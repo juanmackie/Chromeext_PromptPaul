@@ -1,0 +1,141 @@
+body {
+    overflow: hidden; /* Prevent main window scrolling */
+}
+
+#chat-area {
+    position: relative;
+    height: calc(100vh - 150px); /* Account for input area height */
+    overflow-y: auto; /* Single scrollable area */
+    scroll-behavior: smooth;
+    z-index: 50;
+    padding-bottom: 20px; /* Reduced padding since height is calculated */
+}
+
+#input-area {
+    display: flex;
+    padding: 0.5rem;
+    padding-bottom: 1rem;
+    background-color: var(--surface-color);
+    position: fixed; /* Changed back to fixed */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+    z-index: 100; /* Higher z-index to ensure it's above other elements */
+    pointer-events: auto !important; /* Ensure clicks are registered */
+}
+
+#user-input {
+    flex-grow: 1;
+    margin-right: 0.5rem;
+    padding: 0.6rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 0.6rem;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    pointer-events: auto !important;
+}
+
+#send-button, #clear-button {
+    pointer-events: auto !important; /* Explicitly enable pointer events */
+}
+
+#toast-container {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    pointer-events: none;
+    width: 80%;
+    max-width: 600px;
+    background-color: transparent !important;
+}
+
+.toast {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(51, 51, 51, 0.95) !important;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    transition: opacity 0.5s;
+    max-width: 80%;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    z-index: 1;
+}
+
+.toast.fade-out {
+    opacity: 0;
+}
+
+.message {
+    display: flex; /* Use flexbox for message alignment */
+    flex-direction: column; /* Stack message content vertically */
+    margin-bottom: 0.5rem;
+    padding: 0.8rem 1.2rem; /* Increased padding for better text framing */
+    border-radius: 0.6rem;
+    /* word-wrap: break-word; */
+    /* max-width: 95%; /* Limit message width */
+  width: auto;
+  max-width: 95%;
+}
+
+.llm-message {
+    background-color: #dbdbdb; /* Light grey for LLM messages */
+    align-self: flex-end; /* Align LLM messages to the right */
+}
+
+.llm-message img {
+    display: inline-block; /* Make icons display inline */
+    vertical-align: middle;
+    margin-left: 5px;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    z-index: 10; /* Ensure icons are above other elements */
+}
+
+.llm-message .copy-icons-container {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 5px;
+    align-items: center;
+}
+
+.user-message {
+    background-color: #b8ecf9; /* Primary color for user messages */
+    color: rgb(0, 0, 0); /* White text for user messages */
+    align-self: flex-start; /* Align user messages to the left */
+ width: fit-content;
+  max-width: 95%;
+}
+
+button {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 0.6rem;
+    cursor: pointer;
+    font-weight: 500;
+    box-shadow: var(--shadow-sm);
+}
+
+#clear-button {
+    margin-left: 0.5rem;
+    background-color: #f28b82 !important; /* Soft shade of red for clear button */
+    }
+
+/* Adjust input area and buttons when sidebar is open */
+body.sidebar-open #input-area {
+    right: 300px; /* Adjust based on sidebar width */
+}
+
+body.sidebar-open #chat-area {
+    right: 300px; /* Adjust chat area when sidebar is open */
+}

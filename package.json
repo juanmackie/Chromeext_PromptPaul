@@ -1,0 +1,13 @@
+{
+  "name": "chrome-helpinghand",
+  "version": "1.0.0",
+  "description": "Chrome extension for custom instructions",
+  "main": "background.js",
+  "scripts": {
+    "start": "node background.js"
+  },
+  "dependencies": {
+    "extpay": "^3.0.7",
+    "sqlite3": "^5.1.6"
+  }
+}
