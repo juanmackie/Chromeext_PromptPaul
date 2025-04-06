@@ -7,7 +7,6 @@
     "start": "node background.js"
   },
   "dependencies": {
-    "extpay": "^3.0.7",
-    "sqlite3": "^5.1.6"
+    "extpay": "^3.0.7"
   }
 }
