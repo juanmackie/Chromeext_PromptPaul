@@ -494,6 +494,21 @@ async function getAllToolDefinitions() {
     });
 }
 
+// Function to get a single tool definition by name from storage
+async function getToolDefinition(name) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.get(['promptPaulTools'], (result) => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        const toolsArray = result.promptPaulTools || [];
+        const tool = toolsArray.find(t => t.name === name);
+        resolve(tool);
+      }
+    });
+  });
+}
+
 // Generic function to call a user-defined endpoint
 async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod) { // Added userDefinedMethod parameter
     console.log(`Background: Calling user-defined endpoint: ${endpointUrl} with args:`, args);

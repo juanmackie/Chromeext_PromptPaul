@@ -192,6 +192,12 @@ button:disabled {
   color: white;
 }
 
+.delete-tool-btn {
+ background-color: #e57373;
+ margin-top: 0.5rem;
+ color: #ffffff;
+}
+
 .edit-btn {
   margin-right: 0.5rem;
   margin-bottom: 0.5rem;
