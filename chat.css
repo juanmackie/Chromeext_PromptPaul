@@ -2,6 +2,61 @@ body {
     overflow: hidden; /* Prevent main window scrolling */
 }
 
+/* Dark Theme Overrides */
+body.dark-theme {
+    --primary-color: #7ab7ff;
+    --surface-color: #23272f;
+    --background-color: #181a20;
+    --text-color: #e0e6f0;
+    --border-color: #353a45;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+}
+
+body.dark-theme {
+    background-color: var(--background-color) !important;
+    color: var(--text-color) !important;
+}
+
+body.dark-theme .chat-container,
+body.dark-theme #input-area,
+body.dark-theme .message,
+body.dark-theme .llm-message,
+body.dark-theme .user-message {
+    background-color: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-theme #chat-area {
+    background-color: var(--background-color) !important;
+}
+
+body.dark-theme .llm-message {
+    background-color: #23272f !important;
+}
+
+body.dark-theme .user-message {
+    background-color: #2a3b4d !important;
+    color: #e0e6f0 !important;
+}
+
+body.dark-theme button {
+    background-color: var(--primary-color) !important;
+    color: #fff !important;
+}
+
+body.dark-theme #clear-button {
+    background-color: #b84c4c !important;
+}
+
+body.dark-theme pre,
+body.dark-theme code {
+    background-color: #23272f !important;
+    color: #e0e6f0 !important;
+}
+
 #chat-area {
     position: relative;
     height: calc(100vh - 150px); /* Account for input area height */

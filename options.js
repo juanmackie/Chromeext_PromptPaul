@@ -163,6 +163,41 @@ document.addEventListener('DOMContentLoaded', () => {
   setupToolHandlers(); // Add call to setup tool handlers
 });
 
+// --- Dark Theme Toggle Logic ---
+document.addEventListener('DOMContentLoaded', () => {
+  const darkThemeToggle = document.getElementById('darkThemeToggle');
+  function applyDarkTheme(isDark) {
+    if (isDark) {
+      document.body.classList.add('dark-theme');
+    } else {
+      document.body.classList.remove('dark-theme');
+    }
+  }
+  // Load darkTheme from storage and set toggle/class
+  chrome.storage.sync.get({ darkTheme: false }, (result) => {
+    if (darkThemeToggle) {
+      darkThemeToggle.checked = !!result.darkTheme;
+    }
+    applyDarkTheme(!!result.darkTheme);
+  });
+  // Toggle event: update storage and class
+  if (darkThemeToggle) {
+    darkThemeToggle.addEventListener('change', (e) => {
+      const isDark = darkThemeToggle.checked;
+      chrome.storage.sync.set({ darkTheme: isDark });
+      applyDarkTheme(isDark);
+    });
+  }
+  // Listen for storage changes to sync theme
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.darkTheme) {
+      const isDark = changes.darkTheme.newValue;
+      if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
+      applyDarkTheme(!!isDark);
+    }
+  });
+});
+
 // Migration logic for instructions from sync to local
 function checkAndPromptInstructionMigration() {
   chrome.storage.sync.get(['instructions'], (syncResult) => {

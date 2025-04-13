@@ -13,6 +13,86 @@
   --font-family: 'Inter', sans-serif;
 }
 
+/* Dark Theme Overrides */
+body.dark-theme {
+  --brand-primary: #7ab7ff;
+  --brand-secondary: #3a7bd5;
+  --brand-background: #181a20;
+  --brand-text: #e0e6f0;
+  --surface-color: #23272f;
+  --background-color: #181a20;
+  --text-color: #e0e6f0;
+  --border-color: #353a45;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+}
+
+body.dark-theme {
+  background-color: var(--brand-background) !important;
+  color: var(--brand-text) !important;
+}
+
+body.dark-theme .container,
+body.dark-theme .card,
+body.dark-theme .instruction-form.card,
+body.dark-theme .import-export.card,
+body.dark-theme .tools-card,
+body.dark-theme .config-card {
+  background: var(--surface-color) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme h1,
+body.dark-theme h2,
+body.dark-theme h3,
+body.dark-theme label {
+  color: var(--brand-text) !important;
+}
+
+body.dark-theme input,
+body.dark-theme textarea {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme button {
+  background-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+body.dark-theme .save-button,
+body.dark-theme .save-instruction-button {
+  background-color: #2ecc71 !important;
+}
+
+body.dark-theme .clear-form-button {
+  background-color: #b89c4c !important;
+}
+
+body.dark-theme .export-button,
+body.dark-theme .import-button {
+  background-color: #3a7bd5 !important;
+}
+
+body.dark-theme .delete-tool-btn,
+body.dark-theme .delete-btn {
+  background-color: #b84c4c !important;
+}
+
+body.dark-theme .status {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme #instructionsTable thead {
+  background-color: var(--brand-secondary) !important;
+  color: #fff !important;
+}
+
 body {
   padding: 2rem;
   font-family: var(--font-family);
@@ -289,6 +369,9 @@ button:disabled {
 
 #instructionsTable tbody tr:nth-child(even) {
   background-color: rgba(249, 250, 251, 0.7); /* Very light background for even rows */
+}
+body.dark-theme #instructionsTable tbody tr:nth-child(even) {
+  background: var(--surface-color) !important;
 }
 
 #instructionsTable tbody tr:hover {

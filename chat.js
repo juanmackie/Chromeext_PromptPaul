@@ -8,8 +8,41 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submitBtn');
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
+// --- Dark Theme Toggle Logic ---
+const darkThemeToggle = document.getElementById('darkThemeToggle');
+function applyDarkTheme(isDark) {
+    if (isDark) {
+        document.body.classList.add('dark-theme');
+    } else {
+        document.body.classList.remove('dark-theme');
+    }
+}
+// Load darkTheme from storage and set toggle/class
+chrome.storage.sync.get({ darkTheme: false }, (result) => {
+    if (darkThemeToggle) {
+        darkThemeToggle.checked = !!result.darkTheme;
+    }
+    applyDarkTheme(!!result.darkTheme);
+});
+// Toggle event: update storage and class
+if (darkThemeToggle) {
+    darkThemeToggle.addEventListener('change', (e) => {
+        const isDark = darkThemeToggle.checked;
+        chrome.storage.sync.set({ darkTheme: isDark });
+        applyDarkTheme(isDark);
+    });
+}
+// Listen for storage changes to sync theme
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.darkTheme) {
+        const isDark = changes.darkTheme.newValue;
+        if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
+        applyDarkTheme(!!isDark);
+    }
+});
 
-    let selectedText = null;
+let selectedText = null;
+// let tabId = null; // Removed duplicate declaration
     let tabId = null;
 
      // Get API configuration
