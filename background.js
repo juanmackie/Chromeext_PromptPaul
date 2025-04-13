@@ -170,7 +170,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId.startsWith('custom_')) {
     // Handle custom instruction
     const instructionId = info.menuItemId.replace('custom_', '');
-    const { instructions } = await chrome.storage.sync.get(['instructions']);
+    const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
     if (instruction) {
       prompt = `${instruction.content}\n\n${selectedText}`;
@@ -405,7 +405,8 @@ chrome.runtime.onInstalled.addListener(async () => {
     title: 'Custom Instructions',
     contexts: ['selection'],
   });
-  const { instructions } = await chrome.storage.sync.get(['instructions']);
+  const { instructions } = await chrome.storage.local.get(['instructions']);
+  console.log('Context menu loaded instructions from local:', instructions);
   if (instructions && instructions.length > 0) {
     instructions.forEach(instruction => {
       chrome.contextMenus.create({
@@ -437,14 +438,14 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // Update context menus when instructions change
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
-if (namespace === 'sync' && changes.instructions) {
+if (namespace === 'local' && changes.instructions) {
   // Remove existing menu items
   chrome.contextMenus.remove('customInstructions');
   chrome.contextMenus.remove('separator');
   chrome.contextMenus.remove('manageInstructions');
   
   // Get updated instructions
-  const { instructions } = await chrome.storage.sync.get(['instructions']);
+  const { instructions } = await chrome.storage.local.get(['instructions']);
   
   // Recreate custom instructions menu
   chrome.contextMenus.create({

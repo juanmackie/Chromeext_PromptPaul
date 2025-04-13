@@ -313,6 +313,7 @@ function setupInstructionHandlers() {
         instructions.push(instruction);
       }
 
+      console.log('Saving instructions to local:', instructions);
       chrome.storage.local.set({ instructions }, () => {
         showStatus('Instruction saved successfully!');
         loadInstructions();
