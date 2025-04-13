@@ -52,6 +52,16 @@
     <section class="card instructions-card">
       <h2>Your Custom Instructions</h2>
 
+      <div id="migrationPrompt" class="migration-prompt card" style="display: none; margin-bottom: 1em;">
+        <span>
+          <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
+        </span>
+        <div class="button-group" style="margin-top: 0.5em;">
+          <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">&#128190; Migrate</button>
+          <button type="button" id="dismissMigrationBtn" class="clear-form-button">&#10006; Dismiss</button>
+        </div>
+      </div>
+
       <div id="instructions-list">
         <table id="instructionsTable">
           <thead>

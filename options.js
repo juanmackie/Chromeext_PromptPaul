@@ -17,7 +17,6 @@ function showStatus(message, isError = false, isToast = false) {
   }
 }
 
-// Function to update current configuration display
 function updateCurrentConfig(endpoint, key, model, timestamp) {
   document.getElementById('currentEndpoint').textContent = endpoint || 'Not set';
   document.getElementById('currentApiKey').textContent = key ? '********' + key.slice(-4) : 'Not set';
@@ -159,9 +158,43 @@ function loadOptions() {
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions();
+  checkAndPromptInstructionMigration();
   setupInstructionHandlers();
   setupToolHandlers(); // Add call to setup tool handlers
 });
+
+// Migration logic for instructions from sync to local
+function checkAndPromptInstructionMigration() {
+  chrome.storage.sync.get(['instructions'], (syncResult) => {
+    chrome.storage.local.get(['instructions'], (localResult) => {
+      const syncInstructions = syncResult.instructions || [];
+      const localInstructions = localResult.instructions || [];
+      // Show prompt if sync has instructions and local does not
+      if (syncInstructions.length > 0 && localInstructions.length === 0) {
+        const migrationPrompt = document.getElementById('migrationPrompt');
+        migrationPrompt.style.display = 'block';
+        document.getElementById('migrateInstructionsBtn').onclick = () => {
+          chrome.storage.local.set({ instructions: syncInstructions }, () => {
+            chrome.storage.sync.set({ instructions: [] }, () => {
+              migrationPrompt.style.display = 'none';
+              showStatus('Instructions migrated to this device only!', false, true);
+              // Reload instructions table
+              if (typeof window.setupInstructionHandlers === 'function') {
+                // If handler is re-entrant, reload
+                document.querySelector('#instructionsTable tbody').innerHTML = '';
+                // Call loadInstructions directly if available
+                if (window.loadInstructions) window.loadInstructions();
+              }
+            });
+          });
+        };
+        document.getElementById('dismissMigrationBtn').onclick = () => {
+          migrationPrompt.style.display = 'none';
+        };
+      }
+    });
+  });
+}
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
 
@@ -173,7 +206,7 @@ function setupInstructionHandlers() {
 
   // Load and display instructions
   function loadInstructions() {
-    chrome.storage.sync.get(['instructions'], (result) => {
+    chrome.storage.local.get(['instructions'], (result) => {
       const instructions = result.instructions || [];
       const tableBody = document.querySelector('#instructionsTable tbody');
       tableBody.innerHTML = '';
@@ -238,9 +271,9 @@ function setupInstructionHandlers() {
         btn.addEventListener('click', (e) => {
           const instructionId = e.target.dataset.id;
           if (confirm('Are you sure you want to delete this instruction?')) {
-            chrome.storage.sync.get(['instructions'], (result) => {
+            chrome.storage.local.get(['instructions'], (result) => {
               const updatedInstructions = result.instructions.filter(i => i.id !== instructionId);
-              chrome.storage.sync.set({ instructions: updatedInstructions }, () => {
+              chrome.storage.local.set({ instructions: updatedInstructions }, () => {
                 loadInstructions();
                 clearForm();
               });
@@ -262,7 +295,7 @@ function setupInstructionHandlers() {
       return;
     }
 
-    chrome.storage.sync.get(['instructions'], (result) => {
+    chrome.storage.local.get(['instructions'], (result) => {
       const instructions = result.instructions || [];
       const existingIndex = instructions.findIndex(i => i.id === instructionId);
 
@@ -280,7 +313,7 @@ function setupInstructionHandlers() {
         instructions.push(instruction);
       }
 
-      chrome.storage.sync.set({ instructions }, () => {
+      chrome.storage.local.set({ instructions }, () => {
         showStatus('Instruction saved successfully!');
         loadInstructions();
         clearForm();
@@ -299,7 +332,7 @@ function setupInstructionHandlers() {
 
   // Export instructions handler
   document.getElementById('exportInstructions').addEventListener('click', () => {
-    chrome.storage.sync.get(['instructions'], (result) => {
+    chrome.storage.local.get(['instructions'], (result) => {
       const instructions = result.instructions || [];
       const exportData = {
         version: '1.0',
@@ -348,7 +381,7 @@ function setupInstructionHandlers() {
         });
 
         // Merge with existing instructions
-        chrome.storage.sync.get(['instructions'], (result) => {
+        chrome.storage.local.get(['instructions'], (result) => {
           const currentInstructions = result.instructions || [];
           const newInstructions = importData.instructions.map(instruction => ({
             ...instruction,
@@ -367,7 +400,7 @@ function setupInstructionHandlers() {
             }
           });
 
-          chrome.storage.sync.set({ instructions: mergedInstructions }, () => {
+          chrome.storage.local.set({ instructions: mergedInstructions }, () => {
             showStatus(`Successfully imported ${newInstructions.length} instructions!`);
             loadInstructions();
           });

@@ -46,35 +46,3 @@ This plan outlines the steps to implement a tool/function calling feature within
 *   **Error Handling:** Implement robust error handling throughout the process.
 *   **UI Feedback:** Improve UI feedback during tool execution.
 *   **Tool Definition UI:** Consider enhancing the JSON Schema editing experience.
-
-## Sequence Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant OptionsUI (options.js/html)
-    participant Storage (chrome.storage.sync)
-    participant ChatUI (chat.js)
-    participant Background (background.js)
-    participant LLM_API
-    participant ToolRegistry (in background.js)
-
-    User->>OptionsUI: Defines Tool (Name, Desc, Schema)
-    OptionsUI->>Storage: Save Tool Definition
-
-    User->>ChatUI: Enters chat message
-    ChatUI->>ChatUI: Add User message to history
-    ChatUI->>Storage: Get Tool Definitions
-    Storage-->>ChatUI: Tool Definitions
-    ChatUI->>LLM_API: Send messages + formatted tool definitions
-    LLM_API-->>ChatUI: Response (requests tool_call for 'ToolX')
-    ChatUI->>ChatUI: Add tool_call request to history
-    ChatUI->>User: Display "Using tool: ToolX..."
-    ChatUI->>Background: Request Tool Execution ('executePromptPaulTool', name='ToolX', args)
-    Background->>ToolRegistry: Find & Execute ToolX(args)
-    ToolRegistry-->>Background: Tool Result Data
-    Background->>ChatUI: Send Tool Result (callback response)
-    ChatUI->>ChatUI: Add tool result message to history
-    ChatUI->>LLM_API: Send updated history (incl. tool_call & result)
-    LLM_API-->>ChatUI: Final Response (using tool result)
-    ChatUI->>User: Display final response

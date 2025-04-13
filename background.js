@@ -170,7 +170,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId.startsWith('custom_')) {
     // Handle custom instruction
     const instructionId = info.menuItemId.replace('custom_', '');
-    const { instructions } = await chrome.storage.sync.get(['instructions']);
+    const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
     if (instruction) {
       prompt = `${instruction.content}\n\n${selectedText}`;
@@ -405,7 +405,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     title: 'Custom Instructions',
     contexts: ['selection'],
   });
-  const { instructions } = await chrome.storage.sync.get(['instructions']);
+  const { instructions } = await chrome.storage.local.get(['instructions']);
   if (instructions && instructions.length > 0) {
     instructions.forEach(instruction => {
       chrome.contextMenus.create({
@@ -444,7 +444,7 @@ if (namespace === 'sync' && changes.instructions) {
   chrome.contextMenus.remove('manageInstructions');
   
   // Get updated instructions
-  const { instructions } = await chrome.storage.sync.get(['instructions']);
+  const { instructions } = await chrome.storage.local.get(['instructions']);
   
   // Recreate custom instructions menu
   chrome.contextMenus.create({
@@ -486,12 +486,16 @@ if (namespace === 'sync' && changes.instructions) {
 // --- Tool Execution Logic ---
 
 // Helper function to get all tool definitions from storage
+/**
+ * Get all tool definitions, merging local and MCP tools.
+ */
 async function getAllToolDefinitions() {
-    return new Promise((resolve) => {
+    const localTools = await new Promise((resolve) => {
         chrome.storage.sync.get(['promptPaulTools'], (result) => {
             resolve(result.promptPaulTools || []);
         });
     });
+    return localTools;
 }
 
 // Function to get a single tool definition by name from storage
@@ -592,7 +596,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const { id, name, arguments: argsString } = request.toolCall;
         console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
 
-        // Use an async IIFE to handle fetching tool def and executing
         (async () => {
             try {
                 // 1. Fetch all tool definitions to find the one requested
@@ -600,7 +603,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const toolDefinition = allTools.find(t => t.name === name);
 
                 if (!toolDefinition) {
-                    throw new Error(`Tool definition for '${name}' not found in storage.`);
+                    throw new Error(`Tool definition for '${name}' not found in storage or MCP servers.`);
                 }
 
                 // 2. Parse arguments
@@ -613,24 +616,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 // 3. Check if it has a user-defined endpoint URL
                 if (toolDefinition.endpointUrl) {
-                    // Call the generic endpoint function
-                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod); // Pass httpMethod
+                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
                     console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
                     sendResponse({ result: result });
-                } else {
-                    // 4. If no endpoint URL, check for a built-in implementation
+                }
+                // 4. If no endpoint URL, check for a built-in implementation
+                else {
                     const builtInFunction = toolImplementations[name];
                     if (builtInFunction) {
                         const result = await builtInFunction(args);
                         console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
                         sendResponse({ result: result });
                     } else {
-                        // No endpoint and no built-in function
-                        throw new Error(`Tool '${name}' has no configured endpoint URL and no built-in implementation.`);
+                        throw new Error(`Tool '${name}' has no configured endpoint URL, no built-in implementation, and is not an MCP tool.`);
                     }
                 }
             } catch (error) {
-                // Catch errors from fetching, parsing, or execution
                 console.error(`Background: Error processing tool '${name}':`, error);
                 sendResponse({ error: error.message || 'Tool processing failed' });
             }
@@ -640,5 +641,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     // Handle other potential actions if needed
-    // Example: return false; if not handling the message asynchronously
 });
