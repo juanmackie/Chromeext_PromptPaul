@@ -170,7 +170,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId.startsWith('custom_')) {
     // Handle custom instruction
     const instructionId = info.menuItemId.replace('custom_', '');
-    const { instructions } = await chrome.storage.local.get(['instructions']);
+    const { instructions } = await chrome.storage.sync.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
     if (instruction) {
       prompt = `${instruction.content}\n\n${selectedText}`;
@@ -405,7 +405,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     title: 'Custom Instructions',
     contexts: ['selection'],
   });
-  const { instructions } = await chrome.storage.local.get(['instructions']);
+  const { instructions } = await chrome.storage.sync.get(['instructions']);
   if (instructions && instructions.length > 0) {
     instructions.forEach(instruction => {
       chrome.contextMenus.create({
@@ -444,7 +444,7 @@ if (namespace === 'sync' && changes.instructions) {
   chrome.contextMenus.remove('manageInstructions');
   
   // Get updated instructions
-  const { instructions } = await chrome.storage.local.get(['instructions']);
+  const { instructions } = await chrome.storage.sync.get(['instructions']);
   
   // Recreate custom instructions menu
   chrome.contextMenus.create({
