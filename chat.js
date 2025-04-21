@@ -318,7 +318,7 @@ let selectedText = null;
             // Add tools to the request body if any are defined and valid
             if (formattedTools.length > 0) {
                 requestBody.tools = formattedTools;
-                requestBody.tool_choice = "auto"; // Let the model decide whether to use tools
+                requestBody.tool_choice = "none"; // Let the model decide whether to use tools
             }
 
             console.log("API Request Body:", requestBody); // Log for debugging

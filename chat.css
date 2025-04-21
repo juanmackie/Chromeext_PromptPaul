@@ -5,7 +5,7 @@ body {
 /* Dark Theme Overrides */
 body.dark-theme {
     --primary-color: #7ab7ff;
-    --surface-color: #23272f;
+    --surface-color: #000000;
     --background-color: #181a20;
     --text-color: #e0e6f0;
     --border-color: #353a45;
@@ -30,7 +30,7 @@ body.dark-theme .user-message {
 }
 
 body.dark-theme #chat-area {
-    background-color: var(--background-color) !important;
+    background-color: #000000(--background-color) !important;
 }
 
 body.dark-theme .llm-message {

@@ -248,9 +248,12 @@ function setupInstructionHandlers() {
 
       instructions.forEach(instruction => {
         const row = document.createElement('tr');
+        // Default tool_choice to 'none' if not present
+        const toolChoice = instruction.tool_choice || 'none';
         row.innerHTML = `
           <td>${instruction.name}</td>
           <td>${instruction.content}</td>
+          <td>${toolChoice.charAt(0).toUpperCase() + toolChoice.slice(1)}</td>
           <td>
             <button class="edit-btn" data-id="${instruction.id}">Edit</button>
             <button class="improve-btn" data-id="${instruction.id}">Improve</button>
@@ -269,6 +272,8 @@ function setupInstructionHandlers() {
             document.getElementById('instructionName').value = instruction.name;
             document.getElementById('instructionContent').value = instruction.content;
             document.getElementById('instructionId').value = instruction.id;
+            // Set the tool_choice dropdown, defaulting to 'none' if not present
+            document.getElementById('instructionToolChoice').value = instruction.tool_choice || 'none';
           }
         });
       });
@@ -324,6 +329,7 @@ function setupInstructionHandlers() {
     const instructionId = document.getElementById('instructionId').value;
     const name = document.getElementById('instructionName').value.trim();
     const content = document.getElementById('instructionContent').value.trim();
+    const toolChoice = document.getElementById('instructionToolChoice').value; // Get tool_choice value
 
     if (!name || !content) {
       showStatus('Both name and content are required', true);
@@ -338,6 +344,7 @@ function setupInstructionHandlers() {
         id: instructionId || Date.now().toString(),
         name,
         content,
+        tool_choice: toolChoice, // Save tool_choice
         created_at: instructionId ? instructions[existingIndex].created_at : new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -364,6 +371,7 @@ function setupInstructionHandlers() {
     document.getElementById('instructionName').value = '';
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
+    document.getElementById('instructionToolChoice').value = 'none'; // Reset tool_choice dropdown
   }
 
   // Export instructions handler
@@ -409,10 +417,15 @@ function setupInstructionHandlers() {
           throw new Error('Invalid import file format');
         }
 
-        // Validate each instruction
+        // Validate each instruction (add check for tool_choice, but allow missing for backward compatibility)
         importData.instructions.forEach(instruction => {
           if (!instruction.name || !instruction.content) {
-            throw new Error('Invalid instruction format');
+            throw new Error('Invalid instruction format: Missing name or content');
+          }
+          // Optional: Validate tool_choice value if present
+          if (instruction.tool_choice && !['none', 'auto'].includes(instruction.tool_choice)) {
+             console.warn(`Invalid tool_choice value "${instruction.tool_choice}" for instruction "${instruction.name}". Defaulting to "none".`);
+             instruction.tool_choice = 'none';
           }
         });
 
@@ -422,6 +435,7 @@ function setupInstructionHandlers() {
           const newInstructions = importData.instructions.map(instruction => ({
             ...instruction,
             id: instruction.id || Date.now().toString(),
+            tool_choice: instruction.tool_choice || 'none', // Ensure tool_choice exists, default to 'none'
             imported_at: new Date().toISOString()
           }));
 

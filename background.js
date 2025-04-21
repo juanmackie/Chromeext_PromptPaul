@@ -167,6 +167,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   let prompt = '';
+  let instructionToolChoice = 'none'; // Default tool choice
   if (info.menuItemId.startsWith('custom_')) {
     // Handle custom instruction
     const instructionId = info.menuItemId.replace('custom_', '');
@@ -174,8 +175,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const instruction = instructions.find(i => i.id === instructionId);
     if (instruction) {
       prompt = `${instruction.content}\n\n${selectedText}`;
+      instructionToolChoice = instruction.tool_choice || 'none'; // Get tool_choice, default to 'none'
     } else {
-      throw new Error('Custom instruction not found');
+      // Keep default prompt (selectedText) and toolChoice ('none') if instruction not found
+      console.error(`Custom instruction with ID ${instructionId} not found.`);
+      prompt = selectedText; // Fallback to just using selected text
+      // Optionally, send an error message back to the user via chat.js
+      // chrome.runtime.sendMessage({...});
     }
   } else {
     // Handle predefined commands
@@ -243,7 +249,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         model: config.modelName,
         messages: messages, // Use the constructed messages array
         max_tokens: parseInt(config.maxTokens) || 2048, // Use maxTokens from config or default
-        ...(formattedTools.length > 0 && { tools: formattedTools, tool_choice: "auto" }) // Conditionally add tools
+        // Conditionally add tools based on instruction's tool_choice and if tools exist
+        ...(instructionToolChoice === 'auto' && formattedTools.length > 0 && { tools: formattedTools, tool_choice: "auto" })
       }),
     });
 
