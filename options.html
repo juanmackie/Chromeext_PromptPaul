@@ -96,11 +96,12 @@
         </div>
         <div class="form-group">
           <label for="instructionToolChoice">Tool Choice</label>
-          <select id="instructionToolChoice">
+          <select id="instructionToolChoice" multiple size="4">
             <option value="none">None (Default)</option>
             <option value="auto">Auto</option>
+            <!-- Tools will be populated here -->
           </select>
-          <small>Determines if the AI can use defined tools when this instruction is active. "None" prevents tool use, "Auto" allows it.</small>
+          <small>Select tools the AI can use with this instruction. Use Ctrl/Cmd + Click to select multiple. "None" prevents tool use, "Auto" allows any tool.</small>
         </div>
         <input type="hidden" id="instructionId">
         <div class="button-group">

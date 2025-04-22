@@ -241,12 +241,9 @@ async function populateToolDropdown() {
     return;
   }
 
-  // Store the currently selected value to try and restore it later
-  const currentSelectedValue = toolChoiceSelect.value;
-
-  // Clear existing tool options (keep None and Auto)
+  // Clear existing tool options (keep the first two: None and Auto)
   while (toolChoiceSelect.options.length > 2) {
-    toolChoiceSelect.remove(2);
+    toolChoiceSelect.remove(toolChoiceSelect.options.length - 1);
   }
 
   try {
@@ -255,30 +252,22 @@ async function populateToolDropdown() {
     });
     const tools = result.promptPaulTools || [];
 
-    // Add a separator
-    const separator = document.createElement('option');
-    separator.disabled = true;
-    separator.textContent = '------ Tools ------';
-    toolChoiceSelect.appendChild(separator);
+    if (tools.length > 0) {
+        // Add a separator only if there are tools
+        const separator = document.createElement('option');
+        separator.disabled = true;
+        separator.textContent = '------ Tools ------';
+        toolChoiceSelect.appendChild(separator);
 
-
-    // Add tools to the dropdown
-    tools.forEach(tool => {
-      const option = document.createElement('option');
-      option.value = tool.name; // Use tool name as value
-      option.textContent = tool.name;
-      toolChoiceSelect.appendChild(option);
-    });
-
-    // Try to restore the previously selected value
-    if (Array.from(toolChoiceSelect.options).some(opt => opt.value === currentSelectedValue)) {
-        toolChoiceSelect.value = currentSelectedValue;
-    } else if (currentSelectedValue !== 'none' && currentSelectedValue !== 'auto') {
-        // If the previously selected tool is gone, default to 'auto' or 'none'
-        console.warn(`Previously selected tool "${currentSelectedValue}" not found. Resetting dropdown.`);
-        toolChoiceSelect.value = 'auto'; // Or 'none', depending on desired default
+        // Add tools to the dropdown
+        tools.forEach(tool => {
+          const option = document.createElement('option');
+          option.value = tool.name; // Use tool name as value
+          option.textContent = tool.name;
+          toolChoiceSelect.appendChild(option);
+        });
     }
-
+    // Selection restoration will be handled in the edit handler (loadInstructions)
 
   } catch (error) {
     console.error("Error loading tools for dropdown:", error);
@@ -302,15 +291,29 @@ function setupInstructionHandlers() {
 
       instructions.forEach(instruction => {
         const row = document.createElement('tr');
-        // Default tool_choice to 'none' if not present
-        const toolChoice = instruction.tool_choice || 'none';
+        // Handle tool_choice display (could be string or array)
+        let toolChoiceDisplay = 'None'; // Default display
+        if (instruction.tool_choice) {
+          if (Array.isArray(instruction.tool_choice)) {
+            if (instruction.tool_choice.length === 0 || instruction.tool_choice.includes('none')) {
+              toolChoiceDisplay = 'None';
+            } else if (instruction.tool_choice.includes('auto')) {
+              toolChoiceDisplay = 'Auto';
+            } else {
+              toolChoiceDisplay = instruction.tool_choice.join(', '); // Join array elements
+            }
+          } else { // Handle older string format for backward compatibility
+            toolChoiceDisplay = instruction.tool_choice.charAt(0).toUpperCase() + instruction.tool_choice.slice(1);
+          }
+        }
+
         row.innerHTML = `
           <td>${instruction.name}</td>
           <td>${instruction.content}</td>
-          <td>${toolChoice.charAt(0).toUpperCase() + toolChoice.slice(1)}</td>
+          <td>${toolChoiceDisplay}</td>
           <td>
             <button class="edit-btn" data-id="${instruction.id}">Edit</button>
-            <button class="improve-btn" data-id="${instruction.id}">Improve</button>
+            <button class="improve-btn" data-id="${instruction.id}">Improve</button> <!-- Keep improve button -->
             <button class="delete-btn" data-id="${instruction.id}">Delete</button>
           </td>
         `;
@@ -326,18 +329,32 @@ function setupInstructionHandlers() {
             document.getElementById('instructionName').value = instruction.name;
             document.getElementById('instructionContent').value = instruction.content;
             document.getElementById('instructionId').value = instruction.id;
-            // Set the tool_choice dropdown
-            const toolChoiceSelect = document.getElementById('instructionToolChoice');
-            const savedToolChoice = instruction.tool_choice || 'none';
 
-            // Check if the saved tool choice exists in the dropdown options
-            if (Array.from(toolChoiceSelect.options).some(opt => opt.value === savedToolChoice)) {
-              toolChoiceSelect.value = savedToolChoice;
-            } else {
-              // If the saved tool doesn't exist (e.g., deleted), default to 'none' or 'auto'
-              console.warn(`Saved tool choice "${savedToolChoice}" not found in dropdown. Defaulting to 'none'.`);
-              toolChoiceSelect.value = 'none';
-              // Optionally, you could add a placeholder indicating the tool is missing
+            // Set the tool_choice dropdown (multi-select)
+            const toolChoiceSelect = document.getElementById('instructionToolChoice');
+            const savedToolChoices = instruction.tool_choice || ['none']; // Default to ['none'] if undefined
+
+            // Deselect all options first
+            Array.from(toolChoiceSelect.options).forEach(option => option.selected = false);
+
+            // Select the saved options
+            if (Array.isArray(savedToolChoices)) {
+              savedToolChoices.forEach(choiceValue => {
+                const option = toolChoiceSelect.querySelector(`option[value="${choiceValue}"]`);
+                if (option) {
+                  option.selected = true;
+                } else {
+                  console.warn(`Saved tool choice "${choiceValue}" not found in dropdown.`);
+                }
+              });
+            } else { // Handle older single string value for backward compatibility
+                const option = toolChoiceSelect.querySelector(`option[value="${savedToolChoices}"]`);
+                if (option) {
+                    option.selected = true;
+                } else {
+                    console.warn(`Saved tool choice "${savedToolChoices}" not found in dropdown. Defaulting to 'none'.`);
+                    toolChoiceSelect.querySelector('option[value="none"]').selected = true;
+                }
             }
           }
         });
@@ -394,7 +411,24 @@ function setupInstructionHandlers() {
     const instructionId = document.getElementById('instructionId').value;
     const name = document.getElementById('instructionName').value.trim();
     const content = document.getElementById('instructionContent').value.trim();
-    const toolChoice = document.getElementById('instructionToolChoice').value; // Get tool_choice value
+    const toolChoiceSelect = document.getElementById('instructionToolChoice');
+    // Get all selected options' values as an array
+    const selectedToolChoices = Array.from(toolChoiceSelect.selectedOptions).map(option => option.value);
+
+    // Handle edge cases: if nothing selected, default to 'none'
+    // If 'none' is selected with others, only keep 'none'
+    // If 'auto' is selected with others (but not 'none'), only keep 'auto'
+    let finalToolChoices = ['none']; // Default
+    if (selectedToolChoices.length > 0) {
+        if (selectedToolChoices.includes('none')) {
+            finalToolChoices = ['none'];
+        } else if (selectedToolChoices.includes('auto')) {
+            finalToolChoices = ['auto'];
+        } else {
+            finalToolChoices = selectedToolChoices; // Store the specific tools selected
+        }
+    }
+
 
     if (!name || !content) {
       showStatus('Both name and content are required', true);
@@ -409,7 +443,7 @@ function setupInstructionHandlers() {
         id: instructionId || Date.now().toString(),
         name,
         content,
-        tool_choice: toolChoice, // Save tool_choice
+        tool_choice: finalToolChoices, // Save the array of selected tool choices
         created_at: instructionId ? instructions[existingIndex].created_at : new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -436,7 +470,10 @@ function setupInstructionHandlers() {
     document.getElementById('instructionName').value = '';
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
-    document.getElementById('instructionToolChoice').value = 'none'; // Reset tool_choice dropdown
+    // Reset multi-select dropdown: deselect all, then select 'none'
+    const toolChoiceSelect = document.getElementById('instructionToolChoice');
+    Array.from(toolChoiceSelect.options).forEach(option => option.selected = false);
+    toolChoiceSelect.querySelector('option[value="none"]').selected = true;
   }
 
   // Export instructions handler
@@ -487,10 +524,27 @@ function setupInstructionHandlers() {
           if (!instruction.name || !instruction.content) {
             throw new Error('Invalid instruction format: Missing name or content');
           }
-          // Optional: Validate tool_choice value if present
-          if (instruction.tool_choice && !['none', 'auto'].includes(instruction.tool_choice)) {
-             console.warn(`Invalid tool_choice value "${instruction.tool_choice}" for instruction "${instruction.name}". Defaulting to "none".`);
-             instruction.tool_choice = 'none';
+          // Validate tool_choice (allow string for backward compat, or array)
+          if (instruction.tool_choice) {
+            if (Array.isArray(instruction.tool_choice)) {
+              // If it's an array, ensure values are valid (exist in dropdown or are 'none'/'auto')
+              // For simplicity here, we'll just accept the array as is, assuming background script handles validation
+            } else if (typeof instruction.tool_choice === 'string') {
+              // If it's a string (old format), validate it
+              if (!['none', 'auto'].includes(instruction.tool_choice)) {
+                 console.warn(`Invalid legacy tool_choice string value "${instruction.tool_choice}" for instruction "${instruction.name}". Converting to ['none'].`);
+                 instruction.tool_choice = ['none'];
+              } else {
+                 // Convert valid legacy string to array
+                 instruction.tool_choice = [instruction.tool_choice];
+              }
+            } else {
+               console.warn(`Invalid tool_choice type for instruction "${instruction.name}". Defaulting to ['none'].`);
+               instruction.tool_choice = ['none'];
+            }
+          } else {
+            // If tool_choice is missing, default to ['none']
+            instruction.tool_choice = ['none'];
           }
         });
 
