@@ -233,6 +233,60 @@ function checkAndPromptInstructionMigration() {
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
 
+// --- Tool Dropdown Population ---
+async function populateToolDropdown() {
+  const toolChoiceSelect = document.getElementById('instructionToolChoice');
+  if (!toolChoiceSelect) {
+    console.error("instructionToolChoice dropdown not found!");
+    return;
+  }
+
+  // Store the currently selected value to try and restore it later
+  const currentSelectedValue = toolChoiceSelect.value;
+
+  // Clear existing tool options (keep None and Auto)
+  while (toolChoiceSelect.options.length > 2) {
+    toolChoiceSelect.remove(2);
+  }
+
+  try {
+    const result = await new Promise((resolve) => {
+      chrome.storage.sync.get(['promptPaulTools'], resolve);
+    });
+    const tools = result.promptPaulTools || [];
+
+    // Add a separator
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '------ Tools ------';
+    toolChoiceSelect.appendChild(separator);
+
+
+    // Add tools to the dropdown
+    tools.forEach(tool => {
+      const option = document.createElement('option');
+      option.value = tool.name; // Use tool name as value
+      option.textContent = tool.name;
+      toolChoiceSelect.appendChild(option);
+    });
+
+    // Try to restore the previously selected value
+    if (Array.from(toolChoiceSelect.options).some(opt => opt.value === currentSelectedValue)) {
+        toolChoiceSelect.value = currentSelectedValue;
+    } else if (currentSelectedValue !== 'none' && currentSelectedValue !== 'auto') {
+        // If the previously selected tool is gone, default to 'auto' or 'none'
+        console.warn(`Previously selected tool "${currentSelectedValue}" not found. Resetting dropdown.`);
+        toolChoiceSelect.value = 'auto'; // Or 'none', depending on desired default
+    }
+
+
+  } catch (error) {
+    console.error("Error loading tools for dropdown:", error);
+    showStatus("Error loading tools for dropdown.", true);
+  }
+}
+
+
 // Setup instruction management handlers
 function setupInstructionHandlers() {
   const saveInstructionBtn = document.getElementById('saveInstruction');
@@ -272,8 +326,19 @@ function setupInstructionHandlers() {
             document.getElementById('instructionName').value = instruction.name;
             document.getElementById('instructionContent').value = instruction.content;
             document.getElementById('instructionId').value = instruction.id;
-            // Set the tool_choice dropdown, defaulting to 'none' if not present
-            document.getElementById('instructionToolChoice').value = instruction.tool_choice || 'none';
+            // Set the tool_choice dropdown
+            const toolChoiceSelect = document.getElementById('instructionToolChoice');
+            const savedToolChoice = instruction.tool_choice || 'none';
+
+            // Check if the saved tool choice exists in the dropdown options
+            if (Array.from(toolChoiceSelect.options).some(opt => opt.value === savedToolChoice)) {
+              toolChoiceSelect.value = savedToolChoice;
+            } else {
+              // If the saved tool doesn't exist (e.g., deleted), default to 'none' or 'auto'
+              console.warn(`Saved tool choice "${savedToolChoice}" not found in dropdown. Defaulting to 'none'.`);
+              toolChoiceSelect.value = 'none';
+              // Optionally, you could add a placeholder indicating the tool is missing
+            }
           }
         });
       });
@@ -473,6 +538,15 @@ function setupInstructionHandlers() {
 
   // Initial load
   loadInstructions();
+  populateToolDropdown(); // Populate dropdown on initial load
+
+  // Listen for changes in tool storage to keep dropdown updated
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.promptPaulTools) {
+      console.log('Detected changes in promptPaulTools, repopulating dropdown.');
+      populateToolDropdown();
+    }
+  });
 }
 
 async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
@@ -585,10 +659,15 @@ function setupToolHandlers() {
                 loadTools(); // Reload the list
                 clearToolForm(); // Clear the form
               });
+        
             });
           }
         });
       });
+
+      // Repopulate the instruction tool dropdown whenever tools are loaded/reloaded
+      populateToolDropdown();
+
     });
   }
 
