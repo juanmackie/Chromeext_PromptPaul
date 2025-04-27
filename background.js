@@ -255,11 +255,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         // Conditionally add tools based on instruction's tool_choice and if tools exist
         ...(formattedTools.length > 0 && {
           tools: formattedTools,
-          tool_choice: Array.isArray(instructionToolChoice) && instructionToolChoice.length > 0
-            ? { type: 'function', function: { name: instructionToolChoice[0] } } // Use first selected tool
-            : instructionToolChoice === 'auto'
-              ? "auto"
-              : "none"
+          tool_choice: (() => { // Using an immediately-invoked function expression for clarity
+            if (Array.isArray(instructionToolChoice) && instructionToolChoice.length > 0) {
+              const choice = instructionToolChoice[0]; // Get the first element ('none', 'auto', or a tool name)
+              if (choice === 'none') {
+                return 'none'; // Correct: Send the string "none"
+              } else if (choice === 'auto') {
+                return 'auto'; // Correct: Send the string "auto"
+              } else {
+                // It's a specific tool name
+                return { type: 'function', function: { name: choice } }; // Correct for specific tool
+              }
+            }
+            // Default/Fallback if something unexpected happened
+            return 'none';
+          })()
         })
       }),
     });
