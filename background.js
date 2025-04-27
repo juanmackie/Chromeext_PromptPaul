@@ -189,6 +189,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       case 'summarize':
         prompt = `Please summarize the following text into a bullet list of points:\n${selectedText}`;
         break;
+      case 'explain':
+        prompt = `Explain this to me in a short concise MECE approach:\n${selectedText}`;
+        break;
       case 'polish':
         prompt = `Polish this text with clarity and purpose:\n${selectedText}`;
         break;
@@ -250,7 +253,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         messages: messages, // Use the constructed messages array
         max_tokens: parseInt(config.maxTokens) || 2048, // Use maxTokens from config or default
         // Conditionally add tools based on instruction's tool_choice and if tools exist
-        ...(instructionToolChoice === 'auto' && formattedTools.length > 0 && { tools: formattedTools, tool_choice: "auto" })
+        ...(formattedTools.length > 0 && {
+          tools: formattedTools,
+          tool_choice: Array.isArray(instructionToolChoice) && instructionToolChoice.length > 0
+            ? { type: 'function', function: { name: instructionToolChoice[0] } } // Use first selected tool
+            : instructionToolChoice === 'auto'
+              ? "auto"
+              : "none"
+        })
       }),
     });
 
@@ -378,7 +388,12 @@ chrome.runtime.onInstalled.addListener(async () => {
     contexts: ['selection'],
     parentId: 'prompt_paul'
   });
-    
+  chrome.contextMenus.create({
+    id: 'explain',
+    title: '❓ Explain',
+    contexts: ['selection'],
+    parentId: 'prompt_paul'
+  });
   chrome.contextMenus.create({
     id: 'polish',
     title: '🪄 Polish',

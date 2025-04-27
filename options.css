@@ -16,6 +16,7 @@
 /* Dark Theme Overrides */
 body.dark-theme {
   --brand-primary: #7ab7ff;
+  --selection-color: #7f7f7f;
   --brand-secondary: #3a7bd5;
   --brand-background: #181a20;
   --brand-text: #e0e6f0;
@@ -90,6 +91,11 @@ body.dark-theme .status {
 
 body.dark-theme #instructionsTable thead {
   background-color: var(--brand-secondary) !important;
+}
+
+body.dark-theme ::selection {
+  background: var(--selection-color);
+}
   color: #fff !important;
 }
 

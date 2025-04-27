@@ -5,9 +5,10 @@ body {
 /* Dark Theme Overrides */
 body.dark-theme {
     --primary-color: #7ab7ff;
+    --selection-color: #7f7f7f;
     --surface-color: #000000;
     --background-color: #181a20;
-    --text-color: #e0e6f0;
+    --text-color: #7f7f7f;
     --border-color: #353a45;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
     --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
@@ -54,6 +55,11 @@ body.dark-theme #clear-button {
 body.dark-theme pre,
 body.dark-theme code {
     background-color: #23272f !important;
+}
+
+body.dark-theme ::selection {
+    background: var(--selection-color);
+}
     color: #e0e6f0 !important;
 }
 
