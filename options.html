@@ -17,6 +17,10 @@
           &#9749; Buy me a coffee
         </button>
       </a>
+      <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
+      <a href="https://promptpaul.juanmackie.com/" target="_blank">
+        <button id="feedbackButton" class="feedback-button">Feedback</button>
+      </a>
       <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
 
       <form id="optionsForm">
@@ -151,7 +155,13 @@
         </div>
         <div class="form-group">
           <label for="toolParameters">Parameters (JSON Schema)</label>
-          <textarea id="toolParameters" placeholder='e.g., {\n  "type": "object",\n  "properties": {\n    "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }\n  },\n  "required": ["location"]\n}' rows="6"></textarea>
+          <textarea id="toolParameters" placeholder='e.g., {
+  "type": "object",
+  "properties": {
+    "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
+  },
+  "required": ["location"]
+}' rows="6"></textarea>
           <small>Define the input parameters for the tool using JSON Schema format.</small>
         </div>
         <div class="form-group">
@@ -207,6 +217,10 @@
         <p id="currentMaxTokens">2048</p>
       </div>
       <div class="form-group">
+        <label>System Prompt</label>
+        <p id="currentSystemPrompt">Not set</p>
+      </div>
+      <div class="form-group">
         <label>Last Updated</label>
         <p id="lastUpdated">Never</p>
       </div>
@@ -223,3 +237,4 @@
   <script src="options.js"></script>
 </body>
 </html>
+]]>

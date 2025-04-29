@@ -17,11 +17,12 @@ function showStatus(message, isError = false, isToast = false) {
   }
 }
 
-function updateCurrentConfig(endpoint, key, model, timestamp) {
+function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt) {
   document.getElementById('currentEndpoint').textContent = endpoint || 'Not set';
   document.getElementById('currentApiKey').textContent = key ? '********' + key.slice(-4) : 'Not set';
   document.getElementById('currentModelName').textContent = model || 'Not set';
-  document.getElementById('lastUpdated').textContent = timestamp || 'Never';
+  document.getElementById('lastUpdated').textContent = timestamp || 'Not set';
+  document.getElementById('currentSystemPrompt').textContent = systemPrompt || 'Not set';
 
   // Get max tokens from storage and display it
   chrome.storage.sync.get(['maxTokens'], (result) => {
@@ -161,6 +162,28 @@ document.addEventListener('DOMContentLoaded', () => {
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
   setupToolHandlers(); // Add call to setup tool handlers
+
+  // Add event listener for the Revert button
+  const revertButton = document.getElementById('revertDefaultsButton');
+  if (revertButton) {
+    revertButton.addEventListener('click', () => {
+      // Get default values (these are defined in loadOptions)
+      const defaultEndpoint = 'https://api.mistral.ai/v1/chat/completions';
+      const defaultApiKey = 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
+      const defaultModelName = 'mistral-small-latest';
+
+      // Set default values in the input fields
+      document.getElementById('llmEndpoint').value = defaultEndpoint;
+      document.getElementById('apiKey').value = defaultApiKey;
+      document.getElementById('modelName').value = defaultModelName;
+
+      // Optionally, clear maxTokens and systemPrompt or set to their defaults if needed
+      // document.getElementById('maxTokens').value = '2048'; // Default max tokens
+      // document.getElementById('systemPrompt').value = ''; // Default system prompt
+
+      showStatus('Settings reverted to defaults. Click "Save Settings" to apply.', false, true); // Show as a toast
+    });
+  }
 });
 
 // --- Dark Theme Toggle Logic ---

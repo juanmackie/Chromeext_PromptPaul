@@ -96,8 +96,6 @@ body.dark-theme #instructionsTable thead {
 body.dark-theme ::selection {
   background: var(--selection-color);
 }
-  color: #fff !important;
-}
 
 body {
   padding: 2rem;
@@ -292,6 +290,16 @@ button:disabled {
 .delete-btn {
   background-color: #e57373; /* Softer red */
   color: #ffffff;
+}
+
+.revert-button {
+  background-color: #e74c3c; /* Red */
+  color: white;
+}
+
+.feedback-button {
+  background-color: #3498db; /* Blue */
+  color: white;
 }
 
 
