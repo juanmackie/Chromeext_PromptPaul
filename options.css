@@ -416,6 +416,10 @@ body.dark-theme #toolsTable {
   margin-top: 1rem;
 }
 
+.button-group button {
+  flex-grow: 1;
+}
+
 
 footer {
   text-align: center;
