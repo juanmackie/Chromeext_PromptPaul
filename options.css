@@ -247,59 +247,63 @@ button:disabled {
 
 .ko-fi-button {
   background-color: #2ecc71;
-  color: white;
+  color: #1f3701;
   margin-bottom: 1.5rem;
 }
 
 .save-button {
   background-color: #2ecc71;
-  color: white;
+  color: #1f3701;
 }
 
 .save-instruction-button {
   background-color: #2ecc71;
-  color: white;
+  color: #1f3701;
 }
 
 .clear-form-button {
   background-color: #fce366;
-  color: white;
+  color: #534600;
 }
 
 .export-button {
   background-color: #3498db;
-  color: white;
+  color: #1f4e4b;
 }
 
 .import-button {
   background-color: #3498db;
-  color: white;
+  color: #1f4e4b;
 }
 
 .delete-tool-btn {
  background-color: #e57373;
  margin-top: 0.5rem;
- color: #ffffff;
+ margin-bottom: 0.5rem;
+ color: #690005;
 }
 
 .edit-btn {
   margin-right: 0.5rem;
   margin-bottom: 0.5rem;
+  margin-top: 0.5rem;
+  background-color: #3498db; /* Blue */
+  color: #1f4e4b;
 }
 
 .delete-btn {
   background-color: #e57373; /* Softer red */
-  color: #ffffff;
+  color: #690005;
 }
 
 .revert-button {
-  background-color: #e74c3c; /* Red */
-  color: white;
+  background-color: #e57373; /* Red */
+  color: #690005;
 }
 
 .feedback-button {
   background-color: #3498db; /* Blue */
-  color: white;
+  color: #00363f;
 }
 
 
