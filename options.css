@@ -1,3 +1,17 @@
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.4rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
 :root {
   --brand-primary: #2f6897;
   --brand-secondary: #5298d5;
@@ -249,6 +263,8 @@ button:disabled {
   background-color: #2ecc71;
   color: #1f3701;
   margin-bottom: 1.5rem;
+  width: 192.93px;
+  height: 47.81px;
 }
 
 .save-button {
@@ -299,11 +315,15 @@ button:disabled {
 .revert-button {
   background-color: #e57373; /* Red */
   color: #690005;
+  width: 192.93px;
+  height: 47.81px;
 }
 
 .feedback-button {
   background-color: #3498db; /* Blue */
   color: #00363f;
+  width: 192.93px;
+  height: 47.81px;
 }
 
 
@@ -518,11 +538,22 @@ footer a:hover {
   }
 }
 
+.button-container {
+  display: flex;
+  gap: 1rem; /* Adjust the gap as needed for spacing */
+  flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+  margin-bottom: 1.5rem; /* Add some space below the buttons */
+}
+
+.button-container button {
+  flex-grow: 1;
+}
+
 .improve-btn {
   margin-right: 0.1rem;
   margin-bottom: 0.5rem;
   background-color: #ff0000; /* Fallback color */
-  background-image: linear-gradient(90deg, 
+  background-image: linear-gradient(90deg,
       red, orange, yellow, green, blue, indigo, violet, red);
   background-size: 800%;
   animation: rainbow 10s linear infinite;

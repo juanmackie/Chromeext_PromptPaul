@@ -4,23 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Prompt Paul Config</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="options.css">
+  <style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 1.4rem;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+  </style>
 </head>
 <body>
   <main class="container">
     <h1>&#10024; Prompt Paul</h1>
 
     <section class="card settings-card">
-      <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
-        <button class="ko-fi-button">
-          &#9749; Buy me a coffee
-        </button>
-      </a>
-      <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
-      <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
-        <button id="feedbackButton" class="feedback-button">Feedback</button>
-      </a>
+      <div class="button-container">
+        <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
+          <button class="ko-fi-button">
+            &#9749; Buy me a coffee
+          </button>
+        </a>
+        <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
+        <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
+          <button id="feedbackButton" class="feedback-button">Feedback</button>
+        </a>
+      </div>
       <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
 
       <form id="optionsForm">
@@ -55,7 +73,7 @@
             Dark Theme
           </label>
         </div>
-        <button type="submit" id="save" class="save-button">&#128190; Save Settings</button>
+        <button type="submit" id="save" class="save-button"><span class="material-symbols-outlined">save</span> Save Settings</button>
       </form>
     </section>
 
@@ -109,17 +127,20 @@
         </div>
         <input type="hidden" id="instructionId">
         <div class="button-group">
-          <button type="button" id="saveInstruction" class="save-instruction-button">&#128190; Save Instruction</button>
-          <button type="button" id="clearForm" class="clear-form-button">&#129529; Clear Form</button>
+          <button type="button" id="saveInstruction" class="save-instruction-button"><span class="material-symbols-outlined">save</span> Save Instruction</button>
+          <button type="button" id="clearForm" class="clear-form-button">
+            <span class="material-symbols-outlined">clear_all</span>
+            Clear Form
+          </button>
         </div>
       </div>
 
       <div class="import-export card">
         <h3>Import/Export Instructions</h3>
         <div class="button-group">
-          <button type="button" id="exportInstructions" class="export-button">&#128229; Export Instructions</button>
+          <button type="button" id="exportInstructions" class="export-button"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
           <input type="file" id="importFile" accept=".json" style="display: none;">
-          <button type="button" id="importInstructions" class="import-button">&#128228; Import Instructions</button>
+          <button type="button" id="importInstructions" class="import-button"><span class="material-symbols-outlined">download</span> Import Instructions</button>
         </div>
       </div>
     </section>
@@ -183,17 +204,22 @@
         </div>
         <input type="hidden" id="toolId">
         <div class="button-group">
-          <button type="button" id="saveTool" class="save-button">&#128190; Save Tool</button>
-          <button type="button" id="clearToolForm" class="clear-form-button">&#129529; Clear Form</button>
+          <button type="button" id="saveTool" class="save-button">
+            <span class="material-symbols-outlined">save</span> Save Tool
+          </button>
+          <button type="button" id="clearToolForm" class="clear-form-button">
+            <span class="material-symbols-outlined">clear_all</span>
+            Clear Form
+          </button>
         </div>
       </div>
 
       <div class="import-export card">
         <h3>Import/Export Tools</h3>
         <div class="button-group">
-          <button type="button" id="exportTools" class="export-button">&#128229; Export Tools</button>
+          <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
           <input type="file" id="importToolsFile" accept=".json" style="display: none;">
-          <button type="button" id="importTools" class="import-button">&#128228; Import Tools</button>
+          <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
         </div>
       </div>
     </section>
@@ -237,4 +263,3 @@
   <script src="options.js"></script>
 </body>
 </html>
-]]>
