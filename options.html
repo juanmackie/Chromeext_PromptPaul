@@ -74,6 +74,14 @@
           </label>
         </div>
         <button type="submit" id="save" class="save-button"><span class="material-symbols-outlined">save</span> Save Settings</button>
+        
+        <div class="form-group" style="margin-top: 15px;"> <!-- Added margin-top for spacing -->
+          <label for="profileSelect">Profile Management</label>
+          <select id="profileSelect">
+            <!-- Options will be populated by JavaScript -->
+          </select>
+          <small>Select a profile, or choose "+ Add New Profile..." to create one.</small>
+        </div>
       </form>
     </section>
 
@@ -245,6 +253,10 @@
       <div class="form-group">
         <label>System Prompt</label>
         <p id="currentSystemPrompt">Not set</p>
+      </div>
+      <div class="form-group">
+        <label>Selected Profile</label>
+        <p id="currentProfile">Default</p>
       </div>
       <div class="form-group">
         <label>Last Updated</label>

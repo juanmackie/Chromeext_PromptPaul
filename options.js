@@ -17,12 +17,16 @@ function showStatus(message, isError = false, isToast = false) {
   }
 }
 
-function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt) {
+function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, profile) {
   document.getElementById('currentEndpoint').textContent = endpoint || 'Not set';
   document.getElementById('currentApiKey').textContent = key ? '********' + key.slice(-4) : 'Not set';
   document.getElementById('currentModelName').textContent = model || 'Not set';
   document.getElementById('lastUpdated').textContent = timestamp || 'Not set';
   document.getElementById('currentSystemPrompt').textContent = systemPrompt || 'Not set';
+  const currentProfileElement = document.getElementById('currentProfile');
+  if (currentProfileElement) {
+    currentProfileElement.textContent = profile || 'Default'; // Display profile
+  }
 
   // Get max tokens from storage and display it
   chrome.storage.sync.get(['maxTokens'], (result) => {
@@ -54,6 +58,14 @@ function validateInputs(endpoint, key, model) {
 // Save options to chrome.storage
 function saveOptions(e) {
   e.preventDefault();
+
+  const profileSelectElement = document.getElementById('profileSelect');
+  if (!profileSelectElement) {
+    console.error('profileSelect element is missing in the DOM.');
+    showStatus('Error: profileSelect element is missing. Please reload the page.', true);
+    return;
+  }
+  const selectedProfileId = profileSelectElement.value; // No trim, could be 'add_new_profile'
 
   const llmEndpoint = document.getElementById('llmEndpoint');
   if (!llmEndpoint) {
@@ -103,62 +115,194 @@ function saveOptions(e) {
   const saveButton = document.getElementById('save');
   saveButton.disabled = true;
 
-  chrome.storage.sync.set(
-    {
-      llmEndpoint: llmEndpointValue,
-      apiKey: apiKeyValue,
-      modelName: modelNameValue,
-      maxTokens: maxTokensValue || 2048,
-      systemPrompt: systemPromptValue, // Add system prompt
-      lastUpdated: new Date().toLocaleString()
-    },
-    () => {
+  // Save to local storage profiles
+  chrome.storage.local.get(['profiles'], (result) => {
+    let profiles = result.profiles || [];
+    let profileToUpdate = profiles.find(p => p.id === selectedProfileId);
+
+    if (!profileToUpdate) {
+      // This case should ideally not happen if dropdown is managed well,
+      // but as a fallback, or if it's 'default' and somehow missing.
+      profileToUpdate = {
+        id: selectedProfileId, // Could be 'default'
+        name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(), // Basic name
+      };
+      profiles.push(profileToUpdate);
+    }
+
+    profileToUpdate.llmEndpoint = llmEndpointValue;
+    profileToUpdate.apiKey = apiKeyValue;
+    profileToUpdate.modelName = modelNameValue;
+    profileToUpdate.maxTokens = maxTokensValue || 2048;
+    profileToUpdate.systemPrompt = systemPromptValue;
+    profileToUpdate.lastUpdated = new Date().toLocaleString();
+    // profileToUpdate.name is handled during creation or if user edits it (future feature)
+
+    chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: selectedProfileId }, () => {
       if (chrome.runtime.lastError) {
-        console.error('Error saving settings:', chrome.runtime.lastError);
-        showStatus('Error saving settings: ' + chrome.runtime.lastError.message, true);
+        console.error('Error saving profile settings to local storage:', chrome.runtime.lastError);
+        showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
       } else {
-        console.log('Settings saved successfully:', { llmEndpoint: llmEndpointValue, apiKey: apiKeyValue, modelName: modelNameValue, maxTokens: maxTokensValue, systemPrompt: systemPromptValue });
-        showStatus('Settings saved successfully!');
+        console.log(`Settings for profile '${profileToUpdate.name}' saved successfully.`);
+        showStatus(`Settings for profile '${profileToUpdate.name}' saved!`);
+        // Reload options to reflect changes, especially if it was a new profile or name changed
         loadOptions();
       }
       saveButton.disabled = false;
-    }
-  );
+    });
+  });
 }
 
 // Load saved options
 function loadOptions() {
-  chrome.storage.sync.get(
-    {
-      llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-      apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-      modelName: 'mistral-small-latest',
-      maxTokens: 32000,
-      systemPrompt: '', // Add default for system prompt
-      lastUpdated: ''
-    },
-    (items) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error loading settings:', chrome.runtime.lastError);
-        showStatus('Error loading settings: ' + chrome.runtime.lastError.message, true);
-        return;
-      }
+  const profileSelectElement = document.getElementById('profileSelect');
 
-      console.log('Loaded settings:', items);
-      document.getElementById('llmEndpoint').value = items.llmEndpoint;
-      document.getElementById('apiKey').value = items.apiKey;
-      document.getElementById('modelName').value = items.modelName;
-      document.getElementById('maxTokens').value = items.maxTokens;
-      document.getElementById('systemPrompt').value = items.systemPrompt; // Load system prompt
+  // Function to populate profile dropdown
+  function populateProfileDropdown(profiles, selectedProfileId) {
+    profileSelectElement.innerHTML = ''; // Clear existing options
 
-      updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated);
+    // Add a "Add New Profile" option
+    const addNewOption = document.createElement('option');
+    addNewOption.value = 'add_new_profile';
+    addNewOption.textContent = '+ Add New Profile...';
+    profileSelectElement.appendChild(addNewOption);
+    
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'default';
+    defaultOption.textContent = 'Default';
+    profileSelectElement.appendChild(defaultOption);
+
+    if (profiles && profiles.length > 0) {
+      profiles.forEach(profile => {
+        if (profile.id === 'default') return; // Skip default if already added
+        const option = document.createElement('option');
+        option.value = profile.id;
+        option.textContent = profile.name;
+        profileSelectElement.appendChild(option);
+      });
     }
-  );
+    profileSelectElement.value = selectedProfileId || 'default';
+  }
+
+  // Function to load settings for a specific profile
+  function loadProfileSettings(profileId) {
+    chrome.storage.local.get(['profiles'], (result) => {
+      const profiles = result.profiles || [];
+      const selectedProfile = profiles.find(p => p.id === profileId) || profiles.find(p => p.id === 'default');
+
+      if (selectedProfile) {
+        document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
+        document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
+        document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
+        document.getElementById('maxTokens').value = selectedProfile.maxTokens || 32000;
+        document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
+        updateCurrentConfig(
+          selectedProfile.llmEndpoint,
+          selectedProfile.apiKey,
+          selectedProfile.modelName,
+          selectedProfile.lastUpdated || new Date().toLocaleString(),
+          selectedProfile.systemPrompt,
+          selectedProfile.name // Pass profile name to updateCurrentConfig
+        );
+      } else {
+        // Fallback to sync storage if profile not found (e.g. initial load or error)
+        chrome.storage.sync.get(
+          {
+            llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+            apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
+            modelName: 'mistral-small-latest',
+            maxTokens: 32000,
+            systemPrompt: '',
+            lastUpdated: '',
+            profileSelect: 'default'
+          },
+          (items) => {
+            if (chrome.runtime.lastError) {
+              console.error('Error loading settings from sync:', chrome.runtime.lastError);
+              showStatus('Error loading settings: ' + chrome.runtime.lastError.message, true);
+              return;
+            }
+            document.getElementById('llmEndpoint').value = items.llmEndpoint;
+            document.getElementById('apiKey').value = items.apiKey;
+            document.getElementById('modelName').value = items.modelName;
+            document.getElementById('maxTokens').value = items.maxTokens;
+            document.getElementById('systemPrompt').value = items.systemPrompt;
+            updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.profileSelect);
+          }
+        );
+      }
+    });
+  }
+
+  // Load profiles and the last selected profile ID from storage
+  chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+    let profiles = result.profiles || [];
+    const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+
+    // Ensure default profile exists
+    if (!profiles.find(p => p.id === 'default')) {
+      const defaultProfile = {
+        id: 'default',
+        name: 'Default',
+        llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+        apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
+        modelName: 'mistral-small-latest',
+        maxTokens: 32000,
+        systemPrompt: 'You are a helpful assistant.',
+        lastUpdated: new Date().toLocaleString()
+      };
+      profiles.push(defaultProfile);
+      chrome.storage.local.set({ profiles: profiles }); // Save updated profiles array
+    }
+    
+    populateProfileDropdown(profiles, lastSelectedProfileId);
+    loadProfileSettings(lastSelectedProfileId); // Load settings for the last selected or default profile
+  });
+
+  // Event listener for profile selection change
+  if (profileSelectElement) {
+    profileSelectElement.addEventListener('change', (event) => {
+      const selectedProfileId = event.target.value;
+      if (selectedProfileId === 'add_new_profile') {
+        const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
+        if (newProfileName && newProfileName.trim() !== '') {
+          chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+            let profiles = result.profiles || [];
+            const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
+            const newProfile = {
+              id: newProfileId,
+              name: newProfileName.trim(),
+              llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
+              apiKey: document.getElementById('apiKey').value.trim(),
+              modelName: document.getElementById('modelName').value.trim(),
+              maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
+              systemPrompt: document.getElementById('systemPrompt').value.trim(),
+              lastUpdated: new Date().toLocaleString()
+            };
+            profiles.push(newProfile);
+            chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
+              populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
+              loadProfileSettings(newProfileId); // Load its settings into the form
+              showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
+            });
+          });
+        } else {
+          // User cancelled or entered empty name, revert to last selected
+          chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
+            profileSelectElement.value = res.lastSelectedProfileId || 'default';
+          });
+        }
+      } else {
+        chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
+        loadProfileSettings(selectedProfileId);
+      }
+    });
+  }
 }
 
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
-  loadOptions();
+  loadOptions(); // This will now also populate profiles and set up listener
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
   setupToolHandlers(); // Add call to setup tool handlers
@@ -271,7 +415,7 @@ async function populateToolDropdown() {
 
   try {
     const result = await new Promise((resolve) => {
-      chrome.storage.sync.get(['promptPaulTools'], resolve);
+      chrome.storage.local.get(['promptPaulTools'], resolve);
     });
     const tools = result.promptPaulTools || [];
 
@@ -619,7 +763,7 @@ function setupInstructionHandlers() {
 
   // Listen for changes in tool storage to keep dropdown updated
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes.promptPaulTools) {
+    if (area === 'local' && changes.promptPaulTools) {
       console.log('Detected changes in promptPaulTools, repopulating dropdown.');
       populateToolDropdown();
     }
@@ -684,7 +828,7 @@ function setupToolHandlers() {
 
   // Load and display tools
   function loadTools() {
-    chrome.storage.sync.get(['promptPaulTools'], (result) => {
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
       const tools = result.promptPaulTools || [];
       const tableBody = document.querySelector('#toolsTable tbody');
       if (!tableBody) {
@@ -729,9 +873,9 @@ function setupToolHandlers() {
         btn.addEventListener('click', (e) => {
           const toolId = e.target.dataset.id;
           if (confirm('Are you sure you want to delete this tool definition?')) {
-            chrome.storage.sync.get(['promptPaulTools'], (result) => {
+            chrome.storage.local.get(['promptPaulTools'], (result) => {
               const updatedTools = (result.promptPaulTools || []).filter(t => t.id !== toolId);
-              chrome.storage.sync.set({ promptPaulTools: updatedTools }, () => {
+              chrome.storage.local.set({ promptPaulTools: updatedTools }, () => {
                 showStatus('Tool deleted successfully!');
                 loadTools(); // Reload the list
                 clearToolForm(); // Clear the form
@@ -777,7 +921,7 @@ function setupToolHandlers() {
         }
     }
 
-    chrome.storage.sync.get(['promptPaulTools'], (result) => {
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
       const tools = result.promptPaulTools || [];
       const existingIndex = tools.findIndex(t => t.id === toolId);
 
@@ -828,7 +972,7 @@ function setupToolHandlers() {
 
   // Export tools handler
   document.getElementById('exportTools').addEventListener('click', () => {
-    chrome.storage.sync.get(['promptPaulTools'], (result) => {
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
       const tools = result.promptPaulTools || [];
       // Ensure parameters are objects for export if they were stored as strings
       const toolsForExport = tools.map(tool => {
@@ -898,7 +1042,7 @@ function setupToolHandlers() {
         });
 
         // Merge with existing tools
-        chrome.storage.sync.get(['promptPaulTools'], (result) => {
+        chrome.storage.local.get(['promptPaulTools'], (result) => {
           const currentTools = result.promptPaulTools || [];
           const newTools = importData.tools.map(tool => ({
             ...tool,
@@ -928,7 +1072,7 @@ function setupToolHandlers() {
             }
           });
 
-          chrome.storage.sync.set({ promptPaulTools: mergedTools }, () => {
+          chrome.storage.local.set({ promptPaulTools: mergedTools }, () => {
             showStatus(`Successfully imported/merged ${newTools.length} tools!`);
             loadTools(); // Reload the list in the UI
           });

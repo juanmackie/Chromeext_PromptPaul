@@ -48,121 +48,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       fromStartChat: true // Flag to indicate this is from the start_chat option
     });
     
-    // Make API call with the selected text as the prompt
-    try {
-      const config = await validateConfig(); // Fetches endpoint, key, model, and systemPrompt
-      const tools = await getAllToolDefinitions(); // Fetch defined tools
-
-      // Format tools for the API request (similar to chat.js)
-      const formattedTools = tools.map(tool => {
-          try {
-              return {
-                  type: 'function',
-                  function: {
-                      name: tool.name,
-                      description: tool.description,
-                      parameters: JSON.parse(tool.parameters || '{}') // Parse the stored JSON string, default to empty object if null/undefined
-                  }
-              };
-          } catch (e) {
-              console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e);
-              // Optionally inform the user via chat.js later if needed
-              return null; // Skip invalid tools
-          }
-      }).filter(tool => tool !== null); // Filter out tools with parsing errors
-
-      // Construct messages array, including system prompt if available
-      const messages = [];
-      if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-        messages.push({ role: 'system', content: config.systemPrompt });
-      }
-      messages.push({ role: 'user', content: selectedText });
-
-      const apiResponse = await fetch(config.llmEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: config.modelName,
-          messages: messages, // Use the constructed messages array
-          max_tokens: parseInt(config.maxTokens) || 2048, // Use maxTokens from config or default
-          ...(formattedTools.length > 0 && { tools: formattedTools, tool_choice: "auto" }) // Conditionally add tools
-        }),
-      });
-
-      if (!apiResponse.ok) {
-        const errorData = await apiResponse.json().catch(() => null);
-        throw new Error(
-          `API request failed with status ${apiResponse.status}: ${
-            errorData ? JSON.stringify(errorData) : apiResponse.statusText
-          }`
-        );
-      }
-
-      const responseData = await apiResponse.json();
-
-      if (
-        !responseData ||
-        !responseData.choices ||
-        !responseData.choices[0] ||
-        !responseData.choices[0].message
-      ) {
-        // Allow responses without content if tool_calls are present
-        if (!responseData.choices[0].message.tool_calls) {
-             throw new Error('Invalid response format from API: Missing message content or tool_calls.');
-        }
-      }
-
-      // Check for tool calls in the response
-      const responseMessage = responseData.choices[0].message;
-      if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-          // Send tool call request to chat.js for handling
-          console.log("Background: Received tool_calls from API, forwarding to chat.js", responseMessage.tool_calls);
-          setTimeout(() => { // Keep delay to ensure panel is ready
-              chrome.runtime.sendMessage({
-                  action: 'handleToolCallResponse', // New action for chat.js
-                  responseMessage: responseMessage, // Send the whole message object
-                  prompt: selectedText, // Include original prompt for context
-                  tabId: tab.id,
-              });
-          }, 300);
-      } else if (responseMessage.content) {
-          // Handle regular text response
-          const latestResponse = responseMessage.content;
-          setTimeout(() => {
-              chrome.runtime.sendMessage({
-                  action: 'setApiResponse',
-                  apiResponse: latestResponse,
-                  prompt: selectedText,  // Include the selected text as the prompt
-                  tabId: tab.id,
-              });
-          }, 300); // Add a delay to ensure the chat panel is ready
-      } else {
-          // Handle cases where there's neither content nor tool_calls
-           console.error("Background: API response message has neither content nor tool_calls:", responseMessage);
-           // Send an error message back
-           setTimeout(() => {
-              chrome.runtime.sendMessage({
-                  action: 'setApiResponse',
-                  apiResponse: "Error: Received an empty or invalid response from the AI.",
-                  prompt: selectedText,
-                  tabId: tab.id,
-              });
-           }, 300);
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      setTimeout(() => {
-        chrome.runtime.sendMessage({
-          action: 'setApiResponse',
-          apiResponse: `Error: ${error.message}`,
-          prompt: selectedText,  // Include the selected text as the prompt
-          tabId: tab.id,
-        });
-      }, 300);
-    }
+    // Call the refactored API request function
+    await makeLlmApiRequest(selectedText, tab.id, { isStartChat: true });
     return;
   }
 
@@ -212,134 +99,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 
-  // Make API call to LLM endpoint and handle response/errors within try...catch
-  try {
-    const config = await validateConfig(); // Fetches endpoint, key, model, and systemPrompt
-    const tools = await getAllToolDefinitions(); // Fetch defined tools
-
-    // Format tools for the API request (similar to chat.js)
-    const formattedTools = tools.map(tool => {
-        try {
-            return {
-                type: 'function',
-                function: {
-                    name: tool.name,
-                    description: tool.description,
-                    parameters: JSON.parse(tool.parameters || '{}') // Parse the stored JSON string, default to empty object if null/undefined
-                }
-            };
-        } catch (e) {
-            console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e);
-            // Optionally inform the user via chat.js later if needed
-            return null; // Skip invalid tools
-        }
-    }).filter(tool => tool !== null); // Filter out tools with parsing errors
-
-    // Construct messages array, including system prompt if available
-    const messages = [];
-    if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-      messages.push({ role: 'system', content: config.systemPrompt });
-    }
-    messages.push({ role: 'user', content: prompt });
-
-    const apiResponse = await fetch(config.llmEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.modelName,
-        messages: messages, // Use the constructed messages array
-        max_tokens: parseInt(config.maxTokens) || 2048, // Use maxTokens from config or default
-        // Conditionally add tools based on instruction's tool_choice and if tools exist
-        ...(formattedTools.length > 0 && {
-          tools: formattedTools,
-          tool_choice: (() => { // Using an immediately-invoked function expression for clarity
-            if (Array.isArray(instructionToolChoice) && instructionToolChoice.length > 0) {
-              const choice = instructionToolChoice[0]; // Get the first element ('none', 'auto', or a tool name)
-              if (choice === 'none') {
-                return 'none'; // Correct: Send the string "none"
-              } else if (choice === 'auto') {
-                return 'auto'; // Correct: Send the string "auto"
-              } else {
-                // It's a specific tool name
-                return { type: 'function', function: { name: choice } }; // Correct for specific tool
-              }
-            }
-            // Default/Fallback if something unexpected happened
-            return 'none';
-          })()
-        })
-      }),
-    });
-
-    if (!apiResponse.ok) {
-      const errorData = await apiResponse.json().catch(() => null);
-      throw new Error(
-        `API request failed with status ${apiResponse.status}: ${
-          errorData ? JSON.stringify(errorData) : apiResponse.statusText
-        }`
-      );
-    }
-
-    const responseData = await apiResponse.json();
-
-    if (
-      !responseData ||
-      !responseData.choices ||
-      !responseData.choices[0] ||
-      !responseData.choices[0].message
-    ) {
-       // Allow responses without content if tool_calls are present
-       if (!responseData.choices[0].message.tool_calls) {
-           throw new Error('Invalid response format from API: Missing message content or tool_calls.');
-       }
-    }
-
-    // Check for tool calls in the response
-    const responseMessage = responseData.choices[0].message;
-    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        // Send tool call request to chat.js for handling
-        console.log("Background: Received tool_calls from API, forwarding to chat.js", responseMessage.tool_calls);
-        // No delay needed here as panel should already be open from context menu click
-        chrome.runtime.sendMessage({
-            action: 'handleToolCallResponse', // New action for chat.js
-            responseMessage: responseMessage, // Send the whole message object
-            prompt: prompt, // Include original prompt for context
-            tabId: tab.id,
-        });
-    } else if (responseMessage.content) {
-        // Handle regular text response
-        const latestResponse = responseMessage.content;
-        chrome.runtime.sendMessage({
-            action: 'setApiResponse',
-            apiResponse: latestResponse,
-            prompt: prompt,  // Include the prompt that was used
-            tabId: tab.id,
-        });
-    } else {
-        // Handle cases where there's neither content nor tool_calls
-        console.error("Background: API response message has neither content nor tool_calls:", responseMessage);
-        // Send an error message back
-        chrome.runtime.sendMessage({
-            action: 'setApiResponse',
-            apiResponse: "Error: Received an empty or invalid response from the AI.",
-            prompt: prompt,
-            tabId: tab.id,
-        });
-    }
-  } catch (error) {
-    console.error('Error:', error);
-    setTimeout(() => { // Add delay here
-      chrome.runtime.sendMessage({
-        action: 'setApiResponse',
-        apiResponse: `Error: ${error.message}`,
-        prompt: prompt,  // Include the prompt that was used
-        tabId: tab.id,
-      });
-    }, 200); // 200ms delay
-  }
+  // Call the refactored API request function
+  await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
 });
 
 // ValidateConfig function to include API configuration
@@ -360,6 +121,157 @@ async function validateConfig() {
       }
     );
   });
+}
+
+// Helper function to process API response and send messages to chat.js
+async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext) {
+    const sendMessageDelay = isStartChatContext ? 300 : 200; // Standardized delay based on original blocks
+
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+        console.log("Background: Received tool_calls from API, forwarding to chat.js", responseMessage.tool_calls);
+        setTimeout(() => {
+            chrome.runtime.sendMessage({
+                action: 'handleToolCallResponse',
+                responseMessage: responseMessage,
+                prompt: prompt,
+                tabId: tabId,
+            });
+        }, sendMessageDelay);
+    } else if (responseMessage.content) {
+        const latestResponse = responseMessage.content;
+        setTimeout(() => {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: latestResponse,
+                prompt: prompt,
+                tabId: tabId,
+            });
+        }, sendMessageDelay);
+    } else {
+        console.error("Background: API response message has neither content nor tool_calls:", responseMessage);
+        setTimeout(() => {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: "Error: Received an empty or invalid response from the AI.",
+                prompt: prompt,
+                tabId: tabId,
+            });
+        }, sendMessageDelay);
+    }
+}
+
+// Refactored function to make LLM API calls
+async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+    try {
+        const config = await validateConfig();
+        const tools = await getAllToolDefinitions();
+
+        const formattedTools = tools.map(tool => {
+            try {
+                return {
+                    type: 'function',
+                    function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: JSON.parse(tool.parameters || '{}')
+                    }
+                };
+            } catch (e) {
+                console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e);
+                return null;
+            }
+        }).filter(tool => tool !== null);
+
+        const messages = [];
+        if (config.systemPrompt && config.systemPrompt.trim() !== '') {
+            messages.push({ role: 'system', content: config.systemPrompt });
+        }
+        messages.push({ role: 'user', content: promptContent });
+
+        console.log('Background: Refactored API call. Tools sent to API:', formattedTools);
+
+        let toolChoicePayload = {}; // This will hold {tools: ..., tool_choice: ...} or be empty
+        if (formattedTools.length > 0) { // Only add tools and tool_choice if there are formatted tools
+            if (isStartChat) {
+                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+            } else {
+                // Logic for customInstructionToolChoice, aiming to match original behavior (lines 260-274)
+                // customInstructionToolChoice is passed from the calling context (derived from instruction.tool_choice || 'none')
+                let finalToolChoiceValue = 'none'; // Default fallback, as in original line 273
+
+                if (Array.isArray(customInstructionToolChoice) && customInstructionToolChoice.length > 0) {
+                    const choiceFromArray = customInstructionToolChoice[0];
+                    if (choiceFromArray === 'auto') {
+                        finalToolChoiceValue = 'auto';
+                    } else if (choiceFromArray && choiceFromArray !== 'none') { // Check if it's a tool name
+                        finalToolChoiceValue = { type: 'function', function: { name: choiceFromArray } };
+                    }
+                    // If choiceFromArray is 'none' or falsy (e.g. empty string from array), finalToolChoiceValue remains 'none'.
+                }
+                // If customInstructionToolChoice was not a non-empty array (e.g. it was a string 'none', 'auto', or a tool name directly, or undefined),
+                // the original logic would effectively lead to 'none' unless it was 'auto' or a tool name handled by some other path not shown in lines 260-274.
+                // Given instructionToolChoice = instruction.tool_choice || 'none' (line 179), if instruction.tool_choice is a string like "my_tool",
+                // Array.isArray(customInstructionToolChoice) would be false, leading to 'none'.
+                // This new logic ensures that if customInstructionToolChoice is directly 'auto' or a tool name string, it's not used unless it's in an array.
+                // This strictly adheres to the original `Array.isArray` check.
+
+                toolChoicePayload = { tools: formattedTools, tool_choice: finalToolChoiceValue };
+            }
+        }
+        // If formattedTools is empty, toolChoicePayload remains {}, and no 'tools' or 'tool_choice' is sent to the API.
+
+        const apiRequestBody = {
+            model: config.modelName,
+            messages: messages,
+            max_tokens: parseInt(config.maxTokens) || 2048,
+            ...toolChoicePayload // Spread the tools and tool_choice if they exist
+        };
+        
+        console.log("Background: API Request Body (Refactored):", JSON.stringify(apiRequestBody, null, 2));
+
+        const apiResponse = await fetch(config.llmEndpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${config.apiKey}`,
+            },
+            body: JSON.stringify(apiRequestBody),
+        });
+
+        if (!apiResponse.ok) {
+            const errorData = await apiResponse.json().catch(() => null);
+            throw new Error(
+                `API request failed with status ${apiResponse.status}: ${
+                errorData ? JSON.stringify(errorData) : apiResponse.statusText
+                }`
+            );
+        }
+
+        const responseData = await apiResponse.json();
+
+        if (!responseData || !responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
+            // Allow responses without content if tool_calls are present
+            if (!(responseData.choices && responseData.choices[0] && responseData.choices[0].message && responseData.choices[0].message.tool_calls)) {
+                 throw new Error('Invalid response format from API: Missing message content or tool_calls.');
+            }
+        }
+        
+        // Pass isStartChat to determine the correct delay in the handler
+        await _handleApiResponseAndSendMessage(responseData.choices[0].message, promptContent, tabId, isStartChat);
+
+    } catch (error) {
+        console.error('Error in makeLlmApiRequest:', error);
+        // Determine error message delay based on context, matching original behavior
+        const errorDelay = isStartChat ? 300 : 200;
+        setTimeout(() => {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: `Error: ${error.message}`,
+                prompt: promptContent,
+                tabId: tabId,
+            });
+        }, errorDelay);
+    }
 }
 
 // Create context menu items
@@ -524,7 +436,7 @@ if (namespace === 'local' && changes.instructions) {
  */
 async function getAllToolDefinitions() {
     const localTools = await new Promise((resolve) => {
-        chrome.storage.sync.get(['promptPaulTools'], (result) => {
+        chrome.storage.local.get(['promptPaulTools'], (result) => {
             resolve(result.promptPaulTools || []);
         });
     });
@@ -533,8 +445,8 @@ async function getAllToolDefinitions() {
 
 // Function to get a single tool definition by name from storage
 async function getToolDefinition(name) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.sync.get(['promptPaulTools'], (result) => {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(['promptPaulTools'], (result) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
       } else {
