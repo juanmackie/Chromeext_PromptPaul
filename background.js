@@ -103,23 +103,35 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
 });
 
-// ValidateConfig function to include API configuration
+// ValidateConfig function to include API configuration, loading from the selected profile in local storage
 async function validateConfig() {
   return new Promise((resolve, reject) => {
-    chrome.storage.sync.get(
-      ['llmEndpoint', 'apiKey', 'modelName', 'systemPrompt', 'maxTokens'], // Add systemPrompt and maxTokens
-      (result) => {
-        if (!result.llmEndpoint || !result.apiKey || !result.modelName) {
-          reject(
-            new Error(
-              'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.' // Note: systemPrompt and maxTokens are optional
-            )
-          );
+    chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+      const profiles = result.profiles || [];
+      const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+
+      const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+
+      if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
+        // Fallback or error if selected profile is incomplete or not found
+        // As a fallback, try to find the default profile
+        const defaultProfile = profiles.find(p => p.id === 'default');
+        if (defaultProfile && defaultProfile.llmEndpoint && defaultProfile.apiKey && defaultProfile.modelName) {
+           console.warn(`Background: Selected profile '${lastSelectedProfileId}' incomplete or not found, using default profile.`);
+           resolve(defaultProfile);
         } else {
-          resolve(result);
+           // If even default is incomplete, reject
+           reject(
+             new Error(
+               'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'
+             )
+           );
         }
+      } else {
+        console.log(`Background: Using configuration from profile: ${selectedProfile.name || selectedProfile.id}`);
+        resolve(selectedProfile);
       }
-    );
+    });
   });
 }
 
