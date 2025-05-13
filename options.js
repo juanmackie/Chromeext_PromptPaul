@@ -287,46 +287,6 @@ function loadOptions() {
   });
 }
 
-// Event listener for profile selection change
-if (profileSelectElement) {
-  profileSelectElement.addEventListener('change', (event) => {
-    const selectedProfileId = event.target.value;
-    if (selectedProfileId === 'add_new_profile') {
-      const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
-      if (newProfileName && newProfileName.trim() !== '') {
-        chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-          let profiles = result.profiles || [];
-          const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
-          const newProfile = {
-            id: newProfileId,
-            name: newProfileName.trim(),
-            llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
-            apiKey: document.getElementById('apiKey').value.trim(),
-            modelName: document.getElementById('modelName').value.trim(),
-            maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
-            systemPrompt: document.getElementById('systemPrompt').value.trim(),
-            lastUpdated: new Date().toLocaleString()
-          };
-          profiles.push(newProfile);
-          chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
-            populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
-            loadProfileSettings(newProfileId); // Load its settings into the form
-            showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
-          });
-        });
-      } else {
-        // User cancelled or entered empty name, revert to last selected
-        chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
-          profileSelectElement.value = res.lastSelectedProfileId || 'default';
-        });
-      }
-    } else {
-      chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
-      loadProfileSettings(selectedProfileId);
-    }
-  });
-}
-
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
@@ -353,6 +313,47 @@ document.addEventListener('DOMContentLoaded', () => {
       // document.getElementById('systemPrompt').value = ''; // Default system prompt
 
       showStatus('Settings reverted to defaults. Click "Save Settings" to apply.', false, true); // Show as a toast
+    });
+  }
+
+  // Event listener for profile selection change
+  const profileSelectElement = document.getElementById('profileSelect');
+  if (profileSelectElement) {
+    profileSelectElement.addEventListener('change', (event) => {
+      const selectedProfileId = event.target.value;
+      if (selectedProfileId === 'add_new_profile') {
+        const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
+        if (newProfileName && newProfileName.trim() !== '') {
+          chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+            let profiles = result.profiles || [];
+            const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
+            const newProfile = {
+              id: newProfileId,
+              name: newProfileName.trim(),
+              llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
+              apiKey: document.getElementById('apiKey').value.trim(),
+              modelName: document.getElementById('modelName').value.trim(),
+              maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
+              systemPrompt: document.getElementById('systemPrompt').value.trim(),
+              lastUpdated: new Date().toLocaleString()
+            };
+            profiles.push(newProfile);
+            chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
+              populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
+              loadProfileSettings(newProfileId); // Load its settings into the form
+              showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
+            });
+          });
+        } else {
+          // User cancelled or entered empty name, revert to last selected
+          chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
+            profileSelectElement.value = res.lastSelectedProfileId || 'default';
+          });
+        }
+      } else {
+        chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
+        loadProfileSettings(selectedProfileId);
+      }
     });
   }
 });
