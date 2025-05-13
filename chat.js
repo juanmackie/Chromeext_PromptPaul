@@ -47,17 +47,34 @@ let selectedText = null;
 
      // Get API configuration
     async function getApiConfig() {
+        console.log("Chat: Getting API configuration from local storage");
         return new Promise((resolve, reject) => {
-            chrome.storage.sync.get(
-            ['llmEndpoint', 'apiKey', 'modelName'],
-            (result) => {
-                if (!result.llmEndpoint || !result.apiKey || !result.modelName) {
-                reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
+            chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+                console.log("Chat: Storage get result:", result);
+                const profiles = result.profiles || [];
+                const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+                
+                console.log("Chat: Profiles:", profiles);
+                console.log("Chat: Last selected profile ID:", lastSelectedProfileId);
+                
+                const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+                
+                if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
+                    console.warn("Chat: Selected profile is missing or incomplete");
+                    // Try to fall back to default profile
+                    const defaultProfile = profiles.find(p => p.id === 'default');
+                    if (defaultProfile && defaultProfile.llmEndpoint && defaultProfile.apiKey && defaultProfile.modelName) {
+                        console.log("Chat: Using default profile as fallback");
+                        resolve(defaultProfile);
+                    } else {
+                        console.error("Chat: No valid configuration found");
+                        reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
+                    }
                 } else {
-                resolve(result);
+                    console.log("Chat: Using configuration from profile:", selectedProfile.name || selectedProfile.id);
+                    resolve(selectedProfile);
                 }
-            }
-            );
+            });
         });
     }
 
@@ -268,8 +285,10 @@ let selectedText = null;
     // Function to make API call
     // Helper function to get tools from storage
     async function getTools() {
+        console.log("Chat: Getting tools from local storage");
         return new Promise((resolve) => {
-            chrome.storage.sync.get(['promptPaulTools'], (result) => {
+            chrome.storage.local.get(['promptPaulTools'], (result) => {
+                console.log("Chat: Tools retrieved:", result.promptPaulTools);
                 resolve(result.promptPaulTools || []);
             });
         });
