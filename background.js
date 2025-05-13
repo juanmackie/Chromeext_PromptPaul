@@ -47,7 +47,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       tabId: tab.id,
       fromStartChat: true // Flag to indicate this is from the start_chat option
     });
-
+    
     // Call the refactored API request function
     await makeLlmApiRequest(selectedText, tab.id, { isStartChat: true });
     return;
@@ -244,64 +244,35 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
         console.log('Background: Refactored API call. Tools sent to API:', formattedTools);
 
-        let toolsToSend = [];
-        let finalToolChoiceValue = 'none'; // Default
-
-        if (isStartChat) {
-            // Start chat always sends all tools with auto tool_choice
-            toolsToSend = formattedTools;
-            finalToolChoiceValue = 'auto';
-        } else {
-            // Handle custom instruction tool_choice
-            if (Array.isArray(customInstructionToolChoice) && customInstructionToolChoice.length > 0) {
-                const choiceFromArray = customInstructionToolChoice[0];
-                if (choiceFromArray === 'auto') {
-                    toolsToSend = formattedTools;
-                    finalToolChoiceValue = 'auto';
-                } else if (choiceFromArray && choiceFromArray !== 'none') {
-                    // Find the specific tool and send only that one
-                    const specificTool = formattedTools.find(tool => tool.function.name === choiceFromArray);
-                    if (specificTool) {
-                        toolsToSend = [specificTool];
-                        finalToolChoiceValue = { type: 'function', function: { name: choiceFromArray } };
-                    } else {
-                        console.warn(`Background: Specified tool '${choiceFromArray}' not found.`);
-                        // If tool not found, behave as 'none'
-                        toolsToSend = [];
-                        finalToolChoiceValue = 'none';
-                    }
-                } else {
-                    // choiceFromArray is 'none' or falsy, behave as 'none'
-                    toolsToSend = [];
-                    finalToolChoiceValue = 'none';
-                }
-            } else if (customInstructionToolChoice === 'auto') {
-                 // Handle case where customInstructionToolChoice is just the string 'auto'
-                 toolsToSend = formattedTools;
-                 finalToolChoiceValue = 'auto';
-            } else if (customInstructionToolChoice && customInstructionToolChoice !== 'none') {
-                // Handle case where customInstructionToolChoice is just a tool name string
-                const specificTool = formattedTools.find(tool => tool.function.name === customInstructionToolChoice);
-                if (specificTool) {
-                    toolsToSend = [specificTool];
-                    finalToolChoiceValue = { type: 'function', function: { name: customInstructionToolChoice } };
-                } else {
-                    console.warn(`Background: Specified tool '${customInstructionToolChoice}' not found.`);
-                    // If tool not found, behave as 'none'
-                    toolsToSend = [];
-                    finalToolChoiceValue = 'none';
-                }
+        let toolChoicePayload = {}; // This will hold {tools: ..., tool_choice: ...} or be empty
+        if (formattedTools.length > 0) { // Only add tools and tool_choice if there are formatted tools
+            if (isStartChat) {
+                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
             } else {
-                // customInstructionToolChoice is 'none' or undefined/falsy, behave as 'none'
-                toolsToSend = [];
-                finalToolChoiceValue = 'none';
+                // Logic for customInstructionToolChoice, aiming to match original behavior (lines 260-274)
+                // customInstructionToolChoice is passed from the calling context (derived from instruction.tool_choice || 'none')
+                let finalToolChoiceValue = 'none'; // Default fallback, as in original line 273
+
+                if (Array.isArray(customInstructionToolChoice) && customInstructionToolChoice.length > 0) {
+                    const choiceFromArray = customInstructionToolChoice[0];
+                    if (choiceFromArray === 'auto') {
+                        finalToolChoiceValue = 'auto';
+                    } else if (choiceFromArray && choiceFromArray !== 'none') { // Check if it's a tool name
+                        finalToolChoiceValue = { type: 'function', function: { name: choiceFromArray } };
+                    }
+                    // If choiceFromArray is 'none' or falsy (e.g. empty string from array), finalToolChoiceValue remains 'none'.
+                }
+                // If customInstructionToolChoice was not a non-empty array (e.g. it was a string 'none', 'auto', or a tool name directly, or undefined),
+                // the original logic would effectively lead to 'none' unless it was 'auto' or a tool name handled by some other path not shown in lines 260-274.
+                // Given instructionToolChoice = instruction.tool_choice || 'none' (line 179), if instruction.tool_choice is a string like "my_tool",
+                // Array.isArray(customInstructionToolChoice) would be false, leading to 'none'.
+                // This new logic ensures that if customInstructionToolChoice is directly 'auto' or a tool name string, it's not used unless it's in an array.
+                // This strictly adheres to the original `Array.isArray` check.
+
+                toolChoicePayload = { tools: formattedTools, tool_choice: finalToolChoiceValue };
             }
         }
-
-        let toolChoicePayload = {};
-        if (toolsToSend.length > 0) {
-            toolChoicePayload = { tools: toolsToSend, tool_choice: finalToolChoiceValue };
-        }
+        // If formattedTools is empty, toolChoicePayload remains {}, and no 'tools' or 'tool_choice' is sent to the API.
 
         const apiRequestBody = {
             model: config.modelName,
@@ -309,7 +280,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             max_tokens: parseInt(config.maxTokens) || 2048,
             ...toolChoicePayload // Spread the tools and tool_choice if they exist
         };
-
+        
         console.log("Background: API Request Body (Refactored):", JSON.stringify(apiRequestBody, null, 2));
 
         const apiResponse = await fetch(config.llmEndpoint, {
@@ -338,7 +309,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                  throw new Error('Invalid response format from API: Missing message content or tool_calls.');
             }
         }
-
+        
         // Pass isStartChat to determine the correct delay in the handler
         await _handleApiResponseAndSendMessage(responseData.choices[0].message, promptContent, tabId, isStartChat);
 
@@ -405,7 +376,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     contexts: ['selection'],
     parentId: 'prompt_paul'
   });
-
+    
   chrome.contextMenus.create({
     id: 'shorten',
     title: '✂️ Shorten',
@@ -470,17 +441,17 @@ if (namespace === 'local' && changes.instructions) {
   chrome.contextMenus.remove('customInstructions');
   chrome.contextMenus.remove('separator');
   chrome.contextMenus.remove('manageInstructions');
-
+  
   // Get updated instructions
   const { instructions } = await chrome.storage.local.get(['instructions']);
-
+  
   // Recreate custom instructions menu
   chrome.contextMenus.create({
     id: 'customInstructions',
     title: 'Custom Instructions',
     contexts: ['selection'],
   });
-
+  
   if (instructions && instructions.length > 0) {
     instructions.forEach(instruction => {
       chrome.contextMenus.create({
@@ -569,293 +540,104 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod) { /
             console.log(`Background: Appended query params for GET request: ${queryParams}`);
         } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
             // Send args in body for POST, PUT, PATCH
+            fetchOptions.headers['Content-Type'] = 'application/json';
             fetchOptions.body = JSON.stringify(args);
-            fetchOptions.headers['Content-Type'] = 'application/json'; // Set Content-Type for body
         }
-        // For other methods (like DELETE) or empty args, no body is sent.
+        // For DELETE, args might be used in the URL path (not handled here) or ignored, body is typically empty.
+        // If args are needed for DELETE, the user should construct the endpointUrl accordingly in the tool definition.
+        // Remove the temporary log we added earlier
+        // console.log("Background: Webhook Fetch Details:", { endpointUrl: finalEndpointUrl, fetchOptions, args });
 
-        const apiResponse = await fetch(finalEndpointUrl, fetchOptions);
+        const response = await fetch(finalEndpointUrl, fetchOptions); // Use finalEndpointUrl which might include query params
 
-        if (!apiResponse.ok) {
-            const errorBody = await apiResponse.text(); // Read as text to avoid JSON parsing errors on non-JSON responses
-            throw new Error(`HTTP error! status: ${apiResponse.status}, body: ${errorBody}`);
+        if (!response.ok) {
+            let errorBody = '';
+            try {
+                errorBody = await response.text(); // Try to get error details from response body
+            } catch (_) { /* Ignore if body cannot be read */ }
+            throw new Error(`HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim());
         }
 
-        // Attempt to parse JSON, but allow non-JSON responses
-        try {
-            const responseData = await apiResponse.json();
-            console.log("Background: User-defined endpoint response (JSON):", responseData);
-            return { success: true, data: responseData };
-        } catch (e) {
-            const responseText = await apiResponse.text();
-            console.log("Background: User-defined endpoint response (Text):", responseText);
-            return { success: true, data: responseText }; // Return text if JSON parsing fails
+        // Attempt to parse response as JSON, fall back to text if not JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return await response.json();
+        } else {
+            return await response.text();
         }
 
     } catch (error) {
-        console.error('Background: Error calling user-defined endpoint:', error);
-        return { success: false, error: error.message };
+        console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
+        // Rethrow a more specific error message
+        throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
     }
 }
 
-// Function to execute a tool call
-async function executeToolCall(toolCall, tabId) {
-    console.log("Background: Executing tool call:", toolCall);
-    const toolName = toolCall.function.name;
-    const toolArgs = JSON.parse(toolCall.function.arguments); // Assuming arguments are always a JSON string
 
-    const toolDefinition = await getToolDefinition(toolName);
-
-    if (!toolDefinition) {
-        console.error(`Background: Tool definition not found for tool: ${toolName}`);
-        return {
-            tool_call_id: toolCall.id,
-            output: `Error: Tool '${toolName}' not found.`
-        };
+// Registry for *built-in* tool implementations (developer adds specific functions here)
+// User-defined endpoints will be handled separately.
+const toolImplementations = {
+    // Example built-in tool (if any are needed):
+    /*
+    'getCurrentTime': async (args) => {
+        console.log("Executing built-in tool getCurrentTime");
+        return { currentTime: new Date().toISOString() };
     }
+    */
+   // Add the generic caller function to the registry for potential direct use if needed,
+   // but the main logic will check endpointUrl first.
+   _callUserDefinedEndpoint: callUserDefinedEndpoint
+};
 
-    // Check if the tool is an MCP tool or a user-defined endpoint tool
-    if (toolDefinition.type === 'mcp') {
-        // Handle MCP tool execution (requires MCP server connection)
-        // This part is a placeholder as MCP server integration is not fully implemented yet
-        console.warn(`Background: Attempted to execute MCP tool '${toolName}'. MCP server integration is not yet fully implemented.`);
-        return {
-            tool_call_id: toolCall.id,
-            output: `Error: MCP tool execution for '${toolName}' is not yet supported.`
-        };
-    } else if (toolDefinition.type === 'user_defined_endpoint') {
-        // Handle user-defined endpoint tool execution
-        const endpointUrl = toolDefinition.endpoint_url;
-        const userDefinedMethod = toolDefinition.method; // Get the user-defined method
-
-        if (!endpointUrl) {
-            console.error(`Background: Endpoint URL not defined for user-defined tool: ${toolName}`);
-            return {
-                tool_call_id: toolCall.id,
-                output: `Error: Endpoint URL not defined for tool '${toolName}'.`
-            };
-        }
-
-        const result = await callUserDefinedEndpoint(endpointUrl, toolArgs, userDefinedMethod); // Pass userDefinedMethod
-
-        if (result.success) {
-            // Return the data as a JSON string in the output
-            return {
-                tool_call_id: toolCall.id,
-                output: JSON.stringify(result.data)
-            };
-        } else {
-            return {
-                tool_call_id: toolCall.id,
-                output: `Error executing tool '${toolName}': ${result.error}`
-            };
-        }
-    } else {
-        console.error(`Background: Unknown tool type for tool: ${toolName}`);
-        return {
-            tool_call_id: toolCall.id,
-            output: `Error: Unknown tool type for tool '${toolName}'.`
-        };
-    }
-}
-
-// Handle messages from chat.js
+// Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'executeToolCalls') {
-        console.log("Background: Received executeToolCalls message:", request.toolCalls);
-        const toolCallPromises = request.toolCalls.map(toolCall => executeToolCall(toolCall, request.tabId));
+    if (request.action === 'executePromptPaulTool') {
+        const { id, name, arguments: argsString } = request.toolCall;
+        console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
 
-        Promise.all(toolCallPromises)
-            .then(toolOutputs => {
-                console.log("Background: Tool execution results:", toolOutputs);
-                // Send the tool outputs back to chat.js
-                chrome.runtime.sendMessage({
-                    action: 'handleToolOutputs',
-                    toolOutputs: toolOutputs,
-                    conversationHistory: request.conversationHistory, // Pass back the conversation history
-                    tabId: request.tabId
-                });
-            })
-            .catch(error => {
-                console.error("Background: Error during tool execution:", error);
-                // Send an error message back to chat.js
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    apiResponse: `Error executing tools: ${error.message}`,
-                    prompt: "Tool Execution Error", // Indicate this is an error related to tool execution
-                    tabId: request.tabId
-                });
-            });
+        (async () => {
+            try {
+                // 1. Fetch all tool definitions to find the one requested
+                const allTools = await getAllToolDefinitions();
+                const toolDefinition = allTools.find(t => t.name === name);
 
-        // Indicate that the response will be sent asynchronously
-        return true;
-    } else if (request.action === 'makeLlmApiRequest') {
-        console.log("Background: Received makeLlmApiRequest message:", request);
-        // This handles API requests initiated from chat.js (e.g., follow-up turns after tool execution)
-        makeLlmApiRequest(request.prompt, request.tabId, { isStartChat: false, customInstructionToolChoice: 'auto' }); // Assume 'auto' tool choice for chat turns for now
-        return true; // Indicate that the response will be sent asynchronously
+                if (!toolDefinition) {
+                    throw new Error(`Tool definition for '${name}' not found in storage or MCP servers.`);
+                }
+
+                // 2. Parse arguments
+                let args;
+                try {
+                    args = JSON.parse(argsString || '{}');
+                } catch (parseError) {
+                    throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
+                }
+
+                // 3. Check if it has a user-defined endpoint URL
+                if (toolDefinition.endpointUrl) {
+                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
+                    console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
+                    sendResponse({ result: result });
+                }
+                // 4. If no endpoint URL, check for a built-in implementation
+                else {
+                    const builtInFunction = toolImplementations[name];
+                    if (builtInFunction) {
+                        const result = await builtInFunction(args);
+                        console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
+                        sendResponse({ result: result });
+                    } else {
+                        throw new Error(`Tool '${name}' has no configured endpoint URL, no built-in implementation, and is not an MCP tool.`);
+                    }
+                }
+            } catch (error) {
+                console.error(`Background: Error processing tool '${name}':`, error);
+                sendResponse({ error: error.message || 'Tool processing failed' });
+            }
+        })();
+
+        return true; // Crucial: Indicates that sendResponse will be called asynchronously
     }
+
+    // Handle other potential actions if needed
 });
-
-// Placeholder for MCP server connection status
-let isMcpServerConnected = false;
-
-// Function to update MCP server connection status (called by MCP server)
-function updateMcpServerStatus(isConnected) {
-    isMcpServerConnected = isConnected;
-    console.log(`Background: MCP Server Connection Status: ${isMcpServerConnected}`);
-    // Potentially update UI or tool availability based on connection status
-}
-
-// Example of how an MCP server might signal its status (this would be handled by the MCP communication layer)
-// chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-//     if (request.action === 'mcpServerStatus') {
-//         updateMcpServerStatus(request.isConnected);
-//         sendResponse({ success: true });
-//     }
-// });
-
-// Placeholder for MCP tool definitions (these would be provided by the MCP server)
-let mcpToolDefinitions = [];
-
-// Function to update MCP tool definitions (called by MCP server)
-function updateMcpToolDefinitions(toolDefinitions) {
-    mcpToolDefinitions = toolDefinitions;
-    console.log("Background: Updated MCP Tool Definitions:", mcpToolDefinitions);
-    // Potentially update context menus or internal tool list
-}
-
-// Example of how an MCP server might provide tool definitions
-// chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-//     if (request.action === 'mcpToolDefinitions') {
-//         updateMcpToolDefinitions(request.toolDefinitions);
-//         sendResponse({ success: true });
-//     }
-// });
-
-// Modify getAllToolDefinitions to merge local and MCP tools
-// async function getAllToolDefinitions() {
-//     const localTools = await new Promise((resolve) => {
-//         chrome.storage.local.get(['promptPaulTools'], (result) => {
-//             resolve(result.promptPaulTools || []);
-//         });
-//     });
-//     // Merge local and MCP tools if MCP server is connected
-//     if (isMcpServerConnected) {
-//         return [...localTools, ...mcpToolDefinitions];
-//     } else {
-//         return localTools;
-//     }
-// }
-
-// Modify getToolDefinition to search both local and MCP tools
-// async function getToolDefinition(name) {
-//     const localTool = await new Promise((resolve) => {
-//         chrome.storage.local.get(['promptPaulTools'], (result) => {
-//             const toolsArray = result.promptPaulTools || [];
-//             resolve(toolsArray.find(t => t.name === name));
-//         });
-//     });
-//     if (localTool) {
-//         return localTool;
-//     } else if (isMcpServerConnected) {
-//         // Search MCP tools if not found locally and MCP server is connected
-//         return mcpToolDefinitions.find(t => t.name === name);
-//     } else {
-//         return null;
-//     }
-// }
-
-// Modify executeToolCall to handle MCP tool execution
-// async function executeToolCall(toolCall, tabId) {
-//     console.log("Background: Executing tool call:", toolCall);
-//     const toolName = toolCall.function.name;
-//     const toolArgs = JSON.parse(toolCall.function.arguments); // Assuming arguments are always a JSON string
-
-//     const toolDefinition = await getToolDefinition(toolName);
-
-//     if (!toolDefinition) {
-//         console.error(`Background: Tool definition not found for tool: ${toolName}`);
-//         return {
-//             tool_call_id: toolCall.id,
-//             output: `Error: Tool '${toolName}' not found.`
-//         };
-//     }
-
-//     if (toolDefinition.type === 'mcp') {
-//         // Send tool execution request to MCP server
-//         return new Promise((resolve, reject) => {
-//             chrome.runtime.sendMessage(toolDefinition.mcp_extension_id, {
-//                 action: 'executeMcpTool',
-//                 toolName: toolName,
-//                 args: toolArgs,
-//                 toolCallId: toolCall.id // Pass toolCallId for response correlation
-//             }, (response) => {
-//                 if (chrome.runtime.lastError) {
-//                     console.error(`Background: Error sending message to MCP server for tool '${toolName}':`, chrome.runtime.lastError);
-//                     resolve({
-//                         tool_call_id: toolCall.id,
-//                         output: `Error communicating with MCP server for tool '${toolName}': ${chrome.runtime.lastError.message}`
-//                     });
-//                 } else if (response && response.success) {
-//                     console.log(`Background: MCP tool '${toolName}' executed successfully. Output:`, response.output);
-//                     resolve({
-//                         tool_call_id: toolCall.id,
-//                         output: JSON.stringify(response.output) // Assuming MCP server returns output in 'output' field
-//                     });
-//                 } else {
-//                     console.error(`Background: MCP tool '${toolName}' execution failed. Response:`, response);
-//                     resolve({
-//                         tool_call_id: toolCall.id,
-//                         output: `Error executing MCP tool '${toolName}': ${response ? response.error : 'Unknown error'}`
-//                     });
-//                 }
-//             });
-//         });
-//     } else if (toolDefinition.type === 'user_defined_endpoint') {
-//         // Handle user-defined endpoint tool execution (existing logic)
-//         const endpointUrl = toolDefinition.endpoint_url;
-//         const userDefinedMethod = toolDefinition.method;
-
-//         if (!endpointUrl) {
-//             console.error(`Background: Endpoint URL not defined for user-defined tool: ${toolName}`);
-//             return {
-//                 tool_call_id: toolCall.id,
-//                 output: `Error: Endpoint URL not defined for tool '${toolName}'.`
-//             };
-//         }
-
-//         const result = await callUserDefinedEndpoint(endpointUrl, toolArgs, userDefinedMethod);
-
-//         if (result.success) {
-//             return {
-//                 tool_call_id: toolCall.id,
-//                 output: JSON.stringify(result.data)
-//             };
-//         } else {
-//             return {
-//                 tool_call_id: toolCall.id,
-//                 output: `Error executing tool '${toolName}': ${result.error}`
-//             };
-//         }
-//     } else {
-//         console.error(`Background: Unknown tool type for tool: ${toolName}`);
-//         return {
-//             tool_call_id: toolCall.id,
-//             output: `Error: Unknown tool type for tool '${toolName}'.`
-//         };
-//     }
-// }
-
-// Handle responses from MCP server tool executions
-// chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-//     if (request.action === 'mcpToolOutput') {
-//         console.log("Background: Received MCP tool output:", request);
-//         // Find the corresponding tool call and process the output
-//         // This would involve matching request.toolCallId to an ongoing tool execution
-//         // and then sending the output back to chat.js via handleToolOutputs
-//         // Placeholder for now
-//         console.warn("Background: Received MCP tool output, but handling logic is a placeholder.");
-//         sendResponse({ success: true });
-//     }
-// });
