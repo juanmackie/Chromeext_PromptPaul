@@ -167,6 +167,61 @@ function saveOptions(e) {
 }
 
 // Load saved options
+// Function to load settings for a specific profile
+function loadProfileSettings(profileId) {
+  console.log(`[DEBUG] loadProfileSettings: Attempting to load settings for profile ID: ${profileId}`);
+  chrome.storage.local.get(['profiles'], (result) => {
+    console.log('[DEBUG] loadProfileSettings: Profiles retrieved from storage:', result.profiles);
+    const profiles = result.profiles || [];
+    const selectedProfile = profiles.find(p => p.id === profileId) || profiles.find(p => p.id === 'default');
+    console.log('[DEBUG] loadProfileSettings: Selected profile:', selectedProfile);
+
+    if (selectedProfile) {
+      console.log('Options: Populating form fields with selected profile data.'); // Added log
+      document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
+      document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
+      document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
+      document.getElementById('maxTokens').value = selectedProfile.maxTokens || 32000;
+      document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
+      updateCurrentConfig(
+        selectedProfile.llmEndpoint,
+        selectedProfile.apiKey,
+        selectedProfile.modelName,
+        selectedProfile.lastUpdated || new Date().toLocaleString(),
+        selectedProfile.systemPrompt,
+        selectedProfile.name // Pass profile name to updateCurrentConfig
+      );
+    } else {
+      // Fallback to sync storage if profile not found (e.g. initial load or error)
+      chrome.storage.sync.get(
+        {
+          llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+          apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
+          modelName: 'mistral-small-latest',
+          maxTokens: 32000,
+          systemPrompt: '',
+          lastUpdated: '',
+          profileSelect: 'default'
+        },
+        (items) => {
+          if (chrome.runtime.lastError) {
+            console.error('Error loading settings from sync:', chrome.runtime.lastError);
+            showStatus('Error loading settings: ' + chrome.runtime.lastError.message, true);
+            return;
+          }
+          document.getElementById('llmEndpoint').value = items.llmEndpoint;
+          document.getElementById('apiKey').value = items.apiKey;
+          document.getElementById('modelName').value = items.modelName;
+          document.getElementById('maxTokens').value = items.maxTokens;
+          document.getElementById('systemPrompt').value = items.systemPrompt;
+          updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.profileSelect);
+        }
+      );
+    }
+  });
+}
+
+// Load saved options
 function loadOptions() {
   const profileSelectElement = document.getElementById('profileSelect');
 
@@ -195,56 +250,6 @@ function loadOptions() {
       });
     }
     profileSelectElement.value = selectedProfileId || 'default';
-  }
-
-  // Function to load settings for a specific profile
-  function loadProfileSettings(profileId) {
-    chrome.storage.local.get(['profiles'], (result) => {
-      const profiles = result.profiles || [];
-      const selectedProfile = profiles.find(p => p.id === profileId) || profiles.find(p => p.id === 'default');
-
-      if (selectedProfile) {
-        document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
-        document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
-        document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
-        document.getElementById('maxTokens').value = selectedProfile.maxTokens || 32000;
-        document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
-        updateCurrentConfig(
-          selectedProfile.llmEndpoint,
-          selectedProfile.apiKey,
-          selectedProfile.modelName,
-          selectedProfile.lastUpdated || new Date().toLocaleString(),
-          selectedProfile.systemPrompt,
-          selectedProfile.name // Pass profile name to updateCurrentConfig
-        );
-      } else {
-        // Fallback to sync storage if profile not found (e.g. initial load or error)
-        chrome.storage.sync.get(
-          {
-            llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-            apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-            modelName: 'mistral-small-latest',
-            maxTokens: 32000,
-            systemPrompt: '',
-            lastUpdated: '',
-            profileSelect: 'default'
-          },
-          (items) => {
-            if (chrome.runtime.lastError) {
-              console.error('Error loading settings from sync:', chrome.runtime.lastError);
-              showStatus('Error loading settings: ' + chrome.runtime.lastError.message, true);
-              return;
-            }
-            document.getElementById('llmEndpoint').value = items.llmEndpoint;
-            document.getElementById('apiKey').value = items.apiKey;
-            document.getElementById('modelName').value = items.modelName;
-            document.getElementById('maxTokens').value = items.maxTokens;
-            document.getElementById('systemPrompt').value = items.systemPrompt;
-            updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.profileSelect);
-          }
-        );
-      }
-    });
   }
 
   // Load profiles and the last selected profile ID from storage
@@ -321,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (profileSelectElement) {
     profileSelectElement.addEventListener('change', (event) => {
       const selectedProfileId = event.target.value;
+      console.log(`[DEBUG] profileSelect change: Selected profile ID: ${selectedProfileId}`);
       if (selectedProfileId === 'add_new_profile') {
         const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
         if (newProfileName && newProfileName.trim() !== '') {
