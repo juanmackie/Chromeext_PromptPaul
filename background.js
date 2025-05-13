@@ -103,9 +103,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
 });
 
-// ValidateConfig function to include API configuration, loading from the selected profile in local storage
+// ValidateConfig function to include API configuration
 async function validateConfig() {
   return new Promise((resolve, reject) => {
+<<<<<<< HEAD
     console.log('Background: Validating configuration...');
     chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
       console.log('Background: Storage get result:', result);
@@ -142,8 +143,22 @@ async function validateConfig() {
           model: selectedProfile.modelName
         });
         resolve(selectedProfile);
+=======
+    chrome.storage.sync.get(
+      ['llmEndpoint', 'apiKey', 'modelName', 'systemPrompt', 'maxTokens'], // Add systemPrompt and maxTokens
+      (result) => {
+        if (!result.llmEndpoint || !result.apiKey || !result.modelName) {
+          reject(
+            new Error(
+              'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.' // Note: systemPrompt and maxTokens are optional
+            )
+          );
+        } else {
+          resolve(result);
+        }
+>>>>>>> parent of c6f1b07 (fixed profile drop down)
       }
-    });
+    );
   });
 }
 
