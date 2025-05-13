@@ -106,13 +106,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // ValidateConfig function to include API configuration, loading from the selected profile in local storage
 async function validateConfig() {
   return new Promise((resolve, reject) => {
+    console.log('Background: Validating configuration...');
     chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+      console.log('Background: Storage get result:', result);
       const profiles = result.profiles || [];
       const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+
+      console.log('Background: Profiles:', profiles);
+      console.log('Background: Last selected profile ID:', lastSelectedProfileId);
 
       const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
 
       if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
+        console.warn('Background: Selected profile is missing or incomplete');
         // Fallback or error if selected profile is incomplete or not found
         // As a fallback, try to find the default profile
         const defaultProfile = profiles.find(p => p.id === 'default');
@@ -120,6 +126,7 @@ async function validateConfig() {
            console.warn(`Background: Selected profile '${lastSelectedProfileId}' incomplete or not found, using default profile.`);
            resolve(defaultProfile);
         } else {
+           console.error('Background: Default profile is also incomplete or missing');
            // If even default is incomplete, reject
            reject(
              new Error(
@@ -129,6 +136,11 @@ async function validateConfig() {
         }
       } else {
         console.log(`Background: Using configuration from profile: ${selectedProfile.name || selectedProfile.id}`);
+        console.log('Background: Configuration:', {
+          endpoint: selectedProfile.llmEndpoint,
+          key: selectedProfile.apiKey ? '********' + selectedProfile.apiKey.slice(-4) : 'Not set',
+          model: selectedProfile.modelName
+        });
         resolve(selectedProfile);
       }
     });

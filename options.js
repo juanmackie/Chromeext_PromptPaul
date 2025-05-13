@@ -116,34 +116,47 @@ function saveOptions(e) {
   saveButton.disabled = true;
 
   // Save to local storage profiles
+  console.log('Options: Attempting to save options...');
   chrome.storage.local.get(['profiles'], (result) => {
+    console.log('Options: Current profiles from storage:', result.profiles);
     let profiles = result.profiles || [];
     let profileToUpdate = profiles.find(p => p.id === selectedProfileId);
 
     if (!profileToUpdate) {
+      console.log(`Options: Profile with ID '${selectedProfileId}' not found, creating new profile.`);
       // This case should ideally not happen if dropdown is managed well,
       // but as a fallback, or if it's 'default' and somehow missing.
       profileToUpdate = {
         id: selectedProfileId, // Could be 'default'
         name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(), // Basic name
+        llmEndpoint: llmEndpointValue,
+        apiKey: apiKeyValue,
+        modelName: modelNameValue,
+        maxTokens: maxTokensValue || 2048,
+        systemPrompt: systemPromptValue,
+        lastUpdated: new Date().toLocaleString()
       };
       profiles.push(profileToUpdate);
+      console.log('Options: New profile created:', profileToUpdate);
+    } else {
+      console.log(`Options: Profile with ID '${selectedProfileId}' found, updating existing profile.`);
+      profileToUpdate.llmEndpoint = llmEndpointValue;
+      profileToUpdate.apiKey = apiKeyValue;
+      profileToUpdate.modelName = modelNameValue;
+      profileToUpdate.maxTokens = maxTokensValue || 2048;
+      profileToUpdate.systemPrompt = systemPromptValue;
+      profileToUpdate.lastUpdated = new Date().toLocaleString();
+      console.log('Options: Profile updated:', profileToUpdate);
+      // profileToUpdate.name is handled during creation or if user edits it (future feature)
     }
 
-    profileToUpdate.llmEndpoint = llmEndpointValue;
-    profileToUpdate.apiKey = apiKeyValue;
-    profileToUpdate.modelName = modelNameValue;
-    profileToUpdate.maxTokens = maxTokensValue || 2048;
-    profileToUpdate.systemPrompt = systemPromptValue;
-    profileToUpdate.lastUpdated = new Date().toLocaleString();
-    // profileToUpdate.name is handled during creation or if user edits it (future feature)
-
+    console.log('Options: Saving profiles and last selected profile ID:', { profiles: profiles, lastSelectedProfileId: selectedProfileId });
     chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: selectedProfileId }, () => {
       if (chrome.runtime.lastError) {
-        console.error('Error saving profile settings to local storage:', chrome.runtime.lastError);
+        console.error('Options: Error saving profile settings to local storage:', chrome.runtime.lastError);
         showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
       } else {
-        console.log(`Settings for profile '${profileToUpdate.name}' saved successfully.`);
+        console.log(`Options: Settings for profile '${profileToUpdate.name}' saved successfully.`);
         showStatus(`Settings for profile '${profileToUpdate.name}' saved!`);
         // Reload options to reflect changes, especially if it was a new profile or name changed
         loadOptions();
@@ -235,12 +248,17 @@ function loadOptions() {
   }
 
   // Load profiles and the last selected profile ID from storage
+  console.log('Options: Loading profiles and last selected profile ID...');
   chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+    console.log('Options: Storage get result for profiles and lastSelectedProfileId:', result);
     let profiles = result.profiles || [];
     const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+    console.log('Options: Loaded profiles:', profiles);
+    console.log('Options: Loaded last selected profile ID:', lastSelectedProfileId);
 
     // Ensure default profile exists
     if (!profiles.find(p => p.id === 'default')) {
+      console.log('Options: Default profile not found, creating it.');
       const defaultProfile = {
         id: 'default',
         name: 'Default',
@@ -252,52 +270,61 @@ function loadOptions() {
         lastUpdated: new Date().toLocaleString()
       };
       profiles.push(defaultProfile);
-      chrome.storage.local.set({ profiles: profiles }); // Save updated profiles array
+      console.log('Options: Default profile created:', defaultProfile);
+      chrome.storage.local.set({ profiles: profiles }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Options: Error saving default profile:', chrome.runtime.lastError);
+        } else {
+          console.log('Options: Default profile saved successfully.');
+        }
+      }); // Save updated profiles array
+    } else {
+      console.log('Options: Default profile already exists.');
     }
     
     populateProfileDropdown(profiles, lastSelectedProfileId);
     loadProfileSettings(lastSelectedProfileId); // Load settings for the last selected or default profile
   });
+}
 
-  // Event listener for profile selection change
-  if (profileSelectElement) {
-    profileSelectElement.addEventListener('change', (event) => {
-      const selectedProfileId = event.target.value;
-      if (selectedProfileId === 'add_new_profile') {
-        const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
-        if (newProfileName && newProfileName.trim() !== '') {
-          chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-            let profiles = result.profiles || [];
-            const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
-            const newProfile = {
-              id: newProfileId,
-              name: newProfileName.trim(),
-              llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
-              apiKey: document.getElementById('apiKey').value.trim(),
-              modelName: document.getElementById('modelName').value.trim(),
-              maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
-              systemPrompt: document.getElementById('systemPrompt').value.trim(),
-              lastUpdated: new Date().toLocaleString()
-            };
-            profiles.push(newProfile);
-            chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
-              populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
-              loadProfileSettings(newProfileId); // Load its settings into the form
-              showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
-            });
+// Event listener for profile selection change
+if (profileSelectElement) {
+  profileSelectElement.addEventListener('change', (event) => {
+    const selectedProfileId = event.target.value;
+    if (selectedProfileId === 'add_new_profile') {
+      const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
+      if (newProfileName && newProfileName.trim() !== '') {
+        chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+          let profiles = result.profiles || [];
+          const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
+          const newProfile = {
+            id: newProfileId,
+            name: newProfileName.trim(),
+            llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
+            apiKey: document.getElementById('apiKey').value.trim(),
+            modelName: document.getElementById('modelName').value.trim(),
+            maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
+            systemPrompt: document.getElementById('systemPrompt').value.trim(),
+            lastUpdated: new Date().toLocaleString()
+          };
+          profiles.push(newProfile);
+          chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
+            populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
+            loadProfileSettings(newProfileId); // Load its settings into the form
+            showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
           });
-        } else {
-          // User cancelled or entered empty name, revert to last selected
-          chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
-            profileSelectElement.value = res.lastSelectedProfileId || 'default';
-          });
-        }
+        });
       } else {
-        chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
-        loadProfileSettings(selectedProfileId);
+        // User cancelled or entered empty name, revert to last selected
+        chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
+          profileSelectElement.value = res.lastSelectedProfileId || 'default';
+        });
       }
-    });
-  }
+    } else {
+      chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
+      loadProfileSettings(selectedProfileId);
+    }
+  });
 }
 
 // Add event listeners
@@ -499,59 +526,33 @@ function setupInstructionHandlers() {
 
             // Set the tool_choice dropdown (multi-select)
             const toolChoiceSelect = document.getElementById('instructionToolChoice');
-            const savedToolChoices = instruction.tool_choice || ['none']; // Default to ['none'] if undefined
-
-            // Deselect all options first
-            Array.from(toolChoiceSelect.options).forEach(option => option.selected = false);
-
-            // Select the saved options
-            if (Array.isArray(savedToolChoices)) {
-              savedToolChoices.forEach(choiceValue => {
-                const option = toolChoiceSelect.querySelector(`option[value="${choiceValue}"]`);
-                if (option) {
-                  option.selected = true;
-                } else {
-                  console.warn(`Saved tool choice "${choiceValue}" not found in dropdown.`);
-                }
+            if (toolChoiceSelect) {
+              // Clear previous selections
+              Array.from(toolChoiceSelect.options).forEach(option => {
+                option.selected = false;
               });
-            } else { // Handle older single string value for backward compatibility
-                const option = toolChoiceSelect.querySelector(`option[value="${savedToolChoices}"]`);
-                if (option) {
+
+              // Select the appropriate options based on instruction.tool_choice
+              if (Array.isArray(instruction.tool_choice)) {
+                instruction.tool_choice.forEach(choice => {
+                  const option = toolChoiceSelect.querySelector(`option[value="${choice}"]`);
+                  if (option) {
                     option.selected = true;
-                } else {
-                    console.warn(`Saved tool choice "${savedToolChoices}" not found in dropdown. Defaulting to 'none'.`);
-                    toolChoiceSelect.querySelector('option[value="none"]').selected = true;
-                }
-            }
-          }
-        });
-      });
-
-      document.querySelectorAll('.improve-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => { // Make the listener async
-          const instructionId = e.target.dataset.id;
-          const instruction = instructions.find(i => i.id === instructionId);
-          if (instruction) {
-            // Get API endpoint and API key from storage
-            chrome.storage.sync.get(['llmEndpoint', 'apiKey', 'modelName'], async (config) => {
-              if (config.llmEndpoint && config.apiKey && config.modelName) {
-                const promptForImprovement = `Please improve the following prompt to be clearer and more effective for an LLM. Your response should ONLY contain the improved prompt text, without any additional text, prefixes, or markers. Do not include any placeholders in the improved prompt.\n\nOriginal Prompt Name: ${instruction.name}\n\nOriginal Prompt Content: ${instruction.content}\n\nImproved Prompt:`;
-
-                try {
-                  // Call API to improve prompt
-                  const improvedPrompt = await improvePromptAPI(config.llmEndpoint, config.apiKey, config.modelName, promptForImprovement);
-                  // Update instruction content in the form
-                  document.getElementById('instructionContent').value = improvedPrompt;
-                  // Optionally show a status message
-                  showStatus('Prompt successfully improved', false, true); // Show toast notification
-                } catch (error) {
-                  console.error('Error improving prompt:', error);
-                  showStatus(`Error improving prompt: ${error.message}`, true, false); // Show error status
-                }
+                  }
+                });
+              } else if (instruction.tool_choice) { // Handle older string format
+                 const option = toolChoiceSelect.querySelector(`option[value="${instruction.tool_choice}"]`);
+                 if (option) {
+                   option.selected = true;
+                 }
               } else {
-                showStatus('API configuration missing. Please check settings.', true);
+                 // Default to 'none' if tool_choice is not set
+                 const noneOption = toolChoiceSelect.querySelector('option[value="none"]');
+                 if (noneOption) {
+                   noneOption.selected = true;
+                 }
               }
-            });
+            }
           }
         });
       });
@@ -561,12 +562,60 @@ function setupInstructionHandlers() {
           const instructionId = e.target.dataset.id;
           if (confirm('Are you sure you want to delete this instruction?')) {
             chrome.storage.local.get(['instructions'], (result) => {
-              const updatedInstructions = result.instructions.filter(i => i.id !== instructionId);
-              chrome.storage.local.set({ instructions: updatedInstructions }, () => {
-                loadInstructions();
-                clearForm();
+              let instructions = result.instructions || [];
+              instructions = instructions.filter(i => i.id !== instructionId);
+              chrome.storage.local.set({ instructions: instructions }, () => {
+                showStatus('Instruction deleted!');
+                loadInstructions(); // Reload the table
+                // Clear the form if the deleted instruction was being edited
+                if (document.getElementById('instructionId').value === instructionId) {
+                  clearForm();
+                }
               });
             });
+          }
+        });
+      });
+
+      // Add improve handler (calls the API)
+      document.querySelectorAll('.improve-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const instructionId = e.target.dataset.id;
+          const instruction = instructions.find(i => i.id === instructionId);
+          if (instruction) {
+            showStatus('Improving instruction...', false, true); // Show as toast
+            try {
+              // Get current API config from the selected profile
+              const config = await new Promise((resolve, reject) => {
+                chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+                  const profiles = result.profiles || [];
+                  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+                  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+                  if (selectedProfile && selectedProfile.llmEndpoint && selectedProfile.apiKey && selectedProfile.modelName) {
+                    resolve(selectedProfile);
+                  } else {
+                    reject(new Error('API configuration is incomplete. Please set it up in settings.'));
+                  }
+                });
+              });
+
+              const improvedContent = await improvePromptAPI(
+                config.llmEndpoint,
+                config.apiKey,
+                config.modelName,
+                instruction.content // Pass the instruction content to the API
+              );
+
+              // Update the form with the improved content
+              document.getElementById('instructionName').value = instruction.name; // Keep original name
+              document.getElementById('instructionContent').value = improvedContent;
+              document.getElementById('instructionId').value = instruction.id; // Keep original ID
+
+              showStatus('Instruction improved! Review and Save.', false, true); // Show as toast
+            } catch (error) {
+              console.error('Error improving instruction:', error);
+              showStatus('Failed to improve instruction: ' + error.message, true);
+            }
           }
         });
       });
@@ -574,73 +623,81 @@ function setupInstructionHandlers() {
   }
 
   // Save instruction handler
-  saveInstructionBtn.addEventListener('click', () => {
-    const instructionId = document.getElementById('instructionId').value;
-    const name = document.getElementById('instructionName').value.trim();
-    const content = document.getElementById('instructionContent').value.trim();
-    const toolChoiceSelect = document.getElementById('instructionToolChoice');
-    // Get all selected options' values as an array
-    const selectedToolChoices = Array.from(toolChoiceSelect.selectedOptions).map(option => option.value);
+  if (saveInstructionBtn) {
+    saveInstructionBtn.addEventListener('click', () => {
+      const instructionName = document.getElementById('instructionName').value.trim();
+      const instructionContent = document.getElementById('instructionContent').value.trim();
+      const instructionId = document.getElementById('instructionId').value;
+      const toolChoiceSelect = document.getElementById('instructionToolChoice');
+      const selectedToolChoices = Array.from(toolChoiceSelect.selectedOptions).map(option => option.value);
 
-    // Handle edge cases: if nothing selected, default to 'none'
-    // If 'none' is selected with others, only keep 'none'
-    // If 'auto' is selected with others (but not 'none'), only keep 'auto'
-    let finalToolChoices = ['none']; // Default
-    if (selectedToolChoices.length > 0) {
-        if (selectedToolChoices.includes('none')) {
-            finalToolChoices = ['none'];
-        } else if (selectedToolChoices.includes('auto')) {
-            finalToolChoices = ['auto'];
-        } else {
-            finalToolChoices = selectedToolChoices; // Store the specific tools selected
-        }
-    }
-
-
-    if (!name || !content) {
-      showStatus('Both name and content are required', true);
-      return;
-    }
-
-    chrome.storage.local.get(['instructions'], (result) => {
-      const instructions = result.instructions || [];
-      const existingIndex = instructions.findIndex(i => i.id === instructionId);
-
-      const instruction = {
-        id: instructionId || Date.now().toString(),
-        name,
-        content,
-        tool_choice: finalToolChoices, // Save the array of selected tool choices
-        created_at: instructionId ? instructions[existingIndex].created_at : new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      if (existingIndex >= 0) {
-        instructions[existingIndex] = instruction;
-      } else {
-        instructions.push(instruction);
+      if (!instructionName || !instructionContent) {
+        showStatus('Instruction name and content are required.', true);
+        return;
       }
 
-      console.log('Saving instructions to local:', instructions);
-      chrome.storage.local.set({ instructions }, () => {
-        showStatus('Instruction saved successfully!');
-        loadInstructions();
-        clearForm();
+      chrome.storage.local.get(['instructions'], (result) => {
+        let instructions = result.instructions || [];
+        const now = new Date().toISOString();
+
+        if (instructionId) {
+          // Update existing instruction
+          instructions = instructions.map(inst => {
+            if (inst.id === instructionId) {
+              return {
+                ...inst,
+                name: instructionName,
+                content: instructionContent,
+                tool_choice: selectedToolChoices, // Save as array
+                lastUpdated: now
+              };
+            }
+            return inst;
+          });
+          showStatus('Instruction updated!');
+        } else {
+          // Add new instruction
+          const newInstruction = {
+            id: 'inst_' + Date.now(), // Simple unique ID
+            name: instructionName,
+            content: instructionContent,
+            tool_choice: selectedToolChoices, // Save as array
+            createdAt: now,
+            lastUpdated: now
+          };
+          instructions.push(newInstruction);
+          showStatus('Instruction added!');
+        }
+
+        chrome.storage.local.set({ instructions: instructions }, () => {
+          loadInstructions(); // Reload the table
+          clearForm(); // Clear the form after saving
+        });
       });
     });
-  });
+  }
 
   // Clear form handler
-  clearFormBtn.addEventListener('click', clearForm);
+  if (clearFormBtn) {
+    clearFormBtn.addEventListener('click', clearForm);
+  }
 
   function clearForm() {
     document.getElementById('instructionName').value = '';
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
-    // Reset multi-select dropdown: deselect all, then select 'none'
     const toolChoiceSelect = document.getElementById('instructionToolChoice');
-    Array.from(toolChoiceSelect.options).forEach(option => option.selected = false);
-    toolChoiceSelect.querySelector('option[value="none"]').selected = true;
+    if (toolChoiceSelect) {
+      // Clear selected options and set to 'none'
+      Array.from(toolChoiceSelect.options).forEach(option => {
+        option.selected = false;
+      });
+      const noneOption = toolChoiceSelect.querySelector('option[value="none"]');
+      if (noneOption) {
+        noneOption.selected = true;
+      }
+    }
+    showStatus('Form cleared.');
   }
 
   // Export instructions handler
@@ -648,129 +705,78 @@ function setupInstructionHandlers() {
     chrome.storage.local.get(['instructions'], (result) => {
       const instructions = result.instructions || [];
       const exportData = {
-        version: '1.0',
-        timestamp: new Date().toISOString(),
+        version: 1, // Versioning for future compatibility
         instructions: instructions
       };
-
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `prompt-paul-instructions-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      showStatus('Instructions exported successfully!');
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", "prompt_paul_instructions.json");
+      document.body.appendChild(downloadAnchorNode); // Required for Firefox
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
     });
   });
 
   // Import instructions handler
   document.getElementById('importInstructions').addEventListener('click', () => {
-    document.getElementById('importFile').click();
+    document.getElementById('importFile').click(); // Trigger the hidden file input
   });
 
   document.getElementById('importFile').addEventListener('change', (event) => {
     const file = event.target.files[0];
-    if (!file) return;
-
+    if (!file) {
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const importData = JSON.parse(e.target.result);
+        if (importData.version === 1 && Array.isArray(importData.instructions)) {
+          // Simple merge strategy: add new instructions, update existing by ID
+          chrome.storage.local.get(['instructions'], (result) => {
+            let existingInstructions = result.instructions || [];
+            const importedInstructions = importData.instructions;
 
-        // Validate import data structure
-        if (!importData.instructions || !Array.isArray(importData.instructions)) {
-          throw new Error('Invalid import file format');
-        }
-
-        // Validate each instruction (add check for tool_choice, but allow missing for backward compatibility)
-        importData.instructions.forEach(instruction => {
-          if (!instruction.name || !instruction.content) {
-            throw new Error('Invalid instruction format: Missing name or content');
-          }
-          // Validate tool_choice (allow string for backward compat, or array)
-          if (instruction.tool_choice) {
-            if (Array.isArray(instruction.tool_choice)) {
-              // If it's an array, ensure values are valid (exist in dropdown or are 'none'/'auto')
-              // For simplicity here, we'll just accept the array as is, assuming background script handles validation
-            } else if (typeof instruction.tool_choice === 'string') {
-              // If it's a string (old format), validate it
-              if (!['none', 'auto'].includes(instruction.tool_choice)) {
-                 console.warn(`Invalid legacy tool_choice string value "${instruction.tool_choice}" for instruction "${instruction.name}". Converting to ['none'].`);
-                 instruction.tool_choice = ['none'];
+            importedInstructions.forEach(importedInst => {
+              const existingIndex = existingInstructions.findIndex(inst => inst.id === importedInst.id);
+              if (existingIndex > -1) {
+                // Update existing instruction
+                existingInstructions[existingIndex] = { ...existingInstructions[existingIndex], ...importedInst, lastUpdated: new Date().toISOString() };
               } else {
-                 // Convert valid legacy string to array
-                 instruction.tool_choice = [instruction.tool_choice];
+                // Add new instruction
+                existingInstructions.push({ ...importedInst, id: importedInst.id || 'inst_' + Date.now(), createdAt: importedInst.createdAt || new Date().toISOString(), lastUpdated: new Date().toISOString() });
               }
-            } else {
-               console.warn(`Invalid tool_choice type for instruction "${instruction.name}". Defaulting to ['none'].`);
-               instruction.tool_choice = ['none'];
-            }
-          } else {
-            // If tool_choice is missing, default to ['none']
-            instruction.tool_choice = ['none'];
-          }
-        });
+            });
 
-        // Merge with existing instructions
-        chrome.storage.local.get(['instructions'], (result) => {
-          const currentInstructions = result.instructions || [];
-          const newInstructions = importData.instructions.map(instruction => ({
-            ...instruction,
-            id: instruction.id || Date.now().toString(),
-            tool_choice: instruction.tool_choice || 'none', // Ensure tool_choice exists, default to 'none'
-            imported_at: new Date().toISOString()
-          }));
-
-          // Remove duplicates based on name
-          const mergedInstructions = [...currentInstructions];
-          newInstructions.forEach(newInst => {
-            const existingIndex = mergedInstructions.findIndex(i => i.name === newInst.name);
-            if (existingIndex >= 0) {
-              mergedInstructions[existingIndex] = newInst;
-            } else {
-              mergedInstructions.push(newInst);
-            }
+            chrome.storage.local.set({ instructions: existingInstructions }, () => {
+              showStatus('Instructions imported successfully!');
+              loadInstructions(); // Reload the table
+            });
           });
-
-          chrome.storage.local.set({ instructions: mergedInstructions }, () => {
-            showStatus(`Successfully imported ${newInstructions.length} instructions!`);
-            loadInstructions();
-          });
-        });
+        } else {
+          showStatus('Invalid import file format.', true);
+        }
       } catch (error) {
-        showStatus(`Error importing instructions: ${error.message}`, true);
+        console.error('Error importing instructions:', error);
+        showStatus('Error reading or parsing import file.', true);
       }
-
-      // Clear the file input
-      event.target.value = '';
     };
-
-    reader.onerror = () => {
-      showStatus('Error reading import file', true);
-      event.target.value = '';
-    };
-
     reader.readAsText(file);
   });
 
-  // Initial load
+  // Initial load of instructions and tools
   loadInstructions();
-  populateToolDropdown(); // Populate dropdown on initial load
-
-  // Listen for changes in tool storage to keep dropdown updated
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.promptPaulTools) {
-      console.log('Detected changes in promptPaulTools, repopulating dropdown.');
-      populateToolDropdown();
-    }
-  });
+  populateToolDropdown(); // Populate tool dropdown on load
 }
 
+// Function to call the API for prompt improvement
 async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
+  const messages = [
+    { role: 'system', content: 'You are an expert prompt engineer. Improve the following prompt for a large language model to be clearer, more concise, and more effective. Only return the improved prompt text, nothing else.' },
+    { role: 'user', content: prompt }
+  ];
+
   const apiResponse = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -778,9 +784,10 @@ async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: modelName, // Use modelName from config
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2048,
+      model: modelName,
+      messages: messages,
+      max_tokens: 1000, // Limit response length for prompt improvement
+      temperature: 0.7,
     }),
   });
 
@@ -794,23 +801,13 @@ async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
   }
 
   const responseData = await apiResponse.json();
-
-  if (
-    !responseData ||
-    !responseData.choices ||
-    !responseData.choices[0] ||
-    !responseData.choices[0].message ||
-    !responseData.choices[0].message.content
-  ) {
-    throw new Error('Invalid response format from API');
+  if (!responseData || !responseData.choices || !responseData.choices[0] || !responseData.choices[0].message || !responseData.choices[0].message.content) {
+    throw new Error('Invalid response format from API: Missing message content.');
   }
 
-  return responseData.choices[0].message.content;
+  return responseData.choices[0].message.content.trim();
 }
 
-// --- Tool Management ---
-
-// Function to validate JSON
 function isValidJson(str) {
   try {
     JSON.parse(str);
@@ -824,26 +821,19 @@ function isValidJson(str) {
 function setupToolHandlers() {
   const saveToolBtn = document.getElementById('saveTool');
   const clearToolFormBtn = document.getElementById('clearToolForm');
-  const toolForm = document.querySelector('.tool-form'); // Assuming a class for the form container
 
   // Load and display tools
   function loadTools() {
     chrome.storage.local.get(['promptPaulTools'], (result) => {
       const tools = result.promptPaulTools || [];
       const tableBody = document.querySelector('#toolsTable tbody');
-      if (!tableBody) {
-          console.error("Tool table body not found!");
-          return;
-      }
-      tableBody.innerHTML = ''; // Clear existing rows
+      tableBody.innerHTML = '';
 
       tools.forEach(tool => {
         const row = document.createElement('tr');
-        // Truncate description for display if needed, or use a tooltip
-        const displayDescription = tool.description.length > 100 ? tool.description.substring(0, 97) + '...' : tool.description;
         row.innerHTML = `
           <td>${tool.name}</td>
-          <td title="${tool.description}">${displayDescription}</td>
+          <td>${tool.description}</td>
           <td>
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
             <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
@@ -852,112 +842,118 @@ function setupToolHandlers() {
         tableBody.appendChild(row);
       });
 
-      // Add edit/delete handlers for tools
+      // Add edit/delete handlers
       document.querySelectorAll('.edit-tool-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const toolId = e.target.dataset.id;
-          const tool = tools.find(t => t.id === toolId);
-          if (tool) {
-            document.getElementById('toolName').value = tool.name;
-            document.getElementById('toolDescription').value = tool.description;
-            // Ensure parameters are stored as string; handle potential parsing if stored as object
-            document.getElementById('toolParameters').value = typeof tool.parameters === 'string' ? tool.parameters : JSON.stringify(tool.parameters, null, 2);
-            document.getElementById('toolEndpointUrl').value = tool.endpointUrl || ''; // Populate endpoint URL
-            document.getElementById('toolHttpMethod').value = tool.httpMethod || ''; // Populate HTTP method
-            document.getElementById('toolId').value = tool.id;
-          }
+          chrome.storage.local.get(['promptPaulTools'], (result) => {
+            const tools = result.promptPaulTools || [];
+            const tool = tools.find(t => t.id === toolId);
+            if (tool) {
+              document.getElementById('toolName').value = tool.name;
+              document.getElementById('toolDescription').value = tool.description;
+              document.getElementById('toolParameters').value = tool.parameters || '';
+              document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
+              document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
+              document.getElementById('toolId').value = tool.id;
+            }
+          });
         });
       });
 
       document.querySelectorAll('.delete-tool-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const toolId = e.target.dataset.id;
-          if (confirm('Are you sure you want to delete this tool definition?')) {
+          if (confirm('Are you sure you want to delete this tool?')) {
             chrome.storage.local.get(['promptPaulTools'], (result) => {
-              const updatedTools = (result.promptPaulTools || []).filter(t => t.id !== toolId);
-              chrome.storage.local.set({ promptPaulTools: updatedTools }, () => {
-                showStatus('Tool deleted successfully!');
-                loadTools(); // Reload the list
-                clearToolForm(); // Clear the form
+              let tools = result.promptPaulTools || [];
+              tools = tools.filter(t => t.id !== toolId);
+              chrome.storage.local.set({ promptPaulTools: tools }, () => {
+                showStatus('Tool deleted!');
+                loadTools(); // Reload the table
+                populateToolDropdown(); // Update tool dropdown
+                // Clear the form if the deleted tool was being edited
+                if (document.getElementById('toolId').value === toolId) {
+                  clearToolForm();
+                }
               });
-        
             });
           }
         });
       });
-
-      // Repopulate the instruction tool dropdown whenever tools are loaded/reloaded
-      populateToolDropdown();
-
     });
   }
 
   // Save tool handler
-  saveToolBtn.addEventListener('click', () => {
-    const toolId = document.getElementById('toolId').value;
-    const name = document.getElementById('toolName').value.trim();
-    const description = document.getElementById('toolDescription').value.trim();
-    const parametersStr = document.getElementById('toolParameters').value.trim();
-    const endpointUrl = document.getElementById('toolEndpointUrl').value.trim();
-    const httpMethod = document.getElementById('toolHttpMethod').value;
+  if (saveToolBtn) {
+    saveToolBtn.addEventListener('click', () => {
+      const toolName = document.getElementById('toolName').value.trim();
+      const toolDescription = document.getElementById('toolDescription').value.trim();
+      const toolParameters = document.getElementById('toolParameters').value.trim();
+      const toolEndpointUrl = document.getElementById('toolEndpointUrl').value.trim();
+      const toolHttpMethod = document.getElementById('toolHttpMethod').value;
+      const toolId = document.getElementById('toolId').value;
 
-    if (!name || !description || !parametersStr) {
-      showStatus('Tool name, description, and parameters are required', true);
-      return;
-    }
-
-    if (!isValidJson(parametersStr)) {
-      showStatus('Parameters must be valid JSON', true);
-      return;
-    }
-
-    // Optional: Validate endpoint URL if provided
-    if (endpointUrl) {
-        try {
-            new URL(endpointUrl);
-        } catch (e) {
-            showStatus('Please enter a valid URL for the Endpoint URL or leave it empty.', true);
-            return;
-        }
-    }
-
-    chrome.storage.local.get(['promptPaulTools'], (result) => {
-      const tools = result.promptPaulTools || [];
-      const existingIndex = tools.findIndex(t => t.id === toolId);
-
-      const tool = {
-        id: toolId || Date.now().toString() + Math.random().toString(36).substring(2, 9), // Generate unique ID if new
-        name,
-        description,
-        parameters: parametersStr, // Store as string
-        endpointUrl: endpointUrl || null, // Store null if empty
-        httpMethod: httpMethod || null, // Store null if empty/auto
-        created_at: existingIndex >= 0 ? tools[existingIndex].created_at : new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      if (existingIndex >= 0) {
-        tools[existingIndex] = tool; // Update existing
-      } else {
-        // Check for name conflict before adding
-        const nameConflictIndex = tools.findIndex(t => t.name === tool.name);
-        if (nameConflictIndex >= 0) {
-            showStatus(`A tool with the name "${tool.name}" already exists. Please use a unique name.`, true);
-            return; // Prevent adding duplicate name
-        }
-        tools.push(tool); // Add new
+      if (!toolName || !toolDescription) {
+        showStatus('Tool name and description are required.', true);
+        return;
       }
 
-      chrome.storage.sync.set({ promptPaulTools: tools }, () => {
-        showStatus('Tool saved successfully!');
-        loadTools(); // Reload the list
-        clearToolForm(); // Clear the form
+      if (toolParameters && !isValidJson(toolParameters)) {
+        showStatus('Parameters must be valid JSON.', true);
+        return;
+      }
+
+      chrome.storage.local.get(['promptPaulTools'], (result) => {
+        let tools = result.promptPaulTools || [];
+        const now = new Date().toISOString();
+
+        if (toolId) {
+          // Update existing tool
+          tools = tools.map(tool => {
+            if (tool.id === toolId) {
+              return {
+                ...tool,
+                name: toolName,
+                description: toolDescription,
+                parameters: toolParameters,
+                endpointUrl: toolEndpointUrl,
+                httpMethod: toolHttpMethod,
+                lastUpdated: now
+              };
+            }
+            return tool;
+          });
+          showStatus('Tool updated!');
+        } else {
+          // Add new tool
+          const newTool = {
+            id: 'tool_' + Date.now(), // Simple unique ID
+            name: toolName,
+            description: toolDescription,
+            parameters: toolParameters,
+            endpointUrl: toolEndpointUrl,
+            httpMethod: toolHttpMethod,
+            createdAt: now,
+            lastUpdated: now
+          };
+          tools.push(newTool);
+          showStatus('Tool added!');
+        }
+
+        chrome.storage.local.set({ promptPaulTools: tools }, () => {
+          loadTools(); // Reload the table
+          populateToolDropdown(); // Update tool dropdown
+          clearToolForm(); // Clear the form after saving
+        });
       });
     });
-  });
+  }
 
   // Clear tool form handler
-  clearToolFormBtn.addEventListener('click', clearToolForm);
+  if (clearToolFormBtn) {
+    clearToolFormBtn.addEventListener('click', clearToolForm);
+  }
 
   function clearToolForm() {
     document.getElementById('toolName').value = '';
@@ -966,131 +962,72 @@ function setupToolHandlers() {
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
     document.getElementById('toolId').value = '';
+    showStatus('Tool form cleared.');
   }
-
-  // --- Tool Import/Export Handlers ---
 
   // Export tools handler
   document.getElementById('exportTools').addEventListener('click', () => {
     chrome.storage.local.get(['promptPaulTools'], (result) => {
       const tools = result.promptPaulTools || [];
-      // Ensure parameters are objects for export if they were stored as strings
-      const toolsForExport = tools.map(tool => {
-          let parametersObject;
-          try {
-              parametersObject = typeof tool.parameters === 'string' ? JSON.parse(tool.parameters) : tool.parameters;
-          } catch (e) {
-              console.error(`Failed to parse parameters for tool "${tool.name}" during export:`, e);
-              // Handle error - maybe skip this tool or use a default empty object
-              parametersObject = {}; // Default to empty object on parse error
-          }
-          return {
-              ...tool,
-              parameters: parametersObject
-          };
-      });
-
       const exportData = {
-        version: '1.0', // Add a version for potential future compatibility
-        timestamp: new Date().toISOString(),
-        tools: toolsForExport
+        version: 1, // Versioning for future compatibility
+        tools: tools
       };
-
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `prompt-paul-tools-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      showStatus('Tools exported successfully!');
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", "prompt_paul_tools.json");
+      document.body.appendChild(downloadAnchorNode); // Required for Firefox
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
     });
   });
 
-  // Import tools handler - trigger file input
+  // Import tools handler
   document.getElementById('importTools').addEventListener('click', () => {
-    document.getElementById('importToolsFile').click();
+    document.getElementById('importToolsFile').click(); // Trigger the hidden file input
   });
 
-  // Import tools handler - process file
   document.getElementById('importToolsFile').addEventListener('change', (event) => {
     const file = event.target.files[0];
-    if (!file) return;
-
+    if (!file) {
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const importData = JSON.parse(e.target.result);
+        if (importData.version === 1 && Array.isArray(importData.tools)) {
+          // Simple merge strategy: add new tools, update existing by ID
+          chrome.storage.local.get(['promptPaulTools'], (result) => {
+            let existingTools = result.promptPaulTools || [];
+            const importedTools = importData.tools;
 
-        // Basic validation
-        if (!importData.tools || !Array.isArray(importData.tools)) {
-          throw new Error('Invalid import file format: Missing "tools" array.');
-        }
-
-        // Validate each tool (add more checks as needed)
-        importData.tools.forEach((tool, index) => {
-          if (!tool.name || !tool.description || !tool.parameters) {
-            throw new Error(`Invalid tool format at index ${index}: Missing required fields (name, description, parameters).`);
-          }
-          // Parameters should be an object in the import file
-          if (typeof tool.parameters !== 'object' || tool.parameters === null) {
-               throw new Error(`Parameters for tool "${tool.name}" at index ${index} must be a valid JSON object.`);
-          }
-        });
-
-        // Merge with existing tools
-        chrome.storage.local.get(['promptPaulTools'], (result) => {
-          const currentTools = result.promptPaulTools || [];
-          const newTools = importData.tools.map(tool => ({
-            ...tool,
-            // Ensure parameters are stored as string internally
-            parameters: JSON.stringify(tool.parameters, null, 2),
-            id: tool.id || Date.now().toString() + Math.random().toString(36).substring(2, 9), // Generate unique ID if missing
-            imported_at: new Date().toISOString()
-          }));
-
-          // Merge strategy: Overwrite based on ID if present, otherwise add. Check name conflicts.
-          const mergedTools = [...currentTools];
-          newTools.forEach(newTool => {
-            const existingIndexById = mergedTools.findIndex(t => t.id === newTool.id);
-            if (existingIndexById >= 0) {
-              mergedTools[existingIndexById] = newTool; // Overwrite existing by ID
-            } else {
-              // Check for name conflict before adding as new
-              const existingIndexByName = mergedTools.findIndex(t => t.name === newTool.name);
-              if (existingIndexByName >= 0) {
-                  // Overwrite based on name if ID didn't match but name did
-                  mergedTools[existingIndexByName] = newTool;
-                  console.warn(`Tool name conflict for "${newTool.name}". Overwriting existing tool with imported one.`);
-                  showStatus(`Warning: Tool "${newTool.name}" already existed and was overwritten by import.`, false, true); // Toast warning
+            importedTools.forEach(importedTool => {
+              const existingIndex = existingTools.findIndex(tool => tool.id === importedTool.id);
+              if (existingIndex > -1) {
+                // Update existing tool
+                existingTools[existingIndex] = { ...existingTools[existingIndex], ...importedTool, lastUpdated: new Date().toISOString() };
               } else {
-                  mergedTools.push(newTool); // Add as new
+                // Add new tool
+                existingTools.push({ ...importedTool, id: importedTool.id || 'tool_' + Date.now(), createdAt: importedTool.createdAt || new Date().toISOString(), lastUpdated: new Date().toISOString() });
               }
-            }
-          });
+            });
 
-          chrome.storage.local.set({ promptPaulTools: mergedTools }, () => {
-            showStatus(`Successfully imported/merged ${newTools.length} tools!`);
-            loadTools(); // Reload the list in the UI
+            chrome.storage.local.set({ promptPaulTools: existingTools }, () => {
+              showStatus('Tools imported successfully!');
+              loadTools(); // Reload the table
+              populateToolDropdown(); // Update tool dropdown
+            });
           });
-        });
+        } else {
+          showStatus('Invalid import file format.', true);
+        }
       } catch (error) {
-        console.error("Error importing tools:", error);
-        showStatus(`Error importing tools: ${error.message}`, true);
+        console.error('Error importing tools:', error);
+        showStatus('Error reading or parsing import file.', true);
       }
-
-      // Clear the file input value to allow importing the same file again
-      event.target.value = '';
     };
-
-    reader.onerror = () => {
-      showStatus('Error reading import file', true);
-      event.target.value = '';
-    };
-
     reader.readAsText(file);
   });
 
