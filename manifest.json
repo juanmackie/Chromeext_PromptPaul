@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Prompt Paul- AI Insights at the click of a mouse",
-  "version": "3.20",
+  "version": "3.40",
   "description": "A Chrome extension for processing selected text using an LLM endpoint",
   "permissions": [
     "activeTab",
     "contextMenus",
     "storage",
-    "scripting",
     "sidePanel"
   ],
   "host_permissions": [

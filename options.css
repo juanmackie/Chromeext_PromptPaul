@@ -13,14 +13,14 @@
 }
 
 :root {
-  --brand-primary: #2f6897;
-  --brand-secondary: #5298d5;
+  --brand-primary: #006879;
+  --brand-secondary: #4b6268;
   --brand-background: #b8ecf9;
   --brand-text: #333;
   --surface-color: #ffffff;
   --background-color: #f8fafc;
   --text-color: #1e293b;
-  --border-color: #e2e8f0;
+  --border-color: #004e5b;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
@@ -29,9 +29,9 @@
 
 /* Dark Theme Overrides */
 body.dark-theme {
-  --brand-primary: #7ab7ff;
-  --selection-color: #7f7f7f;
-  --brand-secondary: #3a7bd5;
+  --brand-primary: #84d2e5;
+  --selection-color: #b2cbd2;
+  --brand-secondary: #1c3439;
   --brand-background: #181a20;
   --brand-text: #e0e6f0;
   --surface-color: #23272f;
@@ -94,7 +94,7 @@ body.dark-theme .import-button {
 
 body.dark-theme .delete-tool-btn,
 body.dark-theme .delete-btn {
-  background-color: #b84c4c !important;
+  background-color: #ffdad6 !important;
 }
 
 body.dark-theme .status {
@@ -357,60 +357,60 @@ button:disabled {
 }
 
 .save-button {
-  background-color: #2ecc71;
-  color: #1f3701;
+  background-color: #334a50;
+  color: #cee7ee;
 }
 
 .save-instruction-button {
-  background-color: #2ecc71;
-  color: #1f3701;
+  background-color: #334a50;
+  color: #cee7ee;
 }
 
 .clear-form-button {
-  background-color: #fce366;
-  color: #534600;
+  background-color: #ffdad6;
+  color: #93000a;
 }
 
 .export-button {
-  background-color: #3498db;
-  color: #1f4e4b;
+  background-color: #334a50;
+  color: #cee7ee;
 }
 
 .import-button {
-  background-color: #3498db;
-  color: #1f4e4b;
+  background-color: #334a50;
+  color: #cee7ee;
 }
 
 .delete-tool-btn {
- background-color: #e57373;
+ background-color: #ffdad6;
  margin-top: 0.5rem;
  margin-bottom: 0.5rem;
- color: #690005;
+ color: #93000a;
 }
 
 .edit-btn {
   margin-right: 0.5rem;
   margin-bottom: 0.5rem;
   margin-top: 0.5rem;
-  background-color: #3498db; /* Blue */
-  color: #1f4e4b;
+  background-color: #a8edff; /* Blue */
+  color: #004e5b;
 }
 
 .delete-btn {
-  background-color: #e57373; /* Softer red */
-  color: #690005;
+  background-color: #ffdad6; /* Softer red */
+  color: #93000a;
 }
 
 .revert-button {
-  background-color: #e57373; /* Red */
-  color: #690005;
+  background-color: #ffdad6; /* Red */
+  color: #93000a;
   width: 192.93px;
   height: 47.81px;
 }
 
 .feedback-button {
-  background-color: #3498db; /* Blue */
-  color: #00363f;
+  background-color: #a8ecff; /* Blue */
+  color: #004e5b;
   width: 192.93px;
   height: 47.81px;
 }
