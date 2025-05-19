@@ -1,4 +1,6 @@
+console.log('Background service worker script started.');
 importScripts('marked.min.js');
+console.log('marked.min.js imported successfully.');
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -214,34 +216,57 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
         console.log('Background: Refactored API call. Tools sent to API:', formattedTools);
 
-        let toolChoicePayload = {}; // This will hold {tools: ..., tool_choice: ...} or be empty
-        if (formattedTools.length > 0) { // Only add tools and tool_choice if there are formatted tools
-            if (isStartChat) {
+        let toolChoicePayload = {};
+        let finalToolChoice = customInstructionToolChoice; // Use the value passed in
+
+        // Normalize tool choice if it's an array containing 'none' or is empty
+        if (Array.isArray(finalToolChoice)) {
+            if (finalToolChoice.length === 0 || (finalToolChoice.length === 1 && finalToolChoice[0] === 'none')) {
+                finalToolChoice = 'none';
+            } else if (finalToolChoice.includes('auto')) {
+                 finalToolChoice = 'auto'; // If 'auto' is present, treat as auto
+            }
+            // If it's an array of specific tools, keep it as an array
+        } else if (finalToolChoice === undefined) {
+            finalToolChoice = 'none'; // Default if not set
+        }
+
+        if (finalToolChoice === 'none') {
+            // Case 1: No tools or tool_choice sent
+            toolChoicePayload = {};
+        } else if (finalToolChoice === 'auto') {
+            // Case 2: All tools sent, tool_choice is "auto"
+            if (formattedTools.length > 0) {
                 toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
             } else {
-                // Logic for customInstructionToolChoice, aiming to match original behavior (lines 260-274)
-                // customInstructionToolChoice is passed from the calling context (derived from instruction.tool_choice || 'none')
-                let finalToolChoiceValue = 'none'; // Default fallback, as in original line 273
-
-                if (Array.isArray(customInstructionToolChoice) && customInstructionToolChoice.length > 0) {
-                    const choiceFromArray = customInstructionToolChoice[0];
-                    if (choiceFromArray === 'auto') {
-                        finalToolChoiceValue = 'auto';
-                    } else if (choiceFromArray && choiceFromArray !== 'none') { // Check if it's a tool name
-                        finalToolChoiceValue = { type: 'function', function: { name: choiceFromArray } };
-                    }
-                    // If choiceFromArray is 'none' or falsy (e.g. empty string from array), finalToolChoiceValue remains 'none'.
-                }
-                // If customInstructionToolChoice was not a non-empty array (e.g. it was a string 'none', 'auto', or a tool name directly, or undefined),
-                // the original logic would effectively lead to 'none' unless it was 'auto' or a tool name handled by some other path not shown in lines 260-274.
-                // Given instructionToolChoice = instruction.tool_choice || 'none' (line 179), if instruction.tool_choice is a string like "my_tool",
-                // Array.isArray(customInstructionToolChoice) would be false, leading to 'none'.
-                // This new logic ensures that if customInstructionToolChoice is directly 'auto' or a tool name string, it's not used unless it's in an array.
-                // This strictly adheres to the original `Array.isArray` check.
-
-                toolChoicePayload = { tools: formattedTools, tool_choice: finalToolChoiceValue };
+                // If 'auto' is chosen but no tools are defined, send no tools
+                toolChoicePayload = {};
             }
+        } else if (Array.isArray(finalToolChoice)) {
+            // Case 3: Specific tools selected
+            const selectedToolNames = finalToolChoice;
+            const selectedFormattedTools = formattedTools.filter(tool => selectedToolNames.includes(tool.function.name));
+
+            if (selectedFormattedTools.length > 0) {
+                 let specificToolChoiceFormat;
+                 if (selectedFormattedTools.length === 1) {
+                     // API expects { type: 'function', function: { name: 'tool_name' } } for a single specific tool
+                     specificToolChoiceFormat = { type: 'function', function: { name: selectedFormattedTools[0].function.name } };
+                 } else {
+                     // API expects [{ type: 'function', function: { name: 'tool1' } }, ...] for multiple specific tools
+                     specificToolChoiceFormat = selectedFormattedTools.map(tool => ({ type: 'function', function: { name: tool.function.name } }));
+                 }
+                 toolChoicePayload = { tools: selectedFormattedTools, tool_choice: specificToolChoiceFormat };
+            } else {
+                // If specific tools were selected but none of them are defined/formatted correctly, send no tools
+                toolChoicePayload = {};
+            }
+        } else {
+            // Fallback for unexpected values, treat as none
+            console.warn(`Background: Unexpected tool choice value: ${finalToolChoice}. Treating as 'none'.`);
+            toolChoicePayload = {};
         }
+
         // If formattedTools is empty, toolChoicePayload remains {}, and no 'tools' or 'tool_choice' is sent to the API.
 
         const apiRequestBody = {
