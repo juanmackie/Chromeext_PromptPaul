@@ -292,6 +292,29 @@ function loadOptions() {
   });
 }
 
+let previousProfileIdBeforeAdd = 'default'; // Variable to store the profile ID before opening the add new form
+
+/**
+ * Enables or disables the main settings form elements and action buttons.
+ * This is used to prevent interactions with the main form while the
+ * "Add New Profile" inline form is active.
+ * @param {boolean} disabled - True to disable the main form, false to enable it.
+ */
+function toggleMainFormDisabled(disabled) {
+  const formElements = document.getElementById('optionsForm').elements;
+  for (let i = 0; i < formElements.length; i++) {
+    // Don't disable the profileSelect dropdown itself, or elements within addNewProfileSection
+    if (formElements[i].id !== 'profileSelect' && !formElements[i].closest('#addNewProfileSection')) {
+      formElements[i].disabled = disabled;
+    }
+  }
+  // Specifically target buttons that are not part of the form elements collection (like type="button")
+  document.getElementById('save').disabled = disabled;
+  document.getElementById('deleteProfileButton').disabled = disabled;
+  document.getElementById('revertDefaultsButton').disabled = disabled; // If you want to disable this too
+}
+
+
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
@@ -323,42 +346,163 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Event listener for profile selection change
   const profileSelectElement = document.getElementById('profileSelect');
+  const deleteProfileButton = document.getElementById('deleteProfileButton');
+  const addNewProfileSection = document.getElementById('addNewProfileSection');
+  const newProfileNameInput = document.getElementById('newProfileName');
+  const saveNewProfileButton = document.getElementById('saveNewProfileButton');
+  const cancelNewProfileButton = document.getElementById('cancelNewProfileButton');
+
   if (profileSelectElement) {
+    /**
+     * Event listener for the profile selection dropdown.
+     * Handles loading settings for the selected profile.
+     * If the "+ Add New Profile..." option is selected, it reveals an inline form
+     * for creating a new profile and disables the main settings form to prevent
+     * concurrent operations.
+     */
     profileSelectElement.addEventListener('change', (event) => {
       const selectedProfileId = event.target.value;
       console.log(`[DEBUG] profileSelect change: Selected profile ID: ${selectedProfileId}`);
       if (selectedProfileId === 'add_new_profile') {
-        const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
-        if (newProfileName && newProfileName.trim() !== '') {
-          chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-            let profiles = result.profiles || [];
-            const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
-            const newProfile = {
-              id: newProfileId,
-              name: newProfileName.trim(),
-              llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
-              apiKey: document.getElementById('apiKey').value.trim(),
-              modelName: document.getElementById('modelName').value.trim(),
-              maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
-              systemPrompt: document.getElementById('systemPrompt').value.trim(),
-              lastUpdated: new Date().toLocaleString()
-            };
-            profiles.push(newProfile);
-            chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
-              populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
-              loadProfileSettings(newProfileId); // Load its settings into the form
-              showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
-            });
-          });
+        // Store current selection before showing the add new form
+        // Find the actual last selected profile ID, not 'add_new_profile' itself
+        const options = Array.from(profileSelectElement.options);
+        const currentlySelectedOption = options.find(opt => opt.selected && opt.value !== 'add_new_profile');
+        if(currentlySelectedOption) {
+             previousProfileIdBeforeAdd = currentlySelectedOption.value;
         } else {
-          // User cancelled or entered empty name, revert to last selected
-          chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
-            profileSelectElement.value = res.lastSelectedProfileId || 'default';
-          });
+             // Fallback if somehow no other option was selected (e.g. on initial load if default wasn't set right)
+            chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
+                previousProfileIdBeforeAdd = res.lastSelectedProfileId || 'default';
+            });
         }
+        
+        addNewProfileSection.style.display = 'block';
+        newProfileNameInput.value = ''; // Clear the input
+        newProfileNameInput.focus();
+        toggleMainFormDisabled(true); // Disable main form
       } else {
+        addNewProfileSection.style.display = 'none'; // Hide if user selects a regular profile
+        toggleMainFormDisabled(false); // Ensure main form is enabled
         chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
         loadProfileSettings(selectedProfileId);
+      }
+    });
+  }
+
+  if (saveNewProfileButton) {
+    /**
+     * Event listener for the "Save New Profile" button in the inline form.
+     * Validates the new profile name, checks for duplicates, and then creates
+     * a new profile object using the settings currently displayed in the main form.
+     * Saves the new profile to storage, updates the profile dropdown,
+     * hides the inline form, and re-enables the main settings form.
+     */
+    saveNewProfileButton.addEventListener('click', () => {
+      const newProfileNameValue = newProfileNameInput.value.trim();
+      if (!newProfileNameValue) {
+        showStatus('Profile name cannot be empty.', true);
+        return;
+      }
+
+      chrome.storage.local.get(['profiles'], (result) => {
+        let profiles = result.profiles || [];
+        // Check if profile name already exists
+        if (profiles.some(p => p.name.toLowerCase() === newProfileNameValue.toLowerCase())) {
+            showStatus(`A profile named "${newProfileNameValue}" already exists. Please choose a different name.`, true);
+            return;
+        }
+
+        const newProfileId = 'profile_' + Date.now();
+        const newProfile = {
+          id: newProfileId,
+          name: newProfileNameValue,
+          llmEndpoint: document.getElementById('llmEndpoint').value.trim(),
+          apiKey: document.getElementById('apiKey').value.trim(),
+          modelName: document.getElementById('modelName').value.trim(),
+          maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
+          systemPrompt: document.getElementById('systemPrompt').value.trim(),
+          lastUpdated: new Date().toLocaleString()
+        };
+        profiles.push(newProfile);
+        chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
+          // Repopulate dropdown, then select the new profile
+          // The populateProfileDropdown function is defined within loadOptions,
+          // so we call loadOptions which will internally call populate and then loadProfileSettings.
+          loadOptions(); // This will repopulate and select the new profile due to lastSelectedProfileId being set
+          
+          addNewProfileSection.style.display = 'none';
+          toggleMainFormDisabled(false);
+          showStatus(`Profile "${newProfile.name}" created successfully. Settings copied from previously selected profile.`, false, true);
+          // Explicitly set the profileSelect value after loadOptions finishes,
+          // as loadOptions might set it based on the stored lastSelectedProfileId which is now newProfileId.
+          // We need to ensure the new profile is selected in the dropdown.
+           setTimeout(() => { // Ensure loadOptions has completed DOM updates
+            profileSelectElement.value = newProfileId;
+            loadProfileSettings(newProfileId); // Ensure form shows the new profile's settings
+          }, 100); // Small delay to allow DOM updates by loadOptions
+        });
+      });
+    });
+  }
+
+  if (cancelNewProfileButton) {
+    /**
+     * Event listener for the "Cancel" button in the "Add New Profile" inline form.
+     * Hides the inline form, re-enables the main settings form, and restores
+     * the profile selection dropdown to its state before the inline form was opened.
+     */
+    cancelNewProfileButton.addEventListener('click', () => {
+      addNewProfileSection.style.display = 'none';
+      toggleMainFormDisabled(false);
+      // Revert dropdown to the profile selected before clicking "Add New Profile..."
+      profileSelectElement.value = previousProfileIdBeforeAdd;
+      // Trigger change to load the settings of the reverted profile
+      if (previousProfileIdBeforeAdd !== 'add_new_profile') {
+          loadProfileSettings(previousProfileIdBeforeAdd);
+      } else {
+          loadProfileSettings('default'); // Fallback if something went wrong
+      }
+    });
+  }
+
+  if (deleteProfileButton) {
+    /**
+     * Event listener for the "Delete Selected Profile" button.
+     * Prevents deletion of the 'default' profile.
+     * Prompts the user for confirmation before deleting any other profile.
+     * Upon confirmation, removes the profile from storage, sets the active
+     * profile to 'default', and refreshes the options UI.
+     */
+    deleteProfileButton.addEventListener('click', () => {
+      const selectedProfileId = profileSelectElement.value;
+      const selectedProfileName = profileSelectElement.options[profileSelectElement.selectedIndex].text;
+
+      if (selectedProfileId === 'default') {
+        showStatus('The Default profile cannot be deleted.', true);
+        return;
+      }
+
+      if (selectedProfileId === 'add_new_profile') {
+        showStatus('No profile selected to delete.', true);
+        return;
+      }
+
+      if (confirm(`Are you sure you want to delete the profile: "${selectedProfileName}"?`)) {
+        chrome.storage.local.get(['profiles'], (result) => {
+          let profiles = result.profiles || [];
+          const updatedProfiles = profiles.filter(profile => profile.id !== selectedProfileId);
+          
+          chrome.storage.local.set({ profiles: updatedProfiles, lastSelectedProfileId: 'default' }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('Options: Error deleting profile:', chrome.runtime.lastError);
+              showStatus('Error deleting profile: ' + chrome.runtime.lastError.message, true);
+            } else {
+              showStatus(`Profile "${selectedProfileName}" deleted successfully.`);
+              loadOptions(); // Reload options to refresh dropdown and form
+            }
+          });
+        });
       }
     });
   }

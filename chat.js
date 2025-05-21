@@ -32,22 +32,67 @@ if (darkThemeToggle) {
         applyDarkTheme(isDark);
     });
 }
-// Listen for storage changes to sync theme
+// Listen for storage changes to sync theme and invalidate API config cache
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'sync' && changes.darkTheme) {
         const isDark = changes.darkTheme.newValue;
         if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
         applyDarkTheme(!!isDark);
     }
+    if (area === 'local' && (changes.profiles || changes.lastSelectedProfileId)) {
+        console.log("Chat: API config changed in storage, invalidating cache.");
+        cachedApiConfig = null;
+    }
 });
 
 let selectedText = null;
 // let tabId = null; // Removed duplicate declaration
-    let tabId = null;
+    let currentTabId = null; // Renamed from tabId for clarity and new purpose
+    let cachedApiConfig = null; // Cache for API configuration
 
-     // Get API configuration
+    // --- Loading Indicator Logic ---
+    const LOADING_INDICATOR_ID = 'loading-indicator-element';
+
+    /**
+     * Displays or hides a loading indicator message at the bottom of the chat area.
+     * @param {boolean} show - True to show the indicator, false to hide it.
+     * @param {string} [message='Thinking...'] - The message to display in the indicator.
+     */
+    function showLoadingIndicator(show, message = 'Thinking...') {
+        const chatArea = document.getElementById('chat-area');
+        let indicator = document.getElementById(LOADING_INDICATOR_ID);
+
+        if (show) {
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = LOADING_INDICATOR_ID;
+                indicator.classList.add('loading-indicator'); // Use the class for styling
+                chatArea.appendChild(indicator);
+            }
+            indicator.textContent = message;
+            indicator.style.display = 'block'; // Ensure it's visible
+            chatArea.scrollTop = chatArea.scrollHeight; // Scroll to bottom
+        } else {
+            if (indicator) {
+                indicator.style.display = 'none'; // Hide it
+                // Optionally, remove it if you prefer:
+                // indicator.remove();
+            }
+        }
+    }
+
+
+    /**
+     * Retrieves API configuration for chat UI operations.
+     * Uses an in-memory cache for the current session to speed up access.
+     * Cache is invalidated if settings change in `chrome.storage.local`.
+     */
     async function getApiConfig() {
-        console.log("Chat: Getting API configuration from local storage");
+        if (cachedApiConfig) {
+            console.log("Chat: Returning cached API configuration", cachedApiConfig);
+            return Promise.resolve(cachedApiConfig);
+        }
+        console.log("Chat: Getting API configuration from local storage (cache miss)");
         return new Promise((resolve, reject) => {
             chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
                 console.log("Chat: Storage get result:", result);
@@ -59,20 +104,23 @@ let selectedText = null;
                 
                 const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
                 
-                if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
-                    console.warn("Chat: Selected profile is missing or incomplete");
+                if (selectedProfile && selectedProfile.llmEndpoint && selectedProfile.apiKey && selectedProfile.modelName) {
+                    console.log("Chat: Using configuration from profile:", selectedProfile.name || selectedProfile.id);
+                    cachedApiConfig = selectedProfile; // Cache it
+                    resolve(cachedApiConfig);
+                } else {
+                    console.warn("Chat: Selected profile is missing or incomplete, trying fallback to default.");
                     // Try to fall back to default profile
                     const defaultProfile = profiles.find(p => p.id === 'default');
                     if (defaultProfile && defaultProfile.llmEndpoint && defaultProfile.apiKey && defaultProfile.modelName) {
                         console.log("Chat: Using default profile as fallback");
-                        resolve(defaultProfile);
+                        cachedApiConfig = defaultProfile; // Cache it
+                        resolve(cachedApiConfig);
                     } else {
-                        console.error("Chat: No valid configuration found");
+                        console.error("Chat: No valid configuration found (selected or default).");
+                        cachedApiConfig = null; // Ensure cache is null on failure
                         reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
                     }
-                } else {
-                    console.log("Chat: Using configuration from profile:", selectedProfile.name || selectedProfile.id);
-                    resolve(selectedProfile);
                 }
             });
         });
@@ -81,18 +129,41 @@ let selectedText = null;
 
     // Listen for messages from the background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'setSelectedText') {
+        /**
+         * Handles the 'initChat' message from the background script.
+         * This message is sent when a tab is activated or a context menu is clicked,
+         * signaling that the chat UI should initialize or re-initialize for the specified tab.
+         * It sets the currentTabId, clears any existing chat messages, resets the
+         * conversationHistory array, and then loads the persisted history for the given tab.
+         */
+        if (request.action === 'initChat') {
+            console.log("Chat: Received initChat for tabId:", request.tabId);
+            currentTabId = request.tabId; // Set currentTabId
+            chatArea.innerHTML = ''; // Clear chat area before loading
+            conversationHistory = []; // Reset history before loading
+            loadConversationHistory(request.tabId);
+            // Ensure chat area is visible and one-off instruction area is hidden
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            return; // Message handled
+        } else if (request.action === 'setSelectedText') {
             selectedText = request.selectedText;
-            tabId = request.tabId; // Store the tab ID
+            currentTabId = request.tabId; // Store the tab ID, ensuring currentTabId is set
             
             // If this is from the "start_chat" context menu option
             if (request.fromStartChat) {
-                // Keep chat area visible, just add the selected text as a user message
+                showLoadingIndicator(true, 'Processing selected text...'); // Show indicator for start_chat
                 chatMainArea.style.display = 'block'; // Ensure chat area is visible
                 oneoffInstructionArea.style.display = 'none'; // Hide one-off instruction area
                 
-                // Reset conversation history for new chat
-                conversationHistory = [];
+                // Load existing history for this tab or start fresh
+                loadConversationHistory(currentTabId); 
+                // Note: The API call for 'start_chat' in background.js will eventually call setApiResponse,
+                // which will add the prompt and response. We might not need to clear history here
+                // if loadConversationHistory correctly sets it up.
+                // For a "true" new chat, background.js might need to signal a history clear first,
+                // or chat.js makes a decision based on existing history length after loading.
+                // For now, loadConversationHistory will handle setting conversationHistory.
             } else {
                 // For one-off instruction, show the instruction area
                 selectedTextDiv.textContent = selectedText; // Update selected text display
@@ -129,6 +200,7 @@ let selectedText = null;
 
                 // Add the API response as an LLM message
                 if (chatArea) {
+                    showLoadingIndicator(false); // Hide indicator before showing response
                     addMessage('LLM', request.apiResponse);
                     
                     // Add to conversation history
@@ -136,12 +208,14 @@ let selectedText = null;
                         role: 'assistant',
                         content: request.apiResponse
                     });
+                    saveConversationHistory(); // Save history
                 } else {
                     console.error("chatArea element is null, cannot add message");
                 }
             }
         } else if (request.action === 'handleToolCallResponse') {
             console.log("handleToolCallResponse message received", request);
+            currentTabId = request.tabId; // Ensure currentTabId is set
             // Ensure chat area is visible
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
@@ -167,6 +241,7 @@ let selectedText = null;
 
             // 2. Add the assistant's message (containing tool_calls) to history
             conversationHistory.push(responseMessage);
+            saveConversationHistory(); // Save history
 
             // 3. Trigger the tool execution flow (similar to makeApiCall)
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
@@ -175,8 +250,9 @@ let selectedText = null;
                 const toolName = toolCall.function.name;
                 const toolArgs = toolCall.function.arguments;
 
-                addMessage('System', `⚙️ Requesting execution for tool: ${toolName}...`);
+                // addMessage('System', `⚙️ Requesting execution for tool: ${toolName}...`); // Replaced by loading indicator
                 console.log("Tool call requested via handleToolCallResponse:", toolCall);
+                showLoadingIndicator(true, `Executing tool: ${toolName}...`);
 
                 // Send tool call details to background script for execution
                 chrome.runtime.sendMessage({
@@ -190,12 +266,14 @@ let selectedText = null;
                     // Callback function to handle the result from background.js
                     if (chrome.runtime.lastError) {
                          console.error("Error sending/receiving tool execution message:", chrome.runtime.lastError);
+                         showLoadingIndicator(false);
                          addMessage('System', `Error communicating with background script: ${chrome.runtime.lastError.message}`);
                          return;
                     }
 
                     if (response.error) {
                         console.error(`Error executing tool ${toolName}:`, response.error);
+                        showLoadingIndicator(false);
                         addMessage('System', `Error executing tool ${toolName}: ${response.error}`);
                         conversationHistory.push({
                             role: 'tool',
@@ -203,6 +281,7 @@ let selectedText = null;
                             name: toolName,
                             content: `Error: ${response.error}`
                         });
+                        saveConversationHistory(); // Save history
                         // Optionally call makeApiCall again to let the LLM handle the error
                         // makeApiCall();
                     } else {
@@ -214,12 +293,15 @@ let selectedText = null;
                             name: toolName,
                             content: JSON.stringify(response.result) // Result needs to be stringified
                         });
+                        saveConversationHistory(); // Save history
                         // Call makeApiCall again (without a new user message) to get final response
+                        // makeApiCall will show its own "Processing tool response..."
                         makeApiCall();
                     }
                 });
             } else {
                  console.error("handleToolCallResponse received message without tool_calls:", responseMessage);
+                 showLoadingIndicator(false);
                  addMessage('System', "Error: Received tool call instruction but no tool calls found.");
             }
         }
@@ -237,9 +319,86 @@ let selectedText = null;
     // Store conversation history
     let conversationHistory = [];
 
+    // --- Conversation History Persistence ---
+    /**
+     * Saves the current conversationHistory array to chrome.storage.local.
+     * The history is stored using a key specific to the currentTabId,
+     * allowing each tab to have its own persisted chat conversation.
+     */
+    async function saveConversationHistory() {
+        if (currentTabId && conversationHistory) {
+            const historyKey = 'chatHistory_tab_' + currentTabId;
+            // Potential enhancement: Trim history if it's getting too large for storage.
+            chrome.storage.local.set({ [historyKey]: conversationHistory }, () => {
+                if (chrome.runtime.lastError) {
+                    console.error('Error saving conversation history:', chrome.runtime.lastError);
+                } else {
+                    console.log('Conversation history saved for tab:', currentTabId);
+                }
+            });
+        }
+    }
+
+    /**
+     * Loads the conversation history for a given tabId from chrome.storage.local.
+     * If history is found, it populates the global conversationHistory array
+     * and re-renders the chat messages in the UI. If no history is found,
+     * it initializes an empty conversation.
+     * @param {number} tabId - The ID of the tab for which to load history.
+     */
+    async function loadConversationHistory(tabId) {
+        if (!tabId) return;
+        currentTabId = tabId; // Ensure currentTabId is set
+        const historyKey = 'chatHistory_tab_' + tabId;
+
+        chrome.storage.local.get([historyKey], (result) => {
+            if (chrome.runtime.lastError) {
+                console.error('Error loading conversation history:', chrome.runtime.lastError);
+                conversationHistory = [];
+                chatArea.innerHTML = '';
+                return;
+            }
+
+            if (result[historyKey]) {
+                conversationHistory = result[historyKey];
+                chatArea.innerHTML = ''; // Clear current messages
+                conversationHistory.forEach(item => {
+                    // Map role for display: 'assistant' -> 'LLM', 'user' -> 'User', others as 'System'
+                    let senderType = 'System';
+                    if (item.role === 'user') senderType = 'User';
+                    else if (item.role === 'assistant') senderType = 'LLM';
+                    // For tool role, the content is often an object/string not directly displayable as a chat message.
+                    // You might want to display a summary or specific parts if item.role === 'tool'.
+                    // For now, tool responses are added as 'System' messages directly by the logic that handles them.
+                    // This loop primarily re-renders user and assistant messages.
+                    // System messages from history (if any are stored that way) will also be rendered.
+                    if (item.role === 'user' || item.role === 'assistant' || item.role === 'system') {
+                         addMessage(senderType, item.content);
+                    }
+                });
+                setTimeout(() => chatArea.scrollTop = chatArea.scrollHeight, 0); // Scroll to bottom
+                console.log('Conversation history loaded for tab:', tabId);
+            } else {
+                conversationHistory = [];
+                chatArea.innerHTML = ''; // Ensure chat area is clear for a new chat
+                console.log('No conversation history found for tab:', tabId);
+            }
+        });
+    }
+
     function clearChat() {
             chatArea.innerHTML = '';
             conversationHistory = [];
+            if (currentTabId) {
+                const historyKey = 'chatHistory_tab_' + currentTabId;
+                chrome.storage.local.remove(historyKey, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Error clearing history from storage:', chrome.runtime.lastError);
+                    } else {
+                        console.log('Chat history for tab', currentTabId, 'cleared from storage.');
+                    }
+                });
+            }
             
             // Ensure chat-main-area is visible and oneoff-instruction-area is hidden
             chatMainArea.style.display = 'block';
@@ -276,9 +435,9 @@ let selectedText = null;
         if (message.trim()) {
             addMessage('User', message);
             userInput.value = '';
-            
+            showLoadingIndicator(true); // Show indicator before making API call
             // Make API call with the message
-            makeApiCall(message);
+            makeApiCall(message); // saveConversationHistory will be called within makeApiCall after history is updated
         }
     }
     
@@ -296,6 +455,12 @@ let selectedText = null;
 
     // Function to make API call
     async function makeApiCall(message) {
+        // If message is undefined/null, it's a follow-up call (e.g., after tool execution)
+        if (!message) {
+            showLoadingIndicator(true, 'Processing tool response...');
+        }
+        // If 'message' is present, showLoadingIndicator(true) was already called by sendMessage
+
         try {
             const config = await getApiConfig();
             const tools = await getTools(); // Fetch defined tools
@@ -307,6 +472,7 @@ let selectedText = null;
                     role: 'user',
                     content: message
                 });
+                saveConversationHistory(); // Save after adding user message
             }
             
             // Format tools for the API request (OpenAI format example)
@@ -378,6 +544,9 @@ let selectedText = null;
 
             // Add the raw assistant message to history (might contain content or tool_calls)
             conversationHistory.push(responseMessage);
+            // Note: If it's a tool_call, saveConversationHistory will be called again after the tool response.
+            // If it's direct content, this save is important.
+            saveConversationHistory(); 
 
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 // Handle tool calls (assuming only one call for now, but API might return multiple)
@@ -386,8 +555,9 @@ let selectedText = null;
                 const toolName = toolCall.function.name;
                 const toolArgs = toolCall.function.arguments; // Arguments are usually a stringified JSON
 
-                addMessage('System', `⚙️ Requesting execution for tool: ${toolName}...`); // Inform user
+                // addMessage('System', `⚙️ Requesting execution for tool: ${toolName}...`); // Replaced by loading indicator
                 console.log("Tool call requested:", toolCall);
+                showLoadingIndicator(true, `Executing tool: ${toolName}...`);
 
                 // Send tool call details to background script for execution
                 chrome.runtime.sendMessage({
@@ -401,6 +571,7 @@ let selectedText = null;
                     // Callback function to handle the result from background.js
                     if (chrome.runtime.lastError) {
                          console.error("Error sending/receiving tool execution message:", chrome.runtime.lastError);
+                         showLoadingIndicator(false);
                          addMessage('System', `Error communicating with background script: ${chrome.runtime.lastError.message}`);
                          // Potentially stop the flow here or try to recover
                          return;
@@ -408,6 +579,7 @@ let selectedText = null;
 
                     if (response.error) {
                         console.error(`Error executing tool ${toolName}:`, response.error);
+                        showLoadingIndicator(false);
                         addMessage('System', `Error executing tool ${toolName}: ${response.error}`);
                         // Add an error message to history? Or let the user retry?
                         // For now, we'll add an error message to history and let the LLM know.
@@ -417,6 +589,7 @@ let selectedText = null;
                             name: toolName,
                             content: `Error: ${response.error}` // Inform LLM about the error
                         });
+                        saveConversationHistory(); // Save history
                         // Optionally call makeApiCall again to let the LLM handle the error
                         // makeApiCall(); // Decide if AI should respond to the error
 
@@ -431,23 +604,29 @@ let selectedText = null;
                             name: toolName,
                             content: JSON.stringify(response.result) // Result needs to be stringified for the API
                         });
+                        saveConversationHistory(); // Save history
 
                         // Call makeApiCall again (without a new user message)
                         // This sends the history including the tool result back to the LLM
+                        // makeApiCall will show "Processing tool response..."
                         makeApiCall();
                     }
                 });
             } else if (responseMessage.content) {
                 // Handle regular text response
+                // conversationHistory already updated and saved if this is a direct response
                 const responseContent = responseMessage.content;
+                showLoadingIndicator(false); // Hide indicator before showing response
                 // Display the response
                 addMessage('LLM', responseContent);
             } else {
                  // Handle cases where there's neither content nor tool_calls (should be rare)
                  console.error("API response message has neither content nor tool_calls:", responseMessage);
+                 showLoadingIndicator(false);
                  addMessage('System', "Received an empty response from the AI.");
             }
         } catch (error) {
+            showLoadingIndicator(false); // Hide indicator on error
             addMessage('LLM', 'Error: ' + error.message);
         }
     }
@@ -530,6 +709,7 @@ let selectedText = null;
 
     // Handle submit button click for one-off instruction
     submitBtn.addEventListener('click', async () => {
+        showLoadingIndicator(true, 'Processing one-off instruction...');
         const instruction = instructionInput.value;
         if (!instruction.trim()) {
             alert('Please enter an instruction');
@@ -550,6 +730,7 @@ let selectedText = null;
                 role: 'user',
                 content: prompt
             });
+            saveConversationHistory(); // Save history
 
             // Make API call
             const apiResponse = await fetch(config.llmEndpoint, {
@@ -593,12 +774,14 @@ let selectedText = null;
                 role: 'assistant',
                 content: responseContent
             });
+            saveConversationHistory(); // Save history
 
             // No longer showing response in the original tab as a popup overlay
             // Only showing in the sidebar
 
             // Also show the response in the side panel
             // Add the instruction as a user message and the response as an LLM message
+            showLoadingIndicator(false);
             addMessage('User', instruction + "\\n\\n[Selected text: " + selectedText.substring(0, 50) + (selectedText.length > 50 ? "..." : "") + "]");
             addMessage('LLM', responseContent);
 
@@ -611,6 +794,7 @@ let selectedText = null;
 
 
         } catch (error) {
+            showLoadingIndicator(false);
             alert('Error: ' + error.message);
         }
     });

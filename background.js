@@ -1,6 +1,4 @@
 console.log('Background service worker script started.');
-importScripts('marked.min.js');
-console.log('marked.min.js imported successfully.');
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -13,12 +11,28 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
     path: 'chat.html',
     enabled: true
   }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
+  // Ensure chat is initialized if the panel was already open for this tab or just opened
+  setTimeout(() => {
+    chrome.runtime.sendMessage({
+        action: 'initChat',
+        tabId: tabId
+    });
+  }, 150); // Delay to allow side panel to potentially finish loading/setting up
 });
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Single side panel open call at start of user gesture
   await chrome.sidePanel.open({ tabId: tab.id });
+
+  // Send a message to chat.js to initialize with the current tabId and load history
+  setTimeout(() => { // Use setTimeout to ensure panel is ready
+      chrome.runtime.sendMessage({
+          action: 'initChat',
+          tabId: tab.id
+      });
+  }, 150); // Adjusted delay, may need tuning or a more robust handshake
+
   const selectedText = info.selectionText;
 
   // Handle manage instructions click
@@ -29,7 +43,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   // Handle one-off instruction click with proper sequencing
   if (info.menuItemId === 'oneoff_instruction') {
-    // Ensure panel is fully opened before sending message
+    // Ensure panel is fully opened before sending message.
+    // TODO: Consider a more robust handshake mechanism with chat.js to confirm readiness.
     setTimeout(() => {
       chrome.runtime.sendMessage({
         action: 'setSelectedText',
@@ -105,7 +120,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
 });
 
-// ValidateConfig function to include API configuration
+/**
+ * Validates and retrieves API configuration for background service worker operations.
+ * Ensures that a valid profile (active or default) is available before making API calls.
+ * Does not use an in-memory cache as service worker invocations can be short-lived;
+ * always fetches from `chrome.storage.local` for up-to-date settings.
+ */
 async function validateConfig() {
   return new Promise((resolve, reject) => {
     console.log('Background: Validating configuration...');
@@ -155,6 +175,8 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
         console.log("Background: Received tool_calls from API, forwarding to chat.js", responseMessage.tool_calls);
+        // Delay sending the message, likely to ensure UI readiness in chat.js or for consistency.
+        // TODO: Explore a more direct signaling mechanism if UI readiness is the primary concern.
         setTimeout(() => {
             chrome.runtime.sendMessage({
                 action: 'handleToolCallResponse',
@@ -165,6 +187,8 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
         }, sendMessageDelay);
     } else if (responseMessage.content) {
         const latestResponse = responseMessage.content;
+        // Delay sending the message, likely to ensure UI readiness in chat.js or for consistency.
+        // TODO: Explore a more direct signaling mechanism if UI readiness is the primary concern.
         setTimeout(() => {
             chrome.runtime.sendMessage({
                 action: 'setApiResponse',
@@ -175,6 +199,7 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
         }, sendMessageDelay);
     } else {
         console.error("Background: API response message has neither content nor tool_calls:", responseMessage);
+        // Delay sending the error message, likely for consistency with other message sending paths.
         setTimeout(() => {
             chrome.runtime.sendMessage({
                 action: 'setApiResponse',
@@ -310,7 +335,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
     } catch (error) {
         console.error('Error in makeLlmApiRequest:', error);
-        // Determine error message delay based on context, matching original behavior
+        // Determine error message delay based on context, matching original behavior.
+        // This delay is likely for consistency with the success path's message sending.
         const errorDelay = isStartChat ? 300 : 200;
         setTimeout(() => {
             chrome.runtime.sendMessage({
@@ -411,7 +437,9 @@ chrome.runtime.onInstalled.addListener(async () => {
     });
   }
 
-  // Add a separator and manage instructions at the end
+  // Add a separator and manage instructions at the end.
+  // The timeout is used to ensure these specific menu items are added last,
+  // potentially due to asynchronous nature of context menu creation or to order them visually.
   setTimeout(() => {
     // Add a separator
     chrome.contextMenus.create({
@@ -458,7 +486,9 @@ if (namespace === 'local' && changes.instructions) {
     });
   }
 
-  // Add separator and manage instructions at the end
+  // Add separator and manage instructions at the end.
+  // The timeout is used to ensure these specific menu items are added last,
+  // potentially due to asynchronous nature of context menu creation or to order them visually.
   setTimeout(() => {
     // Add a separator
     chrome.contextMenus.create({
