@@ -678,6 +678,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         return true; // Crucial: Indicates that sendResponse will be called asynchronously
     } else if (request.action === 'requestInitDataForMyTab') {
+        console.log('Background: sender.tab is:', sender.tab); // Added log
         const tabId = sender.tab.id;
         if (tabId) {
             const dataToInitializeWith = tabPendingInitializationData[tabId] || { tabId: tabId, fromRequest: true }; // Ensure tabId is always sent
