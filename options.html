@@ -30,6 +30,23 @@
     <p style="font-family: 'Roboto', sans-serif; font-weight: 300; font-size: 1.1rem; margin: 0.5rem auto; color: #666; text-align: center;">Context aware instant AI Insights, a mouse click away</p>
 
     <section class="card settings-card">
+      <style>
+        .delete-button {
+          background-color: #f44336; /* Red */
+          color: white;
+          padding: 0.6rem 1rem; /* Match other buttons */
+          border: none;
+          border-radius: 0.3rem; /* Match other buttons */
+          cursor: pointer;
+          font-weight: 500; /* Match other buttons */
+          box-shadow: var(--shadow-sm); /* Match other buttons */
+          margin-left: 0.5rem; /* Add some space */
+          vertical-align: middle; /* Align with select dropdown */
+        }
+        .delete-button:hover {
+          background-color: #d32f2f;
+        }
+      </style>
       <div class="button-container">
         <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
           <button class="ko-fi-button">
@@ -82,9 +99,23 @@
           <select id="profileSelect">
             <!-- Options will be populated by JavaScript -->
           </select>
+          <button type="button" id="deleteProfileButton" class="delete-button">Delete Selected Profile</button>
           <small>Select a profile, or choose "+ Add New Profile..." to create one.</small>
         </div>
       </form>
+
+      <div id="addNewProfileSection" class="card" style="display: none; margin-top: 1em;">
+        <h4>Create New Profile</h4>
+        <div class="form-group">
+          <label for="newProfileName">Profile Name:</label>
+          <input type="text" id="newProfileName" placeholder="Enter new profile name" required>
+        </div>
+        <p><small>New profile will be initialized with the currently displayed LLM settings. You can adjust them after saving the new profile.</small></p>
+        <div class="button-group">
+          <button type="button" id="saveNewProfileButton" class="save-button">Save New Profile</button>
+          <button type="button" id="cancelNewProfileButton" class="clear-form-button">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <section class="card instructions-card">
