@@ -678,22 +678,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         return true; // Crucial: Indicates that sendResponse will be called asynchronously
     } else if (request.action === 'requestInitDataForMyTab') {
+        console.log('Background: Received requestInitDataForMyTab. Sender:', sender); // Added log to inspect sender object
         console.log('Background: sender.tab is:', sender.tab); // Added log
-        const tabId = sender.tab.id;
-        if (tabId) {
-            const dataToInitializeWith = tabPendingInitializationData[tabId] || { tabId: tabId, fromRequest: true }; // Ensure tabId is always sent
-            console.log(`Background: Received requestInitDataForMyTab from tab ${tabId}, sending initChat with data:`, dataToInitializeWith);
-            
-            // Send message directly to the specific tab that requested it
-            chrome.tabs.sendMessage(tabId, {
-                action: 'initChat',
-                ...dataToInitializeWith
-            });
-            delete tabPendingInitializationData[tabId]; // Clear after sending
-        } else {
-            console.error("Background: Received requestInitDataForMyTab from sender with no tab ID.");
+        const tabId = sender.tab?.id; // Use optional chaining for safety
+        
+        if (tabId === undefined) {
+            console.warn('Background: Received requestInitDataForMyTab from a context without a valid tab ID. Sender:', sender);
+            // Do not proceed with tab-specific initialization if tabId is undefined
+            return true; // Indicate that sendResponse will not be called here
         }
-        // No need to return true here as chrome.tabs.sendMessage is not using sendResponse from this listener
+
+        // Proceed only if tabId is valid
+        const dataToInitializeWith = tabPendingInitializationData[tabId] || { tabId: tabId, fromRequest: true }; // Ensure tabId is always sent
+        console.log(`Background: Received requestInitDataForMyTab from tab ${tabId}, sending initChat with data:`, dataToInitializeWith);
+        
+        // Send message directly to the specific tab that requested it
+        chrome.tabs.sendMessage(tabId, {
+            action: 'initChat',
+            ...dataToInitializeWith
+        }); // Corrected brace placement
+        delete tabPendingInitializationData[tabId]; // Clear after sending
+    } else {
+        console.warn("Background: Received requestInitDataForMyTab from a context without a valid tab ID. Sender:", sender);
+        // Do not proceed with tab-specific initialization if tabId is undefined
+        // return true; // Removed this return as it's not needed here based on the original structure
     }
     // Handle other potential actions if needed
 });
