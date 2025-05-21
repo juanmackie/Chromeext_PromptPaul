@@ -1,5 +1,7 @@
 console.log('Background service worker script started.');
 
+let tabPendingInitializationData = {}; // Stores data for chat.js initialization requests
+
 // Enable the side panel on all pages
 chrome.sidePanel
   .setOptions({ path: 'chat.html' })
@@ -11,13 +13,18 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
     path: 'chat.html',
     enabled: true
   }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
-  // Ensure chat is initialized if the panel was already open for this tab or just opened
-  setTimeout(() => {
-    chrome.runtime.sendMessage({
-        action: 'initChat',
-        tabId: tabId
-    });
-  }, 150); // Delay to allow side panel to potentially finish loading/setting up
+
+  // Stash minimal data for chat.js to request if it's a fresh load for this tab's side panel
+  // If chat.js is already loaded and active for this tab, it won't re-request.
+  // This ensures if the panel is enabled for a tab, and then user navigates away and back,
+  // or if browser starts with this tab active and panel set to open, it can init.
+  if (!tabPendingInitializationData[tabId]) { // Only if not already set by a very recent context click
+      tabPendingInitializationData[tabId] = {
+          tabId: tabId,
+          isTabActivation: true
+      };
+      console.log(`Background: Stashed init data for tab activation: ${tabId}`, tabPendingInitializationData[tabId]);
+  }
 });
 
 // Handle context menu clicks
@@ -25,13 +32,21 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Single side panel open call at start of user gesture
   await chrome.sidePanel.open({ tabId: tab.id });
 
-  // Send a message to chat.js to initialize with the current tabId and load history
-  setTimeout(() => { // Use setTimeout to ensure panel is ready
-      chrome.runtime.sendMessage({
-          action: 'initChat',
-          tabId: tab.id
-      });
-  }, 150); // Adjusted delay, may need tuning or a more robust handshake
+  // For any action that isn't just opening options page:
+  if (info.menuItemId !== 'manageInstructions') {
+      tabPendingInitializationData[tab.id] = {
+          tabId: tab.id,
+          // If it's a start_chat or a direct command, signal to clear history potentially
+          // This will be handled by chat.js when it processes the subsequent specific command.
+          // For now, initChat just means "load your history if any".
+          // The specific command messages will dictate clearing.
+          // So, this data is minimal:
+          isNewInteraction: true // A generic flag
+      };
+      console.log(`Background: Stashed init data for context menu click on tab ${tab.id}:`, tabPendingInitializationData[tab.id]);
+  }
+  // The existing setSelectedText and makeLlmApiRequest calls will proceed as they were.
+  // The initChat that chat.js requests will primarily load history.
 
   const selectedText = info.selectionText;
 
@@ -662,7 +677,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })();
 
         return true; // Crucial: Indicates that sendResponse will be called asynchronously
+    } else if (request.action === 'requestInitDataForMyTab') {
+        const tabId = sender.tab.id;
+        if (tabId) {
+            const dataToInitializeWith = tabPendingInitializationData[tabId] || { tabId: tabId, fromRequest: true }; // Ensure tabId is always sent
+            console.log(`Background: Received requestInitDataForMyTab from tab ${tabId}, sending initChat with data:`, dataToInitializeWith);
+            
+            // Send message directly to the specific tab that requested it
+            chrome.tabs.sendMessage(tabId, {
+                action: 'initChat',
+                ...dataToInitializeWith
+            });
+            delete tabPendingInitializationData[tabId]; // Clear after sending
+        } else {
+            console.error("Background: Received requestInitDataForMyTab from sender with no tab ID.");
+        }
+        // No need to return true here as chrome.tabs.sendMessage is not using sendResponse from this listener
     }
-
     // Handle other potential actions if needed
 });
