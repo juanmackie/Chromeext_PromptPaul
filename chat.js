@@ -8,6 +8,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submitBtn');
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
+
+    // Request initialization data from background script for this tab context
+    console.log("Chat: Requesting init data for my tab.");
+    chrome.runtime.sendMessage({ action: 'requestInitDataForMyTab' });
+
 // --- Dark Theme Toggle Logic ---
 const darkThemeToggle = document.getElementById('darkThemeToggle');
 function applyDarkTheme(isDark) {
@@ -145,6 +150,7 @@ let selectedText = null;
             // Ensure chat area is visible and one-off instruction area is hidden
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
+            userInput.focus(); // Focus input on init
             return; // Message handled
         } else if (request.action === 'setSelectedText') {
             selectedText = request.selectedText;
