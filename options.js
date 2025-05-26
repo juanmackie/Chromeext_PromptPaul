@@ -315,12 +315,110 @@ function toggleMainFormDisabled(disabled) {
 }
 
 
+// Load and display tools
+function loadTools() {
+  chrome.storage.local.get(['promptPaulTools'], (result) => {
+    const tools = result.promptPaulTools || [];
+    const tableBody = document.querySelector('#toolsTable tbody');
+    tableBody.innerHTML = '';
+
+    tools.forEach(tool => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${tool.name}</td>
+        <td>${tool.description}</td>
+        <td>
+          <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
+          <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
+        </td>
+      `;
+      tableBody.appendChild(row);
+    });
+
+    // Add edit/delete handlers
+    document.querySelectorAll('.edit-tool-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const toolId = e.target.dataset.id;
+        chrome.storage.local.get(['promptPaulTools'], (result) => {
+          const tools = result.promptPaulTools || [];
+          const tool = tools.find(t => t.id === toolId);
+          if (tool) {
+            document.getElementById('toolName').value = tool.name;
+            document.getElementById('toolDescription').value = tool.description;
+            document.getElementById('toolParameters').value = tool.parameters || '';
+            document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
+            document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
+            document.getElementById('toolId').value = tool.id;
+          }
+        });
+      });
+    });
+
+    document.querySelectorAll('.delete-tool-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const toolId = e.target.dataset.id;
+        if (confirm('Are you sure you want to delete this tool?')) {
+          chrome.storage.local.get(['promptPaulTools'], (result) => {
+            let tools = result.promptPaulTools || [];
+            tools = tools.filter(t => t.id !== toolId);
+            chrome.storage.local.set({ promptPaulTools: tools }, () => {
+              showStatus('Tool deleted!');
+              loadTools(); // Reload the table
+              populateToolDropdown(); // Update tool dropdown
+              // Clear the form if the deleted tool was being edited
+              if (document.getElementById('toolId').value === toolId) {
+                clearToolForm();
+              }
+            });
+          });
+        }
+      });
+    });
+  });
+}
+
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
   setupToolHandlers(); // Add call to setup tool handlers
+
+  // --- cURL Tool Creation ---
+  const curlCommandTextarea = document.getElementById('curlCommand');
+  const createToolFromCurlButton = document.getElementById('createToolFromCurlButton');
+  const curlFeedbackDiv = document.getElementById('curlFeedback');
+
+  if (createToolFromCurlButton) {
+    createToolFromCurlButton.addEventListener('click', () => {
+      const curlCommand = curlCommandTextarea.value.trim();
+      if (!curlCommand) {
+        curlFeedbackDiv.textContent = 'Please paste a cURL command.';
+        curlFeedbackDiv.style.color = 'red';
+        return;
+      }
+
+      curlFeedbackDiv.textContent = 'Creating tool...';
+      curlFeedbackDiv.style.color = 'orange';
+
+      chrome.runtime.sendMessage({
+        type: 'createToolFromCurl',
+        curl: curlCommand
+      }, (response) => {
+        if (response.success) {
+          curlFeedbackDiv.textContent = 'Tool created successfully!';
+          curlFeedbackDiv.style.color = 'green';
+          curlCommandTextarea.value = ''; // Clear the input field
+          loadTools(); // Reload the tools list to show the new tool
+        } else {
+          curlFeedbackDiv.textContent = `Error: ${response.error}`;
+          curlFeedbackDiv.style.color = 'red';
+        }
+      });
+    });
+  }
+  // --- End cURL Tool Creation ---
+
 
   // Add event listener for the Revert button
   const revertButton = document.getElementById('revertDefaultsButton');

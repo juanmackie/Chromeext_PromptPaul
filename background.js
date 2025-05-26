@@ -2,6 +2,108 @@ console.log('Background service worker script started.');
 
 let tabPendingInitializationData = {}; // Stores data for chat.js initialization requests
 
+// --- cURL Parsing and Saving ---
+
+/**
+ * Basic function to parse a cURL command string into a tool definition object.
+ * Handles URL, method (-X), headers (-H), and data (-d, --data).
+ * @param {string} curlCommand - The cURL command string.
+ * @returns {object} A tool definition object.
+ * @throws {Error} If the command is invalid or essential parts are missing.
+ */
+function parseCurlCommand(curlCommand) {
+  const tool = {
+    id: 'tool_' + Date.now(), // Add a unique ID for the tool
+    name: 'Generated Tool ' + Date.now(), // Basic name, could be improved
+    description: 'Generated from cURL command',
+    parameters: '{}', // Default empty parameters
+    endpointUrl: '',
+    httpMethod: 'GET', // Default method
+  };
+
+  // Basic parsing - this is a simplified approach
+  const parts = curlCommand.split(/\s+/); // Split by whitespace
+
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+
+    if (part.startsWith('http://') || part.startsWith('https://')) {
+      tool.endpointUrl = part;
+    } else if (part === '-X' && i + 1 < parts.length) {
+      tool.httpMethod = parts[i + 1].toUpperCase();
+      i++; // Consume the next part (the method)
+    } else if (part === '-H' && i + 1 < parts.length) {
+      const header = parts[i + 1];
+      const separatorIndex = header.indexOf(':');
+      if (separatorIndex > 0) {
+        const headerName = header.substring(0, separatorIndex).trim();
+        const headerValue = header.substring(separatorIndex + 1).trim();
+        // Note: This basic parser doesn't handle complex headers or multiple headers well.
+        // For simplicity, we'll just note the first header found or could build a headers object.
+        // For now, we won't store headers in the basic tool definition structure.
+        // A more advanced parser would be needed for full header support.
+      }
+      i++; // Consume the next part (the header string)
+    } else if ((part === '-d' || part === '--data') && i + 1 < parts.length) {
+      // Assuming the data is the next part. This is very basic and won't handle JSON with spaces etc.
+      // A real parser would need to handle quoted strings properly.
+      const data = parts[i + 1];
+      // For simplicity, we'll store the data as the body.
+      // A more advanced parser might try to infer parameters from JSON data.
+      tool.parameters = JSON.stringify({ body: { type: 'string', description: 'Request body' } }); // Indicate body parameter
+      tool.requestBody = data; // Store the raw body data (not part of standard tool schema, but useful)
+      tool.httpMethod = tool.httpMethod === 'GET' ? 'POST' : tool.httpMethod; // Assume POST if data is present and method was GET
+      i++; // Consume the next part (the data string)
+    }
+    // Add more parsing logic here for other curl options if needed
+
+    i++;
+  }
+
+  if (!tool.endpointUrl) {
+    throw new Error('cURL command must include a URL.');
+  }
+
+  // Clean up the generated name if it's just the timestamp default
+  if (tool.name.startsWith('Generated Tool ')) {
+      const urlParts = tool.endpointUrl.split('/');
+      const simpleName = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2] || 'Endpoint';
+      tool.name = `curl_${simpleName.replace(/[^a-zA-Z0-9_]/g, '')}_${Date.now()}`;
+  }
+
+
+  console.log('Background: Parsed tool definition:', tool);
+  return tool;
+}
+
+/**
+ * Saves a tool definition to chrome.storage.local.
+ * @param {object} tool - The tool definition object.
+ * @returns {Promise<void>} A promise that resolves when saving is complete.
+ */
+async function saveToolDefinition(tool) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
+      const tools = result.promptPaulTools || [];
+      tools.push(tool); // Add the new tool
+      chrome.storage.local.set({ promptPaulTools: tools }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Background: Error saving tool definition:', chrome.runtime.lastError);
+          reject(new Error('Failed to save tool definition.'));
+        } else {
+          console.log('Background: Tool definition saved successfully.');
+          // Optionally, update context menus here if tools affect them
+          // updateContextMenus(); // Assuming this function exists and updates tool menus
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+// --- End cURL Parsing and Saving ---
+
 // Enable the side panel on all pages
 chrome.sidePanel
   .setOptions({ path: 'chat.html' })
@@ -13,6 +115,9 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
     path: 'chat.html',
     enabled: true
   }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
+
+
+
 
   // Stash minimal data for chat.js to request if it's a fresh load for this tab's side panel
   // If chat.js is already loaded and active for this tab, it won't re-request.
@@ -134,6 +239,30 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Call the refactored API request function
   await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
 });
+
+// Listen for messages from the options page
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'createToolFromCurl') {
+    console.log('Background: Received createToolFromCurl message:', request.curl);
+    try {
+      console.log('Background: Attempting to parse cURL command.'); // Added log
+      const toolDefinition = parseCurlCommand(request.curl);
+      console.log('Background: cURL command parsed successfully.', toolDefinition); // Added log
+      saveToolDefinition(toolDefinition).then(() => {
+        console.log('Background: Tool definition saved successfully, sending success response.'); // Added log
+        sendResponse({ success: true });
+      }).catch(error => {
+        console.error('Background: Error saving tool definition:', error); // Added log
+        sendResponse({ success: false, error: error.message });
+      });
+    } catch (error) {
+      console.error('Background: Error parsing cURL command:', error); // Added log
+      sendResponse({ success: false, error: error.message });
+    }
+    return true; // Indicate that the response will be sent asynchronously
+  }
+});
+
 
 /**
  * Validates and retrieves API configuration for background service worker operations.
