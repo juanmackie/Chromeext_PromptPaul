@@ -30,249 +30,265 @@
     <p style="font-family: 'Roboto', sans-serif; font-weight: 300; font-size: 1.1rem; margin: 0.5rem auto; color: #666; text-align: center;">Context aware instant AI Insights, a mouse click away</p>
 
     <section class="card settings-card">
-      <style>
-        .delete-button {
-          background-color: #f44336; /* Red */
-          color: white;
-          padding: 0.6rem 1rem; /* Match other buttons */
-          border: none;
-          border-radius: 0.3rem; /* Match other buttons */
-          cursor: pointer;
-          font-weight: 500; /* Match other buttons */
-          box-shadow: var(--shadow-sm); /* Match other buttons */
-          margin-left: 0.5rem; /* Add some space */
-          vertical-align: middle; /* Align with select dropdown */
-        }
-        .delete-button:hover {
-          background-color: #d32f2f;
-        }
-      </style>
-      <div class="button-container">
-        <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
-          <button class="ko-fi-button">
-            &#9749; Buy me a coffee
-          </button>
-        </a>
-        <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
-        <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
-          <button id="feedbackButton" class="feedback-button">Feedback</button>
-        </a>
-      </div>
-      <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
+      <button class="collapsible-button">
+        <h2>Settings <span class="material-symbols-outlined">expand_more</span></h2>
+      </button>
+      <div class="collapsible-content collapsed">
+        <style>
+          .delete-button {
+            background-color: #f44336; /* Red */
+            color: white;
+            padding: 0.6rem 1rem; /* Match other buttons */
+            border: none;
+            border-radius: 0.3rem; /* Match other buttons */
+            cursor: pointer;
+            font-weight: 500; /* Match other buttons */
+            box-shadow: var(--shadow-sm); /* Match other buttons */
+            margin-left: 0.5rem; /* Add some space */
+            vertical-align: middle; /* Align with select dropdown */
+          }
+          .delete-button:hover {
+            background-color: #d32f2f;
+          }
+        </style>
+        <div class="button-container">
+          <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
+            <button class="ko-fi-button">
+              &#9749; Buy me a coffee
+            </button>
+          </a>
+          <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
+          <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
+            <button id="feedbackButton" class="feedback-button">Feedback</button>
+          </a>
+        </div>
+        <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
 
-      <form id="optionsForm">
-        <div class="form-group">
-          <label for="llmEndpoint">LLM API Endpoint</label>
-          <input type="text" id="llmEndpoint" placeholder="https://api.mistral.ai/v1/chat/completions" required>
-        </div>
+        <form id="optionsForm">
+          <div class="form-group">
+            <label for="llmEndpoint">LLM API Endpoint</label>
+            <input type="text" id="llmEndpoint" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+          </div>
 
-        <div class="form-group">
-          <label for="apiKey">API Key</label>
-          <input type="text" id="apiKey" placeholder="AClt4XnMjO5eUjBjXbq3XpEiiHBtQuGW" required>
-        </div>
+          <div class="form-group">
+            <label for="apiKey">API Key</label>
+            <input type="text" id="apiKey" placeholder="AClt4XnMjO5eUjBjXbq3XpEiiHBtQuGW" required>
+          </div>
 
-        <div class="form-group">
-          <label for="modelName">Model Name</label>
-          <input type="text" id="modelName" placeholder="mistral-small-latest" required>
-        </div>
+          <div class="form-group">
+            <label for="modelName">Model Name</label>
+            <input type="text" id="modelName" placeholder="mistral-small-latest" required>
+          </div>
 
-        <div class="form-group">
-          <label for="maxTokens">Max Tokens</label>
-          <input type="number" id="maxTokens" placeholder="Enter max tokens" value="2048" required>
-        </div>
+          <div class="form-group">
+            <label for="maxTokens">Max Tokens</label>
+            <input type="number" id="maxTokens" placeholder="Enter max tokens" value="2048" required>
+          </div>
 
-        <div class="form-group">
-          <label for="systemPrompt">System Prompt (Optional)</label>
-          <textarea id="systemPrompt" placeholder="Define the AI's role or persona, e.g., 'You are a helpful assistant.'" rows="4"></textarea>
-        </div>
+          <div class="form-group">
+            <label for="systemPrompt">System Prompt (Optional)</label>
+            <textarea id="systemPrompt" placeholder="Define the AI's role or persona, e.g., 'You are a helpful assistant.'" rows="4"></textarea>
+          </div>
 
-        <div class="form-group">
-          <label for="darkThemeToggle">
-            <input type="checkbox" id="darkThemeToggle" style="vertical-align: middle; margin-right: 4px;">
-            Dark Theme
-          </label>
-        </div>
-        <button type="submit" id="save" class="save-button"><span class="material-symbols-outlined">save</span> Save Settings</button>
-        
-        <div class="form-group" style="margin-top: 15px;"> <!-- Added margin-top for spacing -->
-          <label for="profileSelect">Profile Management</label>
-          <select id="profileSelect">
-            <!-- Options will be populated by JavaScript -->
-          </select>
-          <button type="button" id="deleteProfileButton" class="delete-button">Delete Selected Profile</button>
-          <small>Select a profile, or choose "+ Add New Profile..." to create one.</small>
-        </div>
-      </form>
+          <div class="form-group">
+            <label for="darkThemeToggle">
+              <input type="checkbox" id="darkThemeToggle" style="vertical-align: middle; margin-right: 4px;">
+              Dark Theme
+            </label>
+          </div>
+          <button type="submit" id="save" class="save-button"><span class="material-symbols-outlined">save</span> Save Settings</button>
+          
+          <div class="form-group" style="margin-top: 15px;"> <!-- Added margin-top for spacing -->
+            <label for="profileSelect">Profile Management</label>
+            <select id="profileSelect">
+              <!-- Options will be populated by JavaScript -->
+            </select>
+            <button type="button" id="deleteProfileButton" class="delete-button">Delete Selected Profile</button>
+            <small>Select a profile, or choose "+ Add New Profile..." to create one.</small>
+          </div>
+        </form>
 
-      <div id="addNewProfileSection" class="card" style="display: none; margin-top: 1em;">
-        <h4>Create New Profile</h4>
-        <div class="form-group">
-          <label for="newProfileName">Profile Name:</label>
-          <input type="text" id="newProfileName" placeholder="Enter new profile name" required>
-        </div>
-        <p><small>New profile will be initialized with the currently displayed LLM settings. You can adjust them after saving the new profile.</small></p>
-        <div class="button-group">
-          <button type="button" id="saveNewProfileButton" class="save-button">Save New Profile</button>
-          <button type="button" id="cancelNewProfileButton" class="clear-form-button">Cancel</button>
+        <div id="addNewProfileSection" class="card" style="display: none; margin-top: 1em;">
+          <h4>Create New Profile</h4>
+          <div class="form-group">
+            <label for="newProfileName">Profile Name:</label>
+            <input type="text" id="newProfileName" placeholder="Enter new profile name" required>
+          </div>
+          <p><small>New profile will be initialized with the currently displayed LLM settings. You can adjust them after saving the new profile.</small></p>
+          <div class="button-group">
+            <button type="button" id="saveNewProfileButton" class="save-button">Save New Profile</button>
+            <button type="button" id="cancelNewProfileButton" class="clear-form-button">Cancel</button>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="card instructions-card">
-      <h2>Your Custom Instructions</h2>
+      <button class="collapsible-button">
+        <h2>Custom Instructions <span class="material-symbols-outlined">expand_more</span></h2>
+      </button>
+      <div class="collapsible-content collapsed">
+        <div id="migrationPrompt" class="migration-prompt card" style="display: none; margin-bottom: 1em;">
+          <span>
+            <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
+          </span>
+          <div class="button-group" style="margin-top: 0.5em;">
+            <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">&#128190; Migrate</button>
+            <button type="button" id="dismissMigrationBtn" class="clear-form-button">&#10006; Dismiss</button>
+          </div>
+        </div>
 
-      <div id="migrationPrompt" class="migration-prompt card" style="display: none; margin-bottom: 1em;">
-        <span>
-          <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
-        </span>
-        <div class="button-group" style="margin-top: 0.5em;">
-          <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">&#128190; Migrate</button>
-          <button type="button" id="dismissMigrationBtn" class="clear-form-button">&#10006; Dismiss</button>
+        <div id="instructions-list">
+          <table id="instructionsTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Content</th>
+                <th>Tool Choice</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Instructions will be populated here -->
+            </tbody>
+          </table>
         </div>
-      </div>
 
-      <div id="instructions-list">
-        <table id="instructionsTable">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Content</th>
-              <th>Tool Choice</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Instructions will be populated here -->
-          </tbody>
-        </table>
-      </div>
-
-      <div class="instruction-form card">
-        <h3>Add/Edit Instruction</h3>
-        <div class="form-group">
-          <label for="instructionName">Instruction Name</label>
-          <input type="text" id="instructionName" placeholder="Enter instruction name">
-        </div>
-        <div class="form-group">
-          <label for="instructionContent">Instruction Content</label>
-          <textarea id="instructionContent" placeholder="Enter instruction content" rows="4"></textarea>
-        </div>
-        <div class="form-group">
-          <label for="instructionToolChoice">Tool Choice</label>
-          <select id="instructionToolChoice" multiple size="4">
-            <option value="none">None (Default)</option>
-            <option value="auto">Auto</option>
-            <!-- Tools will be populated here -->
-          </select>
-          <small>Select tools the AI can use with this instruction. Use Ctrl/Cmd + Click to select multiple. "None" prevents tool use, "Auto" allows any tool.</small>
-        </div>
-        <input type="hidden" id="instructionId">
-        <div class="button-group">
-          <button type="button" id="saveInstruction" class="save-instruction-button"><span class="material-symbols-outlined">save</span> Save Instruction</button>
-          <button type="button" id="clearForm" class="clear-form-button">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
+        <div class="instruction-form card">
+          <button class="collapsible-button">
+            <h3>Add/Edit Instruction <span class="material-symbols-outlined">expand_more</span></h3>
           </button>
+          <div class="collapsible-content collapsed">
+            <div class="form-group">
+              <label for="instructionName">Instruction Name</label>
+              <input type="text" id="instructionName" placeholder="Enter instruction name">
+            </div>
+            <div class="form-group">
+              <label for="instructionContent">Instruction Content</label>
+              <textarea id="instructionContent" placeholder="Enter instruction content" rows="4"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="instructionToolChoice">Tool Choice</label>
+              <select id="instructionToolChoice" multiple size="4">
+                <option value="none">None (Default)</option>
+                <option value="auto">Auto</option>
+                <!-- Tools will be populated here -->
+              </select>
+              <small>Select tools the AI can use with this instruction. Use Ctrl/Cmd + Click to select multiple. "None" prevents tool use, "Auto" allows any tool.</small>
+            </div>
+            <input type="hidden" id="instructionId">
+            <div class="button-group">
+              <button type="button" id="saveInstruction" class="save-instruction-button"><span class="material-symbols-outlined">save</span> Save Instruction</button>
+              <button type="button" id="clearForm" class="clear-form-button">
+                <span class="material-symbols-outlined">clear_all</span>
+                Clear Form
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="import-export card">
-        <h3>Import/Export Instructions</h3>
-        <div class="button-group">
-          <button type="button" id="exportInstructions" class="export-button"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
-          <input type="file" id="importFile" accept=".json" style="display: none;">
-          <button type="button" id="importInstructions" class="import-button"><span class="material-symbols-outlined">download</span> Import Instructions</button>
+        <div class="import-export card">
+          <h3>Import/Export Instructions</h3>
+          <div class="button-group">
+            <button type="button" id="exportInstructions" class="export-button"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
+            <input type="file" id="importFile" accept=".json" style="display: none;">
+            <button type="button" id="importInstructions" class="import-button"><span class="material-symbols-outlined">download</span> Import Instructions</button>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="card tools-card">
-      <h2>Tool Definitions</h2>
-      <p>Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
+      <button class="collapsible-button">
+        <h2>Tools <span class="material-symbols-outlined">expand_more</span></h2>
+      </button>
+      <div class="collapsible-content collapsed">
+        <p>Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
 
-      <div id="tools-list">
-        <table id="toolsTable">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Description</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Tools will be populated here -->
-          </tbody>
-        </table>
-      </div>
+        <div id="tools-list">
+          <table id="toolsTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Tools will be populated here -->
+            </tbody>
+          </table>
+        </div>
 
-      <div class="curl-tool-form card">
-        <h3>Create Tool from cURL Command</h3>
-        <div class="form-group">
-          <label for="curlCommand">cURL Command</label>
-          <textarea id="curlCommand" placeholder="Paste your cURL command here" rows="4"></textarea>
+        <div class="curl-tool-form card">
+          <h3>Create Tool from cURL Command</h3>
+          <div class="form-group">
+            <label for="curlCommand">cURL Command</label>
+            <textarea id="curlCommand" placeholder="Paste your cURL command here" rows="4"></textarea>
+          </div>
+          <div class="button-group">
+            <button type="button" id="createToolFromCurlButton" class="save-button">Create Tool</button>
+          </div>
+          <div id="curlFeedback" class="feedback-area"></div>
         </div>
-        <div class="button-group">
-          <button type="button" id="createToolFromCurlButton" class="save-button">Create Tool</button>
-        </div>
-        <div id="curlFeedback" class="feedback-area"></div>
-      </div>
 
-      <div class="tool-form card">
-        <h3>Add/Edit Tool</h3>
-        <div class="form-group">
-          <label for="toolName">Tool Name</label>
-          <input type="text" id="toolName" placeholder="e.g., getWeather">
-        </div>
-        <div class="form-group">
-          <label for="toolDescription">Tool Description</label>
-          <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
-        </div>
-        <div class="form-group">
-          <label for="toolParameters">Parameters (JSON Schema)</label>
-          <textarea id="toolParameters" placeholder='e.g., {
+        <div class="tool-form card">
+          <h3>Add/Edit Tool</h3>
+          <div class="form-group">
+            <label for="toolName">Tool Name</label>
+            <input type="text" id="toolName" placeholder="e.g., getWeather">
+          </div>
+          <div class="form-group">
+            <label for="toolDescription">Tool Description</label>
+            <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="toolParameters">Parameters (JSON Schema)</label>
+            <textarea id="toolParameters" placeholder='e.g., {
   "type": "object",
   "properties": {
     "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
   },
   "required": ["location"]
 }' rows="6"></textarea>
-          <small>Define the input parameters for the tool using JSON Schema format.</small>
+            <small>Define the input parameters for the tool using JSON Schema format.</small>
+          </div>
+          <div class="form-group">
+            <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
+            <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
+            <small>If this tool calls an external API or webhook, enter the URL here.</small>
+          </div>
+          <div class="form-group">
+            <label for="toolHttpMethod">HTTP Method (Optional)</label>
+            <select id="toolHttpMethod">
+              <option value="">Auto (GET if no params, POST if params)</option>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="DELETE">DELETE</option>
+              <option value="PATCH">PATCH</option>
+            </select>
+            <small>Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</small>
+          </div>
+          <input type="hidden" id="toolId">
+          <div class="button-group">
+            <button type="button" id="saveTool" class="save-button">
+              <span class="material-symbols-outlined">save</span> Save Tool
+            </button>
+            <button type="button" id="clearToolForm" class="clear-form-button">
+              <span class="material-symbols-outlined">clear_all</span>
+              Clear Form
+            </button>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
-          <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
-          <small>If this tool calls an external API or webhook, enter the URL here.</small>
-        </div>
-        <div class="form-group">
-          <label for="toolHttpMethod">HTTP Method (Optional)</label>
-          <select id="toolHttpMethod">
-            <option value="">Auto (GET if no params, POST if params)</option>
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-            <option value="PUT">PUT</option>
-            <option value="DELETE">DELETE</option>
-            <option value="PATCH">PATCH</option>
-          </select>
-          <small>Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</small>
-        </div>
-        <input type="hidden" id="toolId">
-        <div class="button-group">
-          <button type="button" id="saveTool" class="save-button">
-            <span class="material-symbols-outlined">save</span> Save Tool
-          </button>
-          <button type="button" id="clearToolForm" class="clear-form-button">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
-          </button>
-        </div>
-      </div>
 
-      <div class="import-export card">
-        <h3>Import/Export Tools</h3>
-        <div class="button-group">
-          <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
-          <input type="file" id="importToolsFile" accept=".json" style="display: none;">
-          <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
+        <div class="import-export card">
+          <h3>Import/Export Tools</h3>
+          <div class="button-group">
+            <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
+            <input type="file" id="importToolsFile" accept=".json" style="display: none;">
+            <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
+          </div>
         </div>
       </div>
     </section>
