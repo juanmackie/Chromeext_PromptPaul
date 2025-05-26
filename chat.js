@@ -514,45 +514,56 @@ let selectedText = null;
 
             console.log("API Request Body:", requestBody); // Log for debugging
 
-            // Make API call with conversation history and tools
-            const apiResponse = await fetch(config.llmEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + config.apiKey,
-                },
-                body: JSON.stringify(requestBody),
-            });
-    
-            if (!apiResponse.ok) {
-                const errorData = await apiResponse.json().catch(() => null);
-                throw new Error(
-                    'API request failed with status ' + apiResponse.status + ': ' + (
-                        errorData ? JSON.stringify(errorData) : apiResponse.statusText
-                    )
-                );
-            }
-    
-            const responseData = await apiResponse.json();
-    
-            if (
-                !responseData ||
-                !responseData.choices ||
-                !responseData.choices[0] ||
-                !responseData.choices[0].message ||
-                !responseData.choices[0].message.content
-            ) {
-                throw new Error('Invalid response format from API');
-            }
-    
-            // --- Tool Call Handling Logic (Phase 2, Step 2) ---
-            const responseMessage = responseData.choices[0].message;
+            showLoadingIndicator(true); // Show loading indicator
 
-            // Add the raw assistant message to history (might contain content or tool_calls)
-            conversationHistory.push(responseMessage);
-            // Note: If it's a tool_call, saveConversationHistory will be called again after the tool response.
-            // If it's direct content, this save is important.
-            saveConversationHistory(); 
+            try {
+                // Make API call with conversation history and tools
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + config.apiKey,
+                    },
+                    body: JSON.stringify(requestBody),
+                });
+        
+                if (!apiResponse.ok) {
+                    const errorData = await apiResponse.json().catch(() => null);
+                    throw new Error(
+                        'API request failed with status ' + apiResponse.status + ': ' + (
+                            errorData ? JSON.stringify(errorData) : apiResponse.statusText
+                        )
+                    );
+                }
+        
+                const responseData = await apiResponse.json();
+        
+                if (
+                    !responseData ||
+                    !responseData.choices ||
+                    !responseData.choices[0] ||
+                    !responseData.choices[0].message ||
+                    !responseData.choices[0].message.content
+                ) {
+                    throw new Error('Invalid response format from API');
+                }
+        
+                showLoadingIndicator(false); // Hide loading indicator on success
+
+                // --- Tool Call Handling Logic (Phase 2, Step 2) ---
+                const responseMessage = responseData.choices[0].message;
+
+                // Add the raw assistant message to history (might contain content or tool_calls)
+                conversationHistory.push(responseMessage);
+                // Note: If it's a tool_call, saveConversationHistory will be called again after the tool response.
+                // If it's direct content, this save is important.
+                saveConversationHistory();
+
+            } catch (error) {
+                console.error("API Call Error:", error);
+                showLoadingIndicator(false); // Hide loading indicator on error
+                addMessage('System', 'Error: ' + error.message); // Display error message
+            }
 
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 // Handle tool calls (assuming only one call for now, but API might return multiple)

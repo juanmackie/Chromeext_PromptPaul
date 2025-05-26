@@ -120,7 +120,7 @@ body.dark-theme ::selection {
     overflow-y: auto; /* Single scrollable area */
     scroll-behavior: smooth;
     z-index: 50;
-    padding-bottom: 20px; /* Reduced padding since height is calculated */
+    padding-bottom: 80px; /* Increased padding to accommodate fixed input area */
 }
 
 #input-area {
@@ -150,6 +150,15 @@ body.dark-theme ::selection {
 
 #send-button, #clear-button {
     pointer-events: auto !important; /* Explicitly enable pointer events */
+.error-message {
+    background-color: #ffcccc; /* Light red background for error messages */
+    color: #cc0000; /* Dark red text color for error messages */
+    padding: 0.8rem 1.2rem;
+    border-radius: 0.6rem;
+    width: auto;
+    max-width: 95%;
+    align-self: flex-start; /* Align error messages to the left */
+}
 }
 
 #toast-container {
