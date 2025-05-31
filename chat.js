@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentLlmMessageDiv = null;
     let currentLlmRawMarkdown = '';
     let currentLlmMessageId = null;
+    let activeStreamId = null;
 
     // Request initialization data from background script for this tab context
     console.log("Chat: Requesting init data for my tab.");
@@ -221,6 +222,7 @@ let selectedText = null;
             currentLlmMessageDiv = null;
             currentLlmRawMarkdown = '';
             currentLlmMessageId = null;
+            activeStreamId = null; // Reset activeStreamId
             showLoadingIndicator(false); // Hide any potentially stuck loading indicator
 
             loadConversationHistory(request.tabId);
@@ -260,43 +262,41 @@ let selectedText = null;
 
             if (request.streamState === 'start') {
                 showLoadingIndicator(true, 'Receiving response...');
-                // Display the initial prompt as a user message ONLY if the conversation history is currently empty.
-                // This prevents re-displaying the prompt if background.js sends it again for multi-part streams.
                 if (request.prompt && conversationHistory.length === 0) {
                     const promptLines = request.prompt.split('\n');
                     const instruction = promptLines[0];
                     addMessage('User', instruction);
                     conversationHistory.push({ role: 'user', content: request.prompt });
-                    // saveConversationHistory(); // Intentionally deferred to 'end' or next user message
                 }
+                activeStreamId = request.streamId; // Set active stream ID
                 currentLlmRawMarkdown = request.apiResponse || '';
-                currentLlmMessageDiv = addMessage('LLM', currentLlmRawMarkdown, true); // true for isStreamStart
+                currentLlmMessageDiv = addMessage('LLM', currentLlmRawMarkdown, true);
                 if (currentLlmMessageDiv) {
                     currentLlmMessageId = currentLlmMessageDiv.id;
                 } else {
-                    console.error("Failed to create message div for LLM stream start.");
+                    console.error("Failed to create message div for LLM stream start. Stream ID:", request.streamId);
                     addMessage('System', "Error: Could not initialize streaming display.");
+                    activeStreamId = null; // Clear if div creation failed
                 }
                 chatArea.scrollTop = chatArea.scrollHeight;
             } else if (request.streamState === 'continue') {
-                if (currentLlmMessageDiv && currentLlmMessageId) {
+                if (request.streamId === activeStreamId && currentLlmMessageDiv && currentLlmMessageId) {
                     currentLlmRawMarkdown += request.apiResponse;
                     currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
-                    attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown); // Re-attach for potentially new DOM
+                    attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown);
                     chatArea.scrollTop = chatArea.scrollHeight;
+                } else if (request.streamId !== activeStreamId) {
+                    console.warn(`Chat: Received 'continue' for mismatched stream ID (${request.streamId} vs active ${activeStreamId}). Ignoring chunk.`);
                 } else {
-                    // Stream desynchronization or message came without a 'start'
-                    console.warn("Chat: Received 'continue' stream state without an active LLM message div. Adding as new message.");
-                    const newMsgDiv = addMessage('LLM', request.apiResponse, true); // Treat as start of a new message visually
-                    if(newMsgDiv) currentLlmMessageId = newMsgDiv.id; // Capture new ID
-                    currentLlmRawMarkdown = request.apiResponse; // Reset raw markdown
-                    currentLlmMessageDiv = newMsgDiv; // Track new div
-                    // Avoid pushing partial history here, wait for 'end' or explicit save.
+                    console.warn("Chat: Received 'continue' stream state with matching stream ID but no active LLM message div. Adding as new message. Stream ID:", request.streamId);
+                    addMessage('LLM', request.apiResponse);
+                    conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                    saveConversationHistory();
                 }
             } else if (request.streamState === 'end') {
-                showLoadingIndicator(false);
-                if (currentLlmMessageDiv && currentLlmMessageId) {
-                    if (request.apiResponse) { // Handle any final text part
+                showLoadingIndicator(false); // Always hide indicator on 'end'
+                if (request.streamId === activeStreamId && currentLlmMessageDiv && currentLlmMessageId) {
+                    if (request.apiResponse) {
                         currentLlmRawMarkdown += request.apiResponse;
                     }
                     currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
@@ -306,46 +306,75 @@ let selectedText = null;
                         conversationHistory.push({ role: 'assistant', content: currentLlmRawMarkdown });
                         saveConversationHistory();
                     }
-                } else if (request.apiResponse && request.apiResponse.trim()) { // If 'end' comes with data but no prior stream
-                     addMessage('LLM', request.apiResponse); // Display it
-                     conversationHistory.push({ role: 'assistant', content: request.apiResponse });
-                     saveConversationHistory();
+                    activeStreamId = null;
+                    currentLlmMessageDiv = null;
+                    currentLlmRawMarkdown = '';
+                    currentLlmMessageId = null;
+                } else if (request.streamId === activeStreamId && !currentLlmMessageDiv) {
+                    console.warn('Chat: Received END for active stream but no message div. Stream ID:', request.streamId);
+                    if (request.apiResponse && request.apiResponse.trim()) {
+                        addMessage('LLM', request.apiResponse);
+                        conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                        saveConversationHistory();
+                    }
+                    activeStreamId = null;
+                } else if (request.streamId !== activeStreamId) {
+                     console.warn(`Chat: Received 'end' for mismatched stream ID (${request.streamId} vs active ${activeStreamId}). Ignoring.`);
+                } else {
+                    // Fallback for complete non-streamed messages or if streamId wasn't part of request
+                    if (request.apiResponse && request.apiResponse.trim()) {
+                        addMessage('LLM', request.apiResponse);
+                        conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                        saveConversationHistory();
+                    }
+                    activeStreamId = null;
+                    currentLlmMessageDiv = null;
+                    currentLlmRawMarkdown = '';
+                    currentLlmMessageId = null;
                 }
-                // Reset streaming state variables
-                currentLlmMessageDiv = null;
-                currentLlmRawMarkdown = '';
-                currentLlmMessageId = null;
                 chatArea.scrollTop = chatArea.scrollHeight;
             } else if (request.streamState === 'error') {
                 showLoadingIndicator(false);
-                addMessage('System', `Error: ${request.apiResponse}`);
-                // Reset streaming state variables
-                currentLlmMessageDiv = null;
-                currentLlmRawMarkdown = '';
-                currentLlmMessageId = null;
-            } else if (request.streamState === 'tool_call_start') {
-                showLoadingIndicator(true, `Assistant is using tool: ${request.toolCallInfo?.name || 'a tool'}...`);
-                // If there was a text stream before tool call, finalize it.
-                if (currentLlmMessageDiv && currentLlmMessageId && currentLlmRawMarkdown.trim()) {
-                    currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
-                    attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown);
-                    conversationHistory.push({ role: 'assistant', content: currentLlmRawMarkdown });
-                    saveConversationHistory();
+                addMessage('System', `Error: ${request.apiResponse} (Stream ID: ${request.streamId || 'N/A'})`);
+                if (request.streamId && request.streamId === activeStreamId) {
+                    activeStreamId = null;
+                    currentLlmMessageDiv = null;
+                    currentLlmRawMarkdown = '';
+                    currentLlmMessageId = null;
                 }
-                currentLlmMessageDiv = null;
-                currentLlmRawMarkdown = '';
-                currentLlmMessageId = null;
-            } else { // Fallback for non-streaming or 'complete' state (older background versions or non-streamed tools)
+            } else if (request.streamState === 'tool_call_start') {
+                 if (request.streamId && request.streamId === activeStreamId) {
+                    showLoadingIndicator(true, `Assistant is using tool: ${request.toolCallInfo?.name || 'a tool'}...`);
+                    if (currentLlmMessageDiv && currentLlmMessageId && currentLlmRawMarkdown.trim()) {
+                        currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
+                        attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown);
+                        conversationHistory.push({ role: 'assistant', content: currentLlmRawMarkdown });
+                        saveConversationHistory();
+                    }
+                    // Reset text-specific stream vars, but keep activeStreamId as tool call is part of it
+                    currentLlmMessageDiv = null;
+                    currentLlmRawMarkdown = '';
+                    currentLlmMessageId = null;
+                } else {
+                    console.warn("Chat: Received 'tool_call_start' for non-active or mismatched stream. Request Stream ID:", request.streamId, "Active Stream ID:", activeStreamId);
+                     // Optionally, still show indicator if a tool call is starting, even if stream ID is mismatched,
+                     // as it's a significant background event. But this could lead to confusing UI if not handled carefully.
+                    showLoadingIndicator(true, `Assistant is using tool: ${request.toolCallInfo?.name || 'a tool'}... (stream ID mismatch)`);
+                }
+            } else { // Fallback for non-streaming or 'complete' state (older background versions or no streamState)
                 showLoadingIndicator(false);
-                if (request.prompt && (conversationHistory.length === 0 || conversationHistory[conversationHistory.length -1].role !== 'user')) {
+                if (request.prompt && conversationHistory.length === 0) { // Only add prompt if history is empty
                     const promptLines = request.prompt.split('\n');
                     const instruction = promptLines[0];
                     addMessage('User', instruction);
                     conversationHistory.push({ role: 'user', content: request.prompt });
                 }
-                addMessage('LLM', request.apiResponse);
-                conversationHistory.push({ role: 'assistant', content: request.apiResponse });
-                saveConversationHistory();
+                if (request.apiResponse) {
+                    addMessage('LLM', request.apiResponse);
+                    conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                    saveConversationHistory();
+                }
+                activeStreamId = null;
                 currentLlmMessageDiv = null;
                 currentLlmRawMarkdown = '';
                 currentLlmMessageId = null;

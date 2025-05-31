@@ -410,7 +410,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                 apiResponse: `API request failed: ${apiResponse.status} ${apiResponse.statusText}${errorData ? ` - ${JSON.stringify(errorData)}` : ''}`,
                 streamState: 'error',
                 prompt: promptContent,
-                tabId: tabId
+                tabId: tabId,
+                streamId: streamId // Include streamId in error message if fetch fails early
             });
             return; // Exit early on fetch error
         }
@@ -421,6 +422,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         let isFirstChunk = true;
         let accumulatedToolCallJson = ''; // For assembling multi-chunk tool calls if needed
         let activeToolCallInfo = null; // Stores { id, name, arguments } for the current tool call
+        const streamId = `stream-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -434,7 +436,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                         apiResponse: "Error: Stream ended with incomplete tool call data.",
                         streamState: 'error',
                         prompt: promptContent,
-                        tabId: tabId
+                        tabId: tabId,
+                        streamId: streamId
                     });
                 } else {
                     // Send end message only if not already handled by [DONE] or error
@@ -442,7 +445,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                         action: 'setApiResponse',
                         apiResponse: '',
                         streamState: 'end',
-                        tabId: tabId
+                        tabId: tabId,
+                        streamId: streamId
                     });
                 }
                 break;
@@ -468,7 +472,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                     responseMessage: { tool_calls: [activeToolCallInfo] },
                                     prompt: promptContent,
                                     tabId: tabId,
-                                    streamState: 'tool_call_end' // Indicate this is the end of a tool call stream
+                                    streamState: 'tool_call_end', // Indicate this is the end of a tool call stream
+                                    streamId: streamId
                                 });
                             } catch (e) {
                                 console.error("Background: Error parsing accumulated tool call JSON before [DONE]:", e, accumulatedToolCallJson);
@@ -477,7 +482,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                     apiResponse: `Error parsing tool call arguments: ${e.message}`,
                                     streamState: 'error',
                                     prompt: promptContent,
-                                    tabId: tabId
+                                    tabId: tabId,
+                                    streamId: streamId
                                 });
                             }
                             activeToolCallInfo = null;
@@ -487,7 +493,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                             action: 'setApiResponse',
                             apiResponse: '',
                             streamState: 'end',
-                            tabId: tabId
+                            tabId: tabId,
+                            streamId: streamId
                         });
                         return; // Exit makeLlmApiRequest as stream is done.
                     }
@@ -505,7 +512,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                         apiResponse: delta.content,
                                         streamState: 'start',
                                         prompt: promptContent,
-                                        tabId: tabId
+                                        tabId: tabId,
+                                        streamId: streamId
                                     });
                                     isFirstChunk = false;
                                 } else {
@@ -513,7 +521,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                         action: 'setApiResponse',
                                         apiResponse: delta.content,
                                         streamState: 'continue',
-                                        tabId: tabId
+                                        tabId: tabId,
+                                        streamId: streamId
                                     });
                                 }
                             } else if (delta && delta.tool_calls) {
@@ -541,7 +550,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                     toolCallInfo: { name: activeToolCallInfo.name, id: activeToolCallInfo.id, partialArguments: accumulatedToolCallJson },
                                     streamState: 'tool_call_start', // Or 'tool_call_delta'
                                     prompt: promptContent,
-                                    tabId: tabId
+                                    tabId: tabId,
+                                    streamId: streamId
                                 });
 
 
@@ -564,6 +574,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                             responseMessage: { tool_calls: [completeToolCall] },
                                             prompt: promptContent,
                                             tabId: tabId,
+                                            streamId: streamId // Pass streamId along
                                             // streamState: 'tool_call_end' // Can add this if chat.js needs to differentiate
                                         });
                                     } catch (e) {
@@ -573,7 +584,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                             apiResponse: `Error parsing tool call arguments: ${e.message}`,
                                             streamState: 'error',
                                             prompt: promptContent,
-                                            tabId: tabId
+                                            tabId: tabId,
+                                            streamId: streamId
                                         });
                                     }
                                     activeToolCallInfo = null;
@@ -588,6 +600,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                         responseMessage: { tool_calls: toolCalls },
                                         prompt: promptContent,
                                         tabId: tabId,
+                                        streamId: streamId // Pass streamId along
                                     });
 
                                 }
@@ -611,7 +624,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             apiResponse: `Error: ${error.message}`,
             streamState: 'error', // Custom state for stream errors
             prompt: promptContent, // promptContent should be available from the function parameter
-            tabId: tabId      // tabId should be available from the function parameter
+            tabId: tabId,      // tabId should be available from the function parameter
+            streamId: typeof streamId !== 'undefined' ? streamId : null // Include streamId if available
         });
     }
 }
