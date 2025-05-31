@@ -313,48 +313,6 @@ async function validateConfig() {
   });
 }
 
-// Helper function to process API response and send messages to chat.js
-async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext) {
-    const sendMessageDelay = isStartChatContext ? 300 : 200; // Standardized delay based on original blocks
-
-    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        console.log("Background: Received tool_calls from API, forwarding to chat.js", responseMessage.tool_calls);
-        // Delay sending the message, likely to ensure UI readiness in chat.js or for consistency.
-        // TODO: Explore a more direct signaling mechanism if UI readiness is the primary concern.
-        setTimeout(() => {
-            chrome.runtime.sendMessage({
-                action: 'handleToolCallResponse',
-                responseMessage: responseMessage,
-                prompt: prompt,
-                tabId: tabId,
-            });
-        }, sendMessageDelay);
-    } else if (responseMessage.content) {
-        const latestResponse = responseMessage.content;
-        // Delay sending the message, likely to ensure UI readiness in chat.js or for consistency.
-        // TODO: Explore a more direct signaling mechanism if UI readiness is the primary concern.
-        setTimeout(() => {
-            chrome.runtime.sendMessage({
-                action: 'setApiResponse',
-                apiResponse: latestResponse,
-                prompt: prompt,
-                tabId: tabId,
-            });
-        }, sendMessageDelay);
-    } else {
-        console.error("Background: API response message has neither content nor tool_calls:", responseMessage);
-        // Delay sending the error message, likely for consistency with other message sending paths.
-        setTimeout(() => {
-            chrome.runtime.sendMessage({
-                action: 'setApiResponse',
-                apiResponse: "Error: Received an empty or invalid response from the AI.",
-                prompt: prompt,
-                tabId: tabId,
-            });
-        }, sendMessageDelay);
-    }
-}
-
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
     try {
@@ -383,69 +341,58 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         }
         messages.push({ role: 'user', content: promptContent });
 
-        console.log('Background: Refactored API call. Tools sent to API:', formattedTools);
+        console.log('Background: Streaming API call. Tools sent to API:', formattedTools);
 
         let toolChoicePayload = {};
-        let finalToolChoice = customInstructionToolChoice; // Use the value passed in
+        let finalToolChoice = customInstructionToolChoice;
 
-        // Normalize tool choice if it's an array containing 'none' or is empty
         if (Array.isArray(finalToolChoice)) {
             if (finalToolChoice.length === 0 || (finalToolChoice.length === 1 && finalToolChoice[0] === 'none')) {
                 finalToolChoice = 'none';
             } else if (finalToolChoice.includes('auto')) {
-                 finalToolChoice = 'auto'; // If 'auto' is present, treat as auto
+                 finalToolChoice = 'auto';
             }
-            // If it's an array of specific tools, keep it as an array
         } else if (finalToolChoice === undefined) {
-            finalToolChoice = 'none'; // Default if not set
+            finalToolChoice = 'none';
         }
 
         if (finalToolChoice === 'none') {
-            // Case 1: No tools or tool_choice sent
             toolChoicePayload = {};
         } else if (finalToolChoice === 'auto') {
-            // Case 2: All tools sent, tool_choice is "auto"
             if (formattedTools.length > 0) {
                 toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
             } else {
-                // If 'auto' is chosen but no tools are defined, send no tools
                 toolChoicePayload = {};
             }
         } else if (Array.isArray(finalToolChoice)) {
-            // Case 3: Specific tools selected
             const selectedToolNames = finalToolChoice;
             const selectedFormattedTools = formattedTools.filter(tool => selectedToolNames.includes(tool.function.name));
 
             if (selectedFormattedTools.length > 0) {
                  let specificToolChoiceFormat;
                  if (selectedFormattedTools.length === 1) {
-                     // API expects { type: 'function', function: { name: 'tool_name' } } for a single specific tool
                      specificToolChoiceFormat = { type: 'function', function: { name: selectedFormattedTools[0].function.name } };
                  } else {
-                     // API expects [{ type: 'function', function: { name: 'tool1' } }, ...] for multiple specific tools
                      specificToolChoiceFormat = selectedFormattedTools.map(tool => ({ type: 'function', function: { name: tool.function.name } }));
                  }
                  toolChoicePayload = { tools: selectedFormattedTools, tool_choice: specificToolChoiceFormat };
             } else {
-                // If specific tools were selected but none of them are defined/formatted correctly, send no tools
                 toolChoicePayload = {};
             }
         } else {
-            // Fallback for unexpected values, treat as none
             console.warn(`Background: Unexpected tool choice value: ${finalToolChoice}. Treating as 'none'.`);
             toolChoicePayload = {};
         }
-
-        // If formattedTools is empty, toolChoicePayload remains {}, and no 'tools' or 'tool_choice' is sent to the API.
 
         const apiRequestBody = {
             model: config.modelName,
             messages: messages,
             max_tokens: parseInt(config.maxTokens) || 2048,
-            ...toolChoicePayload // Spread the tools and tool_choice if they exist
+            stream: true, // Enable streaming
+            ...toolChoicePayload
         };
         
-        console.log("Background: API Request Body (Refactored):", JSON.stringify(apiRequestBody, null, 2));
+        console.log("Background: API Request Body (Streaming):", JSON.stringify(apiRequestBody, null, 2));
 
         const apiResponse = await fetch(config.llmEndpoint, {
             method: 'POST',
@@ -457,39 +404,215 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         });
 
         if (!apiResponse.ok) {
-            const errorData = await apiResponse.json().catch(() => null);
-            throw new Error(
-                `API request failed with status ${apiResponse.status}: ${
-                errorData ? JSON.stringify(errorData) : apiResponse.statusText
-                }`
-            );
-        }
-
-        const responseData = await apiResponse.json();
-
-        if (!responseData || !responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
-            // Allow responses without content if tool_calls are present
-            if (!(responseData.choices && responseData.choices[0] && responseData.choices[0].message && responseData.choices[0].message.tool_calls)) {
-                 throw new Error('Invalid response format from API: Missing message content or tool_calls.');
-            }
-        }
-        
-        // Pass isStartChat to determine the correct delay in the handler
-        await _handleApiResponseAndSendMessage(responseData.choices[0].message, promptContent, tabId, isStartChat);
-
-    } catch (error) {
-        console.error('Error in makeLlmApiRequest:', error);
-        // Determine error message delay based on context, matching original behavior.
-        // This delay is likely for consistency with the success path's message sending.
-        const errorDelay = isStartChat ? 300 : 200;
-        setTimeout(() => {
+            const errorData = await apiResponse.json().catch(() => null); // Try to parse error JSON
             chrome.runtime.sendMessage({
                 action: 'setApiResponse',
-                apiResponse: `Error: ${error.message}`,
+                apiResponse: `API request failed: ${apiResponse.status} ${apiResponse.statusText}${errorData ? ` - ${JSON.stringify(errorData)}` : ''}`,
+                streamState: 'error',
                 prompt: promptContent,
-                tabId: tabId,
+                tabId: tabId
             });
-        }, errorDelay);
+            return; // Exit early on fetch error
+        }
+
+        const reader = apiResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let isFirstChunk = true;
+        let accumulatedToolCallJson = ''; // For assembling multi-chunk tool calls if needed
+        let activeToolCallInfo = null; // Stores { id, name, arguments } for the current tool call
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                console.log("Background: Stream finished.");
+                // If there was an unterminated tool call being assembled, handle it as an error or incomplete.
+                if (activeToolCallInfo) {
+                    console.warn("Background: Stream ended with an incomplete tool call:", activeToolCallInfo);
+                     chrome.runtime.sendMessage({
+                        action: 'setApiResponse',
+                        apiResponse: "Error: Stream ended with incomplete tool call data.",
+                        streamState: 'error',
+                        prompt: promptContent,
+                        tabId: tabId
+                    });
+                } else {
+                    // Send end message only if not already handled by [DONE] or error
+                     chrome.runtime.sendMessage({
+                        action: 'setApiResponse',
+                        apiResponse: '',
+                        streamState: 'end',
+                        tabId: tabId
+                    });
+                }
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep the last (potentially incomplete) line in the buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataContent = line.substring(5).trim();
+                    if (dataContent === '[DONE]') {
+                        console.log("Background: Stream indicated completion with [DONE].");
+                        if (activeToolCallInfo && accumulatedToolCallJson) {
+                             // This case implies [DONE] arrived while a tool call was being assembled.
+                             // This is unusual for OpenAI but we should try to finalize it.
+                            try {
+                                const parsedArgs = JSON.parse(accumulatedToolCallJson);
+                                activeToolCallInfo.arguments = parsedArgs; // Arguments are now complete
+                                chrome.runtime.sendMessage({
+                                    action: 'handleToolCallResponse',
+                                    responseMessage: { tool_calls: [activeToolCallInfo] },
+                                    prompt: promptContent,
+                                    tabId: tabId,
+                                    streamState: 'tool_call_end' // Indicate this is the end of a tool call stream
+                                });
+                            } catch (e) {
+                                console.error("Background: Error parsing accumulated tool call JSON before [DONE]:", e, accumulatedToolCallJson);
+                                chrome.runtime.sendMessage({
+                                    action: 'setApiResponse',
+                                    apiResponse: `Error parsing tool call arguments: ${e.message}`,
+                                    streamState: 'error',
+                                    prompt: promptContent,
+                                    tabId: tabId
+                                });
+                            }
+                            activeToolCallInfo = null;
+                            accumulatedToolCallJson = '';
+                        }
+                        chrome.runtime.sendMessage({
+                            action: 'setApiResponse',
+                            apiResponse: '',
+                            streamState: 'end',
+                            tabId: tabId
+                        });
+                        return; // Exit makeLlmApiRequest as stream is done.
+                    }
+
+                    try {
+                        const chunk = JSON.parse(dataContent);
+                        if (chunk.choices && chunk.choices[0]) {
+                            const delta = chunk.choices[0].delta;
+                            const finishReason = chunk.choices[0].finish_reason;
+
+                            if (delta && delta.content) {
+                                if (isFirstChunk) {
+                                    chrome.runtime.sendMessage({
+                                        action: 'setApiResponse',
+                                        apiResponse: delta.content,
+                                        streamState: 'start',
+                                        prompt: promptContent,
+                                        tabId: tabId
+                                    });
+                                    isFirstChunk = false;
+                                } else {
+                                    chrome.runtime.sendMessage({
+                                        action: 'setApiResponse',
+                                        apiResponse: delta.content,
+                                        streamState: 'continue',
+                                        tabId: tabId
+                                    });
+                                }
+                            } else if (delta && delta.tool_calls) {
+                                // Handle streaming tool calls
+                                const toolCallChunk = delta.tool_calls[0]; // Assuming one tool call per delta for now
+
+                                if (toolCallChunk.id) { // Start of a new tool call
+                                    if (activeToolCallInfo && accumulatedToolCallJson) {
+                                        // This means a new tool call started before the previous one's arguments finished.
+                                        // This is unlikely with current OpenAI models but good to be aware of.
+                                        // For now, we'll assume one tool call's arguments stream completely before another starts.
+                                        console.warn("Background: New tool call started before previous arguments finished. Previous:", activeToolCallInfo.name);
+                                        // Optionally send the previously accumulated one if it's parsable, or handle error.
+                                    }
+                                    activeToolCallInfo = { id: toolCallChunk.id, name: toolCallChunk.function.name, arguments: '' };
+                                    accumulatedToolCallJson = toolCallChunk.function.arguments || ''; // Start accumulating arguments
+                                } else if (activeToolCallInfo && toolCallChunk.function && toolCallChunk.function.arguments) {
+                                    // Continuation of arguments for the current tool call
+                                    accumulatedToolCallJson += toolCallChunk.function.arguments;
+                                }
+                                // Send a message to chat.js that a tool call is starting/streaming
+                                // chat.js might display "Thinking about using tool X..."
+                                chrome.runtime.sendMessage({
+                                    action: 'setApiResponse', // Or a new action like 'toolCallStream'
+                                    toolCallInfo: { name: activeToolCallInfo.name, id: activeToolCallInfo.id, partialArguments: accumulatedToolCallJson },
+                                    streamState: 'tool_call_start', // Or 'tool_call_delta'
+                                    prompt: promptContent,
+                                    tabId: tabId
+                                });
+
+
+                            } else if (finishReason === 'tool_calls' || (chunk.choices[0].message && chunk.choices[0].message.tool_calls)) {
+                                // This indicates the full tool call object might be present or it's the end of a tool call stream.
+                                if (activeToolCallInfo && accumulatedToolCallJson) {
+                                     try {
+                                        const parsedArgs = JSON.parse(accumulatedToolCallJson);
+                                        const completeToolCall = {
+                                            id: activeToolCallInfo.id,
+                                            type: 'function', // OpenAI specific
+                                            function: {
+                                                name: activeToolCallInfo.name,
+                                                arguments: JSON.stringify(parsedArgs) // Ensure arguments are stringified for the final message
+                                            }
+                                        };
+                                        console.log("Background: Sending complete tool call to chat.js:", completeToolCall);
+                                        chrome.runtime.sendMessage({
+                                            action: 'handleToolCallResponse', // Use existing action for complete tool calls
+                                            responseMessage: { tool_calls: [completeToolCall] },
+                                            prompt: promptContent,
+                                            tabId: tabId,
+                                            // streamState: 'tool_call_end' // Can add this if chat.js needs to differentiate
+                                        });
+                                    } catch (e) {
+                                        console.error("Background: Error parsing accumulated tool call JSON:", e, accumulatedToolCallJson);
+                                        chrome.runtime.sendMessage({
+                                            action: 'setApiResponse',
+                                            apiResponse: `Error parsing tool call arguments: ${e.message}`,
+                                            streamState: 'error',
+                                            prompt: promptContent,
+                                            tabId: tabId
+                                        });
+                                    }
+                                    activeToolCallInfo = null;
+                                    accumulatedToolCallJson = '';
+                                } else if (chunk.choices[0].message && chunk.choices[0].message.tool_calls) {
+                                    // Handle non-streamed tool calls that might arrive in a stream-enabled response
+                                    // This can happen if the model decides to call a tool immediately.
+                                    const toolCalls = chunk.choices[0].message.tool_calls;
+                                    console.log("Background: Received non-streamed tool_calls in stream:", toolCalls);
+                                    chrome.runtime.sendMessage({
+                                        action: 'handleToolCallResponse',
+                                        responseMessage: { tool_calls: toolCalls },
+                                        prompt: promptContent,
+                                        tabId: tabId,
+                                    });
+
+                                }
+                            }
+                            // If finishReason is 'stop' or other terminal reasons, the [DONE] message will handle stream termination.
+                        }
+                    } catch (e) {
+                        console.warn('Background: Error parsing JSON chunk or processing delta:', e, 'Chunk:', dataContent);
+                        // Optionally send an error to chat.js, or try to continue if minor.
+                        // For now, we log and continue, as some chunks might be metadata or empty.
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error in makeLlmApiRequest (streaming):', error);
+        // Ensure tabId is available for sending the error message
+        // The original `tabId` parameter of makeLlmApiRequest should be used.
+        chrome.runtime.sendMessage({
+            action: 'setApiResponse',
+            apiResponse: `Error: ${error.message}`,
+            streamState: 'error', // Custom state for stream errors
+            prompt: promptContent, // promptContent should be available from the function parameter
+            tabId: tabId      // tabId should be available from the function parameter
+        });
     }
 }
 

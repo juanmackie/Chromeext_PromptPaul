@@ -9,6 +9,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
 
+    // Global state for streaming
+    let currentLlmMessageDiv = null;
+    let currentLlmRawMarkdown = '';
+    let currentLlmMessageId = null;
+
     // Request initialization data from background script for this tab context
     console.log("Chat: Requesting init data for my tab.");
     chrome.runtime.sendMessage({ action: 'requestInitDataForMyTab' });
@@ -54,6 +59,71 @@ let selectedText = null;
 // let tabId = null; // Removed duplicate declaration
     let currentTabId = null; // Renamed from tabId for clarity and new purpose
     let cachedApiConfig = null; // Cache for API configuration
+
+    // --- Helper functions for Copy Icons and Toast ---
+    function getCopyIconsHTML(baseId) {
+        return ` <img id="copy-icon-${baseId}" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjQgMjQiPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiI+CiAgICA8cGF0aCBkPSJNOCAxMGEyIDIgMCAwIDEgMi0yaDhhMiAyIDAgMCAxIDIgMnY4YTIgMiAwIDAgMS0yIDJoLThhMiAyIDAgMCAxLTItMnoiLz4KICAgIDxwYXRoIGQ9Ik0xNiA4VjZhMiAyIDAgMCAwLTItMkg2YTIgMiAwIDAgMC0yIDJ2OGEyIDIgMCAwIDAgMiAyaDIiLz4KICA8L2c+Cjwvc3ZnPg==" alt="Copy" style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;">` +
+               ` <img id="copy-formatted-icon-${baseId}" src="data:image/png;base64,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" alt="Copy Formatted" style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;">`;
+    }
+
+    function attachCopyIconListeners(baseId, rawMessageContent) {
+        const copyIcon = document.getElementById(`copy-icon-${baseId}`);
+        const copyFormattedIcon = document.getElementById(`copy-formatted-icon-${baseId}`);
+        const messageDiv = document.getElementById(baseId);
+
+        if (copyIcon) {
+            copyIcon.onclick = function() { // Use onclick to ensure it replaces old listeners if any
+                navigator.clipboard.writeText(rawMessageContent);
+                showToast('Copied markdown text to clipboard');
+            };
+        }
+        if (copyFormattedIcon && messageDiv) {
+            copyFormattedIcon.onclick = function() { // Use onclick
+                const tempDiv = document.createElement('div');
+                const contentToCopy = messageDiv.cloneNode(true);
+                // Remove copy icons from the cloned content before copying
+                contentToCopy.querySelectorAll('img[id^="copy-icon-"], img[id^="copy-formatted-icon-"]').forEach(img => img.remove());
+                tempDiv.innerHTML = contentToCopy.innerHTML;
+
+                navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': new Blob([tempDiv.innerHTML], { type: 'text/html' }),
+                        'text/plain': new Blob([rawMessageContent], { type: 'text/plain' })
+                    })
+                ]).then(() => {
+                    showToast('Copied formatted text to clipboard');
+                }).catch(err => {
+                    // Fallback to plain text if rich copy fails
+                    navigator.clipboard.writeText(rawMessageContent);
+                    showToast('Copied as plain text; rich copy failed.');
+                    console.error('Failed to copy rich text: ', err);
+                });
+            };
+        }
+    }
+
+    function showToast(message) {
+        let toastContainer = document.getElementById('toast-container');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toast-container';
+            // Append to chat-area or body, ensure it's styled to overlay correctly
+            document.getElementById('chat-area').appendChild(toastContainer);
+        }
+        const toast = document.createElement('div');
+        toast.classList.add('toast');
+        toast.textContent = message;
+        toastContainer.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('fade-out');
+            setTimeout(() => {
+                toast.remove();
+                if (toastContainer.children.length === 0) {
+                    toastContainer.remove(); // Clean up container if empty
+                }
+            }, 500);
+        }, 2500);
+    }
 
     // --- Loading Indicator Logic ---
     const LOADING_INDICATOR_ID = 'loading-indicator-element';
@@ -177,81 +247,160 @@ let selectedText = null;
                 oneoffInstructionArea.style.display = 'block'; // Show one-off instruction area
             }
         } else if (request.action === 'setApiResponse') {
-            console.log("setApiResponse message received", request);
-            console.log("chatArea element", chatArea);
             // Ensure chat area is visible when showing API response
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
-            if (request.apiResponse) {
-                // Reset conversation history if it's a new conversation
-                if (conversationHistory.length === 0) {
-                    conversationHistory = [];
-                }
 
-                // If we have a prompt, display it as a user message first
-                if (request.prompt) {
-                    // For predefined commands, extract just the instruction part
+            if (request.streamState === 'start') {
+                showLoadingIndicator(true, 'Receiving response...');
+                // Display the initial prompt as a user message ONLY if the conversation history is currently empty.
+                // This prevents re-displaying the prompt if background.js sends it again for multi-part streams.
+                if (request.prompt && conversationHistory.length === 0) {
                     const promptLines = request.prompt.split('\n');
-                    const instruction = promptLines[0]; // Get just the first line (the instruction)
-
-                    // Add the instruction as a user message
+                    const instruction = promptLines[0];
                     addMessage('User', instruction);
-                    
-                    // Add to conversation history
-                    conversationHistory.push({
-                        role: 'user',
-                        content: request.prompt // Use full prompt for context
-                    });
+                    conversationHistory.push({ role: 'user', content: request.prompt });
+                    // saveConversationHistory(); // Intentionally deferred to 'end' or next user message
                 }
-
-                // Add the API response as an LLM message
-                if (chatArea) {
-                    showLoadingIndicator(false); // Hide indicator before showing response
-                    addMessage('LLM', request.apiResponse);
-                    
-                    // Add to conversation history
-                    conversationHistory.push({
-                        role: 'assistant',
-                        content: request.apiResponse
-                    });
-                    saveConversationHistory(); // Save history
+                currentLlmRawMarkdown = request.apiResponse || '';
+                currentLlmMessageDiv = addMessage('LLM', currentLlmRawMarkdown, true); // true for isStreamStart
+                if (currentLlmMessageDiv) {
+                    currentLlmMessageId = currentLlmMessageDiv.id;
                 } else {
-                    console.error("chatArea element is null, cannot add message");
+                    console.error("Failed to create message div for LLM stream start.");
+                    addMessage('System', "Error: Could not initialize streaming display.");
                 }
+                chatArea.scrollTop = chatArea.scrollHeight;
+            } else if (request.streamState === 'continue') {
+                if (currentLlmMessageDiv && currentLlmMessageId) {
+                    currentLlmRawMarkdown += request.apiResponse;
+                    currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
+                    attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown); // Re-attach for potentially new DOM
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                } else {
+                    // Stream desynchronization or message came without a 'start'
+                    console.warn("Chat: Received 'continue' stream state without an active LLM message div. Adding as new message.");
+                    const newMsgDiv = addMessage('LLM', request.apiResponse, true); // Treat as start of a new message visually
+                    if(newMsgDiv) currentLlmMessageId = newMsgDiv.id; // Capture new ID
+                    currentLlmRawMarkdown = request.apiResponse; // Reset raw markdown
+                    currentLlmMessageDiv = newMsgDiv; // Track new div
+                    // Avoid pushing partial history here, wait for 'end' or explicit save.
+                }
+            } else if (request.streamState === 'end') {
+                showLoadingIndicator(false);
+                if (currentLlmMessageDiv && currentLlmMessageId) {
+                    if (request.apiResponse) { // Handle any final text part
+                        currentLlmRawMarkdown += request.apiResponse;
+                    }
+                    currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
+                    attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown);
+
+                    if (currentLlmRawMarkdown.trim()) {
+                        conversationHistory.push({ role: 'assistant', content: currentLlmRawMarkdown });
+                        saveConversationHistory();
+                    }
+                } else if (request.apiResponse && request.apiResponse.trim()) { // If 'end' comes with data but no prior stream
+                     addMessage('LLM', request.apiResponse); // Display it
+                     conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                     saveConversationHistory();
+                }
+                // Reset streaming state variables
+                currentLlmMessageDiv = null;
+                currentLlmRawMarkdown = '';
+                currentLlmMessageId = null;
+                chatArea.scrollTop = chatArea.scrollHeight;
+            } else if (request.streamState === 'error') {
+                showLoadingIndicator(false);
+                addMessage('System', `Error: ${request.apiResponse}`);
+                // Reset streaming state variables
+                currentLlmMessageDiv = null;
+                currentLlmRawMarkdown = '';
+                currentLlmMessageId = null;
+            } else if (request.streamState === 'tool_call_start') {
+                showLoadingIndicator(true, `Assistant is using tool: ${request.toolCallInfo?.name || 'a tool'}...`);
+                // If there was a text stream before tool call, finalize it.
+                if (currentLlmMessageDiv && currentLlmMessageId && currentLlmRawMarkdown.trim()) {
+                    currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
+                    attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown);
+                    conversationHistory.push({ role: 'assistant', content: currentLlmRawMarkdown });
+                    saveConversationHistory();
+                }
+                currentLlmMessageDiv = null;
+                currentLlmRawMarkdown = '';
+                currentLlmMessageId = null;
+            } else { // Fallback for non-streaming or 'complete' state (older background versions or non-streamed tools)
+                showLoadingIndicator(false);
+                if (request.prompt && (conversationHistory.length === 0 || conversationHistory[conversationHistory.length -1].role !== 'user')) {
+                    const promptLines = request.prompt.split('\n');
+                    const instruction = promptLines[0];
+                    addMessage('User', instruction);
+                    conversationHistory.push({ role: 'user', content: request.prompt });
+                }
+                addMessage('LLM', request.apiResponse);
+                conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                saveConversationHistory();
+                currentLlmMessageDiv = null;
+                currentLlmRawMarkdown = '';
+                currentLlmMessageId = null;
             }
         } else if (request.action === 'handleToolCallResponse') {
             console.log("handleToolCallResponse message received", request);
             currentTabId = request.tabId; // Ensure currentTabId is set
+
+            // If there's an active LLM text stream, finalize and save it before handling tool call.
+            if (currentLlmMessageDiv && currentLlmMessageId && currentLlmRawMarkdown.trim()) {
+                currentLlmMessageDiv.innerHTML = marked(currentLlmRawMarkdown) + getCopyIconsHTML(currentLlmMessageId);
+                attachCopyIconListeners(currentLlmMessageId, currentLlmRawMarkdown);
+                conversationHistory.push({ role: 'assistant', content: currentLlmRawMarkdown });
+                // saveConversationHistory(); // History will be saved by later calls in this function
+                currentLlmMessageDiv = null;
+                currentLlmRawMarkdown = '';
+                currentLlmMessageId = null;
+            }
+
             // Ensure chat area is visible
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
 
             const { responseMessage, prompt: originalPrompt } = request;
 
-            // Reset conversation history if it's a new conversation (likely from context menu)
-            conversationHistory = [];
+            // Ensure original user prompt for this interaction is in history
+            if (originalPrompt && (conversationHistory.length === 0 || conversationHistory[conversationHistory.length - 1].role !== 'user')) {
+                // This condition implies the prompt leading to this tool call isn't the last thing in history.
+                // It's possible it's a new interaction.
+                // Clearing history here might be too aggressive if it's a tool call within an ongoing chat.
+                // Let's assume for now that if originalPrompt is passed, it should initiate this turn.
+                // If conversationHistory is truly empty, then this is fine.
+                // If not empty, and last message isn't this prompt, add it.
+                // This avoids duplicate user messages if background.js already added it via a 'start' stream for text part.
 
-            // 1. Display the original prompt/instruction as a user message
-            if (originalPrompt) {
-                // For predefined commands, extract just the instruction part
-                const promptLines = originalPrompt.split('\n');
-                const instruction = promptLines[0]; // Get just the first line (the instruction)
-                addMessage('User', instruction);
-
-                // Add the full original prompt to history for context
-                conversationHistory.push({
-                    role: 'user',
-                    content: originalPrompt
-                });
+                // A safer check: only add if the prompt isn't already in the immediate history.
+                let promptAlreadyExists = false;
+                if (conversationHistory.length > 0 && conversationHistory[conversationHistory.length -1].role === 'user' && conversationHistory[conversationHistory.length -1].content === originalPrompt) {
+                    promptAlreadyExists = true;
+                }
+                if (!promptAlreadyExists) {
+                    const promptLines = originalPrompt.split('\n');
+                    const instruction = promptLines[0];
+                    addMessage('User', instruction); // Display it
+                    conversationHistory.push({ role: 'user', content: originalPrompt });
+                }
             }
 
-            // 2. Add the assistant's message (containing tool_calls) to history
-            conversationHistory.push(responseMessage);
-            saveConversationHistory(); // Save history
+            // Add assistant's message with tool_calls to history
+            // Ensure this specific tool_call message isn't already the last item.
+            if (responseMessage && responseMessage.tool_calls) {
+                 if (conversationHistory.length === 0 || conversationHistory[conversationHistory.length - 1] !== responseMessage) {
+                    // Check if a message with the same tool_call_id already exists to prevent duplicates if logic re-triggers
+                    const existingToolCallMsg = conversationHistory.find(msg => msg.role === 'assistant' && msg.tool_calls && msg.tool_calls[0].id === responseMessage.tool_calls[0].id);
+                    if(!existingToolCallMsg){
+                        conversationHistory.push(responseMessage);
+                    }
+                }
+            }
+            saveConversationHistory(); // Save history before tool execution
 
-            // 3. Trigger the tool execution flow (similar to makeApiCall)
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-                // Assuming only one call for now, as handled in makeApiCall
                 const toolCall = responseMessage.tool_calls[0];
                 const toolName = toolCall.function.name;
                 const toolArgs = toolCall.function.arguments;
@@ -648,80 +797,38 @@ let selectedText = null;
         }
     }
 
-    function addMessage(sender, message) {
+    function addMessage(sender, message, isStreamStart = false) {
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message');
-        const uniqueId = Date.now();
+
         if (sender === 'User') {
             messageDiv.classList.add('user-message');
-            messageDiv.textContent = 'You: ' + message;
+            messageDiv.textContent = 'You: ' + message; // User messages are plain text
         } else if (sender === 'LLM') {
             messageDiv.classList.add('llm-message');
-            const escapedMessage = message.replace(/`/g, '\\`');
-            messageDiv.innerHTML = marked(message) + ` <img id="copy-icon-${uniqueId}" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjQgMjQiPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiI+CiAgICA8cGF0aCBkPSJNOCAxMGEyIDIgMCAwIDEgMi0yaDhhMiAyIDAgMCAxIDIgMnY4YTIgMiAwIDAgMS0yIDJoLThhMiAyIDAgMCAxLTItMnoiLz4KICAgIDxwYXRoIGQ9Ik0xNiA4VjZhMiAyIDAgMCAwLTItMkg2YTIgMiAwIDAgMC0yIDJ2OGEyIDIgMCAwIDAgMiAyaDIiLz4KICA8L2c+Cjwvc3ZnPg==" alt="Copy" style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;">` + `<img id="copy-formatted-icon-${uniqueId}" src="data:image/png;base64,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" alt="Copy Formatted" style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;">`;
+            const messageId = 'llm-message-' + Date.now() + '-' + Math.random().toString(36).substring(2,7); // Add random for more uniqueness
+            messageDiv.id = messageId;
+            // Render markdown and add copy icons
+            messageDiv.innerHTML = marked(message) + getCopyIconsHTML(messageId);
+            // Attach listeners after element is in DOM or very soon to be.
+            // For streaming, currentLlmRawMarkdown will be the full content up to that point.
+            // When isStreamStart is true, 'message' is the first chunk.
+            // When currentLlmMessageDiv is updated directly, attachCopyIconListeners is called again.
+             setTimeout(() => attachCopyIconListeners(messageId, isStreamStart ? message : currentLlmRawMarkdown), 0);
+        } else if (sender === 'System') {
+            messageDiv.classList.add('system-message');
+            messageDiv.textContent = message;
         } else {
-            messageDiv.textContent = sender + ': ' + message;
+            messageDiv.textContent = sender + ': ' + message; // Fallback
         }
+
         chatArea.appendChild(messageDiv);
-        if (sender === 'LLM') {
-            const copyIcon = document.getElementById('copy-icon-' + uniqueId);
-            copyIcon.addEventListener('click', function() {
-                navigator.clipboard.writeText(message);
-                // Show a toast notification
-                var toast = document.createElement('div');
-                toast.classList.add('toast');
-                toast.textContent = 'Copied markdown text to clipboard';
-                document.body.appendChild(toast);
-                setTimeout(function() {
-                    toast.remove();
-                }, 3000); // Remove after 3 seconds
-            });
 
-            const copyFormattedIcon = document.getElementById('copy-formatted-icon-' + uniqueId);
-            copyFormattedIcon.addEventListener('click', function() {
-                // Create a temporary div to hold the formatted content
-                const tempDiv = document.createElement('div');
-                
-                // Clone the message div content
-                const contentWithoutIcons = messageDiv.cloneNode(true);
-                
-                // Remove the copy icons from the cloned content
-                const iconsToRemove = contentWithoutIcons.querySelectorAll('img');
-                iconsToRemove.forEach(icon => icon.remove());
-                
-                // Set the HTML content to our temporary div
-                tempDiv.innerHTML = contentWithoutIcons.innerHTML;
-                
-                // Use the clipboard API to copy as rich text (HTML)
-                const htmlContent = tempDiv.innerHTML;
-                
-                // Use the Clipboard API with HTML format
-                navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/html': new Blob([htmlContent], { type: 'text/html' }),
-                        'text/plain': new Blob([tempDiv.textContent], { type: 'text/plain' })
-                    })
-                ]).catch(err => {
-                    // Fallback to text-only if the rich copy fails
-                    navigator.clipboard.writeText(tempDiv.textContent);
-                    console.error('Failed to copy rich text: ', err);
-                });
-                
-                // Show a toast notification
-                var toast = document.createElement('div');
-                toast.classList.add('toast');
-                toast.textContent = 'Copied formatted text to clipboard';
-                document.body.appendChild(toast);
-                setTimeout(function() {
-                    toast.remove();
-                }, 3000); // Remove after 3 seconds
-            });
-        }
-
-        // Ensure scroll to bottom happens after content is rendered
         setTimeout(() => {
             chatArea.scrollTop = chatArea.scrollHeight;
-        }, 10);
+        }, 10); // Delay to ensure content is rendered
+
+        return messageDiv; // Return the created div
     }
 
     // Handle submit button click for one-off instruction
