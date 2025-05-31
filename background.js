@@ -189,8 +189,11 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
     try {
-        const config = await validateConfig();
-        const tools = await getAllToolDefinitions();
+        const [config, tools, { enableStreaming }] = await Promise.all([
+            validateConfig(),
+            getAllToolDefinitions(),
+            new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve))
+        ]);
 
         const formattedTools = tools.map(tool => {
             try {
@@ -276,6 +279,10 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             ...toolChoicePayload // Spread the tools and tool_choice if they exist
         };
         
+        if (enableStreaming) {
+            apiRequestBody.stream = true;
+        }
+
         console.log("Background: API Request Body (Refactored):", JSON.stringify(apiRequestBody, null, 2));
 
         const apiResponse = await fetch(config.llmEndpoint, {
@@ -304,9 +311,103 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                  throw new Error('Invalid response format from API: Missing message content or tool_calls.');
             }
         }
-        
-        // Pass isStartChat to determine the correct delay in the handler
-        await _handleApiResponseAndSendMessage(responseData.choices[0].message, promptContent, tabId, isStartChat);
+
+        if (enableStreaming) {
+            console.log("Background: Streaming API response...");
+            const reader = apiResponse.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            // Send a message to chat.js to indicate streaming has started
+            // This allows chat.js to prepare the UI for incoming chunks
+            const initialStreamMessageDelay = isStartChat ? 300 : 100; // Shorter delay for stream start
+            setTimeout(() => {
+                chrome.runtime.sendMessage({
+                    action: 'streamApiStart',
+                    tabId: tabId,
+                    prompt: promptContent
+                });
+            }, initialStreamMessageDelay);
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log("Background: Stream finished.");
+                    chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent });
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                console.log("Background: Stream raw chunk received:", buffer);
+
+                // Process buffer line by line for SSE
+                let lines = buffer.split('\n');
+                buffer = lines.pop(); // Keep the last partial line in the buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const jsonStr = line.substring(6).trim();
+                        if (jsonStr === '[DONE]') {
+                            console.log("Background: Stream signaled [DONE].");
+                            // Some APIs send a data: [DONE] message
+                            // Ensure streamApiEnd is sent, though the `done` condition above should also catch this.
+                            // chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent });
+                            // Breaking here might be too soon if [DONE] isn't the absolute last part of the stream.
+                            // Rely on reader.read() {done: true} for final termination.
+                            continue;
+                        }
+                        if (jsonStr) {
+                            try {
+                                const parsed = JSON.parse(jsonStr);
+                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                    const contentChunk = parsed.choices[0].delta.content;
+                                    const toolCallChunk = parsed.choices[0].delta.tool_calls;
+
+                                    if (contentChunk) {
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiResponseChunk',
+                                            chunk: contentChunk,
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        });
+                                    }
+                                    // Handling streaming tool calls (more complex, potentially out of initial scope but good to be aware of)
+                                    // For now, we focus on content chunks. If tool calls are streamed, they might need to be accumulated.
+                                    // The current design expects full tool_calls object after stream via _handleApiResponseAndSendMessage
+                                    // or a separate message if full tool call info is streamed.
+                                    if (toolCallChunk) {
+                                        // This is a placeholder for potential future handling of streamed tool calls.
+                                        // For now, the non-streaming path handles tool calls after the full response.
+                                        // If tool calls are also streamed as deltas, they'd need to be reconstructed.
+                                        console.log("Background: Received tool_call delta (streaming):", toolCallChunk);
+                                         chrome.runtime.sendMessage({
+                                            action: 'streamApiToolCallChunk', // A new action if we decide to stream tool calls
+                                            toolCallChunk: toolCallChunk,
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        });
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Background: Error parsing JSON from stream:", e, "JSON string:", jsonStr);
+                            }
+                        }
+                    }
+                }
+            }
+            // After stream finishes, if there was any remaining data in buffer that was a valid data line (unlikely if stream ends cleanly)
+            // it could be processed here. However, typically the stream ends after the last complete message.
+
+        } else { // Non-streaming path
+            const responseData = await apiResponse.json();
+
+            if (!responseData || !responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
+                if (!(responseData.choices && responseData.choices[0] && responseData.choices[0].message && responseData.choices[0].message.tool_calls)) {
+                    throw new Error('Invalid response format from API: Missing message content or tool_calls.');
+                }
+            }
+            await _handleApiResponseAndSendMessage(responseData.choices[0].message, promptContent, tabId, isStartChat);
+        }
 
     } catch (error) {
         console.error('Error in makeLlmApiRequest:', error);
