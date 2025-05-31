@@ -225,7 +225,26 @@ let selectedText = null;
             activeStreamId = null; // Reset activeStreamId
             showLoadingIndicator(false); // Hide any potentially stuck loading indicator
 
-            loadConversationHistory(request.tabId);
+            loadConversationHistory(request.tabId); // This will load history and render messages
+
+            // After history is loaded and potentially messages are rendered by loadConversationHistory:
+            if (request.promptForDisplay && conversationHistory.length === 0) {
+                // Only add the promptForDisplay if history is still empty after loading.
+                // This handles cases where history for the tab was truly empty.
+                // The prompt from context menu is considered the first user message.
+                addMessage('User', request.promptForDisplay);
+                conversationHistory.push({ role: 'user', content: request.promptForDisplay });
+                saveConversationHistory(); // Save this initial user message
+            }
+
+            if (request.interactionId) {
+                chrome.runtime.sendMessage({
+                    action: 'chatReadyForInteraction',
+                    interactionId: request.interactionId
+                });
+                console.log(`Chat: Sent chatReadyForInteraction for ${request.interactionId}`);
+            }
+
             // Ensure chat area is visible and one-off instruction area is hidden
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';

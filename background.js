@@ -1,6 +1,7 @@
 console.log('Background service worker script started.');
 
 let tabPendingInitializationData = {}; // Stores data for chat.js initialization requests
+let pendingInteractions = {}; // Stores details for interactions awaiting chat.js readiness
 
 // --- cURL Parsing and Saving ---
 
@@ -177,92 +178,197 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   // Handle start chat click - Open side panel immediately
   if (info.menuItemId === 'start_chat') {
-    // Send message to chat.js with selected text
-    chrome.runtime.sendMessage({
-      action: 'setSelectedText',
-      selectedText: selectedText,
-      tabId: tab.id,
-      fromStartChat: true // Flag to indicate this is from the start_chat option
-    });
+    const interactionId = `interaction-${Date.now()}-${Math.random().toString(36).substring(2,9)}`;
+    const promptContent = selectedText; // For start_chat, the selected text is the initial prompt
+
+    pendingInteractions[interactionId] = {
+        promptContent: promptContent,
+        tabId: tab.id,
+        options: { isStartChat: true, customInstructionToolChoice: 'none' }
+    };
+
+    // Update tabPendingInitializationData for chat.js to pick up
+    // This will be sent via requestInitDataForMyTab -> initChat
+    tabPendingInitializationData[tab.id] = {
+        tabId: tab.id,
+        interactionId: interactionId,
+        promptForDisplay: promptContent, // chat.js will display this as the user's message
+        fromStartChat: true, // Keep this if chat.js uses it for UI decisions
+        isNewInteraction: true
+    };
+     console.log(`Background: Stashed init data for start_chat on tab ${tab.id}, interactionId ${interactionId}`);
     
-    // Call the refactored API request function
-    await makeLlmApiRequest(selectedText, tab.id, { isStartChat: true });
+    // No direct call to makeLlmApiRequest here anymore, it's deferred.
+    // chat.js will send 'chatReadyForInteraction' after it processes 'initChat'.
     return;
   }
 
-  let prompt = '';
+  // Standard handling for other context menu items (summarize, explain, custom prompts, etc.)
+  let promptContent = ''; // Renamed from prompt to avoid conflict with promptContent in pendingInteractions
   let instructionToolChoice = 'none'; // Default tool choice
+
   if (info.menuItemId.startsWith('custom_')) {
-    // Handle custom instruction
     const instructionId = info.menuItemId.replace('custom_', '');
     const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
     if (instruction) {
-      prompt = `${instruction.content}\n\n${selectedText}`;
-      instructionToolChoice = instruction.tool_choice || 'none'; // Get tool_choice, default to 'none'
+      promptContent = `${instruction.content}\n\n${selectedText}`;
+      instructionToolChoice = instruction.tool_choice || 'none';
     } else {
-      // Keep default prompt (selectedText) and toolChoice ('none') if instruction not found
       console.error(`Custom instruction with ID ${instructionId} not found.`);
-      prompt = selectedText; // Fallback to just using selected text
-      // Optionally, send an error message back to the user via chat.js
-      // chrome.runtime.sendMessage({...});
+      promptContent = selectedText;
     }
   } else {
-    // Handle predefined commands
+    // Handle predefined commands (summarize, explain, etc.)
+    // These are stream-initiating actions, so they use the handshake
     switch (info.menuItemId) {
       case 'summarize':
-        prompt = `Please summarize the following text into a bullet list of points:\n${selectedText}`;
+        promptContent = `Please summarize the following text into a bullet list of points:\n${selectedText}`;
         break;
       case 'explain':
-        prompt = `Explain this to me in a short concise MECE approach:\n${selectedText}`;
+        promptContent = `Explain this to me in a short concise MECE approach:\n${selectedText}`;
         break;
       case 'polish':
-        prompt = `Polish this text with clarity and purpose:\n${selectedText}`;
+        promptContent = `Polish this text with clarity and purpose:\n${selectedText}`;
         break;
       case 'shorten':
-        prompt = `shorten this text without losing its meaning and context:\n${selectedText}`;
+        promptContent = `shorten this text without losing its meaning and context:\n${selectedText}`;
         break;
       case 'formal':
-        prompt = `Make this text more formal and eloquent:\n${selectedText}`;
+        promptContent = `Make this text more formal and eloquent:\n${selectedText}`;
         break;
       case 'casual':
-        prompt = `Make this text more casual and fun:\n${selectedText}`;
+        promptContent = `Make this text more casual and fun:\n${selectedText}`;
         break;
       case 'analyze':
-        prompt = `Please analyze the following text:\n${selectedText}`;
+        promptContent = `Please analyze the following text:\n${selectedText}`;
         break;
       default:
-        prompt = selectedText;
+        // If it's not a known command and not handled above, it might be an error or an unhandled item.
+        // For safety, if we reach here with an unknown item, don't proceed to make an LLM request.
+        console.warn(`Background: Unhandled context menu item: ${info.menuItemId}`);
+        return;
     }
   }
 
-  // Call the refactored API request function
-  await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
+  // For all these stream-initiating context menu actions:
+  const interactionId = `interaction-${Date.now()}-${Math.random().toString(36).substring(2,9)}`;
+  pendingInteractions[interactionId] = {
+      promptContent: promptContent,
+      tabId: tab.id,
+      options: { customInstructionToolChoice: instructionToolChoice }
+  };
+
+  // Update tabPendingInitializationData for chat.js
+  // The existing entry for tab.id from the start of onClicked is overwritten here with more specific data
+  tabPendingInitializationData[tab.id] = {
+      tabId: tab.id,
+      interactionId: interactionId,
+      promptForDisplay: promptContent, // User's part of the interaction
+      isNewInteraction: true
+  };
+  console.log(`Background: Stashed init data for menu item ${info.menuItemId} on tab ${tab.id}, interactionId ${interactionId}`);
+  // makeLlmApiRequest is deferred until 'chatReadyForInteraction' is received.
 });
 
-// Listen for messages from the options page
+
+// Main message listener for all actions
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'createToolFromCurl') {
-    console.log('Background: Received createToolFromCurl message:', request.curl);
-    try {
-      console.log('Background: Attempting to parse cURL command.'); // Added log
-      const toolDefinition = parseCurlCommand(request.curl);
-      console.log('Background: cURL command parsed successfully.', toolDefinition); // Added log
-      saveToolDefinition(toolDefinition).then(() => {
-        console.log('Background: Tool definition saved successfully, sending success response.'); // Added log
-        sendResponse({ success: true });
-      }).catch(error => {
-        console.error('Background: Error saving tool definition:', error); // Added log
-        sendResponse({ success: false, error: error.message });
-      });
-    } catch (error) {
-      console.error('Background: Error parsing cURL command:', error); // Added log
-      sendResponse({ success: false, error: error.message });
-    }
-    return true; // Indicate that the response will be sent asynchronously
-  }
-});
+    if (request.type === 'createToolFromCurl') {
+        console.log('Background: Received createToolFromCurl message:', request.curl);
+        try {
+            console.log('Background: Attempting to parse cURL command.');
+            const toolDefinition = parseCurlCommand(request.curl);
+            console.log('Background: cURL command parsed successfully.', toolDefinition);
+            saveToolDefinition(toolDefinition).then(() => {
+                console.log('Background: Tool definition saved successfully, sending success response.');
+                sendResponse({ success: true });
+            }).catch(error => {
+                console.error('Background: Error saving tool definition:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        } catch (error) {
+            console.error('Background: Error parsing cURL command:', error);
+            sendResponse({ success: false, error: error.message });
+        }
+        return true; // Indicate that the response will be sent asynchronously
 
+    } else if (request.action === 'chatReadyForInteraction' && request.interactionId) {
+        const interactionDetails = pendingInteractions[request.interactionId];
+        if (interactionDetails) {
+            console.log(`Background: chat.js ready for interaction ${request.interactionId}. Starting LLM request.`);
+            makeLlmApiRequest(
+                interactionDetails.promptContent,
+                interactionDetails.tabId,
+                interactionDetails.options
+            );
+            delete pendingInteractions[request.interactionId]; // Clean up
+        } else {
+            console.warn(`Background: Received chatReadyForInteraction for unknown or stale ID: ${request.interactionId}`);
+        }
+        // No sendResponse needed here as this is part of a handshake.
+
+    } else if (request.action === 'executePromptPaulTool') {
+        const { id, name, arguments: argsString } = request.toolCall;
+        console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
+
+        (async () => {
+            try {
+                const allTools = await getAllToolDefinitions();
+                const toolDefinition = allTools.find(t => t.name === name);
+                if (!toolDefinition) {
+                    throw new Error(`Tool definition for '${name}' not found.`);
+                }
+                let args = JSON.parse(argsString || '{}');
+                if (toolDefinition.endpointUrl) {
+                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
+                    sendResponse({ result: result });
+                } else {
+                    const builtInFunction = toolImplementations[name];
+                    if (builtInFunction) {
+                        const result = await builtInFunction(args);
+                        sendResponse({ result: result });
+                    } else {
+                        throw new Error(`Tool '${name}' has no configured endpoint or built-in implementation.`);
+                    }
+                }
+            } catch (error) {
+                console.error(`Background: Error processing tool '${name}':`, error);
+                sendResponse({ error: error.message || 'Tool processing failed' });
+            }
+        })();
+        return true; // Crucial for async sendResponse
+
+    } else if (request.action === 'requestInitDataForMyTab') {
+        console.log('Background: Received requestInitDataForMyTab. Sender:', sender);
+        const tabId = sender.tab?.id;
+
+        if (tabId === undefined) {
+            console.warn('Background: requestInitDataForMyTab from context without valid tab ID. Sender:', sender);
+            // If we `return true` here, we MUST call sendResponse or the channel may close for other handlers.
+            // However, for this specific message, there's no one to sendResponse to if tabId is invalid.
+            // It's better to just not `return true` if we aren't going to `sendResponse`.
+            // But, the overall listener might need to `return true` if other branches ARE async.
+            // This specific branch will not call sendResponse.
+        } else {
+            const dataToInitializeWith = tabPendingInitializationData[tabId] || { tabId: tabId, fromRequest: true };
+            console.log(`Background: Sending initChat to tab ${tabId} with data:`, dataToInitializeWith);
+            chrome.tabs.sendMessage(tabId, {
+                action: 'initChat',
+                ...dataToInitializeWith
+            });
+            delete tabPendingInitializationData[tabId];
+        }
+        // This branch does not call sendResponse. If other branches do, and return true,
+        // this path should not cause an issue as it doesn't return true itself.
+        // The `return true` statements in 'createToolFromCurl' and 'executePromptPaulTool'
+        // are specific to those message types.
+    }
+    // It's important that if any branch uses `return true`, all paths within that branch eventually call sendResponse.
+    // If a top-level `return true` is desired for the entire listener (e.g. if default behavior should be async),
+    // then ALL message types not calling sendResponse would need to be handled carefully, or call sendResponse(undefined).
+    // Given the current structure, only specific actions are async and return true.
+});
 
 /**
  * Validates and retrieves API configuration for background service worker operations.
