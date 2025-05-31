@@ -216,6 +216,13 @@ let selectedText = null;
             currentTabId = request.tabId; // Set currentTabId
             chatArea.innerHTML = ''; // Clear chat area before loading
             conversationHistory = []; // Reset history before loading
+
+            // Reset streaming state variables as the chat is being re-initialized
+            currentLlmMessageDiv = null;
+            currentLlmRawMarkdown = '';
+            currentLlmMessageId = null;
+            showLoadingIndicator(false); // Hide any potentially stuck loading indicator
+
             loadConversationHistory(request.tabId);
             // Ensure chat area is visible and one-off instruction area is hidden
             chatMainArea.style.display = 'block';
