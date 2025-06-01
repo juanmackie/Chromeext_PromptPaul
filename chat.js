@@ -226,6 +226,10 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             currentStreamingMessageDiv = messageDiv;
             currentStreamingContentElement = contentElement;
             currentStreamingUniqueId = uniqueIdString;
+            console.log("Chat: streamApiStart - Values set: ", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement
+            });
         } else if (request.action === 'streamApiResponseChunk') {
             if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
             if (currentStreamingContentElement && request.chunk != null) {
@@ -234,17 +238,22 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
         } else if (request.action === 'streamApiEnd') {
-            console.log("Chat: streamApiEnd received", request);
+            console.log("Chat: streamApiEnd handler invoked.", request);
+            console.log("Chat: Current activeStreamingToolCall (at start of streamApiEnd):", activeStreamingToolCall);
+            console.log("Chat: Current accumulatedStreamedText (at start of streamApiEnd):", accumulatedStreamedText);
+            // console.log("Chat: streamApiEnd received", request); // Duplicative of the first log.
             let toolCallWasHandledInThisStream = false;
 
             // Tool call execution logic STARTS HERE (moved before UI finalization for current bubble)
             if (activeStreamingToolCall) {
+                console.log("Chat: streamApiEnd - activeStreamingToolCall is TRUE.");
                 toolCallWasHandledInThisStream = true; // Mark that a tool call is being handled in this stream event
                 const toolCall = activeStreamingToolCall; // Clarity
+                console.log("Chat: streamApiEnd - toolCall variable set to:", toolCall);
 
                 const assistantMessageWithToolCall = {
                     role: 'assistant',
-                    content: null,
+                    content: accumulatedStreamedText.trim(), // Capture pre-tool call text
                     tool_calls: [toolCall]
                 };
 
@@ -255,9 +264,11 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                       lastHistoryMessage.tool_calls[0] &&
                       lastHistoryMessage.tool_calls[0].id === toolCall.id
                      )) {
+                    console.log("Chat: streamApiEnd - Pushing assistantMessageWithToolCall to history:", assistantMessageWithToolCall);
                     conversationHistory.push(assistantMessageWithToolCall);
                 }
 
+                console.log("Chat: streamApiEnd - ABOUT TO SEND executePromptPaulTool message. ToolCall details:", { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments });
                 chrome.runtime.sendMessage({
                     action: 'executePromptPaulTool',
                     toolCall: {
@@ -266,7 +277,9 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                         arguments: toolCall.function.arguments
                     }
                 }, (response) => {
+                    console.log("Chat: streamApiEnd - In callback of executePromptPaulTool. Response:", response);
                     if (chrome.runtime.lastError) {
+                        console.error("Chat: streamApiEnd - chrome.runtime.lastError in executePromptPaulTool callback:", chrome.runtime.lastError);
                         addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
                         conversationHistory.push({
                             role: 'tool',
@@ -281,6 +294,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                     }
 
                     if (response.error) {
+                        console.error("Chat: streamApiEnd - response.error in executePromptPaulTool callback:", response.error);
                         addMessage('System', `❌ Error executing tool ${toolCall.function.name}: ${response.error}`);
                         conversationHistory.push({
                             role: 'tool',
@@ -299,12 +313,17 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                             name: toolCall.function.name,
                             content: JSON.stringify(response.result)
                         });
+                        console.log("Chat: Preparing to call makeApiCall after tool execution (streamApiEnd). Current conversationHistory (last 3 messages):");
+                        console.log(conversationHistory.slice(-3));
+                        console.log("Chat: streamApiEnd - Tool execution successful, proceeding to call makeApiCall() for LLM follow-up.");
                         makeApiCall();
                     }
                 });
 
                 activeStreamingToolCall = null; // Reset immediately as it's being processed now
+                console.log("Chat: streamApiEnd - activeStreamingToolCall has been reset to null.");
             } else {
+                console.log("Chat: streamApiEnd - activeStreamingToolCall is FALSE or null.");
                 // Original path for non-tool-call streaming responses: re-enable inputs
                 userInput.disabled = false;
                 sendButton.disabled = false;
@@ -363,17 +382,28 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             // toolCallWasHandledInThisStream is a local var and will be gone.
 
         } else if (request.action === 'streamApiToolCallChunk') {
-            console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk);
+            console.log("Chat: streamApiToolCallChunk handler invoked.", request);
+            // console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk); // This is duplicative of the log above
+            console.log("Chat: streamApiToolCallChunk - Pre-condition check:", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement,
+                requestToolCallChunk: request.toolCallChunk,
+                requestToolCallChunkLength: request.toolCallChunk ? request.toolCallChunk.length : 'undefined'
+            });
             if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
+                console.log("Chat: streamApiToolCallChunk - DEBUG: Entered 'if' block for processing toolCallChunk.");
                 const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
+                console.log("Chat: Extracted toolCall from chunk:", toolCall);
                 activeStreamingToolCall = toolCall; // Store the active tool call
+                console.log("Chat: activeStreamingToolCall has been set to:", activeStreamingToolCall);
 
                 // Clear previous accumulated text from display
-                accumulatedStreamedText = "";
-                currentStreamingContentElement.innerHTML = '';
+                // accumulatedStreamedText = ""; // Preserve accumulated text
+                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
 
                 // Display tool usage
                 currentStreamingContentElement.innerHTML = marked.parse("⚙️ Using tool: **" + toolCall.function.name + "**");
+                console.log("Chat: UI updated to show 'Using tool' message.");
 
                 // Potentially, actual arguments could be streamed. For now, just the name.
                 // If toolCall.function.arguments is a string of streamed arguments, append it:
@@ -492,7 +522,15 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
 
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
-            if (enableStreaming) {
+            let effectiveEnableStreaming = enableStreaming;
+            const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
+
+            if (hasToolMessage && enableStreaming) {
+                effectiveEnableStreaming = false;
+                console.log("Chat: Tool result detected in history, temporarily disabling streaming for this call.");
+            }
+
+            if (effectiveEnableStreaming) {
                 requestBody.stream = true;
                 userInput.disabled = true;
                 sendButton.disabled = true;
@@ -613,6 +651,8 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                          } else {
                             addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                            console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
+                            console.log(conversationHistory.slice(-3));
                             makeApiCall();
                          }
                     });
@@ -656,8 +696,16 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             // Also add to main conversation history for context
             conversationHistory.push({role: 'user', content: prompt});
 
+            let effectiveEnableStreaming = enableStreaming;
+            // As per subtask, check global conversationHistory, not oneOffHistory for tool messages.
+            const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
 
-            if (enableStreaming) {
+            if (hasToolMessage && enableStreaming) {
+                effectiveEnableStreaming = false;
+                console.log("Chat (one-off): Tool result detected in global history, temporarily disabling streaming for this call.");
+            }
+
+            if (effectiveEnableStreaming) {
                 requestBody.stream = true;
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
