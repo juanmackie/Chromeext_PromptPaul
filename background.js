@@ -2,6 +2,8 @@ console.log('Background service worker script started.');
 importScripts('marked.min.js');
 console.log('marked.min.js imported successfully.');
 
+let messageListenerAdded = false;
+
 // Enable the side panel on all pages
 chrome.sidePanel
   .setOptions({ path: 'chat.html' })
@@ -683,54 +685,61 @@ const toolImplementations = {
 };
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'executePromptPaulTool') {
-        const { id, name, arguments: argsString } = request.toolCall;
-        console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
+if (!messageListenerAdded) {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'executePromptPaulTool') {
+            const { id, name, arguments: argsString } = request.toolCall;
+            console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
 
-        (async () => {
-            try {
-                // 1. Fetch all tool definitions to find the one requested
-                const allTools = await getAllToolDefinitions();
-                const toolDefinition = allTools.find(t => t.name === name);
-
-                if (!toolDefinition) {
-                    throw new Error(`Tool definition for '${name}' not found in storage or MCP servers.`);
-                }
-
-                // 2. Parse arguments
-                let args;
+            (async () => {
                 try {
-                    args = JSON.parse(argsString || '{}');
-                } catch (parseError) {
-                    throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
-                }
+                    // 1. Fetch all tool definitions to find the one requested
+                    const allTools = await getAllToolDefinitions();
+                    const toolDefinition = allTools.find(t => t.name === name);
 
-                // 3. Check if it has a user-defined endpoint URL
-                if (toolDefinition.endpointUrl) {
-                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
-                    console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
-                    sendResponse({ result: result });
-                }
-                // 4. If no endpoint URL, check for a built-in implementation
-                else {
-                    const builtInFunction = toolImplementations[name];
-                    if (builtInFunction) {
-                        const result = await builtInFunction(args);
-                        console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
-                        sendResponse({ result: result });
-                    } else {
-                        throw new Error(`Tool '${name}' has no configured endpoint URL, no built-in implementation, and is not an MCP tool.`);
+                    if (!toolDefinition) {
+                        throw new Error(`Tool definition for '${name}' not found in storage or MCP servers.`);
                     }
+
+                    // 2. Parse arguments
+                    let args;
+                    try {
+                        args = JSON.parse(argsString || '{}');
+                    } catch (parseError) {
+                        throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
+                    }
+
+                    // 3. Check if it has a user-defined endpoint URL
+                    if (toolDefinition.endpointUrl) {
+                        const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
+                        console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
+                        sendResponse({ result: result });
+                    }
+                    // 4. If no endpoint URL, check for a built-in implementation
+                    else {
+                        const builtInFunction = toolImplementations[name];
+                        if (builtInFunction) {
+                            const result = await builtInFunction(args);
+                            console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
+                            sendResponse({ result: result });
+                        } else {
+                            throw new Error(`Tool '${name}' has no configured endpoint URL, no built-in implementation, and is not an MCP tool.`);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Background: Error processing tool '${name}':`, error);
+                    sendResponse({ error: error.message || 'Tool processing failed' });
                 }
-            } catch (error) {
-                console.error(`Background: Error processing tool '${name}':`, error);
-                sendResponse({ error: error.message || 'Tool processing failed' });
-            }
-        })();
+            })();
 
-        return true; // Crucial: Indicates that sendResponse will be called asynchronously
-    }
+            return true; // Crucial: Indicates that sendResponse will be called asynchronously
+        }
 
-    // Handle other potential actions if needed
-});
+        // Handle other potential actions if needed
+    });
+
+    messageListenerAdded = true;
+    console.log('Background: chrome.runtime.onMessage listener added.');
+} else {
+    console.log('Background: chrome.runtime.onMessage listener ALREADY added, skipping re-registration.');
+}
