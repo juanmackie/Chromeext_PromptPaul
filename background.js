@@ -683,9 +683,11 @@ const toolImplementations = {
 };
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
+console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'executePromptPaulTool') {
         const { id, name, arguments: argsString } = request.toolCall;
+        // This is the log that was appearing multiple times (e.g., background.js:692)
         console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
 
         (async () => {
@@ -728,9 +730,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 sendResponse({ error: error.message || 'Tool processing failed' });
             }
         })();
-
-        return true; // Crucial: Indicates that sendResponse will be called asynchronously
+        return true; // Crucial for async sendResponse
     }
-
-    // Handle other potential actions if needed
+    // Handle other actions if any
 });
+console.log("Background: onMessage listener function HAS BEEN registered.");

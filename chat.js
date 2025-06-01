@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStreamingContentElement = null;
     let currentStreamingUniqueId = null;
     let accumulatedStreamedText = "";
+    let activeStreamingToolCall = null;
 
     async function getApiConfig() {
         return new Promise((resolve, reject) => {
@@ -226,6 +227,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             currentStreamingContentElement = contentElement;
             currentStreamingUniqueId = uniqueIdString;
         } else if (request.action === 'streamApiResponseChunk') {
+            if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
             if (currentStreamingContentElement && request.chunk != null) {
                 accumulatedStreamedText += request.chunk;
                 currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
@@ -233,28 +235,152 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             }
         } else if (request.action === 'streamApiEnd') {
             console.log("Chat: streamApiEnd received", request);
+            let toolCallWasHandledInThisStream = false;
+
+            // Tool call execution logic STARTS HERE (moved before UI finalization for current bubble)
+            if (activeStreamingToolCall) {
+                toolCallWasHandledInThisStream = true; // Mark that a tool call is being handled in this stream event
+                const toolCall = activeStreamingToolCall; // Clarity
+
+                const assistantMessageWithToolCall = {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [toolCall]
+                };
+
+                const lastHistoryMessage = conversationHistory[conversationHistory.length - 1];
+                if (!lastHistoryMessage ||
+                    !(lastHistoryMessage.role === 'assistant' &&
+                      lastHistoryMessage.tool_calls &&
+                      lastHistoryMessage.tool_calls[0] &&
+                      lastHistoryMessage.tool_calls[0].id === toolCall.id
+                     )) {
+                    conversationHistory.push(assistantMessageWithToolCall);
+                }
+
+                chrome.runtime.sendMessage({
+                    action: 'executePromptPaulTool',
+                    toolCall: {
+                        id: toolCall.id,
+                        name: toolCall.function.name,
+                        arguments: toolCall.function.arguments
+                    }
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
+                        conversationHistory.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.function.name,
+                            content: `Error: ${chrome.runtime.lastError.message}`
+                        });
+                        userInput.disabled = false;
+                        sendButton.disabled = false;
+                        userInput.focus();
+                        return;
+                    }
+
+                    if (response.error) {
+                        addMessage('System', `❌ Error executing tool ${toolCall.function.name}: ${response.error}`);
+                        conversationHistory.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.function.name,
+                            content: `Error: ${response.error}`
+                        });
+                        userInput.disabled = false;
+                        sendButton.disabled = false;
+                        userInput.focus();
+                    } else {
+                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        conversationHistory.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.function.name,
+                            content: JSON.stringify(response.result)
+                        });
+                        makeApiCall();
+                    }
+                });
+
+                activeStreamingToolCall = null; // Reset immediately as it's being processed now
+            } else {
+                // Original path for non-tool-call streaming responses: re-enable inputs
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                userInput.focus();
+            }
+            // Tool call execution logic ENDS HERE
+
+
+            // Finalize the original LLM message bubble based on whether a tool was called
             if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
-                const finalContent = accumulatedStreamedText;
-                currentStreamingContentElement.innerHTML = marked.parse(finalContent);
                 const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
                 const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                if (copyIconElem && copyFormattedIconElem) {
-                   attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                }
-                const lastMessage = conversationHistory[conversationHistory.length - 1];
-                if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
-                    conversationHistory.push({ role: 'assistant', content: finalContent });
+
+                if (toolCallWasHandledInThisStream) {
+                    // The content of currentStreamingContentElement is "⚙️ Using tool: ..."
+                    // It was set by streamApiToolCallChunk. We just need to attach copy listeners.
+                    if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
+                        const toolMessageContent = currentStreamingContentElement.innerText;
+                        attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                    }
+                    // History for assistant *requesting* the tool is already added within the toolCallWasHandledInThisStream block.
+                } else {
+                    // This is the original path: finalize with accumulatedStreamedText
+                    const finalContent = accumulatedStreamedText;
+                    if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
+                        currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                         if (copyIconElem && copyFormattedIconElem) {
+                            attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                        }
+                    }
+
+                    // Add to history if there's actual content and it wasn't a tool call
+                    if (finalContent.trim()) {
+                        const lastMessage = conversationHistory[conversationHistory.length - 1];
+                        // Check if the last message is not the same text content from the same assistant
+                        if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
+                             // Also ensure the last message wasn't an assistant message that just made a tool call (avoid double history)
+                             let lastMessageWasToolCallRequest = false;
+                             if(lastMessage && lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0){
+                                 lastMessageWasToolCallRequest = true;
+                             }
+                             if(!lastMessageWasToolCallRequest){
+                                conversationHistory.push({ role: 'assistant', content: finalContent });
+                             }
+                        }
+                    }
                 }
             }
+
+            // Reset global streaming variables
             currentStreamingMessageDiv = null;
             currentStreamingContentElement = null;
             currentStreamingUniqueId = null;
             accumulatedStreamedText = "";
-            userInput.disabled = false;
-            sendButton.disabled = false;
-            userInput.focus();
+            // activeStreamingToolCall is already null if it was processed earlier in this function.
+            // toolCallWasHandledInThisStream is a local var and will be gone.
+
         } else if (request.action === 'streamApiToolCallChunk') {
-            console.log("Chat: Received streamApiToolCallChunk (not yet fully implemented):", request.toolCallChunk);
+            console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk);
+            if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
+                const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
+                activeStreamingToolCall = toolCall; // Store the active tool call
+
+                // Clear previous accumulated text from display
+                accumulatedStreamedText = "";
+                currentStreamingContentElement.innerHTML = '';
+
+                // Display tool usage
+                currentStreamingContentElement.innerHTML = marked.parse("⚙️ Using tool: **" + toolCall.function.name + "**");
+
+                // Potentially, actual arguments could be streamed. For now, just the name.
+                // If toolCall.function.arguments is a string of streamed arguments, append it:
+                // currentStreamingContentElement.innerHTML += marked.parse("```\n" + toolCall.function.arguments + "\n```");
+
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
         } else if (request.action === 'handleToolCallResponse') {
             console.log("Chat: handleToolCallResponse received", request);
             chatMainArea.style.display = 'block';
@@ -316,6 +442,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
     }
     
     function sendMessage() {
+        activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
             makeApiCall(message);
@@ -505,6 +632,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
     }
 
     submitBtn.addEventListener('click', async () => {
+        activeStreamingToolCall = null; // Reset active tool call
         const instruction = instructionInput.value;
         if (!instruction.trim()) {
             showToast('Please enter an instruction');
