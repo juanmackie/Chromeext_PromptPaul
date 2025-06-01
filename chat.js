@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     'text/html': new Blob([htmlContent], { type: 'text/html' }),
                     'text/plain': new Blob([rawMessage], { type: 'text/plain' })
                 })
-            ]).then(() => showToast('Copied formatted HTML to clipboard'))
+            ]).then(() => showToast('Copied formatted text to clipboard'))
               .catch(err => {
                 console.error('Failed to copy formatted text: ', err);
                 navigator.clipboard.writeText(rawMessage).then(() => showToast('Copied (plain text fallback) to clipboard'))
