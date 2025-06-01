@@ -685,11 +685,12 @@ const toolImplementations = {
 };
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
-if (!messageListenerAdded) {
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'executePromptPaulTool') {
-            const { id, name, arguments: argsString } = request.toolCall;
-            console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
+console.log("Background: Attempting to add onMessage listener NOW...");
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'executePromptPaulTool') {
+        const { id, name, arguments: argsString } = request.toolCall;
+        // This is the log that was appearing multiple times (e.g., background.js:692)
+        console.log(`Background: Received request to execute tool '${name}' with id '${id}'`);
 
             (async () => {
                 try {
@@ -730,16 +731,13 @@ if (!messageListenerAdded) {
                     console.error(`Background: Error processing tool '${name}':`, error);
                     sendResponse({ error: error.message || 'Tool processing failed' });
                 }
-            })();
-
-            return true; // Crucial: Indicates that sendResponse will be called asynchronously
-        }
-
-        // Handle other potential actions if needed
-    });
-
-    messageListenerAdded = true;
-    console.log('Background: chrome.runtime.onMessage listener added.');
-} else {
-    console.log('Background: chrome.runtime.onMessage listener ALREADY added, skipping re-registration.');
-}
+            } catch (error) {
+                console.error(`Background: Error processing tool '${name}':`, error);
+                sendResponse({ error: error.message || 'Tool processing failed' });
+            }
+        })();
+        return true; // Crucial for async sendResponse
+    }
+    // Handle other actions if any
+});
+console.log("Background: onMessage listener function HAS BEEN registered.");
