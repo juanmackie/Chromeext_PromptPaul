@@ -303,15 +303,6 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             );
         }
 
-        const responseData = await apiResponse.json();
-
-        if (!responseData || !responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
-            // Allow responses without content if tool_calls are present
-            if (!(responseData.choices && responseData.choices[0] && responseData.choices[0].message && responseData.choices[0].message.tool_calls)) {
-                 throw new Error('Invalid response format from API: Missing message content or tool_calls.');
-            }
-        }
-
         if (enableStreaming) {
             console.log("Background: Streaming API response...");
             const reader = apiResponse.body.getReader();
