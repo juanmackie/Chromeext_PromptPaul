@@ -226,6 +226,10 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             currentStreamingMessageDiv = messageDiv;
             currentStreamingContentElement = contentElement;
             currentStreamingUniqueId = uniqueIdString;
+            console.log("Chat: streamApiStart - Values set: ", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement
+            });
         } else if (request.action === 'streamApiResponseChunk') {
             if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
             if (currentStreamingContentElement && request.chunk != null) {
@@ -380,6 +384,12 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
         } else if (request.action === 'streamApiToolCallChunk') {
             console.log("Chat: streamApiToolCallChunk handler invoked.", request);
             // console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk); // This is duplicative of the log above
+            console.log("Chat: streamApiToolCallChunk - Pre-condition check:", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement,
+                requestToolCallChunk: request.toolCallChunk,
+                requestToolCallChunkLength: request.toolCallChunk ? request.toolCallChunk.length : 'undefined'
+            });
             if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
                 const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
                 console.log("Chat: Extracted toolCall from chunk:", toolCall);
