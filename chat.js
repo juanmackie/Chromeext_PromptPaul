@@ -387,8 +387,14 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             console.log("Chat: streamApiToolCallChunk - Pre-condition check:", {
                 currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
                 currentStreamingContentElementExists: !!currentStreamingContentElement,
-                requestToolCallChunk: request.toolCallChunk,
-                requestToolCallChunkLength: request.toolCallChunk ? request.toolCallChunk.length : 'undefined'
+                requestToolCallChunk: request.toolCallChunk, // Keep this for visual inspection
+                isToolCallChunkArray: Array.isArray(request.toolCallChunk),
+                typeofToolCallChunk: typeof request.toolCallChunk,
+                toolCallChunkLength: (request.toolCallChunk && typeof request.toolCallChunk.length !== 'undefined') ? request.toolCallChunk.length : 'length property is undefined or chunk is null',
+                condition_currentStreamingMessageDiv: !!currentStreamingMessageDiv,
+                condition_currentStreamingContentElement: !!currentStreamingContentElement,
+                condition_requestToolCallChunk: !!request.toolCallChunk,
+                condition_requestToolCallChunkLengthGreaterThanZero: !!(request.toolCallChunk && request.toolCallChunk.length > 0)
             });
             if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
                 console.log("Chat: streamApiToolCallChunk - DEBUG: Entered 'if' block for processing toolCallChunk.");
