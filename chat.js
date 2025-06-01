@@ -492,7 +492,15 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
 
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
-            if (enableStreaming) {
+            let effectiveEnableStreaming = enableStreaming;
+            const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
+
+            if (hasToolMessage && enableStreaming) {
+                effectiveEnableStreaming = false;
+                console.log("Chat: Tool result detected in history, temporarily disabling streaming for this call.");
+            }
+
+            if (effectiveEnableStreaming) {
                 requestBody.stream = true;
                 userInput.disabled = true;
                 sendButton.disabled = true;
@@ -656,8 +664,16 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             // Also add to main conversation history for context
             conversationHistory.push({role: 'user', content: prompt});
 
+            let effectiveEnableStreaming = enableStreaming;
+            // As per subtask, check global conversationHistory, not oneOffHistory for tool messages.
+            const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
 
-            if (enableStreaming) {
+            if (hasToolMessage && enableStreaming) {
+                effectiveEnableStreaming = false;
+                console.log("Chat (one-off): Tool result detected in global history, temporarily disabling streaming for this call.");
+            }
+
+            if (effectiveEnableStreaming) {
                 requestBody.stream = true;
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
