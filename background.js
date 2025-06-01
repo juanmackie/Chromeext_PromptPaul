@@ -313,14 +313,12 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
             // Send a message to chat.js to indicate streaming has started
             // This allows chat.js to prepare the UI for incoming chunks
-            const initialStreamMessageDelay = isStartChat ? 300 : 100; // Shorter delay for stream start
-            setTimeout(() => {
-                chrome.runtime.sendMessage({
-                    action: 'streamApiStart',
-                    tabId: tabId,
-                    prompt: promptContent
-                }).catch(error => console.log(`Error sending streamApiStart: ${error.message}, tabId: ${tabId}`));
-            }, initialStreamMessageDelay);
+            // Moved out of setTimeout to send immediately
+            chrome.runtime.sendMessage({
+                action: 'streamApiStart',
+                tabId: tabId,
+                prompt: promptContent
+            }).catch(error => console.log(`Error sending streamApiStart synchronously: ${error.message}, tabId: ${tabId}`));
 
             while (true) {
                 const { done, value } = await reader.read();
