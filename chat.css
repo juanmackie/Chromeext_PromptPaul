@@ -217,7 +217,7 @@ body.dark-theme ::selection {
     flex-wrap: nowrap;
     gap: 5px;
     align-items: center;
-    padding-bottom: 2px; /* Add a small padding to prevent clipping */
+    padding-bottom: 5px; /* Add a small padding to prevent clipping */
 }
 
 .user-message {
