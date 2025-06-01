@@ -391,6 +391,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                 requestToolCallChunkLength: request.toolCallChunk ? request.toolCallChunk.length : 'undefined'
             });
             if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
+                console.log("Chat: streamApiToolCallChunk - DEBUG: Entered 'if' block for processing toolCallChunk.");
                 const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
                 console.log("Chat: Extracted toolCall from chunk:", toolCall);
                 activeStreamingToolCall = toolCall; // Store the active tool call
