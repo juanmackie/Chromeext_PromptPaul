@@ -35,7 +35,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         action: 'setSelectedText',
         selectedText: selectedText,
         tabId: tab.id
-      });
+      }).catch(error => console.log(`Error sending setSelectedText for one-off: ${error.message}, tabId: ${tab.id}`));
     }, 100);
     return;
   }
@@ -48,7 +48,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       selectedText: selectedText,
       tabId: tab.id,
       fromStartChat: true // Flag to indicate this is from the start_chat option
-    });
+    }).catch(error => console.log(`Error sending setSelectedText for start_chat: ${error.message}, tabId: ${tab.id}`));
     
     // Call the refactored API request function
     await makeLlmApiRequest(selectedText, tab.id, { isStartChat: true });
@@ -161,7 +161,7 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
                 responseMessage: responseMessage,
                 prompt: prompt,
                 tabId: tabId,
-            });
+            }).catch(error => console.log(`Error sending handleToolCallResponse: ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
     } else if (responseMessage.content) {
         const latestResponse = responseMessage.content;
@@ -171,7 +171,7 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
                 apiResponse: latestResponse,
                 prompt: prompt,
                 tabId: tabId,
-            });
+            }).catch(error => console.log(`Error sending setApiResponse (content): ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
     } else {
         console.error("Background: API response message has neither content nor tool_calls:", responseMessage);
@@ -181,7 +181,7 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
                 apiResponse: "Error: Received an empty or invalid response from the AI.",
                 prompt: prompt,
                 tabId: tabId,
-            });
+            }).catch(error => console.log(`Error sending setApiResponse (error response): ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
     }
 }
@@ -326,14 +326,15 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                     action: 'streamApiStart',
                     tabId: tabId,
                     prompt: promptContent
-                });
+                }).catch(error => console.log(`Error sending streamApiStart: ${error.message}, tabId: ${tabId}`));
             }, initialStreamMessageDelay);
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
                     console.log("Background: Stream finished.");
-                    chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent });
+                    chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent })
+                        .catch(error => console.log(`Error sending streamApiEnd: ${error.message}, tabId: ${tabId}`));
                     break;
                 }
 
@@ -345,19 +346,25 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                 buffer = lines.pop(); // Keep the last partial line in the buffer
 
                 for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const jsonStr = line.substring(6).trim();
+                    if (line.startsWith('data:')) { // More general check for "data:"
+                        let jsonStr = line.substring(5).trim(); // Remove "data:" and leading/trailing spaces
+
+                        // Check if the result of stripping "data:" itself starts with "data:" again (double prefix)
+                        // Or if it's the specific case from the error "data: {" (which means jsonStr would be "data: {...")
+                        if (jsonStr.startsWith('data:')) {
+                            console.warn("Background: Detected and correcting doubly prefixed 'data:' line. Original line segment for parsing was:", jsonStr);
+                            jsonStr = jsonStr.substring(5).trim(); // Strip the second "data:"
+                        }
+
                         if (jsonStr === '[DONE]') {
                             console.log("Background: Stream signaled [DONE].");
-                            // Some APIs send a data: [DONE] message
-                            // Ensure streamApiEnd is sent, though the `done` condition above should also catch this.
-                            // chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent });
-                            // Breaking here might be too soon if [DONE] isn't the absolute last part of the stream.
-                            // Rely on reader.read() {done: true} for final termination.
                             continue;
                         }
                         if (jsonStr) {
                             try {
+                                // Ensure we are not trying to parse an empty string if all removals lead to it.
+                                if (jsonStr.length === 0) continue;
+
                                 const parsed = JSON.parse(jsonStr);
                                 if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
                                     const contentChunk = parsed.choices[0].delta.content;
@@ -369,23 +376,17 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                             chunk: contentChunk,
                                             tabId: tabId,
                                             prompt: promptContent
-                                        });
+                                        }).catch(error => console.log(`Error sending streamApiResponseChunk: ${error.message}, tabId: ${tabId}`));
                                     }
-                                    // Handling streaming tool calls (more complex, potentially out of initial scope but good to be aware of)
-                                    // For now, we focus on content chunks. If tool calls are streamed, they might need to be accumulated.
-                                    // The current design expects full tool_calls object after stream via _handleApiResponseAndSendMessage
-                                    // or a separate message if full tool call info is streamed.
+
                                     if (toolCallChunk) {
-                                        // This is a placeholder for potential future handling of streamed tool calls.
-                                        // For now, the non-streaming path handles tool calls after the full response.
-                                        // If tool calls are also streamed as deltas, they'd need to be reconstructed.
                                         console.log("Background: Received tool_call delta (streaming):", toolCallChunk);
                                          chrome.runtime.sendMessage({
-                                            action: 'streamApiToolCallChunk', // A new action if we decide to stream tool calls
+                                            action: 'streamApiToolCallChunk',
                                             toolCallChunk: toolCallChunk,
                                             tabId: tabId,
                                             prompt: promptContent
-                                        });
+                                        }).catch(error => console.log(`Error sending streamApiToolCallChunk: ${error.message}, tabId: ${tabId}`));
                                     }
                                 }
                             } catch (e) {
@@ -419,7 +420,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                 apiResponse: `Error: ${error.message}`,
                 prompt: promptContent,
                 tabId: tabId,
-            });
+            }).catch(error => console.log(`Error sending setApiResponse (from makeLlmApiRequest error): ${error.message}, tabId: ${tabId}`));
         }, errorDelay);
     }
 }
