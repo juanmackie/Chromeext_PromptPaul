@@ -346,26 +346,27 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                 buffer = lines.pop(); // Keep the last partial line in the buffer
 
                 for (const line of lines) {
-                    if (line.startsWith('data:')) { // More general check for "data:"
-                        let jsonStr = line.substring(5).trim(); // Remove "data:" and leading/trailing spaces
+                    if (line.startsWith('data:')) {
+                        let currentPayload = line.substring(5).trim(); // Remove the initial "data:" prefix and trim
 
-                        // Check if the result of stripping "data:" itself starts with "data:" again (double prefix)
-                        // Or if it's the specific case from the error "data: {" (which means jsonStr would be "data: {...")
-                        if (jsonStr.startsWith('data:')) {
-                            console.warn("Background: Detected and correcting doubly prefixed 'data:' line. Original line segment for parsing was:", jsonStr);
-                            jsonStr = jsonStr.substring(5).trim(); // Strip the second "data:"
+                        // Aggressively strip any further "data:" prefixes
+                        while (currentPayload.startsWith('data:')) {
+                            console.warn("Background: Stripping nested 'data:' prefix. Current payload before strip:", currentPayload);
+                            currentPayload = currentPayload.substring(5).trim();
+                            console.warn("Background: Current payload after strip:", currentPayload);
                         }
 
-                        if (jsonStr === '[DONE]') {
+                        if (currentPayload === '[DONE]') {
                             console.log("Background: Stream signaled [DONE].");
                             continue;
                         }
-                        if (jsonStr) {
-                            try {
-                                // Ensure we are not trying to parse an empty string if all removals lead to it.
-                                if (jsonStr.length === 0) continue;
 
-                                const parsed = JSON.parse(jsonStr);
+                        // Proceed to parse only if currentPayload is not empty and looks like JSON
+                        if (currentPayload && currentPayload.length > 0 && (currentPayload.startsWith('{') || currentPayload.startsWith('['))) {
+                            console.log('Background SSE Processing: Original line (after buffer split):', line);
+                            console.log('Background SSE Processing: Final string to be parsed (currentPayload):', currentPayload);
+                            try {
+                                const parsed = JSON.parse(currentPayload);
                                 if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
                                     const contentChunk = parsed.choices[0].delta.content;
                                     const toolCallChunk = parsed.choices[0].delta.tool_calls;
@@ -390,9 +391,13 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                                     }
                                 }
                             } catch (e) {
-                                console.error("Background: Error parsing JSON from stream:", e, "JSON string:", jsonStr);
+                                console.error("Background: Error parsing JSON from stream:", e, "Attempted to parse:", currentPayload, "Original full line:", line);
                             }
+                        } else if (currentPayload) {
+                            // Log if it's not [DONE] and not starting with { or [ after stripping data:
+                            console.log("Background: SSE line does not appear to be JSON or [DONE] after stripping prefixes. Payload:", currentPayload, "Original line:", line);
                         }
+                        // If currentPayload is empty after stripping, it's ignored.
                     }
                 }
             }
