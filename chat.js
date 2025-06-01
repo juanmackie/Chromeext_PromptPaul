@@ -244,7 +244,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
 
                 const assistantMessageWithToolCall = {
                     role: 'assistant',
-                    content: null,
+                    content: accumulatedStreamedText.trim(), // Capture pre-tool call text
                     tool_calls: [toolCall]
                 };
 
@@ -299,6 +299,8 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                             name: toolCall.function.name,
                             content: JSON.stringify(response.result)
                         });
+                        console.log("Chat: Preparing to call makeApiCall after tool execution (streamApiEnd). Current conversationHistory (last 3 messages):");
+                        console.log(conversationHistory.slice(-3));
                         makeApiCall();
                     }
                 });
@@ -369,8 +371,8 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                 activeStreamingToolCall = toolCall; // Store the active tool call
 
                 // Clear previous accumulated text from display
-                accumulatedStreamedText = "";
-                currentStreamingContentElement.innerHTML = '';
+                // accumulatedStreamedText = ""; // Preserve accumulated text
+                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
 
                 // Display tool usage
                 currentStreamingContentElement.innerHTML = marked.parse("⚙️ Using tool: **" + toolCall.function.name + "**");
@@ -621,6 +623,8 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                          } else {
                             addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                            console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
+                            console.log(conversationHistory.slice(-3));
                             makeApiCall();
                          }
                     });
