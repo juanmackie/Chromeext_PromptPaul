@@ -295,6 +295,48 @@ function loadOptions() {
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
+  const deleteProfileButton = document.getElementById('deleteProfileButton');
+
+  if (deleteProfileButton) {
+    deleteProfileButton.addEventListener('click', () => {
+      const profileSelectElement = document.getElementById('profileSelect');
+      if (!profileSelectElement) {
+        showStatus('Profile select dropdown not found.', true);
+        return;
+      }
+      const selectedProfileId = profileSelectElement.value;
+
+      if (selectedProfileId === 'default') {
+        showStatus('The "Default" profile cannot be deleted.', true);
+        return;
+      }
+
+      if (selectedProfileId === 'add_new_profile') {
+        showStatus('Please select a profile to delete.', true);
+        return;
+      }
+
+      // Confirm with the user
+      chrome.storage.local.get(['profiles'], (result) => {
+        const profiles = result.profiles || [];
+        const profileToDelete = profiles.find(p => p.id === selectedProfileId);
+        const profileName = profileToDelete ? profileToDelete.name : 'the selected profile';
+
+        if (window.confirm(`Are you sure you want to delete the profile "${profileName}"? This action cannot be undone.`)) {
+          const updatedProfiles = profiles.filter(p => p.id !== selectedProfileId);
+          chrome.storage.local.set({ profiles: updatedProfiles, lastSelectedProfileId: 'default' }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('Error deleting profile:', chrome.runtime.lastError);
+              showStatus('Error deleting profile: ' + chrome.runtime.lastError.message, true);
+            } else {
+              showStatus(`Profile "${profileName}" deleted successfully. Switched to Default profile.`, false, true);
+              loadOptions(); // This will repopulate dropdown and load default profile settings.
+            }
+          });
+        }
+      });
+    });
+  }
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
   setupToolHandlers(); // Add call to setup tool handlers
@@ -332,28 +374,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newProfileName && newProfileName.trim() !== '') {
           chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
             let profiles = result.profiles || [];
+            // Ensure profileSelectElement is available before accessing its value.
+            const currentProfileId = profileSelectElement ? profileSelectElement.value : 'default';
+            const currentProfile = profiles.find(p => p.id === currentProfileId) || profiles.find(p => p.id === 'default') || {};
+
             const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
             const newProfile = {
               id: newProfileId,
               name: newProfileName.trim(),
-              llmEndpoint: document.getElementById('llmEndpoint').value.trim(), // Start with current form values
-              apiKey: document.getElementById('apiKey').value.trim(),
-              modelName: document.getElementById('modelName').value.trim(),
-              maxTokens: document.getElementById('maxTokens').value.trim() || 2048,
-              systemPrompt: document.getElementById('systemPrompt').value.trim(),
+              llmEndpoint: document.getElementById('llmEndpoint').value.trim() || currentProfile.llmEndpoint,
+              apiKey: document.getElementById('apiKey').value.trim() || currentProfile.apiKey,
+              modelName: document.getElementById('modelName').value.trim() || currentProfile.modelName,
+              maxTokens: document.getElementById('maxTokens').value.trim() || currentProfile.maxTokens || 2048,
+              systemPrompt: document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
               lastUpdated: new Date().toLocaleString()
             };
             profiles.push(newProfile);
             chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
-              populateProfileDropdown(profiles, newProfileId); // Repopulate and select the new one
+              // populateProfileDropdown is called within loadOptions
+              loadOptions(); // Reload options to correctly populate and select.
+              // Explicitly set to new profile ID *after* loadOptions, as loadOptions might reset it.
+              profileSelectElement.value = newProfileId;
               loadProfileSettings(newProfileId); // Load its settings into the form
-              showStatus(`Profile "${newProfile.name}" created and selected. Save settings to confirm.`, false, true);
+              showStatus(`Profile "${newProfile.name}" created. Review and save settings.`, false, true);
             });
           });
         } else {
           // User cancelled or entered empty name, revert to last selected
           chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
-            profileSelectElement.value = res.lastSelectedProfileId || 'default';
+            if (profileSelectElement) {
+              profileSelectElement.value = res.lastSelectedProfileId || 'default';
+            }
           });
         }
       } else {
@@ -365,7 +416,27 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- Dark Theme Toggle Logic ---
+// This DOMContentLoaded listener should ideally be merged with the one above,
+// but for now, we'll follow the existing structure.
 document.addEventListener('DOMContentLoaded', () => {
+  // Streaming Toggle
+  const enableStreamingToggle = document.getElementById('enableStreamingToggle');
+  if (enableStreamingToggle) {
+    // Load streaming setting
+    chrome.storage.sync.get({ enableStreaming: false }, (result) => {
+      enableStreamingToggle.checked = !!result.enableStreaming;
+    });
+
+    // Save streaming setting on change
+    enableStreamingToggle.addEventListener('change', () => {
+      const isStreamingEnabled = enableStreamingToggle.checked;
+      chrome.storage.sync.set({ enableStreaming: isStreamingEnabled }, () => {
+        showStatus(`Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`, false, true);
+      });
+    });
+  }
+
+  // Dark Theme Toggle
   const darkThemeToggle = document.getElementById('darkThemeToggle');
   function applyDarkTheme(isDark) {
     if (isDark) {
@@ -389,12 +460,17 @@ document.addEventListener('DOMContentLoaded', () => {
       applyDarkTheme(isDark);
     });
   }
-  // Listen for storage changes to sync theme
+  // Listen for storage changes to sync theme and streaming
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes.darkTheme) {
-      const isDark = changes.darkTheme.newValue;
-      if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
-      applyDarkTheme(!!isDark);
+    if (area === 'sync') {
+      if (changes.darkTheme) {
+        const isDark = changes.darkTheme.newValue;
+        if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
+        applyDarkTheme(!!isDark);
+      }
+      if (changes.enableStreaming && enableStreamingToggle) {
+        enableStreamingToggle.checked = !!changes.enableStreaming.newValue;
+      }
     }
   });
 });
