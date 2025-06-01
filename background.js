@@ -731,11 +731,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     console.error(`Background: Error processing tool '${name}':`, error);
                     sendResponse({ error: error.message || 'Tool processing failed' });
                 }
-            } catch (error) {
-                console.error(`Background: Error processing tool '${name}':`, error);
-                sendResponse({ error: error.message || 'Tool processing failed' });
-            }
-        })();
+            })();
         return true; // Crucial for async sendResponse
     }
     // Handle other actions if any
