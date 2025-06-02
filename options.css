@@ -13,6 +13,16 @@
 }
 
 :root {
+  /* Shadcn theme variables */
+  --background: 0 0% 100%;
+  --foreground: 222.2 47.4% 11.2%;
+  --primary: 194 100% 27%; /* #006879 */
+  --primary-foreground: 0 0% 100%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 194 100% 27%;
+
+  /* Existing variables */
   --brand-primary: #006879;
   --brand-secondary: #4b6268;
   --brand-background: #b8ecf9;
@@ -25,6 +35,31 @@
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
   --font-family: 'Inter', sans-serif;
+}
+
+.dark {
+  /* Shadcn dark theme */
+  --background: 224 71% 4%;
+  --foreground: 213 31% 91%;
+  --primary: 194 100% 40%;
+  --primary-foreground: 0 0% 100%;
+  --border: 216 34% 17%;
+  --input: 216 34% 17%;
+  --ring: 194 100% 40%;
+
+  /* Existing dark theme */
+  --brand-primary: #004d61;
+  --selection-color: #88d0ec;
+  --brand-secondary: #1c3439;
+  --brand-background: #181a20;
+  --brand-text: #e0e6f0;
+  --surface-color: #23272f;
+  --background-color: #181a20;
+  --text-color: #e0e6f0;
+  --border-color: #353a45;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
 }
 
 /* Dark Theme Overrides */
@@ -82,6 +117,7 @@ body.dark-theme .save-button,
 body.dark-theme .save-instruction-button {
   background-color: #354a53!important;
   color: #88d0ec!important;
+  border-radius: 1.5rem;
 }
 
 body.dark-theme .clear-form-button {
@@ -351,8 +387,8 @@ button:disabled {
 }
 
 .ko-fi-button { /*Coffee */
-  background-color: #a8ecff;
-  color: #004e5b;
+  background-color: #004e5b;
+  color: #a8ecff;
   margin-bottom: 1.5rem;
   width: 192.93px;
   height: 47.81px;
@@ -363,6 +399,11 @@ button:disabled {
   background-color: #334a50;
   color: #cee7ee;
   border-radius: 1.5rem;
+}
+
+/* Custom styles for Save Settings button */
+#save {
+  border-radius: 1.5rem !important;
 }
 
 .save-instruction-button {
@@ -417,6 +458,14 @@ button:disabled {
   border-radius: 1.5rem;
 }
 
+/* Custom styles for Delete Profile button */
+#deleteProfileButton {
+  background-color: #ffb4ab !important;
+  color: #690005 !important;
+  border-radius: 1.5rem;
+  margin-top: 0.5rem;
+}
+
 .revert-button {
   background-color: #ffdad6; /* Red */
   color: #93000a;
@@ -426,8 +475,8 @@ button:disabled {
 }
 
 .feedback-button {
-  background-color: #a8ecff; /* Blue */
-  color: #004e5b;
+  background-color: #004e5b;
+  color: #a8ecff;
   width: 192.93px;
   height: 47.81px;
   border-radius: 1.5rem;
@@ -449,6 +498,9 @@ button:disabled {
   z-index: 1000;
   box-shadow: var(--shadow-md);
   background-color: rgba(255, 255, 255, 0.85);
+#systemPrompt.shadcn-textarea {
+  border-radius: 1.5rem;
+}
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
