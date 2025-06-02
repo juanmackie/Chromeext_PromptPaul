@@ -27,6 +27,7 @@
   "content_scripts": [
     {
       "matches": ["*://*/*.pdf", "file://*/*.pdf"],
+      "js": ["pdf_content_script.js"],
       "all_frames": true
     }
   ]
