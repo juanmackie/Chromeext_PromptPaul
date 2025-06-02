@@ -107,45 +107,134 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await makeLlmApiRequest(prompt, tab.id, { customInstructionToolChoice: instructionToolChoice });
 });
 
+// Helper function to check for valid URL
+function isValidURL(string) {
+  try {
+    new URL(string);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 // ValidateConfig function to include API configuration
 async function validateConfig() {
   return new Promise((resolve, reject) => {
     console.log('Background: Validating configuration...');
-    chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+    // Fetch profiles, lastSelectedProfileId, and defaultLlmEndpoint simultaneously
+    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], (result) => {
       console.log('Background: Storage get result:', result);
       const profiles = result.profiles || [];
       const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+      const defaultLlmEndpoint = result.defaultLlmEndpoint || ''; // Get default endpoint
 
       console.log('Background: Profiles:', profiles);
       console.log('Background: Last selected profile ID:', lastSelectedProfileId);
+      console.log('Background: Default LLM Endpoint:', defaultLlmEndpoint);
 
-      const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+      let selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+      let profileToUse = null;
+      let endpointError = false;
 
-      if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
-        console.warn('Background: Selected profile is missing or incomplete');
-        // Fallback or error if selected profile is incomplete or not found
-        // As a fallback, try to find the default profile
-        const defaultProfile = profiles.find(p => p.id === 'default');
-        if (defaultProfile && defaultProfile.llmEndpoint && defaultProfile.apiKey && defaultProfile.modelName) {
-           console.warn(`Background: Selected profile '${lastSelectedProfileId}' incomplete or not found, using default profile.`);
-           resolve(defaultProfile);
+      // Scenario 1: A selected profile exists
+      if (selectedProfile) {
+        console.log(`Background: Checking selected profile: ${selectedProfile.name || selectedProfile.id}`);
+        // Check if its endpoint is valid
+        if (selectedProfile.llmEndpoint && isValidURL(selectedProfile.llmEndpoint)) {
+          // If endpoint is valid, check for API key and model name
+          if (selectedProfile.apiKey && selectedProfile.modelName) {
+            profileToUse = selectedProfile;
+            console.log(`Background: Selected profile '${profileToUse.name || profileToUse.id}' is valid and complete.`);
+          } else {
+            // Endpoint is valid, but API key or model name is missing
+            console.warn(`Background: Selected profile '${selectedProfile.name || selectedProfile.id}' has a valid endpoint but is missing API key or model name.`);
+            // We will later check the default profile or reject with a generic error
+          }
         } else {
-           console.error('Background: Default profile is also incomplete or missing');
-           // If even default is incomplete, reject
-           reject(
-             new Error(
-               'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'
-             )
-           );
+          // Selected profile's endpoint is missing or invalid
+          console.warn(`Background: Selected profile '${selectedProfile.name || selectedProfile.id}' has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.`);
+          endpointError = true; // Mark that an endpoint issue was detected
+          if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
+            // Default LLM endpoint is valid, try to use it with the selected profile's other details
+            if (selectedProfile.apiKey && selectedProfile.modelName) {
+              // Create a temporary profile object with the default endpoint
+              profileToUse = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
+              console.log(`Background: Using defaultLlmEndpoint for selected profile '${selectedProfile.name || selectedProfile.id}'.`);
+            } else {
+              // Default endpoint is ok, but selected profile still missing API key/model
+              console.warn(`Background: defaultLlmEndpoint is valid, but selected profile '${selectedProfile.name || selectedProfile.id}' is still missing API key or model name.`);
+            }
+          } else {
+            // Default LLM endpoint is also missing or invalid
+            console.warn('Background: defaultLlmEndpoint is also missing or invalid.');
+            // No need to set profileToUse, will proceed to defaultProfile check or reject
+          }
         }
       } else {
-        console.log(`Background: Using configuration from profile: ${selectedProfile.name || selectedProfile.id}`);
+        console.warn('Background: No selected profile found with ID:', lastSelectedProfileId);
+        endpointError = true; // Potentially an endpoint issue if no profile is selected
+      }
+
+      // Scenario 2: If no valid profileToUse yet, try the default profile
+      if (!profileToUse) {
+        console.log('Background: No valid selected profile configuration yet. Checking default profile...');
+        const defaultProfile = profiles.find(p => p.id === 'default');
+
+        if (defaultProfile) {
+          console.log('Background: Checking default profile.');
+          // Check default profile's endpoint
+          if (defaultProfile.llmEndpoint && isValidURL(defaultProfile.llmEndpoint)) {
+            if (defaultProfile.apiKey && defaultProfile.modelName) {
+              profileToUse = defaultProfile;
+              endpointError = false; // Default profile has a valid endpoint
+              console.log('Background: Using default profile as it is valid and complete.');
+            } else {
+              console.warn('Background: Default profile has a valid endpoint but is missing API key or model name.');
+              // endpointError remains true if it was set by selectedProfile's endpoint failure
+            }
+          } else {
+            // Default profile's endpoint is missing or invalid
+            console.warn('Background: Default profile has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.');
+            endpointError = true; // Mark that an endpoint issue was detected with default profile
+            if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
+              if (defaultProfile.apiKey && defaultProfile.modelName) {
+                profileToUse = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
+                console.log('Background: Using defaultLlmEndpoint for default profile.');
+                endpointError = false; // Using the global default endpoint successfully
+              } else {
+                  console.warn('Background: defaultLlmEndpoint is valid, but default profile is still missing API key or model name.');
+              }
+            } else {
+              console.warn('Background: defaultLlmEndpoint is also missing or invalid (when checking for default profile).');
+            }
+          }
+        } else {
+          console.warn('Background: Default profile (id: "default") not found.');
+          // endpointError remains true if it was set by selectedProfile's endpoint failure or no selected profile
+        }
+      }
+
+      // Scenario 3: Final decision based on profileToUse and endpointError
+      if (profileToUse && profileToUse.llmEndpoint && profileToUse.apiKey && profileToUse.modelName && isValidURL(profileToUse.llmEndpoint)) {
+        console.log(`Background: Using configuration from profile: ${profileToUse.name || profileToUse.id}`);
         console.log('Background: Configuration:', {
-          endpoint: selectedProfile.llmEndpoint,
-          key: selectedProfile.apiKey ? '********' + selectedProfile.apiKey.slice(-4) : 'Not set',
-          model: selectedProfile.modelName
+          endpoint: profileToUse.llmEndpoint,
+          key: profileToUse.apiKey ? '********' + profileToUse.apiKey.slice(-4) : 'Not set',
+          model: profileToUse.modelName,
+          systemPrompt: profileToUse.systemPrompt // also log systemPrompt
         });
-        resolve(selectedProfile);
+        resolve(profileToUse);
+      } else {
+        // If no usable profile is found, decide on the error message
+        if (endpointError && (!profileToUse || !isValidURL(profileToUse.llmEndpoint))) {
+          // If an endpoint error was specifically identified and not resolved
+          console.error('Background: Configuration rejected due to missing or invalid LLM API endpoint.');
+          reject(new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.'));
+        } else {
+          // For any other missing configuration (API key, model name, or profile entirely missing)
+          console.error('Background: Configuration rejected due to incomplete general configuration.');
+          reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
+        }
       }
     });
   });
@@ -190,12 +279,33 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+    let config, tools, enableStreaming;
     try {
-        const [config, tools, { enableStreaming }] = await Promise.all([
-            validateConfig(),
-            getAllToolDefinitions(),
-            new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve))
-        ]);
+        // Step 1: Validate configuration and get tool definitions
+        try {
+            const results = await Promise.all([
+                validateConfig(),
+                getAllToolDefinitions(),
+                new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, data => resolve(data)))
+            ]);
+            config = results[0];
+            tools = results[1];
+            enableStreaming = results[2].enableStreaming;
+        } catch (error) {
+            // Check if this is the specific configuration error we're looking for
+            if (error.message === "LLM API endpoint is missing or invalid. Please configure it in the options page.") {
+                console.warn("Background: Caught specific LLM endpoint configuration error.");
+                chrome.runtime.sendMessage({
+                    action: 'displayErrorInChat', // New action for chat.js
+                    errorMessage: "The LLM API endpoint is not configured or is invalid. Please go to the extension options page (right-click the extension icon) and set it up.",
+                    tabId: tabId,
+                    prompt: promptContent // Pass prompt content for context if needed
+                }).catch(e => console.error("Background: Error sending displayErrorInChat message:", e));
+                return; // Stop further execution in this function
+            }
+            // If it's a different error from validateConfig or other setup, re-throw it
+            throw error;
+        }
 
         const formattedTools = tools.map(tool => {
             try {
@@ -407,16 +517,16 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         }
 
     } catch (error) {
-        console.error('Error in makeLlmApiRequest:', error);
-        // Determine error message delay based on context, matching original behavior
+        // This is the generic catch block for any other errors that occur in makeLlmApiRequest
+        console.error('Error in makeLlmApiRequest (generic catch):', error);
         const errorDelay = isStartChat ? 300 : 200;
         setTimeout(() => {
             chrome.runtime.sendMessage({
                 action: 'setApiResponse',
-                apiResponse: `Error: ${error.message}`,
+                apiResponse: `Error: ${error.message}`, // Standard error reporting
                 prompt: promptContent,
                 tabId: tabId,
-            }).catch(error => console.log(`Error sending setApiResponse (from makeLlmApiRequest error): ${error.message}, tabId: ${tabId}`));
+            }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
         }, errorDelay);
     }
 }
