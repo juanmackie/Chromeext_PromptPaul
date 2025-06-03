@@ -9,6 +9,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
 
+    // Quick Actions Sidebar Elements
+    const summarizeTabButton = document.getElementById('summarize-tab-button');
+    const pinnedActionsContainer = document.getElementById('pinned-actions-container');
+    const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button');
+
     const darkThemeToggle = document.getElementById('darkThemeToggle');
     function applyDarkTheme(isDark) {
         if (isDark) {
@@ -35,6 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const isDark = changes.darkTheme.newValue;
             if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
             applyDarkTheme(!!isDark);
+        }
+        // Added conditions for pinned actions and instructions
+        if (area === 'local' && (changes.pinnedQuickActions || changes.instructions)) {
+            renderPinnedActions();
         }
     });
 
@@ -813,4 +822,163 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             sendButton.disabled = false;
         }
     });
+
+    // --- Summarize Tab Button Functionality ---
+    if (summarizeTabButton) {
+        summarizeTabButton.addEventListener('click', () => {
+            showToast('Requesting tab content for summary...');
+            chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Error sending getTabContent message:", chrome.runtime.lastError.message);
+                    showToast(`Error: ${chrome.runtime.lastError.message}`);
+                    return;
+                }
+                if (response && response.action === 'tabContentResponse') {
+                    if (response.content) {
+                        const prompt = "Summarize the following text:\n\n" + response.content;
+                        // Ensure chat area is visible
+                        chatMainArea.style.display = 'block';
+                        oneoffInstructionArea.style.display = 'none';
+                        makeApiCall(prompt);
+                        showToast('Tab content received, summarizing...');
+                    } else {
+                        showToast('No content received from tab.');
+                    }
+                } else if (response && response.action === 'error') {
+                    showToast(`Error getting tab content: ${response.message}`);
+                } else {
+                    showToast('Failed to get tab content. Unknown response.');
+                }
+            });
+        });
+    }
+
+    // --- Pinned Instructions Functionality ---
+    async function renderPinnedActions() {
+        if (!pinnedActionsContainer) return;
+        pinnedActionsContainer.innerHTML = ''; // Clear existing pinned actions
+
+        try {
+            const { pinnedQuickActions, instructions } = await new Promise((resolve, reject) => {
+                chrome.storage.local.get(['pinnedQuickActions', 'instructions'], (result) => {
+                    if (chrome.runtime.lastError) {
+                        return reject(chrome.runtime.lastError);
+                    }
+                    resolve(result);
+                });
+            });
+
+            const currentPins = pinnedQuickActions || [];
+            const allInstructions = instructions || [];
+
+            if (currentPins.length === 0) {
+                // Optionally, display a message like "No pinned actions yet."
+                // For now, just leave it empty or add a placeholder if desired.
+                // const placeholder = document.createElement('p');
+                // placeholder.textContent = 'No pins';
+                // placeholder.style.fontSize = '0.7em';
+                // placeholder.style.textAlign = 'center';
+                // placeholder.style.color = '#888';
+                // pinnedActionsContainer.appendChild(placeholder);
+                return;
+            }
+
+            currentPins.forEach(pinId => {
+                const instruction = allInstructions.find(inst => inst.id === pinId);
+                if (instruction) {
+                    const button = document.createElement('button');
+                    button.textContent = instruction.name;
+                    button.title = instruction.content; // Show full instruction on hover
+                    button.classList.add('quick-action-button', 'pinned-action-item');
+                    button.dataset.instructionId = instruction.id; // Store ID
+                    // button.dataset.instructionContent = instruction.content; // Or store full content
+
+                    button.addEventListener('click', () => {
+                        // Ensure chat area is visible
+                        chatMainArea.style.display = 'block';
+                        oneoffInstructionArea.style.display = 'none';
+
+                        let prompt = instruction.content;
+                        if (selectedText && selectedText.trim() !== "") {
+                            prompt += '\n\nSelected Text:\n' + selectedText;
+                        }
+                        makeApiCall(prompt);
+                        showToast(`Executing: ${instruction.name}`);
+                    });
+                    pinnedActionsContainer.appendChild(button);
+                }
+            });
+        } catch (error) {
+            console.error("Error rendering pinned actions:", error);
+            showToast("Error loading pinned actions.");
+        }
+    }
+
+    // Initial call to render and listener for changes will be added later.
+    if (managePinnedActionsButton) {
+        managePinnedActionsButton.addEventListener('click', async () => {
+            try {
+                const { instructions, pinnedQuickActions } = await new Promise((resolve, reject) => {
+                    chrome.storage.local.get(['instructions', 'pinnedQuickActions'], (result) => {
+                        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+                        resolve(result);
+                    });
+                });
+
+                const allInstructions = instructions || [];
+                let currentPins = pinnedQuickActions || [];
+
+                if (allInstructions.length === 0) {
+                    showToast("No instructions available to pin.");
+                    return;
+                }
+
+                let message = "Available instructions (ID: Name):\n";
+                allInstructions.forEach(inst => {
+                    message += `${inst.id}: ${inst.name} ${currentPins.includes(inst.id) ? '(Pinned)' : ''}\n`;
+                });
+                message += "\nEnter ID to toggle pin (or type 'cancel'):";
+
+                const instructionIdToToggle = prompt(message);
+
+                if (instructionIdToToggle === null || instructionIdToToggle.toLowerCase() === 'cancel' || instructionIdToToggle.trim() === '') {
+                    showToast("Pin management cancelled.");
+                    return;
+                }
+
+                const instructionExists = allInstructions.some(inst => inst.id === instructionIdToToggle);
+                if (!instructionExists) {
+                    showToast(`Instruction ID "${instructionIdToToggle}" not found.`);
+                    return;
+                }
+
+                if (currentPins.includes(instructionIdToToggle)) {
+                    currentPins = currentPins.filter(id => id !== instructionIdToToggle);
+                    showToast(`Instruction "${allInstructions.find(i=>i.id===instructionIdToToggle).name}" unpinned.`);
+                } else {
+                    currentPins.push(instructionIdToToggle);
+                    showToast(`Instruction "${allInstructions.find(i=>i.id===instructionIdToToggle).name}" pinned.`);
+                }
+
+                await new Promise((resolve, reject) => {
+                    chrome.storage.local.set({ pinnedQuickActions: currentPins }, () => {
+                        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+                        resolve();
+                    });
+                });
+                // renderPinnedActions will be called by the storage.onChanged listener,
+                // but calling it directly ensures immediate UI update if storage change event is slow.
+                renderPinnedActions();
+            } catch (error) {
+                console.error("Error managing pinned actions:", error);
+                showToast("Error managing pins: " + error.message);
+            }
+        });
+    }
+
+    // Initial rendering of pinned actions
+    renderPinnedActions();
+
+    // The chrome.storage.onChanged listener above has been updated to include this logic.
+    // No need for a separate listener here.
 });

@@ -228,6 +228,14 @@
 </head>
 <link rel="stylesheet" href="chat.css?v=2">
 <body>
+    <div id="quick-actions-sidebar">
+        <!-- Preset "Summarize this tab" button -->
+        <button id="summarize-tab-button" class="quick-action-button">Summarize Tab</button>
+        <!-- Pinned instructions will be added here by chat.js -->
+        <div id="pinned-actions-container"></div>
+        <!-- Button to manage/add pinned instructions -->
+        <button id="manage-pinned-actions-button" class="quick-action-button">+</button>
+    </div>
     <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
       <label style="font-size: 0.95em; cursor: pointer;">
         <input type="checkbox" id="darkThemeToggle" style="vertical-align: middle; margin-right: 4px;">
