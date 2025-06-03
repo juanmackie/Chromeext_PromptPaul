@@ -588,16 +588,65 @@ function setupInstructionHandlers() {
           <td>${instruction.name}</td>
           <td>${instruction.content}</td>
           <td>${toolChoiceDisplay}</td>
+          <td><button class="pin-btn" data-id="${instruction.id}" title="Toggle Pin"><span class="material-symbols-outlined">hourglass_empty</span></button></td>
           <td>
             <button class="edit-btn" data-id="${instruction.id}">Edit</button>
-            <button class="improve-btn" data-id="${instruction.id}">Improve</button> <!-- Keep improve button -->
+            <button class="improve-btn" data-id="${instruction.id}">Improve</button>
             <button class="delete-btn" data-id="${instruction.id}">Delete</button>
           </td>
         `;
         tableBody.appendChild(row);
+
+        // Asynchronously update the just-added pin button's state
+        const currentPinButton = row.querySelector(`.pin-btn[data-id="${instruction.id}"]`);
+        if (currentPinButton) {
+            chrome.storage.local.get(['pinnedQuickActions'], (result) => {
+                const pinnedQuickActions = result.pinnedQuickActions || [];
+                if (pinnedQuickActions.includes(instruction.id)) {
+                    currentPinButton.innerHTML = '<span class="material-symbols-outlined">keep_off</span>';
+                    currentPinButton.classList.add('pinned');
+                    currentPinButton.title = 'Unpin from Quick Actions';
+                } else {
+                    currentPinButton.innerHTML = '<span class="material-symbols-outlined">push_pin</span>';
+                    currentPinButton.classList.remove('pinned'); // Ensure it's not there if re-rendering
+                    currentPinButton.title = 'Pin to Quick Actions';
+                }
+            });
+        }
       });
 
-      // Add edit/delete handlers
+      // Add pin/edit/delete handlers (improve-btn is handled separately if it has complex logic)
+      document.querySelectorAll('.pin-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const button = e.currentTarget;
+          const instructionId = button.dataset.id;
+
+          chrome.storage.local.get(['pinnedQuickActions'], (result) => {
+            let pinnedQuickActions = result.pinnedQuickActions || [];
+            const isPinned = pinnedQuickActions.includes(instructionId);
+
+            if (isPinned) {
+              pinnedQuickActions = pinnedQuickActions.filter(id => id !== instructionId);
+              button.innerHTML = '<span class="material-symbols-outlined">push_pin</span>';
+              button.classList.remove('pinned');
+              button.title = 'Pin to Quick Actions';
+              showStatus('Instruction unpinned from Quick Actions.');
+            } else {
+              pinnedQuickActions.push(instructionId);
+              button.innerHTML = '<span class="material-symbols-outlined">keep_off</span>';
+              button.classList.add('pinned');
+              button.title = 'Unpin from Quick Actions';
+              showStatus('Instruction pinned to Quick Actions.');
+            }
+
+            chrome.storage.local.set({ pinnedQuickActions: pinnedQuickActions }, () => {
+              if (chrome.runtime.lastError) {
+                showStatus('Error updating pinned status: ' + chrome.runtime.lastError.message, true);
+              }
+            });
+          });
+        });
+      });
       document.querySelectorAll('.edit-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const instructionId = e.target.dataset.id;
