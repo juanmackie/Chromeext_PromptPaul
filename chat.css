@@ -16,7 +16,7 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background-color: #ffffff; /* Slightly different shade */
+    background-color: #f0f0f0; /* Slightly different shade */
     padding: 10px 5px; /* More padding top/bottom */
     box-shadow: 2px 0 5px rgba(0,0,0,0.1);
     align-items: center;
@@ -31,7 +31,7 @@ body {
     padding: 0; /* Remove padding for flex centering */
     border: 1px solid #ccc;
     border-radius: 5px;
-    background-color: #88d0ec;
+    background-color: white;
     cursor: pointer;
     word-wrap: break-word;
     display: flex;
