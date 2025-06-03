@@ -221,13 +221,14 @@ label {
   transition: color 0.2s ease;
 }
 
-input[type="text"],
-input[type="number"],
-textarea {
+/* General inputs, excluding shadcn ones which have their own detailed styling from shadcn.css */
+input[type="text"]:not(.shadcn-input),
+input[type="number"], /* Assuming number inputs aren't using .shadcn-input style for now */
+textarea:not(.shadcn-textarea) {
   width: 90%;
   padding: 1rem 1.25rem;
   border: 2px solid var(--border-color);
-  border-radius: 1.5rem;
+  border-radius: 1.5rem; /* This radius is for non-shadcn elements */
   background-color: rgba(255, 255, 255, 0.85);
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   font-family: inherit;
@@ -728,4 +729,30 @@ footer a:hover {
 
 #toolHttpMethod {
   border-radius: 1.5rem;
+}
+
+/* Ensure the specific paragraph with text-center is centered */
+.flex-col p.text-muted-foreground.text-center.mt-2 {
+    text-align: center;
+    width: 100%; /* Ensures the paragraph takes full width of its container to center text within */
+}
+
+/* Styles for Pin Button in Instructions Table */
+.pin-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem; /* Adjust as needed */
+  vertical-align: middle; /* Align icon nicely with text in other cells */
+}
+
+.pin-btn .material-symbols-outlined {
+  font-size: 1.2rem; /* Adjust icon size as needed */
+  /* Optionally, add color here or handle through .pinned class */
+}
+
+/* Optional: Style for when a button is pinned */
+.pin-btn.pinned .material-symbols-outlined {
+  color: var(--brand-primary); /* Example: use brand color for pinned items */
+  /* Or use a specific fill/font variation for Material Symbols if applicable */
 }

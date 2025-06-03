@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quick Actions Sidebar Elements
     const summarizeTabButton = document.getElementById('summarize-tab-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
-    const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button');
+    // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
     const darkThemeToggle = document.getElementById('darkThemeToggle');
     function applyDarkTheme(isDark) {
@@ -916,66 +916,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
     }
 
     // Initial call to render and listener for changes will be added later.
-    if (managePinnedActionsButton) {
-        managePinnedActionsButton.addEventListener('click', async () => {
-            try {
-                const { instructions, pinnedQuickActions } = await new Promise((resolve, reject) => {
-                    chrome.storage.local.get(['instructions', 'pinnedQuickActions'], (result) => {
-                        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-                        resolve(result);
-                    });
-                });
-
-                const allInstructions = instructions || [];
-                let currentPins = pinnedQuickActions || [];
-
-                if (allInstructions.length === 0) {
-                    showToast("No instructions available to pin.");
-                    return;
-                }
-
-                let message = "Available instructions (ID: Name):\n";
-                allInstructions.forEach(inst => {
-                    message += `${inst.id}: ${inst.name} ${currentPins.includes(inst.id) ? '(Pinned)' : ''}\n`;
-                });
-                message += "\nEnter ID to toggle pin (or type 'cancel'):";
-
-                const instructionIdToToggle = prompt(message);
-
-                if (instructionIdToToggle === null || instructionIdToToggle.toLowerCase() === 'cancel' || instructionIdToToggle.trim() === '') {
-                    showToast("Pin management cancelled.");
-                    return;
-                }
-
-                const instructionExists = allInstructions.some(inst => inst.id === instructionIdToToggle);
-                if (!instructionExists) {
-                    showToast(`Instruction ID "${instructionIdToToggle}" not found.`);
-                    return;
-                }
-
-                if (currentPins.includes(instructionIdToToggle)) {
-                    currentPins = currentPins.filter(id => id !== instructionIdToToggle);
-                    showToast(`Instruction "${allInstructions.find(i=>i.id===instructionIdToToggle).name}" unpinned.`);
-                } else {
-                    currentPins.push(instructionIdToToggle);
-                    showToast(`Instruction "${allInstructions.find(i=>i.id===instructionIdToToggle).name}" pinned.`);
-                }
-
-                await new Promise((resolve, reject) => {
-                    chrome.storage.local.set({ pinnedQuickActions: currentPins }, () => {
-                        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-                        resolve();
-                    });
-                });
-                // renderPinnedActions will be called by the storage.onChanged listener,
-                // but calling it directly ensures immediate UI update if storage change event is slow.
-                renderPinnedActions();
-            } catch (error) {
-                console.error("Error managing pinned actions:", error);
-                showToast("Error managing pins: " + error.message);
-            }
-        });
-    }
+    // The block for managePinnedActionsButton listener has been removed.
 
     // Initial rendering of pinned actions
     renderPinnedActions();
