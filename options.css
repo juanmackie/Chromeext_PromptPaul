@@ -443,13 +443,13 @@ button:disabled {
   margin-right: 0.5rem;
   margin-bottom: 0.5rem;
   margin-top: 0.5rem;
-  background-color: #a8edff; /* Blue */
+  background-color: #a8edff; /* Updated to match button-pin */
   color: #004e5b;
   border-radius: 1.5rem;
 }
 .edit-tool-btn {
   border-radius: 1.5rem;
-  background-color: #a8edff; /* Blue */
+  background-color: #a8edff; /* Updated to match button-pin */
   color: #004e5b;
 }
 
