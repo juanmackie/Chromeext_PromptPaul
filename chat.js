@@ -887,8 +887,9 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                 const instruction = allInstructions.find(inst => inst.id === pinId);
                 if (instruction) {
                     const button = document.createElement('button');
-                    button.textContent = instruction.name;
-                    button.title = instruction.content; // Show full instruction on hover
+                    const iconLetter = instruction.name ? instruction.name[0].toUpperCase() : '?';
+                    button.textContent = iconLetter;
+                    button.title = instruction.name; // Set full instruction name as tooltip
                     button.classList.add('quick-action-button', 'pinned-action-item');
                     button.dataset.instructionId = instruction.id; // Store ID
                     // button.dataset.instructionContent = instruction.content; // Or store full content

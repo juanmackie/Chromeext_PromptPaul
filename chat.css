@@ -24,19 +24,21 @@ body {
 }
 
 .quick-action-button {
-    width: 100%; /* Full width of sidebar */
-    height: auto;
-    min-height: 40px; /* Minimum height */
+    width: 100%;
+    min-height: 40px;
+    height: 40px; /* Fixed height */
     margin-bottom: 10px;
-    padding: 8px 4px; /* Adjusted padding */
+    padding: 0; /* Remove padding for flex centering */
     border: 1px solid #ccc;
     border-radius: 5px;
     background-color: white;
     cursor: pointer;
-    text-align: center;
-    font-size: 0.75em; /* Smaller font for condensed text */
-    word-wrap: break-word; /* Wrap long text */
-    line-height: 1.2;
+    word-wrap: break-word;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4em; /* Larger font for icon */
+    font-weight: bold;
 }
 
 .quick-action-button:hover {
@@ -46,8 +48,9 @@ body {
 
 #manage-pinned-actions-button {
     margin-top: auto; /* Pushes this button to the bottom */
-    font-size: 1.5em; /* Larger font for "+" */
-    font-weight: bold;
+    font-size: 1.8em; /* Adjust if it becomes too large */
+    font-weight: bold; /* Ensure boldness, inherits from .quick-action-button but can be explicit */
+    /* It will also become a flex centered button due to .quick-action-button style */
 }
 
 /* Ensure chat-container takes remaining width and manages its own scrolling */
