@@ -24,10 +24,9 @@ body {
 }
 
 .quick-action-button {
-    width: 100%;
-    min-height: 40px;
-    max-height: 40px; /* Ensure fixed height */
-    margin-bottom: 10px;
+    width: 40px; /* Set fixed width to match height for square buttons */
+    height: 40px; /* Ensure fixed height */
+    margin-bottom: 5px; /* Reduce margin for closer buttons */
     padding: 0; /* Remove padding for flex centering */
     border: 1px solid #004d61;
     border-radius: 5px;
@@ -89,8 +88,8 @@ body.dark-theme #quick-actions-sidebar {
 }
 
 body.dark-theme .quick-action-button {
-    background-color: #3a3a3a;
-    border-color: #555;
+    background-color: #000000;
+    border-color: #000000;
     color: #e0e0e0;
 }
 
