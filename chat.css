@@ -124,6 +124,10 @@ body.dark-theme .user-message {
 body.dark-theme button {
     background-color: var(--primary-color) !important;
     color: #fff !important;
+body.dark-theme #send-button {
+    border-radius: 1.5rem;
+    background-color: #004e5b;
+}
 }
 
 body.dark-theme #clear-button {
@@ -280,13 +284,14 @@ body.dark-theme ::selection {
 }
 
 .llm-message img {
-    display: inline-block; /* Make icons display inline */
+    display: inline-block;
     vertical-align: middle;
     margin-left: 5px;
-    width: 16px;
-    height: 16px;
+    /* Removed margin-bottom to prevent vertical spacing */
+    width: 14px;
+    height: 14px;
     cursor: pointer;
-    z-index: 10; /* Ensure icons are above other elements */
+    z-index: 10;
 }
 
 .llm-message .copy-icons-container {
@@ -295,7 +300,7 @@ body.dark-theme ::selection {
     flex-wrap: nowrap;
     gap: 5px;
     align-items: center;
-    padding-bottom: 5px; /* Add a small padding to prevent clipping */
+    /* Removed padding-bottom to prevent extra vertical space */
 }
 
 .user-message {
@@ -319,16 +324,21 @@ button {
 
 #send-button {
     border-radius: 1.5rem;
-    background-color: #334a50;
-    color: #cee7ee;
+    background-color: #004e5b;
+    color: #a8ecff;
 }
 
 #clear-button {
     margin-left: 0.5rem;
-    background-color: #ffdad6;
-    color: #93000a;
+    background-color: #ffb4ab !important;
+    color: #690005 !important;
     border-radius: 1.5rem;
     }
+
+#submitBtn {
+    background-color: #004e5b;
+    color: #a8ecff;
+}
 
 /* Adjust input area and buttons when sidebar is open */
 body.sidebar-open #input-area {
@@ -389,4 +399,9 @@ body.sidebar-open #chat-area {
   --md-sys-color-surface-container: rgb(27 33 34);
   --md-sys-color-surface-container-high: rgb(37 43 45);
   --md-sys-color-surface-container-highest: rgb(48 54 55);
+}
+
+/* Add style for instructionInput */
+#instructionInput {
+  border-radius: 1.5rem;
 }
