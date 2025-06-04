@@ -656,33 +656,15 @@ function setupInstructionHandlers() {
             document.getElementById('instructionContent').value = instruction.content;
             document.getElementById('instructionId').value = instruction.id;
 
-            // Set the tool_choice dropdown (multi-select)
-            const toolChoiceSelect = document.getElementById('instructionToolChoice');
-            if (toolChoiceSelect) {
-              // Clear previous selections
-              Array.from(toolChoiceSelect.options).forEach(option => {
-                option.selected = false;
-              });
-
-              // Select the appropriate options based on instruction.tool_choice
+            // Set the tool_choice input
+            const toolChoiceInput = document.getElementById('instructionToolChoice');
+            if (toolChoiceInput) {
               if (Array.isArray(instruction.tool_choice)) {
-                instruction.tool_choice.forEach(choice => {
-                  const option = toolChoiceSelect.querySelector(`option[value="${choice}"]`);
-                  if (option) {
-                    option.selected = true;
-                  }
-                });
-              } else if (instruction.tool_choice) { // Handle older string format
-                 const option = toolChoiceSelect.querySelector(`option[value="${instruction.tool_choice}"]`);
-                 if (option) {
-                   option.selected = true;
-                 }
+                toolChoiceInput.value = instruction.tool_choice.join(', ');
+              } else if (instruction.tool_choice) {
+                toolChoiceInput.value = instruction.tool_choice;
               } else {
-                 // Default to 'none' if tool_choice is not set
-                 const noneOption = toolChoiceSelect.querySelector('option[value="none"]');
-                 if (noneOption) {
-                   noneOption.selected = true;
-                 }
+                toolChoiceInput.value = 'none';
               }
             }
           }
@@ -760,8 +742,8 @@ function setupInstructionHandlers() {
       const instructionName = document.getElementById('instructionName').value.trim();
       const instructionContent = document.getElementById('instructionContent').value.trim();
       const instructionId = document.getElementById('instructionId').value;
-      const toolChoiceSelect = document.getElementById('instructionToolChoice');
-      const selectedToolChoices = Array.from(toolChoiceSelect.selectedOptions).map(option => option.value);
+      const toolChoiceInput = document.getElementById('instructionToolChoice');
+      const toolChoiceValue = toolChoiceInput.value.trim();
 
       if (!instructionName || !instructionContent) {
         showStatus('Instruction name and content are required.', true);
@@ -780,7 +762,7 @@ function setupInstructionHandlers() {
                 ...inst,
                 name: instructionName,
                 content: instructionContent,
-                tool_choice: selectedToolChoices, // Save as array
+                tool_choice: toolChoiceValue || 'none', // Save as string
                 lastUpdated: now
               };
             }
@@ -793,7 +775,7 @@ function setupInstructionHandlers() {
             id: 'inst_' + Date.now(), // Simple unique ID
             name: instructionName,
             content: instructionContent,
-            tool_choice: selectedToolChoices, // Save as array
+            tool_choice: toolChoiceValue || 'none', // Save as string
             createdAt: now,
             lastUpdated: now
           };
@@ -818,17 +800,7 @@ function setupInstructionHandlers() {
     document.getElementById('instructionName').value = '';
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
-    const toolChoiceSelect = document.getElementById('instructionToolChoice');
-    if (toolChoiceSelect) {
-      // Clear selected options and set to 'none'
-      Array.from(toolChoiceSelect.options).forEach(option => {
-        option.selected = false;
-      });
-      const noneOption = toolChoiceSelect.querySelector('option[value="none"]');
-      if (noneOption) {
-        noneOption.selected = true;
-      }
-    }
+    document.getElementById('instructionToolChoice').value = '';
     showStatus('Form cleared.');
   }
 

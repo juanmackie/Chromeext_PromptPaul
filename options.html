@@ -179,15 +179,11 @@
         </div>
         <div class="form-group">
           <label for="instructionContent">Instruction Content</label>
-          <textarea id="instructionContent" placeholder="Enter instruction content" rows="4"></textarea>
+          <input type="text" id="instructionContent" placeholder="Enter instruction content" class="shadcn-input">
         </div>
         <div class="form-group">
           <label for="instructionToolChoice">Tool Choice</label>
-          <select id="instructionToolChoice" multiple size="4">
-            <option value="none">None (Default)</option>
-            <option value="auto">Auto</option>
-            <!-- Tools will be populated here -->
-          </select>
+          <input type="text" id="instructionToolChoice" placeholder="Select tools" class="shadcn-input">
           <small>Select tools the AI can use with this instruction. Use Ctrl/Cmd + Click to select multiple. "None" prevents tool use, "Auto" allows any tool.</small>
         </div>
         <input type="hidden" id="instructionId">
