@@ -18,8 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyDarkTheme(isDark) {
         if (isDark) {
             document.body.classList.add('dark-theme');
+            if (document.getElementById('darkThemeIcon')) {
+                document.getElementById('darkThemeIcon').textContent = 'wb_sunny'; // Sun icon for dark theme
+            }
         } else {
             document.body.classList.remove('dark-theme');
+            if (document.getElementById('darkThemeIcon')) {
+                document.getElementById('darkThemeIcon').textContent = 'brightness_2'; // Moon icon for light theme
+            }
         }
     }
     chrome.storage.sync.get({ darkTheme: false }, (result) => {

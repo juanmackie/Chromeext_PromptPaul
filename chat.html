@@ -3,6 +3,7 @@
 <head>
     <title>LLM Chat</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         :root {
           --primary-color: #306794;
@@ -236,9 +237,10 @@
         <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
     </div>
     <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
-      <label style="font-size: 0.95em; cursor: pointer;">
-        <input type="checkbox" id="darkThemeToggle" style="vertical-align: middle; margin-right: 4px;">
-        Dark Theme
+      <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center;">
+        <input type="checkbox" id="darkThemeToggle" style="vertical-align: middle; margin-right: 4px; appearance: none; width: 32px; height: 20px; background-color: #ccc; border-radius: 10px; position: relative; transition: background-color 0.3s;">
+        <span id="darkThemeIcon" style="margin-right: 4px; font-size: 1.2em; vertical-align: middle;" class="material-icons">brightness_2</span>
+        Dark/Light Theme
       </label>
     </div>
     <div class="chat-container">

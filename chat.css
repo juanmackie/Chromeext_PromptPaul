@@ -401,6 +401,38 @@ body.sidebar-open #chat-area {
   --md-sys-color-surface-container-highest: rgb(48 54 55);
 }
 
+/* Custom dark theme toggle switch */
+#darkThemeToggle {
+  appearance: none;
+  width: 32px;
+  height: 20px;
+  background-color: #ccc;
+  border-radius: 10px;
+  position: relative;
+  transition: background-color 0.3s;
+  cursor: pointer;
+}
+
+#darkThemeToggle:checked {
+  background-color: #007bff;
+}
+
+#darkThemeToggle::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background-color: white;
+  border-radius: 50%;
+  top: 1px;
+  left: 1px;
+  transition: left 0.3s;
+}
+
+#darkThemeToggle:checked::before {
+  left: 13px;
+}
+
 /* Add style for instructionInput */
 #instructionInput {
   border-radius: 1.5rem;
