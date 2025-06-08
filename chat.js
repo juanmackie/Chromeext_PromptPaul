@@ -167,7 +167,17 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'setSelectedText') {
+        if (request.action === 'explainContentResponse') {
+            if (request.content) {
+                const prompt = "Explain the following text:\n\n" + request.content;
+                chatMainArea.style.display = 'block';
+                oneoffInstructionArea.style.display = 'none';
+                makeApiCall(prompt);
+                showToast('Tab content received, explaining...');
+            } else {
+                showToast('No content received from tab.');
+            }
+        } else if (request.action === 'setSelectedText') {
             selectedText = request.selectedText;
             tabId = request.tabId;
             if (request.fromStartChat) {
@@ -838,6 +848,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     showToast('Failed to get tab content. Unknown response.');
                 }
+            });
+        });
+    }
+
+    // --- Explain Tab Button Functionality ---
+    const explainButton = document.getElementById('explain-button');
+    if (explainButton) {
+        explainButton.addEventListener('click', () => {
+            showToast('Requesting tab content for explanation...');
+            chrome.runtime.sendMessage({ action: 'getExplainContent' }).catch(error => {
+                console.error("Error sending getExplainContent message:", error);
+                showToast(`Error: ${error.message}`);
             });
         });
     }

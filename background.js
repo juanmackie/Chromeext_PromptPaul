@@ -73,6 +73,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const commandMap = {
     summarize: 'Please summarize the following text into a bullet list of points',
     explain: 'Explain this to me in a short concise MECE approach',
+    explain: 'Explain this to me in a short concise MECE approach',
     polish: 'Polish this text with clarity and purpose',
     shorten: 'Shorten this text without losing its meaning and context',
     formal: 'Make this text more formal and eloquent',
@@ -705,6 +706,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
         return true; // Indicates that sendResponse will be called asynchronously.
+    } else if (request.action === 'getExplainContent') {
+        // Store the sendResponse function to call it later
+        tabContentCallback = sendResponse;
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+                chrome.scripting.executeScript({
+                    target: { tabId: activeTabId },
+                    files: ['content_script_explain.js']
+                }, (injectionResults) => {
+                    if (chrome.runtime.lastError || !injectionResults || !injectionResults.length) {
+                        console.error('Failed to inject content_script_explain.js:', chrome.runtime.lastError);
+                        if (tabContentCallback) {
+                            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error') });
+                            tabContentCallback = null;
+                        }
+                    }
+                });
+            } else {
+                console.error('No active tab found for getExplainContent.');
+                if (tabContentCallback) {
+                    tabContentCallback({ action: 'explainContentResponse', success: false, error: 'No active tab found.' });
+                    tabContentCallback = null;
+                }
+            }
+        });
+        return true;
+    } else if (request.action === 'explainContent') {
+        // Forward the content to the chat UI
+        chrome.runtime.sendMessage({
+            action: 'explainContentResponse',
+            success: request.success,
+            content: request.data,
+            error: request.error
+        }).catch(error => console.log("Error sending explainContentResponse:", error));
+        return true;
     } else if (request.action === 'extractedTabContent') {
         if (tabContentCallback) {
             // Send a structured response consistent with chat.js expectations for tabContentResponse
