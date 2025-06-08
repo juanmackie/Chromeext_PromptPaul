@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOMContentLoaded event fired in chat.js");
     const chatArea = document.getElementById('chat-area');
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
@@ -11,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quick Actions Sidebar Elements
     const summarizeTabButton = document.getElementById('summarize-tab-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
+    // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
     const darkThemeToggle = document.getElementById('darkThemeToggle');
     function applyDarkTheme(isDark) {
@@ -45,13 +47,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
             applyDarkTheme(!!isDark);
         }
+        // Added conditions for pinned actions and instructions
         if (area === 'local' && (changes.pinnedQuickActions || changes.instructions)) {
             renderPinnedActions();
         }
     });
 
     let selectedText = null;
-    let tabId = null; // Keep tabId as it might be used by other parts or future features.
+    let tabId = null;
     let currentStreamingMessageDiv = null;
     let currentStreamingContentElement = null;
     let currentStreamingUniqueId = null;
@@ -64,8 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const profiles = result.profiles || [];
                 const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
                 const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId) || profiles.find(p => p.id === 'default');
-
+                
                 if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
+                    console.error("Chat: Configuration is incomplete or missing.");
                     reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
                 } else {
                     resolve(selectedProfile);
@@ -99,12 +103,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function attachCopyListeners(rawMessage, contentElement, copyIconElement, copyFormattedIconElement) {
-        copyIconElement.addEventListener('click', function(event) {
+        const newCopyIcon = copyIconElement.cloneNode(true);
+        if (copyIconElement.parentNode) {
+            copyIconElement.parentNode.replaceChild(newCopyIcon, copyIconElement);
+        }
+        const newFormattedCopyIcon = copyFormattedIconElement.cloneNode(true);
+        if (copyFormattedIconElement.parentNode) {
+            copyFormattedIconElement.parentNode.replaceChild(newFormattedCopyIcon, copyFormattedIconElement);
+        }
+        newCopyIcon.addEventListener('click', function(event) {
             event.stopPropagation();
             navigator.clipboard.writeText(rawMessage).then(() => showToast('Copied raw text to clipboard'))
-                .catch(err => { showToast('Error copying raw text.'); });
+                .catch(err => { console.error('Failed to copy raw text: ', err); showToast('Error copying raw text.'); });
         });
-        copyFormattedIconElement.addEventListener('click', function(event) {
+        newFormattedCopyIcon.addEventListener('click', function(event) {
             event.stopPropagation();
             const htmlContent = contentElement.innerHTML;
             navigator.clipboard.write([
@@ -114,8 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             ]).then(() => showToast('Copied formatted text to clipboard'))
               .catch(err => {
+                console.error('Failed to copy formatted text: ', err);
                 navigator.clipboard.writeText(rawMessage).then(() => showToast('Copied (plain text fallback) to clipboard'))
-                    .catch(errFallback => { showToast('Error copying text.'); });
+                    .catch(errFallback => { console.error('Failed to copy plain text fallback: ', errFallback); showToast('Error copying text.'); });
             });
         });
     }
@@ -136,20 +149,51 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDiv.classList.add('llm-message');
             const llmContentDiv = document.createElement('div');
             llmContentDiv.classList.add('llm-content-area');
+            let thinkingSection = null;
+            let responseSection = null;
 
-            const { thinkingContent, responseContent } = parseThinkTags(message);
+            // Check for thinking tags
+            const thinkTagStart = '◁think▷';
+            const thinkTagEnd = '◁/think▷';
+            const thinkStartIdx = message.indexOf(thinkTagStart);
+            const thinkEndIdx = message.indexOf(thinkTagEnd);
 
-            if (thinkingContent && thinkingContent.length > 0) {
-                const thinkingSection = document.createElement('div');
-                thinkingSection.classList.add('thinking-section');
-                thinkingSection.innerHTML = marked.parse(thinkingContent);
-                llmContentDiv.appendChild(thinkingSection);
+            if (thinkStartIdx !== -1 && thinkEndIdx !== -1 && thinkEndIdx > thinkStartIdx) {
+                // Extract thinking content
+                const thinkingContent = message.substring(thinkStartIdx + thinkTagStart.length, thinkEndIdx).trim();
+
+                // Extract response content (before and after thinking section)
+                const beforeThinking = message.substring(0, thinkStartIdx).trim();
+                const afterThinking = message.substring(thinkEndIdx + thinkTagEnd.length).trim();
+                const fullResponse = [beforeThinking, afterThinking].filter(part => part.length > 0).join(' ');
+
+                // Create thinking section
+                if (thinkingContent.length > 0) {
+                    thinkingSection = document.createElement('div');
+                    thinkingSection.classList.add('thinking-section');
+                    thinkingSection.innerHTML = marked.parse(thinkingContent);
+                }
+
+                // Create response section
+                if (fullResponse.length > 0) {
+                    responseSection = document.createElement('div');
+                    responseSection.classList.add('response-section');
+                    responseSection.innerHTML = marked.parse(fullResponse);
+                }
+            } else {
+                // No thinking tags found, wrap entire message in response section
+                responseSection = document.createElement('div');
+                responseSection.classList.add('response-section');
+                responseSection.innerHTML = marked.parse(message || "");
             }
 
-            const responseSection = document.createElement('div');
-            responseSection.classList.add('response-section');
-            responseSection.innerHTML = marked.parse(responseContent || "");
-            llmContentDiv.appendChild(responseSection);
+            // Append sections to content div
+            if (thinkingSection) {
+                llmContentDiv.appendChild(thinkingSection);
+            }
+            if (responseSection) {
+                llmContentDiv.appendChild(responseSection);
+            }
 
             messageDiv.appendChild(llmContentDiv);
             contentElement = llmContentDiv;
@@ -174,7 +218,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
             attachCopyListeners(message, contentElement, copyIcon, copyFormattedIcon);
         }
     } else {
-        messageDiv.textContent = message;
+        messageDiv.textContent = message; // Should not happen if sender is always User, System, or LLM
     }
     chatArea.appendChild(messageDiv);
 
@@ -184,256 +228,297 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
     return { messageDiv, contentElement, uniqueIdString };
 }
 
-function parseThinkTags(message) {
-    const thinkTagStart = '◁think▷';
-    const thinkTagEnd = '◁/think▷';
-    const thinkStartIdx = message.indexOf(thinkTagStart);
-    const thinkEndIdx = message.indexOf(thinkTagEnd);
-
-    if (thinkStartIdx !== -1 && thinkEndIdx !== -1 && thinkEndIdx > thinkStartIdx) {
-        const thinkingContent = message.substring(thinkStartIdx + thinkTagStart.length, thinkEndIdx).trim();
-        const beforeThinking = message.substring(0, thinkStartIdx).trim();
-        const afterThinking = message.substring(thinkEndIdx + thinkTagEnd.length).trim();
-        const responseContent = [beforeThinking, afterThinking].filter(part => part.length > 0).join(' ');
-        return { thinkingContent, responseContent };
-    } else {
-        return { thinkingContent: null, responseContent: message };
-    }
-}
-
-// --- Message Handlers for chrome.runtime.onMessage ---
-
-function handleSetSelectedText(request) {
-    selectedText = request.selectedText;
-    tabId = request.tabId;
-    if (request.fromStartChat) {
-        chatMainArea.style.display = 'block';
-        oneoffInstructionArea.style.display = 'none';
-        conversationHistory = [];
-    } else {
-        selectedTextDiv.textContent = selectedText;
-        chatMainArea.style.display = 'none';
-        oneoffInstructionArea.style.display = 'block';
-    }
-}
-
-function handleSetApiResponse(request) {
-    chatMainArea.style.display = 'block';
-    oneoffInstructionArea.style.display = 'none';
-    userInput.disabled = false;
-    sendButton.disabled = false;
-    if (currentStreamingMessageDiv) {
-        currentStreamingMessageDiv = null;
-        currentStreamingContentElement = null;
-        currentStreamingUniqueId = null;
-        accumulatedStreamedText = "";
-    }
-    if (request.apiResponse) {
-        if (request.prompt) {
-            const lastMessage = conversationHistory[conversationHistory.length - 1];
-            if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
-                 addMessage('User', request.prompt.split('\n')[0]);
-                 conversationHistory.push({ role: 'user', content: request.prompt });
-            }
-        }
-        addMessage('LLM', request.apiResponse);
-        const lastAssistantMessage = conversationHistory.length > 0 && conversationHistory[conversationHistory.length -1].role === 'assistant' ? conversationHistory[conversationHistory.length -1].content : null;
-        if(lastAssistantMessage !== request.apiResponse){
-            conversationHistory.push({ role: 'assistant', content: request.apiResponse });
-        }
-    }
-}
-
-function handleStreamApiStart(request) {
-    chatMainArea.style.display = 'block';
-    oneoffInstructionArea.style.display = 'none';
-    userInput.disabled = true;
-    sendButton.disabled = true;
-    if (request.prompt) {
-        const lastMessage = conversationHistory[conversationHistory.length - 1];
-         if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
-            addMessage('User', request.prompt.split('\n')[0]);
-            conversationHistory.push({ role: 'user', content: request.prompt });
-        }
-    }
-    accumulatedStreamedText = "";
-    const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-    currentStreamingMessageDiv = messageDiv;
-    currentStreamingContentElement = contentElement;
-    currentStreamingUniqueId = uniqueIdString;
-}
-
-function handleStreamApiResponseChunk(request) {
-    if (activeStreamingToolCall) return;
-    if (currentStreamingContentElement && request.chunk != null) {
-        accumulatedStreamedText += request.chunk;
-        currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-        chatArea.scrollTop = chatArea.scrollHeight;
-    }
-}
-
-function handleStreamApiEnd(request) {
-    let toolCallWasHandledInThisStream = false;
-
-    if (activeStreamingToolCall) {
-        toolCallWasHandledInThisStream = true;
-        const toolCall = activeStreamingToolCall;
-
-        const assistantMessageWithToolCall = {
-            role: 'assistant',
-            content: accumulatedStreamedText.trim(),
-            tool_calls: [toolCall]
-        };
-
-        const lastHistoryMessage = conversationHistory[conversationHistory.length - 1];
-        if (!lastHistoryMessage ||
-            !(lastHistoryMessage.role === 'assistant' &&
-              lastHistoryMessage.tool_calls &&
-              lastHistoryMessage.tool_calls[0] &&
-              lastHistoryMessage.tool_calls[0].id === toolCall.id
-             )) {
-            conversationHistory.push(assistantMessageWithToolCall);
-        }
-
-        chrome.runtime.sendMessage({
-            action: 'executePromptPaulTool',
-            toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
-                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${chrome.runtime.lastError.message}` });
-                userInput.disabled = false; sendButton.disabled = false; userInput.focus();
-                return;
-            }
-
-            if (response.error) {
-                addMessage('System', `❌ Error executing tool ${toolCall.function.name}: ${response.error}`);
-                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
-                userInput.disabled = false; sendButton.disabled = false; userInput.focus();
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'setSelectedText') {
+            selectedText = request.selectedText;
+            tabId = request.tabId;
+            if (request.fromStartChat) {
+                chatMainArea.style.display = 'block';
+                oneoffInstructionArea.style.display = 'none';
+                conversationHistory = [];
             } else {
-                addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                makeApiCall();
+                selectedTextDiv.textContent = selectedText;
+                chatMainArea.style.display = 'none';
+                oneoffInstructionArea.style.display = 'block';
             }
-        });
-        activeStreamingToolCall = null;
-    } else {
-        userInput.disabled = false;
-        sendButton.disabled = false;
-        userInput.focus();
-    }
-
-    if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
-        const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-        const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-
-        if (toolCallWasHandledInThisStream) {
-            if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) {
-                const toolMessageContent = currentStreamingContentElement.innerText;
-                attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+        } else if (request.action === 'setApiResponse') {
+            console.log("Chat: setApiResponse received", request);
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            if (currentStreamingMessageDiv) {
+                currentStreamingMessageDiv = null;
+                currentStreamingContentElement = null;
+                currentStreamingUniqueId = null;
+                accumulatedStreamedText = "";
             }
-        } else {
-            const finalContent = accumulatedStreamedText;
-            if (finalContent.trim() || currentStreamingContentElement.innerHTML) {
-                currentStreamingContentElement.innerHTML = marked.parse(finalContent);
-                 if (copyIconElem && copyFormattedIconElem) {
-                    attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+            if (request.apiResponse) {
+                if (request.prompt) { // For setApiResponse, prompt is usually the full original prompt
+                    const lastMessage = conversationHistory[conversationHistory.length - 1];
+                    if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
+                         addMessage('User', request.prompt.split('\n')[0]);
+                         conversationHistory.push({ role: 'user', content: request.prompt });
+                    }
+                }
+                addMessage('LLM', request.apiResponse);
+                // Ensure not to add duplicate assistant message if it's already the last one
+                const lastAssistantMessage = conversationHistory.length > 0 && conversationHistory[conversationHistory.length -1].role === 'assistant' ? conversationHistory[conversationHistory.length -1].content : null;
+                if(lastAssistantMessage !== request.apiResponse){
+                    conversationHistory.push({ role: 'assistant', content: request.apiResponse });
                 }
             }
-            if (finalContent.trim()) {
+        } else if (request.action === 'streamApiStart') {
+            console.log("Chat: streamApiStart received", request);
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            userInput.disabled = true;
+            sendButton.disabled = true;
+            if (request.prompt) {
                 const lastMessage = conversationHistory[conversationHistory.length - 1];
-                if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
-                     let lastMessageWasToolCallRequest = false;
-                     if(lastMessage && lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0){
-                         lastMessageWasToolCallRequest = true;
-                     }
-                     if(!lastMessageWasToolCallRequest){
-                        conversationHistory.push({ role: 'assistant', content: finalContent });
-                     }
+                 if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
+                    addMessage('User', request.prompt.split('\n')[0]);
+                    conversationHistory.push({ role: 'user', content: request.prompt });
                 }
             }
-        }
-    }
-    currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
-}
-
-function handleStreamApiToolCallChunk(request) {
-    if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
-        const toolCall = request.toolCallChunk[0];
-        activeStreamingToolCall = toolCall;
-        currentStreamingContentElement.innerHTML = '';
-        currentStreamingContentElement.innerHTML = marked.parse("⚙️ Using tool: **" + toolCall.function.name + "**");
-        chatArea.scrollTop = chatArea.scrollHeight;
-    }
-}
-
-function handleToolCallResponseMessage(request) {
-    chatMainArea.style.display = 'block';
-    oneoffInstructionArea.style.display = 'none';
-    userInput.disabled = false;
-    sendButton.disabled = false;
-    const { responseMessage, prompt: originalPrompt } = request;
-
-    if (conversationHistory.length === 0 && originalPrompt) {
-         addMessage('User', originalPrompt.split('\n')[0]);
-         conversationHistory.push({ role: 'user', content: originalPrompt });
-    }
-    conversationHistory.push(responseMessage);
-
-    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        const toolCall = responseMessage.tool_calls[0];
-        addMessage('System', `⚙️ Requesting execution for tool: ${toolCall.function.name}...`);
-        chrome.runtime.sendMessage({
-            action: 'executePromptPaulTool',
-            toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                 addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return;
+            accumulatedStreamedText = "";
+            const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
+            currentStreamingMessageDiv = messageDiv;
+            currentStreamingContentElement = contentElement;
+            currentStreamingUniqueId = uniqueIdString;
+            console.log("Chat: streamApiStart - Values set: ", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement
+            });
+        } else if (request.action === 'streamApiResponseChunk') {
+            if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
+            if (currentStreamingContentElement && request.chunk != null) {
+                accumulatedStreamedText += request.chunk;
+                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                chatArea.scrollTop = chatArea.scrollHeight;
             }
-            if (response.error) {
-                addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+        } else if (request.action === 'streamApiEnd') {
+            console.log("Chat: streamApiEnd handler invoked.", request);
+            console.log("Chat: Current activeStreamingToolCall (at start of streamApiEnd):", activeStreamingToolCall);
+            console.log("Chat: Current accumulatedStreamedText (at start of streamApiEnd):", accumulatedStreamedText);
+            // console.log("Chat: streamApiEnd received", request); // Duplicative of the first log.
+            let toolCallWasHandledInThisStream = false;
+
+            // Tool call execution logic STARTS HERE (moved before UI finalization for current bubble)
+            if (activeStreamingToolCall) {
+                console.log("Chat: streamApiEnd - activeStreamingToolCall is TRUE.");
+                toolCallWasHandledInThisStream = true; // Mark that a tool call is being handled in this stream event
+                const toolCall = activeStreamingToolCall; // Clarity
+                console.log("Chat: streamApiEnd - toolCall variable set to:", toolCall);
+
+                const assistantMessageWithToolCall = {
+                    role: 'assistant',
+                    content: accumulatedStreamedText.trim(), // Capture pre-tool call text
+                    tool_calls: [toolCall]
+                };
+
+                const lastHistoryMessage = conversationHistory[conversationHistory.length - 1];
+                if (!lastHistoryMessage ||
+                    !(lastHistoryMessage.role === 'assistant' &&
+                      lastHistoryMessage.tool_calls &&
+                      lastHistoryMessage.tool_calls[0] &&
+                      lastHistoryMessage.tool_calls[0].id === toolCall.id
+                     )) {
+                    console.log("Chat: streamApiEnd - Pushing assistantMessageWithToolCall to history:", assistantMessageWithToolCall);
+                    conversationHistory.push(assistantMessageWithToolCall);
+                }
+
+                console.log("Chat: streamApiEnd - ABOUT TO SEND executePromptPaulTool message. ToolCall details:", { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments });
+                chrome.runtime.sendMessage({
+                    action: 'executePromptPaulTool',
+                    toolCall: {
+                        id: toolCall.id,
+                        name: toolCall.function.name,
+                        arguments: toolCall.function.arguments
+                    }
+                }, (response) => {
+                    console.log("Chat: streamApiEnd - In callback of executePromptPaulTool. Response:", response);
+                    if (chrome.runtime.lastError) {
+                        console.error("Chat: streamApiEnd - chrome.runtime.lastError in executePromptPaulTool callback:", chrome.runtime.lastError);
+                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
+                        conversationHistory.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.function.name,
+                            content: `Error: ${chrome.runtime.lastError.message}`
+                        });
+                        userInput.disabled = false;
+                        sendButton.disabled = false;
+                        userInput.focus();
+                        return;
+                    }
+
+                    if (response.error) {
+                        console.error("Chat: streamApiEnd - response.error in executePromptPaulTool callback:", response.error);
+                        addMessage('System', `❌ Error executing tool ${toolCall.function.name}: ${response.error}`);
+                        conversationHistory.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.function.name,
+                            content: `Error: ${response.error}`
+                        });
+                        userInput.disabled = false;
+                        sendButton.disabled = false;
+                        userInput.focus();
+                    } else {
+                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        conversationHistory.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.function.name,
+                            content: JSON.stringify(response.result)
+                        });
+                        console.log("Chat: Preparing to call makeApiCall after tool execution (streamApiEnd). Current conversationHistory (last 3 messages):");
+                        console.log(conversationHistory.slice(-3));
+                        console.log("Chat: streamApiEnd - Tool execution successful, proceeding to call makeApiCall() for LLM follow-up.");
+                        makeApiCall();
+                    }
+                });
+
+                activeStreamingToolCall = null; // Reset immediately as it's being processed now
+                console.log("Chat: streamApiEnd - activeStreamingToolCall has been reset to null.");
             } else {
-                addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                makeApiCall();
+                console.log("Chat: streamApiEnd - activeStreamingToolCall is FALSE or null.");
+                // Original path for non-tool-call streaming responses: re-enable inputs
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                userInput.focus();
             }
-        });
-    } else {
-         addMessage('System', "Error: Tool call instruction received without tool_calls.");
-    }
-}
+            // Tool call execution logic ENDS HERE
 
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    switch (request.action) {
-        case 'setSelectedText':
-            handleSetSelectedText(request);
-            break;
-        case 'setApiResponse':
-            handleSetApiResponse(request);
-            break;
-        case 'streamApiStart':
-            handleStreamApiStart(request);
-            break;
-        case 'streamApiResponseChunk':
-            handleStreamApiResponseChunk(request);
-            break;
-        case 'streamApiEnd':
-            handleStreamApiEnd(request);
-            break;
-        case 'streamApiToolCallChunk':
-            handleStreamApiToolCallChunk(request);
-            break;
-        case 'handleToolCallResponse':
-            handleToolCallResponseMessage(request);
-            break;
-        // default:
-        //     console.warn("Chat: Received unknown message action:", request.action);
-    }
-});
+            // Finalize the original LLM message bubble based on whether a tool was called
+            if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
+                const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
+                const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
 
-sendButton.addEventListener('click', sendMessage);
+                if (toolCallWasHandledInThisStream) {
+                    // The content of currentStreamingContentElement is "⚙️ Using tool: ..."
+                    // It was set by streamApiToolCallChunk. We just need to attach copy listeners.
+                    if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
+                        const toolMessageContent = currentStreamingContentElement.innerText;
+                        attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                    }
+                    // History for assistant *requesting* the tool is already added within the toolCallWasHandledInThisStream block.
+                } else {
+                    // This is the original path: finalize with accumulatedStreamedText
+                    const finalContent = accumulatedStreamedText;
+                    if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
+                        currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                         if (copyIconElem && copyFormattedIconElem) {
+                            attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                        }
+                    }
+
+                    // Add to history if there's actual content and it wasn't a tool call
+                    if (finalContent.trim()) {
+                        const lastMessage = conversationHistory[conversationHistory.length - 1];
+                        // Check if the last message is not the same text content from the same assistant
+                        if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
+                             // Also ensure the last message wasn't an assistant message that just made a tool call (avoid double history)
+                             let lastMessageWasToolCallRequest = false;
+                             if(lastMessage && lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0){
+                                 lastMessageWasToolCallRequest = true;
+                             }
+                             if(!lastMessageWasToolCallRequest){
+                                conversationHistory.push({ role: 'assistant', content: finalContent });
+                             }
+                        }
+                    }
+                }
+            }
+
+            // Reset global streaming variables
+            currentStreamingMessageDiv = null;
+            currentStreamingContentElement = null;
+            currentStreamingUniqueId = null;
+            accumulatedStreamedText = "";
+            // activeStreamingToolCall is already null if it was processed earlier in this function.
+            // toolCallWasHandledInThisStream is a local var and will be gone.
+
+        } else if (request.action === 'streamApiToolCallChunk') {
+            console.log("Chat: streamApiToolCallChunk handler invoked.", request);
+            // console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk); // This is duplicative of the log above
+            console.log("Chat: streamApiToolCallChunk - Pre-condition check:", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement,
+                requestToolCallChunk: request.toolCallChunk, // Keep this for visual inspection
+                isToolCallChunkArray: Array.isArray(request.toolCallChunk),
+                typeofToolCallChunk: typeof request.toolCallChunk,
+                toolCallChunkLength: (request.toolCallChunk && typeof request.toolCallChunk.length !== 'undefined') ? request.toolCallChunk.length : 'length property is undefined or chunk is null',
+                condition_currentStreamingMessageDiv: !!currentStreamingMessageDiv,
+                condition_currentStreamingContentElement: !!currentStreamingContentElement,
+                condition_requestToolCallChunk: !!request.toolCallChunk,
+                condition_requestToolCallChunkLengthGreaterThanZero: !!(request.toolCallChunk && request.toolCallChunk.length > 0)
+            });
+            if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
+                console.log("Chat: streamApiToolCallChunk - DEBUG: Entered 'if' block for processing toolCallChunk.");
+                const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
+                console.log("Chat: Extracted toolCall from chunk:", toolCall);
+                activeStreamingToolCall = toolCall; // Store the active tool call
+                console.log("Chat: activeStreamingToolCall has been set to:", activeStreamingToolCall);
+
+                // Clear previous accumulated text from display
+                // accumulatedStreamedText = ""; // Preserve accumulated text
+                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
+
+                // Display tool usage
+                currentStreamingContentElement.innerHTML = marked.parse("⚙️ Using tool: **" + toolCall.function.name + "**");
+                console.log("Chat: UI updated to show 'Using tool' message.");
+
+                // Potentially, actual arguments could be streamed. For now, just the name.
+                // If toolCall.function.arguments is a string of streamed arguments, append it:
+                // currentStreamingContentElement.innerHTML += marked.parse("```\n" + toolCall.function.arguments + "\n```");
+
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
+        } else if (request.action === 'handleToolCallResponse') {
+            console.log("Chat: handleToolCallResponse received", request);
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            const { responseMessage, prompt: originalPrompt } = request;
+
+            // For context menu tool calls, history is usually fresh or should be reset
+             if (conversationHistory.length === 0 && originalPrompt) {
+                 addMessage('User', originalPrompt.split('\n')[0]);
+                 conversationHistory.push({ role: 'user', content: originalPrompt });
+            } // If continuing a chat, user prompt might already be in history.
+
+            conversationHistory.push(responseMessage);
+
+            if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+                const toolCall = responseMessage.tool_calls[0];
+                addMessage('System', `⚙️ Requesting execution for tool: ${toolCall.function.name}...`);
+                chrome.runtime.sendMessage({
+                    action: 'executePromptPaulTool',
+                    toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                         addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return;
+                    }
+                    if (response.error) {
+                        addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
+                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                    } else {
+                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                        makeApiCall();
+                    }
+                });
+            } else {
+                 addMessage('System', "Error: Tool call instruction received without tool_calls.");
+            }
+        }
+    });
+
+    sendButton.addEventListener('click', sendMessage);
     const clearButton = document.getElementById('clear-button');
     clearButton.addEventListener('click', clearChat);
     userInput.addEventListener('keydown', (event) => {
@@ -453,7 +538,7 @@ sendButton.addEventListener('click', sendMessage);
     }
     
     function sendMessage() {
-        activeStreamingToolCall = null;
+        activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
             makeApiCall(message);
@@ -497,6 +582,8 @@ sendButton.addEventListener('click', sendMessage);
                 max_tokens: parseInt(config.maxTokens) || 2048,
             };
 
+            // Only include tools in the request body if toolChoice is not 'none'
+            // and there are actual tools to send.
             if (toolChoice !== 'none' && formattedTools.length > 0) {
                 requestBody.tools = formattedTools;
             }
@@ -508,40 +595,62 @@ sendButton.addEventListener('click', sendMessage);
 
             if (hasToolMessage && enableStreaming) {
                 effectiveEnableStreaming = false;
+                console.log("Chat: Tool result detected in history, temporarily disabling streaming for this call.");
             }
 
             if (effectiveEnableStreaming) {
                 requestBody.stream = true;
-                if (toolChoice !== 'none' && formattedTools.length > 0) {
-                    if (toolChoice !== 'auto' && toolChoice !== 'none') {
-                         requestBody.tool_choice = { type: "function", function: { name: toolChoice }};
-                    } else {
-                        requestBody.tool_choice = toolChoice;
-                    }
-                } else if (toolChoice === 'none') {
-                    delete requestBody.tools;
-                    delete requestBody.tool_choice;
+                // Add tool_choice to request if specified
+                if (toolChoice !== 'none') {
+                    requestBody.tool_choice = toolChoice;
+                }
+                
+                userInput.disabled = true;
+                sendButton.disabled = true;
+
+                const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
+                currentStreamingMessageDiv = messageDiv;
+                currentStreamingContentElement = contentElement;
+                currentStreamingUniqueId = uniqueIdString;
+                accumulatedStreamedText = ""; // Reset for this new stream
+
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    body: JSON.stringify(requestBody),
+                });
+
+                if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    let errorDetail = errorText;
+                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
+                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
                 }
 
-                userInput.disabled = true; sendButton.disabled = true;
-                const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-                currentStreamingMessageDiv = messageDiv; currentStreamingContentElement = contentElement; currentStreamingUniqueId = uniqueIdString;
-                accumulatedStreamedText = "";
-
-                const reader = await executeApiRequest(config, requestBody, true);
+                const reader = apiResponse.body.getReader();
                 const decoder = new TextDecoder();
-                let sseBuffer = "";
+                let sseBuffer = ""; // Buffer for incomplete SSE lines
 
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) {
+                        // Final attachment of copy listeners for the fully accumulated message
                         if (currentStreamingContentElement && currentStreamingUniqueId) {
                              const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
                              const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                             if (copyIconElem && copyFormattedIconElem) {
+                             if (copyIconElem && copyFormattedIconElem) { // Ensure icons exist
                                 attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
                              }
                         }
+                        // Add the fully accumulated message to history
+                        if (accumulatedStreamedText.trim()) {
+                           const lastMessage = conversationHistory[conversationHistory.length - 1];
+                           // Avoid adding if it's effectively a duplicate of the last message
+                           if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === accumulatedStreamedText)) {
+                               conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
+                           }
+                        }
+                        // Reset UI and state
                         userInput.disabled = false;
                         sendButton.disabled = false;
                         currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
@@ -550,46 +659,51 @@ sendButton.addEventListener('click', sendMessage);
                     }
                     sseBuffer += decoder.decode(value, { stream: true });
                     let eolIndex;
+                    // Process all complete lines in the buffer
                     while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
                         const line = sseBuffer.substring(0, eolIndex).trim();
                         sseBuffer = sseBuffer.substring(eolIndex + 1);
 
                         if (line.startsWith('data:')) {
                             let jsonData = line.substring(5).trim();
-                            if (jsonData.startsWith('data:')) { jsonData = jsonData.substring(5).trim(); }
-                            if (jsonData === '[DONE]') continue;
+                            if (jsonData.startsWith('data:')) { // Handle potential double prefix
+                                jsonData = jsonData.substring(5).trim();
+                            }
+                            if (jsonData === '[DONE]') { // OpenAI specific end signal
+                                continue;
+                            }
                             if (jsonData) {
                                 try {
                                     const parsed = JSON.parse(jsonData);
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-                                        if (parsed.choices[0].delta.content) {
-                                            accumulatedStreamedText += parsed.choices[0].delta.content;
-                                            if (currentStreamingContentElement) {
-                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                                            }
-                                            chatArea.scrollTop = chatArea.scrollHeight;
+                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                        accumulatedStreamedText += parsed.choices[0].delta.content;
+                                        if(currentStreamingContentElement) {
+                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
                                         }
-                                        // TODO: Add handling for streamed tool calls here if API supports it (example: parsed.choices[0].delta.tool_calls)
+                                        chatArea.scrollTop = chatArea.scrollHeight;
                                     }
-                                } catch (e) { /* console.warn("SSE JSON Parse Error in makeApiCall:", e, jsonData); */ }
+                                } catch (e) {
+                                    // Log benignly, as some chunks might not be full JSON objects if stream is interrupted or malformed.
+                                    console.warn("SSE JSON Parse Error in makeApiCall (chat.js):", e, "Problematic JSON string:", jsonData);
+                                }
                             }
                         }
                     }
                 }
-            } else {
-                requestBody.stream = false;
-                if (toolChoice !== 'none' && formattedTools.length > 0) {
-                    if (toolChoice !== 'auto' && toolChoice !== 'none') {
-                        requestBody.tool_choice = { type: "function", function: { name: toolChoice }};
-                    } else {
-                        requestBody.tool_choice = toolChoice;
-                    }
-                } else if (toolChoice === 'none') {
-                    delete requestBody.tools;
-                    delete requestBody.tool_choice;
-                }
+            } else { // Non-streaming for chat input
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    body: JSON.stringify(requestBody),
+                });
 
-                const responseData = await executeApiRequest(config, requestBody, false);
+                if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    let errorDetail = errorText;
+                     try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
+                    throw new Error( `API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                }
+                const responseData = await apiResponse.json();
                 if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
                     throw new Error('Invalid response format from API (no choices or message)');
                 }
@@ -610,6 +724,8 @@ sendButton.addEventListener('click', sendMessage);
                          } else {
                             addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                            console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
+                            console.log(conversationHistory.slice(-3));
                             makeApiCall();
                          }
                     });
@@ -620,6 +736,7 @@ sendButton.addEventListener('click', sendMessage);
                 }
             }
         } catch (error) {
+            console.error("makeApiCall Error:", error);
             addMessage('System', 'Error: ' + error.message);
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -628,7 +745,7 @@ sendButton.addEventListener('click', sendMessage);
     }
 
     submitBtn.addEventListener('click', async () => {
-        activeStreamingToolCall = null;
+        activeStreamingToolCall = null; // Reset active tool call
         const instruction = instructionInput.value;
         if (!instruction.trim()) {
             showToast('Please enter an instruction');
@@ -636,7 +753,7 @@ sendButton.addEventListener('click', sendMessage);
         }
         try {
             const config = await getApiConfig();
-            // const toolChoice = config.tool_choice || 'none'; // Not used for one-off
+            const toolChoice = config.tool_choice || 'none';
             const prompt = instruction + '\n\n' + selectedText;
             let oneOffHistory = [{ role: 'user', content: prompt }];
 
@@ -648,29 +765,49 @@ sendButton.addEventListener('click', sendMessage);
             
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
+            // Display user message in main chat UI
             addMessage('User', instruction + "\n\n[Selected text: " + selectedText.substring(0, 50) + (selectedText.length > 50 ? "..." : "") + "]");
+            // Also add to main conversation history for context
             conversationHistory.push({role: 'user', content: prompt});
 
             let effectiveEnableStreaming = enableStreaming;
+            // As per subtask, check global conversationHistory, not oneOffHistory for tool messages.
             const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
 
             if (hasToolMessage && enableStreaming) {
                 effectiveEnableStreaming = false;
+                console.log("Chat (one-off): Tool result detected in global history, temporarily disabling streaming for this call.");
             }
 
             if (effectiveEnableStreaming) {
                 requestBody.stream = true;
-                delete requestBody.tools;
-                delete requestBody.tool_choice;
+                // Add tool_choice to request if specified
+                if (toolChoice !== 'none') {
+                    requestBody.tool_choice = toolChoice;
+                }
                 
-                oneoffInstructionArea.style.display = 'none'; chatMainArea.style.display = 'block';
+                oneoffInstructionArea.style.display = 'none';
+                chatMainArea.style.display = 'block';
                 userInput.disabled = true; sendButton.disabled = true;
 
                 const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-                currentStreamingMessageDiv = messageDiv; currentStreamingContentElement = contentElement; currentStreamingUniqueId = uniqueIdString;
+                currentStreamingMessageDiv = messageDiv;
+                currentStreamingContentElement = contentElement;
+                currentStreamingUniqueId = uniqueIdString;
                 accumulatedStreamedText = "";
 
-                const reader = await executeApiRequest(config, requestBody, true);
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    body: JSON.stringify(requestBody),
+                });
+                 if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    let errorDetail = errorText;
+                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
+                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                }
+                const reader = apiResponse.body.getReader();
                 const decoder = new TextDecoder();
                 let sseBuffer = "";
                 while (true) {
@@ -706,20 +843,29 @@ sendButton.addEventListener('click', sendMessage);
                                     const parsed = JSON.parse(jsonData);
                                     if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
                                         accumulatedStreamedText += parsed.choices[0].delta.content;
-                                        if (currentStreamingContentElement) {
+                                        if(currentStreamingContentElement) {
                                             currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
                                         }
                                         chatArea.scrollTop = chatArea.scrollHeight;
                                     }
-                                } catch (e) { /* console.warn("SSE JSON Parse Error in submitBtn:", e, jsonData); */ }
+                                } catch (e) { console.warn("SSE JSON Parse Error (one-off submit):", e, jsonData); }
                             }
                         }
                     }
                 }
             } else {
-                delete requestBody.tools;
-                delete requestBody.tool_choice;
-                const responseData = await executeApiRequest(config, requestBody, false);
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    body: JSON.stringify(requestBody),
+                });
+                if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    let errorDetail = errorText;
+                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
+                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                }
+                const responseData = await apiResponse.json();
                 if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message || !responseData.choices[0].message.content) {
                     throw new Error('Invalid response format from API');
                 }
@@ -735,6 +881,7 @@ sendButton.addEventListener('click', sendMessage);
             }
         } catch (error) {
             showToast('Error: ' + error.message);
+            console.error("Error in one-off instruction submission:", error);
             userInput.disabled = false;
             sendButton.disabled = false;
         }
@@ -745,24 +892,27 @@ sendButton.addEventListener('click', sendMessage);
         summarizeTabButton.addEventListener('click', async () => {
             showToast('Requesting tab content for summary...');
             
+            // Get current tool choice from storage
             let toolChoice = 'none';
             try {
                 const result = await new Promise((resolve) => {
-                    chrome.storage.sync.get(['tool_choice'], resolve); // This tool_choice is for summarize, not one-off
+                    chrome.storage.sync.get(['tool_choice'], resolve);
                 });
                 toolChoice = result.tool_choice || 'none';
             } catch (e) {
-                // Error fetching tool_choice, default to 'none'
+                console.error("Error getting tool_choice from storage:", e);
             }
-
+            
             chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => {
                 if (chrome.runtime.lastError) {
+                    console.error("Error sending getTabContent message:", chrome.runtime.lastError.message);
                     showToast(`Error: ${chrome.runtime.lastError.message}`);
                     return;
                 }
                 if (response && response.action === 'tabContentResponse') {
                     if (response.content) {
                         const prompt = "Summarize the following text:\n\n" + response.content;
+                        // Ensure chat area is visible
                         chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
                         makeApiCall(prompt, toolChoice);
@@ -782,7 +932,7 @@ sendButton.addEventListener('click', sendMessage);
     // --- Pinned Instructions Functionality ---
     async function renderPinnedActions() {
         if (!pinnedActionsContainer) return;
-        pinnedActionsContainer.innerHTML = '';
+        pinnedActionsContainer.innerHTML = ''; // Clear existing pinned actions
 
         try {
             const { pinnedQuickActions, instructions } = await new Promise((resolve, reject) => {
@@ -798,7 +948,14 @@ sendButton.addEventListener('click', sendMessage);
             const allInstructions = instructions || [];
 
             if (currentPins.length === 0) {
-                // No pinned actions to display
+                // Optionally, display a message like "No pinned actions yet."
+                // For now, just leave it empty or add a placeholder if desired.
+                // const placeholder = document.createElement('p');
+                // placeholder.textContent = 'No pins';
+                // placeholder.style.fontSize = '0.7em';
+                // placeholder.style.textAlign = 'center';
+                // placeholder.style.color = '#888';
+                // pinnedActionsContainer.appendChild(placeholder);
                 return;
             }
 
@@ -808,11 +965,13 @@ sendButton.addEventListener('click', sendMessage);
                     const button = document.createElement('button');
                     const iconLetter = instruction.name ? instruction.name[0].toUpperCase() : '?';
                     button.textContent = iconLetter;
-                    button.title = instruction.name;
+                    button.title = instruction.name; // Set full instruction name as tooltip
                     button.classList.add('quick-action-button', 'pinned-action-item');
-                    button.dataset.instructionId = instruction.id;
+                    button.dataset.instructionId = instruction.id; // Store ID
+                    // button.dataset.instructionContent = instruction.content; // Or store full content
 
                     button.addEventListener('click', () => {
+                        // Ensure chat area is visible
                         chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
 
@@ -820,47 +979,24 @@ sendButton.addEventListener('click', sendMessage);
                         if (selectedText && selectedText.trim() !== "") {
                             prompt += '\n\nSelected Text:\n' + selectedText;
                         }
-                        makeApiCall(prompt); // Pinned actions use default/auto tool_choice from makeApiCall
+                        makeApiCall(prompt);
                         showToast(`Executing: ${instruction.name}`);
                     });
                     pinnedActionsContainer.appendChild(button);
                 }
             });
         } catch (error) {
-            showStatus("Error loading pinned actions.");
+            console.error("Error rendering pinned actions:", error);
+            showToast("Error loading pinned actions.");
         }
     }
 
+    // Initial call to render and listener for changes will be added later.
+    // The block for managePinnedActionsButton listener has been removed.
+
+    // Initial rendering of pinned actions
     renderPinnedActions();
 
+    // The chrome.storage.onChanged listener above has been updated to include this logic.
+    // No need for a separate listener here.
 });
-
-// --- Core API Call Logic ---
-async function executeApiRequest(config, requestBody, isStreaming) {
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + config.apiKey
-    };
-
-    const response = await fetch(config.llmEndpoint, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        let errorDetail = errorText;
-        try {
-            const errorJson = JSON.parse(errorText);
-            errorDetail = errorJson.error ? errorJson.error.message : errorText;
-        } catch (e) { /* ignore parsing error */ }
-        throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorDetail}`);
-    }
-
-    if (isStreaming) {
-        return response.body.getReader();
-    } else {
-        return await response.json();
-    }
-}
