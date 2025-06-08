@@ -18,115 +18,73 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
 });
 
-// Handle context menu clicks
+// Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  // Single side panel open call at start of user gesture
   await chrome.sidePanel.open({ tabId: tab.id });
-  let selectedText = info.selectionText; // Allow modification
-  let promptContent = ''; // Initialize promptContent
-
-  // Handle image context: Prepend image URL if present
+  
+  // Handle image context
+  let promptContent = info.selectionText || '';
   if (info.mediaType === 'image' && info.srcUrl) {
-    const imageUrlText = `Image URL: ${info.srcUrl}`;
-    if (selectedText) {
-      selectedText = `${imageUrlText}\n${selectedText}`;
-    } else {
-      selectedText = imageUrlText;
-    }
+    promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
   }
-  // At this point, selectedText contains the image URL and/or the selected text.
-  // Initialize promptContent with this potentially modified selectedText.
-  promptContent = selectedText;
 
-  // Handle manage instructions click
+  // Handle special menu items
   if (info.menuItemId === 'manageInstructions') {
     chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
     return;
   }
 
-  // Handle one-off instruction click with proper sequencing
+  // Common message sending function
+  const sendMessage = (action, extra = {}) => {
+    chrome.runtime.sendMessage({
+      action,
+      selectedText: promptContent,
+      tabId: tab.id,
+      ...extra
+    }).catch(error => console.log(`Error sending ${action}: ${error.message}, tabId: ${tab.id}`));
+  };
+
   if (info.menuItemId === 'oneoff_instruction') {
-    // Ensure panel is fully opened before sending message
-    setTimeout(() => {
-      chrome.runtime.sendMessage({
-        action: 'setSelectedText',
-        selectedText: promptContent, // Pass the combined content
-        tabId: tab.id
-      }).catch(error => console.log(`Error sending setSelectedText for one-off: ${error.message}, tabId: ${tab.id}`));
-    }, 100);
+    setTimeout(() => sendMessage('setSelectedText'), 100);
     return;
   }
 
-  // Handle start chat click - Open side panel immediately
   if (info.menuItemId === 'start_chat') {
-    // Send message to chat.js with selected text (which now includes image URL if applicable)
-    chrome.runtime.sendMessage({
-      action: 'setSelectedText',
-      selectedText: promptContent, // Pass the combined content
-      tabId: tab.id,
-      fromStartChat: true // Flag to indicate this is from the start_chat option
-    }).catch(error => console.log(`Error sending setSelectedText for start_chat: ${error.message}, tabId: ${tab.id}`));
-    
-    // Call the refactored API request function with the combined content
+    sendMessage('setSelectedText', { fromStartChat: true });
     await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
     return;
   }
 
-  let instructionToolChoice = 'none'; // Default tool choice
-  // promptContent is already initialized with selectedText (which could be an image URL, text, or both)
-
+  // Handle custom instructions
   if (info.menuItemId.startsWith('custom_')) {
-    // Handle custom instruction
     const instructionId = info.menuItemId.replace('custom_', '');
     const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
+    
     if (instruction) {
-      // Prepend instruction content. promptContent might be just an image URL,
-      // or image URL + text, or just text.
       promptContent = `${instruction.content}\n\n${promptContent}`;
-      instructionToolChoice = instruction.tool_choice || 'none'; // Get tool_choice, default to 'none'
-    } else {
-      console.error(`Custom instruction with ID ${instructionId} not found.`);
-      // promptContent remains as is (selectedText, potentially with image URL)
+      const toolChoice = instruction.tool_choice || 'none';
+      await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
     }
-  } else {
-    // Handle predefined commands
-    // promptContent is already set (it includes image URL if applicable).
-    // We need to ensure the specific command prompt is prepended correctly.
-    switch (info.menuItemId) {
-      case 'summarize':
-        promptContent = `Please summarize the following text into a bullet list of points:\n${promptContent}`;
-        break;
-      case 'explain':
-        promptContent = `Explain this to me in a short concise MECE approach:\n${promptContent}`;
-        break;
-      case 'polish':
-        promptContent = `Polish this text with clarity and purpose:\n${promptContent}`;
-        break;
-      case 'shorten':
-        promptContent = `shorten this text without losing its meaning and context:\n${promptContent}`;
-        break;
-      case 'formal':
-        promptContent = `Make this text more formal and eloquent:\n${promptContent}`;
-        break;
-      case 'casual':
-        promptContent = `Make this text more casual and fun:\n${promptContent}`;
-        break;
-      case 'analyze':
-        promptContent = `Please analyze the following text:\n${promptContent}`;
-        break;
-      // If it's not a predefined command, not custom, and not one of the special items above,
-      // promptContent will just be the original selectedText (potentially with image URL).
-      // This path handles cases like clicking on "Prompt Paul" parent item directly if it were to trigger this part,
-      // or any other menu item that doesn't fit the specific command structure.
-      default:
-        // promptContent is already as needed (selectedText, possibly with image URL)
-        break;
-    }
+    return;
   }
 
-  // Call the refactored API request function
-  await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: instructionToolChoice });
+  // Handle predefined commands
+  const commandMap = {
+    summarize: 'Please summarize the following text into a bullet list of points',
+    explain: 'Explain this to me in a short concise MECE approach',
+    polish: 'Polish this text with clarity and purpose',
+    shorten: 'Shorten this text without losing its meaning and context',
+    formal: 'Make this text more formal and eloquent',
+    casual: 'Make this text more casual and fun',
+    analyze: 'Please analyze the following text'
+  };
+
+  if (commandMap[info.menuItemId]) {
+    promptContent = `${commandMap[info.menuItemId]}:\n${promptContent}`;
+  }
+
+  await makeLlmApiRequest(promptContent, tab.id);
 });
 
 // Helper function to check for valid URL
@@ -139,127 +97,55 @@ function isValidURL(string) {
   }
 }
 
-// ValidateConfig function to include API configuration
+// Simplified validateConfig function
 async function validateConfig() {
-  return new Promise((resolve, reject) => {
-    console.log('Background: Validating configuration...');
-    // Fetch profiles, lastSelectedProfileId, and defaultLlmEndpoint simultaneously
-    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], (result) => {
-      console.log('Background: Storage get result:', result);
-      const profiles = result.profiles || [];
-      const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-      const defaultLlmEndpoint = result.defaultLlmEndpoint || ''; // Get default endpoint
+  console.log('Background: Validating configuration...');
+  const result = await new Promise(resolve =>
+    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
+  );
+  
+  const profiles = result.profiles || [];
+  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+  const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
 
-      console.log('Background: Profiles:', profiles);
-      console.log('Background: Last selected profile ID:', lastSelectedProfileId);
-      console.log('Background: Default LLM Endpoint:', defaultLlmEndpoint);
+  // Find profiles
+  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+  const defaultProfile = profiles.find(p => p.id === 'default');
 
-      let selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
-      let profileToUse = null;
-      let endpointError = false;
+  // Validate profile with optional endpoint override
+  const validateProfile = (profile, endpointOverride = null) => {
+    const endpoint = endpointOverride || profile?.llmEndpoint;
+    return endpoint && isValidURL(endpoint) && profile?.apiKey && profile?.modelName;
+  };
 
-      // Scenario 1: A selected profile exists
-      if (selectedProfile) {
-        console.log(`Background: Checking selected profile: ${selectedProfile.name || selectedProfile.id}`);
-        // Check if its endpoint is valid
-        if (selectedProfile.llmEndpoint && isValidURL(selectedProfile.llmEndpoint)) {
-          // If endpoint is valid, check for API key and model name
-          if (selectedProfile.apiKey && selectedProfile.modelName) {
-            profileToUse = selectedProfile;
-            console.log(`Background: Selected profile '${profileToUse.name || profileToUse.id}' is valid and complete.`);
-          } else {
-            // Endpoint is valid, but API key or model name is missing
-            console.warn(`Background: Selected profile '${selectedProfile.name || selectedProfile.id}' has a valid endpoint but is missing API key or model name.`);
-            // We will later check the default profile or reject with a generic error
-          }
-        } else {
-          // Selected profile's endpoint is missing or invalid
-          console.warn(`Background: Selected profile '${selectedProfile.name || selectedProfile.id}' has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.`);
-          endpointError = true; // Mark that an endpoint issue was detected
-          if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
-            // Default LLM endpoint is valid, try to use it with the selected profile's other details
-            if (selectedProfile.apiKey && selectedProfile.modelName) {
-              // Create a temporary profile object with the default endpoint
-              profileToUse = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
-              console.log(`Background: Using defaultLlmEndpoint for selected profile '${selectedProfile.name || selectedProfile.id}'.`);
-            } else {
-              // Default endpoint is ok, but selected profile still missing API key/model
-              console.warn(`Background: defaultLlmEndpoint is valid, but selected profile '${selectedProfile.name || selectedProfile.id}' is still missing API key or model name.`);
-            }
-          } else {
-            // Default LLM endpoint is also missing or invalid
-            console.warn('Background: defaultLlmEndpoint is also missing or invalid.');
-            // No need to set profileToUse, will proceed to defaultProfile check or reject
-          }
-        }
-      } else {
-        console.warn('Background: No selected profile found with ID:', lastSelectedProfileId);
-        endpointError = true; // Potentially an endpoint issue if no profile is selected
-      }
+  // Check profiles in priority order
+  let validProfile = null;
+  if (validateProfile(selectedProfile)) {
+    validProfile = selectedProfile;
+  } else if (validateProfile(selectedProfile, defaultLlmEndpoint)) {
+    validProfile = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
+  } else if (validateProfile(defaultProfile)) {
+    validProfile = defaultProfile;
+  } else if (validateProfile(defaultProfile, defaultLlmEndpoint)) {
+    validProfile = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
+  }
 
-      // Scenario 2: If no valid profileToUse yet, try the default profile
-      if (!profileToUse) {
-        console.log('Background: No valid selected profile configuration yet. Checking default profile...');
-        const defaultProfile = profiles.find(p => p.id === 'default');
+  if (validProfile) {
+    console.log(`Background: Using configuration from profile: ${validProfile.name || validProfile.id}`);
+    return validProfile;
+  }
 
-        if (defaultProfile) {
-          console.log('Background: Checking default profile.');
-          // Check default profile's endpoint
-          if (defaultProfile.llmEndpoint && isValidURL(defaultProfile.llmEndpoint)) {
-            if (defaultProfile.apiKey && defaultProfile.modelName) {
-              profileToUse = defaultProfile;
-              endpointError = false; // Default profile has a valid endpoint
-              console.log('Background: Using default profile as it is valid and complete.');
-            } else {
-              console.warn('Background: Default profile has a valid endpoint but is missing API key or model name.');
-              // endpointError remains true if it was set by selectedProfile's endpoint failure
-            }
-          } else {
-            // Default profile's endpoint is missing or invalid
-            console.warn('Background: Default profile has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.');
-            endpointError = true; // Mark that an endpoint issue was detected with default profile
-            if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
-              if (defaultProfile.apiKey && defaultProfile.modelName) {
-                profileToUse = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
-                console.log('Background: Using defaultLlmEndpoint for default profile.');
-                endpointError = false; // Using the global default endpoint successfully
-              } else {
-                  console.warn('Background: defaultLlmEndpoint is valid, but default profile is still missing API key or model name.');
-              }
-            } else {
-              console.warn('Background: defaultLlmEndpoint is also missing or invalid (when checking for default profile).');
-            }
-          }
-        } else {
-          console.warn('Background: Default profile (id: "default") not found.');
-          // endpointError remains true if it was set by selectedProfile's endpoint failure or no selected profile
-        }
-      }
-
-      // Scenario 3: Final decision based on profileToUse and endpointError
-      if (profileToUse && profileToUse.llmEndpoint && profileToUse.apiKey && profileToUse.modelName && isValidURL(profileToUse.llmEndpoint)) {
-        console.log(`Background: Using configuration from profile: ${profileToUse.name || profileToUse.id}`);
-        console.log('Background: Configuration:', {
-          endpoint: profileToUse.llmEndpoint,
-          key: profileToUse.apiKey ? '********' + profileToUse.apiKey.slice(-4) : 'Not set',
-          model: profileToUse.modelName,
-          systemPrompt: profileToUse.systemPrompt // also log systemPrompt
-        });
-        resolve(profileToUse);
-      } else {
-        // If no usable profile is found, decide on the error message
-        if (endpointError && (!profileToUse || !isValidURL(profileToUse.llmEndpoint))) {
-          // If an endpoint error was specifically identified and not resolved
-          console.error('Background: Configuration rejected due to missing or invalid LLM API endpoint.');
-          reject(new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.'));
-        } else {
-          // For any other missing configuration (API key, model name, or profile entirely missing)
-          console.error('Background: Configuration rejected due to incomplete general configuration.');
-          reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
-        }
-      }
-    });
-  });
+  // Handle errors
+  const hasEndpoint = defaultLlmEndpoint && isValidURL(defaultLlmEndpoint);
+  const hasValidProfile = selectedProfile || defaultProfile;
+  
+  if (!hasEndpoint) {
+    throw new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
+  } else if (!hasValidProfile) {
+    throw new Error('No valid profiles found. Please create a profile in the options page.');
+  } else {
+    throw new Error('Configuration is incomplete. Please set API key and model name in the options page.');
+  }
 }
 
 // Helper function to process API response and send messages to chat.js
@@ -356,55 +242,26 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         let toolChoicePayload = {};
         let finalToolChoice = customInstructionToolChoice; // Use the value passed in
 
-        // Normalize tool choice if it's an array containing 'none' or is empty
-        if (Array.isArray(finalToolChoice)) {
-            if (finalToolChoice.length === 0 || (finalToolChoice.length === 1 && finalToolChoice[0] === 'none')) {
-                finalToolChoice = 'none';
-            } else if (finalToolChoice.includes('auto')) {
-                 finalToolChoice = 'auto'; // If 'auto' is present, treat as auto
-            }
-            // If it's an array of specific tools, keep it as an array
-        } else if (finalToolChoice === undefined) {
-            finalToolChoice = 'none'; // Default if not set
-        }
-
-        if (finalToolChoice === 'none') {
-            // Case 1: No tools or tool_choice sent
+        // Simplify tool choice handling
+        if (finalToolChoice === 'none' || !formattedTools.length) {
             toolChoicePayload = {};
         } else if (finalToolChoice === 'auto') {
-            // Case 2: All tools sent, tool_choice is "auto"
-            if (formattedTools.length > 0) {
-                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
-            } else {
-                // If 'auto' is chosen but no tools are defined, send no tools
-                toolChoicePayload = {};
-            }
-        } else if (Array.isArray(finalToolChoice)) {
-            // Case 3: Specific tools selected
-            const selectedToolNames = finalToolChoice;
-            const selectedFormattedTools = formattedTools.filter(tool => selectedToolNames.includes(tool.function.name));
-
-            if (selectedFormattedTools.length > 0) {
-                 let specificToolChoiceFormat;
-                 if (selectedFormattedTools.length === 1) {
-                     // API expects { type: 'function', function: { name: 'tool_name' } } for a single specific tool
-                     specificToolChoiceFormat = { type: 'function', function: { name: selectedFormattedTools[0].function.name } };
-                 } else {
-                     // API expects [{ type: 'function', function: { name: 'tool1' } }, ...] for multiple specific tools
-                     specificToolChoiceFormat = selectedFormattedTools.map(tool => ({ type: 'function', function: { name: tool.function.name } }));
-                 }
-                 toolChoicePayload = { tools: selectedFormattedTools, tool_choice: specificToolChoiceFormat };
-            } else {
-                // If specific tools were selected but none of them are defined/formatted correctly, send no tools
-                toolChoicePayload = {};
+            toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+        } else if (Array.isArray(finalToolChoice) && finalToolChoice.length) {
+            const selectedTools = formattedTools.filter(tool =>
+                finalToolChoice.includes(tool.function.name)
+            );
+            
+            if (selectedTools.length) {
+                const toolChoice = selectedTools.length === 1
+                    ? { type: 'function', function: { name: selectedTools[0].function.name } }
+                    : selectedTools.map(tool => ({ type: 'function', function: { name: tool.function.name } }));
+                
+                toolChoicePayload = { tools: selectedTools, tool_choice: toolChoice };
             }
         } else {
-            // Fallback for unexpected values, treat as none
-            console.warn(`Background: Unexpected tool choice value: ${finalToolChoice}. Treating as 'none'.`);
-            toolChoicePayload = {};
+            console.warn(`Background: Invalid tool choice: ${finalToolChoice}. Using default.`);
         }
-
-        // If formattedTools is empty, toolChoicePayload remains {}, and no 'tools' or 'tool_choice' is sent to the API.
 
         const apiRequestBody = {
             model: config.modelName,

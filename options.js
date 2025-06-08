@@ -418,6 +418,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- Dark Theme Toggle Logic ---
 // This DOMContentLoaded listener should ideally be merged with the one above,
 // but for now, we'll follow the existing structure.
+import { setupThemeToggle } from './themeUtils.js';
+
 document.addEventListener('DOMContentLoaded', () => {
   // Streaming Toggle
   const enableStreamingToggle = document.getElementById('enableStreamingToggle');
@@ -438,45 +440,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Dark Theme Toggle
   const darkThemeToggle = document.getElementById('darkThemeToggle');
-  function applyDarkTheme(isDark) {
-    if (isDark) {
-      document.body.classList.add('dark-theme');
-      if (document.getElementById('darkThemeIcon')) {
-        document.getElementById('darkThemeIcon').textContent = 'wb_sunny';
-      }
-    } else {
-      document.body.classList.remove('dark-theme');
-      if (document.getElementById('darkThemeIcon')) {
-        document.getElementById('darkThemeIcon').textContent = 'brightness_2';
-      }
-    }
-  }
-  // Load darkTheme from storage and set toggle/class
-  chrome.storage.sync.get({ darkTheme: false }, (result) => {
-    if (darkThemeToggle) {
-      darkThemeToggle.checked = !!result.darkTheme;
-    }
-    applyDarkTheme(!!result.darkTheme);
-  });
-  // Toggle event: update storage and class
   if (darkThemeToggle) {
-    darkThemeToggle.addEventListener('change', (e) => {
-      const isDark = darkThemeToggle.checked;
-      chrome.storage.sync.set({ darkTheme: isDark });
-      applyDarkTheme(isDark);
-    });
+    setupThemeToggle(darkThemeToggle);
   }
-  // Listen for storage changes to sync theme and streaming
+
+  // Listen for storage changes to sync streaming
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync') {
-      if (changes.darkTheme) {
-        const isDark = changes.darkTheme.newValue;
-        if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
-        applyDarkTheme(!!isDark);
-      }
-      if (changes.enableStreaming && enableStreamingToggle) {
-        enableStreamingToggle.checked = !!changes.enableStreaming.newValue;
-      }
+    if (area === 'sync' && changes.enableStreaming && enableStreamingToggle) {
+      enableStreamingToggle.checked = !!changes.enableStreaming.newValue;
     }
   });
 });
