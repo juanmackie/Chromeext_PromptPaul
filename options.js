@@ -55,129 +55,132 @@ function validateInputs(endpoint, key, model) {
   return true;
 }
 
+// Helper function to get form values
+function getFormValues() {
+  const formIds = ['profileSelect', 'llmEndpoint', 'apiKey', 'modelName', 'maxTokens', 'systemPrompt'];
+  const values = {};
+  let allElementsExist = true;
+
+  formIds.forEach(id => {
+    const element = document.getElementById(id);
+    if (!element) {
+      console.error(`${id} element is missing in the DOM.`);
+      showStatus(`Error: ${id} element is missing. Please reload the page.`, true);
+      allElementsExist = false;
+      return; // Exit forEach iteration
+    }
+    // For profileSelect, we take the value directly. For others, we trim.
+    values[id] = (id === 'profileSelect') ? element.value : element.value.trim();
+  });
+
+  if (!allElementsExist) return null; // Return null if any element is missing
+  return values;
+}
+
 // Save options to chrome.storage
-function saveOptions(e) {
+async function saveOptions(e) {
   e.preventDefault();
 
-  const profileSelectElement = document.getElementById('profileSelect');
-  if (!profileSelectElement) {
-    console.error('profileSelect element is missing in the DOM.');
-    showStatus('Error: profileSelect element is missing. Please reload the page.', true);
-    return;
-  }
-  const selectedProfileId = profileSelectElement.value; // No trim, could be 'add_new_profile'
+  const formValues = getFormValues();
+  if (!formValues) return; // Stop if form elements are missing
 
-  const llmEndpoint = document.getElementById('llmEndpoint');
-  if (!llmEndpoint) {
-    console.error('llmEndpoint element is missing in the DOM.');
-    showStatus('Error: llmEndpoint element is missing. Please reload the page.', true);
-    return;
-  }
-  const llmEndpointValue = llmEndpoint.value.trim();
+  const {
+    profileSelect: selectedProfileId, // Renaming for clarity
+    llmEndpoint: llmEndpointValue,
+    apiKey: apiKeyValue,
+    modelName: modelNameValue,
+    maxTokens: maxTokensValue,
+    systemPrompt: systemPromptValue
+  } = formValues;
 
-  const apiKey = document.getElementById('apiKey');
-  if (!apiKey) {
-    console.error('apiKey element is missing in the DOM.');
-    showStatus('Error: apiKey element is missing. Please reload the page.', true);
-    return;
-  }
-  const apiKeyValue = apiKey.value.trim();
-
-  const modelName = document.getElementById('modelName');
-  if (!modelName) {
-    console.error('modelName element is missing in the DOM.');
-    showStatus('Error: modelName element is missing. Please reload the page.', true);
-    return;
-  }
-  const modelNameValue = modelName.value.trim();
-
-  const maxTokens = document.getElementById('maxTokens');
-  if (!maxTokens) {
-    console.error('maxTokens element is missing in the DOM.');
-    showStatus('Error: maxTokens element is missing. Please reload the page.', true);
-    return;
-  }
-  const maxTokensValue = maxTokens.value.trim();
-
-  const systemPrompt = document.getElementById('systemPrompt');
-  if (!systemPrompt) {
-    console.error('systemPrompt element is missing in the DOM.');
-    showStatus('Error: systemPrompt element is missing. Please reload the page.', true);
-    return;
-  }
-  const systemPromptValue = systemPrompt.value.trim();
 
   if (!validateInputs(llmEndpointValue, apiKeyValue, modelNameValue)) {
     return;
   }
 
-  // Disable save button while saving
   const saveButton = document.getElementById('save');
   saveButton.disabled = true;
 
-  // Save to local storage profiles
   console.log('Options: Attempting to save options...');
-  chrome.storage.local.get(['profiles'], (result) => {
+  try {
+    const result = await new Promise(resolve => chrome.storage.local.get(['profiles'], resolve));
     console.log('Options: Current profiles from storage:', result.profiles);
     let profiles = result.profiles || [];
     let profileToUpdate = profiles.find(p => p.id === selectedProfileId);
+    const isNewProfile = !profileToUpdate;
 
-    if (!profileToUpdate) {
-      console.log(`Options: Profile with ID '${selectedProfileId}' not found, creating new profile.`);
-      // This case should ideally not happen if dropdown is managed well,
-      // but as a fallback, or if it's 'default' and somehow missing.
-      profileToUpdate = {
-        id: selectedProfileId, // Could be 'default'
-        name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(), // Basic name
-        llmEndpoint: llmEndpointValue,
-        apiKey: apiKeyValue,
-        modelName: modelNameValue,
-        maxTokens: maxTokensValue || 2048,
-        systemPrompt: systemPromptValue,
-        lastUpdated: new Date().toLocaleString()
-      };
-      profiles.push(profileToUpdate);
-      console.log('Options: New profile created:', profileToUpdate);
-    } else {
-      console.log(`Options: Profile with ID '${selectedProfileId}' found, updating existing profile.`);
-      profileToUpdate.llmEndpoint = llmEndpointValue;
-      profileToUpdate.apiKey = apiKeyValue;
-      profileToUpdate.modelName = modelNameValue;
-      profileToUpdate.maxTokens = maxTokensValue || 2048;
-      profileToUpdate.systemPrompt = systemPromptValue;
-      profileToUpdate.lastUpdated = new Date().toLocaleString();
-      console.log('Options: Profile updated:', profileToUpdate);
-      // profileToUpdate.name is handled during creation or if user edits it (future feature)
+    if (isNewProfile) {
+      console.log(`Options: Profile with ID '${selectedProfileId}' not found, should be handled by profile creation flow.`);
+      // This path should ideally not be hit if 'add_new_profile' is handled separately
+      // or if saving always happens to an existing, selected profile.
+      // For safety, we can log an error or create a new one if absolutely necessary,
+      // but it indicates a potential flaw in profile management UI flow.
+      // For now, let's assume profile management (creation/selection) ensures profileToUpdate exists.
+      // If selectedProfileId is 'default' and it's missing, ensureDefaultProfileExists should have handled it.
+      // If it's a custom profile ID that's somehow missing, that's an issue.
+      // The current logic relies on 'add_new_profile' to create profiles.
+      // Let's adjust: if profileToUpdate is null, it means we are saving to a profile that doesn't exist yet (which is unexpected here)
+      // unless it is the 'default' profile which should always exist due to ensureDefaultProfileExists.
+       if (selectedProfileId === 'default') { // If it's default and somehow missing after load.
+            profileToUpdate = { id: 'default', name: 'Default' }; // Re-create basic structure
+            profiles.push(profileToUpdate);
+       } else {
+            // This case should ideally not be reached if UI prevents saving to a non-existent custom profile.
+            // If it is reached, it might be better to show an error than to create an unexpected profile.
+            console.error(`Options: Attempting to save to a non-existent profile ID '${selectedProfileId}' without explicit creation.`);
+            showStatus(`Error: Profile ID '${selectedProfileId}' does not exist. Please select a valid profile or create a new one.`, true);
+            saveButton.disabled = false;
+            return;
+       }
     }
 
+    console.log(`Options: Updating profile with ID '${selectedProfileId}'.`);
+    profileToUpdate.llmEndpoint = llmEndpointValue;
+    profileToUpdate.apiKey = apiKeyValue;
+    profileToUpdate.modelName = modelNameValue;
+    profileToUpdate.maxTokens = maxTokensValue || 2048; // Default if empty
+    profileToUpdate.systemPrompt = systemPromptValue;
+    profileToUpdate.lastUpdated = new Date().toLocaleString();
+    if (isNewProfile && !profileToUpdate.name) { // Only set name if it's a new profile without one (e.g. re-created default)
+        profileToUpdate.name = selectedProfileId === 'default' ? 'Default' : 'Profile ' + selectedProfileId;
+    }
+
+
     console.log('Options: Saving profiles and last selected profile ID:', { profiles: profiles, lastSelectedProfileId: selectedProfileId });
-    chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: selectedProfileId }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Options: Error saving profile settings to local storage:', chrome.runtime.lastError);
-        showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
-      } else {
-        console.log(`Options: Settings for profile '${profileToUpdate.name}' saved successfully.`);
-        showStatus(`Settings for profile '${profileToUpdate.name}' saved!`);
-        // Reload options to reflect changes, especially if it was a new profile or name changed
-        loadOptions();
-      }
-      saveButton.disabled = false;
+    await new Promise((resolve, reject) => {
+      chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: selectedProfileId }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
     });
-  });
+
+    console.log(`Options: Settings for profile '${profileToUpdate.name || selectedProfileId}' saved successfully.`);
+    showStatus(`Settings for profile '${profileToUpdate.name || selectedProfileId}' saved!`);
+    await loadOptions(); // Reload options to reflect changes
+  } catch (error) {
+    console.error('Options: Error saving profile settings to local storage:', error);
+    showStatus('Error saving profile settings: ' + error.message, true);
+  } finally {
+    saveButton.disabled = false;
+  }
 }
 
 // Load saved options
 // Function to load settings for a specific profile
-function loadProfileSettings(profileId) {
+async function loadProfileSettings(profileId) {
   console.log(`[DEBUG] loadProfileSettings: Attempting to load settings for profile ID: ${profileId}`);
-  chrome.storage.local.get(['profiles'], (result) => {
+  try {
+    const result = await new Promise(resolve => chrome.storage.local.get(['profiles'], resolve));
     console.log('[DEBUG] loadProfileSettings: Profiles retrieved from storage:', result.profiles);
     const profiles = result.profiles || [];
     const selectedProfile = profiles.find(p => p.id === profileId) || profiles.find(p => p.id === 'default');
     console.log('[DEBUG] loadProfileSettings: Selected profile:', selectedProfile);
 
     if (selectedProfile) {
-      console.log('Options: Populating form fields with selected profile data.'); // Added log
+      console.log('Options: Populating form fields with selected profile data.');
       document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
       document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
       document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
@@ -189,112 +192,186 @@ function loadProfileSettings(profileId) {
         selectedProfile.modelName,
         selectedProfile.lastUpdated || new Date().toLocaleString(),
         selectedProfile.systemPrompt,
-        selectedProfile.name // Pass profile name to updateCurrentConfig
+        selectedProfile.name
       );
     } else {
-      // Fallback to sync storage if profile not found (e.g. initial load or error)
-      chrome.storage.sync.get(
-        {
-          llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-          apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-          modelName: 'mistral-small-latest',
-          maxTokens: 32000,
-          systemPrompt: '',
-          lastUpdated: '',
-          profileSelect: 'default'
-        },
-        (items) => {
-          if (chrome.runtime.lastError) {
-            console.error('Error loading settings from sync:', chrome.runtime.lastError);
-            showStatus('Error loading settings: ' + chrome.runtime.lastError.message, true);
-            return;
+      // This fallback might be less critical if ensureDefaultProfileExists works reliably
+      console.warn(`Options: Profile with ID '${profileId}' not found in local storage, attempting fallback to sync (legacy).`);
+      const items = await new Promise((resolve, reject) => {
+        chrome.storage.sync.get(
+          {
+            llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+            apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
+            modelName: 'mistral-small-latest',
+            maxTokens: 32000,
+            systemPrompt: '',
+            lastUpdated: '',
+            profileSelect: 'default' // This 'profileSelect' seems like a legacy or differently named field
+          },
+          (data) => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve(data);
+            }
           }
-          document.getElementById('llmEndpoint').value = items.llmEndpoint;
-          document.getElementById('apiKey').value = items.apiKey;
-          document.getElementById('modelName').value = items.modelName;
-          document.getElementById('maxTokens').value = items.maxTokens;
-          document.getElementById('systemPrompt').value = items.systemPrompt;
-          updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.profileSelect);
-        }
-      );
+        );
+      });
+      document.getElementById('llmEndpoint').value = items.llmEndpoint;
+      document.getElementById('apiKey').value = items.apiKey;
+      document.getElementById('modelName').value = items.modelName;
+      document.getElementById('maxTokens').value = items.maxTokens;
+      document.getElementById('systemPrompt').value = items.systemPrompt;
+      // Note: items.profileSelect is used for the profile name in updateCurrentConfig.
+      // This might be 'default' or another string, not necessarily matching a profile *name* if profiles are managed by ID.
+      updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.systemPrompt, items.profileSelect);
     }
-  });
+  } catch (error) {
+    console.error('Error in loadProfileSettings:', error);
+    showStatus('Error loading profile settings: ' + error.message, true);
+  }
+}
+
+// Helper function to populate profile dropdown
+function populateProfileDropdown(profiles, selectedProfileId) {
+  const profileSelectElement = document.getElementById('profileSelect');
+  profileSelectElement.innerHTML = ''; // Clear existing options
+
+  // Add a "Add New Profile" option
+  const addNewOption = document.createElement('option');
+  addNewOption.value = 'add_new_profile';
+  addNewOption.textContent = '+ Add New Profile...';
+  profileSelectElement.appendChild(addNewOption);
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = 'default';
+  defaultOption.textContent = 'Default';
+  profileSelectElement.appendChild(defaultOption);
+
+  if (profiles && profiles.length > 0) {
+    profiles.forEach(profile => {
+      if (profile.id === 'default') return; // Skip default as it's already added
+      const option = document.createElement('option');
+      option.value = profile.id;
+      option.textContent = profile.name;
+      profileSelectElement.appendChild(option);
+    });
+  }
+  profileSelectElement.value = selectedProfileId || 'default';
+}
+
+// Helper function to ensure default profile exists
+async function ensureDefaultProfileExists(profiles) {
+  if (!profiles.find(p => p.id === 'default')) {
+    console.log('Options: Default profile not found, creating it.');
+    const defaultProfile = {
+      id: 'default',
+      name: 'Default',
+      llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+      apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
+      modelName: 'mistral-small-latest',
+      maxTokens: 32000,
+      systemPrompt: 'You are a helpful assistant.',
+      lastUpdated: new Date().toLocaleString()
+    };
+    profiles.push(defaultProfile);
+    console.log('Options: Default profile created:', defaultProfile);
+    await new Promise(resolve => chrome.storage.local.set({ profiles: profiles }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Options: Error saving default profile:', chrome.runtime.lastError);
+      } else {
+        console.log('Options: Default profile saved successfully.');
+      }
+      resolve();
+    }));
+  } else {
+    console.log('Options: Default profile already exists.');
+  }
+  return profiles;
 }
 
 // Load saved options
-function loadOptions() {
-  const profileSelectElement = document.getElementById('profileSelect');
-
-  // Function to populate profile dropdown
-  function populateProfileDropdown(profiles, selectedProfileId) {
-    profileSelectElement.innerHTML = ''; // Clear existing options
-
-    // Add a "Add New Profile" option
-    const addNewOption = document.createElement('option');
-    addNewOption.value = 'add_new_profile';
-    addNewOption.textContent = '+ Add New Profile...';
-    profileSelectElement.appendChild(addNewOption);
-    
-    const defaultOption = document.createElement('option');
-    defaultOption.value = 'default';
-    defaultOption.textContent = 'Default';
-    profileSelectElement.appendChild(defaultOption);
-
-    if (profiles && profiles.length > 0) {
-      profiles.forEach(profile => {
-        if (profile.id === 'default') return; // Skip default if already added
-        const option = document.createElement('option');
-        option.value = profile.id;
-        option.textContent = profile.name;
-        profileSelectElement.appendChild(option);
-      });
-    }
-    profileSelectElement.value = selectedProfileId || 'default';
-  }
-
-  // Load profiles and the last selected profile ID from storage
+async function loadOptions() {
   console.log('Options: Loading profiles and last selected profile ID...');
-  chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-    console.log('Options: Storage get result for profiles and lastSelectedProfileId:', result);
-    let profiles = result.profiles || [];
-    const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-    console.log('Options: Loaded profiles:', profiles);
-    console.log('Options: Loaded last selected profile ID:', lastSelectedProfileId);
+  let result = await new Promise(resolve => chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], resolve));
 
-    // Ensure default profile exists
-    if (!profiles.find(p => p.id === 'default')) {
-      console.log('Options: Default profile not found, creating it.');
-      const defaultProfile = {
-        id: 'default',
-        name: 'Default',
-        llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-        apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-        modelName: 'mistral-small-latest',
-        maxTokens: 32000,
-        systemPrompt: 'You are a helpful assistant.',
-        lastUpdated: new Date().toLocaleString()
-      };
-      profiles.push(defaultProfile);
-      console.log('Options: Default profile created:', defaultProfile);
-      chrome.storage.local.set({ profiles: profiles }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Options: Error saving default profile:', chrome.runtime.lastError);
-        } else {
-          console.log('Options: Default profile saved successfully.');
-        }
-      }); // Save updated profiles array
-    } else {
-      console.log('Options: Default profile already exists.');
-    }
-    
-    populateProfileDropdown(profiles, lastSelectedProfileId);
-    loadProfileSettings(lastSelectedProfileId); // Load settings for the last selected or default profile
-  });
+  console.log('Options: Storage get result for profiles and lastSelectedProfileId:', result);
+  let profiles = result.profiles || [];
+  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+  console.log('Options: Loaded profiles:', profiles);
+  console.log('Options: Loaded last selected profile ID:', lastSelectedProfileId);
+
+  profiles = await ensureDefaultProfileExists(profiles);
+
+  populateProfileDropdown(profiles, lastSelectedProfileId);
+  loadProfileSettings(lastSelectedProfileId); // Load settings for the last selected or default profile
 }
 
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
+
+  // Streaming Toggle
+  const enableStreamingToggle = document.getElementById('enableStreamingToggle');
+  if (enableStreamingToggle) {
+    // Load streaming setting
+    chrome.storage.sync.get({ enableStreaming: false }, (result) => {
+      enableStreamingToggle.checked = !!result.enableStreaming;
+    });
+
+    // Save streaming setting on change
+    enableStreamingToggle.addEventListener('change', () => {
+      const isStreamingEnabled = enableStreamingToggle.checked;
+      chrome.storage.sync.set({ enableStreaming: isStreamingEnabled }, () => {
+        showStatus(`Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`, false, true);
+      });
+    });
+  }
+
+  // Dark Theme Toggle
+  const darkThemeToggle = document.getElementById('darkThemeToggle');
+  function applyDarkTheme(isDark) {
+    if (isDark) {
+      document.body.classList.add('dark-theme');
+      if (document.getElementById('darkThemeIcon')) {
+        document.getElementById('darkThemeIcon').textContent = 'wb_sunny';
+      }
+    } else {
+      document.body.classList.remove('dark-theme');
+      if (document.getElementById('darkThemeIcon')) {
+        document.getElementById('darkThemeIcon').textContent = 'brightness_2';
+      }
+    }
+  }
+  // Load darkTheme from storage and set toggle/class
+  chrome.storage.sync.get({ darkTheme: false }, (result) => {
+    if (darkThemeToggle) {
+      darkThemeToggle.checked = !!result.darkTheme;
+    }
+    applyDarkTheme(!!result.darkTheme);
+  });
+  // Toggle event: update storage and class
+  if (darkThemeToggle) {
+    darkThemeToggle.addEventListener('change', (e) => {
+      const isDark = darkThemeToggle.checked;
+      chrome.storage.sync.set({ darkTheme: isDark });
+      applyDarkTheme(isDark);
+    });
+  }
+  // Listen for storage changes to sync theme and streaming
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync') {
+      if (changes.darkTheme) {
+        const isDark = changes.darkTheme.newValue;
+        if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
+        applyDarkTheme(!!isDark);
+      }
+      if (changes.enableStreaming && enableStreamingToggle) {
+        enableStreamingToggle.checked = !!changes.enableStreaming.newValue;
+      }
+    }
+  });
+
   const deleteProfileButton = document.getElementById('deleteProfileButton');
 
   if (deleteProfileButton) {
@@ -413,72 +490,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
-});
-
-// --- Dark Theme Toggle Logic ---
-// This DOMContentLoaded listener should ideally be merged with the one above,
-// but for now, we'll follow the existing structure.
-document.addEventListener('DOMContentLoaded', () => {
-  // Streaming Toggle
-  const enableStreamingToggle = document.getElementById('enableStreamingToggle');
-  if (enableStreamingToggle) {
-    // Load streaming setting
-    chrome.storage.sync.get({ enableStreaming: false }, (result) => {
-      enableStreamingToggle.checked = !!result.enableStreaming;
-    });
-
-    // Save streaming setting on change
-    enableStreamingToggle.addEventListener('change', () => {
-      const isStreamingEnabled = enableStreamingToggle.checked;
-      chrome.storage.sync.set({ enableStreaming: isStreamingEnabled }, () => {
-        showStatus(`Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`, false, true);
-      });
-    });
-  }
-
-  // Dark Theme Toggle
-  const darkThemeToggle = document.getElementById('darkThemeToggle');
-  function applyDarkTheme(isDark) {
-    if (isDark) {
-      document.body.classList.add('dark-theme');
-      if (document.getElementById('darkThemeIcon')) {
-        document.getElementById('darkThemeIcon').textContent = 'wb_sunny';
-      }
-    } else {
-      document.body.classList.remove('dark-theme');
-      if (document.getElementById('darkThemeIcon')) {
-        document.getElementById('darkThemeIcon').textContent = 'brightness_2';
-      }
-    }
-  }
-  // Load darkTheme from storage and set toggle/class
-  chrome.storage.sync.get({ darkTheme: false }, (result) => {
-    if (darkThemeToggle) {
-      darkThemeToggle.checked = !!result.darkTheme;
-    }
-    applyDarkTheme(!!result.darkTheme);
-  });
-  // Toggle event: update storage and class
-  if (darkThemeToggle) {
-    darkThemeToggle.addEventListener('change', (e) => {
-      const isDark = darkThemeToggle.checked;
-      chrome.storage.sync.set({ darkTheme: isDark });
-      applyDarkTheme(isDark);
-    });
-  }
-  // Listen for storage changes to sync theme and streaming
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync') {
-      if (changes.darkTheme) {
-        const isDark = changes.darkTheme.newValue;
-        if (darkThemeToggle) darkThemeToggle.checked = !!isDark;
-        applyDarkTheme(!!isDark);
-      }
-      if (changes.enableStreaming && enableStreamingToggle) {
-        enableStreamingToggle.checked = !!changes.enableStreaming.newValue;
-      }
-    }
-  });
 });
 
 // Migration logic for instructions from sync to local

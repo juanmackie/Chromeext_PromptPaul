@@ -61,6 +61,86 @@ document.addEventListener('DOMContentLoaded', () => {
     let accumulatedStreamedText = "";
     let activeStreamingToolCall = null;
 
+    // Consolidated function to handle streaming responses
+    async function handleStreamingResponse(reader, currentStreamingContentElement, currentStreamingUniqueId, isOneOff = false) {
+        const decoder = new TextDecoder();
+        let sseBuffer = "";
+        accumulatedStreamedText = ""; // Reset for each new stream
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                if (currentStreamingContentElement && currentStreamingUniqueId) {
+                    const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
+                    const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
+                    if (copyIconElem && copyFormattedIconElem) {
+                        attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                    }
+                }
+                if (!isOneOff) { // For regular chat, add to main history
+                    if (accumulatedStreamedText.trim()) {
+                        const lastMessage = conversationHistory[conversationHistory.length - 1];
+                        if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === accumulatedStreamedText)) {
+                            conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
+                        }
+                    }
+                } else { // For one-off, add to main history as well, as per existing logic
+                     conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
+                }
+
+                // Reset UI and state (common parts)
+                currentStreamingMessageDiv = null;
+                currentStreamingContentElement = null;
+                currentStreamingUniqueId = null;
+                // accumulatedStreamedText is reset at the start of this function for the next stream
+
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                userInput.focus();
+
+                if (isOneOff) {
+                    instructionInput.value = '';
+                    selectedTextDiv.textContent = '';
+                    selectedText = null;
+                    oneoffInstructionArea.style.display = 'none';
+                    chatMainArea.style.display = 'block';
+                }
+                break;
+            }
+            sseBuffer += decoder.decode(value, { stream: true });
+            let eolIndex;
+            while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
+                const line = sseBuffer.substring(0, eolIndex).trim();
+                sseBuffer = sseBuffer.substring(eolIndex + 1);
+
+                if (line.startsWith('data:')) {
+                    let jsonData = line.substring(5).trim();
+                    if (jsonData.startsWith('data:')) {
+                        jsonData = jsonData.substring(5).trim();
+                    }
+                    if (jsonData === '[DONE]') {
+                        continue;
+                    }
+                    if (jsonData) {
+                        try {
+                            const parsed = JSON.parse(jsonData);
+                            if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                accumulatedStreamedText += parsed.choices[0].delta.content;
+                                if(currentStreamingContentElement) { // Check if element still exists (might be cleared by other logic)
+                                    currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                }
+                                chatArea.scrollTop = chatArea.scrollHeight;
+                            }
+                        } catch (e) {
+                            console.warn(`SSE JSON Parse Error in handleStreamingResponse (isOneOff: ${isOneOff}):`, e, "Problematic JSON string:", jsonData);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
     async function getApiConfig() {
         return new Promise((resolve, reject) => {
             chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
@@ -576,68 +656,8 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                 }
 
                 const reader = apiResponse.body.getReader();
-                const decoder = new TextDecoder();
-                let sseBuffer = ""; // Buffer for incomplete SSE lines
+                await handleStreamingResponse(reader, currentStreamingContentElement, currentStreamingUniqueId, false);
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        // Final attachment of copy listeners for the fully accumulated message
-                        if (currentStreamingContentElement && currentStreamingUniqueId) {
-                             const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                             const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                             if (copyIconElem && copyFormattedIconElem) { // Ensure icons exist
-                                attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                             }
-                        }
-                        // Add the fully accumulated message to history
-                        if (accumulatedStreamedText.trim()) {
-                           const lastMessage = conversationHistory[conversationHistory.length - 1];
-                           // Avoid adding if it's effectively a duplicate of the last message
-                           if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === accumulatedStreamedText)) {
-                               conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
-                           }
-                        }
-                        // Reset UI and state
-                        userInput.disabled = false;
-                        sendButton.disabled = false;
-                        currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
-                        userInput.focus();
-                        break;
-                    }
-                    sseBuffer += decoder.decode(value, { stream: true });
-                    let eolIndex;
-                    // Process all complete lines in the buffer
-                    while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
-                        const line = sseBuffer.substring(0, eolIndex).trim();
-                        sseBuffer = sseBuffer.substring(eolIndex + 1);
-
-                        if (line.startsWith('data:')) {
-                            let jsonData = line.substring(5).trim();
-                            if (jsonData.startsWith('data:')) { // Handle potential double prefix
-                                jsonData = jsonData.substring(5).trim();
-                            }
-                            if (jsonData === '[DONE]') { // OpenAI specific end signal
-                                continue;
-                            }
-                            if (jsonData) {
-                                try {
-                                    const parsed = JSON.parse(jsonData);
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                        accumulatedStreamedText += parsed.choices[0].delta.content;
-                                        if(currentStreamingContentElement) {
-                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                                        }
-                                        chatArea.scrollTop = chatArea.scrollHeight;
-                                    }
-                                } catch (e) {
-                                    // Log benignly, as some chunks might not be full JSON objects if stream is interrupted or malformed.
-                                    console.warn("SSE JSON Parse Error in makeApiCall (chat.js):", e, "Problematic JSON string:", jsonData);
-                                }
-                            }
-                        }
-                    }
-                }
             } else { // Non-streaming for chat input
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
@@ -750,51 +770,8 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                     throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
                 }
                 const reader = apiResponse.body.getReader();
-                const decoder = new TextDecoder();
-                let sseBuffer = "";
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        if (currentStreamingContentElement && currentStreamingUniqueId) {
-                           const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                           const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                           if (copyIconElem && copyFormattedIconElem) {
-                            attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                           }
-                        }
-                        conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
-                        currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
-                        userInput.disabled = false; sendButton.disabled = false;
-                        instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
-                         oneoffInstructionArea.style.display = 'none';
-                         chatMainArea.style.display = 'block';
-                        userInput.focus();
-                        break;
-                    }
-                    sseBuffer += decoder.decode(value, { stream: true });
-                    let eolIndex;
-                    while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
-                        const line = sseBuffer.substring(0, eolIndex).trim();
-                        sseBuffer = sseBuffer.substring(eolIndex + 1);
-                        if (line.startsWith('data:')) {
-                            let jsonData = line.substring(5).trim();
-                            if (jsonData.startsWith('data:')) { jsonData = jsonData.substring(5).trim(); }
-                            if (jsonData === '[DONE]') continue;
-                            if (jsonData) {
-                                try {
-                                    const parsed = JSON.parse(jsonData);
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                        accumulatedStreamedText += parsed.choices[0].delta.content;
-                                        if(currentStreamingContentElement) {
-                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                                        }
-                                        chatArea.scrollTop = chatArea.scrollHeight;
-                                    }
-                                } catch (e) { console.warn("SSE JSON Parse Error (one-off submit):", e, jsonData); }
-                            }
-                        }
-                    }
-                }
+                await handleStreamingResponse(reader, currentStreamingContentElement, currentStreamingUniqueId, true);
+
             } else {
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',

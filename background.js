@@ -2,7 +2,6 @@ console.log('Background service worker script started.');
 importScripts('marked.min.js');
 console.log('marked.min.js imported successfully.');
 
-let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
 
 // Enable the side panel on all pages
@@ -22,21 +21,18 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Single side panel open call at start of user gesture
   await chrome.sidePanel.open({ tabId: tab.id });
-  let selectedText = info.selectionText; // Allow modification
-  let promptContent = ''; // Initialize promptContent
+  let promptContent = info.selectionText || ''; // Initialize with selection text or empty string
 
   // Handle image context: Prepend image URL if present
   if (info.mediaType === 'image' && info.srcUrl) {
     const imageUrlText = `Image URL: ${info.srcUrl}`;
-    if (selectedText) {
-      selectedText = `${imageUrlText}\n${selectedText}`;
+    if (promptContent) {
+      promptContent = `${imageUrlText}\n${promptContent}`;
     } else {
-      selectedText = imageUrlText;
+      promptContent = imageUrlText;
     }
   }
-  // At this point, selectedText contains the image URL and/or the selected text.
-  // Initialize promptContent with this potentially modified selectedText.
-  promptContent = selectedText;
+  // At this point, promptContent contains the image URL and/or the selected text.
 
   // Handle manage instructions click
   if (info.menuItemId === 'manageInstructions') {
@@ -50,7 +46,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     setTimeout(() => {
       chrome.runtime.sendMessage({
         action: 'setSelectedText',
-        selectedText: promptContent, // Pass the combined content
+        selectedText: promptContent,
         tabId: tab.id
       }).catch(error => console.log(`Error sending setSelectedText for one-off: ${error.message}, tabId: ${tab.id}`));
     }, 100);
@@ -59,10 +55,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   // Handle start chat click - Open side panel immediately
   if (info.menuItemId === 'start_chat') {
-    // Send message to chat.js with selected text (which now includes image URL if applicable)
+    // Send message to chat.js with selected text
     chrome.runtime.sendMessage({
       action: 'setSelectedText',
-      selectedText: promptContent, // Pass the combined content
+      selectedText: promptContent,
       tabId: tab.id,
       fromStartChat: true // Flag to indicate this is from the start_chat option
     }).catch(error => console.log(`Error sending setSelectedText for start_chat: ${error.message}, tabId: ${tab.id}`));
@@ -73,7 +69,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   let instructionToolChoice = 'none'; // Default tool choice
-  // promptContent is already initialized with selectedText (which could be an image URL, text, or both)
 
   if (info.menuItemId.startsWith('custom_')) {
     // Handle custom instruction
@@ -81,18 +76,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
     if (instruction) {
-      // Prepend instruction content. promptContent might be just an image URL,
-      // or image URL + text, or just text.
       promptContent = `${instruction.content}\n\n${promptContent}`;
-      instructionToolChoice = instruction.tool_choice || 'none'; // Get tool_choice, default to 'none'
+      instructionToolChoice = instruction.tool_choice || 'none';
     } else {
       console.error(`Custom instruction with ID ${instructionId} not found.`);
-      // promptContent remains as is (selectedText, potentially with image URL)
     }
-  } else {
+  } else if (info.menuItemId !== 'prompt_paul' && info.menuItemId !== 'customInstructions') { // Avoid processing parent menu items as commands
     // Handle predefined commands
-    // promptContent is already set (it includes image URL if applicable).
-    // We need to ensure the specific command prompt is prepended correctly.
     switch (info.menuItemId) {
       case 'summarize':
         promptContent = `Please summarize the following text into a bullet list of points:\n${promptContent}`;
@@ -115,18 +105,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       case 'analyze':
         promptContent = `Please analyze the following text:\n${promptContent}`;
         break;
-      // If it's not a predefined command, not custom, and not one of the special items above,
-      // promptContent will just be the original selectedText (potentially with image URL).
-      // This path handles cases like clicking on "Prompt Paul" parent item directly if it were to trigger this part,
-      // or any other menu item that doesn't fit the specific command structure.
       default:
-        // promptContent is already as needed (selectedText, possibly with image URL)
+        // If it's not a predefined command or a known special item,
+        // promptContent remains as is. This case is important if new, non-command items are added.
         break;
     }
   }
+  // If it's 'prompt_paul' or 'customInstructions' or any other non-command item,
+  // promptContent is already set and no specific command is prepended.
+  // The API call will proceed with the (potentially modified by custom instruction) promptContent.
 
   // Call the refactored API request function
-  await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: instructionToolChoice });
+  // Ensure that parent menu items that don't correspond to an action don't trigger an API call without a specific command.
+  // This check can be made more robust depending on how parent items should behave.
+  // For now, we assume if no specific command or custom instruction modified promptContent, it's a direct query.
+  if (info.menuItemId !== 'prompt_paul' && info.menuItemId !== 'customInstructions' || info.menuItemId.startsWith('custom_')) {
+     await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: instructionToolChoice });
+  }
 });
 
 // Helper function to check for valid URL
@@ -141,125 +136,94 @@ function isValidURL(string) {
 
 // ValidateConfig function to include API configuration
 async function validateConfig() {
-  return new Promise((resolve, reject) => {
-    console.log('Background: Validating configuration...');
-    // Fetch profiles, lastSelectedProfileId, and defaultLlmEndpoint simultaneously
-    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], (result) => {
-      console.log('Background: Storage get result:', result);
-      const profiles = result.profiles || [];
-      const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-      const defaultLlmEndpoint = result.defaultLlmEndpoint || ''; // Get default endpoint
+  console.log('Background: Validating configuration...');
+  const result = await chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint']);
+  console.log('Background: Storage get result:', result);
 
-      console.log('Background: Profiles:', profiles);
-      console.log('Background: Last selected profile ID:', lastSelectedProfileId);
-      console.log('Background: Default LLM Endpoint:', defaultLlmEndpoint);
+  const profiles = result.profiles || [];
+  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+  const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
 
-      let selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
-      let profileToUse = null;
-      let endpointError = false;
+  console.log('Background: Profiles:', profiles);
+  console.log('Background: Last selected profile ID:', lastSelectedProfileId);
+  console.log('Background: Default LLM Endpoint:', defaultLlmEndpoint);
 
-      // Scenario 1: A selected profile exists
-      if (selectedProfile) {
-        console.log(`Background: Checking selected profile: ${selectedProfile.name || selectedProfile.id}`);
-        // Check if its endpoint is valid
-        if (selectedProfile.llmEndpoint && isValidURL(selectedProfile.llmEndpoint)) {
-          // If endpoint is valid, check for API key and model name
-          if (selectedProfile.apiKey && selectedProfile.modelName) {
-            profileToUse = selectedProfile;
-            console.log(`Background: Selected profile '${profileToUse.name || profileToUse.id}' is valid and complete.`);
-          } else {
-            // Endpoint is valid, but API key or model name is missing
-            console.warn(`Background: Selected profile '${selectedProfile.name || selectedProfile.id}' has a valid endpoint but is missing API key or model name.`);
-            // We will later check the default profile or reject with a generic error
-          }
-        } else {
-          // Selected profile's endpoint is missing or invalid
-          console.warn(`Background: Selected profile '${selectedProfile.name || selectedProfile.id}' has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.`);
-          endpointError = true; // Mark that an endpoint issue was detected
-          if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
-            // Default LLM endpoint is valid, try to use it with the selected profile's other details
-            if (selectedProfile.apiKey && selectedProfile.modelName) {
-              // Create a temporary profile object with the default endpoint
-              profileToUse = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
-              console.log(`Background: Using defaultLlmEndpoint for selected profile '${selectedProfile.name || selectedProfile.id}'.`);
-            } else {
-              // Default endpoint is ok, but selected profile still missing API key/model
-              console.warn(`Background: defaultLlmEndpoint is valid, but selected profile '${selectedProfile.name || selectedProfile.id}' is still missing API key or model name.`);
-            }
-          } else {
-            // Default LLM endpoint is also missing or invalid
-            console.warn('Background: defaultLlmEndpoint is also missing or invalid.');
-            // No need to set profileToUse, will proceed to defaultProfile check or reject
-          }
-        }
+  let profileToUse = null;
+  let endpointError = false;
+
+  const checkProfile = (profile, isDefaultProfile = false) => {
+    if (!profile) {
+      if (isDefaultProfile) {
+        console.warn('Background: Default profile (id: "default") not found.');
       } else {
         console.warn('Background: No selected profile found with ID:', lastSelectedProfileId);
-        endpointError = true; // Potentially an endpoint issue if no profile is selected
       }
+      endpointError = true; // Mark as endpoint error if profile is missing
+      return null;
+    }
 
-      // Scenario 2: If no valid profileToUse yet, try the default profile
-      if (!profileToUse) {
-        console.log('Background: No valid selected profile configuration yet. Checking default profile...');
-        const defaultProfile = profiles.find(p => p.id === 'default');
+    console.log(`Background: Checking ${isDefaultProfile ? 'default' : 'selected'} profile: ${profile.name || profile.id}`);
 
-        if (defaultProfile) {
-          console.log('Background: Checking default profile.');
-          // Check default profile's endpoint
-          if (defaultProfile.llmEndpoint && isValidURL(defaultProfile.llmEndpoint)) {
-            if (defaultProfile.apiKey && defaultProfile.modelName) {
-              profileToUse = defaultProfile;
-              endpointError = false; // Default profile has a valid endpoint
-              console.log('Background: Using default profile as it is valid and complete.');
-            } else {
-              console.warn('Background: Default profile has a valid endpoint but is missing API key or model name.');
-              // endpointError remains true if it was set by selectedProfile's endpoint failure
-            }
-          } else {
-            // Default profile's endpoint is missing or invalid
-            console.warn('Background: Default profile has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.');
-            endpointError = true; // Mark that an endpoint issue was detected with default profile
-            if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
-              if (defaultProfile.apiKey && defaultProfile.modelName) {
-                profileToUse = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
-                console.log('Background: Using defaultLlmEndpoint for default profile.');
-                endpointError = false; // Using the global default endpoint successfully
-              } else {
-                  console.warn('Background: defaultLlmEndpoint is valid, but default profile is still missing API key or model name.');
-              }
-            } else {
-              console.warn('Background: defaultLlmEndpoint is also missing or invalid (when checking for default profile).');
-            }
-          }
-        } else {
-          console.warn('Background: Default profile (id: "default") not found.');
-          // endpointError remains true if it was set by selectedProfile's endpoint failure or no selected profile
-        }
-      }
-
-      // Scenario 3: Final decision based on profileToUse and endpointError
-      if (profileToUse && profileToUse.llmEndpoint && profileToUse.apiKey && profileToUse.modelName && isValidURL(profileToUse.llmEndpoint)) {
-        console.log(`Background: Using configuration from profile: ${profileToUse.name || profileToUse.id}`);
-        console.log('Background: Configuration:', {
-          endpoint: profileToUse.llmEndpoint,
-          key: profileToUse.apiKey ? '********' + profileToUse.apiKey.slice(-4) : 'Not set',
-          model: profileToUse.modelName,
-          systemPrompt: profileToUse.systemPrompt // also log systemPrompt
-        });
-        resolve(profileToUse);
+    if (profile.llmEndpoint && isValidURL(profile.llmEndpoint)) {
+      if (profile.apiKey && profile.modelName) {
+        console.log(`Background: Profile '${profile.name || profile.id}' is valid and complete.`);
+        return profile;
       } else {
-        // If no usable profile is found, decide on the error message
-        if (endpointError && (!profileToUse || !isValidURL(profileToUse.llmEndpoint))) {
-          // If an endpoint error was specifically identified and not resolved
-          console.error('Background: Configuration rejected due to missing or invalid LLM API endpoint.');
-          reject(new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.'));
-        } else {
-          // For any other missing configuration (API key, model name, or profile entirely missing)
-          console.error('Background: Configuration rejected due to incomplete general configuration.');
-          reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
-        }
+        console.warn(`Background: Profile '${profile.name || profile.id}' has a valid endpoint but is missing API key or model name.`);
+        return null; // Incomplete profile
       }
+    } else {
+      console.warn(`Background: Profile '${profile.name || profile.id}' has missing or invalid llmEndpoint. Attempting to use defaultLlmEndpoint.`);
+      endpointError = true; // Mark that an endpoint issue was detected
+      if (defaultLlmEndpoint && isValidURL(defaultLlmEndpoint)) {
+        if (profile.apiKey && profile.modelName) {
+          console.log(`Background: Using defaultLlmEndpoint for profile '${profile.name || profile.id}'.`);
+          return { ...profile, llmEndpoint: defaultLlmEndpoint };
+        } else {
+          console.warn(`Background: defaultLlmEndpoint is valid, but profile '${profile.name || profile.id}' is still missing API key or model name.`);
+          return null;
+        }
+      } else {
+        console.warn('Background: defaultLlmEndpoint is also missing or invalid.');
+        return null;
+      }
+    }
+  };
+
+  // Attempt to use the selected profile first
+  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+  profileToUse = checkProfile(selectedProfile);
+
+  // If selected profile is not valid or not found, try the default profile
+  if (!profileToUse) {
+    console.log('Background: No valid selected profile configuration. Checking default profile...');
+    const defaultProfile = profiles.find(p => p.id === 'default');
+    // Reset endpointError before checking default, unless it was already set by a *missing* selected profile
+    // If selectedProfile existed but was invalid, its endpointError state is relevant.
+    // If selectedProfile didn't exist at all, then the error truly begins with default.
+    if (!selectedProfile) endpointError = false;
+    profileToUse = checkProfile(defaultProfile, true);
+  }
+
+  // Final decision
+  if (profileToUse && profileToUse.llmEndpoint && profileToUse.apiKey && profileToUse.modelName && isValidURL(profileToUse.llmEndpoint)) {
+    console.log(`Background: Using configuration from profile: ${profileToUse.name || profileToUse.id}`);
+    console.log('Background: Configuration:', {
+      endpoint: profileToUse.llmEndpoint,
+      key: profileToUse.apiKey ? '********' + profileToUse.apiKey.slice(-4) : 'Not set',
+      model: profileToUse.modelName,
+      systemPrompt: profileToUse.systemPrompt
     });
-  });
+    return profileToUse;
+  } else {
+    if (endpointError) {
+      console.error('Background: Configuration rejected due to missing or invalid LLM API endpoint.');
+      throw new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
+    } else {
+      console.error('Background: Configuration rejected due to incomplete general configuration (API key, model name, or profile missing).');
+      throw new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.');
+    }
+  }
 }
 
 // Helper function to process API response and send messages to chat.js
@@ -714,27 +678,8 @@ if (namespace === 'local' && changes.instructions) {
  * Get all tool definitions, merging local and MCP tools.
  */
 async function getAllToolDefinitions() {
-    const localTools = await new Promise((resolve) => {
-        chrome.storage.local.get(['promptPaulTools'], (result) => {
-            resolve(result.promptPaulTools || []);
-        });
-    });
-    return localTools;
-}
-
-// Function to get a single tool definition by name from storage
-async function getToolDefinition(name) {
-    return new Promise((resolve, reject) => {
-        chrome.storage.local.get(['promptPaulTools'], (result) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        const toolsArray = result.promptPaulTools || [];
-        const tool = toolsArray.find(t => t.name === name);
-        resolve(tool);
-      }
-    });
-  });
+    const result = await chrome.storage.local.get(['promptPaulTools']);
+    return result.promptPaulTools || [];
 }
 
 // Generic function to call a user-defined endpoint

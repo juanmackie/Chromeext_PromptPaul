@@ -6,7 +6,5 @@
   "scripts": {
     "start": "node background.js"
   },
-  "dependencies": {
-    "extpay": "^3.0.7"
-  }
+  "dependencies": {}
 }
