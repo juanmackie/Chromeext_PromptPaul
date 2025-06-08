@@ -1,5 +1,5 @@
 // content_script_tab_summary.js
-(function() {
+(async function() {
     let content = "";
     let success = false;
     let errorMessage = "";
@@ -40,12 +40,24 @@
         success = false;
     }
 
-    // Send the extracted content (or error) back to the background script
+    // Get current tool choice from storage
+    let toolChoice = 'none';
+    try {
+        const result = await new Promise((resolve) => {
+            chrome.storage.sync.get(['tool_choice'], resolve);
+        });
+        toolChoice = result.tool_choice || 'none';
+    } catch (e) {
+        console.error("Error getting tool_choice from storage:", e);
+    }
+
+    // Send the extracted content and tool choice back to the background script
     chrome.runtime.sendMessage({
         action: 'extractedTabContent',
         success: success,
         data: content, // Will be empty if !success or if successfully extracted empty content
-        error: errorMessage // Will be empty if success
+        error: errorMessage, // Will be empty if success
+        tool_choice: toolChoice // Include tool choice parameter
     }, response => {
         if (chrome.runtime.lastError) {
             // Log error if sending message failed (e.g., if background script isn't listening)

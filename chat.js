@@ -147,11 +147,56 @@ document.addEventListener('DOMContentLoaded', () => {
             messageDiv.textContent = 'System: ' + message;
         } else if (sender === 'LLM') {
             messageDiv.classList.add('llm-message');
-            const llmContentSpan = document.createElement('span');
-            llmContentSpan.classList.add('llm-content-area');
-            llmContentSpan.innerHTML = marked.parse(message || "");
-            messageDiv.appendChild(llmContentSpan);
-            contentElement = llmContentSpan;
+            const llmContentDiv = document.createElement('div');
+            llmContentDiv.classList.add('llm-content-area');
+            let thinkingSection = null;
+            let responseSection = null;
+
+            // Check for thinking tags
+            const thinkTagStart = '◁think▷';
+            const thinkTagEnd = '◁/think▷';
+            const thinkStartIdx = message.indexOf(thinkTagStart);
+            const thinkEndIdx = message.indexOf(thinkTagEnd);
+
+            if (thinkStartIdx !== -1 && thinkEndIdx !== -1 && thinkEndIdx > thinkStartIdx) {
+                // Extract thinking content
+                const thinkingContent = message.substring(thinkStartIdx + thinkTagStart.length, thinkEndIdx).trim();
+
+                // Extract response content (before and after thinking section)
+                const beforeThinking = message.substring(0, thinkStartIdx).trim();
+                const afterThinking = message.substring(thinkEndIdx + thinkTagEnd.length).trim();
+                const fullResponse = [beforeThinking, afterThinking].filter(part => part.length > 0).join(' ');
+
+                // Create thinking section
+                if (thinkingContent.length > 0) {
+                    thinkingSection = document.createElement('div');
+                    thinkingSection.classList.add('thinking-section');
+                    thinkingSection.innerHTML = marked.parse(thinkingContent);
+                }
+
+                // Create response section
+                if (fullResponse.length > 0) {
+                    responseSection = document.createElement('div');
+                    responseSection.classList.add('response-section');
+                    responseSection.innerHTML = marked.parse(fullResponse);
+                }
+            } else {
+                // No thinking tags found, wrap entire message in response section
+                responseSection = document.createElement('div');
+                responseSection.classList.add('response-section');
+                responseSection.innerHTML = marked.parse(message || "");
+            }
+
+            // Append sections to content div
+            if (thinkingSection) {
+                llmContentDiv.appendChild(thinkingSection);
+            }
+            if (responseSection) {
+                llmContentDiv.appendChild(responseSection);
+            }
+
+            messageDiv.appendChild(llmContentDiv);
+            contentElement = llmContentDiv;
             uniqueIdString = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
             const copyIcon = document.createElement('img');
@@ -509,7 +554,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
         });
     }
 
-    async function makeApiCall(userMessage = null) {
+    async function makeApiCall(userMessage = null, toolChoice = 'none') {
         try {
             const config = await getApiConfig();
             const tools = await getTools();
@@ -537,7 +582,9 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                 max_tokens: parseInt(config.maxTokens) || 2048,
             };
 
-            if (formattedTools.length > 0) {
+            // Only include tools in the request body if toolChoice is not 'none'
+            // and there are actual tools to send.
+            if (toolChoice !== 'none' && formattedTools.length > 0) {
                 requestBody.tools = formattedTools;
             }
 
@@ -553,6 +600,11 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
 
             if (effectiveEnableStreaming) {
                 requestBody.stream = true;
+                // Add tool_choice to request if specified
+                if (toolChoice !== 'none') {
+                    requestBody.tool_choice = toolChoice;
+                }
+                
                 userInput.disabled = true;
                 sendButton.disabled = true;
 
@@ -701,6 +753,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
         }
         try {
             const config = await getApiConfig();
+            const toolChoice = config.tool_choice || 'none';
             const prompt = instruction + '\n\n' + selectedText;
             let oneOffHistory = [{ role: 'user', content: prompt }];
 
@@ -728,6 +781,11 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
 
             if (effectiveEnableStreaming) {
                 requestBody.stream = true;
+                // Add tool_choice to request if specified
+                if (toolChoice !== 'none') {
+                    requestBody.tool_choice = toolChoice;
+                }
+                
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
                 userInput.disabled = true; sendButton.disabled = true;
@@ -831,8 +889,20 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
 
     // --- Summarize Tab Button Functionality ---
     if (summarizeTabButton) {
-        summarizeTabButton.addEventListener('click', () => {
+        summarizeTabButton.addEventListener('click', async () => {
             showToast('Requesting tab content for summary...');
+            
+            // Get current tool choice from storage
+            let toolChoice = 'none';
+            try {
+                const result = await new Promise((resolve) => {
+                    chrome.storage.sync.get(['tool_choice'], resolve);
+                });
+                toolChoice = result.tool_choice || 'none';
+            } catch (e) {
+                console.error("Error getting tool_choice from storage:", e);
+            }
+            
             chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => {
                 if (chrome.runtime.lastError) {
                     console.error("Error sending getTabContent message:", chrome.runtime.lastError.message);
@@ -845,7 +915,7 @@ style="cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; h
                         // Ensure chat area is visible
                         chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
-                        makeApiCall(prompt);
+                        makeApiCall(prompt, toolChoice);
                         showToast('Tab content received, summarizing...');
                     } else {
                         showToast('No content received from tab.');

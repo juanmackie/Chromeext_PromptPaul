@@ -116,6 +116,12 @@ body.dark-theme .llm-message {
     background-color: #23272f !important;
 }
 
+body.dark-theme .response-section,
+body.dark-theme .llm-content-area {
+    background-color: var(--surface-color) !important;
+    color: var(--text-color) !important;
+}
+
 body.dark-theme .user-message {
     background-color: #2a3b4d !important;
     color: #e0e6f0 !important;
@@ -436,4 +442,27 @@ body.sidebar-open #chat-area {
 /* Add style for instructionInput */
 #instructionInput {
   border-radius: 1.5rem;
+}
+
+.thinking-section {
+    background-color: #f5f5f5;
+    border-left: 3px solid #ccc;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-style: italic;
+    color: #555;
+}
+
+.response-section {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    padding: 8px 12px;
+    margin: 8px 0;
+}
+
+.llm-content-area {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    padding: 8px 12px;
+    margin: 8px 0;
 }

@@ -352,6 +352,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         messages.push({ role: 'user', content: promptContent });
 
         console.log('Background: Refactored API call. Tools sent to API:', formattedTools);
+        console.log(`Background: Received tool_choice from storage: ${customInstructionToolChoice}`);
 
         let toolChoicePayload = {};
         let finalToolChoice = customInstructionToolChoice; // Use the value passed in
@@ -367,6 +368,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         } else if (finalToolChoice === undefined) {
             finalToolChoice = 'none'; // Default if not set
         }
+        
+        console.log(`Background: Final tool_choice after normalization: ${finalToolChoice}`);
 
         if (finalToolChoice === 'none') {
             // Case 1: No tools or tool_choice sent
@@ -417,7 +420,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             apiRequestBody.stream = true;
         }
 
-        console.log("Background: API Request Body (Refactored):", JSON.stringify(apiRequestBody, null, 2));
+        console.log("Background: API Request Payload with tool_choice (for diagnosis):", JSON.stringify(apiRequestBody, null, 2));
 
         const apiResponse = await fetch(config.llmEndpoint, {
             method: 'POST',
