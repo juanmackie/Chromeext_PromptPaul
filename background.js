@@ -4,6 +4,7 @@ console.log('marked.min.js imported successfully.');
 
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
+let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -238,31 +239,84 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         }
         messages.push({ role: 'user', content: promptContent });
 
-        console.log('Background: Refactored API call. Tools sent to API:', formattedTools);
+        // START SHARED API REQUEST PREP LOGIC (manual sync with chat.js)
+        // Note: 'tools' variable here is 'allAvailableTools' in chat.js
+        // 'customInstructionToolChoice' is 'tool_choice' in chat.js makeApiCall signature
+        const allAvailableToolsRaw = tools; // Alias for clarity within this block
+        const current_tool_choice_option = customInstructionToolChoice; // Parameter to this function
+
+        const formattedToolsForRequest = allAvailableToolsRaw.map(tool => {
+            try {
+                return {
+                    type: 'function',
+                    function: { name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters || '{}') }
+                };
+            } catch (e) {
+                console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e); // Context-specific error
+                return null;
+            }
+        }).filter(tool => tool !== null);
 
         let toolChoicePayload = {};
-        let finalToolChoice = customInstructionToolChoice; // Use the value passed in
 
-        // Simplify tool choice handling
-        if (finalToolChoice === 'none' || !formattedTools.length) {
+        if (current_tool_choice_option === 'none' || formattedToolsForRequest.length === 0) {
             toolChoicePayload = {};
-        } else if (finalToolChoice === 'auto') {
-            toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
-        } else if (Array.isArray(finalToolChoice) && finalToolChoice.length) {
-            const selectedTools = formattedTools.filter(tool =>
-                finalToolChoice.includes(tool.function.name)
+            if (formattedToolsForRequest.length === 0 && current_tool_choice_option !== 'none') {
+                 console.warn("Background: makeLlmApiRequest - No tools available, though choice was not 'none'. Sending request without tools.");
+            } else {
+                 console.log("Background: makeLlmApiRequest - Tool choice is 'none' or no tools available. Sending request without tools.");
+            }
+        } else if (current_tool_choice_option === 'auto') {
+            toolChoicePayload = { tools: formattedToolsForRequest, tool_choice: "auto" };
+            console.log("Background: makeLlmApiRequest - Tool choice is 'auto'. Sending with all available tools.");
+        } else if (typeof current_tool_choice_option === 'string') { // Specific tool name
+            const specificTool = formattedToolsForRequest.find(t => t.function.name === current_tool_choice_option);
+            if (specificTool) {
+                toolChoicePayload = { tools: [specificTool], tool_choice: { type: "function", function: { name: current_tool_choice_option } } };
+                console.log(`Background: makeLlmApiRequest - Tool choice is specific: '${current_tool_choice_option}'. Sending with this tool.`);
+            } else {
+                console.warn(`Background: Specified tool "${current_tool_choice_option}" not found. No tools will be sent.`); // Context-specific error
+                toolChoicePayload = {};
+            }
+        } else if (Array.isArray(current_tool_choice_option) && current_tool_choice_option.length > 0) {
+            // This part is still specific to background.js as chat.js doesn't handle array of tool names yet.
+            // If it needs to be fully harmonized, chat.js would need this logic too, or it's removed from here.
+            // For now, keeping it as per current background.js capability.
+            const selectedTools = formattedToolsForRequest.filter(tool =>
+                current_tool_choice_option.includes(tool.function.name)
             );
-            
-            if (selectedTools.length) {
-                const toolChoice = selectedTools.length === 1
+            if (selectedTools.length > 0) {
+                const tcObject = selectedTools.length === 1
                     ? { type: 'function', function: { name: selectedTools[0].function.name } }
-                    : selectedTools.map(tool => ({ type: 'function', function: { name: tool.function.name } }));
-                
-                toolChoicePayload = { tools: selectedTools, tool_choice: toolChoice };
+                    // The API spec for tool_choice array seems to expect specific objects if not 'auto' or 'none'
+                    // Forcing a specific tool with an array of names might require multiple {type: "function", function: {name: "X"}} objects
+                    // or it might imply 'any' of these. Let's assume for now it means "the LLM must call one of these tools".
+                    // The most robust way if the API supports it would be just to list the tools and let the LLM pick.
+                    // However, to be explicit for "tool_choice" when it's a list:
+                    // OpenAI docs are a bit sparse on this exact format for an array of *required* tools.
+                    // Typically, 'tool_choice' is one specific tool or 'auto'/'none'.
+                    // If the intention is to make a *subset* of tools available, that's done by filtering the `tools` array.
+                    // If the intention for an array in `customInstructionToolChoice` was to *force one from a list*,
+                    // the API usually expects a single tool object for `tool_choice`.
+                    // Given this, the most direct interpretation matching the previous logic for an array:
+                    // This implies the model *must* choose one of the functions in this list.
+                    // The `tools` parameter should list these, and `tool_choice` could be "auto" over this subset,
+                    // or if the API supports it, a list of functions.
+                    // Let's simplify: if an array is passed, we'll make *only those tools available* and set choice to "auto".
+                    // This aligns better with typical API usage.
+                    : "auto"; // If multiple tools in the array, let the model choose from them.
+
+                toolChoicePayload = { tools: selectedTools, tool_choice: tcObject };
+                 console.log(`Background: makeLlmApiRequest - Tool choice is an array. Making these tools available: ${selectedTools.map(t=>t.function.name).join(', ')} with choice:`, tcObject);
+            } else {
+                 console.warn(`Background: Specified tools in array "${current_tool_choice_option}" not found. No tools will be sent.`);
+                 toolChoicePayload = {};
             }
         } else {
-            console.warn(`Background: Invalid tool choice: ${finalToolChoice}. Using default.`);
+            console.warn(`Background: Invalid tool choice format: ${current_tool_choice_option}. Defaulting to no tools.`);
+            toolChoicePayload = {};
         }
+        // END SHARED API REQUEST PREP LOGIC
 
         const apiRequestBody = {
             model: config.modelName,
@@ -706,6 +760,48 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
         return true; // Indicates that sendResponse will be called asynchronously.
+    } else if (request.action === 'getPinnedActionTabContent') {
+        const instructionFromChat = request.instruction; // Capture instruction from the request
+        pinnedActionTabContentCallback = (responsePayload) => {
+            // Augment the response payload with the original instruction
+            sendResponse({ ...responsePayload, instruction: instructionFromChat });
+        };
+
+        console.log("Background: getPinnedActionTabContent requested for instruction:", instructionFromChat ? instructionFromChat.name : "Unknown");
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+                chrome.scripting.executeScript({
+                    target: { tabId: activeTabId },
+                    files: ['content_script_tab_summary.js']
+                }, (injectionResults) => {
+                    if (chrome.runtime.lastError || !injectionResults || !injectionResults.length) {
+                        console.error('Failed to inject content_script_tab_summary.js for pinned action:', chrome.runtime.lastError);
+                        if (pinnedActionTabContentCallback) {
+                            pinnedActionTabContentCallback({
+                                action: 'pinnedActionTabContentResponse',
+                                success: false,
+                                content: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error')
+                            });
+                            pinnedActionTabContentCallback = null;
+                        }
+                    }
+                    // If successful, 'extractedTabContent' will trigger the callback
+                });
+            } else {
+                console.error('No active tab found for getPinnedActionTabContent.');
+                if (pinnedActionTabContentCallback) {
+                    pinnedActionTabContentCallback({
+                        action: 'pinnedActionTabContentResponse',
+                        success: false,
+                        content: 'No active tab found.'
+                    });
+                    pinnedActionTabContentCallback = null;
+                }
+            }
+        });
+        return true; // Async response
     } else if (request.action === 'getExplainContent') {
         // Store the sendResponse function to call it later
         tabContentCallback = sendResponse;
@@ -744,8 +840,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }).catch(error => console.log("Error sending explainContentResponse:", error));
         return true;
     } else if (request.action === 'extractedTabContent') {
-        if (tabContentCallback) {
-            // Send a structured response consistent with chat.js expectations for tabContentResponse
+        // This is where the response from content_script_tab_summary.js (and others) is handled
+        if (pinnedActionTabContentCallback) {
+            // This callback was set by 'getPinnedActionTabContent'
+            // It already includes the instruction in its closure, so we just pass the tab content part
+            if (request.success) {
+                pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: true, content: request.data });
+            } else {
+                pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: request.error });
+            }
+            pinnedActionTabContentCallback = null; // Clear callback
+        } else if (tabContentCallback) {
+            // This callback was set by 'getTabContent' or 'getExplainContent'
+            // These don't need the instruction passed back in the same way
             if (request.success) {
                 tabContentCallback({ action: 'tabContentResponse', success: true, content: request.data });
             } else {
@@ -753,7 +860,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
             tabContentCallback = null; // Clear callback after use
         } else {
-            console.warn("Received extractedTabContent but no pending callback.");
+            console.warn("Received extractedTabContent but no pending callback (neither tabContentCallback nor pinnedActionTabContentCallback).");
         }
         return false; // No further async response from this branch.
     } else if (request.action === 'executePromptPaulTool') {

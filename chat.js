@@ -502,37 +502,63 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function makeApiCall(userMessage = null) {
+    async function makeApiCall(userMessage = null, tool_choice = 'auto') { // Added tool_choice, default to 'auto'
         try {
             const config = await getApiConfig();
-            const tools = await getTools();
+            const allAvailableTools = await getTools(); // Renamed for clarity
 
             if (userMessage) {
                 addMessage('User', userMessage);
                 conversationHistory.push({ role: 'user', content: userMessage });
             }
             
-            const formattedTools = tools.map(tool => {
+            // START SHARED API REQUEST PREP LOGIC (manual sync with background.js)
+            const formattedTools = allAvailableTools.map(tool => {
                 try {
                     return {
                         type: 'function',
                         function: { name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters || '{}') }
                     };
                 } catch (e) {
-                    addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'.`);
+                    addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'.`); // Context-specific error
                     return null;
                 }
             }).filter(tool => tool !== null);
+
+            let toolChoicePayload = {};
+            const current_tool_choice_option = tool_choice; // Parameter to this function
+
+            if (current_tool_choice_option === 'none' || formattedTools.length === 0) {
+                toolChoicePayload = {};
+                if (formattedTools.length === 0 && current_tool_choice_option !== 'none') {
+                    console.log("Chat: makeApiCall - No tools available, though choice was not 'none'. Sending request without tools.");
+                } else {
+                    console.log("Chat: makeApiCall - Tool choice is 'none' or no tools available. Sending request without tools.");
+                }
+            } else if (current_tool_choice_option === 'auto') {
+                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+                console.log("Chat: makeApiCall - Tool choice is 'auto'. Sending with all available tools.");
+            } else if (typeof current_tool_choice_option === 'string') { // Specific tool name
+                const specificTool = formattedTools.find(t => t.function.name === current_tool_choice_option);
+                if (specificTool) {
+                    toolChoicePayload = { tools: [specificTool], tool_choice: { type: "function", function: { name: current_tool_choice_option } } };
+                    console.log(`Chat: makeApiCall - Tool choice is specific: '${current_tool_choice_option}'. Sending with this tool.`);
+                } else {
+                    addMessage('System', `Warning: Specified tool "${current_tool_choice_option}" not found. No tools will be sent.`); // Context-specific error
+                    console.log(`Chat: makeApiCall - Specified tool "${current_tool_choice_option}" not found. Sending request without tools.`);
+                    toolChoicePayload = {};
+                }
+            }
+            // END SHARED API REQUEST PREP LOGIC
 
             const requestBody = {
                 model: config.modelName,
                 messages: conversationHistory,
                 max_tokens: parseInt(config.maxTokens) || 2048,
+                ...toolChoicePayload // Spread the payload
             };
 
-            if (formattedTools.length > 0) {
-                requestBody.tools = formattedTools;
-            }
+            console.log("Chat: makeApiCall - Final requestBody before sending:", JSON.stringify(requestBody, null, 2));
 
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
@@ -910,12 +936,64 @@ document.addEventListener('DOMContentLoaded', () => {
                         chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
 
-                        let prompt = instruction.content;
-                        if (selectedText && selectedText.trim() !== "") {
-                            prompt += '\n\nSelected Text:\n' + selectedText;
+                        // Retrieve the instruction object
+                        const instructionToExecute = allInstructions.find(inst => inst.id === button.dataset.instructionId);
+                        if (!instructionToExecute) {
+                            showToast("Error: Could not find instruction details.");
+                            return;
                         }
-                        makeApiCall(prompt);
-                        showToast(`Executing: ${instruction.name}`);
+
+                        // Send a message to background.js to get tab content
+                        chrome.runtime.sendMessage(
+                            {
+                                action: 'getPinnedActionTabContent',
+                                instruction: { // Pass necessary instruction details
+                                    id: instructionToExecute.id, // Keep track of the instruction
+                                    name: instructionToExecute.name,
+                                    content: instructionToExecute.content,
+                                    tool_choice: instructionToExecute.tool_choice // Assuming tool_choice might be needed later
+                                }
+                            },
+                            (response) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error("Error sending getPinnedActionTabContent message:", chrome.runtime.lastError.message);
+                                    showToast(`Error: ${chrome.runtime.lastError.message}`);
+                                    // Fallback or error handling: maybe execute with just selected text or show error
+                                    // For now, we'll just show an error and not proceed.
+                                    return;
+                                }
+
+                                // response.instruction should contain the instruction object passed back from background.js
+                                const originalInstruction = response.instruction;
+                                if (!originalInstruction) {
+                                    showToast("Error: Instruction details not returned from background script.");
+                                    return;
+                                }
+
+                                let tabContent = "";
+                                if (response && response.success && response.content) {
+                                    tabContent = response.content;
+                                    showToast(`Executing: ${originalInstruction.name} with tab content...`);
+                                } else if (response && !response.success) {
+                                    showToast(`Note: Could not get tab content for ${originalInstruction.name}. Error: ${response.content || 'Unknown error'}`);
+                                } else {
+                                    showToast(`Note: No tab content received for ${originalInstruction.name}. Executing without it.`);
+                                }
+
+                                let prompt = originalInstruction.content;
+
+                                if (tabContent && tabContent.trim() !== "") {
+                                    prompt += '\n\nActive Tab Content:\n' + tabContent;
+                                }
+
+                                if (selectedText && selectedText.trim() !== "") {
+                                    prompt += '\n\nSelected Text:\n' + selectedText;
+                                }
+
+                                // Pass the tool_choice from the original instruction
+                                makeApiCall(prompt, originalInstruction.tool_choice);
+                            }
+                        );
                     });
                     pinnedActionsContainer.appendChild(button);
                 }
