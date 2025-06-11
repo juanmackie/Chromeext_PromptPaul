@@ -40,19 +40,6 @@
         success = false;
     }
 
-    // Send the extracted content (or error) back to the background script
-    chrome.runtime.sendMessage({
-        action: 'extractedTabContent',
-        success: success,
-        data: content, // Will be empty if !success or if successfully extracted empty content
-        error: errorMessage // Will be empty if success
-    }, response => {
-        if (chrome.runtime.lastError) {
-            // Log error if sending message failed (e.g., if background script isn't listening)
-            console.error("PromptPaul Extension: content_script_tab_summary.js - Error sending message to background:", chrome.runtime.lastError.message);
-        } else {
-            // Optional: Log success or response from background if needed
-            // console.log("PromptPaul Extension: content_script_tab_summary.js - Message sent, response:", response);
-        }
-    });
+    // Instead of sendMessage, return the object.
+    return { success: success, data: content, error: errorMessage };
 })();

@@ -765,20 +765,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs && tabs[0] && tabs[0].id) {
                 const activeTabId = tabs[0].id;
-                chrome.scripting.executeScript({
-                    target: { tabId: activeTabId },
-                    files: ['content_script_tab_summary.js']
-                }).then(() => {
-                    console.log('Background: content_script_tab_summary.js injected successfully.');
-                    // The actual response will come from 'extractedTabContent' listener
-                }).catch(error => {
-                    console.error('Background: Error injecting content_script_tab_summary.js:', error);
-                    clearTimeout(timeoutId); // Clear timeout on immediate error
-                    if (tabContentCallback) {
-                        tabContentCallback({ action: 'tabContentResponse', success: false, error: 'Failed to inject script: ' + error.message });
-                        tabContentCallback = null;
-                    }
-                });
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_tab_summary.js']
+}, (injectionResults) => {
+    clearTimeout(timeoutId); // Ensure timeout is cleared
+    if (chrome.runtime.lastError) {
+        console.error('Background: Error executing content_script_tab_summary.js for getTabContent:', chrome.runtime.lastError);
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'tabContentResponse', success: false, error: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+            tabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        console.log('Background: getTabContent - Result from content_script_tab_summary.js:', result);
+        if (tabContentCallback) {
+            tabContentCallback({
+                action: 'tabContentResponse',
+                success: result.success,
+                content: result.data, // Ensure 'content' field is used as expected by chat.js
+                error: result.error
+            });
+            tabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getTabContent - No result from content_script_tab_summary.js');
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'tabContentResponse', success: false, error: 'No result from content script', content: '' }); // Ensure content is defined
+            tabContentCallback = null;
+        }
+    }
+});
             } else {
                 console.error('No active tab found for getTabContent.');
                 clearTimeout(timeoutId); // Clear timeout if no tab found
@@ -832,20 +851,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs && tabs[0] && tabs[0].id) {
                 const activeTabId = tabs[0].id;
-                chrome.scripting.executeScript({
-                    target: { tabId: activeTabId },
-                    files: ['content_script_tab_summary.js']
-                }).then(() => {
-                    console.log('Background: content_script_tab_summary.js injected successfully for pinned action tab.');
-                    // The actual response will come from 'extractedTabContent' listener
-                }).catch(error => {
-                    console.error('Background: Error injecting content_script_tab_summary.js for pinned action tab:', error);
-                    clearTimeout(timeoutId); // Clear timeout on immediate error
-                    if (pinnedActionTabContentCallback) {
-                        pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'Failed to inject script: ' + error.message });
-                        pinnedActionTabContentCallback = null;
-                    }
-                });
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_tab_summary.js']
+}, (injectionResults) => {
+    clearTimeout(timeoutId); // Ensure timeout is cleared
+    if (chrome.runtime.lastError) {
+        console.error('Background: Error executing content_script_tab_summary.js for getPinnedActionTabContent:', chrome.runtime.lastError);
+        if (pinnedActionTabContentCallback) {
+            pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+            pinnedActionTabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        console.log('Background: getPinnedActionTabContent - Result from content_script_tab_summary.js:', result);
+        if (pinnedActionTabContentCallback) {
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: result.success,
+                content: result.data, // Ensure 'content' field is used
+                error: result.error
+            });
+            pinnedActionTabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getPinnedActionTabContent - No result from content_script_tab_summary.js');
+        if (pinnedActionTabContentCallback) {
+            pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'No result from content script' });
+            pinnedActionTabContentCallback = null;
+        }
+    }
+});
             } else {
                 console.error('No active tab found for getPinnedActionTabContent.');
                 clearTimeout(timeoutId); // Clear timeout if no tab found
@@ -863,18 +901,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs && tabs[0] && tabs[0].id) {
                 const activeTabId = tabs[0].id;
-                chrome.scripting.executeScript({
-                    target: { tabId: activeTabId },
-                    files: ['content_script_explain.js']
-                }, (injectionResults) => {
-                    if (chrome.runtime.lastError || !injectionResults || !injectionResults.length) {
-                        console.error('Failed to inject content_script_explain.js:', chrome.runtime.lastError);
-                        if (tabContentCallback) {
-                            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error') });
-                            tabContentCallback = null;
-                        }
-                    }
-                });
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_explain.js']
+}, (injectionResults) => {
+    // If there was a timeout for getExplainContent, clear it here.
+    // clearTimeout(timeoutId_for_getExplainContent);
+    if (chrome.runtime.lastError) {
+        console.error('Failed to inject/execute content_script_explain.js:', chrome.runtime.lastError);
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error'), content: '' });
+            tabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        console.log('Background: getExplainContent - Result from content_script_explain.js:', result);
+        if (tabContentCallback) {
+            tabContentCallback({
+                action: 'explainContentResponse',
+                success: result.success,
+                content: result.data, // Ensure 'content' field is used
+                error: result.error
+            });
+            tabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getExplainContent - No result from content_script_explain.js');
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'No result from content script', content: '' });
+            tabContentCallback = null;
+        }
+    }
+});
             } else {
                 console.error('No active tab found for getExplainContent.');
                 if (tabContentCallback) {
@@ -884,39 +944,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
         return true;
-    } else if (request.action === 'explainContent') {
-        // Forward the content to the chat UI
-        chrome.runtime.sendMessage({
-            action: 'explainContentResponse',
-            success: request.success,
-            content: request.data,
-            error: request.error
-        }).catch(error => console.log("Error sending explainContentResponse:", error));
-        return true;
-    } else if (request.action === 'extractedTabContent') {
-        // This is where the response from content_script_tab_summary.js (and others) is handled
-        if (pinnedActionTabContentCallback) {
-            // This callback was set by 'getPinnedActionTabContent'
-            // It already includes the instruction in its closure, so we just pass the tab content part
-            if (request.success) {
-                pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: true, content: request.data });
-            } else {
-                pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: request.error });
-            }
-            pinnedActionTabContentCallback = null; // Clear callback
-        } else if (tabContentCallback) {
-            // This callback was set by 'getTabContent' or 'getExplainContent'
-            // These don't need the instruction passed back in the same way
-            if (request.success) {
-                tabContentCallback({ action: 'tabContentResponse', success: true, content: request.data });
-            } else {
-                tabContentCallback({ action: 'tabContentResponse', success: false, error: request.error });
-            }
-            tabContentCallback = null; // Clear callback after use
-        } else {
-            console.warn("Received extractedTabContent but no pending callback (neither tabContentCallback nor pinnedActionTabContentCallback).");
-        }
-        return false; // No further async response from this branch.
     } else if (request.action === 'executePromptPaulTool') {
         const { id, name, arguments: argsString } = request.toolCall;
         // This is the log that was appearing multiple times (e.g., background.js:692)
