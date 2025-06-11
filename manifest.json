@@ -30,16 +30,8 @@
       "matches": ["*://*/*.pdf", "file://*/*.pdf"],
       "js": ["pdf_content_script.js"],
       "all_frames": true
-    },
-    {
-      "matches": ["http://*/*", "https://*/*", "file://*/*"],
-      "js": ["content_script_tab_summary.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["http://*/*", "https://*/*", "file://*/*"],
-      "js": ["content_script_explain.js"],
-      "run_at": "document_idle"
     }
+    // Removed content_script_tab_summary.js entry
+    // Removed content_script_explain.js entry
   ]
 }
