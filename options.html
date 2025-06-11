@@ -184,8 +184,12 @@
         </div>
         <div class="form-group">
           <label for="instructionToolChoice">Tool Choice</label>
-          <input type="text" id="instructionToolChoice" placeholder="Select tools" class="shadcn-input">
-          <small>Select tools the AI can use with this instruction. Use Ctrl/Cmd + Click to select multiple. "None" prevents tool use, "Auto" allows any tool.</small>
+          <select id="instructionToolChoice" class="shadcn-input">
+            <option value="none">None</option>
+            <option value="auto">Auto</option>
+            <!-- Tools will be populated here by options.js -->
+          </select>
+          <small>Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</small>
         </div>
         <input type="hidden" id="instructionId">
         <div class="button-group">
