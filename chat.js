@@ -16,6 +16,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
     // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
+    // Add event listeners for quick action buttons
+    if (summarizeTabButton) {
+        summarizeTabButton.addEventListener('click', handleSummarizeTabButtonClick);
+    }
+    const explainBtn = document.getElementById('explain-button');
+    if (explainBtn) {
+        explainBtn.addEventListener('click', () => {
+            showToast('Requesting tab content for explanation...');
+            handleExplainButtonClick();
+        });
+    }
+
     const darkThemeToggle = document.getElementById('darkThemeToggle');
     if (darkThemeToggle) {
         setupThemeToggle(darkThemeToggle);
@@ -485,6 +497,20 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Chat history cleared');
     }
     
+    function handleSummarizeTabButtonClick() {
+        chrome.runtime.sendMessage({
+            action: 'getTabContent',
+            forAction: 'summarize'
+        });
+    }
+    
+    function handleExplainButtonClick() {
+        chrome.runtime.sendMessage({
+            action: 'getTabContent',
+            forAction: 'explain'
+        });
+    }
+    
     function sendMessage() {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
@@ -878,17 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Explain Tab Button Functionality ---
-    const explainButton = document.getElementById('explain-button');
-    if (explainButton) {
-        explainButton.addEventListener('click', () => {
-            showToast('Requesting tab content for explanation...');
-            chrome.runtime.sendMessage({ action: 'getExplainContent' }).catch(error => {
-                console.error("Error sending getExplainContent message:", error);
-                showToast(`Error: ${error.message}`);
-            });
-        });
-    }
+    // --- Explain Tab Button Functionality --- (duplicate declaration removed)
 
     // --- Pinned Instructions Functionality ---
     async function renderPinnedActions() {
