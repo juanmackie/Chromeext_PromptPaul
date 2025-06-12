@@ -21,37 +21,37 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 
 // Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  console.log("Context Menu Clicked:", info.menuItemId, "Initial selectionText:", info.selectionText);
   await chrome.sidePanel.open({ tabId: tab.id });
 
   let originalSelectionText = info.selectionText;
   let promptContent = info.selectionText || '';
 
   if (!originalSelectionText) {
+    console.log("No text selected, attempting to fetch tab content...");
     try {
-      console.log(`Background: No text selected. Attempting to inject content_script_tab_summary.js into tab ${tab.id}`);
+      console.log(`Background: Attempting to inject content_script_tab_summary.js into tab ${tab.id}`);
       const injectionResults = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['content_script_tab_summary.js'],
       });
+      console.log("Background: chrome.scripting.executeScript result:", injectionResults);
 
       if (injectionResults && injectionResults[0] && injectionResults[0].result) {
         const scriptResult = injectionResults[0].result;
         if (scriptResult.success && scriptResult.data) {
           promptContent = scriptResult.data;
-          console.log(`Background: Successfully fetched tab content. Length: ${promptContent.length}`);
+          console.log("Tab content fetched, length:", scriptResult.data.length);
         } else {
-          console.error(`Background: Content script execution failed or returned no data. Error: ${scriptResult.error}`);
-          // Fallback to original (empty) selectionText or an empty string if preferred
+          console.error("Error fetching tab content:", scriptResult.error);
           promptContent = originalSelectionText;
         }
       } else {
-        console.error('Background: Failed to inject content script or no result received.');
-        // Fallback
+        console.error('Background: Failed to inject content script or no result/error in result.');
         promptContent = originalSelectionText;
       }
     } catch (error) {
-      console.error(`Background: Error injecting content script: ${error.message}`);
-      // Fallback
+      console.error(`Background: Error injecting content script or during execution: ${error.message}`, error);
       promptContent = originalSelectionText;
     }
   }
@@ -61,10 +61,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.mediaType === 'image' && info.srcUrl) {
     // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
     promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
+    console.log("Image context added. Updated promptContent:", promptContent.substring(0, 100));
   }
+
+  console.log("Base promptContent before instruction:", promptContent.substring(0, 100));
 
   // Handle special menu items
   if (info.menuItemId === 'manageInstructions') {
+    console.log("Handling manageInstructions, opening options page.");
     chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
     return;
   }
@@ -80,12 +84,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   };
 
   if (info.menuItemId === 'oneoff_instruction') {
-    setTimeout(() => sendMessage('setSelectedText'), 100);
+    console.log("Handling oneoff_instruction. Sending setSelectedText message.");
+    setTimeout(() => sendMessage('setSelectedText'), 100); // sendMessage already logs errors
     return;
   }
 
   if (info.menuItemId === 'start_chat') {
+    console.log("Handling start_chat. Sending setSelectedText and calling API.");
     sendMessage('setSelectedText', { fromStartChat: true });
+    console.log("Final promptContent with instruction (start_chat - implicit):", promptContent.substring(0, 100));
+    console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
     await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
     return;
   }
@@ -93,13 +101,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Handle custom instructions
   if (info.menuItemId.startsWith('custom_')) {
     const instructionId = info.menuItemId.replace('custom_', '');
+    console.log("Handling custom instruction. ID:", instructionId);
     const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
     
     if (instruction) {
       promptContent = `${instruction.content}\n\n${promptContent}`;
+      console.log("Final promptContent with instruction (custom):", promptContent.substring(0, 100));
       const toolChoice = instruction.tool_choice || 'none';
+      console.log("Calling makeLlmApiRequest for menuItemId (custom):", info.menuItemId, "with tool_choice:", toolChoice);
       await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
+    } else {
+      console.error("Custom instruction not found for ID:", instructionId);
     }
     return;
   }
@@ -118,8 +131,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   if (commandMap[info.menuItemId]) {
     promptContent = `${commandMap[info.menuItemId]}:\n${promptContent}`;
+    console.log("Final promptContent with instruction (predefined):", promptContent.substring(0, 100));
+  } else if (info.menuItemId !== 'prompt_paul' && !info.menuItemId.startsWith('custom_') && info.menuItemId !== 'oneoff_instruction' && info.menuItemId !== 'start_chat' && info.menuItemId !== 'manageInstructions') {
+    // Log if no specific instruction handling was matched for known patterns, but it's not a parent menu item
+    console.log("No specific command/instruction prepended for menuItemId:", info.menuItemId);
   }
 
+  console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
   await makeLlmApiRequest(promptContent, tab.id);
 });
 
