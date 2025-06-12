@@ -22,10 +22,44 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 // Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await chrome.sidePanel.open({ tabId: tab.id });
+
+  let originalSelectionText = info.selectionText;
+  let promptContent = info.selectionText || '';
+
+  if (!originalSelectionText) {
+    try {
+      console.log(`Background: No text selected. Attempting to inject content_script_tab_summary.js into tab ${tab.id}`);
+      const injectionResults = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content_script_tab_summary.js'],
+      });
+
+      if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const scriptResult = injectionResults[0].result;
+        if (scriptResult.success && scriptResult.data) {
+          promptContent = scriptResult.data;
+          console.log(`Background: Successfully fetched tab content. Length: ${promptContent.length}`);
+        } else {
+          console.error(`Background: Content script execution failed or returned no data. Error: ${scriptResult.error}`);
+          // Fallback to original (empty) selectionText or an empty string if preferred
+          promptContent = originalSelectionText;
+        }
+      } else {
+        console.error('Background: Failed to inject content script or no result received.');
+        // Fallback
+        promptContent = originalSelectionText;
+      }
+    } catch (error) {
+      console.error(`Background: Error injecting content script: ${error.message}`);
+      // Fallback
+      promptContent = originalSelectionText;
+    }
+  }
   
   // Handle image context
-  let promptContent = info.selectionText || '';
+  // This should be applied *after* potentially fetching tab content if selection was empty
   if (info.mediaType === 'image' && info.srcUrl) {
+    // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
     promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
   }
 
@@ -74,7 +108,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const commandMap = {
     summarize: 'Please summarize the following text into a bullet list of points',
     explain: 'Explain this to me in a short concise MECE approach',
-    explain: 'Explain this to me in a short concise MECE approach',
+    // explain: 'Explain this to me in a short concise MECE approach', // Duplicate "explain" removed
     polish: 'Polish this text with clarity and purpose',
     shorten: 'Shorten this text without losing its meaning and context',
     formal: 'Make this text more formal and eloquent',
