@@ -17,14 +17,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
     // Add event listeners for quick action buttons
-    if (summarizeTabButton) {
-        summarizeTabButton.addEventListener('click', handleSummarizeTabButtonClick);
-    }
+    // summarizeTabButton listener moved to lines 878-905 to consolidate logic
+    // and prevent duplicate message sending.
     const explainBtn = document.getElementById('explain-button');
     if (explainBtn) {
         explainBtn.addEventListener('click', () => {
             showToast('Requesting tab content for explanation...');
-            handleExplainButtonClick();
+            chrome.runtime.sendMessage({ action: 'getExplainContent' }, (response) => {
+                console.log("Chat.js: Explain button - received response from background:", response);
+                if (chrome.runtime.lastError) {
+                    console.error("Chat.js: Explain button - Error sending getExplainContent message:", chrome.runtime.lastError.message);
+                    showToast(`Error: ${chrome.runtime.lastError.message}`);
+                    return;
+                }
+
+                if (response && response.action === 'explainContentResponse') {
+                    if (response.success && response.content) {
+                        console.log("Chat.js: Explain button - Content received, length:", response.content.length);
+                        const prompt = "Explain the following text:\n\n" + response.content;
+                        chatMainArea.style.display = 'block';
+                        oneoffInstructionArea.style.display = 'none';
+                        console.log("Chat.js: Explain button - About to call makeApiCall. Prompt length:", prompt.length);
+                        makeApiCall(prompt);
+                        showToast('Tab content received, explaining...');
+                    } else {
+                        console.error("Chat.js: Explain button - Failed to get content or content missing. Success:", response.success, "Error:", response.error);
+                        showToast('No content received for explanation: ' + (response.error || 'Content not available'));
+                    }
+                } else {
+                    console.warn("Chat.js: Explain button - Received unexpected response action or missing action. Response:", response);
+                    showToast('Received an unexpected response for explain action.');
+                }
+            });
         });
     }
 
@@ -179,17 +203,23 @@ document.addEventListener('DOMContentLoaded', () => {
 }
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'explainContentResponse') {
-            if (request.content) {
-                const prompt = "Explain the following text:\n\n" + request.content;
-                chatMainArea.style.display = 'block';
-                oneoffInstructionArea.style.display = 'none';
-                makeApiCall(prompt);
-                showToast('Tab content received, explaining...');
-            } else {
-                showToast('No content received from tab.');
-            }
-        } else if (request.action === 'setSelectedText') {
+        // if (request.action === 'explainContentResponse') {
+        //     // This logic is now moved directly into the explainBtn's sendMessage callback (around lines 26-45)
+        //     // to ensure it's handled there.
+        //     console.log("Chat.js: General onMessage listener processing 'explainContentResponse'", request);
+        //     if (request.content) {
+        //         const prompt = "Explain the following text:\n\n" + request.content;
+        //         chatMainArea.style.display = 'block';
+        //         oneoffInstructionArea.style.display = 'none';
+        //         console.log("Chat.js: General onMessage - About to call makeApiCall for explain. Prompt length:", prompt.length);
+        //         makeApiCall(prompt);
+        //         showToast('Tab content received, explaining...');
+        //     } else {
+        //         console.log("Chat.js: General onMessage - 'explainContentResponse' received but no content.");
+        //         showToast('No content received from tab.');
+        //     }
+        // } else
+        if (request.action === 'setSelectedText') {
             selectedText = request.selectedText;
             tabId = request.tabId;
             if (request.fromStartChat) {
@@ -497,20 +527,11 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Chat history cleared');
     }
     
-    function handleSummarizeTabButtonClick() {
-        chrome.runtime.sendMessage({
-            action: 'getTabContent',
-            forAction: 'summarize'
-        });
-    }
-    
-    function handleExplainButtonClick() {
-        chrome.runtime.sendMessage({
-            action: 'getTabContent',
-            forAction: 'explain'
-        });
-    }
-    
+    // Removed handleSummarizeTabButtonClick as its logic is now consolidated
+    // in the event listener at lines 878-905.
+    // Removed handleExplainButtonClick as its logic is now consolidated
+    // in the event listener for explainBtn (lines 24-40 approx).
+    // The new listener directly sends 'getExplainContent'.
     function sendMessage() {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;

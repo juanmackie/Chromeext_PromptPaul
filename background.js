@@ -28,31 +28,48 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let promptContent = info.selectionText || '';
 
   if (!originalSelectionText) {
-    console.log("No text selected, attempting to fetch tab content...");
+    console.log("No text selected, attempting to fetch tab content via 'getTabContent' message...");
     try {
-      console.log(`Background: Attempting to inject content_script_tab_summary.js into tab ${tab.id}`);
-      const injectionResults = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content_script_tab_summary.js'],
-      });
-      console.log("Background: chrome.scripting.executeScript result:", injectionResults);
+        // The contextMenus.onClicked listener IS async (line 23).
+        const tabDataResponse = await new Promise((resolve, reject) => {
+            const messageTimeout = setTimeout(() => {
+                reject(new Error("Timeout waiting for getTabContent response"));
+            }, 5000); // 5 second timeout for the message response
 
-      if (injectionResults && injectionResults[0] && injectionResults[0].result) {
-        const scriptResult = injectionResults[0].result;
-        if (scriptResult.success && scriptResult.data) {
-          promptContent = scriptResult.data;
-          console.log("Tab content fetched, length:", scriptResult.data.length);
+            chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
+                clearTimeout(messageTimeout);
+                if (chrome.runtime.lastError) {
+                    console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
+                    return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
+                }
+                if (response) {
+                    resolve(response); // Resolve with the full response object
+                } else {
+                    // This case should ideally be caught by chrome.runtime.lastError if sendResponse is not called
+                    reject(new Error("Failed to get tab content: No response from getTabContent handler."));
+                }
+            });
+        });
+
+        // Check for both content and data properties to handle different response formats
+        if (tabDataResponse && tabDataResponse.success) {
+            if (tabDataResponse.content) {
+                promptContent = tabDataResponse.content;
+                console.log("Background: Tab content fetched via 'getTabContent' message (content property), length:", promptContent.length);
+            } else if (tabDataResponse.data) {
+                promptContent = tabDataResponse.data;
+                console.log("Background: Tab content fetched via 'getTabContent' message (data property), length:", promptContent.length);
+            } else {
+                console.error("Background: Tab content response successful but missing content/data property. Response:", tabDataResponse);
+                promptContent = originalSelectionText; // Fallback
+            }
         } else {
-          console.error("Error fetching tab content:", scriptResult.error);
-          promptContent = originalSelectionText;
+            console.error("Background: Failed to get tab content via 'getTabContent' message. Response:", tabDataResponse);
+            promptContent = originalSelectionText; // Fallback to empty or original selection
         }
-      } else {
-        console.error('Background: Failed to inject content script or no result/error in result.');
-        promptContent = originalSelectionText;
-      }
     } catch (error) {
-      console.error(`Background: Error injecting content script or during execution: ${error.message}`, error);
-      promptContent = originalSelectionText;
+        console.error("Background: Exception while fetching tab content via 'getTabContent' message:", error.message);
+        promptContent = originalSelectionText; // Fallback
     }
   }
   
@@ -867,7 +884,8 @@ chrome.scripting.executeScript({
             tabContentCallback({
                 action: 'tabContentResponse',
                 success: request.success,
-                data: request.data,
+                content: request.data, // Use 'content' field for consistency
+                data: request.data,    // Also keep 'data' field for backward compatibility
                 error: request.error
             });
             tabContentCallback = null; // Clear callback
@@ -911,7 +929,12 @@ chrome.scripting.executeScript({
     if (chrome.runtime.lastError) {
         console.error('Background: Error executing content_script_tab_summary.js for getPinnedActionTabContent:', chrome.runtime.lastError);
         if (pinnedActionTabContentCallback) {
-            pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: false,
+                content: 'Failed to execute script: ' + chrome.runtime.lastError.message,
+                instruction: request.instruction // Echo back instruction on error
+            });
             pinnedActionTabContentCallback = null;
         }
         return;
@@ -923,15 +946,22 @@ chrome.scripting.executeScript({
             pinnedActionTabContentCallback({
                 action: 'pinnedActionTabContentResponse',
                 success: result.success,
-                content: result.data, // Ensure 'content' field is used
-                error: result.error
+                content: result.data,
+                data: result.data,
+                error: result.error,
+                instruction: request.instruction // Echo back instruction on success
             });
             pinnedActionTabContentCallback = null;
         }
     } else {
         console.error('Background: getPinnedActionTabContent - No result from content_script_tab_summary.js');
         if (pinnedActionTabContentCallback) {
-            pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'No result from content script' });
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: false,
+                content: 'No result from content script',
+                instruction: request.instruction // Echo back instruction on error
+            });
             pinnedActionTabContentCallback = null;
         }
     }
@@ -940,7 +970,12 @@ chrome.scripting.executeScript({
                 console.error('No active tab found for getPinnedActionTabContent.');
                 clearTimeout(timeoutId); // Clear timeout if no tab found
                 if (pinnedActionTabContentCallback) {
-                    pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'No active tab found.' });
+                    pinnedActionTabContentCallback({
+                        action: 'pinnedActionTabContentResponse',
+                        success: false,
+                        content: 'No active tab found.',
+                        instruction: request.instruction // Echo back instruction on error
+                    });
                     pinnedActionTabContentCallback = null;
                 }
             }
