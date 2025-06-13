@@ -549,7 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function makeApiCall(userMessage = null, tool_choice = 'auto') { // Added tool_choice, default to 'auto'
+    async function makeApiCall(userMessage = null, tool_choice = 'none') { // Added tool_choice, default to 'none'
         try {
             const config = await getApiConfig();
             const allAvailableTools = await getTools(); // Renamed for clarity
