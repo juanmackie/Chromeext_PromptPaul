@@ -222,6 +222,7 @@
               <th>Name</th>
               <th>Description</th>
               <th>MCP ID</th>
+              <th>MCP Server URL</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -261,6 +262,11 @@
         <div class="form-group">
           <label for="mcpId">MCP ID</label>
           <input type="text" id="mcpId" placeholder="Enter MCP ID (required if Is MCP is checked)">
+        </div>
+        <div class="form-group">
+          <label for="toolMcpServerUrl">MCP Server URL (if Is MCP Tool is checked)</label>
+          <input type="url" id="toolMcpServerUrl" placeholder="e.g., https://mcp.example.com/service">
+          <small>The base URL of the MCP server.</small>
         </div>
         <div class="form-group">
           <label for="toolEndpointUrl">Endpoint URL (Optional)</label>

@@ -889,6 +889,17 @@ async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
   return responseData.choices[0].message.content.trim();
 }
 
+// Helper function to validate URL (basic check)
+function isValidURL(string) {
+  if (!string) return false;
+  try {
+    new URL(string);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function isValidJson(str) {
   try {
     JSON.parse(str);
@@ -916,6 +927,7 @@ function setupToolHandlers() {
           <td>${tool.name}</td>
           <td>${tool.description}</td>
           <td>${tool.mcpId || ''}</td>
+          <td>${tool.mcpServerUrl || ''}</td>
           <td>
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
             <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
@@ -939,6 +951,7 @@ function setupToolHandlers() {
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
               document.getElementById('isMCP').checked = tool.isMCP || false;
               document.getElementById('mcpId').value = tool.mcpId || '';
+              document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
             }
           });
@@ -978,6 +991,7 @@ function setupToolHandlers() {
       const toolHttpMethod = document.getElementById('toolHttpMethod').value;
       const isMCP = document.getElementById('isMCP').checked;
       let mcpId = document.getElementById('mcpId').value.trim();
+      let toolMcpServerUrl = document.getElementById('toolMcpServerUrl').value.trim();
       const toolId = document.getElementById('toolId').value;
 
       if (!toolName || !toolDescription) {
@@ -985,12 +999,18 @@ function setupToolHandlers() {
         return;
       }
 
-      if (isMCP && !mcpId) {
-        showStatus('MCP ID is required if "Is MCP?" is checked.', true);
-        return;
-      }
-      if (!isMCP) {
+      if (isMCP) {
+        if (!mcpId) {
+          showStatus('MCP ID is required if "Is MCP?" is checked.', true);
+          return;
+        }
+        if (!toolMcpServerUrl || !isValidURL(toolMcpServerUrl)) {
+          showStatus('A valid MCP Server URL is required if "Is MCP?" is checked.', true);
+          return;
+        }
+      } else {
         mcpId = ''; // Clear mcpId if not an MCP tool
+        toolMcpServerUrl = ''; // Clear mcpServerUrl if not an MCP tool
       }
 
       if (toolParameters && !isValidJson(toolParameters)) {
@@ -1015,6 +1035,7 @@ function setupToolHandlers() {
                 httpMethod: toolHttpMethod,
                 isMCP: isMCP,
                 mcpId: mcpId,
+                mcpServerUrl: toolMcpServerUrl,
                 lastUpdated: now
               };
             }
@@ -1032,6 +1053,7 @@ function setupToolHandlers() {
             httpMethod: toolHttpMethod,
             isMCP: isMCP,
             mcpId: mcpId,
+            mcpServerUrl: toolMcpServerUrl,
             createdAt: now,
             lastUpdated: now
           };
@@ -1061,6 +1083,7 @@ function setupToolHandlers() {
     document.getElementById('toolHttpMethod').value = '';
     document.getElementById('isMCP').checked = false;
     document.getElementById('mcpId').value = '';
+    document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
     showStatus('Tool form cleared.');
   }
