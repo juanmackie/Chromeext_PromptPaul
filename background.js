@@ -1,5 +1,7 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 console.log('Background service worker script started.');
-importScripts('marked.min.js');
+import './marked.min.js';
 console.log('marked.min.js imported successfully.');
 
 let messageListenerAdded = false;
@@ -796,19 +798,81 @@ const toolImplementations = {
 };
 
 // Placeholder for MCP tool execution
-async function executeMCPTool(mcpId, args) {
-  console.log(`Background: Placeholder executeMCPTool called for mcpId: ${mcpId} with args:`, args);
-  // In a real scenario, this would involve a more complex interaction,
-  // possibly with another API or a different part of the extension ecosystem.
-  return Promise.resolve({
-    status: "success",
-    message: `MCP tool ${mcpId} processed with arguments.`,
-    data: {
-      mcpId: mcpId,
-      receivedArgs: args,
-      timestamp: new Date().toISOString()
+async function executeMCPTool(mcpId, args, toolDefinition) {
+  const toolName = toolDefinition.name;
+  const mcpServerUrl = toolDefinition.mcpServerUrl;
+  let transport = null; // Declare outside try to access in finally
+  let client = null;    // Declare outside try to access in finally
+
+  console.log(`Background: Attempting to execute MCP tool '${toolName}' (MCP ID: ${mcpId}) via server ${mcpServerUrl} with args:`, args);
+
+  // Placeholder Consent Logic
+  const storageKey = 'approvedMcpServers';
+  const items = await chrome.storage.local.get([storageKey]);
+  let approvedServers = items.approvedMcpServers || [];
+
+  if (!approvedServers.includes(mcpServerUrl)) {
+    console.warn(`User consent would be required to connect to MCP server: ${mcpServerUrl}. For now, proceeding automatically for testing.`);
+    // In a real scenario, you would prompt the user here.
+    // For testing, we can simulate auto-approval for subsequent calls:
+    // approvedServers.push(mcpServerUrl);
+    // await chrome.storage.local.set({ approvedMcpServers: approvedServers });
+    // console.log(`Simulated auto-approval for ${mcpServerUrl} for future calls during this session/testing.`);
+  } else {
+    console.log(`Connection to ${mcpServerUrl} has been previously approved (simulated).`);
+  }
+
+  try {
+    if (!mcpServerUrl || !isValidURL(mcpServerUrl)) { // isValidURL is already defined in this file
+      throw new Error("MCP Server URL is missing or invalid in tool definition.");
     }
-  });
+
+    transport = new StreamableHTTPClientTransport(new URL(mcpServerUrl));
+    client = new Client({ name: "PromptPaulExtensionClient", version: "1.0.0" }); // TODO: Get version from manifest
+
+    await client.connect(transport);
+    console.log(`Background: Connected to MCP server for tool ${toolName} (${mcpId}). Calling tool...`);
+
+    const toolResult = await client.callTool({ name: toolName, arguments: args });
+    console.log(`Background: MCP tool '${toolName}' (${mcpId}) executed successfully. Result:`, toolResult);
+
+    // Assuming toolResult.content is the primary output.
+    // The SDK example for an 'add' tool returns { content: [{ type: "text", text: String(a + b) }] }
+    // Adjust if the structure is different for other tools or if a different part of the response is needed.
+    return toolResult.content;
+
+  } catch (error) {
+    console.error(`Error in executeMCPTool for ${toolName} (MCP ID: ${mcpId}):`, error);
+    console.error(`Error Name: ${error.name}, Error Message: ${error.message}`);
+    if (error.stack) {
+        console.error(`Error Stack: ${error.stack}`);
+    }
+    // Return an error object that can be processed by the calling function
+    return {
+        error: true,
+        name: error.name || "MCPToolError",
+        message: error.message || "MCP tool execution failed.",
+        details: error.toString()
+    };
+  } finally {
+    if (client && typeof client.close === 'function') {
+        try {
+            await client.close();
+            console.log(`MCP client for ${toolName} closed.`);
+        } catch (closeError) {
+            console.error(`Error closing MCP client for ${toolName}:`, closeError);
+        }
+    }
+    if (transport && typeof transport.close === 'function') {
+        try {
+            await transport.close(); // Assuming transport also has a close method
+            console.log(`MCP transport for ${toolName} closed.`);
+        } catch (closeError) {
+            console.error(`Error closing MCP transport for ${toolName}:`, closeError);
+        }
+    }
+    console.log(`Background: MCP tool execution for ${toolName} (${mcpId}) finished (either success or error). Cleaned up client/transport.`);
+  }
 }
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
@@ -1073,9 +1137,9 @@ chrome.scripting.executeScript({
                     // 3. Check if it's an MCP tool
                     if (toolDefinition.isMCP) {
                         console.log(`Background: Executing MCP tool: ${toolDefinition.mcpId} with arguments:`, args);
-                        const result = await executeMCPTool(toolDefinition.mcpId, args);
+                        const result = await executeMCPTool(toolDefinition.mcpId, args, toolDefinition); // Pass full toolDefinition
                         console.log(`Background: MCP tool '${name}' (MCP ID: ${toolDefinition.mcpId}) executed. Result:`, result);
-                        sendResponse({ result: result });
+                        sendResponse({ result: result }); // Note: result might be { error: true, ... }
                     }
                     // 4. Check if it has a user-defined endpoint URL (non-MCP)
                     else if (toolDefinition.endpointUrl) {
