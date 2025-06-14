@@ -949,8 +949,6 @@ function setupToolHandlers() {
               document.getElementById('toolParameters').value = tool.parameters || '';
               document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
-              document.getElementById('isMCP').checked = tool.isMCP || false;
-              document.getElementById('mcpId').value = tool.mcpId || '';
               document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
             }
@@ -989,8 +987,6 @@ function setupToolHandlers() {
       const toolParameters = document.getElementById('toolParameters').value.trim();
       const toolEndpointUrl = document.getElementById('toolEndpointUrl').value.trim();
       const toolHttpMethod = document.getElementById('toolHttpMethod').value;
-      const isMCP = document.getElementById('isMCP').checked;
-      let mcpId = document.getElementById('mcpId').value.trim();
       let toolMcpServerUrl = document.getElementById('toolMcpServerUrl').value.trim();
       const toolId = document.getElementById('toolId').value;
 
@@ -999,19 +995,6 @@ function setupToolHandlers() {
         return;
       }
 
-      if (isMCP) {
-        if (!mcpId) {
-          showStatus('MCP ID is required if "Is MCP?" is checked.', true);
-          return;
-        }
-        if (!toolMcpServerUrl || !isValidURL(toolMcpServerUrl)) {
-          showStatus('A valid MCP Server URL is required if "Is MCP?" is checked.', true);
-          return;
-        }
-      } else {
-        mcpId = ''; // Clear mcpId if not an MCP tool
-        toolMcpServerUrl = ''; // Clear mcpServerUrl if not an MCP tool
-      }
 
       if (toolParameters && !isValidJson(toolParameters)) {
         showStatus('Parameters must be valid JSON.', true);
@@ -1033,8 +1016,6 @@ function setupToolHandlers() {
                 parameters: toolParameters,
                 endpointUrl: toolEndpointUrl,
                 httpMethod: toolHttpMethod,
-                isMCP: isMCP,
-                mcpId: mcpId,
                 mcpServerUrl: toolMcpServerUrl,
                 lastUpdated: now
               };
@@ -1051,8 +1032,6 @@ function setupToolHandlers() {
             parameters: toolParameters,
             endpointUrl: toolEndpointUrl,
             httpMethod: toolHttpMethod,
-            isMCP: isMCP,
-            mcpId: mcpId,
             mcpServerUrl: toolMcpServerUrl,
             createdAt: now,
             lastUpdated: now
@@ -1081,8 +1060,6 @@ function setupToolHandlers() {
     document.getElementById('toolParameters').value = '';
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
-    document.getElementById('isMCP').checked = false;
-    document.getElementById('mcpId').value = '';
     document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
     showStatus('Tool form cleared.');

@@ -319,7 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 console.log("Chat: streamApiEnd - ABOUT TO SEND executePromptPaulTool message. ToolCall details:", { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments });
-                console.warn(`CONCEPTUAL: User confirmation would ideally be sought here if '${toolCall.function.name}' is an MCP tool. Tool call details:`, toolCall);
                 chrome.runtime.sendMessage({
                     action: 'executePromptPaulTool',
                     toolCall: {
@@ -487,7 +486,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 const toolCall = responseMessage.tool_calls[0];
                 addMessage('System', `⚙️ Requesting execution for tool: ${toolCall.function.name}...`);
-                console.warn(`CONCEPTUAL: User confirmation would ideally be sought here if '${request.responseMessage.tool_calls[0].function.name}' is an MCP tool. Tool call details:`, request.responseMessage.tool_calls[0]);
                 chrome.runtime.sendMessage({
                     action: 'executePromptPaulTool',
                     toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
@@ -730,7 +728,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const toolCall = responseMessage.tool_calls[0];
                     addMessage('System', `⚙️ Requesting execution for tool: ${toolCall.function.name}...`);
                     const toolCallForLog = responseMessage.tool_calls[0];
-                    console.warn(`CONCEPTUAL: User confirmation would ideally be sought here if '${toolCallForLog.function.name}' is an MCP tool. Tool call details:`, toolCallForLog);
                     chrome.runtime.sendMessage({
                         action: 'executePromptPaulTool',
                         toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
