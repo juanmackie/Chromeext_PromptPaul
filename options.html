@@ -221,6 +221,7 @@
             <tr>
               <th>Name</th>
               <th>Description</th>
+              <th>MCP ID</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -250,6 +251,16 @@
   "required": ["location"]
 }' rows="6"></textarea>
           <small>Define the input parameters for the tool using JSON Schema format.</small>
+        </div>
+        <div class="form-group">
+          <label class="flex items-center">
+            <input type="checkbox" id="isMCP" class="shadcn-checkbox">
+            <span class="ml-2 text-sm font-medium leading-none">Is MCP?</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label for="mcpId">MCP ID</label>
+          <input type="text" id="mcpId" placeholder="Enter MCP ID (required if Is MCP is checked)">
         </div>
         <div class="form-group">
           <label for="toolEndpointUrl">Endpoint URL (Optional)</label>

@@ -795,6 +795,22 @@ const toolImplementations = {
    _callUserDefinedEndpoint: callUserDefinedEndpoint
 };
 
+// Placeholder for MCP tool execution
+async function executeMCPTool(mcpId, args) {
+  console.log(`Background: Placeholder executeMCPTool called for mcpId: ${mcpId} with args:`, args);
+  // In a real scenario, this would involve a more complex interaction,
+  // possibly with another API or a different part of the extension ecosystem.
+  return Promise.resolve({
+    status: "success",
+    message: `MCP tool ${mcpId} processed with arguments.`,
+    data: {
+      mcpId: mcpId,
+      receivedArgs: args,
+      timestamp: new Date().toISOString()
+    }
+  });
+}
+
 // Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -1054,21 +1070,28 @@ chrome.scripting.executeScript({
                         throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                     }
 
-                    // 3. Check if it has a user-defined endpoint URL
-                    if (toolDefinition.endpointUrl) {
-                        const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
-                        console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
+                    // 3. Check if it's an MCP tool
+                    if (toolDefinition.isMCP) {
+                        console.log(`Background: Executing MCP tool: ${toolDefinition.mcpId} with arguments:`, args);
+                        const result = await executeMCPTool(toolDefinition.mcpId, args);
+                        console.log(`Background: MCP tool '${name}' (MCP ID: ${toolDefinition.mcpId}) executed. Result:`, result);
                         sendResponse({ result: result });
                     }
-                    // 4. If no endpoint URL, check for a built-in implementation
+                    // 4. Check if it has a user-defined endpoint URL (non-MCP)
+                    else if (toolDefinition.endpointUrl) {
+                        const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, args, toolDefinition.httpMethod);
+                        console.log(`Background: User-defined (non-MCP) tool '${name}' executed successfully via endpoint. Result:`, result);
+                        sendResponse({ result: result });
+                    }
+                    // 5. If no MCP and no endpoint URL, check for a built-in implementation (non-MCP)
                     else {
                         const builtInFunction = toolImplementations[name];
                         if (builtInFunction) {
                             const result = await builtInFunction(args);
-                            console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
+                            console.log(`Background: Built-in (non-MCP) tool '${name}' executed successfully. Result:`, result);
                             sendResponse({ result: result });
                         } else {
-                            throw new Error(`Tool '${name}' has no configured endpoint URL, no built-in implementation, and is not an MCP tool.`);
+                            throw new Error(`Non-MCP tool '${name}' is not properly configured: It has no endpoint URL and no built-in implementation.`);
                         }
                     }
                 } catch (error) {
