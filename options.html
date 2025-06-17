@@ -261,6 +261,11 @@
           <small>If this tool calls an external API or webhook, enter the URL here.</small>
         </div>
         <div class="form-group">
+          <label for="toolMcpProxyUrl">MCP Proxy URL (Optional)</label>
+          <input type="url" id="toolMcpProxyUrl" placeholder="e.g., https://mcp-proxy.example.com">
+          <small>If this tool is an MCP tool, enter the MCP Proxy URL here.</small>
+        </div>
+        <div class="form-group">
           <label for="toolHttpMethod">HTTP Method (Optional)</label>
           <select id="toolHttpMethod">
             <option value="">Auto (GET if no params, POST if params)</option>
