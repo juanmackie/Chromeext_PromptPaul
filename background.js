@@ -927,42 +927,54 @@ async function getToolDefinition(name) {
 }
 
 // Generic function to call a user-defined endpoint
-async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod) { // Added userDefinedMethod parameter
+async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, originalToolName = null, mcpProxyUrlBase = null) { // Added userDefinedMethod parameter
     console.log(`Background: Calling user-defined endpoint: ${endpointUrl} with args:`, args);
     try {
-        // Determine HTTP method: Use user-defined method if provided, otherwise default based on args
-        const isEmptyArgs = !args || Object.keys(args).length === 0;
-        let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST'); // Prioritize user setting
-        method = method.toUpperCase(); // Ensure method is uppercase
-
-        console.log(`Background: Using method ${method} (User defined: ${userDefinedMethod || 'Auto'}) for endpoint ${endpointUrl}`);
-
-        const fetchOptions = {
-            method: method,
+        let finalEndpointUrl = endpointUrl;
+        let finalFetchOptions = { // Initialize with common headers
             headers: {
                 'Accept': 'application/json' // Always accept JSON response
-                // Note: No API keys or auth headers are sent by default.
-            },
+            }
         };
+        let finalArgs = args;
 
-        // Handle arguments based on method
-        let finalEndpointUrl = endpointUrl;
-        if (method === 'GET' && !isEmptyArgs) {
-            // Append args as query parameters for GET requests
-            const queryParams = new URLSearchParams(args).toString();
-            finalEndpointUrl = `${endpointUrl}?${queryParams}`;
-            console.log(`Background: Appended query params for GET request: ${queryParams}`);
-        } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
-            // Send args in body for POST, PUT, PATCH
-            fetchOptions.headers['Content-Type'] = 'application/json';
-            fetchOptions.body = JSON.stringify(args);
+        if (mcpProxyUrlBase && isValidURL(mcpProxyUrlBase)) {
+            try {
+                finalEndpointUrl = new URL(endpointUrl, mcpProxyUrlBase).href;
+                console.log(`Background: MCP Tool detected. Constructed proxy URL: ${finalEndpointUrl}`);
+                // For MCP proxy, always POST a JSON payload with tool name and args
+                finalFetchOptions.method = 'POST'; // Override method to POST for MCP proxy
+                finalFetchOptions.headers['Content-Type'] = 'application/json';
+                finalArgs = { tool_name: originalToolName, arguments: args }; // Structure payload for MCP proxy
+                finalFetchOptions.body = JSON.stringify(finalArgs);
+                console.log(`Background: MCP Tool - Method forced to POST. Payload:`, finalArgs);
+            } catch (e) {
+                console.error(`Background: Error constructing MCP proxy URL from base '${mcpProxyUrlBase}' and path '${endpointUrl}':`, e);
+                throw new Error(`Invalid MCP Proxy URL configuration: ${e.message}`);
+            }
+        } else {
+            // Existing logic for non-MCP tools (handling GET/POST based on args and userDefinedMethod)
+            const isEmptyArgs = !args || Object.keys(args).length === 0;
+            let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
+            method = method.toUpperCase();
+            finalFetchOptions.method = method;
+            console.log(`Background: Using method ${method} (User defined: ${userDefinedMethod || 'Auto'}) for endpoint ${finalEndpointUrl}`);
+
+            if (method === 'GET' && !isEmptyArgs) {
+                const queryParams = new URLSearchParams(finalArgs).toString();
+                finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
+                console.log(`Background: Appended query params for GET request: ${queryParams}`);
+            } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
+                finalFetchOptions.headers['Content-Type'] = 'application/json';
+                finalFetchOptions.body = JSON.stringify(finalArgs);
+            }
         }
         // For DELETE, args might be used in the URL path (not handled here) or ignored, body is typically empty.
         // If args are needed for DELETE, the user should construct the endpointUrl accordingly in the tool definition.
-        // Remove the temporary log we added earlier
-        // console.log("Background: Webhook Fetch Details:", { endpointUrl: finalEndpointUrl, fetchOptions, args });
+        
+        console.log("Background: Webhook Fetch Details:", { endpointUrl: finalEndpointUrl, fetchOptions: finalFetchOptions });
 
-        const response = await fetch(finalEndpointUrl, fetchOptions); // Use finalEndpointUrl which might include query params
+        const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
 
         if (!response.ok) {
             let errorBody = '';
