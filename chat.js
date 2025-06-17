@@ -457,8 +457,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 // accumulatedStreamedText = ""; // Preserve accumulated text
                 currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
 
-                // Display tool usage
-                currentStreamingContentElement.innerHTML = marked.parse("⚙️ Using tool: **" + toolCall.function.name + "**");
+                // Asynchronously fetch tool definition to update UI for MCP tool
+                (async () => {
+                    const allToolsStream = await getTools();
+                    const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
+                    if (currentStreamingContentElement) { // Check if element still exists
+                        if (currentToolDefStream && currentToolDefStream.mcpProxyUrl) {
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**`);
+                        } else {
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
+                        }
+                        // chatArea.scrollTop = chatArea.scrollHeight; // Already present after this block
+                    }
+                })();
                 console.log("Chat: UI updated to show 'Using tool' message.");
 
                 // Potentially, actual arguments could be streamed. For now, just the name.
@@ -485,23 +496,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 const toolCall = responseMessage.tool_calls[0];
-                addMessage('System', `⚙️ Requesting execution for tool: ${toolCall.function.name}...`);
-                chrome.runtime.sendMessage({
-                    action: 'executePromptPaulTool',
-                    toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                         addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return;
-                    }
-                    if (response.error) {
-                        addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                // Fetch tool definition to check if it's an MCP tool
+                (async () => {
+                    const allToolsNonStream = await getTools(); // Already async
+                    const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
+
+                    if (toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl) {
+                        addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
                     } else {
-                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                        makeApiCall();
+                        addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
                     }
-                });
+                    chrome.runtime.sendMessage({
+                        action: 'executePromptPaulTool',
+                        toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
+                    }, (response) => {
+                        if (chrome.runtime.lastError) {
+                             addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return;
+                        }
+                        if (response.error) {
+                            addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
+                            conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                        } else {
+                            addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                            conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                            makeApiCall();
+                        }
+                    });
+                })();
             } else {
                  addMessage('System', "Error: Tool call instruction received without tool_calls.");
             }
@@ -726,24 +747,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                     const toolCall = responseMessage.tool_calls[0];
-                    addMessage('System', `⚙️ Requesting execution for tool: ${toolCall.function.name}...`);
-                    const toolCallForLog = responseMessage.tool_calls[0];
-                    chrome.runtime.sendMessage({
-                        action: 'executePromptPaulTool',
-                        toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-                    }, (response) => {
-                         if (chrome.runtime.lastError) { addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return; }
-                         if (response.error) {
-                            addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                            conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
-                         } else {
-                            addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                            conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                            console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
-                            console.log(conversationHistory.slice(-3));
-                            makeApiCall();
-                         }
-                    });
+                    // Fetch tool definition to check if it's an MCP tool
+                    (async () => {
+                        const allToolsNonStream = await getTools(); // Already async
+                        const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
+
+                        if (toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl) {
+                            addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
+                        } else {
+                            addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
+                        }
+                        const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
+                        chrome.runtime.sendMessage({
+                            action: 'executePromptPaulTool',
+                            toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
+                        }, (response) => {
+                             if (chrome.runtime.lastError) { addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return; }
+                             if (response.error) {
+                                addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
+                                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                             } else {
+                                addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                                console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
+                                console.log(conversationHistory.slice(-3));
+                                makeApiCall();
+                             }
+                        });
+                    })();
                 } else if (responseMessage.content) {
                     addMessage('LLM', responseMessage.content);
                 } else {
