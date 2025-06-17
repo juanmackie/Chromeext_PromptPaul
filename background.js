@@ -226,14 +226,16 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
     const session = mcpSessions[mcpServerUrl];
     const headers = {
         'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream' // Keep this from previous fix
+
+        'Accept': 'application/json, text/event-stream'
     };
 
     if (session && session.mcpSessionId) {
         headers['mcp-session-id'] = session.mcpSessionId;
         console.log(`Including mcp-session-id: ${session.mcpSessionId} in request to ${mcpServerUrl}`);
     } else {
-        console.warn(`No mcpSessionId found for ${mcpServerUrl} in sendMcpRequest. This might be okay for pre-session requests if any, but usually expected for tools/call.`);
+
+        console.warn(`No mcpSessionId found for ${mcpServerUrl} in sendMcpRequest.`);
     }
 
     try {
@@ -243,33 +245,59 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
             body: JSON.stringify(requestPayload)
         });
 
-        // ... (rest of the response handling logic remains the same)
-        if (!response.ok) { // Example: keep existing error handling
+        if (!response.ok) {
             let errorMsg = `MCP Request HTTP error! Status: ${response.status}`;
             try {
-                const errorBody = await response.json();
-                errorMsg += `, Body: ${JSON.stringify(errorBody)}`;
-            } catch (e) { /* ignore if body isn't json */ }
+                const errorBody = await response.text(); // Use text() for more robust error body reading
+                errorMsg += `, Body: ${errorBody}`;
+            } catch (e) { /* ignore if body isn't text */ }
             throw new Error(errorMsg);
         }
 
-        const serverResponse = await response.json();
+        const responseText = await response.text();
+        let serverResponse = null;
+        let foundResponse = false;
+
+        const lines = responseText.split('\n');
+        for (const line of lines) {
+            if (line.startsWith('data:')) {
+                const jsonData = line.substring(5).trim();
+                if (jsonData) {
+                    try {
+                        const parsedEventData = JSON.parse(jsonData);
+                        if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
+                            serverResponse = parsedEventData;
+                            foundResponse = true;
+                            console.log(`Found MCP response for ID ${requestPayload.id} in SSE data:`, serverResponse);
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`Could not parse SSE data line as JSON or not the target response: "${jsonData}" for ID ${requestPayload.id}`, e);
+                    }
+                }
+            }
+        }
+
+        if (!foundResponse || !serverResponse) {
+            console.error(`MCP Request: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream. Full response text:`, responseText);
+            throw new Error(`MCP Request failed: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream.`);
+        }
+
+        // serverResponse is now the JSON-RPC object like {jsonrpc, id, result} or {jsonrpc, id, error}
 
         if (serverResponse.error) {
             console.error(`MCP Request error response (for id: ${requestPayload.id}):`, serverResponse.error);
-            // Properly throw an error that includes the JSON-RPC error details
             const mcpError = new Error(`MCP Request failed: ${serverResponse.error.message} (Code: ${serverResponse.error.code})`);
             mcpError.details = serverResponse.error; // Attach full error object
             throw mcpError;
         }
 
-        // Validate that the response ID matches the request ID
-        if (serverResponse.id !== requestPayload.id) {
-            console.warn(`MCP Request ID mismatch: Expected ${requestPayload.id}, received ${serverResponse.id}`);
-            // Depending on strictness, this could be an error. For now, a warning.
-        }
+        // ID check already implicitly done by finding the response in the stream by requestPayload.id
+        // if (serverResponse.id !== requestPayload.id) {
+        //     console.warn(`MCP Request ID mismatch: Expected ${requestPayload.id}, received ${serverResponse.id}`);
+        // }
 
-        console.log(`MCP Response for id ${requestPayload.id}:`, serverResponse);
+        console.log(`MCP Response for id ${requestPayload.id} (from SSE):`, serverResponse);
         return serverResponse; // This will be the full JSON-RPC response {jsonrpc, id, result}
 
     } catch (error) {
