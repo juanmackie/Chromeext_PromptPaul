@@ -30,7 +30,7 @@ async function sendMcpNotification(mcpServerUrl, method, params) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json, text/event-stream'
             },
             body: JSON.stringify(notificationPayload)
         });
@@ -73,7 +73,7 @@ async function initializeMcpSession(mcpServerUrl) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json, text/event-stream'
             },
             body: JSON.stringify(requestPayload)
         });
@@ -178,7 +178,8 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+
+                'Accept': 'application/json, text/event-stream'
             },
             body: JSON.stringify(requestPayload)
         });
