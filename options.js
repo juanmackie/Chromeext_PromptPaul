@@ -913,6 +913,39 @@ function isValidJson(str) {
 function setupToolHandlers() {
   const saveToolBtn = document.getElementById('saveTool');
   const clearToolFormBtn = document.getElementById('clearToolForm');
+  const toolMcpServerUrlEl = document.getElementById('toolMcpServerUrl');
+  const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
+  const toolHttpMethodEl = document.getElementById('toolHttpMethod');
+
+  function updateToolFieldStates() {
+    const mcpUrl = toolMcpServerUrlEl.value.trim();
+    const endpointUrl = toolEndpointUrlEl.value.trim();
+
+    if (mcpUrl) {
+      toolEndpointUrlEl.disabled = true;
+      toolHttpMethodEl.disabled = true;
+      // Optionally, clear them or just disable
+      // toolEndpointUrlEl.value = '';
+      // toolHttpMethodEl.value = '';
+    } else {
+      toolEndpointUrlEl.disabled = false;
+      toolHttpMethodEl.disabled = false;
+    }
+
+    if (endpointUrl) {
+      toolMcpServerUrlEl.disabled = true;
+    } else if (!mcpUrl) { // Only enable mcpUrl if endpointUrl is also empty (and mcpUrl itself was empty before this check)
+      toolMcpServerUrlEl.disabled = false;
+    }
+    // If mcpUrl is filled, endpointUrl related fields are disabled.
+    // If endpointUrl is filled, mcpUrl field is disabled.
+    // If both are empty, all are enabled.
+  }
+
+  if (toolMcpServerUrlEl && toolEndpointUrlEl) { // Ensure elements exist before adding listeners
+    toolMcpServerUrlEl.addEventListener('input', updateToolFieldStates);
+    toolEndpointUrlEl.addEventListener('input', updateToolFieldStates);
+  }
 
   // Load and display tools
   function loadTools() {
@@ -926,7 +959,6 @@ function setupToolHandlers() {
         row.innerHTML = `
           <td>${tool.name}</td>
           <td>${tool.description}</td>
-          <td>${tool.mcpId || ''}</td>
           <td>${tool.mcpServerUrl || ''}</td>
           <td>
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
@@ -949,8 +981,10 @@ function setupToolHandlers() {
               document.getElementById('toolParameters').value = tool.parameters || '';
               document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
+              // toolMcpId is removed, so no need to load it into a field.
               document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
+              updateToolFieldStates(); // Update field states when a tool is loaded for editing
             }
           });
         });
@@ -1060,8 +1094,10 @@ function setupToolHandlers() {
     document.getElementById('toolParameters').value = '';
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
+    // toolMcpId is removed, so no need to clear its field.
     document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
+    updateToolFieldStates(); // Reset field states when form is cleared
     showStatus('Tool form cleared.');
   }
 

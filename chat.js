@@ -563,35 +563,118 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function getTools() {
-        return new Promise((resolve) => {
-            chrome.storage.local.get(['promptPaulTools'], (result) => {
-                resolve(result.promptPaulTools || []);
-            });
+        console.log("Chat: getTools - Starting to fetch and process tool definitions.");
+        const { promptPaulTools: definedTools = [] } = await new Promise((resolve) => {
+            chrome.storage.local.get(['promptPaulTools'], resolve);
         });
+        console.log("Chat: getTools - Defined tools from storage:", definedTools);
+
+        const processedTools = [];
+
+        for (const tool of definedTools) {
+            let parametersForLlm = {};
+            let source = 'manual'; // Default source
+
+            if (tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "") {
+                console.log(`Chat: getTools - Processing MCP tool: ${tool.name} from ${tool.mcpServerUrl}`);
+                try {
+                    const response = await new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage(
+                            { action: 'getDiscoveredMcpToolSchema', mcpServerUrl: tool.mcpServerUrl, toolName: tool.name },
+                            (res) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error(`Chat: getTools - Error getting schema for MCP tool ${tool.name}:`, chrome.runtime.lastError.message);
+                                    // Resolve with failure to allow fallback, rather than rejecting the whole getTools
+                                    resolve({ success: false, error: chrome.runtime.lastError.message });
+                                    return;
+                                }
+                                resolve(res);
+                            }
+                        );
+                    });
+
+                    if (response && response.success && response.toolSchema) {
+                        console.log(`Chat: getTools - Successfully fetched schema for MCP tool ${tool.name}:`, response.toolSchema);
+                        // MCP standard is often "inputSchema" for parameters.
+                        // The discoveredTool object itself might be the schema {name, description, inputSchema}
+                        parametersForLlm = response.toolSchema.inputSchema || {}; // Ensure it's an object
+                        source = 'mcp_discovered';
+                        // Use discovered name and description if available and different, or stick to stored ones.
+                        // For now, we assume the 'name' matches and 'description' from storage is fine,
+                        // primarily focusing on 'inputSchema' for 'parameters'.
+                    } else {
+                        console.warn(`Chat: getTools - Failed to get dynamic schema for MCP tool ${tool.name}. Error: ${response ? response.error : 'Unknown error'}. Falling back to manual config.`);
+                        source = 'manual_fallback_mcp';
+                        if (tool.parameters) {
+                            try {
+                                parametersForLlm = JSON.parse(tool.parameters);
+                            } catch (e) {
+                                console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name}:`, e);
+                                addMessage('System', `Error: Invalid JSON Schema (fallback) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                                parametersForLlm = {}; // Keep it an empty object if parsing fails
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Chat: getTools - Exception while fetching schema for MCP tool ${tool.name}:`, error);
+                    source = 'manual_fallback_mcp_exception';
+                    if (tool.parameters) {
+                        try {
+                            parametersForLlm = JSON.parse(tool.parameters);
+                        } catch (e) {
+                            console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name} after exception:`, e);
+                             addMessage('System', `Error: Invalid JSON Schema (fallback after exception) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                            parametersForLlm = {};
+                        }
+                    }
+                }
+            } else { // Not an MCP tool, use manual parameters
+                console.log(`Chat: getTools - Processing non-MCP tool: ${tool.name}`);
+                if (tool.parameters) {
+                    try {
+                        parametersForLlm = JSON.parse(tool.parameters);
+                    } catch (e) {
+                        console.error(`Chat: getTools - Error parsing parameters for manual tool ${tool.name}:`, e);
+                        addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                        parametersForLlm = {}; // Keep it an empty object if parsing fails
+                    }
+                }
+            }
+
+            processedTools.push({
+                ...tool, // Spread original tool properties
+                parametersForLlm: parametersForLlm, // Add the processed parameters
+                source: source // Add the source for debugging/info
+            });
+        }
+        console.log("Chat: getTools - Finished processing tools. Result:", processedTools);
+        return processedTools;
     }
 
     async function makeApiCall(userMessage = null, tool_choice = 'none') { // Added tool_choice, default to 'none'
         try {
             const config = await getApiConfig();
-            const allAvailableTools = await getTools(); // Renamed for clarity
+            const allAvailableTools = await getTools();
 
             if (userMessage) {
                 addMessage('User', userMessage);
                 conversationHistory.push({ role: 'user', content: userMessage });
             }
             
-            // START SHARED API REQUEST PREP LOGIC (manual sync with background.js)
+            // START SHARED API REQUEST PREP LOGIC
+            // Now uses parametersForLlm from getTools()
             const formattedTools = allAvailableTools.map(tool => {
-                try {
-                    return {
-                        type: 'function',
-                        function: { name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters || '{}') }
-                    };
-                } catch (e) {
-                    addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'.`); // Context-specific error
-                    return null;
-                }
-            }).filter(tool => tool !== null);
+                // parametersForLlm should already be a valid JSON object or an empty object {}
+                // as processed by getTools()
+                return {
+                    type: 'function',
+                    function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: tool.parametersForLlm // Directly use the pre-processed parameters
+                    }
+                };
+            }).filter(tool => tool !== null); // filter might not be strictly necessary if getTools ensures valid entries or empty schemas
 
             let toolChoicePayload = {};
             const current_tool_choice_option = tool_choice; // Parameter to this function
