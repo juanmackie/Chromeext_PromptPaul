@@ -926,7 +926,6 @@ function setupToolHandlers() {
         row.innerHTML = `
           <td>${tool.name}</td>
           <td>${tool.description}</td>
-          <td>${tool.mcpId || ''}</td>
           <td>${tool.mcpServerUrl || ''}</td>
           <td>
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
@@ -949,6 +948,7 @@ function setupToolHandlers() {
               document.getElementById('toolParameters').value = tool.parameters || '';
               document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
+              // toolMcpId is removed, so no need to load it into a field.
               document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
             }
@@ -1060,6 +1060,7 @@ function setupToolHandlers() {
     document.getElementById('toolParameters').value = '';
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
+    // toolMcpId is removed, so no need to clear its field.
     document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
     showStatus('Tool form cleared.');

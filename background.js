@@ -98,7 +98,7 @@ async function initializeMcpSession(mcpServerUrl) {
                 const errorBody = await response.text(); // Use text() for potential non-JSON errors too
                 errorMsg += `, Body: ${errorBody}`;
             } catch (e) { /* ignore */ }
-            throw new Error(errorMsg);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: HTTP status ${response.status}. Body: ${errorBody}`);
         }
 
         const mcpSessionId = response.headers.get('mcp-session-id');
@@ -137,13 +137,14 @@ async function initializeMcpSession(mcpServerUrl) {
         }
 
         if (!foundInitializeResult || !serverResponse) {
+            console.error(`MCP Initialize: Full SSE response text from ${mcpServerUrl} when 'initialize' result was not found:\n${responseText}`);
             console.error('MCP Initialize: Initialize result not found in SSE stream. Full response text:', responseText);
-            throw new Error('MCP Initialize failed: Initialize result not found in SSE stream.');
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: 'initialize' result not found in SSE stream.`);
         }
 
         if (serverResponse.error) {
             console.error('MCP Initialize error response from SSE:', serverResponse.error);
-            throw new Error(`MCP Initialize failed: ${serverResponse.error.message} (Code: ${serverResponse.error.code})`);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
         }
 
         if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
@@ -173,7 +174,7 @@ async function initializeMcpSession(mcpServerUrl) {
     } catch (error) {
         console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
         delete mcpSessions[mcpServerUrl];
-        throw error;
+        throw new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
     }
 }
 
@@ -251,7 +252,7 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
                 const errorBody = await response.text(); // Use text() for more robust error body reading
                 errorMsg += `, Body: ${errorBody}`;
             } catch (e) { /* ignore if body isn't text */ }
-            throw new Error(errorMsg);
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: HTTP status ${response.status}. Body: ${errorBody}`);
         }
 
         const responseText = await response.text();
@@ -279,15 +280,16 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
         }
 
         if (!foundResponse || !serverResponse) {
+            console.error(`MCP Request '${requestPayload.method}': Full SSE response text from ${mcpServerUrl} (ID: ${requestPayload.id}) when response was not found:\n${responseText}`);
             console.error(`MCP Request: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream. Full response text:`, responseText);
-            throw new Error(`MCP Request failed: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream.`);
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} (ID: ${requestPayload.id}) failed: Response not found in SSE stream.`);
         }
 
         // serverResponse is now the JSON-RPC object like {jsonrpc, id, result} or {jsonrpc, id, error}
 
         if (serverResponse.error) {
             console.error(`MCP Request error response (for id: ${requestPayload.id}):`, serverResponse.error);
-            const mcpError = new Error(`MCP Request failed: ${serverResponse.error.message} (Code: ${serverResponse.error.code})`);
+            const mcpError = new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
             mcpError.details = serverResponse.error; // Attach full error object
             throw mcpError;
         }
@@ -302,7 +304,7 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
 
     } catch (error) {
         console.error(`Error sending MCP request '${requestPayload.method}' to ${mcpServerUrl}:`, error);
-        throw error; // Re-throw to be handled by the caller
+        throw new Error(`MCP request '${requestPayload.method}' to ${mcpServerUrl} encountered an error: ${error.message}`);
     }
 }
 
