@@ -238,11 +238,11 @@
           <input type="text" id="toolName" placeholder="e.g., getWeather">
         </div>
         <div class="form-group">
-          <label for="toolDescription">Tool Description</label>
+          <label for="toolDescription">Tool Description (Fallback for MCP)</label>
           <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
         </div>
         <div class="form-group">
-          <label for="toolParameters">Parameters (JSON Schema)</label>
+          <label for="toolParameters">Parameters (JSON Schema - Fallback for MCP)</label>
           <textarea id="toolParameters" placeholder='e.g., {
   "type": "object",
   "properties": {
@@ -255,7 +255,7 @@
         <div class="form-group">
         </div>
         <div class="form-group">
-          <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
+          <label for="toolEndpointUrl">Endpoint URL (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
           <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
           <small>If this tool calls an external API or webhook, enter the URL here.</small>
         </div>
@@ -265,7 +265,7 @@
           <small>If this tool is an MCP tool, enter the MCP Proxy URL here.</small>
         </div>
         <div class="form-group">
-          <label for="toolHttpMethod">HTTP Method (Optional)</label>
+          <label for="toolHttpMethod">HTTP Method (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
           <select id="toolHttpMethod">
             <option value="">Auto (GET if no params, POST if params)</option>
             <option value="GET">GET</option>
@@ -279,7 +279,9 @@
         <div class="form-group">
           <label for="toolMcpServerUrl">MCP Server URL (Optional)</label>
           <input type="url" id="toolMcpServerUrl" placeholder="e.g., https://mcp.example.com">
-          <small>If this tool uses an MCP server, enter the URL here.</small>
+          <small>If this tool uses an MCP server, enter the URL here.
+            <p class="mcp-note" style="font-size: 0.8em; margin-top: 0.5em;">Note: If an MCP Server URL is specified, the tool's description and input schema will be fetched dynamically from the server. The description and parameters entered here will be used as fallbacks if the server doesn't provide them or if the dynamic fetch fails.</p>
+          </small>
         </div>
         <input type="hidden" id="toolId">
         <div class="button-group">

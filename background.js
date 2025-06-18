@@ -167,8 +167,30 @@ async function initializeMcpSession(mcpServerUrl) {
         mcpSessions[mcpServerUrl] = session; // Cache the session
         console.log(`MCP session (with mcpSessionId: ${mcpSessionId}) successfully initialized and cached for ${mcpServerUrl}`);
 
-        // Send "initialized" notification (this will be updated in next step to include session ID in header)
+        // Send "initialized" notification
         await sendMcpNotification(mcpServerUrl, "initialized", {});
+
+        // Attempt to list tools from the MCP server
+        try {
+            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
+            // This is okay because we've already cached it above.
+            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
+            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
+            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
+            const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
+            if (discoveredTools && discoveredTools.length > 0) {
+                session.tools = discoveredTools;
+                console.log(`MCP Initialize: Discovered ${discoveredTools.length} tools from ${mcpServerUrl}:`, discoveredTools);
+            } else {
+                session.tools = []; // Ensure session.tools is always an array
+                console.log(`MCP Initialize: No tools discovered or returned from ${mcpServerUrl}.`);
+            }
+        } catch (toolError) {
+            console.error(`MCP Initialize: Failed to list tools from ${mcpServerUrl}. Error:`, toolError.message);
+            session.tools = []; // Ensure session.tools is an array even on error
+            // Do not re-throw; session initialization can proceed without tools.
+        }
+
         return session;
 
     } catch (error) {
@@ -185,6 +207,36 @@ async function getMcpSession(mcpServerUrl) {
     }
     console.log(`No existing session or not initialized, creating new MCP session for: ${mcpServerUrl}`);
     return await initializeMcpSession(mcpServerUrl);
+}
+
+// New function to list tools from an MCP server
+async function listMcpTools(mcpServerUrl, sessionId) { // sessionId might not be strictly needed if sendMcpRequest uses global session
+    console.log(`Listing tools from MCP server: ${mcpServerUrl}`);
+    const requestId = `mcp-listtools-${Date.now()}`;
+    const requestPayload = {
+        jsonrpc: "2.0",
+        id: requestId,
+        method: "tools/list", // Standard MCP method for listing tools
+        params: {} // Typically no parameters for a list method
+    };
+
+    try {
+        // sendMcpRequest will use the mcpSessionId from the cached session for mcpServerUrl
+        const mcpResponse = await sendMcpRequest(mcpServerUrl, requestPayload);
+
+        if (mcpResponse && mcpResponse.result && Array.isArray(mcpResponse.result.tools)) {
+            console.log(`MCP tools/list: Received ${mcpResponse.result.tools.length} tools from ${mcpServerUrl}.`);
+            return mcpResponse.result.tools; // Expected structure { tools: [...] }
+        } else {
+            console.error(`MCP tools/list: Unexpected response format from ${mcpServerUrl}. Response:`, mcpResponse);
+            return []; // Return empty array on unexpected format
+        }
+    } catch (error) {
+        console.error(`MCP tools/list: Error listing tools from ${mcpServerUrl}: ${error.message}`);
+        // Depending on desired strictness, could throw error or return empty array.
+        // For robustness of session initialization, returning empty array.
+        return [];
+    }
 }
 
 function createMcpToolCallPayload(toolName, toolArguments, requestId) {
@@ -1419,6 +1471,28 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Crucial for async sendResponse
+    } else if (request.action === 'getDiscoveredMcpToolSchema') {
+        (async () => {
+            const { mcpServerUrl, toolName } = request;
+            if (!mcpServerUrl || !toolName) {
+                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request.' });
+                return;
+            }
+
+            const session = mcpSessions[mcpServerUrl];
+            if (session && session.tools && Array.isArray(session.tools)) {
+                const discoveredTool = session.tools.find(t => t.name === toolName);
+                if (discoveredTool) {
+                    // The discoveredTool object should contain name, description, and inputSchema (or similar)
+                    sendResponse({ success: true, toolSchema: discoveredTool });
+                } else {
+                    sendResponse({ success: false, error: `Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}.` });
+                }
+            } else {
+                sendResponse({ success: false, error: `MCP session for ${mcpServerUrl} not active or tools not listed.` });
+            }
+        })();
+        return true; // Indicates asynchronous response
     }
     // Handle other actions if any
 });
