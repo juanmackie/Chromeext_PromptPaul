@@ -101,7 +101,7 @@ async function initializeMcpSession(mcpServerUrl) {
                 const errorBody = await response.text(); // Use text() for potential non-JSON errors too
                 errorMsg += `, Body: ${errorBody}`;
             } catch (e) { /* ignore */ }
-            throw new Error(errorMsg);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: HTTP status ${response.status}. Body: ${errorBody}`);
         }
 
         const mcpSessionId = response.headers.get('mcp-session-id');
@@ -140,13 +140,14 @@ async function initializeMcpSession(mcpServerUrl) {
         }
 
         if (!foundInitializeResult || !serverResponse) {
+            console.error(`MCP Initialize: Full SSE response text from ${mcpServerUrl} when 'initialize' result was not found:\n${responseText}`);
             console.error('MCP Initialize: Initialize result not found in SSE stream. Full response text:', responseText);
-            throw new Error('MCP Initialize failed: Initialize result not found in SSE stream.');
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: 'initialize' result not found in SSE stream.`);
         }
 
         if (serverResponse.error) {
             console.error('MCP Initialize error response from SSE:', serverResponse.error);
-            throw new Error(`MCP Initialize failed: ${serverResponse.error.message} (Code: ${serverResponse.error.code})`);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
         }
 
         if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
@@ -169,14 +170,36 @@ async function initializeMcpSession(mcpServerUrl) {
         mcpSessions[mcpServerUrl] = session; // Cache the session
         console.log(`MCP session (with mcpSessionId: ${mcpSessionId}) successfully initialized and cached for ${mcpServerUrl}`);
 
-        // Send "initialized" notification (this will be updated in next step to include session ID in header)
+        // Send "initialized" notification
         await sendMcpNotification(mcpServerUrl, "initialized", {});
+
+        // Attempt to list tools from the MCP server
+        try {
+            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
+            // This is okay because we've already cached it above.
+            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
+            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
+            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
+            const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
+            if (discoveredTools && discoveredTools.length > 0) {
+                session.tools = discoveredTools;
+                console.log(`MCP Initialize: Discovered ${discoveredTools.length} tools from ${mcpServerUrl}:`, discoveredTools);
+            } else {
+                session.tools = []; // Ensure session.tools is always an array
+                console.log(`MCP Initialize: No tools discovered or returned from ${mcpServerUrl}.`);
+            }
+        } catch (toolError) {
+            console.error(`MCP Initialize: Failed to list tools from ${mcpServerUrl}. Error:`, toolError.message);
+            session.tools = []; // Ensure session.tools is an array even on error
+            // Do not re-throw; session initialization can proceed without tools.
+        }
+
         return session;
 
     } catch (error) {
         console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
         delete mcpSessions[mcpServerUrl];
-        throw error;
+        throw new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
     }
 }
 
@@ -187,6 +210,36 @@ async function getMcpSession(mcpServerUrl) {
     }
     console.log(`No existing session or not initialized, creating new MCP session for: ${mcpServerUrl}`);
     return await initializeMcpSession(mcpServerUrl);
+}
+
+// New function to list tools from an MCP server
+async function listMcpTools(mcpServerUrl, sessionId) { // sessionId might not be strictly needed if sendMcpRequest uses global session
+    console.log(`Listing tools from MCP server: ${mcpServerUrl}`);
+    const requestId = `mcp-listtools-${Date.now()}`;
+    const requestPayload = {
+        jsonrpc: "2.0",
+        id: requestId,
+        method: "tools/list", // Standard MCP method for listing tools
+        params: {} // Typically no parameters for a list method
+    };
+
+    try {
+        // sendMcpRequest will use the mcpSessionId from the cached session for mcpServerUrl
+        const mcpResponse = await sendMcpRequest(mcpServerUrl, requestPayload);
+
+        if (mcpResponse && mcpResponse.result && Array.isArray(mcpResponse.result.tools)) {
+            console.log(`MCP tools/list: Received ${mcpResponse.result.tools.length} tools from ${mcpServerUrl}.`);
+            return mcpResponse.result.tools; // Expected structure { tools: [...] }
+        } else {
+            console.error(`MCP tools/list: Unexpected response format from ${mcpServerUrl}. Response:`, mcpResponse);
+            return []; // Return empty array on unexpected format
+        }
+    } catch (error) {
+        console.error(`MCP tools/list: Error listing tools from ${mcpServerUrl}: ${error.message}`);
+        // Depending on desired strictness, could throw error or return empty array.
+        // For robustness of session initialization, returning empty array.
+        return [];
+    }
 }
 
 function createMcpToolCallPayload(toolName, toolArguments, requestId) {
@@ -255,7 +308,7 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
                 const errorBody = await response.text(); // Use text() for more robust error body reading
                 errorMsg += `, Body: ${errorBody}`;
             } catch (e) { /* ignore if body isn't text */ }
-            throw new Error(errorMsg);
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: HTTP status ${response.status}. Body: ${errorBody}`);
         }
 
         const responseText = await response.text();
@@ -303,15 +356,16 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
         }
 
         if (!foundResponse || !serverResponse) {
+            console.error(`MCP Request '${requestPayload.method}': Full SSE response text from ${mcpServerUrl} (ID: ${requestPayload.id}) when response was not found:\n${responseText}`);
             console.error(`MCP Request: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream. Full response text:`, responseText);
-            throw new Error(`MCP Request failed: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream.`);
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} (ID: ${requestPayload.id}) failed: Response not found in SSE stream.`);
         }
 
         // serverResponse is now the JSON-RPC object like {jsonrpc, id, result} or {jsonrpc, id, error}
 
         if (serverResponse.error) {
             console.error(`MCP Request error response (for id: ${requestPayload.id}):`, serverResponse.error);
-            const mcpError = new Error(`MCP Request failed: ${serverResponse.error.message} (Code: ${serverResponse.error.code})`);
+            const mcpError = new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
             mcpError.details = serverResponse.error; // Attach full error object
             throw mcpError;
         }
@@ -326,7 +380,7 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
 
     } catch (error) {
         console.error(`Error sending MCP request '${requestPayload.method}' to ${mcpServerUrl}:`, error);
-        throw error; // Re-throw to be handled by the caller
+        throw new Error(`MCP request '${requestPayload.method}' to ${mcpServerUrl} encountered an error: ${error.message}`);
     }
 }
 
@@ -1463,6 +1517,28 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Crucial for async sendResponse
+    } else if (request.action === 'getDiscoveredMcpToolSchema') {
+        (async () => {
+            const { mcpServerUrl, toolName } = request;
+            if (!mcpServerUrl || !toolName) {
+                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request.' });
+                return;
+            }
+
+            const session = mcpSessions[mcpServerUrl];
+            if (session && session.tools && Array.isArray(session.tools)) {
+                const discoveredTool = session.tools.find(t => t.name === toolName);
+                if (discoveredTool) {
+                    // The discoveredTool object should contain name, description, and inputSchema (or similar)
+                    sendResponse({ success: true, toolSchema: discoveredTool });
+                } else {
+                    sendResponse({ success: false, error: `Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}.` });
+                }
+            } else {
+                sendResponse({ success: false, error: `MCP session for ${mcpServerUrl} not active or tools not listed.` });
+            }
+        })();
+        return true; // Indicates asynchronous response
     }
     // Handle other actions if any
 });
