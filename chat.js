@@ -462,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const allToolsStream = await getTools();
                     const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
                     if (currentStreamingContentElement) { // Check if element still exists
-                        if (currentToolDefStream && currentToolDefStream.mcpProxyUrl) {
+                        if (currentToolDefStream && currentToolDefStream.mcpServerUrl) {
                             currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**`);
                         } else {
                             currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
@@ -752,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const allToolsNonStream = await getTools(); // Already async
                         const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
 
-                        if (toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl) {
+                        if (toolDefinitionNonStream && toolDefinitionNonStream.mcpServerUrl) {
                             addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
                         } else {
                             addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
@@ -920,7 +920,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 chatMainArea.style.display = 'block';
             }
         } catch (error) {
-            showToast('Error: ' + error.message);
+            // Show more detailed error messages
+            let errorMsg = error.message;
+            if (error.details) {
+                errorMsg += ` (Details: ${JSON.stringify(error.details)})`;
+            }
+            showToast('Error: ' + errorMsg);
             console.error("Error in one-off instruction submission:", error);
             userInput.disabled = false;
             sendButton.disabled = false;

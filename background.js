@@ -40,6 +40,9 @@ async function sendMcpNotification(mcpServerUrl, method, params) {
         // If mcpSessionId was just obtained in initializeMcpSession and set into mcpSessions,
         // it *should* be found here. If not, it's a problem or the server didn't provide one.
         console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This might be an issue if the server expects it even for 'initialized'.`);
+    } else {
+        // For other methods, we should have a session ID if the session was properly initialized
+        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This could cause issues if the server requires it.`);
     }
 
 
@@ -103,9 +106,9 @@ async function initializeMcpSession(mcpServerUrl) {
 
         const mcpSessionId = response.headers.get('mcp-session-id');
         if (!mcpSessionId) {
-            console.warn(`MCP Initialize Warning: mcp-session-id header not found in response from ${mcpServerUrl}`);
-            // Depending on server strictness, this could be an error.
-            // For now, we'll proceed but log a warning. The next step will ensure it's used if present.
+            console.error(`MCP Initialize Error: mcp-session-id header not found in response from ${mcpServerUrl}. This is required for subsequent requests.`);
+            // This is now treated as an error since most servers will require the session ID
+            throw new Error(`MCP Initialize failed: mcp-session-id header missing in response from ${mcpServerUrl}`);
         } else {
             console.log(`MCP Initialize: Received mcp-session-id: ${mcpSessionId}`);
         }
@@ -193,16 +196,17 @@ function createMcpToolCallPayload(toolName, toolArguments, requestId) {
     // it indicates it wasn't parsed at the executePromptPaulTool level.
     // For safety, though this function expects an object:
     let paramsArguments = toolArguments;
+    // Ensure toolArguments is an object
     if (typeof toolArguments === 'string') {
         try {
             paramsArguments = JSON.parse(toolArguments);
         } catch (e) {
             console.error("Tool arguments for MCP call were a string but not valid JSON:", toolArguments, e);
-            // Depending on desired error handling, could throw or default to an empty object or the string itself.
-            // For now, let's proceed with the potentially problematic string if it's not JSON,
-            // but ideally, parsing happens before this function.
-            // Or, more strictly: throw new Error("Tool arguments must be a valid JSON object or pre-parsed object.");
+            throw new Error("Tool arguments must be a valid JSON object or pre-parsed object.");
         }
+    } else if (typeof toolArguments !== 'object' || toolArguments === null) {
+        console.error("Tool arguments must be an object:", toolArguments);
+        throw new Error("Tool arguments must be an object.");
     }
 
     const toolCallParams = {
@@ -258,23 +262,43 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
         let serverResponse = null;
         let foundResponse = false;
 
-        const lines = responseText.split('\n');
-        for (const line of lines) {
-            if (line.startsWith('data:')) {
-                const jsonData = line.substring(5).trim();
-                if (jsonData) {
-                    try {
-                        const parsedEventData = JSON.parse(jsonData);
-                        if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
-                            serverResponse = parsedEventData;
-                            foundResponse = true;
-                            console.log(`Found MCP response for ID ${requestPayload.id} in SSE data:`, serverResponse);
-                            break;
-                        }
-                    } catch (e) {
-                        console.warn(`Could not parse SSE data line as JSON or not the target response: "${jsonData}" for ID ${requestPayload.id}`, e);
+        // Check for SSE format before parsing
+        if (responseText.includes('event: mes') || responseText.startsWith('data: ')) {
+            // Handle SSE response
+            const events = responseText.trim().split('\n\n');
+            for (const event of events) {
+                const lines = event.split('\n');
+                let data = '';
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        data += line.substring(6) + '\n';
                     }
                 }
+                if (data) {
+                    try {
+                        const result = JSON.parse(data.trim());
+                        if (result.id === requestPayload.id && (result.result !== undefined || result.error !== undefined)) {
+                            serverResponse = result;
+                            foundResponse = true;
+                            console.log(`Found MCP response for ID ${requestPayload.id} in SSE data:`, serverResponse);
+                            break; // break out of events loop
+                        }
+                    } catch (e) {
+                        console.error('SSE parsing error', e);
+                    }
+                }
+            }
+        } else {
+            // Handle standard JSON response
+            try {
+                const json = JSON.parse(responseText);
+                if (json.id === requestPayload.id && (json.result !== undefined || json.error !== undefined)) {
+                    serverResponse = json;
+                    foundResponse = true;
+                    console.log(`Found MCP response for ID ${requestPayload.id} in JSON response:`, serverResponse);
+                }
+            } catch (e) {
+                console.error('JSON parsing error', e);
             }
         }
 
@@ -1369,6 +1393,16 @@ chrome.scripting.executeScript({
                         if (!session || !session.initialized) {
                             throw new Error("MCP session could not be initialized.");
                         }
+                        
+                        // Add debug logging for MCP tool execution
+                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
+                        
+                        // Validate that the server supports this tool
+                        // Check if tools exists and is an array before using .some()
+                        if (!Array.isArray(session.serverCapabilities?.tools) ||
+                            !session.serverCapabilities.tools.some(t => t.name === name)) {
+                            throw new Error(`MCP server does not support tool '${name}'`);
+                        }
 
                         const requestId = `mcp-tc-${Date.now()}`;
                         const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
@@ -1385,6 +1419,13 @@ chrome.scripting.executeScript({
 
                     } catch (mcpError) {
                         console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
+                        // Enhanced error logging for TypeErrors
+                        if (mcpError instanceof TypeError) {
+                            console.error('MCP Capabilities Debug Info:', {
+                                serverCapabilities: session.serverCapabilities,
+                                tools: session.serverCapabilities?.tools
+                            });
+                        }
                         let userFriendlyMessage;
                         if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
                             userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
@@ -1413,7 +1454,12 @@ chrome.scripting.executeScript({
 
             } catch (error) { // General error catch for executePromptPaulTool
                 console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
-                sendResponse({ error: error.message || 'Tool processing failed' });
+                // Provide more detailed error message for MCP tools
+                let errorMessage = error.message || 'Tool processing failed';
+                if (error.details) {
+                    errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
+                }
+                sendResponse({ error: errorMessage });
             }
         })();
         return true; // Crucial for async sendResponse
