@@ -773,3 +773,21 @@ footer a:hover {
   color: var(--brand-primary); /* Example: use brand color for pinned items */
   /* Or use a specific fill/font variation for Material Symbols if applicable */
 }
+
+.mcp-sourced {
+  border-left: 3px solid var(--primary); /* Uses existing theme variable */
+  padding-left: 8px;
+  background-color: color-mix(in srgb, var(--primary) 5%, var(--background)); /* Slight tint */
+}
+.mcp-data-source-note {
+  font-size: 0.75rem;
+  color: var(--muted-foreground); /* Uses existing theme variable */
+  margin-top: -2px;
+  margin-bottom: 4px;
+}
+
+.read-only-mcp {
+  background-color: var(--border); /* Using a theme variable for a slightly different background */
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
