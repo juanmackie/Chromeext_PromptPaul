@@ -199,7 +199,10 @@ async function initializeMcpSession(mcpServerUrl) {
     } catch (error) {
         console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
         delete mcpSessions[mcpServerUrl];
-        throw new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
+        // Enhanced error message with more details
+        const enhancedError = new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
+        enhancedError.cause = error; // Attach the original error as cause
+        throw enhancedError;
     }
 }
 
