@@ -916,10 +916,15 @@ function setupToolHandlers() {
   const toolMcpServerUrlEl = document.getElementById('toolMcpServerUrl');
   const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
   const toolHttpMethodEl = document.getElementById('toolHttpMethod');
+  const fetchMcpToolInfoBtn = document.getElementById('fetchMcpToolInfoBtn');
 
   function updateToolFieldStates() {
     const mcpUrl = toolMcpServerUrlEl.value.trim();
     const endpointUrl = toolEndpointUrlEl.value.trim();
+    const toolDescriptionEl = document.getElementById('toolDescription');
+    const toolParametersEl = document.getElementById('toolParameters');
+    const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
+    const toolParametersSourceEl = document.getElementById('toolParametersSource');
 
     if (mcpUrl) {
       toolEndpointUrlEl.disabled = true;
@@ -927,9 +932,29 @@ function setupToolHandlers() {
       // Optionally, clear them or just disable
       // toolEndpointUrlEl.value = '';
       // toolHttpMethodEl.value = '';
+      toolDescriptionEl.dataset.source = 'mcp';
+      toolParametersEl.dataset.source = 'mcp';
+      toolDescriptionEl.classList.add('mcp-sourced');
+      toolParametersEl.classList.add('mcp-sourced');
+      toolDescriptionSourceEl.textContent = 'Source: MCP Server (dynamic). Local content is fallback.';
+      toolDescriptionSourceEl.style.display = 'block';
+      toolParametersSourceEl.textContent = 'Source: MCP Server (dynamic). Local content is fallback.';
+      toolParametersSourceEl.style.display = 'block';
+      // IMPORTANT: Do not set readOnly here. Fields remain editable for fallback.
     } else {
       toolEndpointUrlEl.disabled = false;
       toolHttpMethodEl.disabled = false;
+      toolDescriptionEl.removeAttribute('dataset.source');
+      toolParametersEl.removeAttribute('dataset.source');
+      toolDescriptionEl.classList.remove('mcp-sourced');
+      toolParametersEl.classList.remove('mcp-sourced');
+      toolDescriptionSourceEl.style.display = 'none';
+      toolParametersSourceEl.style.display = 'none';
+      // Ensure fields are editable if MCP URL is removed
+      toolDescriptionEl.readOnly = false;
+      toolParametersEl.readOnly = false;
+      toolDescriptionEl.classList.remove('read-only-mcp');
+      toolParametersEl.classList.remove('read-only-mcp');
     }
 
     if (endpointUrl) {
@@ -1099,6 +1124,13 @@ function setupToolHandlers() {
     document.getElementById('toolId').value = '';
     updateToolFieldStates(); // Reset field states when form is cleared
     showStatus('Tool form cleared.');
+    // Ensure fields are reset to be editable and styling removed
+    document.getElementById('toolDescription').readOnly = false;
+    document.getElementById('toolParameters').readOnly = false;
+    document.getElementById('toolDescription').classList.remove('read-only-mcp');
+    document.getElementById('toolParameters').classList.remove('read-only-mcp');
+    document.getElementById('toolDescriptionSource').style.display = 'none';
+    document.getElementById('toolParametersSource').style.display = 'none';
   }
 
   // Export tools handler
@@ -1169,4 +1201,79 @@ function setupToolHandlers() {
 
   // Initial load of tools
   loadTools();
+
+  if (fetchMcpToolInfoBtn) {
+    fetchMcpToolInfoBtn.addEventListener('click', () => {
+      const mcpUrl = toolMcpServerUrlEl.value.trim();
+      const toolName = document.getElementById('toolName').value.trim();
+
+      if (!mcpUrl) {
+        showStatus("Please enter an MCP Server URL first.", true);
+        return;
+      }
+      if (!toolName) {
+        showStatus("Please enter a Tool Name to fetch its details.", true);
+        return;
+      }
+
+      console.log(`Fetching tool info for "${toolName}" from: ${mcpUrl}`);
+      showStatus("Fetching tool information...", false, true);
+
+      // TODO: Implement actual MCP client logic here to fetch tool information.
+      // This would involve:
+      // 1. Constructing the correct MCP API endpoint (e.g., `${toolMcpServerUrl}/tools/${toolNameFromForm}` or query `${toolMcpServerUrl}/tools`).
+      //    The exact endpoint depends on the MCP specification for fetching a single tool's definition.
+      // 2. Making an HTTP GET request using `fetch()` with appropriate MCP headers (e.g., 'MCP-Protocol-Version', 'Accept: application/json').
+      // 3. Handling the response:
+      //    - Check for HTTP errors (response.ok).
+      //    - Parse the JSON response.
+      //    - Validate if the response conforms to the MCP Tool schema.
+      //    - Extract `description` and `inputSchema`.
+      // 4. If successful, populate the form fields as done in the mock below.
+      // 5. If an error occurs (network, HTTP error, invalid response), show an appropriate status message
+      //    and ensure fields are reset to their editable state (as in the 'else' block below).
+      // The current implementation uses a mock fetch for demonstration and UI testing.
+      // Simulate Fetching
+      if (mcpUrl === "https://mcp.example.com/test-server") {
+        const mockFetchedTool = {
+          name: toolName, // Use the name from the form
+          description: "This is a dynamically fetched description for the tool.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              param1: { type: "string", description: "Dynamically fetched parameter 1" },
+              param2: { type: "boolean", description: "Dynamically fetched parameter 2" }
+            },
+            required: ["param1"]
+          }
+        };
+
+        const toolDescriptionEl = document.getElementById('toolDescription');
+        const toolParametersEl = document.getElementById('toolParameters');
+
+        toolDescriptionEl.disabled = false; // Ensure enabled
+        toolParametersEl.disabled = false; // Ensure enabled
+
+        toolDescriptionEl.value = mockFetchedTool.description;
+        toolParametersEl.value = JSON.stringify(mockFetchedTool.inputSchema, null, 2);
+        toolDescriptionEl.readOnly = true;
+        toolParametersEl.readOnly = true;
+        toolDescriptionEl.classList.add('read-only-mcp');
+        toolParametersEl.classList.add('read-only-mcp');
+        showStatus("Tool information fetched and populated successfully!", false, true);
+        document.getElementById('toolDescriptionSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
+        document.getElementById('toolParametersSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
+      } else {
+        document.getElementById('toolDescription').readOnly = false;
+        document.getElementById('toolParameters').readOnly = false;
+        document.getElementById('toolDescription').classList.remove('read-only-mcp');
+        document.getElementById('toolParameters').classList.remove('read-only-mcp');
+        showStatus("Failed to fetch tool information. Server not found or tool not available. (Simulated for non-mock URL)", true);
+        document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (MCP fetch failed or URL not recognized).';
+        document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (MCP fetch failed or URL not recognized).';
+        document.getElementById('toolDescriptionSource').style.display = 'block'; // Ensure visible
+        document.getElementById('toolParametersSource').style.display = 'block'; // Ensure visible
+      }
+    });
+  }
 }
