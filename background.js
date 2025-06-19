@@ -1456,7 +1456,7 @@ chrome.scripting.executeScript({
                         
                         // Validate that the server supports this tool
                         // Check if tools exists and is an array before using .some()
-                        const serverTools = session.serverCapabilities?.tools;
+                        const serverTools = session.tools;
                         if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
                             console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
                             throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
