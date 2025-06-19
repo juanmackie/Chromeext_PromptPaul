@@ -1203,21 +1203,20 @@ function setupToolHandlers() {
   loadTools();
 
   if (fetchMcpToolInfoBtn) {
-    fetchMcpToolInfoBtn.addEventListener('click', () => {
-      const mcpUrl = toolMcpServerUrlEl.value.trim();
-      const toolName = document.getElementById('toolName').value.trim();
+    fetchMcpToolInfoBtn.addEventListener('click', async () => { // Made async
+      const toolMcpServerUrl = toolMcpServerUrlEl.value.trim();
+      const toolNameValue = document.getElementById('toolName').value.trim();
 
-      if (!mcpUrl) {
+      if (!toolMcpServerUrl) {
         showStatus("Please enter an MCP Server URL first.", true);
         return;
       }
-      if (!toolName) {
+      if (!toolNameValue) {
         showStatus("Please enter a Tool Name to fetch its details.", true);
         return;
       }
 
-      console.log(`Fetching tool info for "${toolName}" from: ${mcpUrl}`);
-      showStatus("Fetching tool information...", false, true);
+      console.log(`Fetching tool info for "${toolNameValue}" from: ${toolMcpServerUrl}`);
 
       // TODO: Implement actual MCP client logic here to fetch tool information.
       // This would involve:
@@ -1233,47 +1232,83 @@ function setupToolHandlers() {
       // 5. If an error occurs (network, HTTP error, invalid response), show an appropriate status message
       //    and ensure fields are reset to their editable state (as in the 'else' block below).
       // The current implementation uses a mock fetch for demonstration and UI testing.
-      // Simulate Fetching
-      if (mcpUrl === "https://mcp.example.com/test-server") {
-        const mockFetchedTool = {
-          name: toolName, // Use the name from the form
-          description: "This is a dynamically fetched description for the tool.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              param1: { type: "string", description: "Dynamically fetched parameter 1" },
-              param2: { type: "boolean", description: "Dynamically fetched parameter 2" }
-            },
-            required: ["param1"]
+
+      // --- Start of new fetch logic ---
+      showStatus("Fetching tool information...", false, true);
+      document.getElementById('toolDescription').readOnly = false;
+      document.getElementById('toolParameters').readOnly = false;
+      document.getElementById('toolDescription').classList.remove('read-only-mcp');
+      document.getElementById('toolParameters').classList.remove('read-only-mcp');
+
+      try {
+        const encodedToolName = encodeURIComponent(toolNameValue);
+        // Assuming MCP specification might use a path like /tools/{tool_name}
+        // This is an assumption; the actual MCP spec might differ.
+        const requestUrl = `${toolMcpServerUrl.endsWith('/') ? toolMcpServerUrl : toolMcpServerUrl + '/'}tools/${encodedToolName}`;
+
+        const response = await fetch(requestUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'MCP-Protocol-Version': '2025-06-18' // Example version, ideally from a constant
           }
-        };
+        });
 
-        const toolDescriptionEl = document.getElementById('toolDescription');
-        const toolParametersEl = document.getElementById('toolParameters');
+        if (response.ok) {
+          const data = await response.json();
 
-        toolDescriptionEl.disabled = false; // Ensure enabled
-        toolParametersEl.disabled = false; // Ensure enabled
+          // Basic validation of the received MCP tool structure
+          if (data && typeof data.name === 'string' && typeof data.description === 'string' && data.inputSchema && typeof data.inputSchema === 'object') {
+            document.getElementById('toolDescription').value = data.description;
+            document.getElementById('toolParameters').value = JSON.stringify(data.inputSchema, null, 2);
 
-        toolDescriptionEl.value = mockFetchedTool.description;
-        toolParametersEl.value = JSON.stringify(mockFetchedTool.inputSchema, null, 2);
-        toolDescriptionEl.readOnly = true;
-        toolParametersEl.readOnly = true;
-        toolDescriptionEl.classList.add('read-only-mcp');
-        toolParametersEl.classList.add('read-only-mcp');
-        showStatus("Tool information fetched and populated successfully!", false, true);
-        document.getElementById('toolDescriptionSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
-        document.getElementById('toolParametersSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
-      } else {
-        document.getElementById('toolDescription').readOnly = false;
-        document.getElementById('toolParameters').readOnly = false;
-        document.getElementById('toolDescription').classList.remove('read-only-mcp');
-        document.getElementById('toolParameters').classList.remove('read-only-mcp');
-        showStatus("Failed to fetch tool information. Server not found or tool not available. (Simulated for non-mock URL)", true);
-        document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (MCP fetch failed or URL not recognized).';
-        document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (MCP fetch failed or URL not recognized).';
-        document.getElementById('toolDescriptionSource').style.display = 'block'; // Ensure visible
-        document.getElementById('toolParametersSource').style.display = 'block'; // Ensure visible
+            document.getElementById('toolDescription').readOnly = true;
+            document.getElementById('toolParameters').readOnly = true;
+            document.getElementById('toolDescription').classList.add('read-only-mcp');
+            document.getElementById('toolParameters').classList.add('read-only-mcp');
+            document.getElementById('toolDescriptionSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
+            document.getElementById('toolParametersSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
+            document.getElementById('toolDescriptionSource').style.display = 'block';
+            document.getElementById('toolParametersSource').style.display = 'block';
+            showStatus('Tool information fetched and populated successfully!', false, true);
+          } else {
+            // Tool name from server (data.name) might differ from what user typed (toolNameValue),
+            // but we are fetching based on toolNameValue as the identifier on the server.
+            // If data.name is important to display, it needs more UI consideration.
+            console.error('Fetched data structure from MCP server is not as expected. Received data:', JSON.stringify(data, null, 2)); // Log the stringified data
+            showStatus('Fetched data from server is not a valid MCP Tool definition. See console for details.', true); // Updated message
+            document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (Invalid data from MCP Server).';
+            document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (Invalid data from MCP Server).';
+            document.getElementById('toolDescriptionSource').style.display = 'block';
+            document.getElementById('toolParametersSource').style.display = 'block';
+          }
+        } else {
+          let errorDetail = `Server responded with status ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorDetail += `: ${JSON.stringify(errorData)}`;
+          } catch (e) { /* Ignore if error response is not JSON */ }
+          showStatus(`Failed to fetch tool information. ${errorDetail}`, true);
+          document.getElementById('toolDescriptionSource').textContent = `Source: Local fallback (Error: ${response.status}).`;
+          document.getElementById('toolParametersSource').textContent = `Source: Local fallback (Error: ${response.status}).`;
+          document.getElementById('toolDescriptionSource').style.display = 'block';
+          document.getElementById('toolParametersSource').style.display = 'block';
+        }
+      } catch (error) {
+        console.error('Error fetching MCP tool info:', error);
+        let errorMessage = 'Network error or server unreachable.';
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+           errorMessage = 'Failed to fetch. This could be a CORS issue or network problem. Check browser console for details.'
+        } else if (error instanceof Error) {
+           errorMessage = error.message;
+        }
+        showStatus(`Error fetching tool information: ${errorMessage}`, true);
+        document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (Fetch error).';
+        document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (Fetch error).';
+        document.getElementById('toolDescriptionSource').style.display = 'block';
+        document.getElementById('toolParametersSource').style.display = 'block';
       }
+      // --- End of new fetch logic ---
     });
   }
 }
