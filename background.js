@@ -114,45 +114,30 @@ async function initializeMcpSession(mcpServerUrl) {
         }
 
         const responseText = await response.text();
-        let serverResponse = null;
-        let foundInitializeResult = false;
+        const { serverResponse, error: sseError } = parseSseResponse(responseText, requestId, mcpServerUrl);
 
-        const lines = responseText.split('\n');
-        for (const line of lines) {
-            if (line.startsWith('data:')) {
-                const jsonData = line.substring(5).trim();
-                if (jsonData) {
-                    try {
-                        const parsedEventData = JSON.parse(jsonData);
-                        // Check if this event data is the JSON-RPC response we're looking for
-                        if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
-                            serverResponse = parsedEventData;
-                            foundInitializeResult = true;
-                            console.log("Found initialize result in SSE data:", serverResponse);
-                            break;
-                        }
-                    } catch (e) {
-                        // Not all data lines might be JSON, or not the one we want, so log and continue
-                        console.warn(`Could not parse SSE data line as JSON or not the target response: "${jsonData}"`, e);
-                    }
-                }
-            }
+        if (sseError) {
+            // Log the full response text for debugging if parsing failed or the specific response wasn't found.
+            console.error(`MCP Initialize: Full SSE response text from ${mcpServerUrl} during parsing error or if target response not found:\n${responseText}`);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: ${sseError}`);
         }
 
-        if (!foundInitializeResult || !serverResponse) {
-            console.error(`MCP Initialize: Full SSE response text from ${mcpServerUrl} when 'initialize' result was not found:\n${responseText}`);
-            console.error('MCP Initialize: Initialize result not found in SSE stream. Full response text:', responseText);
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: 'initialize' result not found in SSE stream.`);
+        if (!serverResponse) {
+            // This case should ideally be caught by sseError, but as a fallback:
+            console.error(`MCP Initialize: Full SSE response text from ${mcpServerUrl} when 'initialize' result was not found (after parsing):\n${responseText}`);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: 'initialize' result not found in SSE stream (after parsing).`);
         }
 
         if (serverResponse.error) {
-            console.error('MCP Initialize error response from SSE:', serverResponse.error);
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
+            console.error('MCP Initialize error response from SSE:', JSON.stringify(serverResponse.error, null, 2));
+            const serverError = new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
+            serverError.details = serverResponse.error; // Attach the full server error object
+            throw serverError;
         }
 
-        if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
-            console.error('MCP Initialize invalid result structure in SSE:', serverResponse);
-            throw new Error('MCP Initialize failed: Invalid result structure from server in SSE.');
+        if (!serverResponse.result || typeof serverResponse.result.capabilities !== 'object' || typeof serverResponse.result.protocolVersion !== 'string') {
+            console.error('MCP Initialize invalid result structure in SSE. Received:', JSON.stringify(serverResponse.result, null, 2));
+            throw new Error('MCP Initialize failed: Invalid or incomplete result structure from server in SSE. "capabilities" (object) and "protocolVersion" (string) are required.');
         }
 
         console.log("MCP Server Initialize Result (from SSE):", serverResponse.result);
@@ -175,11 +160,6 @@ async function initializeMcpSession(mcpServerUrl) {
 
         // Attempt to list tools from the MCP server
         try {
-            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
-            // This is okay because we've already cached it above.
-            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
-            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
-            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
             const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
             if (discoveredTools && discoveredTools.length > 0) {
                 session.tools = discoveredTools;
@@ -205,6 +185,102 @@ async function initializeMcpSession(mcpServerUrl) {
         throw enhancedError;
     }
 }
+
+function parseSseResponse(responseText, targetRequestId, mcpServerUrl) {
+    console.log(`Parsing SSE response for request ID ${targetRequestId} from ${mcpServerUrl}`);
+    const lines = responseText.split(/\r?\n/);
+    let currentEvent = { type: 'message', data: [] }; // Default event type
+    let serverResponse = null;
+
+    for (const line of lines) {
+        if (line.startsWith(':')) {
+            // Comment, ignore
+            console.log("SSE Parser: Ignoring comment line:", line);
+            continue;
+        }
+        if (line.trim() === '') {
+            // End of an event
+            if (currentEvent.data.length > 0) {
+                const fullData = currentEvent.data.join('\n');
+                console.log(`SSE Parser: Processing event type '${currentEvent.type}' with data:\n${fullData}`);
+                // For initialize, we expect a JSON-RPC response, typically in an unnamed (message) event.
+                // Other event types might be ignored or handled differently if needed in the future.
+                if (currentEvent.type === 'message' || !currentEvent.type) { // Handle unnamed events as 'message'
+                    try {
+                        const parsedData = JSON.parse(fullData);
+                        if (parsedData.id === targetRequestId && (parsedData.result || parsedData.error)) {
+                            console.log("SSE Parser: Found target JSON-RPC response:", parsedData);
+                            serverResponse = parsedData;
+                            // Found the response we are looking for, can stop processing further events.
+                            return { serverResponse, error: null };
+                        } else {
+                            console.log("SSE Parser: Parsed data, but not the target response. ID:", parsedData.id, "Expected ID:", targetRequestId);
+                        }
+                    } catch (e) {
+                        console.warn(`SSE Parser: Error parsing JSON from data: "${fullData}"`, e);
+                        // Continue to the next event, this one might not be the JSON we're looking for or is malformed.
+                    }
+                } else {
+                    console.log(`SSE Parser: Ignoring event type '${currentEvent.type}' as it's not the primary 'message' type for initialization.`);
+                }
+            }
+            currentEvent = { type: 'message', data: [] }; // Reset for next event
+            continue;
+        }
+
+        const fieldMatch = line.match(/^(\w+):\s?(.*)$/);
+        if (fieldMatch) {
+            const [, field, value] = fieldMatch;
+            if (field === 'event') {
+                currentEvent.type = value;
+                console.log("SSE Parser: Detected event type:", value);
+            } else if (field === 'data') {
+                currentEvent.data.push(value);
+                console.log("SSE Parser: Appended data line:", value);
+            } else if (field === 'id') {
+                // SSE event ID, not to be confused with JSON-RPC ID. Store if needed.
+                currentEvent.id = value;
+                console.log("SSE Parser: Detected SSE event ID:", value);
+            } else if (field === 'retry') {
+                // SSE retry field. Store or handle if needed.
+                currentEvent.retry = parseInt(value, 10);
+                console.log("SSE Parser: Detected SSE retry value:", value);
+            } else {
+                console.log("SSE Parser: Ignoring unknown field:", field);
+            }
+        } else {
+             console.log("SSE Parser: Ignoring malformed line or non-field line:", line);
+        }
+    }
+
+    // Process the last event if the stream didn't end with a blank line
+    if (currentEvent.data.length > 0 && !serverResponse) {
+        const fullData = currentEvent.data.join('\n');
+        console.log(`SSE Parser: Processing final event (type '${currentEvent.type}') after loop with data:\n${fullData}`);
+        if (currentEvent.type === 'message' || !currentEvent.type) {
+            try {
+                const parsedData = JSON.parse(fullData);
+                if (parsedData.id === targetRequestId && (parsedData.result || parsedData.error)) {
+                    console.log("SSE Parser: Found target JSON-RPC response in final event:", parsedData);
+                    serverResponse = parsedData;
+                } else {
+                     console.log("SSE Parser: Processed final event data, but not the target response. ID:", parsedData.id, "Expected ID:", targetRequestId);
+                }
+            } catch (e) {
+                console.warn(`SSE Parser: Error parsing JSON from final event data: "${fullData}"`, e);
+            }
+        }
+    }
+
+    if (!serverResponse) {
+        const errorMessage = `Target response with ID '${targetRequestId}' not found in SSE stream.`;
+        console.error("SSE Parser:", errorMessage);
+        return { serverResponse: null, error: errorMessage };
+    }
+
+    return { serverResponse, error: null };
+}
+
 
 async function getMcpSession(mcpServerUrl) {
     if (mcpSessions[mcpServerUrl] && mcpSessions[mcpServerUrl].initialized) {
@@ -549,55 +625,106 @@ function isValidURL(string) {
   }
 }
 
-// Simplified validateConfig function
+// Enhanced validateConfig function
 async function validateConfig() {
-  console.log('Background: Validating configuration...');
-  const result = await new Promise(resolve =>
-    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
-  );
-  
-  const profiles = result.profiles || [];
-  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-  const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
+    console.log('Background: Validating configuration...');
+    const storageData = await new Promise(resolve =>
+        chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
+    );
 
-  // Find profiles
-  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
-  const defaultProfile = profiles.find(p => p.id === 'default');
+    const profiles = storageData.profiles || [];
+    const lastSelectedProfileId = storageData.lastSelectedProfileId || 'default';
+    const globalDefaultLlmEndpoint = storageData.defaultLlmEndpoint || '';
 
-  // Validate profile with optional endpoint override
-  const validateProfile = (profile, endpointOverride = null) => {
-    const endpoint = endpointOverride || profile?.llmEndpoint;
-    return endpoint && isValidURL(endpoint) && profile?.apiKey && profile?.modelName;
-  };
+    const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+    const defaultProfile = profiles.find(p => p.id === 'default');
 
-  // Check profiles in priority order
-  let validProfile = null;
-  if (validateProfile(selectedProfile)) {
-    validProfile = selectedProfile;
-  } else if (validateProfile(selectedProfile, defaultLlmEndpoint)) {
-    validProfile = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
-  } else if (validateProfile(defaultProfile)) {
-    validProfile = defaultProfile;
-  } else if (validateProfile(defaultProfile, defaultLlmEndpoint)) {
-    validProfile = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
-  }
+    const profileOptions = [
+        { profile: selectedProfile, endpointOverride: null, name: `Selected Profile ('${selectedProfile?.name || lastSelectedProfileId}')` },
+        { profile: selectedProfile, endpointOverride: globalDefaultLlmEndpoint, name: `Selected Profile ('${selectedProfile?.name || lastSelectedProfileId}') with Default Endpoint` },
+        { profile: defaultProfile, endpointOverride: null, name: `Default Profile ('${defaultProfile?.name || 'default'}')` },
+        { profile: defaultProfile, endpointOverride: globalDefaultLlmEndpoint, name: `Default Profile ('${defaultProfile?.name || 'default'}') with Default Endpoint` }
+    ];
 
-  if (validProfile) {
-    console.log(`Background: Using configuration from profile: ${validProfile.name || validProfile.id}`);
-    return validProfile;
-  }
+    for (const option of profileOptions) {
+        const currentProfile = option.profile;
+        const endpointToTest = option.endpointOverride || currentProfile?.llmEndpoint;
 
-  // Handle errors
-  const hasEndpoint = defaultLlmEndpoint && isValidURL(defaultLlmEndpoint);
-  const hasValidProfile = selectedProfile || defaultProfile;
-  
-  if (!hasEndpoint) {
-    throw new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
-  } else if (!hasValidProfile) {
-    throw new Error('No valid profiles found. Please create a profile in the options page.');
-  } else {
-    throw new Error('Configuration is incomplete. Please set API key and model name in the options page.');
-  }
+        if (!currentProfile) {
+            // This profile doesn't exist (e.g. selectedProfile might be null if ID is stale)
+            // Continue to the next option in the fallback chain.
+            continue;
+        }
+
+        // Check if an endpoint is present for this specific option
+        if (!endpointToTest) {
+             // If this option relies on an endpoint that isn't set (e.g. profile has no endpoint AND no override)
+            console.warn(`ValidateConfig: Endpoint not available for profile option: ${option.name}`);
+            continue; // Try next profile option
+        }
+
+        if (!isValidURL(endpointToTest)) {
+            console.warn(`ValidateConfig: Invalid endpoint URL '${endpointToTest}' for profile option: ${option.name}`);
+            // An invalid URL for a specific profile's endpoint doesn't mean all hope is lost,
+            // other profiles or the global default endpoint might still be valid.
+            // However, if this is the *only* available endpoint, it will eventually fail.
+            // We don't return error here yet, let the loop try other options.
+            continue;
+        }
+
+        // At this point, endpointToTest is valid. Now check API key and model name for the currentProfile.
+        if (!currentProfile.apiKey) {
+            return {
+                isValid: false,
+                errorType: 'API_KEY_MISSING',
+                message: `API key is missing for profile '${currentProfile.name || currentProfile.id}'. Please configure it in the options page.`,
+                profileInUse: { ...currentProfile, llmEndpoint: endpointToTest } // Show what was being attempted
+            };
+        }
+        if (!currentProfile.modelName) {
+            return {
+                isValid: false,
+                errorType: 'MODEL_NAME_MISSING',
+                message: `Model name is missing for profile '${currentProfile.name || currentProfile.id}'. Please configure it in the options page.`,
+                profileInUse: { ...currentProfile, llmEndpoint: endpointToTest }
+            };
+        }
+
+        // If all checks pass for this profile option
+        const validConfig = { ...currentProfile, llmEndpoint: endpointToTest };
+        console.log(`Background: Using configuration from profile: ${option.name}`);
+        return { isValid: true, profileInUse: validConfig };
+    }
+
+    // If the loop finishes, no valid configuration was found.
+    // Determine the most appropriate generic error.
+    if (!globalDefaultLlmEndpoint && (!selectedProfile?.llmEndpoint && !defaultProfile?.llmEndpoint) ) {
+         return {
+            isValid: false,
+            errorType: 'ENDPOINT_MISSING_OR_INVALID',
+            message: 'No LLM API endpoint configured. Please set a default endpoint or configure one in a profile in the options page.',
+            profileInUse: null
+        };
+    }
+
+    // Check if any profiles exist at all
+    if (profiles.length === 0) {
+        return {
+            isValid: false,
+            errorType: 'NO_VALID_PROFILE_FOUND',
+            message: 'No profiles configured. Please create a profile in the options page.',
+            profileInUse: null
+        };
+    }
+
+    // If endpoints exist but other parts of profiles are incomplete (e.g. API key/model on ALL tried profiles)
+    // This is a more general fallback if specific API_KEY_MISSING or MODEL_NAME_MISSING wasn't hit for a chosen profile.
+    return {
+        isValid: false,
+        errorType: 'PROFILE_INCOMPLETE',
+        message: 'Configuration is incomplete. Ensure a selected profile has a valid endpoint, API key, and model name. Check options page.',
+        profileInUse: selectedProfile || defaultProfile // Provide some context
+    };
 }
 
 // Helper function to process API response and send messages to chat.js
@@ -640,33 +767,50 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
     let config, tools, enableStreaming;
-    try {
-        // Step 1: Validate configuration and get tool definitions
-        try {
-            const results = await Promise.all([
-                validateConfig(),
-                getAllToolDefinitions(),
-                new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, data => resolve(data)))
-            ]);
-            config = results[0];
-            tools = results[1];
-            enableStreaming = results[2].enableStreaming;
-        } catch (error) {
-            // Check if this is the specific configuration error we're looking for
-            if (error.message === "LLM API endpoint is missing or invalid. Please configure it in the options page.") {
-                console.warn("Background: Caught specific LLM endpoint configuration error.");
-                chrome.runtime.sendMessage({
-                    action: 'displayErrorInChat', // New action for chat.js
-                    errorMessage: "The LLM API endpoint is not configured or is invalid. Please go to the extension options page (right-click the extension icon) and set it up.",
-                    tabId: tabId,
-                    prompt: promptContent // Pass prompt content for context if needed
-                }).catch(e => console.error("Background: Error sending displayErrorInChat message:", e));
-                return; // Stop further execution in this function
-            }
-            // If it's a different error from validateConfig or other setup, re-throw it
-            throw error;
-        }
 
+    // Step 1: Validate configuration
+    const validationResult = await validateConfig();
+
+    if (!validationResult.isValid) {
+        console.warn(`Background: Configuration validation failed. Type: ${validationResult.errorType}, Message: ${validationResult.message}`);
+        chrome.runtime.sendMessage({
+            action: 'displayErrorInChat', // Or 'setApiResponse' and handle 'isConfigurationError' in chat.js
+            errorMessage: validationResult.message,
+            errorType: validationResult.errorType,
+            isConfigurationError: true,
+            tabId: tabId,
+            prompt: promptContent // Pass prompt content for context
+        }).catch(e => console.error("Background: Error sending configuration error message to chat:", e));
+        return; // Stop further execution
+    }
+
+    config = validationResult.profileInUse; // Use the validated and selected profile config
+
+    // Step 2: Get tool definitions and streaming preference (can proceed as config is valid)
+    try {
+        const results = await Promise.all([
+            // validateConfig() is already done
+            getAllToolDefinitions(),
+            new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, data => resolve(data.enableStreaming)))
+        ]);
+        tools = results[0];
+        enableStreaming = results[1];
+    } catch (error) {
+        // This catch is for errors in getAllToolDefinitions or getting enableStreaming setting
+        console.error('Background: Error fetching tool definitions or streaming settings:', error);
+        chrome.runtime.sendMessage({
+            action: 'displayErrorInChat',
+            errorMessage: `Error fetching extension settings: ${error.message}`,
+            isConfigurationError: false, // This is a runtime error, not config
+            tabId: tabId,
+            prompt: promptContent
+        }).catch(e => console.error("Background: Error sending settings fetch error message:", e));
+        return;
+    }
+
+    try {
+        // The rest of the makeLlmApiRequest function proceeds from here...
+        // Ensure 'config' is used consistently as it's now sourced from validationResult.profileInUse
         const formattedTools = tools.map(tool => {
             try {
                 return {
@@ -824,70 +968,81 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                 }
 
                 buffer += decoder.decode(value, { stream: true });
-                console.log("Background: Stream raw chunk received:", buffer);
+                // console.log("Background: Stream raw buffer update:", buffer);
 
-                // Process buffer line by line for SSE
-                let lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep the last partial line in the buffer
+                let eventBoundaryIndex;
+                while ((eventBoundaryIndex = buffer.indexOf('\n\n')) !== -1) {
+                    const eventMessages = buffer.substring(0, eventBoundaryIndex);
+                    buffer = buffer.substring(eventBoundaryIndex + 2); // +2 for '\n\n'
 
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        let currentPayload = line.substring(5).trim(); // Remove the initial "data:" prefix and trim
+                    const lines = eventMessages.split('\n');
+                    let eventData = [];
+                    // let eventType = 'message'; // Default type, though LLM streams might not use 'event:' lines often
 
-                        // Aggressively strip any further "data:" prefixes
-                        while (currentPayload.startsWith('data:')) {
-                            console.warn("Background: Stripping nested 'data:' prefix. Current payload before strip:", currentPayload);
-                            currentPayload = currentPayload.substring(5).trim();
-                            console.warn("Background: Current payload after strip:", currentPayload);
-                        }
-
-                        if (currentPayload === '[DONE]') {
-                            console.log("Background: Stream signaled [DONE].");
+                    for (const line of lines) {
+                        if (line.startsWith(':')) { // Comment
+                            console.log("Background SSE Stream: Ignoring comment:", line);
                             continue;
                         }
-
-                        // Proceed to parse only if currentPayload is not empty and looks like JSON
-                        if (currentPayload && currentPayload.length > 0 && (currentPayload.startsWith('{') || currentPayload.startsWith('['))) {
-                            console.log('Background SSE Processing: Original line (after buffer split):', line);
-                            console.log('Background SSE Processing: Final string to be parsed (currentPayload):', currentPayload);
-                            try {
-                                const parsed = JSON.parse(currentPayload);
-                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-                                    const contentChunk = parsed.choices[0].delta.content;
-                                    const toolCallChunk = parsed.choices[0].delta.tool_calls;
-
-                                    if (contentChunk) {
-                                        chrome.runtime.sendMessage({
-                                            action: 'streamApiResponseChunk',
-                                            chunk: contentChunk,
-                                            tabId: tabId,
-                                            prompt: promptContent
-                                        }).catch(error => console.log(`Error sending streamApiResponseChunk: ${error.message}, tabId: ${tabId}`));
-                                    }
-
-                                    if (toolCallChunk) {
-                                        console.log("Background: Received tool_call delta (streaming):", toolCallChunk);
-                                         chrome.runtime.sendMessage({
-                                            action: 'streamApiToolCallChunk',
-                                            toolCallChunk: toolCallChunk,
-                                            tabId: tabId,
-                                            prompt: promptContent
-                                        }).catch(error => console.log(`Error sending streamApiToolCallChunk: ${error.message}, tabId: ${tabId}`));
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("Background: Error parsing JSON from stream:", e, "Attempted to parse:", currentPayload, "Original full line:", line);
-                            }
-                        } else if (currentPayload) {
-                            // Log if it's not [DONE] and not starting with { or [ after stripping data:
-                            console.log("Background: SSE line does not appear to be JSON or [DONE] after stripping prefixes. Payload:", currentPayload, "Original line:", line);
+                        if (line.startsWith('data:')) {
+                            eventData.push(line.substring(5).trim());
                         }
-                        // If currentPayload is empty after stripping, it's ignored.
+                        // Add handling for 'event:', 'id:', 'retry:' if needed for this specific LLM stream,
+                        // but typically they just send data lines.
+                        // Example: if (line.startsWith('event:')) eventType = line.substring(6).trim();
+                    }
+
+                    if (eventData.length > 0) {
+                        const fullPayload = eventData.join(''); // For LLM streams, data is often a single JSON object, possibly split, not multiple distinct JSONs in one event.
+                                                              // If data lines were meant to be concatenated as strings and then parsed, it would be eventData.join('\n')
+
+                        console.log("Background SSE Stream: Complete event data payload:", fullPayload);
+
+                        if (fullPayload === '[DONE]') {
+                            console.log("Background SSE Stream: Received [DONE] signal.");
+                            // The main loop will handle streamApiEnd when done is true.
+                            // We just need to make sure not to process [DONE] as JSON.
+                            continue; // Skip JSON parsing for [DONE]
+                        }
+
+                        try {
+                            const parsed = JSON.parse(fullPayload);
+                            if (parsed.choices && parsed.choices.length > 0 && parsed.choices[0].delta) {
+                                const delta = parsed.choices[0].delta;
+                                const contentChunk = delta.content;
+                                const toolCallChunk = delta.tool_calls;
+
+                                if (contentChunk) {
+                                    chrome.runtime.sendMessage({
+                                        action: 'streamApiResponseChunk',
+                                        chunk: contentChunk,
+                                        tabId: tabId,
+                                        prompt: promptContent
+                                    }).catch(error => console.error(`Error sending streamApiResponseChunk: ${error.message}, tabId: ${tabId}`));
+                                }
+
+                                if (toolCallChunk && toolCallChunk.length > 0) { // Ensure toolCallChunk is not empty
+                                    console.log("Background SSE Stream: Received tool_call delta:", JSON.stringify(toolCallChunk));
+                                    chrome.runtime.sendMessage({
+                                        action: 'streamApiToolCallChunk',
+                                        toolCallChunk: toolCallChunk,
+                                        tabId: tabId,
+                                        prompt: promptContent
+                                    }).catch(error => console.error(`Error sending streamApiToolCallChunk: ${error.message}, tabId: ${tabId}`));
+                                }
+                            } else {
+                                console.warn("Background SSE Stream: Parsed JSON, but no choices[0].delta found. Payload:", parsed);
+                            }
+                        } catch (e) {
+                            console.error("Background SSE Stream: Error parsing JSON from event data:", e, "Problematic payload:", fullPayload);
+                        }
                     }
                 }
             }
-            // After stream finishes, if there was any remaining data in buffer that was a valid data line (unlikely if stream ends cleanly)
-            // it could be processed here. However, typically the stream ends after the last complete message.
+            // After the loop, if 'buffer' still contains data, it's an incomplete event.
+            // It will be processed in the next iteration when more data arrives, or discarded if the stream ends.
+            // No special handling needed here for the remainder in 'buffer' because the stream ending (done=true)
+            // is the ultimate terminator.
 
         } else { // Non-streaming path
             const responseData = await apiResponse.json();
@@ -1097,75 +1252,96 @@ async function getToolDefinition(name) {
 }
 
 // Generic function to call a user-defined endpoint
-async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, originalToolName = null, mcpProxyUrlBase = null) { // Added userDefinedMethod parameter
-    console.log(`Background: Calling user-defined endpoint: ${endpointUrl} with args:`, args);
+async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, originalToolName = null, mcpProxyUrlBase = null) {
+    let callType = "Direct HTTP Webhook";
+    if (mcpProxyUrlBase) {
+        callType = "MCP Proxy Call via HTTP Webhook";
+    }
+    console.log(`Background: ${callType} - Initializing for tool '${originalToolName || 'N/A'}'. Endpoint/Path: ${endpointUrl}, Args:`, args);
+
     try {
         let finalEndpointUrl = endpointUrl;
-        let finalFetchOptions = { // Initialize with common headers
+        let finalFetchOptions = {
             headers: {
-                'Accept': 'application/json' // Always accept JSON response
+                'Accept': 'application/json'
             }
         };
-        let finalArgs = args;
+        let bodyForLogging = null; // For safe logging
 
-        if (mcpProxyUrlBase && isValidURL(mcpProxyUrlBase)) {
+        if (mcpProxyUrlBase) { // MCP Proxy Call
+            if (!isValidURL(mcpProxyUrlBase)) { // Should be validated before, but good for safety
+                throw new Error(`Invalid MCP Proxy URL Base: ${mcpProxyUrlBase}`);
+            }
             try {
                 finalEndpointUrl = new URL(endpointUrl, mcpProxyUrlBase).href;
-                console.log(`Background: MCP Tool detected. Constructed proxy URL: ${finalEndpointUrl}`);
-                // For MCP proxy, always POST a JSON payload with tool name and args
-                finalFetchOptions.method = 'POST'; // Override method to POST for MCP proxy
-                finalFetchOptions.headers['Content-Type'] = 'application/json';
-                finalArgs = { tool_name: originalToolName, arguments: args }; // Structure payload for MCP proxy
-                finalFetchOptions.body = JSON.stringify(finalArgs);
-                console.log(`Background: MCP Tool - Method forced to POST. Payload:`, finalArgs);
+                console.log(`Background: ${callType} - Constructed proxy URL: ${finalEndpointUrl}`);
             } catch (e) {
-                console.error(`Background: Error constructing MCP proxy URL from base '${mcpProxyUrlBase}' and path '${endpointUrl}':`, e);
+                console.error(`Background: ${callType} - Error constructing MCP proxy URL from base '${mcpProxyUrlBase}' and path '${endpointUrl}':`, e);
                 throw new Error(`Invalid MCP Proxy URL configuration: ${e.message}`);
             }
-        } else {
-            // Existing logic for non-MCP tools (handling GET/POST based on args and userDefinedMethod)
+
+            finalFetchOptions.method = 'POST';
+            finalFetchOptions.headers['Content-Type'] = 'application/json';
+            const proxyPayload = { tool_name: originalToolName, arguments: args };
+            finalFetchOptions.body = JSON.stringify(proxyPayload);
+            bodyForLogging = proxyPayload; // Safe to log this structured payload
+            console.log(`Background: ${callType} - Method: POST, Payload:`, bodyForLogging);
+
+        } else { // Direct HTTP Webhook
             const isEmptyArgs = !args || Object.keys(args).length === 0;
             let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
             method = method.toUpperCase();
             finalFetchOptions.method = method;
-            console.log(`Background: Using method ${method} (User defined: ${userDefinedMethod || 'Auto'}) for endpoint ${finalEndpointUrl}`);
+            console.log(`Background: ${callType} - Method: ${method} (User defined: ${userDefinedMethod || 'Auto'})`);
 
             if (method === 'GET' && !isEmptyArgs) {
-                const queryParams = new URLSearchParams(finalArgs).toString();
+                const queryParams = new URLSearchParams(args).toString();
                 finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
-                console.log(`Background: Appended query params for GET request: ${queryParams}`);
+                console.log(`Background: ${callType} - Appended query params for GET request: ${queryParams}`);
             } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
                 finalFetchOptions.headers['Content-Type'] = 'application/json';
-                finalFetchOptions.body = JSON.stringify(finalArgs);
+                finalFetchOptions.body = JSON.stringify(args);
+                // Consider what is safe to log from 'args' if it can be very large or sensitive.
+                // For now, we'll log it, assuming typical tool arguments are not overly sensitive.
+                bodyForLogging = args;
             }
+             // For DELETE, body is typically empty. If args are used, they'd be in URL path (tool definition's responsibility).
         }
-        // For DELETE, args might be used in the URL path (not handled here) or ignored, body is typically empty.
-        // If args are needed for DELETE, the user should construct the endpointUrl accordingly in the tool definition.
         
-        console.log("Background: Webhook Fetch Details:", { endpointUrl: finalEndpointUrl, fetchOptions: finalFetchOptions });
+        console.log(`Background: ${callType} - Fetching. URL: ${finalEndpointUrl}, Options:`, { method: finalFetchOptions.method, headers: finalFetchOptions.headers, body: bodyForLogging /* Log controlled body */ });
 
-        const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
+        const response = await fetch(finalEndpointUrl, finalFetchOptions);
 
+        console.log(`Background: ${callType} - Response Status: ${response.status}`);
         if (!response.ok) {
             let errorBody = '';
             try {
-                errorBody = await response.text(); // Try to get error details from response body
-            } catch (_) { /* Ignore if body cannot be read */ }
+                errorBody = await response.text();
+                console.error(`Background: ${callType} - Error response body:`, errorBody);
+            } catch (e) {
+                console.error(`Background: ${callType} - Could not read error response body:`, e);
+            }
             throw new Error(`HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim());
         }
 
-        // Attempt to parse response as JSON, fall back to text if not JSON
         const contentType = response.headers.get('content-type');
+        let responseData;
         if (contentType && contentType.includes('application/json')) {
-            return await response.json();
+            responseData = await response.json();
+            console.log(`Background: ${callType} - Parsed JSON response.`);
         } else {
-            return await response.text();
+            responseData = await response.text();
+            console.log(`Background: ${callType} - Received text response.`);
         }
+        return responseData;
 
     } catch (error) {
-        console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
-        // Rethrow a more specific error message
-        throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
+        // Catch both network errors from fetch() and explicitly thrown errors (e.g., HTTP error)
+        console.error(`Background: ${callType} - Error during endpoint call to ${endpointUrl || mcpProxyUrlBase}:`, error.message);
+        // Rethrow a new error to ensure consistent error structure for the caller,
+        // or just rethrow if the caught error is already well-structured.
+        // For now, rethrowing a slightly more specific message.
+        throw new Error(`Failed to call ${callType} endpoint (${endpointUrl}): ${error.message}`);
     }
 }
 
@@ -1423,100 +1599,92 @@ chrome.scripting.executeScript({
         });
         return true;
     } else if (request.action === 'executePromptPaulTool') {
-        const { id, name, arguments: argsString } = request.toolCall;
-        console.log(`Background: Received request to execute tool '${name}' with id '${id}' (executePromptPaulTool entry)`);
+        const { id, name, arguments: argsString } = request.toolCall; // 'id' here is the LLM tool_call_id
+        console.log(`Background: Received 'executePromptPaulTool'. Tool Name: '${name}', Tool Call ID: '${id}', Raw Arguments: '${argsString}'`);
 
         (async () => {
+            let result, errorMsg;
             try {
                 const allTools = await getAllToolDefinitions();
                 const toolDefinition = allTools.find(t => t.name === name);
 
                 if (!toolDefinition) {
-                    throw new Error(`Tool definition for '${name}' not found in storage.`);
+                    throw new Error(`Tool definition for '${name}' not found in local storage.`);
                 }
 
                 let argsObject;
                 try {
                     argsObject = JSON.parse(argsString || '{}');
+                    console.log(`Background: Parsed arguments for tool '${name}':`, argsObject);
                 } catch (parseError) {
-                    throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
+                    throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}. Parse Error: ${parseError.message}`);
                 }
 
-                // === NEW MCP LOGIC STARTS HERE ===
                 if (toolDefinition.mcpServerUrl && toolDefinition.mcpServerUrl.trim() !== "") {
-                    console.log(`Executing '${name}' as an MCP tool via ${toolDefinition.mcpServerUrl}`);
-                    try {
-                        const session = await getMcpSession(toolDefinition.mcpServerUrl);
-                        if (!session || !session.initialized) {
-                            throw new Error("MCP session could not be initialized.");
-                        }
-                        
-                        // Add debug logging for MCP tool execution
-                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
-                        
-                        // Validate that the server supports this tool
-                        // Check if tools exists and is an array before using .some()
-                        const serverTools = session.tools;
-                        if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
-                            console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
-                            throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
-                        }
-
-                        const requestId = `mcp-tc-${Date.now()}`;
-                        const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
-
-                        // Assuming mcpServerUrl is the direct JSON-RPC endpoint for MCP.
-                        const mcpResponse = await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
-
-                        // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
-                        // The actual data might be in mcpResponse.result.content or just mcpResponse.result
-                        // For now, sending mcpResponse.result as per the generic structure.
-                        // The structure of 'result' from 'tools/call' should be: { content: "...", isError: false/true }
-                        // So, mcpResponse.result should be this object.
-                        sendResponse({ result: mcpResponse.result });
-
-                    } catch (mcpError) {
-                        console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
-                        // Enhanced error logging for TypeErrors
-                        // The existing mcpError.details logging seems correct as per the requirement.
-                        // The requirement states: "ensure the console.error in the catch (mcpError) block ... correctly logs mcpError.details if it exists, which it already seems to do."
-                        // The existing line is: console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details);
-                        // This already logs mcpError.details if it exists.
-                        if (mcpError instanceof TypeError) {
-                            // This debug info is helpful for TypeErrors which was the original problem.
-                            console.error('MCP Capabilities Debug Info during TypeError:', {
-                                serverCapabilities: session?.serverCapabilities, // Use optional chaining for session as well
-                                tools: session?.serverCapabilities?.tools
-                            });
-                        }
-                        let userFriendlyMessage;
-                        if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
-                            userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
-                        } else {
-                            userFriendlyMessage = `Failed to execute MCP tool '${name}': ${mcpError.message || 'An unknown error occurred during MCP tool execution.'}`;
-                        }
-                        sendResponse({ error: userFriendlyMessage });
+                    // MCP Tool Execution Path
+                    if (toolDefinition.endpointUrl) {
+                        console.warn(`Background: Tool '${name}' has both mcpServerUrl and endpointUrl defined. Prioritizing mcpServerUrl.`);
                     }
-                } else if (toolDefinition.endpointUrl) { // Existing non-MCP tool logic
-                    console.log(`Executing '${name}' as a user-defined HTTP tool via ${toolDefinition.endpointUrl}`);
-                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
-                    console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
-                    sendResponse({ result: result });
-                } else { // Existing built-in tool logic (if any)
-                    const builtInFunction = toolImplementations[name];
-                    if (builtInFunction) {
-                        console.log(`Executing '${name}' as a built-in tool.`);
-                        const result = await builtInFunction(argsObject);
-                        console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
-                        sendResponse({ result: result });
+                    console.log(`Background: Executing '${name}' as DIRECT MCP Tool. MCP Server: ${toolDefinition.mcpServerUrl}`);
+
+                    const session = await getMcpSession(toolDefinition.mcpServerUrl);
+                    if (!session || !session.initialized) {
+                        throw new Error(`MCP session could not be initialized for ${toolDefinition.mcpServerUrl}.`);
+                    }
+
+                    const serverTools = session.tools; // Already fetched during initializeMcpSession
+                    if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
+                        console.warn(`Background: Tool '${name}' not listed in server capabilities from ${toolDefinition.mcpServerUrl}. Server tools:`, serverTools);
+                        throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}'.`);
+                    }
+
+                    const mcpRequestId = `mcp-tc-${Date.now()}`;
+                    const mcpPayload = createMcpToolCallPayload(name, argsObject, mcpRequestId); // Use 'name' from request, not definition.name
+                    console.log(`Background: Sending MCP 'tools/call' request for '${name}' to ${toolDefinition.mcpServerUrl}. Payload:`, JSON.stringify(mcpPayload, null, 2));
+
+                    const mcpResponse = await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
+                    console.log(`Background: Received MCP 'tools/call' response for '${name}':`, JSON.stringify(mcpResponse, null, 2));
+
+                    // Standard MCP tools/call response has the actual tool output in mcpResponse.result.content
+                    if (mcpResponse.result && mcpResponse.result.content !== undefined) {
+                        result = mcpResponse.result; // Keep the structure { content: "...", isError: ... }
                     } else {
-                        throw new Error(`Tool '${name}' is not properly configured: It has no mcpServerUrl, no endpointUrl, and no built-in implementation.`);
+                        // This case might indicate an issue with the MCP server's response format or the tool itself
+                        console.warn(`Background: MCP tool response for '${name}' is missing 'result.content'. Response:`, mcpResponse);
+                        result = mcpResponse.result; // Pass through the result as is, caller might expect it
+                    }
+
+                } else if (toolDefinition.endpointUrl) { // HTTP Webhook (Direct or MCP Proxy)
+                    // The mcpProxyUrlBase is part of the toolDefinition if this endpointUrl is for an MCP Proxy
+                    const mcpProxyUrlBase = toolDefinition.mcpProxyUrlBase || null;
+                    const executionType = mcpProxyUrlBase ? "MCP PROXY HTTP Webhook" : "DIRECT HTTP Webhook";
+                    console.log(`Background: Executing '${name}' as ${executionType}. Endpoint URL/Path: ${toolDefinition.endpointUrl}`);
+
+                    result = await callUserDefinedEndpoint(
+                        toolDefinition.endpointUrl,
+                        argsObject,
+                        toolDefinition.httpMethod,
+                        name, // originalToolName for MCP Proxy
+                        mcpProxyUrlBase
+                    );
+                    console.log(`Background: ${executionType} tool '${name}' executed. Result:`, result);
+
+                } else { // Built-in JS tool (fallback)
+                    console.log(`Background: Executing '${name}' as BUILT-IN JS Tool.`);
+                    const builtInFunction = toolImplementations[name];
+                    if (builtInFunction && typeof builtInFunction === 'function') {
+                        result = await builtInFunction(argsObject);
+                        console.log(`Background: Built-in JS tool '${name}' executed. Result:`, result);
+                    } else {
+                        throw new Error(`Tool '${name}' is not configured for MCP, HTTP Webhook, and no built-in JS implementation found.`);
                     }
                 }
-                // === MCP LOGIC ENDS HERE ===
 
-            } catch (error) { // General error catch for executePromptPaulTool
-                console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
+                console.log(`Background: Tool '${name}' execution successful. Final result to send:`, result);
+                sendResponse({ result: result });
+
+            } catch (error) {
+                console.error(`Background: Error processing tool '${name}' in 'executePromptPaulTool':`, error.message, error.stack);
                 // Provide more detailed error message for MCP tools
                 let errorMessage = error.message || 'Tool processing failed';
                 if (error.details) {
