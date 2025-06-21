@@ -918,29 +918,18 @@ function setupToolHandlers() {
   const toolHttpMethodEl = document.getElementById('toolHttpMethod');
   const toolMcpProxyUrlEl = document.getElementById('toolMcpProxyUrl'); // Get the element
   const fetchMcpToolInfoBtn = document.getElementById('fetchMcpToolInfoBtn');
-  const toolDescriptionEl = document.getElementById('toolDescription');
-  const toolParametersEl = document.getElementById('toolParameters');
-  const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
-  const toolParametersSourceEl = document.getElementById('toolParametersSource');
-  const clearMcpFetchedInfoBtn = document.getElementById('clearMcpFetchedInfoBtn');
   const MCP_PROTOCOL_VERSION = "0.1.0"; // Defined MCP_PROTOCOL_VERSION
-
-  function resetMcpFetchUI(failureReason) {
-    toolDescriptionEl.readOnly = false;
-    toolParametersEl.readOnly = false;
-    toolDescriptionEl.classList.remove('read-only-mcp');
-    toolParametersEl.classList.remove('read-only-mcp');
-    toolDescriptionSourceEl.textContent = 'Source: Local fallback (' + failureReason + ')';
-    toolParametersSourceEl.textContent = 'Source: Local fallback (' + failureReason + ')';
-    toolDescriptionSourceEl.style.display = 'block';
-    toolParametersSourceEl.style.display = 'block';
-    clearMcpFetchedInfoBtn.style.display = 'none';
-  }
 
   function updateToolFieldStates() {
     const mcpUrl = toolMcpServerUrlEl.value.trim();
     const endpointUrl = toolEndpointUrlEl.value.trim();
     // const mcpProxyUrl = toolMcpProxyUrlEl.value.trim(); // Not strictly needed for disabling logic here but good for context
+    const toolDescriptionEl = document.getElementById('toolDescription');
+    const toolParametersEl = document.getElementById('toolParameters');
+    const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
+    const toolParametersSourceEl = document.getElementById('toolParametersSource');
+    const clearMcpFetchedInfoBtn = document.getElementById('clearMcpFetchedInfoBtn');
+
     if (mcpUrl) {
       toolEndpointUrlEl.disabled = true;
       toolHttpMethodEl.disabled = true;
@@ -1289,14 +1278,15 @@ function setupToolHandlers() {
       fetchMcpToolInfoBtn.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size: 1em;">hourglass_empty</span> Fetching...';
       showStatus("Fetching tool information...", false, true); // Initial toast
 
-      // Reset UI elements before fetch attempt
-      toolDescriptionEl.readOnly = false;
-      toolParametersEl.readOnly = false;
-      toolDescriptionEl.classList.remove('read-only-mcp');
-      toolParametersEl.classList.remove('read-only-mcp');
+      document.getElementById('toolDescription').readOnly = false;
+      document.getElementById('toolParameters').readOnly = false;
+      document.getElementById('toolDescription').classList.remove('read-only-mcp');
+      document.getElementById('toolParameters').classList.remove('read-only-mcp');
 
       try {
         const encodedToolName = encodeURIComponent(toolNameValue);
+        // Assuming MCP specification might use a path like /tools/{tool_name}
+        // This is an assumption; the actual MCP spec might differ.
         const requestUrl = `${toolMcpServerUrl.endsWith('/') ? toolMcpServerUrl : toolMcpServerUrl + '/'}tools/${encodedToolName}`;
 
         const response = await fetch(requestUrl, {
@@ -1307,61 +1297,52 @@ function setupToolHandlers() {
           }
         });
 
-        const contentType = response.headers.get('content-type');
-
         if (response.ok) {
-          if (contentType && contentType.toLowerCase().includes('application/json')) {
-            try {
-              const data = await response.json();
-              if (data && typeof data.name === 'string' && typeof data.description === 'string' && data.inputSchema && typeof data.inputSchema === 'object') {
-                toolDescriptionEl.value = data.description;
-                toolParametersEl.value = JSON.stringify(data.inputSchema, null, 2);
-
-                toolDescriptionEl.readOnly = true;
-                toolParametersEl.readOnly = true;
-                toolDescriptionEl.classList.add('read-only-mcp');
-                toolParametersEl.classList.add('read-only-mcp');
-
-                toolDescriptionSourceEl.textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
-                toolParametersSourceEl.textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
-                toolDescriptionSourceEl.style.display = 'block';
-                toolParametersSourceEl.style.display = 'block';
-                clearMcpFetchedInfoBtn.style.display = 'inline-block';
-                showStatus('Tool information fetched and populated successfully!', false, true);
-              } else {
-                console.error('Fetched data structure from MCP server is not as expected. Received data:', JSON.stringify(data, null, 2));
-                showStatus('Fetched data from server is not a valid MCP Tool definition. See console for details.', true);
-                resetMcpFetchUI('Invalid data structure');
-              }
-            } catch (jsonError) { // Catches errors from response.json()
-              console.error('Error parsing JSON response from MCP server:', jsonError);
-              showStatus('Failed to parse tool information: Server returned malformed JSON.', true);
-              resetMcpFetchUI('Malformed JSON');
-            }
+          const data = await response.json();
+          if (data && typeof data.name === 'string' && typeof data.description === 'string' && data.inputSchema && typeof data.inputSchema === 'object') {
+            document.getElementById('toolDescription').value = data.description;
+            document.getElementById('toolParameters').value = JSON.stringify(data.inputSchema, null, 2);
+            // Apply read-only and styling for fetched fields
+            ['toolDescription', 'toolParameters'].forEach(id => {
+                const el = document.getElementById(id);
+                el.readOnly = true;
+                el.classList.add('read-only-mcp'); // Using existing class, ensure CSS handles it
+            });
+            document.getElementById('toolDescriptionSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
+            document.getElementById('toolParametersSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
+            document.getElementById('toolDescriptionSource').style.display = 'block';
+            document.getElementById('toolParametersSource').style.display = 'block';
+            document.getElementById('clearMcpFetchedInfoBtn').style.display = 'inline-block'; // Show clear button
+            showStatus('Tool information fetched and populated successfully!', false, true);
           } else {
-            showStatus('Failed to fetch: Server returned unexpected data format (expected JSON). Received: ' + (contentType || 'unknown') + '.', true);
-            resetMcpFetchUI('Non-JSON response');
+            console.error('Fetched data structure from MCP server is not as expected. Received data:', JSON.stringify(data, null, 2));
+            showStatus('Fetched data from server is not a valid MCP Tool definition or tool not found. See console for details.', true);
+            document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (Invalid data from MCP Server).';
+            document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (Invalid data from MCP Server).';
+            document.getElementById('toolDescriptionSource').style.display = 'block';
+            document.getElementById('toolParametersSource').style.display = 'block';
+            document.getElementById('clearMcpFetchedInfoBtn').style.display = 'none';
           }
         } else {
-          showStatus(`Fetch failed: Server responded with status ${response.status}.`, true);
-          resetMcpFetchUI('Server error ' + response.status);
+          showStatus(`Failed to fetch tool information. Server responded with status ${response.status}. Details in console.`, true);
+          document.getElementById('toolDescriptionSource').textContent = `Source: Local fallback (Error: ${response.status}).`;
+          document.getElementById('toolParametersSource').textContent = `Source: Local fallback (Error: ${response.status}).`;
+          document.getElementById('toolDescriptionSource').style.display = 'block';
+          document.getElementById('toolParametersSource').style.display = 'block';
+          document.getElementById('clearMcpFetchedInfoBtn').style.display = 'none';
         }
-      } catch (error) { // Catches network errors or other issues with fetch itself
+      } catch (error) {
         console.error('Error fetching MCP tool info:', error);
-        // Check if it's a SyntaxError (which implies it was from response.json() if not caught by inner try-catch)
-        // However, the inner try-catch for response.json() should handle SyntaxError specifically.
-        // This outer catch is more for network errors or if response.json() itself wasn't the issue but something else.
-        if (error instanceof SyntaxError) { // Should ideally be caught by the inner try-catch
-            showStatus('Failed to parse tool information: Server returned malformed JSON.', true);
-            resetMcpFetchUI('Malformed JSON');
-        } else {
-            let errorMessage = error.message || 'Network error or server unreachable.';
-            if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
-               errorMessage = 'Network error or server unreachable. Check CORS policy and server status. See browser console for details.';
-            }
-            showStatus(`Error fetching tool information: ${errorMessage}.`, true);
-            resetMcpFetchUI('Network/fetch error');
+        let errorMessage = error.message || 'Network error or server unreachable.';
+        if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+           errorMessage = 'Network error or server unreachable. Check CORS policy and server status. See browser console for details.';
         }
+        showStatus(`Error fetching tool information: ${errorMessage}. Check console for details.`, true);
+        document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (Fetch error).';
+        document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (Fetch error).';
+        document.getElementById('toolDescriptionSource').style.display = 'block';
+        document.getElementById('toolParametersSource').style.display = 'block';
+        document.getElementById('clearMcpFetchedInfoBtn').style.display = 'none';
       } finally {
         fetchMcpToolInfoBtn.disabled = false;
         fetchMcpToolInfoBtn.innerHTML = originalButtonText; // Restore original button content
@@ -1370,8 +1351,14 @@ function setupToolHandlers() {
     });
   }
 
+  const clearMcpFetchedInfoBtn = document.getElementById('clearMcpFetchedInfoBtn');
   if (clearMcpFetchedInfoBtn) {
     clearMcpFetchedInfoBtn.addEventListener('click', () => {
+      const toolDescriptionEl = document.getElementById('toolDescription');
+      const toolParametersEl = document.getElementById('toolParameters');
+      const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
+      const toolParametersSourceEl = document.getElementById('toolParametersSource');
+
       toolDescriptionEl.value = '';
       toolParametersEl.value = '';
 
@@ -1382,9 +1369,11 @@ function setupToolHandlers() {
 
       toolDescriptionSourceEl.textContent = 'Source: Manual Input';
       toolParametersSourceEl.textContent = 'Source: Manual Input';
-      toolDescriptionSourceEl.style.display = 'block'; // Keep source notes visible
-      toolParametersSourceEl.style.display = 'block'; // Keep source notes visible
-      clearMcpFetchedInfoBtn.style.display = 'none'; // Hide the clear button itself
+      // Keep source notes visible to indicate it's now manual
+      toolDescriptionSourceEl.style.display = 'block';
+      toolParametersSourceEl.style.display = 'block';
+
+      clearMcpFetchedInfoBtn.style.display = 'none';
       showStatus("Fetched MCP info cleared. You can now edit description and parameters manually.", false, true);
     });
   }
