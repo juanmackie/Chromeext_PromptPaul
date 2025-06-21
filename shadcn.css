@@ -11,6 +11,7 @@
   display: flex;
   height: 2.5rem; /* Default height from original theme context */
   width: 100%;
+<<<<<<< HEAD
   padding: 0.5rem 1rem; /* Default padding */
   border-radius: var(--radius-md, calc(var(--radius) - 2px)); /* Using theme radius */
   border: 1px solid var(--input); /* Using theme variable --input for borders */
@@ -19,12 +20,26 @@
   font-size: 0.875rem; /* Default font size */
   transition: border-color 0.3s ease, box-shadow 0.3s ease; /* Original transition */
   /* box-shadow: var(--shadow-xs); Removed to match original shadcn appearance more closely */
+=======
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 .shadcn-input:focus {
   outline: none;
+<<<<<<< HEAD
   border-color: var(--ring); /* Using theme variable --ring for focus */
   box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2); /* Using RGB of #0089d0 */
+=======
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 .shadcn-textarea {
@@ -32,10 +47,17 @@
   width: 100%;
   min-height: 80px;
   padding: 0.5rem 1rem;
+<<<<<<< HEAD
   border-radius: var(--radius-md, calc(var(--radius) - 2px));
   border: 1px solid var(--input);
   background-color: var(--background);
   color: var(--foreground);
+=======
+  border-radius: 0.375rem;
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
   font-size: 0.875rem;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
   /* box-shadow: var(--shadow-xs); Removed */
@@ -43,13 +65,19 @@
 
 .shadcn-textarea:focus {
   outline: none;
+<<<<<<< HEAD
   border-color: var(--ring);
   box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2); /* Using RGB of #0089d0 */
+=======
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 .shadcn-checkbox {
   height: 1rem;
   width: 1rem;
+<<<<<<< HEAD
   border-radius: var(--radius-sm, calc(var(--radius) - 4px));
   border: 1px solid var(--border);
   background-color: var(--background); /* Or var(--input) if preferred for unchecked state */
@@ -82,4 +110,14 @@
 .shadcn-checkbox:focus {
   outline: none;
   box-shadow: 0 0 0 2px var(--ring); /* Focus ring using theme color */
+=======
+  border-radius: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  background-color: hsl(var(--background));
+}
+
+.shadcn-checkbox:checked {
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }

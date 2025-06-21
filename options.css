@@ -1,4 +1,5 @@
 :root {
+<<<<<<< HEAD
   --background: #f3faff;
   --foreground: #00182a;
   --card: #ecf3f8;
@@ -129,6 +130,55 @@
   --border-color: var(--border);
   --font-family: var(--font-sans);
   --selection-color: var(--accent); /* Added from old dark theme */
+=======
+  /* Shadcn theme variables */
+  --background: 0 0% 100%;
+  --foreground: 222.2 47.4% 11.2%;
+  --primary: 194 100% 27%; /* #006879 */
+  --primary-foreground: 0 0% 100%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 194 100% 27%;
+
+  /* Existing variables */
+  --brand-primary: #006879;
+  --brand-secondary: #4b6268;
+  --brand-background: #b8ecf9;
+  --brand-text: #333;
+  --surface-color: #ffffff;
+  --background-color: #f8fafc;
+  --text-color: #1e293b;
+  --border-color: #004e5b;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
+  --font-family: 'Inter', sans-serif;
+}
+
+.dark {
+  /* Shadcn dark theme */
+  --background: 224 71% 4%;
+  --foreground: 213 31% 91%;
+  --primary: 194 100% 40%;
+  --primary-foreground: 0 0% 100%;
+  --border: 216 34% 17%;
+  --input: 216 34% 17%;
+  --ring: 194 100% 40%;
+
+  /* Existing dark theme */
+  --brand-primary: #004d61;
+  --selection-color: #88d0ec;
+  --brand-secondary: #1c3439;
+  --brand-background: #181a20;
+  --brand-text: #e0e6f0;
+  --surface-color: #23272f;
+  --background-color: #181a20;
+  --text-color: #e0e6f0;
+  --border-color: #353a45;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 /*
@@ -376,6 +426,7 @@ button:disabled, .button:disabled {
   box-shadow: none;
 }
 
+<<<<<<< HEAD
 /* Specific button styles from original theme */
 .ko-fi-button, .feedback-button, #save, .save-instruction-button, .export-button, .import-button, .edit-btn, .edit-tool-btn, .pin-btn {
   border-radius: 1.5rem; /* Specific buttons had more rounding */
@@ -460,10 +511,109 @@ tbody tr:hover {
 }
 .dark #instructionsTable tbody tr:nth-child(even) {
   background: var(--surface-color) !important; /* Original dark even row */
+=======
+.ko-fi-button { /*Coffee */
+  background-color: #004e5b;
+  color: #a8ecff;
+  margin-bottom: 1.5rem;
+  width: 192.93px;
+  height: 47.81px;
+  border-radius: 1.5rem;
+}
+
+.save-button {
+  background-color: #334a50;
+  color: #cee7ee;
+  border-radius: 1.5rem;
+}
+
+/* Custom styles for Save Settings button */
+#save {
+  border-radius: 1.5rem !important;
+  background-color: #004e5b;
+  color: #a8ecff;
+}
+
+.save-instruction-button {
+  background-color: #334a50;
+  color: #cee7ee;
+  border-radius: 1.5rem;
+}
+
+.clear-form-button {
+  background-color: #ffdad6;
+  color: #93000a;
+  border-radius: 1.5rem;
+}
+
+.export-button {
+  background-color: #334a50;
+  color: #cee7ee;
+  border-radius: 1.5rem;
+}
+
+.import-button {
+  background-color: #334a50;
+  color: #cee7ee;
+  border-radius: 1.5rem;
+}
+
+.delete-tool-btn {
+ background-color: #ffdad6;
+ margin-top: 0.5rem;
+ margin-bottom: 0.5rem;
+ color: #93000a;
+ border-radius: 1.5rem;
+}
+
+.edit-btn {
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+  margin-top: 0.5rem;
+  background-color: #a8edff; /* Updated to match button-pin */
+  color: #004e5b;
+  border-radius: 1.5rem;
+}
+.edit-tool-btn {
+  border-radius: 1.5rem;
+  background-color: #a8edff; /* Updated to match button-pin */
+  color: #004e5b;
+}
+
+.delete-btn {
+  background-color: #ffdad6; /* Softer red */
+  color: #93000a;
+  border-radius: 1.5rem;
+}
+
+/* Custom styles for Delete Profile button */
+#deleteProfileButton {
+  background-color: #ffb4ab !important;
+  color: #690005 !important;
+  border-radius: 1.5rem;
+  margin-top: 0.5rem;
+}
+
+.revert-button {
+  background-color: #ffdad6; /* Red */
+  color: #93000a;
+  width: 192.93px;
+  height: 47.81px;
+  border-radius: 1.5rem;
+}
+
+.feedback-button {
+  background-color: #004e5b;
+  color: #a8ecff;
+  width: 192.93px;
+  height: 47.81px;
+  border-radius: 1.5rem;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 
 .status {
+<<<<<<< HEAD
   margin-top: 1rem; /* Restored */
   padding: 1.25rem; /* Restored */
   border-radius: 0.75rem; /* Restored */
@@ -498,6 +648,52 @@ tbody tr:hover {
   border-color: rgba(231, 76, 60, 0.9);
 }
 
+=======
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  display: none;
+  font-weight: 500;
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  max-width: 400px;
+  backdrop-filter: blur(8px);
+  animation: slideIn 0.3s ease-out;
+  z-index: 1000;
+  box-shadow: var(--shadow-md);
+  background-color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.status::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  border-radius: 0.75rem;
+}
+
+.success {
+  background-color: rgba(46, 204, 113, 0.9);
+  color: #ffffff;
+}
+
+.error {
+  background-color: rgba(231, 76, 60, 0.9);
+  color: #ffffff;
+}
+
+
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 @keyframes slideIn {
   from {
     transform: translateX(100%);
@@ -509,18 +705,77 @@ tbody tr:hover {
   }
 }
 
+<<<<<<< HEAD
 .button-group {
   display: flex;
   gap: 1rem; /* Restored */
   justify-content: flex-start;
   flex-wrap: wrap;
   margin-top: 1rem; /* Restored */
+=======
+
+#instructionsTable {
+  width: 100%;
+  border-collapse: collapse; /* Changed to collapse for a cleaner look */
+  margin-bottom: 1.5rem;
+  border-radius: 0.5rem;
+  overflow: hidden; /* Ensures rounded corners are respected */
+  box-shadow: var(--shadow-sm);
+}
+
+#instructionsTable thead {
+  background-color: var(--brand-secondary);
+  color: white;
+  font-weight: 500;
+}
+
+#instructionsTable th,
+#instructionsTable td {
+  padding: 0.9rem 1rem; /* Slightly increased padding */
+  text-align: left;
+}
+
+#instructionsTable tbody tr:nth-child(even) {
+  background-color: rgba(249, 250, 251, 0.7); /* Very light background for even rows */
+}
+body.dark-theme #instructionsTable tbody tr:nth-child(even) {
+  background: var(--surface-color) !important;
+}
+
+body.dark-theme #toolsTable {
+  color: var(--text-color) !important; /* Use the dark theme text color variable */
+}
+
+#instructionsTable tbody tr:hover {
+  background-color: rgba(240, 242, 245, 0.8); /* Lighter hover effect */
+}
+
+
+.instruction-form.card {
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.import-export.card {
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+
+.button-group {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 .button-group button {
   flex-grow: 1;
 }
 
+<<<<<<< HEAD
 footer {
   text-align: center;
   margin-top: 3rem; /* Restored */
@@ -536,10 +791,29 @@ footer a {
 }
 
 footer a:hover, footer a:focus {
+=======
+
+footer {
+  text-align: center;
+  margin-top: 3rem;
+  padding: 1.5rem;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+footer a {
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+footer a:hover {
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
   text-decoration: underline;
 }
 
 
+<<<<<<< HEAD
 /* Responsive adaptations - using original breakpoints and adjustments */
 @media (max-width: 640px) {
   body {
@@ -608,10 +882,102 @@ footer a:hover, footer a:focus {
 
 /* Specific button overrides from original theme */
 .improve-btn {
+=======
+@media (max-width: 640px) {
+  body {
+    padding: 1rem;
+  }
+
+  .container {
+    padding: 1rem;
+  }
+
+  .card {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+  }
+
+  h3 {
+    font-size: 1.25rem;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  label {
+    font-size: 0.9rem;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  textarea {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.95rem;
+  }
+
+  button {
+    width: 100%;
+    padding: 0.7rem 1.4rem;
+    font-size: 0.95rem;
+  }
+
+  .button-group {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  #instructionsTable th,
+  #instructionsTable td {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  footer {
+    margin-top: 2rem;
+    padding: 1rem;
+    font-size: 0.8rem;
+  }
+
+  .status {
+    bottom: 1rem;
+    right: 1rem;
+    max-width: 90%;
+    padding: 1rem;
+    font-size: 0.9rem;
+  }
+}
+
+.button-container {
+  display: flex;
+  gap: 1rem; /* Adjust the gap as needed for spacing */
+  flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+  margin-bottom: 1.5rem; /* Add some space below the buttons */
+}
+
+.button-container button {
+  flex-grow: 1;
+}
+
+.improve-btn {
+  margin-right: 0.1rem;
+  margin-bottom: 0.5rem;
+  background-color: #ff0000; /* Fallback color */
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
   background-image: linear-gradient(90deg,
       red, orange, yellow, green, blue, indigo, violet, red);
   background-size: 800%;
   animation: rainbow 10s linear infinite;
+<<<<<<< HEAD
   color: white;
   border: none;
   border-radius: 1.5rem; /* Ensured this is applied */
@@ -705,3 +1071,66 @@ footer a:hover, footer a:focus {
   --shadow-2xl: var(--shadow-2xl);
 }
 */
+=======
+  color: white; /* Ensure text is readable on rainbow background */
+  border-radius: 1.5rem;
+}
+
+@keyframes rainbow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+#toolHttpMethod {
+  border-radius: 1.5rem;
+}
+
+/* Ensure the specific paragraph with text-center is centered */
+.flex-col p.text-muted-foreground.text-center.mt-2 {
+    text-align: center;
+    width: 100%; /* Ensures the paragraph takes full width of its container to center text within */
+}
+
+/* Styles for Pin Button in Instructions Table */
+.pin-btn {
+  background-color: #a8edff;
+  color: #004e5b;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem; /* Adjust as needed */
+  vertical-align: middle; /* Align icon nicely with text in other cells */
+}
+
+.pin-btn .material-symbols-outlined {
+  font-size: 1.2rem; /* Adjust icon size as needed */
+  /* Optionally, add color here or handle through .pinned class */
+}
+
+/* Optional: Style for when a button is pinned */
+.pin-btn.pinned .material-symbols-outlined {
+  color: var(--brand-primary); /* Example: use brand color for pinned items */
+  /* Or use a specific fill/font variation for Material Symbols if applicable */
+}
+
+.mcp-sourced {
+  border-left: 3px solid var(--primary); /* Uses existing theme variable */
+  padding-left: 8px;
+  background-color: color-mix(in srgb, var(--primary) 5%, var(--background)); /* Slight tint */
+}
+.mcp-data-source-note {
+  font-size: 0.75rem;
+  color: var(--muted-foreground); /* Uses existing theme variable */
+  margin-top: -2px;
+  margin-bottom: 4px;
+}
+
+.read-only-mcp {
+  background-color: var(--border); /* Using a theme variable for a slightly different background */
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)

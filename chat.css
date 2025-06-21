@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /* Restored HSL/Hex Color Palette */
 :root {
   --background: #f3faff;
@@ -57,6 +58,19 @@
   /* Typography sizes (from previous attempt, can be adjusted) */
   --body-text: 0.875rem; /* Retaining from previous for baseline */
   --smallText: 0.75rem; /* Retaining from previous for baseline */
+=======
+body {
+    font-family: 'Inter', sans-serif; /* From inline style in HTML */
+    height: 100vh;
+    width: 100vw; /* Use vw to ensure it spans full viewport width */
+    display: flex;
+    flex-direction: row; /* For sidebar layout */
+    background-color: var(--background-color); /* From inline style in HTML */
+    color: var(--text-color); /* From inline style in HTML */
+    padding: 0;
+    margin: 0;
+    overflow: hidden; /* Prevent main window scrolling */
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 .dark {
@@ -127,6 +141,7 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
+<<<<<<< HEAD
     background-color: var(--sidebar);
     padding: 10px 5px; /* Original padding */
     box-shadow: var(--shadow-sm); /* Restored shadow, can be adjusted */
@@ -144,6 +159,23 @@ body {
     border-radius: 50%; /* Original playful circular buttons */
     background-color: var(--sidebar-accent);
     color: var(--sidebar-accent-foreground);
+=======
+    background-color: #ffffff; /* Slightly different shade */
+    padding: 10px 5px; /* More padding top/bottom */
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.quick-action-button {
+    width: 40px; /* Set fixed width to match height for square buttons */
+    height: 40px; /* Ensure fixed height */
+    margin-bottom: 5px; /* Reduce margin for closer buttons */
+    padding: 0; /* Remove padding for flex centering */
+    border: 1px solid #004d61;
+    border-radius: 5px;
+    background-color: #88d0ec;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -156,6 +188,7 @@ body {
 }
 
 .quick-action-button:hover {
+<<<<<<< HEAD
     background-color: var(--sidebar-primary);
     color: var(--sidebar-primary-foreground);
     border-color: var(--sidebar-ring);
@@ -166,8 +199,160 @@ body {
 .quick-action-button:focus {
     outline: none;
     box-shadow: 0 0 0 2px var(--sidebar-ring);
+=======
+    background-color: #e9e9e9;
+    border-color: #004d61;
 }
 
+#manage-pinned-actions-button {
+    margin-top: auto; /* Pushes this button to the bottom */
+    font-size: 1.8em; /* Adjust if it becomes too large */
+    font-weight: bold; /* Ensure boldness, inherits from .quick-action-button but can be explicit */
+    /* It will also become a flex centered button due to .quick-action-button style */
+}
+
+/* Ensure chat-container takes remaining width and manages its own scrolling */
+.chat-container {
+    flex-grow: 1;
+    height: 100vh; /* Ensure it spans the full viewport height */
+    display: flex; /* It's already a flex container, but ensure it for its children */
+    flex-direction: column; /* Stacks chat-area and input-area vertically */
+    overflow: hidden; /* Important to prevent double scrollbars */
+    /* width: auto; remove fixed width if any, flex-grow handles it */
+}
+
+/* Dark Theme Overrides */
+body.dark-theme {
+    --primary-color: #7ab7ff;
+    --selection-color: #7f7f7f;
+    --surface-color: #000000;
+    --background-color: #181a20;
+    --text-color: #7f7f7f;
+    --border-color: #353a45;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+    --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+}
+
+body.dark-theme {
+    background-color: var(--background-color) !important;
+    color: var(--text-color) !important;
+}
+
+body.dark-theme #quick-actions-sidebar {
+    background-color: #2c2c2c; /* Darker sidebar for dark theme */
+    box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+}
+
+body.dark-theme .quick-action-button {
+    background-color: #000000;
+    border-color: #000000;
+    color: #e0e0e0;
+}
+
+body.dark-theme .quick-action-button:hover {
+    background-color: #4a4a4a;
+    border-color: #666;
+}
+
+body.dark-theme .chat-container,
+body.dark-theme #input-area,
+body.dark-theme .message,
+body.dark-theme .llm-message,
+body.dark-theme .user-message {
+    background-color: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-theme #chat-area {
+    background-color: #000000(--background-color) !important;
+}
+
+body.dark-theme .llm-message {
+    background-color: #23272f !important;
+}
+
+body.dark-theme .user-message {
+    background-color: #2a3b4d !important;
+    color: #e0e6f0 !important;
+}
+
+body.dark-theme button {
+    background-color: var(--primary-color) !important;
+    color: #fff !important;
+body.dark-theme #send-button {
+    border-radius: 1.5rem;
+    background-color: #004e5b;
+}
+}
+
+body.dark-theme #clear-button {
+    background-color: #b84c4c !important;
+}
+
+body.dark-theme pre,
+body.dark-theme code {
+    background-color: #23272f !important;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
+}
+
+body.dark-theme ::selection {
+    background: var(--selection-color);
+    color: #e0e6f0 !important;
+}
+
+.light {
+  --md-sys-color-primary: rgb(0 104 121);
+  --md-sys-color-surface-tint: rgb(0 104 121);
+  --md-sys-color-on-primary: rgb(255 255 255);
+  --md-sys-color-primary-container: rgb(168 237 255);
+  --md-sys-color-on-primary-container: rgb(0 78 91);
+  --md-sys-color-secondary: rgb(75 98 104);
+  --md-sys-color-on-secondary: rgb(255 255 255);
+  --md-sys-color-secondary-container: rgb(206 231 238);
+  --md-sys-color-on-secondary-container: rgb(51 74 80);
+  --md-sys-color-tertiary: rgb(86 93 126);
+  --md-sys-color-on-tertiary: rgb(255 255 255);
+  --md-sys-color-tertiary-container: rgb(221 225 255);
+  --md-sys-color-on-tertiary-container: rgb(62 69 101);
+  --md-sys-color-error: rgb(186 26 26);
+  --md-sys-color-on-error: rgb(255 255 255);
+  --md-sys-color-error-container: rgb(255 218 214);
+  --md-sys-color-on-error-container: rgb(147 0 10);
+  --md-sys-color-background: rgb(245 250 252);
+  --md-sys-color-on-background: rgb(23 29 30);
+  --md-sys-color-surface: rgb(245 250 252);
+  --md-sys-color-on-surface: rgb(23 29 30);
+  --md-sys-color-surface-variant: rgb(219 228 231);
+  --md-sys-color-on-surface-variant: rgb(63 72 75);
+  --md-sys-color-outline: rgb(111 121 123);
+  --md-sys-color-outline-variant: rgb(191 200 203);
+  --md-sys-color-shadow: rgb(0 0 0);
+  --md-sys-color-scrim: rgb(0 0 0);
+  --md-sys-color-inverse-surface: rgb(43 49 51);
+  --md-sys-color-inverse-on-surface: rgb(236 242 243);
+  --md-sys-color-inverse-primary: rgb(132 210 229);
+  --md-sys-color-primary-fixed: rgb(168 237 255);
+  --md-sys-color-on-primary-fixed: rgb(0 31 38);
+  --md-sys-color-primary-fixed-dim: rgb(132 210 229);
+  --md-sys-color-on-primary-fixed-variant: rgb(0 78 91);
+  --md-sys-color-secondary-fixed: rgb(206 231 238);
+  --md-sys-color-on-secondary-fixed: rgb(6 31 36);
+  --md-sys-color-secondary-fixed-dim: rgb(178 203 210);
+  --md-sys-color-on-secondary-fixed-variant: rgb(51 74 80);
+  --md-sys-color-tertiary-fixed: rgb(221 225 255);
+  --md-sys-color-on-tertiary-fixed: rgb(18 26 55);
+  --md-sys-color-tertiary-fixed-dim: rgb(190 197 235);
+  --md-sys-color-on-tertiary-fixed-variant: rgb(62 69 101);
+  --md-sys-color-surface-dim: rgb(213 219 221);
+  --md-sys-color-surface-bright: rgb(245 250 252);
+  --md-sys-color-surface-container-lowest: rgb(255 255 255);
+  --md-sys-color-surface-container-low: rgb(239 244 246);
+  --md-sys-color-surface-container: rgb(233 239 241);
+  --md-sys-color-surface-container-high: rgb(228 233 235);
+  --md-sys-color-surface-container-highest: rgb(222 227 229);
+}
 
 /* ====== CHAT AREA ====== */
 .chat-container {
@@ -193,16 +378,22 @@ body {
     background-color: var(--card); /* Card background */
     overflow-y: auto;
     scroll-behavior: smooth;
+<<<<<<< HEAD
     padding: var(--card-padding, 1rem); /* Padding inside the chat card */
     border: 1px solid var(--border);
     border-radius: var(--radius); /* Standard card radius */
     margin-bottom: var(--element-spacing);
     box-shadow: var(--shadow-md); /* Prominent shadow for the chat card */
+=======
+    z-index: 50;
+    padding-bottom: 20px; /* Reduced padding since height is calculated */
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 /* ====== INPUT AREA - Styled as a distinct card-like bar ====== */
 #input-area {
     display: flex;
+<<<<<<< HEAD
     padding: var(--compact-spacing); /* Compact padding for the input bar */
     background-color: var(--card); /* Card background for the input area */
     border-top: 1px solid var(--border);
@@ -210,10 +401,24 @@ body {
     gap: var(--compact-spacing);
     border-radius: var(--radius); /* Rounded corners for the input bar */
     margin-top: auto;
+=======
+    padding: 0.5rem;
+    padding-bottom: 1rem;
+    background-color: var(--surface-color);
+    position: fixed; /* Changed back to fixed */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+    z-index: 100; /* Higher z-index to ensure it's above other elements */
+    pointer-events: auto !important; /* Ensure clicks are registered */
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 #user-input { /* Input field itself */
     flex-grow: 1;
+<<<<<<< HEAD
     padding: 0.6rem 1rem; /* Original padding */
     border: 2px solid var(--input); /* Using input color for border */
     border-radius: 9999px; /* Original playful pill shape */
@@ -228,10 +433,55 @@ body {
     outline: none;
     border-color: var(--ring);
     box-shadow: 0 0 0 2px var(--ring), inset 0 1px 3px rgba(0,0,0,0.1);
+=======
+    margin-right: 0.5rem;
+    padding: 0.6rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 1.5rem;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    pointer-events: auto !important;
+}
+
+#send-button, #clear-button {
+    pointer-events: auto !important; /* Explicitly enable pointer events */
+}
+
+#toast-container {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    pointer-events: none;
+    width: 80%;
+    max-width: 600px;
+    background-color: transparent !important;
+}
+
+.toast {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(51, 51, 51, 0.95) !important;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    transition: opacity 0.5s;
+    max-width: 80%;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    z-index: 1;
+}
+
+.toast.fade-out {
+    opacity: 0;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 /* ====== MESSAGES - Restoring distinct bubble appearance ====== */
 .message {
+<<<<<<< HEAD
     display: flex;
     flex-direction: column;
     margin-bottom: var(--compact-spacing); /* Tighter spacing between messages */
@@ -263,6 +513,50 @@ body {
     align-self: flex-end;
     border-radius: 1rem 1rem 0.25rem 1rem; /* Original chat bubble shape */
     border: 1px solid var(--primary);
+=======
+    display: flex; /* Use flexbox for message alignment */
+    flex-direction: column; /* Stack message content vertically */
+    margin-bottom: 0.5rem;
+    padding: 0.8rem 1.2rem; /* Increased padding for better text framing */
+    border-radius: 0.6rem;
+    /* word-wrap: break-word; */
+    /* max-width: 95%; /* Limit message width */
+  width: auto;
+  max-width: 95%;
+}
+
+.llm-message {
+    background-color: #dbdbdb; /* Light grey for LLM messages */
+    align-self: flex-end; /* Align LLM messages to the right */
+}
+
+.llm-message img {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 5px;
+    /* Removed margin-bottom to prevent vertical spacing */
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    z-index: 10;
+}
+
+.llm-message .copy-icons-container {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 5px;
+    align-items: center;
+    /* Removed padding-bottom to prevent extra vertical space */
+}
+
+.user-message {
+    background-color: #b8ecf9; /* Primary color for user messages */
+    color: rgb(0, 0, 0); /* White text for user messages */
+    align-self: flex-start; /* Align user messages to the left */
+ width: fit-content;
+  max-width: 95%;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 /* Code blocks within messages */
@@ -283,11 +577,19 @@ body {
 
 /* ====== BUTTONS - Restored original playful feel ====== */
 button {
+<<<<<<< HEAD
     background-color: var(--primary);
     color: var(--primary-foreground);
     padding: 0.6rem 1.2rem; /* Original padding */
     border: none;
     border-radius: 9999px; /* Original playful pill shape */
+=======
+    background-color: var(--primary-color);
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 0.6rem;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
     cursor: pointer;
     font-weight: 500; /* Original font weight */
     font-size: var(--body-text);
@@ -312,6 +614,7 @@ button:active {
 }
 
 #send-button {
+<<<<<<< HEAD
     background-color: var(--secondary); /* Using secondary color for send */
     color: var(--secondary-foreground);
 }
@@ -375,6 +678,24 @@ button:active {
         border-right: none;
         border-bottom: 1px solid var(--sidebar-border);
     }
+=======
+    border-radius: 1.5rem;
+    background-color: #004e5b;
+    color: #a8ecff;
+}
+
+#clear-button {
+    margin-left: 0.5rem;
+    background-color: #ffb4ab !important;
+    color: #690005 !important;
+    border-radius: 1.5rem;
+    }
+
+#submitBtn {
+    background-color: #004e5b;
+    color: #a8ecff;
+}
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 
     .quick-action-button {
         width: 35px; /* Smaller buttons for mobile */
@@ -383,10 +704,104 @@ button:active {
         margin-bottom: 0;
     }
 
+<<<<<<< HEAD
     .main-content {
         padding: var(--compact-spacing);
     }
     #chat-area { margin-bottom: var(--compact-spacing); }
     .message { max-width: 95%; }
     #input-area { border-radius: 0; }
+=======
+body.sidebar-open #chat-area {
+    right: 300px; /* Adjust chat area when sidebar is open */
+}
+
+.dark {
+  --md-sys-color-primary: rgb(132 210 229);
+  --md-sys-color-surface-tint: rgb(132 210 229);
+  --md-sys-color-on-primary: rgb(0 54 63);
+  --md-sys-color-primary-container: rgb(0 78 91);
+  --md-sys-color-on-primary-container: rgb(168 237 255);
+  --md-sys-color-secondary: rgb(178 203 210);
+  --md-sys-color-on-secondary: rgb(28 52 57);
+  --md-sys-color-secondary-container: rgb(51 74 80);
+  --md-sys-color-on-secondary-container: rgb(206 231 238);
+  --md-sys-color-tertiary: rgb(190 197 235);
+  --md-sys-color-on-tertiary: rgb(39 47 77);
+  --md-sys-color-tertiary-container: rgb(62 69 101);
+  --md-sys-color-on-tertiary-container: rgb(221 225 255);
+  --md-sys-color-error: rgb(255 180 171);
+  --md-sys-color-on-error: rgb(105 0 5);
+  --md-sys-color-error-container: rgb(147 0 10);
+  --md-sys-color-on-error-container: rgb(255 218 214);
+  --md-sys-color-background: rgb(15 20 22);
+  --md-sys-color-on-background: rgb(222 227 229);
+  --md-sys-color-surface: rgb(15 20 22);
+  --md-sys-color-on-surface: rgb(222 227 229);
+  --md-sys-color-surface-variant: rgb(63 72 75);
+  --md-sys-color-on-surface-variant: rgb(191 200 203);
+  --md-sys-color-outline: rgb(137 146 149);
+  --md-sys-color-outline-variant: rgb(63 72 75);
+  --md-sys-color-shadow: rgb(0 0 0);
+  --md-sys-color-scrim: rgb(0 0 0);
+  --md-sys-color-inverse-surface: rgb(222 227 229);
+  --md-sys-color-inverse-on-surface: rgb(43 49 51);
+  --md-sys-color-inverse-primary: rgb(0 104 121);
+  --md-sys-color-primary-fixed: rgb(168 237 255);
+  --md-sys-color-on-primary-fixed: rgb(0 31 38);
+  --md-sys-color-primary-fixed-dim: rgb(132 210 229);
+  --md-sys-color-on-primary-fixed-variant: rgb(0 78 91);
+  --md-sys-color-secondary-fixed: rgb(206 231 238);
+  --md-sys-color-on-secondary-fixed: rgb(6 31 36);
+  --md-sys-color-secondary-fixed-dim: rgb(178 203 210);
+  --md-sys-color-on-secondary-fixed-variant: rgb(51 74 80);
+  --md-sys-color-tertiary-fixed: rgb(221 225 255);
+  --md-sys-color-on-tertiary-fixed: rgb(18 26 55);
+  --md-sys-color-tertiary-fixed-dim: rgb(190 197 235);
+  --md-sys-color-on-tertiary-fixed-variant: rgb(62 69 101);
+  --md-sys-color-surface-dim: rgb(15 20 22);
+  --md-sys-color-surface-bright: rgb(52 58 60);
+  --md-sys-color-surface-container-lowest: rgb(9 15 17);
+  --md-sys-color-surface-container-low: rgb(23 29 30);
+  --md-sys-color-surface-container: rgb(27 33 34);
+  --md-sys-color-surface-container-high: rgb(37 43 45);
+  --md-sys-color-surface-container-highest: rgb(48 54 55);
+}
+
+/* Custom dark theme toggle switch */
+#darkThemeToggle {
+  appearance: none;
+  width: 32px;
+  height: 20px;
+  background-color: #ccc;
+  border-radius: 10px;
+  position: relative;
+  transition: background-color 0.3s;
+  cursor: pointer;
+}
+
+#darkThemeToggle:checked {
+  background-color: #007bff;
+}
+
+#darkThemeToggle::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background-color: white;
+  border-radius: 50%;
+  top: 1px;
+  left: 1px;
+  transition: left 0.3s;
+}
+
+#darkThemeToggle:checked::before {
+  left: 13px;
+}
+
+/* Add style for instructionInput */
+#instructionInput {
+  border-radius: 1.5rem;
+>>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
