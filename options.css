@@ -1,136 +1,18 @@
-:root {
-<<<<<<< HEAD
-  --background: #f3faff;
-  --foreground: #00182a;
-  --card: #ecf3f8;
-  --card-foreground: #00182a;
-  --popover: #ecf3f8;
-  --popover-foreground: #00182a;
-  --primary: #0089d0;
-  --primary-foreground: #f3faff;
-  --secondary: #4aadc9;
-  --secondary-foreground: #f3faff;
-  --muted: #d3e0ea;
-  --muted-foreground: #49677d;
-  --accent: #00adba;
-  --accent-foreground: #000001;
-  --destructive: #f1003b;
-  --destructive-foreground: #f3faff;
-  --border: #bdd1e0;
-  --input: #d9e7f1;
-  --ring: #0089d0;
-  --chart-1: #0089d0;
-  --chart-2: #00adba;
-  --chart-3: #62b289;
-  --chart-4: #9fa5f9;
-  --chart-5: #c5b3ea;
-  --sidebar: #f3faff;
-  --sidebar-foreground: #00182a;
-  --sidebar-primary: #0089d0;
-  --sidebar-primary-foreground: #f3faff;
-  --sidebar-accent: #00adba;
-  --sidebar-accent-foreground: #000001;
-  --sidebar-border: #bdd1e0;
-  --sidebar-ring: #0089d0;
-  --font-sans: Poppins, sans-serif;
-  --font-serif: Playfair Display, serif;
-  --font-mono: Space Mono, monospace;
-  --radius: 0.5rem; /* This was from the new system, the restored one also had 0.5rem */
-  --shadow-2xs: 0px 3px 0px 0px hsl(330 70% 30% / 0.09);
-  --shadow-xs: 0px 3px 0px 0px hsl(330 70% 30% / 0.09);
-  --shadow-sm: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 1px 2px -1px hsl(330 70% 30% / 0.18);
-  --shadow: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 1px 2px -1px hsl(330 70% 30% / 0.18);
-  --shadow-md: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 2px 4px -1px hsl(330 70% 30% / 0.18);
-  --shadow-lg: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 4px 6px -1px hsl(330 70% 30% / 0.18);
-  --shadow-xl: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 8px 10px -1px hsl(330 70% 30% / 0.18);
-  --shadow-2xl: 0px 3px 0px 0px hsl(330 70% 30% / 0.45);
-
- /* The restored theme also had these aliases, keeping them for now */
-  --brand-primary: var(--primary);
-  --brand-secondary: var(--secondary);
-  --brand-background: var(--background);
-  --brand-text: var(--foreground);
-  --surface-color: var(--card);
-  --background-color: var(--background);
-  --text-color: var(--foreground);
-  --border-color: var(--border);
-  --font-family: var(--font-sans);
-
-  /* Spacing variables from the new system - may or may not be used by old layout.
-     Keeping them for now in case some new layout parts rely on them.
-     If issues arise, these might need removal or careful integration. */
-  --container-padding: 1.5rem;
-  --card-padding: 1.25rem; /* The old CSS used 2rem for cards, will address in card styling step */
-  --element-spacing: 1rem;
-  --compact-spacing: 0.5rem;
-  --field-spacing: 0.75rem;
-
-  /* Typography sizes from new system - check if they conflict */
-  --font-size-h1: 1.5rem; /* Old CSS: 2.5rem for h1 */
-  --font-size-h2: 1.25rem;
-  --font-size-h3: 1.125rem;
-  --font-size-body: 0.875rem; /* Old CSS: 1rem for inputs, 0.95rem for labels */
-  --font-size-small: 0.75rem;
-  --font-size-label: 0.75rem; /* Old CSS: 0.95rem */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.4rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
 }
 
-.dark {
-  --background: #000408;
-  --foreground: #c1e3fc;
-  --card: #010d16;
-  --card-foreground: #b1d3ec;
-  --popover: #010d16;
-  --popover-foreground: #b1d3ec;
-  --primary: #00b9ff;
-  --primary-foreground: #000408;
-  --secondary: #00b2de;
-  --secondary-foreground: #000408;
-  --muted: #062437;
-  --muted-foreground: #7494ab;
-  --accent: #00e1f0;
-  --accent-foreground: #000408;
-  --destructive: #ff0657;
-  --destructive-foreground: #000408;
-  --border: #00314d;
-  --input: #031826;
-  --ring: #00b9ff;
-  --chart-1: #00b9ff;
-  --chart-2: #00e1f0;
-  --chart-3: #3dca8d;
-  --chart-4: #a9adff;
-  --chart-5: #dabcff;
-  --sidebar: #000408;
-  --sidebar-foreground: #c1e3fc;
-  --sidebar-primary: #00b9ff;
-  --sidebar-primary-foreground: #000408;
-  --sidebar-accent: #00e1f0;
-  --sidebar-accent-foreground: #000408;
-  --sidebar-border: #00314d;
-  --sidebar-ring: #00b9ff;
-  --font-sans: Quicksand, sans-serif;
-  /* --font-serif and --font-mono are inherited from :root if not overridden */
-  --radius: 0.5rem;
-  --shadow-2xs: 0px 3px 0px 0px hsl(300 80% 50% / 0.09);
-  --shadow-xs: 0px 3px 0px 0px hsl(300 80% 50% / 0.09);
-  --shadow-sm: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 1px 2px -1px hsl(300 80% 50% / 0.18);
-  --shadow: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 1px 2px -1px hsl(300 80% 50% / 0.18);
-  --shadow-md: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 2px 4px -1px hsl(300 80% 50% / 0.18);
-  --shadow-lg: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 4px 6px -1px hsl(300 80% 50% / 0.18);
-  --shadow-xl: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 8px 10px -1px hsl(300 80% 50% / 0.18);
-  --shadow-2xl: 0px 3px 0px 0px hsl(300 80% 50% / 0.45);
-
-  /* Restored theme aliases for dark mode */
-  --brand-primary: var(--primary);
-  --brand-secondary: var(--secondary);
-  --brand-background: var(--background);
-  --brand-text: var(--foreground);
-  --surface-color: var(--card);
-  --background-color: var(--background);
-  --text-color: var(--foreground);
-  --border-color: var(--border);
-  --font-family: var(--font-sans);
-  --selection-color: var(--accent); /* Added from old dark theme */
-=======
+:root {
   /* Shadcn theme variables */
   --background: 0 0% 100%;
   --foreground: 222.2 47.4% 11.2%;
@@ -178,60 +60,123 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
-/*
-   The body.dark-theme specific overrides that existed before will largely be
-   covered by the .dark scope now. However, some might have had !important
-   or very specific selectors. These will be reviewed in subsequent steps
-   if cards/components don't look right under .dark.
-*/
+/* Dark Theme Overrides */
+body.dark-theme {
+  --brand-primary: #004d61;
+  --selection-color: #88d0ec;
+  --brand-secondary: #1c3439;
+  --brand-background: #181a20;
+  --brand-text: #e0e6f0;
+  --surface-color: #23272f;
+  --background-color: #181a20;
+  --text-color: #e0e6f0;
+  --border-color: #353a45;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
+}
 
-.material-symbols-outlined {
-  font-family: 'Material Symbols Outlined';
-  font-weight: normal;
-  font-style: normal;
-  font-size: 1.4rem; /* Consider making this responsive or themeable */
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  direction: ltr;
-  -webkit-font-smoothing: antialiased;
+body.dark-theme {
+  background-color: var(--brand-background) !important;
+  color: var(--brand-text) !important;
+}
+
+body.dark-theme .container,
+body.dark-theme .card,
+body.dark-theme .instruction-form.card,
+body.dark-theme .import-export.card,
+body.dark-theme .tools-card,
+body.dark-theme .config-card {
+  background: var(--surface-color) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme h1,
+body.dark-theme h2,
+body.dark-theme h3,
+body.dark-theme label {
+  color: var(--brand-text) !important;
+}
+
+body.dark-theme input,
+body.dark-theme textarea {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme button {
+  background-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+body.dark-theme .save-button,
+body.dark-theme .save-instruction-button {
+  background-color: #354a53!important;
+  color: #88d0ec!important;
+  border-radius: 1.5rem;
+}
+
+body.dark-theme .clear-form-button {
+  background-color: #b89c4c !important;
+}
+
+body.dark-theme .export-button,
+body.dark-theme .import-button {
+  background-color: #3a7bd5 !important;
+}
+
+body.dark-theme .delete-tool-btn,
+body.dark-theme .delete-btn {
+  background-color: #690005 !important;
+  color: #ffb4ab!important;
+}
+
+body.dark-theme .status {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme #instructionsTable thead {
+  background-color: var(--brand-secondary) !important;
+}
+
+body.dark-theme ::selection {
+  background: var(--selection-color);
 }
 
 body {
-  padding: 2rem; /* Restored original padding */
-  font-family: var(--font-family); /* Uses --font-sans from :root or .dark */
-  background-color: var(--background-color); /* Alias for --background */
-  color: var(--text-color); /* Alias for --foreground */
-  font-size: var(--font-size-body); /* Using the one from :root, adjust if needed */
+  padding: 2rem;
+  font-family: var(--font-family);
+  background-color: var(--brand-background);
+  color: var(--brand-text);
   line-height: 1.6;
-  transition: background-color 0.3s ease, color 0.3s ease; /* Restored original transition */
+  transition: background-color 0.3s ease;
 }
 
 .container {
-  max-width: 800px; /* Restored original max-width */
+  max-width: 800px;
   margin: 0 auto;
-  padding: 2rem; /* Restored original padding */
+  padding: 2rem;
 }
 
 .card {
-  background: var(--surface-color); /* Alias for --card */
-  color: var(--text-color); /* Card text color, using main text color */
-  border-radius: 1rem; /* Restored original card border-radius */
-  padding: 2rem; /* Restored original card padding */
-  margin-bottom: 2rem; /* Restored original margin */
-  box-shadow: var(--shadow-md); /* Using restored shadow */
-  border: 1px solid var(--border-color); /* Alias for --border */
+  background: var(--surface-color);
+  border-radius: 1rem;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   position: relative;
   overflow: hidden;
-  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-/* Reinstating the glassy effect for cards if desired, or remove if not part of the target look */
 .card::before {
   content: '';
   position: absolute;
@@ -241,277 +186,221 @@ body {
   bottom: 0;
   background: linear-gradient(
     120deg,
-    rgba(255,255,255,0.1) 0%, /* Adjusted for more subtlety on light cards */
-    rgba(255,255,255,0.0) 100%
+    rgba(255,255,255,0.2) 0%,
+    rgba(255,255,255,0.05) 100%
   );
   pointer-events: none;
-  border-radius: 1rem; /* Match card's border-radius */
+  border-radius: 1rem;
 }
-
-.dark .card::before {
-  background: linear-gradient(
-    120deg,
-    rgba(255,255,255,0.05) 0%, /* More subtle on dark cards */
-    rgba(255,255,255,0.0) 100%
-  );
-}
-
 
 h1 {
-  font-size: 2.5rem; /* Restored original h1 size */
-  font-weight: 600; /* Restored original font-weight */
-  margin-bottom: 2rem; /* Restored original margin */
-  color: var(--brand-primary); /* Alias for --primary */
+  font-size: 2.5rem;
+  font-weight: 600;
+  margin-bottom: 2rem;
+  color: var(--brand-primary);
   text-align: center;
 }
 
-h2 {
-  font-size: 1.8rem; /* Adjusted to be between h1 and h3, as per typical hierarchy */
+h2, h3 {
   font-weight: 500;
-  color: var(--text-color);
-  margin-bottom: 1.5rem;
-}
-
-h3 {
-  font-size: 1.5rem; /* Adjusted */
-  font-weight: 500;
-  color: var(--text-color);
+  color: var(--brand-text);
   margin-bottom: 1.5rem;
 }
 
 .form-group {
-  margin-bottom: 1.5rem; /* Restored original margin */
+  margin-bottom: 1.5rem;
   position: relative;
 }
 
 label {
   display: block;
-  margin-bottom: 0.5rem; /* Restored original */
+  margin-bottom: 0.5rem;
   font-weight: 500;
-  color: var(--text-color); /* Alias for --foreground */
-  font-size: 0.95rem; /* Restored original */
+  color: var(--brand-text);
+  font-size: 0.95rem;
   transition: color 0.2s ease;
 }
 
-/* General inputs, excluding .shadcn-input */
+/* General inputs, excluding shadcn ones which have their own detailed styling from shadcn.css */
 input[type="text"]:not(.shadcn-input),
-input[type="number"]:not(.shadcn-input), /* Assuming number inputs aren't using .shadcn-input style for now */
-input[type="url"]:not(.shadcn-input),
-textarea:not(.shadcn-textarea),
-select:not(.shadcn-input){
-  width: calc(100% - 2.5rem); /* Adjusted for padding, assuming 100% means content-box */
-  padding: 1rem 1.25rem; /* Restored original */
-  border: 2px solid var(--border-color); /* Restored original */
-  border-radius: 1.5rem; /* Restored original specific radius for these inputs */
-  background-color: rgba(255, 255, 255, 0.85); /* Restored original */
+input[type="number"], /* Assuming number inputs aren't using .shadcn-input style for now */
+textarea:not(.shadcn-textarea) {
+  width: 90%;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--border-color);
+  border-radius: 1.5rem; /* This radius is for non-shadcn elements */
+  background-color: rgba(255, 255, 255, 0.85);
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   font-family: inherit;
-  font-size: 1rem; /* Restored original */
-  color: var(--text-color);
+  font-size: 1rem;
+  color: var(--brand-text);
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
-  box-sizing: content-box; /* Revert to content-box if padding is outside width */
-  height: auto; /* Let padding define height for text inputs/textareas */
 }
-input[type="number"]:not(.shadcn-input){
-  height: 1.5rem; /* Approximate based on padding for number inputs */
-}
-
 
 /* Specific styling for LLM API Endpoint, API Key, and Model Name input areas */
 #llmEndpoint,
 #apiKey,
-#modelName,
-#systemPrompt, /* Included systemPrompt here as it had similar styling */
-#toolHttpMethod, /* Included toolHttpMethod select here */
-select#profileSelect,
-select#instructionToolChoice {
-  border-radius: 1.5rem; /* Restored original specific radius */
-   width: calc(90% + 2.5rem); /* Match width of other inputs including padding */
-}
-textarea#toolDescription, textarea#toolParameters { /* Specific textareas for tool parameters */
-    border-radius: 0.5rem; /* Less rounded than primary inputs */
-    width: 90%;
-    padding: 0.5rem 1rem;
+#modelName {
+  border-radius: 1.5rem;
 }
 
+/* Specific styling for System Prompt (Optional) textarea */
+#systemPrompt {
+  border-radius: 1.5rem;
+}
 
-input[type="text"]:not(.shadcn-input):hover,
-input[type="number"]:not(.shadcn-input):hover,
-input[type="url"]:not(.shadcn-input):hover,
-textarea:not(.shadcn-textarea):hover,
-select:not(.shadcn-input):hover {
-  border-color: var(--brand-secondary); /* Alias for --secondary */
+input[type="text"]:hover,
+input[type="number"]:hover,
+textarea:hover {
+  border-color: var(--brand-secondary);
   background-color: rgba(255, 255, 255, 0.95);
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
 }
 
-input[type="text"]:not(.shadcn-input):focus,
-input[type="number"]:not(.shadcn-input):focus,
-input[type="url"]:not(.shadcn-input):focus,
-textarea:not(.shadcn-textarea):focus,
-select:not(.shadcn-input):focus {
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
   outline: none;
-  border-color: var(--brand-primary); /* Alias for --primary */
+  border-color: var(--brand-primary);
   background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(0, 137, 208, 0.15), var(--shadow-md); /* Using primary color for ring */
+  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb), 0.15), var(--shadow-md);
   transform: translateY(-1px);
 }
 
-input::placeholder,
+input[type="text"]::placeholder,
+input[type="number"]::placeholder,
 textarea::placeholder {
-  color: #94a3b8; /* Restored original placeholder color */
+  color: #94a3b8;
   opacity: 0.7;
 }
 
 .form-group:focus-within label {
   color: var(--brand-primary);
 }
-
-select {
-  -webkit-appearance: none;
+select#profileSelect {
+  width: calc(90% + 2.5rem); /* Match width of other inputs including padding */
+  padding: 0.5rem 1.25rem; /* Reduced padding to prevent text cutoff */
+  border: 2px solid var(--border-color);
+  border-radius: 1.5rem;
+  background-color: rgba(255, 255, 255, 0.85);
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5; /* Added line-height for better vertical alignment */
+  color: var(--brand-text);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+  -webkit-appearance: none; /* Remove default S.O. styling */
   -moz-appearance: none;
   appearance: none;
   background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007BC2%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
   background-repeat: no-repeat;
-  background-position: right 1.25rem center; /* Restored original */
+  background-position: right 1.25rem center;
   background-size: .65em auto;
-  /* padding-right adjusted by width calc now */
 }
 
-.dark select {
-    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23c1e3fc%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
+select#profileSelect:hover {
+  border-color: var(--brand-secondary);
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
 }
 
+select#profileSelect:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb, 47, 104, 151), 0.15), var(--shadow-md); /* Added fallback for --brand-primary-rgb */
+  transform: translateY(-1px);
+}
 
-/* General Button Styling - Restored Original */
-button, .button {
+/* Dark theme adjustments for select */
+body.dark-theme select#profileSelect {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23e0e6f0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
+}
+/* Styling for instructionToolChoice multi-select */
+select#instructionToolChoice {
+  width: calc(90% + 2.5rem); /* Match width of other inputs */
+  padding: 0.5rem 1.25rem; /* Reduced padding to prevent text cutoff */
+  border: 2px solid var(--border-color);
+  border-radius: 0.5rem;
+  background-color: rgba(255, 255, 255, 0.85);
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5; /* Added line-height for better vertical alignment */
+  color: var(--brand-text);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+  /* For multi-select, appearance is usually handled by the browser,
+     but we ensure consistent border, background, and padding.
+     Height will be determined by its 'size' attribute in HTML or default. */
+}
+
+select#instructionToolChoice:hover {
+  border-color: var(--brand-secondary);
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
+}
+
+select#instructionToolChoice:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb, 47, 104, 151), 0.15), var(--shadow-md);
+  /* transform: translateY(-1px); /* Might not be desirable for a larger multi-select box */
+}
+
+/* Dark theme adjustments for instructionToolChoice multi-select */
+body.dark-theme select#instructionToolChoice {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-theme select#instructionToolChoice option {
+  background-color: #23272f; /* Ensure options have dark background */
+  color: #e0e6f0;
+}
+
+/* Styling for selected options in dark theme (browser dependent) */
+body.dark-theme select#instructionToolChoice option:checked {
+  background-color: var(--brand-primary) !important; /* Or a suitable dark theme selection color */
+  color: #ffffff !important;
+}
+
+button {
   background-color: var(--brand-primary);
   color: white;
   padding: 0.8rem 1.6rem;
   border: none;
-  border-radius: 0.5rem; /* Original was 0.5rem, not 1.5rem for all buttons */
+  border-radius: 0.5rem;
   cursor: pointer;
   font-weight: 500;
   font-size: 1rem;
   transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 0.5rem;
   box-shadow: var(--shadow-sm);
-  text-decoration: none;
 }
 
-button:hover, .button:hover {
+button:hover {
   background-color: var(--brand-secondary);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
-button:focus, .button:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ring), var(--shadow-md); /* Added var(--ring) for focus */
-}
-
-button:active, .button:active {
+button:active {
   transform: translateY(0);
   box-shadow: var(--shadow-sm);
 }
 
-button:disabled, .button:disabled {
+button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
-  background-color: var(--muted); /* Using theme variable */
-  color: var(--muted-foreground); /* Using theme variable */
-  box-shadow: none;
 }
 
-<<<<<<< HEAD
-/* Specific button styles from original theme */
-.ko-fi-button, .feedback-button, #save, .save-instruction-button, .export-button, .import-button, .edit-btn, .edit-tool-btn, .pin-btn {
-  border-radius: 1.5rem; /* Specific buttons had more rounding */
-}
-
-.ko-fi-button { background-color: #004e5b; color: #a8ecff;}
-.feedback-button { background-color: #004e5b; color: #a8ecff;}
-#save { background-color: #004e5b; color: #a8ecff;}
-.save-button, .save-instruction-button { background-color: #334a50; color: #cee7ee; } /* Consolidating save buttons */
-.clear-form-button { background-color: #ffdad6; color: #93000a; border-radius: 1.5rem; }
-.export-button, .import-button { background-color: #334a50; color: #cee7ee; }
-.delete-tool-btn, .delete-btn { background-color: #ffdad6; color: #93000a; border-radius: 1.5rem; }
-#deleteProfileButton { background-color: #ffb4ab !important; color: #690005 !important; border-radius: 1.5rem; }
-.revert-button { background-color: #ffdad6; color: #93000a; border-radius: 1.5rem; }
-.edit-btn, .edit-tool-btn { background-color: #a8edff; color: #004e5b; }
-.pin-btn { background-color: #a8edff; color: #004e5b; }
-
-
-/* Dark theme button overrides from original */
-.dark button { /* General dark theme button, may need adjustment */
-  background-color: var(--brand-primary); /* Uses dark theme primary */
-  color: var(--primary-foreground); /* Uses dark theme primary foreground */
-}
-.dark .save-button, .dark .save-instruction-button { background-color: #354a53!important; color: #88d0ec!important; }
-.dark .clear-form-button { background-color: #b89c4c !important; }
-.dark .export-button, .dark .import-button { background-color: #3a7bd5 !important; }
-.dark .delete-tool-btn, .dark .delete-btn { background-color: #690005 !important; color: #ffb4ab!important; }
-.dark #deleteProfileButton { background-color: #690005 !important; color: #ffb4ab!important; }
-
-
-/* Tables - Restoring original look & feel */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 1.5rem; /* Restored */
-  border-radius: 0.5rem; /* Restored */
-  overflow: hidden;
-  box-shadow: var(--shadow-sm); /* Restored */
-  background-color: var(--surface-color); /* From restored theme */
-  border: 1px solid var(--border-color); /* From restored theme */
-}
-
-thead {
-  background-color: var(--brand-secondary); /* Restored */
-  color: white; /* Restored */
-}
-.dark thead { background-color: var(--brand-secondary) !important; } /* Original dark thead */
-
-
-th {
-  padding: 0.9rem 1rem; /* Restored */
-  text-align: left;
-  font-size: var(--font-size-body); /* Adjusted to body, original was implicit */
-  font-weight: 500; /* Restored */
-  color: var(--text-color); /* Default text color for light theme th */
-}
-.dark th { color: white; } /* Dark theme th text color */
-
-
-td {
-  padding: 0.9rem 1rem; /* Restored */
-  text-align: left;
-  font-size: var(--font-size-body);
-  color: var(--text-color);
-  border-bottom: 1px solid var(--border-color);
-}
-.dark td { color: var(--text-color); border-bottom: 1px solid var(--border-color); }
-
-
-tbody tr:last-child td {
-  border-bottom: none;
-}
-
-tbody tr:hover {
-  background-color: rgba(240, 242, 245, 0.8); /* Restored light theme hover */
-}
-.dark tbody tr:hover {
-  background-color: var(--muted); /* Using muted for dark theme hover */
-}
-#instructionsTable tbody tr:nth-child(even) { /* Restored original even row styling */
-  background-color: rgba(249, 250, 251, 0.7);
-}
-.dark #instructionsTable tbody tr:nth-child(even) {
-  background: var(--surface-color) !important; /* Original dark even row */
-=======
 .ko-fi-button { /*Coffee */
   background-color: #004e5b;
   color: #a8ecff;
@@ -608,47 +497,10 @@ tbody tr:hover {
   width: 192.93px;
   height: 47.81px;
   border-radius: 1.5rem;
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 
 .status {
-<<<<<<< HEAD
-  margin-top: 1rem; /* Restored */
-  padding: 1.25rem; /* Restored */
-  border-radius: 0.75rem; /* Restored */
-  display: none;
-  font-weight: 500; /* Restored */
-  position: fixed;
-  bottom: 2rem; /* Restored */
-  right: 2rem; /* Restored */
-  max-width: 400px; /* Restored */
-  animation: slideIn 0.3s ease-out; /* Restored */
-  z-index: 1000;
-  box-shadow: var(--shadow-md); /* Restored */
-  background-color: rgba(255, 255, 255, 0.85); /* Restored */
-  border: 1px solid rgba(255, 255, 255, 0.2); /* Restored */
-  color: #333; /* Fallback color, should be themed */
-}
-.dark .status {
-  background-color: #23272f !important;
-  color: #e0e6f0 !important;
-  border-color: var(--border-color) !important;
-}
-
-.status.success {
-  background-color: rgba(46, 204, 113, 0.9); /* Restored */
-  color: #ffffff; /* Restored */
-  border-color: rgba(46, 204, 113, 0.9);
-}
-
-.status.error {
-  background-color: rgba(231, 76, 60, 0.9); /* Restored */
-  color: #ffffff; /* Restored */
-  border-color: rgba(231, 76, 60, 0.9);
-}
-
-=======
   margin-top: 1rem;
   padding: 1.25rem;
   border-radius: 0.75rem;
@@ -693,7 +545,6 @@ tbody tr:hover {
 }
 
 
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 @keyframes slideIn {
   from {
     transform: translateX(100%);
@@ -705,14 +556,6 @@ tbody tr:hover {
   }
 }
 
-<<<<<<< HEAD
-.button-group {
-  display: flex;
-  gap: 1rem; /* Restored */
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  margin-top: 1rem; /* Restored */
-=======
 
 #instructionsTable {
   width: 100%;
@@ -768,30 +611,12 @@ body.dark-theme #toolsTable {
   justify-content: flex-start;
   flex-wrap: wrap;
   margin-top: 1rem;
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
 }
 
 .button-group button {
   flex-grow: 1;
 }
 
-<<<<<<< HEAD
-footer {
-  text-align: center;
-  margin-top: 3rem; /* Restored */
-  padding: 1.5rem; /* Restored */
-  color: #64748b; /* Restored */
-  font-size: 0.875rem; /* Restored */
-}
-
-footer a {
-  color: var(--brand-primary); /* Restored */
-  text-decoration: none;
-  font-weight: 500; /* Restored */
-}
-
-footer a:hover, footer a:focus {
-=======
 
 footer {
   text-align: center;
@@ -808,81 +633,10 @@ footer a {
 }
 
 footer a:hover {
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
   text-decoration: underline;
 }
 
 
-<<<<<<< HEAD
-/* Responsive adaptations - using original breakpoints and adjustments */
-@media (max-width: 640px) {
-  body {
-    padding: 1rem; /* Original */
-    font-size: 0.95rem; /* Adjusted from original for slightly larger base on mobile */
-  }
-
-  .container {
-    padding: 1rem; /* Original */
-  }
-
-  .card {
-    padding: 1.5rem; /* Original */
-    margin-bottom: 1.5rem; /* Original */
-  }
-
-  h1 {
-    font-size: 2rem; /* Original */
-    margin-bottom: 1.5rem; /* Original */
-  }
-  h2 { font-size: 1.5rem; /* Original */ }
-  h3 { font-size: 1.25rem; /* Original */ }
-
-  label { font-size: 0.9rem; /* Original */ }
-
-  input[type="text"]:not(.shadcn-input),
-  input[type="number"]:not(.shadcn-input),
-  input[type="url"]:not(.shadcn-input),
-  textarea:not(.shadcn-textarea),
-  select:not(.shadcn-input) {
-    padding: 0.6rem 0.8rem; /* Original */
-    font-size: 0.95rem; /* Original */
-     /* Height will be auto based on padding or explicit if needed */
-  }
-
-  button, .button {
-    width: 100%; /* Original */
-    padding: 0.7rem 1.4rem; /* Original */
-    font-size: 0.95rem; /* Original */
-    /* Height will be auto based on padding */
-  }
-
-  .button-group {
-    flex-direction: column; /* Original */
-    gap: 0.75rem; /* Original */
-  }
-  .button-group button {
-      margin-right: 0;
-  }
-
-  table, th, td {
-    font-size: 0.9rem; /* Original */
-  }
-  th, td { padding: 0.75rem; /* Original */ }
-
-
-  .status {
-    bottom: 1rem; /* Original */
-    left: 1rem; /* Original */
-    right: 1rem; /* Original */
-    max-width: 90%; /* Original */
-    padding: 1rem; /* Original */
-    font-size: 0.9rem; /* Original */
-  }
-}
-
-/* Specific button overrides from original theme */
-.improve-btn {
-=======
 @media (max-width: 640px) {
   body {
     padding: 1rem;
@@ -972,106 +726,10 @@ footer a:hover {
   margin-right: 0.1rem;
   margin-bottom: 0.5rem;
   background-color: #ff0000; /* Fallback color */
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)
   background-image: linear-gradient(90deg,
       red, orange, yellow, green, blue, indigo, violet, red);
   background-size: 800%;
   animation: rainbow 10s linear infinite;
-<<<<<<< HEAD
-  color: white;
-  border: none;
-  border-radius: 1.5rem; /* Ensured this is applied */
-}
-@keyframes rainbow {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 100% 50%; }
-}
-
-.pin-btn.pinned .material-symbols-outlined {
-  color: var(--brand-primary); /* Original */
-}
-
-
-/* MCP specific styles from original CSS */
-.mcp-sourced {
-  border-left: 3px solid var(--primary);
-  padding-left: 8px; /* Original */
-  background-color: color-mix(in srgb, var(--primary) 5%, var(--background));
-}
-.mcp-data-source-note {
-  font-size: 0.75rem; /* Original */
-  color: var(--muted-foreground);
-  margin-top: -2px; /* Original */
-  margin-bottom: 4px; /* Original */
-}
-.read-only-mcp {
-  background-color: var(--border) !important; /* Original, using !important if needed */
-  color: var(--muted-foreground) !important;
-  cursor: not-allowed !important;
-  border-style: dashed !important;
-}
-
-/* Clean up any lingering variables from the new system that are not in the restored theme */
-/* (This is more of a conceptual step, as direct variable replacement was done) */
-
-/* Ensure the @theme inline block reflects the restored theme if it's used by any JS */
-/* This is a comment, actual @theme inline is below if needed by JS, otherwise CSS vars are king */
-
-/*
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
-  --font-serif: var(--font-serif);
-
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-
-  --shadow-2xs: var(--shadow-2xs);
-  --shadow-xs: var(--shadow-xs);
-  --shadow-sm: var(--shadow-sm);
-  --shadow: var(--shadow);
-  --shadow-md: var(--shadow-md);
-  --shadow-lg: var(--shadow-lg);
-  --shadow-xl: var(--shadow-xl);
-  --shadow-2xl: var(--shadow-2xl);
-}
-*/
-=======
   color: white; /* Ensure text is readable on rainbow background */
   border-radius: 1.5rem;
 }
@@ -1133,4 +791,3 @@ footer a:hover {
   color: var(--muted-foreground);
   cursor: not-allowed;
 }
->>>>>>> parent of 36bb433 (Refactor: Align CSS with new theme color scheme. Updates options.css, chat.css, and shadcn.css to use the new comprehensive theme. This includes new color, font, radius, and shadow variables, an @theme inline block, and refactoring of CSS rules to use the new global variables consistently.)

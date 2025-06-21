@@ -11,30 +11,6 @@
   <link rel="stylesheet" href="shadcn.css">
   <!-- Add shadcn/ui CSS -->
   <style>
-    .read-only-mcp { /* Enhancing existing or ensuring these properties */
-        background-color: #f0f0f0 !important; /* Light gray background */
-        color: #555 !important; /* Dimmer text color */
-        border-style: dashed !important; /* Optional: to indicate it's different */
-        border-width: 1px !important; /* Ensure border is visible */
-        cursor: not-allowed !important;
-    }
-
-    .dark .read-only-mcp {
-        background-color: #333 !important;
-        color: #bbb !important;
-        border-color: #555 !important; /* Ensure dashed border is visible in dark mode */
-    }
-
-    /* Ensure the source notes are clearly visible */
-    .mcp-data-source-note {
-        font-size: 0.75em;
-        color: #006879; /* Using primary color for visibility */
-        margin-top: 4px;
-    }
-    .dark .mcp-data-source-note {
-        color: #22d3ee; /* A lighter cyan for dark mode */
-    }
-
     .material-symbols-outlined {
       font-family: 'Material Symbols Outlined';
       font-weight: normal;
@@ -276,7 +252,7 @@
   "required": ["location"]
 }' rows="6"></textarea>
           <p id="toolParametersSource" class="mcp-data-source-note" style="display: none;">Source: MCP Server (dynamic)</p>
-          <small>Define the input parameters for the tool using JSON Schema format. Must be a valid JSON object representing a JSON Schema.</small>
+          <small>Define the input parameters for the tool using JSON Schema format.</small>
         </div>
         <div class="form-group">
         </div>
@@ -288,11 +264,7 @@
         <div class="form-group">
           <label for="toolMcpProxyUrl">MCP Proxy URL (Optional - for custom tool routing)</label>
           <input type="url" id="toolMcpProxyUrl" placeholder="e.g., https://mcp-proxy.example.com">
-          <small>Use this if the tool call should be routed through an external proxy service you control.
-            When set, the 'Endpoint URL' field will be treated as the path on *this* Proxy URL (e.g., if Proxy URL is <code>https://myproxy.com</code> and Endpoint URL is <code>/do/something</code>, the call goes to <code>https://myproxy.com/do/something</code>).
-            The proxy will receive a POST request with <code>{ tool_name: "...", arguments: { ... } }</code>.
-            This is an alternative to Direct MCP or Direct Webhook calls and should generally not be used if 'MCP Server URL' is filled.
-          </small>
+          <small>If your tool needs to be called via a specific proxy server (which then might call another service or an MCP server), enter its URL here. This is typically for non-standard setups. If you use 'MCP Server URL' below, this field is usually not needed.</small>
         </div>
         <div class="form-group">
           <label for="toolHttpMethod">HTTP Method (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
@@ -312,10 +284,8 @@
           <button type="button" id="fetchMcpToolInfoBtn" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 py-1 mt-1 ml-2">
             <span class="material-symbols-outlined mr-1" style="font-size: 1em;">sync</span> Fetch Tool Info
           </button>
-          <button type="button" id="clearMcpFetchedInfoBtn" class="shadcn-button-outline h-9 px-3 py-1 mt-1 ml-2" style="display: none;"><span class="material-symbols-outlined mr-1" style="font-size: 1em;">backspace</span> Clear Fetched Info & Edit Manually</button>
-          <small>Enter the base URL of the Model Context Protocol server (e.g., https://mcp.example.com).
-            Click 'Fetch Tool Info' (after entering a Tool Name) to attempt to load the tool's description and parameters from this server.
-            <p class="mcp-note" style="font-size: 0.8em; margin-top: 0.5em;"><strong>Note:</strong> The extension attempts to fetch details from <code>{MCP Server URL}/tools/{Tool Name}</code>. If your server uses a different path structure, this automatic fetch may not work. When an MCP Server URL is specified, 'Tool Description' and 'Parameters (JSON Schema)' serve as fallbacks if the server doesn't provide them or if fetching fails. 'Endpoint URL' and 'HTTP Method' are ignored for MCP tools.</p>
+          <small>If this tool is provided by a standard Model Context Protocol (MCP) server, enter the server's base URL here (e.g., https://mcp.example.com).
+            <p class="mcp-note" style="font-size: 0.8em; margin-top: 0.5em;"><strong>Note:</strong> When an MCP Server URL is specified, the extension will attempt to fetch the tool's name, description, and input schema dynamically from that server. The 'Tool Name' you enter above will be used as a local alias. The 'Tool Description' and 'Parameters (JSON Schema)' fields above will serve as fallbacks if the server doesn't provide them or if the dynamic fetch fails. Fields like 'Endpoint URL' and 'HTTP Method' are ignored when MCP Server URL is used.</p>
           </small>
         </div>
         <input type="hidden" id="toolId">
