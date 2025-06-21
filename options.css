@@ -1,125 +1,142 @@
-/* Design System Variables */
 :root {
-  --background: oklch(0.98 0.01 240); /* A very light, airy blue for primary background */
-  --foreground: oklch(0.2 0.05 240); /* Deep, sophisticated blue for text */
-  --card: oklch(0.96 0.01 240); /* Slightly darker light blue for cards */
-  --card-foreground: oklch(0.2 0.05 240);
-  --popover: oklch(0.96 0.01 240);
-  --popover-foreground: oklch(0.2 0.05 240);
-  --primary: oklch(0.6 0.15 240); /* The vibrant main blue from your logo */
-  --primary-foreground: oklch(0.98 0.01 240); /* Light text on primary */
-  --secondary: oklch(0.7 0.1 220); /* A slightly greener, refreshing blue */
-  --secondary-foreground: oklch(0.98 0.01 240);
-  --muted: oklch(0.9 0.02 240); /* Soft blue-grey for subtle elements */
-  --muted-foreground: oklch(0.5 0.05 240); /* Mid-grey blue for muted text */
-  --accent: oklch(0.65 0.18 200); /* A captivating teal/cyan for highlights */
-  --accent-foreground: oklch(0.05 0.01 240); /* Near black for punchy contrast */
-  --destructive: oklch(0.6 0.25 20); /* A classic, strong red for destructive actions */
-  --destructive-foreground: oklch(0.98 0.01 240);
-  --border: oklch(0.85 0.03 240); /* Light blue border */
-  --input: oklch(0.92 0.02 240); /* Slightly desaturated input background */
-  --ring: oklch(0.6 0.15 240); /* Ring color matches primary for consistency */
-  --chart-1: oklch(0.6 0.15 240); /* Primary blue for charts */
-  --chart-2: oklch(0.65 0.18 200); /* Accent teal for charts */
-  --chart-3: oklch(0.7 0.1 160); /* A fresh green-blue for charts */
-  --chart-4: oklch(0.75 0.12 280); /* A soft purple-blue for charts */
-  --chart-5: oklch(0.8 0.08 300); /* A light lilac for charts */
-
-  /* Sidebar specific (using main theme for now as per design system) */
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
-
+  --background: #f3faff;
+  --foreground: #00182a;
+  --card: #ecf3f8;
+  --card-foreground: #00182a;
+  --popover: #ecf3f8;
+  --popover-foreground: #00182a;
+  --primary: #0089d0;
+  --primary-foreground: #f3faff;
+  --secondary: #4aadc9;
+  --secondary-foreground: #f3faff;
+  --muted: #d3e0ea;
+  --muted-foreground: #49677d;
+  --accent: #00adba;
+  --accent-foreground: #000001;
+  --destructive: #f1003b;
+  --destructive-foreground: #f3faff;
+  --border: #bdd1e0;
+  --input: #d9e7f1;
+  --ring: #0089d0;
+  --chart-1: #0089d0;
+  --chart-2: #00adba;
+  --chart-3: #62b289;
+  --chart-4: #9fa5f9;
+  --chart-5: #c5b3ea;
+  --sidebar: #f3faff;
+  --sidebar-foreground: #00182a;
+  --sidebar-primary: #0089d0;
+  --sidebar-primary-foreground: #f3faff;
+  --sidebar-accent: #00adba;
+  --sidebar-accent-foreground: #000001;
+  --sidebar-border: #bdd1e0;
+  --sidebar-ring: #0089d0;
   --font-sans: Poppins, sans-serif;
   --font-serif: Playfair Display, serif;
   --font-mono: Space Mono, monospace;
+  --radius: 0.5rem; /* This was from the new system, the restored one also had 0.5rem */
+  --shadow-2xs: 0px 3px 0px 0px hsl(330 70% 30% / 0.09);
+  --shadow-xs: 0px 3px 0px 0px hsl(330 70% 30% / 0.09);
+  --shadow-sm: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 1px 2px -1px hsl(330 70% 30% / 0.18);
+  --shadow: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 1px 2px -1px hsl(330 70% 30% / 0.18);
+  --shadow-md: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 2px 4px -1px hsl(330 70% 30% / 0.18);
+  --shadow-lg: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 4px 6px -1px hsl(330 70% 30% / 0.18);
+  --shadow-xl: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 8px 10px -1px hsl(330 70% 30% / 0.18);
+  --shadow-2xl: 0px 3px 0px 0px hsl(330 70% 30% / 0.45);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius: 0.5rem; /* Base radius from design system */
+ /* The restored theme also had these aliases, keeping them for now */
+  --brand-primary: var(--primary);
+  --brand-secondary: var(--secondary);
+  --brand-background: var(--background);
+  --brand-text: var(--foreground);
+  --surface-color: var(--card);
+  --background-color: var(--background);
+  --text-color: var(--foreground);
+  --border-color: var(--border);
+  --font-family: var(--font-sans);
 
-  --shadow-2xs: 0px 3px 0px 0px hsl(240 70% 30% / 0.09);
-  --shadow-xs: 0px 3px 0px 0px hsl(240 70% 30% / 0.09);
-  --shadow-sm: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 1px 2px -1px hsl(240 70% 30% / 0.18);
-  --shadow: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 1px 2px -1px hsl(240 70% 30% / 0.18);
-  --shadow-md: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 2px 4px -1px hsl(240 70% 30% / 0.18);
-  --shadow-lg: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 4px 6px -1px hsl(240 70% 30% / 0.18);
-  --shadow-xl: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 8px 10px -1px hsl(240 70% 30% / 0.18);
-  --shadow-2xl: 0px 3px 0px 0px hsl(240 70% 30% / 0.45);
-
-  /* Spacing from design system */
+  /* Spacing variables from the new system - may or may not be used by old layout.
+     Keeping them for now in case some new layout parts rely on them.
+     If issues arise, these might need removal or careful integration. */
   --container-padding: 1.5rem;
-  --card-padding: 1.25rem;
+  --card-padding: 1.25rem; /* The old CSS used 2rem for cards, will address in card styling step */
   --element-spacing: 1rem;
   --compact-spacing: 0.5rem;
   --field-spacing: 0.75rem;
 
-  /* Typography sizes */
-  --font-size-h1: 1.5rem;
+  /* Typography sizes from new system - check if they conflict */
+  --font-size-h1: 1.5rem; /* Old CSS: 2.5rem for h1 */
   --font-size-h2: 1.25rem;
   --font-size-h3: 1.125rem;
-  --font-size-body: 0.875rem;
+  --font-size-body: 0.875rem; /* Old CSS: 1rem for inputs, 0.95rem for labels */
   --font-size-small: 0.75rem;
-  --font-size-label: 0.75rem;
+  --font-size-label: 0.75rem; /* Old CSS: 0.95rem */
 }
 
 .dark {
-  --background: oklch(0.1 0.02 240);
-  --foreground: oklch(0.9 0.05 240);
-  --card: oklch(0.15 0.03 240);
-  --card-foreground: oklch(0.85 0.05 240);
-  --popover: oklch(0.15 0.03 240);
-  --popover-foreground: oklch(0.85 0.05 240);
-  --primary: oklch(0.75 0.18 240);
-  --primary-foreground: oklch(0.1 0.02 240);
-  --secondary: oklch(0.7 0.15 220);
-  --secondary-foreground: oklch(0.1 0.02 240);
-  --muted: oklch(0.25 0.05 240);
-  --muted-foreground: oklch(0.65 0.05 240);
-  --accent: oklch(0.8 0.2 200);
-  --accent-foreground: oklch(0.1 0.02 240);
-  --destructive: oklch(0.75 0.3 20);
-  --destructive-foreground: oklch(0.1 0.02 240);
-  --border: oklch(0.3 0.07 240);
-  --input: oklch(0.2 0.04 240);
-  --ring: oklch(0.75 0.18 240);
-  --chart-1: oklch(0.75 0.18 240);
-  --chart-2: oklch(0.8 0.2 200);
-  --chart-3: oklch(0.75 0.15 160);
-  --chart-4: oklch(0.8 0.18 280);
-  --chart-5: oklch(0.85 0.12 300);
-
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
-
+  --background: #000408;
+  --foreground: #c1e3fc;
+  --card: #010d16;
+  --card-foreground: #b1d3ec;
+  --popover: #010d16;
+  --popover-foreground: #b1d3ec;
+  --primary: #00b9ff;
+  --primary-foreground: #000408;
+  --secondary: #00b2de;
+  --secondary-foreground: #000408;
+  --muted: #062437;
+  --muted-foreground: #7494ab;
+  --accent: #00e1f0;
+  --accent-foreground: #000408;
+  --destructive: #ff0657;
+  --destructive-foreground: #000408;
+  --border: #00314d;
+  --input: #031826;
+  --ring: #00b9ff;
+  --chart-1: #00b9ff;
+  --chart-2: #00e1f0;
+  --chart-3: #3dca8d;
+  --chart-4: #a9adff;
+  --chart-5: #dabcff;
+  --sidebar: #000408;
+  --sidebar-foreground: #c1e3fc;
+  --sidebar-primary: #00b9ff;
+  --sidebar-primary-foreground: #000408;
+  --sidebar-accent: #00e1f0;
+  --sidebar-accent-foreground: #000408;
+  --sidebar-border: #00314d;
+  --sidebar-ring: #00b9ff;
   --font-sans: Quicksand, sans-serif;
+  /* --font-serif and --font-mono are inherited from :root if not overridden */
+  --radius: 0.5rem;
+  --shadow-2xs: 0px 3px 0px 0px hsl(300 80% 50% / 0.09);
+  --shadow-xs: 0px 3px 0px 0px hsl(300 80% 50% / 0.09);
+  --shadow-sm: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 1px 2px -1px hsl(300 80% 50% / 0.18);
+  --shadow: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 1px 2px -1px hsl(300 80% 50% / 0.18);
+  --shadow-md: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 2px 4px -1px hsl(300 80% 50% / 0.18);
+  --shadow-lg: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 4px 6px -1px hsl(300 80% 50% / 0.18);
+  --shadow-xl: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 8px 10px -1px hsl(300 80% 50% / 0.18);
+  --shadow-2xl: 0px 3px 0px 0px hsl(300 80% 50% / 0.45);
 
-  --shadow-2xs: 0px 3px 0px 0px hsl(240 80% 50% / 0.09);
-  --shadow-xs: 0px 3px 0px 0px hsl(240 80% 50% / 0.09);
-  --shadow-sm: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 1px 2px -1px hsl(240 80% 50% / 0.18);
-  --shadow: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 1px 2px -1px hsl(240 80% 50% / 0.18);
-  --shadow-md: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 2px 4px -1px hsl(240 80% 50% / 0.18);
-  --shadow-lg: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 4px 6px -1px hsl(240 80% 50% / 0.18);
-  --shadow-xl: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 8px 10px -1px hsl(240 80% 50% / 0.18);
-  --shadow-2xl: 0px 3px 0px 0px hsl(240 80% 50% / 0.45);
+  /* Restored theme aliases for dark mode */
+  --brand-primary: var(--primary);
+  --brand-secondary: var(--secondary);
+  --brand-background: var(--background);
+  --brand-text: var(--foreground);
+  --surface-color: var(--card);
+  --background-color: var(--background);
+  --text-color: var(--foreground);
+  --border-color: var(--border);
+  --font-family: var(--font-sans);
+  --selection-color: var(--accent); /* Added from old dark theme */
 }
 
-
-/* Remove old .dark-theme specific overrides if they conflict with new .dark */
-/* body.dark-theme { ... } and its descendants related to color will be handled by .dark scope */
+/*
+   The body.dark-theme specific overrides that existed before will largely be
+   covered by the .dark scope now. However, some might have had !important
+   or very specific selectors. These will be reviewed in subsequent steps
+   if cards/components don't look right under .dark.
+*/
 
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
@@ -136,90 +153,146 @@
 }
 
 body {
-  padding: var(--container-padding);
-  font-family: var(--font-sans);
-  background-color: var(--background);
-  color: var(--foreground);
-  font-size: var(--font-size-body);
+  padding: 2rem; /* Restored original padding */
+  font-family: var(--font-family); /* Uses --font-sans from :root or .dark */
+  background-color: var(--background-color); /* Alias for --background */
+  color: var(--text-color); /* Alias for --foreground */
+  font-size: var(--font-size-body); /* Using the one from :root, adjust if needed */
   line-height: 1.6;
-  transition: background-color 150ms ease-in-out, color 150ms ease-in-out; /* From interactions.animations */
+  transition: background-color 0.3s ease, color 0.3s ease; /* Restored original transition */
 }
 
 .container {
-  max-width: var(--layout-maxWidth, 1200px); /* From layout */
+  max-width: 800px; /* Restored original max-width */
   margin: 0 auto;
-  padding: var(--container-padding); /* Consistent padding */
+  padding: 2rem; /* Restored original padding */
 }
 
 .card {
-  background: var(--card);
-  color: var(--card-foreground);
-  border-radius: var(--borderRadius-card, var(--radius)); /* From borderRadius */
-  padding: var(--card-padding);
-  margin-bottom: var(--element-spacing); /* Consistent spacing */
-  box-shadow: var(--shadows-card, var(--shadow-sm)); /* From shadows */
-  border: 1px solid var(--border);
+  background: var(--surface-color); /* Alias for --card */
+  color: var(--text-color); /* Card text color, using main text color */
+  border-radius: 1rem; /* Restored original card border-radius */
+  padding: 2rem; /* Restored original card padding */
+  margin-bottom: 2rem; /* Restored original margin */
+  box-shadow: var(--shadow-md); /* Using restored shadow */
+  border: 1px solid var(--border-color); /* Alias for --border */
   position: relative;
   overflow: hidden;
-  transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out, box-shadow 150ms ease-in-out;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* Removed .card::before for glassy effect, as it's not in the new design system */
+/* Reinstating the glassy effect for cards if desired, or remove if not part of the target look */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    120deg,
+    rgba(255,255,255,0.1) 0%, /* Adjusted for more subtlety on light cards */
+    rgba(255,255,255,0.0) 100%
+  );
+  pointer-events: none;
+  border-radius: 1rem; /* Match card's border-radius */
+}
+
+.dark .card::before {
+  background: linear-gradient(
+    120deg,
+    rgba(255,255,255,0.05) 0%, /* More subtle on dark cards */
+    rgba(255,255,255,0.0) 100%
+  );
+}
+
 
 h1 {
-  font-size: var(--font-size-h1);
-  font-weight: bold; /* Typically headings are bold */
-  margin-bottom: var(--element-spacing);
-  color: var(--primary); /* Prominent color for main headings */
+  font-size: 2.5rem; /* Restored original h1 size */
+  font-weight: 600; /* Restored original font-weight */
+  margin-bottom: 2rem; /* Restored original margin */
+  color: var(--brand-primary); /* Alias for --primary */
   text-align: center;
 }
 
 h2 {
-  font-size: var(--font-size-h2);
-  font-weight: bold;
-  color: var(--foreground);
-  margin-bottom: var(--compact-spacing);
+  font-size: 1.8rem; /* Adjusted to be between h1 and h3, as per typical hierarchy */
+  font-weight: 500;
+  color: var(--text-color);
+  margin-bottom: 1.5rem;
 }
 
 h3 {
-  font-size: var(--font-size-h3);
-  font-weight: bold;
-  color: var(--foreground);
-  margin-bottom: var(--compact-spacing);
+  font-size: 1.5rem; /* Adjusted */
+  font-weight: 500;
+  color: var(--text-color);
+  margin-bottom: 1.5rem;
 }
 
 .form-group {
-  margin-bottom: var(--forms-fieldSpacing, 1rem); /* From forms.fieldSpacing */
+  margin-bottom: 1.5rem; /* Restored original margin */
   position: relative;
 }
 
 label {
   display: block;
-  margin-bottom: var(--forms-labelStyle-marginBottom, 0.25rem); /* From forms.labelStyle */
-  font-weight: var(--forms-labelStyle-fontWeight, medium); /* From forms.labelStyle */
-  color: var(--forms-labelStyle-color, var(--foreground)); /* From forms.labelStyle */
-  font-size: var(--font-size-label); /* From typography.labelText or forms.labelStyle.fontSize */
-  transition: color 150ms ease-in-out;
+  margin-bottom: 0.5rem; /* Restored original */
+  font-weight: 500;
+  color: var(--text-color); /* Alias for --foreground */
+  font-size: 0.95rem; /* Restored original */
+  transition: color 0.2s ease;
 }
 
-/* General inputs, excluding .shadcn-input which should be styled in shadcn.css based on the new theme */
+/* General inputs, excluding .shadcn-input */
 input[type="text"]:not(.shadcn-input),
-input[type="number"]:not(.shadcn-input),
+input[type="number"]:not(.shadcn-input), /* Assuming number inputs aren't using .shadcn-input style for now */
 input[type="url"]:not(.shadcn-input),
 textarea:not(.shadcn-textarea),
-select:not(.shadcn-input) { /* Assuming .shadcn-input might be used on selects too */
-  width: 100%; /* Inputs generally take full width of their container */
-  padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem);
-  border: 1px solid var(--forms-inputStyle-border, var(--border));
-  border-radius: var(--borderRadius-input, var(--radius-sm)); /* From forms.inputStyle or borderRadius */
-  background-color: var(--forms-inputStyle-backgroundColor, var(--input));
-  transition: border-color 150ms ease-in-out, background-color 150ms ease-in-out, box-shadow 150ms ease-in-out;
+select:not(.shadcn-input){
+  width: calc(100% - 2.5rem); /* Adjusted for padding, assuming 100% means content-box */
+  padding: 1rem 1.25rem; /* Restored original */
+  border: 2px solid var(--border-color); /* Restored original */
+  border-radius: 1.5rem; /* Restored original specific radius for these inputs */
+  background-color: rgba(255, 255, 255, 0.85); /* Restored original */
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   font-family: inherit;
-  font-size: var(--forms-inputStyle-fontSize, var(--font-size-body));
-  color: var(--foreground);
-  box-shadow: var(--shadow-xs); /* Subtle shadow for inputs */
-  height: var(--forms-inputStyle-height, 2.5rem); /* Consistent height */
-  box-sizing: border-box; /* Ensure padding and border are inside width/height */
+  font-size: 1rem; /* Restored original */
+  color: var(--text-color);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+  box-sizing: content-box; /* Revert to content-box if padding is outside width */
+  height: auto; /* Let padding define height for text inputs/textareas */
+}
+input[type="number"]:not(.shadcn-input){
+  height: 1.5rem; /* Approximate based on padding for number inputs */
+}
+
+
+/* Specific styling for LLM API Endpoint, API Key, and Model Name input areas */
+#llmEndpoint,
+#apiKey,
+#modelName,
+#systemPrompt, /* Included systemPrompt here as it had similar styling */
+#toolHttpMethod, /* Included toolHttpMethod select here */
+select#profileSelect,
+select#instructionToolChoice {
+  border-radius: 1.5rem; /* Restored original specific radius */
+   width: calc(90% + 2.5rem); /* Match width of other inputs including padding */
+}
+textarea#toolDescription, textarea#toolParameters { /* Specific textareas for tool parameters */
+    border-radius: 0.5rem; /* Less rounded than primary inputs */
+    width: 90%;
+    padding: 0.5rem 1rem;
+}
+
+
+input[type="text"]:not(.shadcn-input):hover,
+input[type="number"]:not(.shadcn-input):hover,
+input[type="url"]:not(.shadcn-input):hover,
+textarea:not(.shadcn-textarea):hover,
+select:not(.shadcn-input):hover {
+  border-color: var(--brand-secondary); /* Alias for --secondary */
+  background-color: rgba(255, 255, 255, 0.95);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
 }
 
 input[type="text"]:not(.shadcn-input):focus,
@@ -228,194 +301,201 @@ input[type="url"]:not(.shadcn-input):focus,
 textarea:not(.shadcn-textarea):focus,
 select:not(.shadcn-input):focus {
   outline: none;
-  border-color: var(--ring);
-  background-color: var(--background); /* Lighten background on focus */
-  box-shadow: 0 0 0 2px var(--ring); /* Ring outline for focus */
+  border-color: var(--brand-primary); /* Alias for --primary */
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 137, 208, 0.15), var(--shadow-md); /* Using primary color for ring */
+  transform: translateY(-1px);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: var(--muted-foreground);
+  color: #94a3b8; /* Restored original placeholder color */
   opacity: 0.7;
 }
 
 .form-group:focus-within label {
-  color: var(--primary); /* Highlight label on group focus */
+  color: var(--brand-primary);
 }
 
 select {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22' + encodeURIComponent(getComputedStyle(document.documentElement).getPropertyValue('--foreground')) + '%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
+  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007BC2%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
   background-repeat: no-repeat;
-  background-position: right var(--compact-spacing) center;
+  background-position: right 1.25rem center; /* Restored original */
   background-size: .65em auto;
-  padding-right: calc(var(--compact-spacing) + 1em); /* Space for arrow */
+  /* padding-right adjusted by width calc now */
 }
-/* Ensure .dark displays the correct arrow color for select */
+
 .dark select {
-    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22' + encodeURIComponent(getComputedStyle(document.querySelector('.dark') || document.documentElement).getPropertyValue('--foreground')) + '%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23c1e3fc%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
 }
 
 
-/* General Button Styling from Design System */
-button, .button { /* Added .button class for a-tags styled as buttons */
-  background-color: var(--buttons-primary-backgroundColor, var(--primary));
-  color: var(--buttons-primary-color, var(--primary-foreground));
-  padding: var(--buttons-primary-padding, 0.5rem 1rem);
+/* General Button Styling - Restored Original */
+button, .button {
+  background-color: var(--brand-primary);
+  color: white;
+  padding: 0.8rem 1.6rem;
   border: none;
-  border-radius: var(--borderRadius-button, var(--radius)); /* from borderRadius or buttons */
+  border-radius: 0.5rem; /* Original was 0.5rem, not 1.5rem for all buttons */
   cursor: pointer;
-  font-weight: var(--buttons-primary-fontWeight, medium);
-  font-size: var(--buttons-primary-fontSize, var(--font-size-body));
-  height: var(--buttons-primary-height, 2.5rem);
-  transition: background-color 150ms ease-in-out, transform 150ms ease-in-out, box-shadow 150ms ease-in-out;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
   display: inline-flex;
   align-items: center;
-  justify-content: center; /* Center text/icons in button */
-  gap: var(--compact-spacing);
-  box-shadow: var(--shadows-button, var(--shadow-xs)); /* from shadows or buttons */
-  text-decoration: none; /* For a-tags styled as buttons */
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
 }
 
 button:hover, .button:hover {
-  background-color: color-mix(in srgb, var(--primary) 90%, oklch(0.1 0.02 240) ); /* Darken primary for hover */
-  transform: translateY(-2px) scale(1.02); /* Subtle lift and scale from animations.buttonPress */
-  box-shadow: var(--shadow-md); /* Increase shadow */
+  background-color: var(--brand-secondary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 button:focus, .button:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--ring); /* Ring outline for focus from interactions */
+  box-shadow: 0 0 0 2px var(--ring), var(--shadow-md); /* Added var(--ring) for focus */
 }
 
 button:active, .button:active {
-  transform: translateY(0px) scale(0.98); /* Press effect */
-  box-shadow: var(--shadow-xs);
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
 }
 
 button:disabled, .button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
-  background-color: var(--muted);
-  color: var(--muted-foreground);
+  background-color: var(--muted); /* Using theme variable */
+  color: var(--muted-foreground); /* Using theme variable */
   box-shadow: none;
 }
 
-/* Secondary Button Style */
-.button-secondary {
-    background-color: var(--buttons-secondary-backgroundColor, transparent);
-    color: var(--buttons-secondary-color, var(--foreground));
-    border: 1px solid var(--buttons-secondary-border, var(--border));
-}
-.button-secondary:hover {
-    background-color: var(--muted); /* Use muted for hover on secondary */
+/* Specific button styles from original theme */
+.ko-fi-button, .feedback-button, #save, .save-instruction-button, .export-button, .import-button, .edit-btn, .edit-tool-btn, .pin-btn {
+  border-radius: 1.5rem; /* Specific buttons had more rounding */
 }
 
-/* Destructive Button Style */
-.button-destructive,
-#deleteProfileButton, /* Apply destructive style directly */
-.delete-tool-btn,
-.delete-btn {
-  background-color: var(--buttons-destructive-backgroundColor, var(--destructive));
-  color: var(--buttons-destructive-color, var(--destructive-foreground));
-}
-.button-destructive:hover,
-#deleteProfileButton:hover,
-.delete-tool-btn:hover,
-.delete-btn:hover {
-  background-color: color-mix(in srgb, var(--destructive) 80%, oklch(0.1 0.02 240) ); /* Darken destructive for hover */
-}
+.ko-fi-button { background-color: #004e5b; color: #a8ecff;}
+.feedback-button { background-color: #004e5b; color: #a8ecff;}
+#save { background-color: #004e5b; color: #a8ecff;}
+.save-button, .save-instruction-button { background-color: #334a50; color: #cee7ee; } /* Consolidating save buttons */
+.clear-form-button { background-color: #ffdad6; color: #93000a; border-radius: 1.5rem; }
+.export-button, .import-button { background-color: #334a50; color: #cee7ee; }
+.delete-tool-btn, .delete-btn { background-color: #ffdad6; color: #93000a; border-radius: 1.5rem; }
+#deleteProfileButton { background-color: #ffb4ab !important; color: #690005 !important; border-radius: 1.5rem; }
+.revert-button { background-color: #ffdad6; color: #93000a; border-radius: 1.5rem; }
+.edit-btn, .edit-tool-btn { background-color: #a8edff; color: #004e5b; }
+.pin-btn { background-color: #a8edff; color: #004e5b; }
 
 
-/* Ko-fi and Feedback buttons might need specific brand colors if not fitting primary/secondary */
-.ko-fi-button {
-  /* If specific brand color needed, override here. Otherwise, it's a primary button. */
-  /* Example: background-color: #29abe0; color: white; */
+/* Dark theme button overrides from original */
+.dark button { /* General dark theme button, may need adjustment */
+  background-color: var(--brand-primary); /* Uses dark theme primary */
+  color: var(--primary-foreground); /* Uses dark theme primary foreground */
 }
-.feedback-button {
-  /* Similar to Ko-fi, primary or specific */
-}
-.revert-button { /* This should likely be a secondary or destructive action */
-    background-color: var(--buttons-secondary-backgroundColor, transparent);
-    color: var(--buttons-secondary-color, var(--foreground));
-    border: 1px solid var(--buttons-secondary-border, var(--border));
-}
-.revert-button:hover {
-    background-color: var(--muted);
-}
+.dark .save-button, .dark .save-instruction-button { background-color: #354a53!important; color: #88d0ec!important; }
+.dark .clear-form-button { background-color: #b89c4c !important; }
+.dark .export-button, .dark .import-button { background-color: #3a7bd5 !important; }
+.dark .delete-tool-btn, .dark .delete-btn { background-color: #690005 !important; color: #ffb4ab!important; }
+.dark #deleteProfileButton { background-color: #690005 !important; color: #ffb4ab!important; }
 
 
-/* Tables based on dataTable design system component */
+/* Tables - Restoring original look & feel */
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: var(--element-spacing);
-  border-radius: var(--dataTable-container-borderRadius, var(--radius));
-  overflow: hidden; /* For border-radius to apply to table */
-  box-shadow: var(--shadow-sm);
-  background-color: var(--dataTable-container-backgroundColor, var(--card));
-  border: 1px solid var(--dataTable-container-border, var(--border));
+  margin-bottom: 1.5rem; /* Restored */
+  border-radius: 0.5rem; /* Restored */
+  overflow: hidden;
+  box-shadow: var(--shadow-sm); /* Restored */
+  background-color: var(--surface-color); /* From restored theme */
+  border: 1px solid var(--border-color); /* From restored theme */
 }
 
 thead {
-  background-color: var(--dataTable-header-backgroundColor, var(--muted));
+  background-color: var(--brand-secondary); /* Restored */
+  color: white; /* Restored */
 }
+.dark thead { background-color: var(--brand-secondary) !important; } /* Original dark thead */
+
 
 th {
-  padding: var(--dataTable-header-padding, 0.75rem 1rem);
+  padding: 0.9rem 1rem; /* Restored */
   text-align: left;
-  font-size: var(--dataTable-header-fontSize, var(--font-size-body));
-  font-weight: var(--dataTable-header-fontWeight, medium);
-  color: var(--dataTable-header-color, var(--muted-foreground));
+  font-size: var(--font-size-body); /* Adjusted to body, original was implicit */
+  font-weight: 500; /* Restored */
+  color: var(--text-color); /* Default text color for light theme th */
 }
+.dark th { color: white; } /* Dark theme th text color */
+
 
 td {
-  padding: var(--dataTable-row-padding, 0.75rem 1rem);
+  padding: 0.9rem 1rem; /* Restored */
   text-align: left;
-  font-size: var(--dataTable-cell-fontSize, var(--font-size-body));
-  color: var(--dataTable-cell-color, var(--foreground));
-  border-bottom: 1px solid var(--dataTable-row-borderBottom, var(--border));
+  font-size: var(--font-size-body);
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
 }
+.dark td { color: var(--text-color); border-bottom: 1px solid var(--border-color); }
+
 
 tbody tr:last-child td {
-  border-bottom: none; /* Remove border from last row */
+  border-bottom: none;
 }
 
 tbody tr:hover {
-  background-color: var(--dataTable-row-states-hover-backgroundColor, var(--muted));
+  background-color: rgba(240, 242, 245, 0.8); /* Restored light theme hover */
+}
+.dark tbody tr:hover {
+  background-color: var(--muted); /* Using muted for dark theme hover */
+}
+#instructionsTable tbody tr:nth-child(even) { /* Restored original even row styling */
+  background-color: rgba(249, 250, 251, 0.7);
+}
+.dark #instructionsTable tbody tr:nth-child(even) {
+  background: var(--surface-color) !important; /* Original dark even row */
 }
 
 
 .status {
-  margin-top: var(--element-spacing);
-  padding: var(--card-padding);
-  border-radius: var(--radius-lg); /* Prominent radius for status/modal like elements */
+  margin-top: 1rem; /* Restored */
+  padding: 1.25rem; /* Restored */
+  border-radius: 0.75rem; /* Restored */
   display: none;
-  font-weight: medium;
+  font-weight: 500; /* Restored */
   position: fixed;
-  bottom: var(--container-padding); /* Consistent with container padding */
-  right: var(--container-padding);
-  max-width: var(--layout-modalMaxWidth, 500px); /* Max width for modals */
-  animation: slideIn 150ms ease-in-out; /* From interactions.animations */
+  bottom: 2rem; /* Restored */
+  right: 2rem; /* Restored */
+  max-width: 400px; /* Restored */
+  animation: slideIn 0.3s ease-out; /* Restored */
   z-index: 1000;
-  box-shadow: var(--shadows-modal, var(--shadow-lg)); /* Modal shadow */
-  background-color: var(--card); /* Use card as base for status popups */
-  border: 1px solid var(--border);
-  color: var(--card-foreground);
+  box-shadow: var(--shadow-md); /* Restored */
+  background-color: rgba(255, 255, 255, 0.85); /* Restored */
+  border: 1px solid rgba(255, 255, 255, 0.2); /* Restored */
+  color: #333; /* Fallback color, should be themed */
+}
+.dark .status {
+  background-color: #23272f !important;
+  color: #e0e6f0 !important;
+  border-color: var(--border-color) !important;
 }
 
 .status.success {
-  background-color: var(--chart-3); /* Using chart success color */
-  color: white; /* Assuming chart colors have good contrast with white */
-  border-color: var(--chart-3);
+  background-color: rgba(46, 204, 113, 0.9); /* Restored */
+  color: #ffffff; /* Restored */
+  border-color: rgba(46, 204, 113, 0.9);
 }
 
 .status.error {
-  background-color: var(--destructive);
-  color: var(--destructive-foreground);
-  border-color: var(--destructive);
+  background-color: rgba(231, 76, 60, 0.9); /* Restored */
+  color: #ffffff; /* Restored */
+  border-color: rgba(231, 76, 60, 0.9);
 }
 
 @keyframes slideIn {
@@ -431,157 +511,180 @@ tbody tr:hover {
 
 .button-group {
   display: flex;
-  gap: var(--compact-spacing); /* Compact spacing for grouped buttons */
+  gap: 1rem; /* Restored */
   justify-content: flex-start;
   flex-wrap: wrap;
-  margin-top: var(--element-spacing);
+  margin-top: 1rem; /* Restored */
 }
 
 .button-group button {
-  flex-grow: 1; /* Allow buttons to grow if needed, or set fixed widths */
+  flex-grow: 1;
 }
 
 footer {
   text-align: center;
-  margin-top: calc(2 * var(--container-padding)); /* More space for footer */
-  padding: var(--container-padding);
-  color: var(--muted-foreground);
-  font-size: var(--font-size-small);
+  margin-top: 3rem; /* Restored */
+  padding: 1.5rem; /* Restored */
+  color: #64748b; /* Restored */
+  font-size: 0.875rem; /* Restored */
 }
 
 footer a {
-  color: var(--primary);
+  color: var(--brand-primary); /* Restored */
   text-decoration: none;
-  font-weight: medium;
+  font-weight: 500; /* Restored */
 }
 
 footer a:hover, footer a:focus {
-  text-decoration: underline; /* Underline on hover/focus for links */
+  text-decoration: underline;
 }
 
 
-/* Responsive adaptations from design system */
-@media (max-width: 768px) { /* mobile breakpoint */
+/* Responsive adaptations - using original breakpoints and adjustments */
+@media (max-width: 640px) {
   body {
-    padding: var(--compact-spacing); /* Less padding on mobile */
-    font-size: calc(var(--font-size-body) * 0.95); /* Slightly smaller base font */
+    padding: 1rem; /* Original */
+    font-size: 0.95rem; /* Adjusted from original for slightly larger base on mobile */
   }
 
   .container {
-    padding: var(--compact-spacing);
+    padding: 1rem; /* Original */
   }
 
   .card {
-    padding: var(--compact-spacing);
-    margin-bottom: var(--compact-spacing);
+    padding: 1.5rem; /* Original */
+    margin-bottom: 1.5rem; /* Original */
   }
 
   h1 {
-    font-size: calc(var(--font-size-h1) * 0.85);
-    margin-bottom: var(--compact-spacing);
+    font-size: 2rem; /* Original */
+    margin-bottom: 1.5rem; /* Original */
   }
-  h2 { font-size: calc(var(--font-size-h2) * 0.9); }
-  h3 { font-size: calc(var(--font-size-h3) * 0.9); }
+  h2 { font-size: 1.5rem; /* Original */ }
+  h3 { font-size: 1.25rem; /* Original */ }
 
-  label { font-size: calc(var(--font-size-label) * 0.95); }
+  label { font-size: 0.9rem; /* Original */ }
 
   input[type="text"]:not(.shadcn-input),
   input[type="number"]:not(.shadcn-input),
   input[type="url"]:not(.shadcn-input),
   textarea:not(.shadcn-textarea),
   select:not(.shadcn-input) {
-    padding: var(--compact-spacing) calc(var(--compact-spacing) + 0.2rem);
-    font-size: var(--font-size-body); /* Maintain body font for inputs */
-    height: calc(var(--forms-inputStyle-height, 2.5rem) * 0.9); /* Slightly smaller height */
+    padding: 0.6rem 0.8rem; /* Original */
+    font-size: 0.95rem; /* Original */
+     /* Height will be auto based on padding or explicit if needed */
   }
 
   button, .button {
-    width: 100%; /* Full width buttons on mobile */
-    padding: var(--compact-spacing) var(--element-spacing);
-    font-size: var(--font-size-body);
-    height: calc(var(--buttons-primary-height, 2.5rem) * 0.9);
+    width: 100%; /* Original */
+    padding: 0.7rem 1.4rem; /* Original */
+    font-size: 0.95rem; /* Original */
+    /* Height will be auto based on padding */
   }
 
   .button-group {
-    flex-direction: column; /* Stack buttons in group */
-    gap: var(--compact-spacing);
+    flex-direction: column; /* Original */
+    gap: 0.75rem; /* Original */
   }
   .button-group button {
-      margin-right: 0; /* Remove right margin if buttons are stacked */
+      margin-right: 0;
   }
 
   table, th, td {
-    font-size: var(--font-size-small); /* Smaller font for tables on mobile */
+    font-size: 0.9rem; /* Original */
   }
-  th, td { padding: var(--compact-spacing); }
+  th, td { padding: 0.75rem; /* Original */ }
 
 
   .status {
-    bottom: var(--compact-spacing);
-    left: var(--compact-spacing);
-    right: var(--compact-spacing);
-    max-width: none; /* Full width status on mobile */
-    padding: var(--compact-spacing);
+    bottom: 1rem; /* Original */
+    left: 1rem; /* Original */
+    right: 1rem; /* Original */
+    max-width: 90%; /* Original */
+    padding: 1rem; /* Original */
+    font-size: 0.9rem; /* Original */
   }
 }
 
-/* Specific button overrides if they don't fit the primary/secondary/destructive pattern neatly */
+/* Specific button overrides from original theme */
 .improve-btn {
-  /* This button has a rainbow gradient, which is very specific. */
-  /* It will override the standard button background. */
   background-image: linear-gradient(90deg,
       red, orange, yellow, green, blue, indigo, violet, red);
   background-size: 800%;
   animation: rainbow 10s linear infinite;
-  color: white; /* Ensure contrast */
-  border: none; /* Remove border if standard buttons have one */
+  color: white;
+  border: none;
+  border-radius: 1.5rem; /* Ensured this is applied */
 }
 @keyframes rainbow {
   0% { background-position: 0% 50%; }
   100% { background-position: 100% 50%; }
 }
 
-.edit-btn, .edit-tool-btn, .pin-btn {
-    /* These could be styled as secondary or accent buttons */
-    background-color: var(--buttons-secondary-backgroundColor, transparent);
-    color: var(--buttons-secondary-color, var(--foreground));
-    border: 1px solid var(--buttons-secondary-border, var(--border));
-}
-.edit-btn:hover, .edit-tool-btn:hover, .pin-btn:hover {
-    background-color: var(--muted);
-}
 .pin-btn.pinned .material-symbols-outlined {
-  color: var(--primary); /* Or a specific icon color for "pinned" state */
+  color: var(--brand-primary); /* Original */
 }
 
 
-/* MCP specific styles from previous CSS */
+/* MCP specific styles from original CSS */
 .mcp-sourced {
   border-left: 3px solid var(--primary);
-  padding-left: var(--compact-spacing);
+  padding-left: 8px; /* Original */
   background-color: color-mix(in srgb, var(--primary) 5%, var(--background));
 }
 .mcp-data-source-note {
-  font-size: var(--font-size-small);
+  font-size: 0.75rem; /* Original */
   color: var(--muted-foreground);
-  margin-top: calc(var(--compact-spacing) / 2);
-  margin-bottom: var(--compact-spacing);
+  margin-top: -2px; /* Original */
+  margin-bottom: 4px; /* Original */
 }
-.read-only-mcp { /* For MCP fields that are fetched and read-only */
-  background-color: var(--muted) !important; /* Use important if shadcn styles are too specific */
+.read-only-mcp {
+  background-color: var(--border) !important; /* Original, using !important if needed */
   color: var(--muted-foreground) !important;
   cursor: not-allowed !important;
-  border-style: dashed !important; /* As per original */
+  border-style: dashed !important;
 }
 
-/* Ensure the theme variables from @theme inline are applied if not already covered by :root */
-/* This block is usually for CSS-in-JS or specific theming tools, but good to have the variables listed */
-/* The values are already in :root, so this is more of a reference */
+/* Clean up any lingering variables from the new system that are not in the restored theme */
+/* (This is more of a conceptual step, as direct variable replacement was done) */
+
+/* Ensure the @theme inline block reflects the restored theme if it's used by any JS */
+/* This is a comment, actual @theme inline is below if needed by JS, otherwise CSS vars are king */
+
 /*
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  ... (all other color variables) ...
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
@@ -592,6 +695,13 @@ footer a:hover, footer a:focus {
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  ... (all shadow variables) ...
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
 }
 */

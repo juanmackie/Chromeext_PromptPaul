@@ -1,336 +1,333 @@
-/* Design System Variables */
+/* Restored HSL/Hex Color Palette */
 :root {
-  --background: oklch(0.98 0.01 240); /* A very light, airy blue for primary background */
-  --foreground: oklch(0.2 0.05 240); /* Deep, sophisticated blue for text */
-  --card: oklch(0.96 0.01 240); /* Slightly darker light blue for cards */
-  --card-foreground: oklch(0.2 0.05 240);
-  --popover: oklch(0.96 0.01 240);
-  --popover-foreground: oklch(0.2 0.05 240);
-  --primary: oklch(0.6 0.15 240); /* The vibrant main blue from your logo */
-  --primary-foreground: oklch(0.98 0.01 240); /* Light text on primary */
-  --secondary: oklch(0.7 0.1 220); /* A slightly greener, refreshing blue */
-  --secondary-foreground: oklch(0.98 0.01 240);
-  --muted: oklch(0.9 0.02 240); /* Soft blue-grey for subtle elements */
-  --muted-foreground: oklch(0.5 0.05 240); /* Mid-grey blue for muted text */
-  --accent: oklch(0.65 0.18 200); /* A captivating teal/cyan for highlights */
-  --accent-foreground: oklch(0.05 0.01 240); /* Near black for punchy contrast */
-  --destructive: oklch(0.6 0.25 20); /* A classic, strong red for destructive actions */
-  --destructive-foreground: oklch(0.98 0.01 240);
-  --border: oklch(0.85 0.03 240); /* Light blue border */
-  --input: oklch(0.92 0.02 240); /* Slightly desaturated input background */
-  --ring: oklch(0.6 0.15 240); /* Ring color matches primary for consistency */
-  --chart-1: oklch(0.6 0.15 240); /* Primary blue for charts */
-  --chart-2: oklch(0.65 0.18 200); /* Accent teal for charts */
-  --chart-3: oklch(0.7 0.1 160); /* A fresh green-blue for charts */
-  --chart-4: oklch(0.75 0.12 280); /* A soft purple-blue for charts */
-  --chart-5: oklch(0.8 0.08 300); /* A light lilac for charts */
-
-  /* Sidebar specific - though design system implies these might be same as main */
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
+  --background: #f3faff;
+  --foreground: #00182a;
+  --card: #ecf3f8;
+  --card-foreground: #00182a;
+  --popover: #ecf3f8;
+  --popover-foreground: #00182a;
+  --primary: #0089d0;
+  --primary-foreground: #f3faff;
+  --secondary: #4aadc9;
+  --secondary-foreground: #f3faff;
+  --muted: #d3e0ea;
+  --muted-foreground: #49677d;
+  --accent: #00adba;
+  --accent-foreground: #000001;
+  --destructive: #f1003b;
+  --destructive-foreground: #f3faff;
+  --border: #bdd1e0;
+  --input: #d9e7f1;
+  --ring: #0089d0;
+  --chart-1: #0089d0;
+  --chart-2: #00adba;
+  --chart-3: #62b289;
+  --chart-4: #9fa5f9;
+  --chart-5: #c5b3ea;
+  --sidebar: #f3faff; /* Matching main background for sidebar */
+  --sidebar-foreground: #00182a;
+  --sidebar-primary: #0089d0;
+  --sidebar-primary-foreground: #f3faff;
+  --sidebar-accent: #00adba;
+  --sidebar-accent-foreground: #000001;
+  --sidebar-border: #bdd1e0;
+  --sidebar-ring: #0089d0;
 
   --font-sans: Poppins, sans-serif;
   --font-serif: Playfair Display, serif;
   --font-mono: Space Mono, monospace;
+  --radius: 0.5rem;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius: 0.5rem; /* Base radius */
+  --shadow-2xs: 0px 3px 0px 0px hsl(330 70% 30% / 0.09);
+  --shadow-xs: 0px 3px 0px 0px hsl(330 70% 30% / 0.09);
+  --shadow-sm: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 1px 2px -1px hsl(330 70% 30% / 0.18);
+  --shadow: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 1px 2px -1px hsl(330 70% 30% / 0.18);
+  --shadow-md: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 2px 4px -1px hsl(330 70% 30% / 0.18);
+  --shadow-lg: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 4px 6px -1px hsl(330 70% 30% / 0.18);
+  --shadow-xl: 0px 3px 0px 0px hsl(330 70% 30% / 0.18), 0px 8px 10px -1px hsl(330 70% 30% / 0.18);
+  --shadow-2xl: 0px 3px 0px 0px hsl(330 70% 30% / 0.45);
 
-
-  --shadow-2xs: 0px 3px 0px 0px hsl(240 70% 30% / 0.09);
-  --shadow-xs: 0px 3px 0px 0px hsl(240 70% 30% / 0.09);
-  --shadow-sm: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 1px 2px -1px hsl(240 70% 30% / 0.18);
-  --shadow: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 1px 2px -1px hsl(240 70% 30% / 0.18);
-  --shadow-md: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 2px 4px -1px hsl(240 70% 30% / 0.18);
-  --shadow-lg: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 4px 6px -1px hsl(240 70% 30% / 0.18);
-  --shadow-xl: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 8px 10px -1px hsl(240 70% 30% / 0.18);
-  --shadow-2xl: 0px 3px 0px 0px hsl(240 70% 30% / 0.45);
-
-  /* Spacing */
+  /* Spacing (from previous attempt, can be adjusted) */
   --container-padding: 1.5rem;
   --card-padding: 1.25rem;
   --element-spacing: 1rem;
   --compact-spacing: 0.5rem;
   --field-spacing: 0.75rem;
+
+  /* Typography sizes (from previous attempt, can be adjusted) */
+  --body-text: 0.875rem; /* Retaining from previous for baseline */
+  --smallText: 0.75rem; /* Retaining from previous for baseline */
 }
 
 .dark {
-  --background: oklch(0.1 0.02 240); /* Deep, captivating dark blue */
-  --foreground: oklch(0.9 0.05 240); /* Bright, clean text for dark mode */
-  --card: oklch(0.15 0.03 240); /* Slightly lighter dark blue for cards */
-  --card-foreground: oklch(0.85 0.05 240);
-  --popover: oklch(0.15 0.03 240);
-  --popover-foreground: oklch(0.85 0.05 240);
-  --primary: oklch(0.75 0.18 240); /* A brighter, more vibrant logo blue for contrast */
-  --primary-foreground: oklch(0.1 0.02 240);
-  --secondary: oklch(0.7 0.15 220); /* A brighter, refreshing blue for dark mode */
-  --secondary-foreground: oklch(0.1 0.02 240);
-  --muted: oklch(0.25 0.05 240); /* Dark blue-grey for subtle elements */
-  --muted-foreground: oklch(0.65 0.05 240); /* Mid-light grey blue for muted text */
-  --accent: oklch(0.8 0.2 200); /* A highly visible teal/cyan accent for dark mode */
-  --accent-foreground: oklch(0.1 0.02 240);
-  --destructive: oklch(0.75 0.3 20); /* A vivid red that pops on dark backgrounds */
-  --destructive-foreground: oklch(0.1 0.02 240);
-  --border: oklch(0.3 0.07 240); /* Dark blue border */
-  --input: oklch(0.2 0.04 240); /* Darker input background */
-  --ring: oklch(0.75 0.18 240); /* Ring color matches primary */
-  --chart-1: oklch(0.75 0.18 240); /* Primary blue for charts */
-  --chart-2: oklch(0.8 0.2 200); /* Accent teal for charts */
-  --chart-3: oklch(0.75 0.15 160); /* A vibrant green-blue for charts */
-  --chart-4: oklch(0.8 0.18 280); /* A vibrant purple-blue for charts */
-  --chart-5: oklch(0.85 0.12 300); /* A vibrant lilac for charts */
-
-  --sidebar: var(--background);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
+  --background: #000408;
+  --foreground: #c1e3fc;
+  --card: #010d16;
+  --card-foreground: #b1d3ec;
+  --popover: #010d16;
+  --popover-foreground: #b1d3ec;
+  --primary: #00b9ff;
+  --primary-foreground: #000408;
+  --secondary: #00b2de;
+  --secondary-foreground: #000408;
+  --muted: #062437;
+  --muted-foreground: #7494ab;
+  --accent: #00e1f0;
+  --accent-foreground: #000408;
+  --destructive: #ff0657;
+  --destructive-foreground: #000408;
+  --border: #00314d;
+  --input: #031826;
+  --ring: #00b9ff;
+  --chart-1: #00b9ff;
+  --chart-2: #00e1f0;
+  --chart-3: #3dca8d;
+  --chart-4: #a9adff;
+  --chart-5: #dabcff;
+  --sidebar: #000408;
+  --sidebar-foreground: #c1e3fc;
+  --sidebar-primary: #00b9ff;
+  --sidebar-primary-foreground: #000408;
+  --sidebar-accent: #00e1f0;
+  --sidebar-accent-foreground: #000408;
+  --sidebar-border: #00314d;
+  --sidebar-ring: #00b9ff;
 
   --font-sans: Quicksand, sans-serif;
+  --radius: 0.5rem;
 
-  --shadow-2xs: 0px 3px 0px 0px hsl(240 80% 50% / 0.09);
-  --shadow-xs: 0px 3px 0px 0px hsl(240 80% 50% / 0.09);
-  --shadow-sm: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 1px 2px -1px hsl(240 80% 50% / 0.18);
-  --shadow: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 1px 2px -1px hsl(240 80% 50% / 0.18);
-  --shadow-md: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 2px 4px -1px hsl(240 80% 50% / 0.18);
-  --shadow-lg: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 4px 6px -1px hsl(240 80% 50% / 0.18);
-  --shadow-xl: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 8px 10px -1px hsl(240 80% 50% / 0.18);
-  --shadow-2xl: 0px 3px 0px 0px hsl(240 80% 50% / 0.45);
+  --shadow-2xs: 0px 3px 0px 0px hsl(300 80% 50% / 0.09);
+  --shadow-xs: 0px 3px 0px 0px hsl(300 80% 50% / 0.09);
+  --shadow-sm: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 1px 2px -1px hsl(300 80% 50% / 0.18);
+  --shadow: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 1px 2px -1px hsl(300 80% 50% / 0.18);
+  --shadow-md: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 2px 4px -1px hsl(300 80% 50% / 0.18);
+  --shadow-lg: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 4px 6px -1px hsl(300 80% 50% / 0.18);
+  --shadow-xl: 0px 3px 0px 0px hsl(300 80% 50% / 0.18), 0px 8px 10px -1px hsl(300 80% 50% / 0.18);
+  --shadow-2xl: 0px 3px 0px 0px hsl(300 80% 50% / 0.45);
 }
 
-/* ====== GENERAL STYLES ====== */
+/* ====== GENERAL STYLES - Using restored theme ====== */
 body {
     font-family: var(--font-sans);
     height: 100vh;
-    width: 100vw; /* Changed from 100% to 100vw for consistency */
+    width: 100vw;
     display: flex;
-    flex-direction: row; /* main layout: sidebar | chat content */
+    flex-direction: row;
     background-color: var(--background);
     color: var(--foreground);
     padding: 0;
     margin: 0;
     overflow: hidden;
-    font-size: var(--body-text, 0.875rem); /* From typography */
+    font-size: var(--body-text);
 }
 
-/* ====== QUICK ACTIONS SIDEBAR ====== */
+/* ====== QUICK ACTIONS SIDEBAR - Restored original playful feel ====== */
 #quick-actions-sidebar {
-    width: var(--sidebar-width, 250px); /* From layout, default to a reasonable value */
+    width: 60px; /* Original width */
     height: 100vh;
     display: flex;
     flex-direction: column;
     background-color: var(--sidebar);
-    padding: var(--compact-spacing); /* Using compact spacing */
-    box-shadow: var(--shadow-sm); /* Using design system shadow */
+    padding: 10px 5px; /* Original padding */
+    box-shadow: var(--shadow-sm); /* Restored shadow, can be adjusted */
     align-items: center;
     box-sizing: border-box;
     border-right: 1px solid var(--sidebar-border);
-    gap: var(--compact-spacing); /* Space between buttons */
+    gap: 5px; /* Original gap */
 }
 
 .quick-action-button {
-    width: calc(var(--sidebar-width, 250px) - 2 * var(--compact-spacing) - 20px); /* Full width minus padding */
-    max-width: 50px; /* Keep them somewhat circular/square */
-    height: 50px; /* Make height consistent */
-    padding: var(--compact-spacing);
-    border: 1px solid transparent; /* Transparent border initially */
-    border-radius: var(--radius); /* Consistent border radius */
+    width: 40px; /* Original size */
+    height: 40px; /* Original size */
+    padding: 0; /* Original padding */
+    border: 1px solid var(--sidebar-primary);
+    border-radius: 50%; /* Original playful circular buttons */
     background-color: var(--sidebar-accent);
     color: var(--sidebar-accent-foreground);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.25rem; /* h2 from typography */
-    font-weight: medium; /* From buttons.primary */
+    font-size: 1.4em; /* Original font size */
+    font-weight: bold; /* Original font weight */
     overflow: hidden;
     box-sizing: border-box;
-    transition: all 150ms ease-in-out; /* From interactions.animations */
-    box-shadow: var(--shadow-xs); /* From buttons.primary */
+    transition: all 0.2s ease; /* Original transition */
 }
 
 .quick-action-button:hover {
-    background-color: var(--sidebar-primary); /* Shift background on hover */
+    background-color: var(--sidebar-primary);
     color: var(--sidebar-primary-foreground);
     border-color: var(--sidebar-ring);
-    transform: scale(1.05); /* Subtle scale on hover */
-    box-shadow: var(--shadow-sm); /* Increase shadow on hover */
+    transform: scale(1.1); /* Original playful hover effect */
+    box-shadow: var(--shadow-md);
 }
 
 .quick-action-button:focus {
     outline: none;
-    box-shadow: 0 0 0 2px var(--sidebar-ring); /* Ring outline for focus */
+    box-shadow: 0 0 0 2px var(--sidebar-ring);
 }
 
 
 /* ====== CHAT AREA ====== */
-.chat-container { /* Parent of main-content and potential future siblings */
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column; /* main-content stacks vertically */
-    height: 100%;
-    overflow: hidden;
-}
-
-.main-content { /* Contains chat-area and input-area */
+.chat-container {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
     height: 100%;
-    overflow: hidden; /* Let children handle their scroll */
-    padding: var(--container-padding);
+    overflow: hidden;
+    /* padding: var(--container-padding); Using padding on main-content instead */
 }
 
-#chat-area {
-    flex-grow: 1; /* Takes available space */
-    background-color: var(--background);
+.main-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    padding: var(--element-spacing); /* Consistent spacing around chat area and input */
+}
+
+#chat-area { /* This is the main card for chat messages */
+    flex-grow: 1;
+    background-color: var(--card); /* Card background */
     overflow-y: auto;
     scroll-behavior: smooth;
-    padding: var(--compact-spacing); /* Use compact spacing inside chat area */
+    padding: var(--card-padding, 1rem); /* Padding inside the chat card */
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg); /* Prominent border radius */
-    margin-bottom: var(--element-spacing); /* Space between chat and input */
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--radius); /* Standard card radius */
+    margin-bottom: var(--element-spacing);
+    box-shadow: var(--shadow-md); /* Prominent shadow for the chat card */
 }
 
-/* ====== INPUT AREA ====== */
+/* ====== INPUT AREA - Styled as a distinct card-like bar ====== */
 #input-area {
     display: flex;
-    padding: var(--compact-spacing);
-    background-color: var(--card); /* Use card as background */
+    padding: var(--compact-spacing); /* Compact padding for the input bar */
+    background-color: var(--card); /* Card background for the input area */
     border-top: 1px solid var(--border);
-    box-shadow: var(--shadow-md); /* More prominent shadow for input area */
+    box-shadow: var(--shadow-lg); /* Lifted shadow for prominent input area */
     gap: var(--compact-spacing);
-    border-radius: var(--radius-lg); /* Rounded corners for the input area itself */
-    margin-top: auto; /* Pushes to bottom if not enough content in chat-area */
+    border-radius: var(--radius); /* Rounded corners for the input bar */
+    margin-top: auto;
 }
 
-#user-input {
+#user-input { /* Input field itself */
     flex-grow: 1;
-    padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem); /* from forms.inputStyle */
-    border: 1px solid var(--input); /* from forms.inputStyle */
-    border-radius: var(--input-borderRadius, var(--radius-sm)); /* from borderRadius or forms.inputStyle */
-    background-color: var(--input-backgroundColor, var(--input)); /* from forms.inputStyle */
+    padding: 0.6rem 1rem; /* Original padding */
+    border: 2px solid var(--input); /* Using input color for border */
+    border-radius: 9999px; /* Original playful pill shape */
+    background-color: var(--background); /* Background for input field to contrast with --card */
     color: var(--foreground);
-    font-size: var(--forms-inputStyle-fontSize, 0.875rem);
-    height: var(--forms-inputStyle-height, 2.5rem);
-    box-shadow: var(--shadow-xs); /* Subtle shadow */
-    transition: all 150ms ease-in-out;
+    font-size: var(--body-text);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); /* Original inner shadow */
+    transition: all 0.2s ease; /* Original transition */
 }
 
 #user-input:focus {
     outline: none;
     border-color: var(--ring);
-    box-shadow: 0 0 0 2px var(--ring); /* Ring outline for focus from interactions */
+    box-shadow: 0 0 0 2px var(--ring), inset 0 1px 3px rgba(0,0,0,0.1);
 }
 
-/* ====== MESSAGES ====== */
+/* ====== MESSAGES - Restoring distinct bubble appearance ====== */
 .message {
     display: flex;
     flex-direction: column;
-    margin-bottom: var(--element-spacing); /* Space between messages */
-    padding: var(--chatWidget-message-padding, 0.75rem 1rem); /* From chatWidget.message */
-    max-width: 80%; /* Don't let messages take full width */
-    border: 1px solid transparent; /* Initially no border, specified by type */
-    transition: transform 150ms ease-in-out, box-shadow 150ms ease-in-out;
-    box-shadow: var(--shadow-sm); /* Default shadow for messages */
+    margin-bottom: var(--compact-spacing); /* Tighter spacing between messages */
+    padding: 0.8rem 1.2rem; /* Original padding */
+    max-width: 80%;
+    border: 1px solid transparent; /* Will be overridden by user/llm message */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: var(--shadow-sm); /* Subtle shadow for messages */
     word-wrap: break-word;
+    border-radius: 1rem; /* General message rounding */
 }
 
 .message:hover {
-    transform: translateY(-2px); /* Subtle lift */
-    box-shadow: var(--shadow-md); /* Increase shadow on hover */
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
 }
 
-.llm-message { /* botMessage from chatWidget */
-    background-color: var(--chatWidget-message-botMessage-backgroundColor, var(--muted));
-    color: var(--chatWidget-message-botMessage-color, var(--foreground));
-    border-radius: var(--chatWidget-message-botMessage-borderRadius, 1rem 1rem 1rem 0.25rem);
-    align-self: flex-start; /* LLM/Bot messages on the left */
+.llm-message {
+    background-color: var(--muted); /* Muted background for LLM */
+    color: var(--muted-foreground); /* Muted foreground for LLM */
+    align-self: flex-start;
+    border-radius: 1rem 1rem 1rem 0.25rem; /* Original chat bubble shape */
     border: 1px solid var(--border);
 }
 
-.user-message { /* userMessage from chatWidget */
-    background-color: var(--chatWidget-message-userMessage-backgroundColor, var(--primary));
-    color: var(--chatWidget-message-userMessage-color, var(--primary-foreground));
-    border-radius: var(--chatWidget-message-userMessage-borderRadius, 1rem 1rem 0.25rem 1rem);
-    align-self: flex-end; /* User messages on the right */
-    border: 1px solid var(--primary); /* Border to match primary color */
+.user-message {
+    background-color: var(--primary); /* Primary color for user messages */
+    color: var(--primary-foreground);
+    align-self: flex-end;
+    border-radius: 1rem 1rem 0.25rem 1rem; /* Original chat bubble shape */
+    border: 1px solid var(--primary);
 }
 
 /* Code blocks within messages */
 .message pre, .message code {
     white-space: pre-wrap;
     overflow-x: auto;
-    background-color: color-mix(in srgb, var(--card-foreground) 5%, var(--card)); /* Slightly tinted background */
+    background-color: color-mix(in srgb, var(--foreground) 5%, var(--background)); /* Darker tint for code on light, lighter on dark */
     padding: var(--compact-spacing);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius); /* Consistent radius */
     font-family: var(--font-mono);
-    font-size: 0.8em; /* Smaller for code */
+    font-size: 0.8em;
     border: 1px solid var(--border);
 }
+.dark .message pre, .dark .message code {
+    background-color: color-mix(in srgb, var(--foreground) 15%, var(--background));
+}
 
-/* ====== BUTTONS ====== */
-/* General button styling - can be overridden by specific button IDs/classes */
+
+/* ====== BUTTONS - Restored original playful feel ====== */
 button {
-    background-color: var(--buttons-primary-backgroundColor, var(--primary));
-    color: var(--buttons-primary-color, var(--primary-foreground));
-    padding: var(--buttons-primary-padding, 0.5rem 1rem);
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    padding: 0.6rem 1.2rem; /* Original padding */
     border: none;
-    border-radius: var(--buttons-button-borderRadius, var(--radius));
+    border-radius: 9999px; /* Original playful pill shape */
     cursor: pointer;
-    font-weight: var(--buttons-primary-fontWeight, medium);
-    font-size: var(--buttons-primary-fontSize, 0.875rem);
-    height: var(--buttons-primary-height, 2.5rem);
-    box-shadow: var(--buttons-button-shadow, var(--shadow-xs));
-    transition: all 150ms ease-in-out; /* From interactions.animations */
+    font-weight: 500; /* Original font weight */
+    font-size: var(--body-text);
+    box-shadow: var(--shadow-xs); /* Subtle shadow */
+    transition: all 0.2s ease; /* Original transition */
 }
 
 button:hover {
-    transform: translateY(-2px) scale(1.02); /* Subtle lift and scale from animations.buttonPress */
-    box-shadow: var(--shadow-md); /* Increase shadow */
-    filter: brightness(1.1); /* Slight brightness increase */
+    transform: translateY(-2px) scale(1.03); /* Slightly more playful hover */
+    box-shadow: var(--shadow-md);
+    filter: brightness(1.1);
 }
 
 button:focus {
     outline: none;
-    box-shadow: 0 0 0 2px var(--ring); /* Ring outline for focus from interactions */
+    box-shadow: 0 0 0 2px var(--ring), var(--shadow-sm);
 }
 
 button:active {
-    transform: translateY(0px) scale(0.98); /* Press effect */
+    transform: translateY(0px) scale(0.97); /* Slightly more playful active */
     box-shadow: var(--shadow-xs);
 }
 
-#send-button { /* This could be a primary button */
-    /* Inherits general button styles, could add specific overrides if needed */
+#send-button {
+    background-color: var(--secondary); /* Using secondary color for send */
+    color: var(--secondary-foreground);
 }
 
-#clear-button { /* This is a destructive button */
-    background-color: var(--buttons-destructive-backgroundColor, var(--destructive));
-    color: var(--buttons-destructive-color, var(--destructive-foreground));
-    /* Other properties like padding, border-radius would be from destructive if specified, or primary */
+#clear-button {
+    background-color: var(--destructive);
+    color: var(--destructive-foreground);
 }
 
-/* Specific styles for one-off instruction area if it's used */
+/* Specific styles for one-off instruction area if it's used - styled as a card */
 #oneoff-instruction-area {
-    padding: var(--card-padding);
+    padding: var(--card-padding, 1rem);
     background-color: var(--card);
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg); /* More prominent for modal-like sections */
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
     margin-top: var(--element-spacing);
 }
 
@@ -339,66 +336,57 @@ button:active {
     overflow-y: auto;
     padding: var(--compact-spacing);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background-color: var(--input); /* Use input background for this display */
+    border-radius: var(--radius);
+    background-color: var(--input);
     margin-bottom: var(--element-spacing);
-    font-size: var(--smallText, 0.75rem);
+    font-size: var(--smallText);
 }
 
 #instructionInput {
-    width: calc(100% - 2 * var(--forms-inputStyle-padding, 0.75rem)); /* Full width minus padding */
+    width: calc(100% - 2 * 0.5rem); /* padding 0.5rem */
     min-height: 100px;
-    padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem);
+    padding: 0.5rem;
     border: 1px solid var(--input);
-    border-radius: var(--input-borderRadius, var(--radius-sm));
+    border-radius: var(--radius);
     margin-bottom: var(--element-spacing);
     resize: vertical;
-    background-color: var(--input-backgroundColor, var(--input));
+    background-color: var(--input);
     color: var(--foreground);
-    font-size: var(--forms-inputStyle-fontSize, 0.875rem);
+    font-size: var(--body-text);
 }
 
 /* Dark theme toggle if it remains in chat.html */
 #darkThemeToggle {
-    /* Style according to design system if it's a custom checkbox/toggle */
+    /* Needs specific styling if it's a custom component */
 }
 
-/* Responsive adjustments based on design system */
-@media (max-width: 768px) { /* mobile breakpoint */
+/* Responsive adjustments - Restored original approach */
+@media (max-width: 768px) {
     body {
-        flex-direction: column; /* Stack sidebar and chat on mobile */
+        flex-direction: column;
     }
 
     #quick-actions-sidebar {
         width: 100%;
-        height: auto; /* Adjust height for horizontal layout */
-        flex-direction: row; /* Buttons in a row */
-        justify-content: space-around; /* Distribute buttons */
-        padding: var(--compact-spacing);
+        height: auto;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 5px; /* Original thinner padding for mobile */
         border-right: none;
         border-bottom: 1px solid var(--sidebar-border);
     }
 
     .quick-action-button {
-        width: auto; /* Allow buttons to size based on content or fixed small size */
-        flex-grow: 1; /* Allow buttons to take up space */
-        margin-bottom: 0; /* No margin bottom in horizontal layout */
+        width: 35px; /* Smaller buttons for mobile */
+        height: 35px;
+        font-size: 1.2em;
+        margin-bottom: 0;
     }
 
     .main-content {
-        padding: var(--compact-spacing); /* Less padding on mobile */
+        padding: var(--compact-spacing);
     }
-
-    #chat-area {
-        margin-bottom: var(--compact-spacing);
-    }
-
-    .message {
-        max-width: 95%; /* Messages can be wider on mobile */
-    }
-
-    #input-area {
-        border-radius: 0; /* May look better full-width without radius on mobile bottom */
-        /* Consider if input area should be fixed or scroll with content on mobile */
-    }
+    #chat-area { margin-bottom: var(--compact-spacing); }
+    .message { max-width: 95%; }
+    #input-area { border-radius: 0; }
 }
