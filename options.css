@@ -1,6 +1,5 @@
 /* Extension Theme Variables */
 :root {
-  /* Light theme colors */
   --ext-background: #f3faff;
   --ext-foreground: #00182a;
   --ext-card: #ecf3f8;
@@ -20,15 +19,11 @@
   --ext-border: #bdd1e0;
   --ext-input: #d9e7f1;
   --ext-ring: #0089d0;
-  
-  /* Chart colors */
   --ext-chart-1: #0089d0;
   --ext-chart-2: #00adba;
   --ext-chart-3: #62b289;
   --ext-chart-4: #9fa5f9;
   --ext-chart-5: #c5b3ea;
-  
-  /* Sidebar colors */
   --ext-sidebar: #f3faff;
   --ext-sidebar-foreground: #00182a;
   --ext-sidebar-primary: #0089d0;
@@ -37,24 +32,59 @@
   --ext-sidebar-accent-foreground: #000001;
   --ext-sidebar-border: #bdd1e0;
   --ext-sidebar-ring: #0089d0;
-  
+
   /* Layout */
   --ext-radius: 0.5rem;
   --ext-radius-sm: 0.25rem;
   --ext-radius-md: 0.375rem;
   --ext-radius-lg: 0.5rem;
   --ext-radius-xl: 0.75rem;
-  
+
   /* Shadows - Simplified for extension UI */
   --ext-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --ext-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-  --ext-shadow-md: 极 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --ext-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --ext-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --ext-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Shadcn theme variables mapped to --ext variables */
+  --background: var(--ext-background);
+  --foreground: var(--ext-foreground);
+  --card: var(--ext-card);
+  --card-foreground: var(--ext-card-foreground);
+  --popover: var(--ext-popover);
+  --popover-foreground: var(--ext-popover-foreground);
+  --primary: var(--ext-primary);
+  --primary-foreground: var(--ext-primary-foreground);
+  --secondary: var(--ext-secondary);
+  --secondary-foreground: var(--ext-secondary-foreground);
+  --muted: var(--ext-muted);
+  --muted-foreground: var(--ext-muted-foreground);
+  --accent: var(--ext-accent);
+  --accent-foreground: var(--ext-accent-foreground);
+  --destructive: var(--ext-destructive);
+  --destructive-foreground: var(--ext-destructive-foreground);
+  --border: var(--ext-border);
+  --input: var(--ext-input);
+  --ring: var(--ext-ring);
+
+  /* Existing variables - these should be reviewed and replaced with --ext equivalents if possible */
+  --brand-primary: var(--ext-primary);
+  --brand-secondary: var(--ext-secondary);
+  --brand-background: var(--ext-background);
+  --brand-text: var(--ext-foreground);
+  --surface-color: var(--ext-card);
+  --background-color: var(--ext-background);
+  --text-color: var(--ext-foreground);
+  --border-color: var(--ext-border);
+  --shadow-sm: var(--ext-shadow-sm);
+  --shadow-md: var(--ext-shadow-md);
+  --shadow-lg: var(--ext-shadow-lg);
+  --font-family: 'Inter', sans-serif;
 }
 
 /* Dark theme */
-[data-theme="dark"], 
+[data-theme="dark"],
 .dark-theme,
 .ext-dark {
   --ext-background: #000408;
@@ -76,13 +106,11 @@
   --ext-border: #00314d;
   --ext-input: #031826;
   --ext-ring: #00b9ff;
-  
   --ext-chart-1: #00b9ff;
   --ext-chart-2: #00e1f0;
-  --极-chart-3: #3dca8d;
+  --ext-chart-3: #3dca8d;
   --ext-chart-4: #a9adff;
   --ext-chart-5: #dabcff;
-  
   --ext-sidebar: #000408;
   --ext-sidebar-foreground: #c1e3fc;
   --ext-sidebar-primary: #00b9ff;
@@ -91,6 +119,41 @@
   --ext-sidebar-accent-foreground: #000408;
   --ext-sidebar-border: #00314d;
   --ext-sidebar-ring: #00b9ff;
+
+  /* Shadcn dark theme variables mapped to --ext variables */
+  --background: var(--ext-background);
+  --foreground: var(--ext-foreground);
+  --card: var(--ext-card);
+  --card-foreground: var(--ext-card-foreground);
+  --popover: var(--ext-popover);
+  --popover-foreground: var(--ext-popover-foreground);
+  --primary: var(--ext-primary);
+  --primary-foreground: var(--ext-primary-foreground);
+  --secondary: var(--ext-secondary);
+  --secondary-foreground: var(--ext-secondary-foreground);
+  --muted: var(--ext-muted);
+  --muted-foreground: var(--ext-muted-foreground);
+  --accent: var(--ext-accent);
+  --accent-foreground: var(--ext-accent-foreground);
+  --destructive: var(--ext-destructive);
+  --destructive-foreground: var(--ext-destructive-foreground);
+  --border: var(--ext-border);
+  --input: var(--ext-input);
+  --ring: var(--ext-ring);
+
+  /* Existing dark theme variables - review and replace */
+  --brand-primary: var(--ext-primary);
+  --selection-color: #88d0ec; /* This could potentially be mapped to an --ext variable if one fits */
+  --brand-secondary: var(--ext-secondary);
+  --brand-background: var(--ext-background);
+  --brand-text: var(--ext-foreground);
+  --surface-color: var(--ext-card);
+  --background-color: var(--ext-background);
+  --text-color: var(--ext-foreground);
+  --border-color: var(--ext-border);
+  --shadow-sm: var(--ext-shadow-sm);
+  --shadow-md: var(--ext-shadow-md);
+  --shadow-lg: var(--ext-shadow-lg);
 }
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
@@ -106,75 +169,12 @@
   -webkit-font-smoothing: antialiased;
 }
 
-:root {
-  /* Shadcn theme variables */
-  --background: 0 0% 100%;
-  --foreground: 222.2 47.4% 11.2%;
-  --primary: 194 100% 27%; /* #006879 */
-  --primary-foreground: 0 0% 100%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 194 100% 27%;
-
-  /* Existing variables */
-  --brand-primary: #006879;
-  --brand-secondary: #4b6268;
-  --brand-background: #b8ecf9;
-  --brand-text: #333;
-  --surface-color: #ffffff;
-  --background-color: #f8fafc;
-  --text-color: #1e293b;
-  --border-color: #004e5b;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
-  --font-family: 'Inter', sans-serif;
-}
-
-.dark {
-  /* Shadcn dark theme */
-  --background: 224 71% 4%;
-  --foreground: 213 31% 91%;
-  --primary: 194 100% 40%;
-  --primary-foreground: 0 0% 100%;
-  --border: 216 34% 17%;
-  --input: 216 34% 17%;
-  --ring: 194 100% 40%;
-
-  /* Existing dark theme */
-  --brand-primary: #004d61;
-  --selection-color: #88d0ec;
-  --brand-secondary: #1c3439;
-  --brand-background: #181a20;
-  --brand-text: #e0e6f0;
-  --surface-color: #23272f;
-  --background-color: #181a20;
-  --text-color: #e0e6f0;
-  --border-color: #353a45;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
-}
+/* Removed the redundant :root and .dark variable declarations as they are already defined with --ext- prefix */
 
 /* Dark Theme Overrides */
 body.dark-theme {
-  --brand-primary: #004d61;
-  --selection-color: #88d0ec;
-  --brand-secondary: #1c3439;
-  --brand-background: #181a20;
-  --brand-text: #e0e6f0;
-  --surface-color: #23272f;
-  --background-color: #181a20;
-  --text-color: #e0e6f0;
-  --border-color: #353a45;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);
-  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.5);
-  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
-}
-
-body.dark-theme {
-  background-color: var(--brand-background) !important;
-  color: var(--brand-text) !important;
+  background-color: var(--ext-background) !important;
+  color: var(--ext-foreground) !important;
 }
 
 body.dark-theme .container,
@@ -183,71 +183,74 @@ body.dark-theme .instruction-form.card,
 body.dark-theme .import-export.card,
 body.dark-theme .tools-card,
 body.dark-theme .config-card {
-  background: var(--surface-color) !important;
-  color: var(--text-color) !important;
-  border-color: var(--border-color) !important;
+  background: var(--ext-card) !important;
+  color: var(--ext-card-foreground) !important;
+  border-color: var(--ext-border) !important;
 }
 
 body.dark-theme h1,
 body.dark-theme h2,
 body.dark-theme h3,
 body.dark-theme label {
-  color: var(--brand-text) !important;
+  color: var(--ext-foreground) !important;
 }
 
 body.dark-theme input,
 body.dark-theme textarea {
-  background-color: #23272f !important;
-  color: #e0e6f0 !important;
-  border-color: var(--border-color) !important;
+  background-color: var(--ext-input) !important;
+  color: var(--ext-foreground) !important;
+  border-color: var(--ext-border) !important;
 }
 
 body.dark-theme button {
-  background-color: var(--brand-primary) !important;
-  color: #fff !important;
+  background-color: var(--ext-primary) !important;
+  color: var(--ext-primary-foreground) !important;
 }
 
 body.dark-theme .save-button,
 body.dark-theme .save-instruction-button {
-  background-color: #354a53!important;
-  color: #88d0ec!important;
+  background-color: var(--ext-secondary) !important; /* Example: using secondary for these buttons */
+  color: var(--ext-secondary-foreground) !important;
   border-radius: 1.5rem;
 }
 
 body.dark-theme .clear-form-button {
-  background-color: #b89c4c !important;
+  background-color: var(--ext-destructive) !important; /* Example: using destructive */
+  color: var(--ext-destructive-foreground) !important;
 }
 
 body.dark-theme .export-button,
 body.dark-theme .import-button {
-  background-color: #3a7bd5 !important;
+  background-color: var(--ext-accent) !important; /* Example: using accent */
+  color: var(--ext-accent-foreground) !important;
 }
 
 body.dark-theme .delete-tool-btn,
 body.dark-theme .delete-btn {
-  background-color: #690005 !important;
-  color: #ffb4ab!important;
+  background-color: var(--ext-destructive) !important;
+  color: var(--ext-destructive-foreground) !important;
 }
 
 body.dark-theme .status {
-  background-color: #23272f !important;
-  color: #e0e6f0 !important;
-  border-color: var(--border-color) !important;
+  background-color: var(--ext-popover) !important;
+  color: var(--ext-popover-foreground) !important;
+  border-color: var(--ext-border) !important;
 }
 
 body.dark-theme #instructionsTable thead {
-  background-color: var(--brand-secondary) !important;
+  background-color: var(--ext-secondary) !important; /* Example: using secondary */
 }
 
 body.dark-theme ::selection {
-  background: var(--selection-color);
+  background: var(--ext-primary); /* Example: using primary for selection */
+  color: var(--ext-primary-foreground);
 }
 
 body {
   padding: 2rem;
   font-family: var(--font-family);
-  background-color: var(--brand-background);
-  color: var(--brand-text);
+  background-color: var(--ext-background);
+  color: var(--ext-foreground);
   line-height: 1.6;
   transition: background-color 0.3s ease;
 }
@@ -259,13 +262,13 @@ body {
 }
 
 .card {
-  background: var(--surface-color);
+  background: var(--ext-card);
   border-radius: 1rem;
   padding: 2rem;
   margin-bottom: 2rem;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--ext-shadow-md);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--ext-border); /* Adjusted to use ext-border */
   position: relative;
   overflow: hidden;
   transition: background-color 0.3s ease, border-color 0.3s ease;
@@ -280,8 +283,8 @@ body {
   bottom: 0;
   background: linear-gradient(
     120deg,
-    rgba(255,255,255,0.2) 0%,
-    rgba(255,255,255,0.05) 100%
+    hsla(var(--ext-primary-hsl), 0.2) 0%, /* Example: Using primary with alpha */
+    hsla(var(--ext-primary-hsl), 0.05) 100%
   );
   pointer-events: none;
   border-radius: 1rem;
@@ -291,13 +294,13 @@ h1 {
   font-size: 2.5rem;
   font-weight: 600;
   margin-bottom: 2rem;
-  color: var(--brand-primary);
+  color: var(--ext-primary);
   text-align: center;
 }
 
 h2, h3 {
   font-weight: 500;
-  color: var(--brand-text);
+  color: var(--ext-foreground);
   margin-bottom: 1.5rem;
 }
 
@@ -310,7 +313,7 @@ label {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: var(--brand-text);
+  color: var(--ext-foreground);
   font-size: 0.95rem;
   transition: color 0.2s ease;
 }
@@ -321,13 +324,13 @@ input[type="number"], /* Assuming number inputs aren't using .shadcn-input style
 textarea:not(.shadcn-textarea) {
   width: 90%;
   padding: 1rem 1.25rem;
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--ext-border);
   border-radius: 1.5rem; /* This radius is for non-shadcn elements */
-  background-color: rgba(255, 255, 255, 0.85);
+  background-color: var(--ext-input); /* Adjusted */
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   font-family: inherit;
   font-size: 1rem;
-  color: var(--brand-text);
+  color: var(--ext-foreground);
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
 }
 
@@ -346,42 +349,42 @@ textarea:not(.shadcn-textarea) {
 input[type="text"]:hover,
 input[type="number"]:hover,
 textarea:hover {
-  border-color: var(--brand-secondary);
-  background-color: rgba(255, 255, 255, 0.95);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
+  border-color: var(--ext-secondary); /* Adjusted */
+  background-color: hsl(var(--ext-input-hsl), 0.95); /* Example: Lighten input color on hover */
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--ext-shadow-sm);
 }
 
 input[type="text"]:focus,
 input[type="number"]:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--brand-primary);
-  background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb), 0.15), var(--shadow-md);
+  border-color: var(--ext-primary); /* Adjusted */
+  background-color: var(--ext-background); /* Adjusted */
+  box-shadow: 0 0 0 3px hsla(var(--ext-primary-hsl), 0.15), var(--ext-shadow-md); /* Example: Using primary with alpha */
   transform: translateY(-1px);
 }
 
 input[type="text"]::placeholder,
 input[type="number"]::placeholder,
 textarea::placeholder {
-  color: #94a3b8;
+  color: var(--ext-muted-foreground); /* Adjusted */
   opacity: 0.7;
 }
 
 .form-group:focus-within label {
-  color: var(--brand-primary);
+  color: var(--ext-primary); /* Adjusted */
 }
 select#profileSelect {
   width: calc(90% + 2.5rem); /* Match width of other inputs including padding */
   padding: 0.5rem 1.25rem; /* Reduced padding to prevent text cutoff */
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--ext-border);
   border-radius: 1.5rem;
-  background-color: rgba(255, 255, 255, 0.85);
+  background-color: var(--ext-input);
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   font-family: inherit;
   font-size: 1rem;
   line-height: 1.5; /* Added line-height for better vertical alignment */
-  color: var(--brand-text);
+  color: var(--ext-foreground);
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
   -webkit-appearance: none; /* Remove default S.O. styling */
   -moz-appearance: none;
@@ -393,38 +396,38 @@ select#profileSelect {
 }
 
 select#profileSelect:hover {
-  border-color: var(--brand-secondary);
-  background-color: rgba(255, 255, 255, 0.95);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
+  border-color: var(--ext-secondary);
+  background-color: hsl(var(--ext-input-hsl), 0.95); /* Example: Lighten input */
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--ext-shadow-sm);
 }
 
 select#profileSelect:focus {
   outline: none;
-  border-color: var(--brand-primary);
-  background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb, 47, 104, 151), 0.15), var(--shadow-md); /* Added fallback for --brand-primary-rgb */
+  border-color: var(--ext-primary);
+  background-color: var(--ext-background);
+  box-shadow: 0 0 0 3px hsla(var(--ext-primary-hsl), 0.15), var(--ext-shadow-md);
   transform: translateY(-1px);
 }
 
 /* Dark theme adjustments for select */
 body.dark-theme select#profileSelect {
-  background-color: #23272f !important;
-  color: #e0e6f0 !important;
-  border-color: var(--border-color) !important;
-  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23e0e6f0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
+  background-color: var(--ext-input) !important;
+  color: var(--ext-foreground) !important;
+  border-color: var(--ext-border) !important;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23c1e3fc%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E'); /* Adjusted fill for dark theme */
 }
 /* Styling for instructionToolChoice multi-select */
 select#instructionToolChoice {
   width: calc(90% + 2.5rem); /* Match width of other inputs */
   padding: 0.5rem 1.25rem; /* Reduced padding to prevent text cutoff */
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--ext-border);
   border-radius: 0.5rem;
-  background-color: rgba(255, 255, 255, 0.85);
+  background-color: var(--ext-input);
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
   font-family: inherit;
   font-size: 1rem;
   line-height: 1.5; /* Added line-height for better vertical alignment */
-  color: var(--brand-text);
+  color: var(--ext-foreground);
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
   /* For multi-select, appearance is usually handled by the browser,
      but we ensure consistent border, background, and padding.
@@ -432,40 +435,40 @@ select#instructionToolChoice {
 }
 
 select#instructionToolChoice:hover {
-  border-color: var(--brand-secondary);
-  background-color: rgba(255, 255, 255, 0.95);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow-sm);
+  border-color: var(--ext-secondary);
+  background-color: hsl(var(--ext-input-hsl), 0.95); /* Example: Lighten input */
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--ext-shadow-sm);
 }
 
 select#instructionToolChoice:focus {
   outline: none;
-  border-color: var(--brand-primary);
-  background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(var(--brand-primary-rgb, 47, 104, 151), 0.15), var(--shadow-md);
+  border-color: var(--ext-primary);
+  background-color: var(--ext-background);
+  box-shadow: 0 0 0 3px hsla(var(--ext-primary-hsl), 0.15), var(--ext-shadow-md);
   /* transform: translateY(-1px); /* Might not be desirable for a larger multi-select box */
 }
 
 /* Dark theme adjustments for instructionToolChoice multi-select */
 body.dark-theme select#instructionToolChoice {
-  background-color: #23272f !important;
-  color: #e0e6f0 !important;
-  border-color: var(--border-color) !important;
+  background-color: var(--ext-input) !important;
+  color: var(--ext-foreground) !important;
+  border-color: var(--ext-border) !important;
 }
 
 body.dark-theme select#instructionToolChoice option {
-  background-color: #23272f; /* Ensure options have dark background */
-  color: #e0e6f0;
+  background-color: var(--ext-input); /* Ensure options have dark background */
+  color: var(--ext-foreground);
 }
 
 /* Styling for selected options in dark theme (browser dependent) */
 body.dark-theme select#instructionToolChoice option:checked {
-  background-color: var(--brand-primary) !important; /* Or a suitable dark theme selection color */
-  color: #ffffff !important;
+  background-color: var(--ext-primary) !important;
+  color: var(--ext-primary-foreground) !important;
 }
 
 button {
-  background-color: var(--brand-primary);
-  color: white;
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
   padding: 0.8rem 1.6rem;
   border: none;
   border-radius: 0.5rem;
@@ -476,18 +479,18 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--ext-shadow-sm);
 }
 
 button:hover {
-  background-color: var(--brand-secondary);
+  background-color: var(--ext-secondary);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--ext-shadow-md);
 }
 
 button:active {
   transform: translateY(0);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--ext-shadow-sm);
 }
 
 button:disabled {
@@ -496,8 +499,8 @@ button:disabled {
 }
 
 .ko-fi-button { /*Coffee */
-  background-color: #004e5b;
-  color: #a8ecff;
+  background-color: var(--ext-primary); /* Adjusted */
+  color: var(--ext-primary-foreground); /* Adjusted */
   margin-bottom: 1.5rem;
   width: 192.93px;
   height: 47.81px;
@@ -505,47 +508,47 @@ button:disabled {
 }
 
 .save-button {
-  background-color: #334a50;
-  color: #cee7ee;
+  background-color: var(--ext-secondary); /* Adjusted */
+  color: var(--ext-secondary-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 
 /* Custom styles for Save Settings button */
 #save {
   border-radius: 1.5rem !important;
-  background-color: #004e5b;
-  color: #a8ecff;
+  background-color: var(--ext-primary); /* Adjusted */
+  color: var(--ext-primary-foreground); /* Adjusted */
 }
 
 .save-instruction-button {
-  background-color: #334a50;
-  color: #cee7ee;
+  background-color: var(--ext-secondary); /* Adjusted */
+  color: var(--ext-secondary-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 
 .clear-form-button {
-  background-color: #ffdad6;
-  color: #93000a;
+  background-color: var(--ext-muted); /* Adjusted */
+  color: var(--ext-muted-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 
 .export-button {
-  background-color: #334a50;
-  color: #cee7ee;
+  background-color: var(--ext-accent); /* Adjusted */
+  color: var(--ext-accent-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 
 .import-button {
-  background-color: #334a50;
-  color: #cee7ee;
+  background-color: var(--ext-accent); /* Adjusted */
+  color: var(--ext-accent-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 
 .delete-tool-btn {
- background-color: #ffdad6;
+ background-color: var(--ext-destructive); /* Adjusted */
  margin-top: 0.5rem;
  margin-bottom: 0.5rem;
- color: #93000a;
+ color: var(--ext-destructive-foreground); /* Adjusted */
  border-radius: 1.5rem;
 }
 
@@ -553,41 +556,41 @@ button:disabled {
   margin-right: 0.5rem;
   margin-bottom: 0.5rem;
   margin-top: 0.5rem;
-  background-color: #a8edff; /* Updated to match button-pin */
-  color: #004e5b;
+  background-color: var(--ext-accent); /* Adjusted to match button-pin */
+  color: var(--ext-accent-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 .edit-tool-btn {
   border-radius: 1.5rem;
-  background-color: #a8edff; /* Updated to match button-pin */
-  color: #004e5b;
+  background-color: var(--ext-accent); /* Adjusted to match button-pin */
+  color: var(--ext-accent-foreground); /* Adjusted */
 }
 
 .delete-btn {
-  background-color: #ffdad6; /* Softer red */
-  color: #93000a;
+  background-color: var(--ext-destructive); /* Softer red */
+  color: var(--ext-destructive-foreground); /* Adjusted */
   border-radius: 1.5rem;
 }
 
 /* Custom styles for Delete Profile button */
 #deleteProfileButton {
-  background-color: #ffb4ab !important;
-  color: #690005 !important;
+  background-color: var(--ext-destructive) !important; /* Adjusted */
+  color: var(--ext-destructive-foreground) !important; /* Adjusted */
   border-radius: 1.5rem;
   margin-top: 0.5rem;
 }
 
 .revert-button {
-  background-color: #ffdad6; /* Red */
-  color: #93000a;
+  background-color: var(--ext-destructive); /* Red */
+  color: var(--ext-destructive-foreground); /* Adjusted */
   width: 192.93px;
   height: 47.81px;
   border-radius: 1.5rem;
 }
 
 .feedback-button {
-  background-color: #004e5b;
-  color: #a8ecff;
+  background-color: var(--ext-primary); /* Adjusted */
+  color: var(--ext-primary-foreground); /* Adjusted */
   width: 192.93px;
   height: 47.81px;
   border-radius: 1.5rem;
@@ -607,9 +610,9 @@ button:disabled {
   backdrop-filter: blur(8px);
   animation: slideIn 0.3s ease-out;
   z-index: 1000;
-  box-shadow: var(--shadow-md);
-  background-color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: var(--ext-shadow-md);
+  background-color: var(--ext-popover); /* Adjusted */
+  border: 1px solid var(--ext-border); /* Adjusted */
 }
 
 .status::before {
@@ -621,21 +624,21 @@ button:disabled {
   bottom: 0;
   background: linear-gradient(
     45deg,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0) 100%
+    hsla(var(--ext-popover-hsl), 0.1) 0%, /* Example */
+    hsla(var(--ext-popover-hsl), 0) 100%
   );
   pointer-events: none;
   border-radius: 0.75rem;
 }
 
 .success {
-  background-color: rgba(46, 204, 113, 0.9);
-  color: #ffffff;
+  background-color: var(--ext-accent); /* Example: Using accent for success */
+  color: var(--ext-accent-foreground);
 }
 
 .error {
-  background-color: rgba(231, 76, 60, 0.9);
-  color: #ffffff;
+  background-color: var(--ext-destructive); /* Example: Using destructive for error */
+  color: var(--ext-destructive-foreground);
 }
 
 
@@ -657,12 +660,12 @@ button:disabled {
   margin-bottom: 1.5rem;
   border-radius: 0.5rem;
   overflow: hidden; /* Ensures rounded corners are respected */
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--ext-shadow-sm);
 }
 
 #instructionsTable thead {
-  background-color: var(--brand-secondary);
-  color: white;
+  background-color: var(--ext-secondary); /* Adjusted */
+  color: var(--ext-secondary-foreground); /* Adjusted */
   font-weight: 500;
 }
 
@@ -673,29 +676,29 @@ button:disabled {
 }
 
 #instructionsTable tbody tr:nth-child(even) {
-  background-color: rgba(249, 250, 251, 0.7); /* Very light background for even rows */
+  background-color: hsl(var(--ext-card-hsl), 0.7); /* Example: Lighter card color */
 }
 body.dark-theme #instructionsTable tbody tr:nth-child(even) {
-  background: var(--surface-color) !important;
+  background: var(--ext-card) !important; /* Adjusted */
 }
 
 body.dark-theme #toolsTable {
-  color: var(--text-color) !important; /* Use the dark theme text color variable */
+  color: var(--ext-foreground) !important; /* Use the dark theme text color variable */
 }
 
 #instructionsTable tbody tr:hover {
-  background-color: rgba(240, 242, 245, 0.8); /* Lighter hover effect */
+  background-color: hsl(var(--ext-card-hsl), 0.8); /* Example: Slightly darker card color on hover */
 }
 
 
 .instruction-form.card {
-  background-color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: hsl(var(--ext-card-hsl), 0.9); /* Example */
+  border: 1px solid hsl(var(--ext-border-hsl), 0.2); /* Example */
 }
 
 .import-export.card {
-  background-color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: hsl(var(--ext-card-hsl), 0.9); /* Example */
+  border: 1px solid hsl(var(--ext-border-hsl), 0.2); /* Example */
 }
 
 
@@ -716,12 +719,12 @@ footer {
   text-align: center;
   margin-top: 3rem;
   padding: 1.5rem;
-  color: #64748b;
+  color: var(--ext-muted-foreground); /* Adjusted */
   font-size: 0.875rem;
 }
 
 footer a {
-  color: var(--brand-primary);
+  color: var(--ext-primary); /* Adjusted */
   text-decoration: none;
   font-weight: 500;
 }
@@ -849,8 +852,8 @@ footer a:hover {
 
 /* Styles for Pin Button in Instructions Table */
 .pin-btn {
-  background-color: #a8edff;
-  color: #004e5b;
+  background-color: var(--ext-accent); /* Adjusted */
+  color: var(--ext-accent-foreground); /* Adjusted */
   border: none;
   cursor: pointer;
   padding: 0.25rem; /* Adjust as needed */
@@ -864,25 +867,25 @@ footer a:hover {
 
 /* Optional: Style for when a button is pinned */
 .pin-btn.pinned .material-symbols-outlined {
-  color: var(--brand-primary); /* Example: use brand color for pinned items */
+  color: var(--ext-primary); /* Example: use brand color for pinned items */
   /* Or use a specific fill/font variation for Material Symbols if applicable */
 }
 
 .mcp-sourced {
-  border-left: 3px solid var(--primary); /* Uses existing theme variable */
+  border-left: 3px solid var(--ext-primary); /* Uses existing theme variable */
   padding-left: 8px;
-  background-color: color-mix(in srgb, var(--primary) 5%, var(--background)); /* Slight tint */
+  background-color: color-mix(in srgb, var(--ext-primary) 5%, var(--ext-background)); /* Slight tint */
 }
 .mcp-data-source-note {
   font-size: 0.75rem;
-  color: var(--muted-foreground); /* Uses existing theme variable */
+  color: var(--ext-muted-foreground); /* Uses existing theme variable */
   margin-top: -2px;
   margin-bottom: 4px;
 }
 
 .read-only-mcp {
-  background-color: var(--border); /* Using a theme variable for a slightly different background */
-  color: var(--muted-foreground);
+  background-color: var(--ext-border); /* Using a theme variable for a slightly different background */
+  color: var(--ext-muted-foreground);
   cursor: not-allowed;
 }
 
@@ -892,7 +895,7 @@ footer a:hover {
   color: var(--ext-foreground);
   font-size: 14px;
   line-height: 1.5;
-  border-radius: var(--极-radius);
+  border-radius: var(--ext-radius); /* Corrected: removed 极 */
   box-shadow: var(--ext-shadow-lg);
   min-width: 320px;
   max-width: 480px;
@@ -946,7 +949,7 @@ footer a:hover {
 .extension-input:focus {
   outline: none;
   border-color: var(--ext-ring);
-  box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2);
+  box-shadow: 0 0 0 2px hsla(var(--ext-ring-hsl), 0.2); /* Example */
 }
 
 .extension-card {
