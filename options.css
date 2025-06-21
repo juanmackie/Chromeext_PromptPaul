@@ -1,3 +1,97 @@
+/* Extension Theme Variables */
+:root {
+  /* Light theme colors */
+  --ext-background: #f3faff;
+  --ext-foreground: #00182a;
+  --ext-card: #ecf3f8;
+  --ext-card-foreground: #00182a;
+  --ext-popover: #ecf3f8;
+  --ext-popover-foreground: #00182a;
+  --ext-primary: #0089d0;
+  --ext-primary-foreground: #f3faff;
+  --ext-secondary: #4aadc9;
+  --ext-secondary-foreground: #f3faff;
+  --ext-muted: #d3e0ea;
+  --ext-muted-foreground: #49677d;
+  --ext-accent: #00adba;
+  --ext-accent-foreground: #000001;
+  --ext-destructive: #f1003b;
+  --ext-destructive-foreground: #f3faff;
+  --ext-border: #bdd1e0;
+  --ext-input: #d9e7f1;
+  --ext-ring: #0089d0;
+  
+  /* Chart colors */
+  --ext-chart-1: #0089d0;
+  --ext-chart-2: #00adba;
+  --ext-chart-3: #62b289;
+  --ext-chart-4: #9fa5f9;
+  --ext-chart-5: #c5b3ea;
+  
+  /* Sidebar colors */
+  --ext-sidebar: #f3faff;
+  --ext-sidebar-foreground: #00182a;
+  --ext-sidebar-primary: #0089d0;
+  --ext-sidebar-primary-foreground: #f3faff;
+  --ext-sidebar-accent: #00adba;
+  --ext-sidebar-accent-foreground: #000001;
+  --ext-sidebar-border: #bdd1e0;
+  --ext-sidebar-ring: #0089d0;
+  
+  /* Layout */
+  --ext-radius: 0.5rem;
+  --ext-radius-sm: 0.25rem;
+  --ext-radius-md: 0.375rem;
+  --ext-radius-lg: 0.5rem;
+  --ext-radius-xl: 0.75rem;
+  
+  /* Shadows - Simplified for extension UI */
+  --ext-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --ext-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --ext-shadow-md: 极 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --ext-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --ext-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Dark theme */
+[data-theme="dark"], 
+.dark-theme,
+.ext-dark {
+  --ext-background: #000408;
+  --ext-foreground: #c1e3fc;
+  --ext-card: #010d16;
+  --ext-card-foreground: #b1d3ec;
+  --ext-popover: #010d16;
+  --ext-popover-foreground: #b1d3ec;
+  --ext-primary: #00b9ff;
+  --ext-primary-foreground: #000408;
+  --ext-secondary: #00b2de;
+  --ext-secondary-foreground: #000408;
+  --ext-muted: #062437;
+  --ext-muted-foreground: #7494ab;
+  --ext-accent: #00e1f0;
+  --ext-accent-foreground: #000408;
+  --ext-destructive: #ff0657;
+  --ext-destructive-foreground: #000408;
+  --ext-border: #00314d;
+  --ext-input: #031826;
+  --ext-ring: #00b9ff;
+  
+  --ext-chart-1: #00b9ff;
+  --ext-chart-2: #00e1f0;
+  --极-chart-3: #3dca8d;
+  --ext-chart-4: #a9adff;
+  --ext-chart-5: #dabcff;
+  
+  --ext-sidebar: #000408;
+  --ext-sidebar-foreground: #c1e3fc;
+  --ext-sidebar-primary: #00b9ff;
+  --ext-sidebar-primary-foreground: #000408;
+  --ext-sidebar-accent: #00e1f0;
+  --ext-sidebar-accent-foreground: #000408;
+  --ext-sidebar-border: #00314d;
+  --ext-sidebar-ring: #00b9ff;
+}
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
   font-weight: normal;
@@ -791,3 +885,92 @@ footer a:hover {
   color: var(--muted-foreground);
   cursor: not-allowed;
 }
+
+/* Extension-specific base styles */
+.extension-container {
+  background-color: var(--ext-background);
+  color: var(--ext-foreground);
+  font-size: 14px;
+  line-height: 1.5;
+  border-radius: var(--极-radius);
+  box-shadow: var(--ext-shadow-lg);
+  min-width: 320px;
+  max-width: 480px;
+}
+
+.extension-header {
+  background-color: var(--ext-card);
+  color: var(--ext-card-foreground);
+  padding: 1rem;
+  border-bottom: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius) var(--ext-radius) 0 0;
+}
+
+.extension-content {
+  padding: 1rem;
+  background-color: var(--ext-background);
+}
+
+.extension-button {
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--ext-radius-md);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.extension-button:hover {
+  opacity: 0.9;
+  box-shadow: var(--ext-shadow);
+}
+
+.extension-button.secondary {
+  background-color: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
+}
+
+.extension-input {
+  background-color: var(--ext-input);
+  color: var(--ext-foreground);
+  border: 1px solid var(--ext-border);
+  padding: 0.5rem;
+  border-radius: var(--ext-radius-sm);
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.extension-input:focus {
+  outline: none;
+  border-color: var(--ext-ring);
+  box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2);
+}
+
+.extension-card {
+  background-color: var(--ext-card);
+  color: var(--ext-card-foreground);
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius);
+  padding: 1rem;
+  box-shadow: var(--ext-shadow-sm);
+}
+
+.extension-muted {
+  color: var(--ext-muted-foreground);
+  font-size: 12px;
+}
+
+/* Utility classes */
+.ext-text-primary { color: var(--ext-primary); }
+.ext-text-secondary { color: var(--ext-secondary); }
+.ext-text-accent { color: var(--ext-accent); }
+.ext-text-muted { color: var(--ext-muted-foreground); }
+.ext-bg-primary { background-color: var(--ext-primary); }
+.ext-bg-secondary { background-color: var(--ext-secondary); }
+.ext-bg-card { background-color: var(--ext-card); }
+.ext-border { border-color: var(--ext-border); }
+.ext-rounded { border-radius: var(--ext-radius); }
+.ext-shadow { box-shadow: var(--ext-shadow); }
