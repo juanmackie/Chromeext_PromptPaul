@@ -1,217 +1,404 @@
-/* ====== NEW COLOR SCHEME ====== */
+/* Design System Variables */
 :root {
-  --background: oklch(0.98 0.01 240);
-  --foreground: oklch(0.2 0.05 240);
-  --card: oklch(0.96 0.01 240);
-  --card-foreground: oklch(0.2极.05 240);
+  --background: oklch(0.98 0.01 240); /* A very light, airy blue for primary background */
+  --foreground: oklch(0.2 0.05 240); /* Deep, sophisticated blue for text */
+  --card: oklch(0.96 0.01 240); /* Slightly darker light blue for cards */
+  --card-foreground: oklch(0.2 0.05 240);
   --popover: oklch(0.96 0.01 240);
   --popover-foreground: oklch(0.2 0.05 240);
-  --primary: oklch(0.6 0.15 240);
-  --primary-foreground: oklch(0.98 0.01 240);
-  --secondary: oklch(0.7 0.1 220);
+  --primary: oklch(0.6 0.15 240); /* The vibrant main blue from your logo */
+  --primary-foreground: oklch(0.98 0.01 240); /* Light text on primary */
+  --secondary: oklch(0.7 0.1 220); /* A slightly greener, refreshing blue */
   --secondary-foreground: oklch(0.98 0.01 240);
-  --muted: oklch(0.9 0.02 240);
-  --muted-foreground: oklch(0.5 0.05 240);
-  --accent: oklch(0.65 0.18 200);
-  --accent-foreground: oklch(0.05 0.01 240);
-  --destructive: oklch(0.6 0.25 20);
+  --muted: oklch(0.9 0.02 240); /* Soft blue-grey for subtle elements */
+  --muted-foreground: oklch(0.5 0.05 240); /* Mid-grey blue for muted text */
+  --accent: oklch(0.65 0.18 200); /* A captivating teal/cyan for highlights */
+  --accent-foreground: oklch(0.05 0.01 240); /* Near black for punchy contrast */
+  --destructive: oklch(0.6 0.25 20); /* A classic, strong red for destructive actions */
   --destructive-foreground: oklch(0.98 0.01 240);
-  --border: oklch(0.85 0.03 240);
-  --input: oklch(0.92 0.02 240);
-  --ring: oklch(0.6 0.15 240);
-  --sidebar: oklch(0.98 0.01 240);
-  --sidebar-foreground: oklch(0.2 0.05 240);
-  --sidebar-primary: oklch(0.6 0.15 240);
-  --sidebar-primary-foreground: oklch(0.98 0.01 240);
-  --sidebar-accent: oklch(0.65 0.18 200);
-  --sidebar-accent-foreground: oklch(0.05 0.01 240);
-  --sidebar-border: oklch(0.85 0.03 240);
-  --sidebar-ring: oklch(0.6 0.15 240);
+  --border: oklch(0.85 0.03 240); /* Light blue border */
+  --input: oklch(0.92 0.02 240); /* Slightly desaturated input background */
+  --ring: oklch(0.6 0.15 240); /* Ring color matches primary for consistency */
+  --chart-1: oklch(0.6 0.15 240); /* Primary blue for charts */
+  --chart-2: oklch(0.65 0.18 200); /* Accent teal for charts */
+  --chart-3: oklch(0.7 0.1 160); /* A fresh green-blue for charts */
+  --chart-4: oklch(0.75 0.12 280); /* A soft purple-blue for charts */
+  --chart-5: oklch(0.8 0.08 300); /* A light lilac for charts */
+
+  /* Sidebar specific - though design system implies these might be same as main */
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
   --font-sans: Poppins, sans-serif;
   --font-serif: Playfair Display, serif;
   --font-mono: Space Mono, monospace;
-  --radius: 0.5rem;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius: 0.5rem; /* Base radius */
+
+
+  --shadow-2xs: 0px 3px 0px 0px hsl(240 70% 30% / 0.09);
+  --shadow-xs: 0px 3px 0px 0px hsl(240 70% 30% / 0.09);
+  --shadow-sm: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 1px 2px -1px hsl(240 70% 30% / 0.18);
+  --shadow: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 1px 2px -1px hsl(240 70% 30% / 0.18);
+  --shadow-md: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 2px 4px -1px hsl(240 70% 30% / 0.18);
+  --shadow-lg: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 4px 6px -1px hsl(240 70% 30% / 0.18);
+  --shadow-xl: 0px 3px 0px 0px hsl(240 70% 30% / 0.18), 0px 8px 10px -1px hsl(240 70% 30% / 0.18);
+  --shadow-2xl: 0px 3px 0px 0px hsl(240 70% 30% / 0.45);
+
+  /* Spacing */
+  --container-padding: 1.5rem;
+  --card-padding: 1.25rem;
+  --element-spacing: 1rem;
+  --compact-spacing: 0.5rem;
+  --field-spacing: 0.75rem;
 }
 
 .dark {
-  --background: oklch(0.1 0.02 240);
-  --foreground: oklch(0.9 0.05 240);
-  --card: oklch(0.15 0.03 240);
+  --background: oklch(0.1 0.02 240); /* Deep, captivating dark blue */
+  --foreground: oklch(0.9 0.05 240); /* Bright, clean text for dark mode */
+  --card: oklch(0.15 0.03 240); /* Slightly lighter dark blue for cards */
   --card-foreground: oklch(0.85 0.05 240);
   --popover: oklch(0.15 0.03 240);
   --popover-foreground: oklch(0.85 0.05 240);
-  --primary: oklch(0.75 0.18 240);
+  --primary: oklch(0.75 0.18 240); /* A brighter, more vibrant logo blue for contrast */
   --primary-foreground: oklch(0.1 0.02 240);
-  --secondary: oklch(0.7 0.15 220);
+  --secondary: oklch(0.7 0.15 220); /* A brighter, refreshing blue for dark mode */
   --secondary-foreground: oklch(0.1 0.02 240);
-  --muted: oklch(0.25 0.05 240);
-  --muted-foreground: oklch(0.65 0.05 240);
-  --accent: oklch(0.8 0.2 200);
+  --muted: oklch(0.25 0.05 240); /* Dark blue-grey for subtle elements */
+  --muted-foreground: oklch(0.65 0.05 240); /* Mid-light grey blue for muted text */
+  --accent: oklch(0.8 0.2 200); /* A highly visible teal/cyan accent for dark mode */
   --accent-foreground: oklch(0.1 0.02 240);
-  --destructive: oklch(0.75 0.3 极);
+  --destructive: oklch(0.75 0.3 20); /* A vivid red that pops on dark backgrounds */
   --destructive-foreground: oklch(0.1 0.02 240);
-  --border: oklch(0.3 0.07 240);
-  --input: oklch(0.2 0.04 240);
-  --ring: oklch(0.75 0.18 240);
-  --sidebar: oklch(0.1 0.02 240);
-  --sidebar-foreground: oklch(0.9 0.05 240);
-  --sidebar-primary: oklch(0.75 0.18 240);
-  --sidebar-primary-foreground: oklch(0.1 0.02 240);
-  --sidebar-accent: oklch(0.8 0.2 200);
-  --sidebar-accent-foreground: oklch(0.1 0.02 240);
-  --sidebar-border: oklch(0.3 0.07 240);
-  --sidebar-ring: oklch(0.75 0.18 240);
+  --border: oklch(0.3 0.07 240); /* Dark blue border */
+  --input: oklch(0.2 0.04 240); /* Darker input background */
+  --ring: oklch(0.75 0.18 240); /* Ring color matches primary */
+  --chart-1: oklch(0.75 0.18 240); /* Primary blue for charts */
+  --chart-2: oklch(0.8 0.2 200); /* Accent teal for charts */
+  --chart-3: oklch(0.75 0.15 160); /* A vibrant green-blue for charts */
+  --chart-4: oklch(0.8 0.18 280); /* A vibrant purple-blue for charts */
+  --chart-5: oklch(0.85 0.12 300); /* A vibrant lilac for charts */
+
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
   --font-sans: Quicksand, sans-serif;
+
+  --shadow-2xs: 0px 3px 0px 0px hsl(240 80% 50% / 0.09);
+  --shadow-xs: 0px 3px 0px 0px hsl(240 80% 50% / 0.09);
+  --shadow-sm: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 1px 2px -1px hsl(240 80% 50% / 0.18);
+  --shadow: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 1px 2px -1px hsl(240 80% 50% / 0.18);
+  --shadow-md: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 2px 4px -1px hsl(240 80% 50% / 0.18);
+  --shadow-lg: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 4px 6px -1px hsl(240 80% 50% / 0.18);
+  --shadow-xl: 0px 3px 0px 0px hsl(240 80% 50% / 0.18), 0px 8px 10px -1px hsl(240 80% 50% / 0.18);
+  --shadow-2xl: 0px 3px 0px 0px hsl(240 80% 50% / 0.45);
 }
 
-/* ====== PLAYFUL UI ENHANCEMENTS ====== */
+/* ====== GENERAL STYLES ====== */
 body {
-    font-family: var(--font-sans), sans-serif;
+    font-family: var(--font-sans);
     height: 100vh;
-    width: 100vw;
+    width: 100vw; /* Changed from 100% to 100vw for consistency */
     display: flex;
-    flex-direction: row;
+    flex-direction: row; /* main layout: sidebar | chat content */
     background-color: var(--background);
     color: var(--foreground);
     padding: 0;
     margin: 0;
     overflow: hidden;
+    font-size: var(--body-text, 0.875rem); /* From typography */
 }
 
+/* ====== QUICK ACTIONS SIDEBAR ====== */
 #quick-actions-sidebar {
-    width: 60px;
+    width: var(--sidebar-width, 250px); /* From layout, default to a reasonable value */
     height: 100vh;
     display: flex;
     flex-direction: column;
     background-color: var(--sidebar);
-    padding: 10px 5px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: var(--compact-spacing); /* Using compact spacing */
+    box-shadow: var(--shadow-sm); /* Using design system shadow */
     align-items: center;
     box-sizing: border-box;
     border-right: 1px solid var(--sidebar-border);
+    gap: var(--compact-spacing); /* Space between buttons */
 }
 
 .quick-action-button {
-    width: 40px;
-    height: 40px;
-    margin-bottom: 5px;
-    padding: 0;
-    border: 1px solid var(--sidebar-primary);
-    border-radius: 50%;
+    width: calc(var(--sidebar-width, 250px) - 2 * var(--compact-spacing) - 20px); /* Full width minus padding */
+    max-width: 50px; /* Keep them somewhat circular/square */
+    height: 50px; /* Make height consistent */
+    padding: var(--compact-spacing);
+    border: 1px solid transparent; /* Transparent border initially */
+    border-radius: var(--radius); /* Consistent border radius */
     background-color: var(--sidebar-accent);
     color: var(--sidebar-accent-foreground);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.4em;
-    font-weight: bold;
+    font-size: 1.25rem; /* h2 from typography */
+    font-weight: medium; /* From buttons.primary */
     overflow: hidden;
     box-sizing: border-box;
-    transition: all 0.2s ease;
+    transition: all 150ms ease-in-out; /* From interactions.animations */
+    box-shadow: var(--shadow-xs); /* From buttons.primary */
 }
 
 .quick-action-button:hover {
-    background-color: var(--sidebar-primary);
+    background-color: var(--sidebar-primary); /* Shift background on hover */
     color: var(--sidebar-primary-foreground);
     border-color: var(--sidebar-ring);
-    transform: scale(1.1);
+    transform: scale(1.05); /* Subtle scale on hover */
+    box-shadow: var(--shadow-sm); /* Increase shadow on hover */
+}
+
+.quick-action-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--sidebar-ring); /* Ring outline for focus */
+}
+
+
+/* ====== CHAT AREA ====== */
+.chat-container { /* Parent of main-content and potential future siblings */
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column; /* main-content stacks vertically */
+    height: 100%;
+    overflow: hidden;
+}
+
+.main-content { /* Contains chat-area and input-area */
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden; /* Let children handle their scroll */
+    padding: var(--container-padding);
 }
 
 #chat-area {
+    flex-grow: 1; /* Takes available space */
     background-color: var(--background);
-    position: relative;
-    height: calc(100vh - 150px);
     overflow-y: auto;
     scroll-behavior: smooth;
-    z-index: 50;
-    padding-bottom: 20px;
+    padding: var(--compact-spacing); /* Use compact spacing inside chat area */
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg); /* Prominent border radius */
+    margin-bottom: var(--element-spacing); /* Space between chat and input */
+    box-shadow: var(--shadow-sm);
 }
 
+/* ====== INPUT AREA ====== */
 #input-area {
     display: flex;
-    padding: 0.5rem;
-    padding-bottom: 1rem;
-    background-color: var(--card);
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    padding: var(--compact-spacing);
+    background-color: var(--card); /* Use card as background */
     border-top: 1px solid var(--border);
-    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
-    z-index: 100;
+    box-shadow: var(--shadow-md); /* More prominent shadow for input area */
+    gap: var(--compact-spacing);
+    border-radius: var(--radius-lg); /* Rounded corners for the input area itself */
+    margin-top: auto; /* Pushes to bottom if not enough content in chat-area */
 }
 
 #user-input {
     flex-grow: 1;
-    margin-right: 0.5rem;
-    padding: 0.6rem 1rem;
-    border: 2px solid var(--input);
-    border-radius: 9999px;
-    background-color: var(--background);
+    padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem); /* from forms.inputStyle */
+    border: 1px solid var(--input); /* from forms.inputStyle */
+    border-radius: var(--input-borderRadius, var(--radius-sm)); /* from borderRadius or forms.inputStyle */
+    background-color: var(--input-backgroundColor, var(--input)); /* from forms.inputStyle */
     color: var(--foreground);
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-    transition: all 0.2s ease;
+    font-size: var(--forms-inputStyle-fontSize, 0.875rem);
+    height: var(--forms-inputStyle-height, 2.5rem);
+    box-shadow: var(--shadow-xs); /* Subtle shadow */
+    transition: all 150ms ease-in-out;
 }
 
 #user-input:focus {
     outline: none;
-    box-shadow: 0 0 0 2px var(--ring);
+    border-color: var(--ring);
+    box-shadow: 0 0 0 2px var(--ring); /* Ring outline for focus from interactions */
 }
 
+/* ====== MESSAGES ====== */
 .message {
     display: flex;
     flex-direction: column;
-    margin-bottom: 0.5rem;
-    padding: 0.8rem 1.2rem;
-    border-radius: 1rem;
-    width: auto;
-    max-width: 95%;
-    border: 1px solid var(--border);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: var(--element-spacing); /* Space between messages */
+    padding: var(--chatWidget-message-padding, 0.75rem 1rem); /* From chatWidget.message */
+    max-width: 80%; /* Don't let messages take full width */
+    border: 1px solid transparent; /* Initially no border, specified by type */
+    transition: transform 150ms ease-in-out, box-shadow 150ms ease-in-out;
+    box-shadow: var(--shadow-sm); /* Default shadow for messages */
+    word-wrap: break-word;
 }
 
 .message:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    transform: translateY(-2px); /* Subtle lift */
+    box-shadow: var(--shadow-md); /* Increase shadow on hover */
 }
 
-.llm-message {
-    background-color: var(--card);
-    color: var(--card-foreground);
-    align-self: flex-end;
+.llm-message { /* botMessage from chatWidget */
+    background-color: var(--chatWidget-message-botMessage-backgroundColor, var(--muted));
+    color: var(--chatWidget-message-botMessage-color, var(--foreground));
+    border-radius: var(--chatWidget-message-botMessage-borderRadius, 1rem 1rem 1rem 0.25rem);
+    align-self: flex-start; /* LLM/Bot messages on the left */
+    border: 1px solid var(--border);
 }
 
-.user-message {
-    background-color: var(--primary);
-    color: var(--primary-foreground);
-    align-self: flex-start;
+.user-message { /* userMessage from chatWidget */
+    background-color: var(--chatWidget-message-userMessage-backgroundColor, var(--primary));
+    color: var(--chatWidget-message-userMessage-color, var(--primary-foreground));
+    border-radius: var(--chatWidget-message-userMessage-borderRadius, 1rem 1rem 0.25rem 1rem);
+    align-self: flex-end; /* User messages on the right */
+    border: 1px solid var(--primary); /* Border to match primary color */
 }
 
+/* Code blocks within messages */
+.message pre, .message code {
+    white-space: pre-wrap;
+    overflow-x: auto;
+    background-color: color-mix(in srgb, var(--card-foreground) 5%, var(--card)); /* Slightly tinted background */
+    padding: var(--compact-spacing);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.8em; /* Smaller for code */
+    border: 1px solid var(--border);
+}
+
+/* ====== BUTTONS ====== */
+/* General button styling - can be overridden by specific button IDs/classes */
 button {
-    background-color: var(--primary);
-    color: var(--primary-foreground);
-    padding: 0.6rem 1.2rem;
+    background-color: var(--buttons-primary-backgroundColor, var(--primary));
+    color: var(--buttons-primary-color, var(--primary-foreground));
+    padding: var(--buttons-primary-padding, 0.5rem 1rem);
     border: none;
-    border-radius: 9999px;
+    border-radius: var(--buttons-button-borderRadius, var(--radius));
     cursor: pointer;
-    font-weight: 500;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    transition: all 0.2s ease;
+    font-weight: var(--buttons-primary-fontWeight, medium);
+    font-size: var(--buttons-primary-fontSize, 0.875rem);
+    height: var(--buttons-primary-height, 2.5rem);
+    box-shadow: var(--buttons-button-shadow, var(--shadow-xs));
+    transition: all 150ms ease-in-out; /* From interactions.animations */
 }
 
 button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    transform: translateY(-2px) scale(1.02); /* Subtle lift and scale from animations.buttonPress */
+    box-shadow: var(--shadow-md); /* Increase shadow */
+    filter: brightness(1.1); /* Slight brightness increase */
 }
 
-#send-button {
-    background-color: var(--secondary);
-    color: var(--secondary-foreground);
+button:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--ring); /* Ring outline for focus from interactions */
 }
 
-#clear-button {
-    background-color: var(--destructive);
-    color: var(--destructive-foreground);
+button:active {
+    transform: translateY(0px) scale(0.98); /* Press effect */
+    box-shadow: var(--shadow-xs);
+}
+
+#send-button { /* This could be a primary button */
+    /* Inherits general button styles, could add specific overrides if needed */
+}
+
+#clear-button { /* This is a destructive button */
+    background-color: var(--buttons-destructive-backgroundColor, var(--destructive));
+    color: var(--buttons-destructive-color, var(--destructive-foreground));
+    /* Other properties like padding, border-radius would be from destructive if specified, or primary */
+}
+
+/* Specific styles for one-off instruction area if it's used */
+#oneoff-instruction-area {
+    padding: var(--card-padding);
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg); /* More prominent for modal-like sections */
+    margin-top: var(--element-spacing);
+}
+
+#selectedText {
+    max-height: 150px;
+    overflow-y: auto;
+    padding: var(--compact-spacing);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--input); /* Use input background for this display */
+    margin-bottom: var(--element-spacing);
+    font-size: var(--smallText, 0.75rem);
+}
+
+#instructionInput {
+    width: calc(100% - 2 * var(--forms-inputStyle-padding, 0.75rem)); /* Full width minus padding */
+    min-height: 100px;
+    padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem);
+    border: 1px solid var(--input);
+    border-radius: var(--input-borderRadius, var(--radius-sm));
+    margin-bottom: var(--element-spacing);
+    resize: vertical;
+    background-color: var(--input-backgroundColor, var(--input));
+    color: var(--foreground);
+    font-size: var(--forms-inputStyle-fontSize, 0.875rem);
+}
+
+/* Dark theme toggle if it remains in chat.html */
+#darkThemeToggle {
+    /* Style according to design system if it's a custom checkbox/toggle */
+}
+
+/* Responsive adjustments based on design system */
+@media (max-width: 768px) { /* mobile breakpoint */
+    body {
+        flex-direction: column; /* Stack sidebar and chat on mobile */
+    }
+
+    #quick-actions-sidebar {
+        width: 100%;
+        height: auto; /* Adjust height for horizontal layout */
+        flex-direction: row; /* Buttons in a row */
+        justify-content: space-around; /* Distribute buttons */
+        padding: var(--compact-spacing);
+        border-right: none;
+        border-bottom: 1px solid var(--sidebar-border);
+    }
+
+    .quick-action-button {
+        width: auto; /* Allow buttons to size based on content or fixed small size */
+        flex-grow: 1; /* Allow buttons to take up space */
+        margin-bottom: 0; /* No margin bottom in horizontal layout */
+    }
+
+    .main-content {
+        padding: var(--compact-spacing); /* Less padding on mobile */
+    }
+
+    #chat-area {
+        margin-bottom: var(--compact-spacing);
+    }
+
+    .message {
+        max-width: 95%; /* Messages can be wider on mobile */
+    }
+
+    #input-area {
+        border-radius: 0; /* May look better full-width without radius on mobile bottom */
+        /* Consider if input area should be fixed or scroll with content on mobile */
+    }
 }
