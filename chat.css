@@ -1,14 +1,81 @@
+/* ====== NEW COLOR SCHEME ====== */
+:root {
+  --background: oklch(0.98 0.01 240);
+  --foreground: oklch(0.2 0.05 240);
+  --card: oklch(0.96 0.01 240);
+  --card-foreground: oklch(0.2极.05 240);
+  --popover: oklch(0.96 0.01 240);
+  --popover-foreground: oklch(0.2 0.05 240);
+  --primary: oklch(0.6 0.15 240);
+  --primary-foreground: oklch(0.98 0.01 240);
+  --secondary: oklch(0.7 0.1 220);
+  --secondary-foreground: oklch(0.98 0.01 240);
+  --muted: oklch(0.9 0.02 240);
+  --muted-foreground: oklch(0.5 0.05 240);
+  --accent: oklch(0.65 0.18 200);
+  --accent-foreground: oklch(0.05 0.01 240);
+  --destructive: oklch(0.6 0.25 20);
+  --destructive-foreground: oklch(0.98 0.01 240);
+  --border: oklch(0.85 0.03 240);
+  --input: oklch(0.92 0.02 240);
+  --ring: oklch(0.6 0.15 240);
+  --sidebar: oklch(0.98 0.01 240);
+  --sidebar-foreground: oklch(0.2 0.05 240);
+  --sidebar-primary: oklch(0.6 0.15 240);
+  --sidebar-primary-foreground: oklch(0.98 0.01 240);
+  --sidebar-accent: oklch(0.65 0.18 200);
+  --sidebar-accent-foreground: oklch(0.05 0.01 240);
+  --sidebar-border: oklch(0.85 0.03 240);
+  --sidebar-ring: oklch(0.6 0.15 240);
+  --font-sans: Poppins, sans-serif;
+  --font-serif: Playfair Display, serif;
+  --font-mono: Space Mono, monospace;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: oklch(0.1 0.02 240);
+  --foreground: oklch(0.9 0.05 240);
+  --card: oklch(0.15 0.03 240);
+  --card-foreground: oklch(0.85 0.05 240);
+  --popover: oklch(0.15 0.03 240);
+  --popover-foreground: oklch(0.85 0.05 240);
+  --primary: oklch(0.75 0.18 240);
+  --primary-foreground: oklch(0.1 0.02 240);
+  --secondary: oklch(0.7 0.15 220);
+  --secondary-foreground: oklch(0.1 0.02 240);
+  --muted: oklch(0.25 0.05 240);
+  --muted-foreground: oklch(0.65 0.05 240);
+  --accent: oklch(0.8 0.2 200);
+  --accent-foreground: oklch(0.1 0.02 240);
+  --destructive: oklch(0.75 0.3 极);
+  --destructive-foreground: oklch(0.1 0.02 240);
+  --border: oklch(0.3 0.07 240);
+  --input: oklch(0.2 0.04 240);
+  --ring: oklch(0.75 0.18 240);
+  --sidebar: oklch(0.1 0.02 240);
+  --sidebar-foreground: oklch(0.9 0.05 240);
+  --sidebar-primary: oklch(0.75 0.18 240);
+  --sidebar-primary-foreground: oklch(0.1 0.02 240);
+  --sidebar-accent: oklch(0.8 0.2 200);
+  --sidebar-accent-foreground: oklch(0.1 0.02 240);
+  --sidebar-border: oklch(0.3 0.07 240);
+  --sidebar-ring: oklch(0.75 0.18 240);
+  --font-sans: Quicksand, sans-serif;
+}
+
+/* ====== PLAYFUL UI ENHANCEMENTS ====== */
 body {
-    font-family: 'Inter', sans-serif; /* From inline style in HTML */
+    font-family: var(--font-sans), sans-serif;
     height: 100vh;
-    width: 100vw; /* Use vw to ensure it spans full viewport width */
+    width: 100vw;
     display: flex;
-    flex-direction: row; /* For sidebar layout */
-    background-color: var(--background); /* Updated to use new theme variable */
-    color: var(--foreground); /* Updated to use new theme variable */
+    flex-direction: row;
+    background-color: var(--background);
+    color: var(--foreground);
     padding: 0;
     margin: 0;
-    overflow: hidden; /* Prevent main window scrolling */
+    overflow: hidden;
 }
 
 #quick-actions-sidebar {
@@ -16,323 +83,135 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background-color: var(--sidebar); /* Updated */
-    padding: 10px 5px; /* More padding top/bottom */
-    box-shadow: 2px 0 5px rgba(0,0,0,0.1); /* Consider var(--shadow-sm) or similar */
+    background-color: var(--sidebar);
+    padding: 10px 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     align-items: center;
     box-sizing: border-box;
-    border-right: 1px solid var(--sidebar-border); /* Added border */
-}
-
-.quick-action-button {
-    width: 40px; /* Set fixed width to match height for square buttons */
-    height: 40px; /* Ensure fixed height */
-    margin-bottom: 5px; /* Reduce margin for closer buttons */
-    padding: 0; /* Remove padding for flex centering */
-    border: 1px solid var(--sidebar-primary); /* Updated */
-    border-radius: var(--radius-sm); /* Updated */
-    background-color: var(--sidebar-accent); /* Updated */
-    color: var(--sidebar-accent-foreground); /* Updated */
-    cursor: pointer;
-    word-wrap: break-word;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.4em; /* Larger font for icon */
-    font-weight: bold;
-    overflow: hidden; /* Prevent content from expanding button */
-    box-sizing: border-box; /* Ensure padding and border are included in height */
-}
-
-.quick-action-button:hover {
-    background-color: var(--sidebar-primary); /* Updated */
-    color: var(--sidebar-primary-foreground); /* Updated */
-    border-color: var(--sidebar-ring); /* Updated */
-}
-
-#manage-pinned-actions-button {
-    margin-top: auto; /* Pushes this button to the bottom */
-    font-size: 1.8em; /* Adjust if it becomes too large */
-    font-weight: bold; /* Ensure boldness, inherits from .quick-action-button but can be explicit */
-    /* It will also become a flex centered button due to .quick-action-button style */
-}
-
-/* Ensure chat-container takes remaining width and manages its own scrolling */
-.chat-container {
-    flex-grow: 1;
-    height: 100vh; /* Ensure it spans the full viewport height */
-    display: flex; /* It's already a flex container, but ensure it for its children */
-    flex-direction: column; /* Stacks chat-area and input-area vertically */
-    overflow: hidden; /* Important to prevent double scrollbars */
-    background-color: var(--background); /* Added background for consistency */
-}
-
-/* Styles previously under body.dark-theme are now handled by .dark from options.css */
-/* or applied directly if they are general styles not specific to dark theme anymore */
-
-.dark #quick-actions-sidebar {
-    background-color: var(--sidebar);
-    box-shadow: 2px 0 5px rgba(0,0,0,0.3); /* Consider var(--shadow-sm) */
     border-right: 1px solid var(--sidebar-border);
 }
 
-.dark .quick-action-button {
+.quick-action-button {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 5px;
+    padding: 0;
+    border: 1px solid var(--sidebar-primary);
+    border-radius: 50%;
     background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-primary);
     color: var(--sidebar-accent-foreground);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4em;
+    font-weight: bold;
+    overflow: hidden;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
 }
 
-.dark .quick-action-button:hover {
+.quick-action-button:hover {
     background-color: var(--sidebar-primary);
     color: var(--sidebar-primary-foreground);
     border-color: var(--sidebar-ring);
-}
-
-/* Generalizing styles that were specific to dark theme before */
-#input-area,
-.message {
-    /* These were set with !important in dark theme, now general */
-    /* background-color will be handled by specific message types or defaults */
-    color: var(--foreground);
-    border-color: var(--border); /* Default border color */
+    transform: scale(1.1);
 }
 
 #chat-area {
-    background-color: var(--background) !important; /* Ensuring chat area matches main background */
-}
-
-.llm-message {
-    /* background-color was #23272f in dark, #dbdbdb in light */
-    /* Using card as a base, can be adjusted */
-    background-color: var(--card);
-}
-
-.user-message {
-    /* background-color was #2a3b4d in dark, #b8ecf9 in light */
-    /* Using primary with some opacity or a muted version of primary */
-    background-color: var(--primary);
-    color: var(--primary-foreground);
-}
-
-button { /* General button styling, previously also in dark theme */
-    background-color: var(--primary) !important; /* Overriding more specific button styles below for now */
-    color: var(--primary-foreground) !important;
-}
-
-#send-button.dark { /* Example of specific dark theme override if needed */
-    /* background-color: #004e5b; */ /* This was an old dark theme specific color */
-}
-
-#clear-button {
-    background-color: var(--destructive) !important;
-    color: var(--destructive-foreground) !important;
-}
-
-pre, code { /* Generalizing from dark theme */
-    background-color: var(--muted); /* Was #23272f */
-    color: var(--muted-foreground);
-    padding: 0.2em 0.4em;
-    border-radius: var(--radius-sm);
-}
-
-::selection {
-    background: var(--accent); /* Was var(--selection-color) */
-    color: var(--accent-foreground); /* Was #e0e6f0 */
-}
-
-
-#chat-area {
+    background-color: var(--background);
     position: relative;
-    height: calc(100vh - 150px); /* Account for input area height */
-    overflow-y: auto; /* Single scrollable area */
+    height: calc(100vh - 150px);
+    overflow-y: auto;
     scroll-behavior: smooth;
     z-index: 50;
-    padding-bottom: 20px; /* Reduced padding since height is calculated */
-    /* background-color already set above */
+    padding-bottom: 20px;
 }
 
 #input-area {
     display: flex;
     padding: 0.5rem;
     padding-bottom: 1rem;
-    background-color: var(--card); /* Updated from var(--surface-color) */
-    position: fixed; /* Changed back to fixed */
+    background-color: var(--card);
+    position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    border-top: 1px solid var(--border); /* Updated from var(--border-color) */
-    box-shadow: var(--shadow-sm); /* Updated from 0 -2px 5px rgba(0,0,0,0.05) */
-    z-index: 100; /* Higher z-index to ensure it's above other elements */
-    pointer-events: auto !important; /* Ensure clicks are registered */
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+    z-index: 100;
 }
 
 #user-input {
     flex-grow: 1;
     margin-right: 0.5rem;
     padding: 0.6rem 1rem;
-    border: 2px solid var(--input); /* Updated from var(--border-color) */
-    border-radius: 1.5rem; /* Keep existing or use var(--radius-lg) */
-    background-color: var(--background); /* Added background */
-    color: var(--foreground); /* Added text color */
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); /* Consider var(--shadow-xs) or similar */
-    pointer-events: auto !important;
+    border: 2px solid var(--input);
+    border-radius: 9999px;
+    background-color: var(--background);
+    color: var(--foreground);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
 }
 
-#send-button, #clear-button {
-    pointer-events: auto !important; /* Explicitly enable pointer events */
-}
-
-#toast-container {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1;
-    pointer-events: none;
-    width: 80%;
-    max-width: 600px;
-    background-color: transparent !important;
-}
-
-.toast {
-    position: absolute;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: var(--popover) !important; /* Updated from rgba(51, 51, 51, 0.95) */
-    color: var(--popover-foreground); /* Updated from white */
-    padding: 10px 20px;
-    border-radius: var(--radius); /* Updated from 5px */
-    transition: opacity 0.5s;
-    max-width: 80%;
-    text-align: center;
-    box-shadow: var(--shadow-md); /* Updated from 0 2px 10px rgba(0,0,0,0.2) */
-    z-index: 1;
-}
-
-.toast.fade-out {
-    opacity: 0;
+#user-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--ring);
 }
 
 .message {
-    display: flex; /* Use flexbox for message alignment */
-    flex-direction: column; /* Stack message content vertically */
+    display: flex;
+    flex-direction: column;
     margin-bottom: 0.5rem;
-    padding: 0.8rem 1.2rem; /* Increased padding for better text framing */
-    border-radius: var(--radius-lg); /* Updated from 0.6rem */
-  width: auto;
-  max-width: 95%;
-  border: 1px solid var(--border); /* Added default border for messages */
+    padding: 0.8rem 1.2rem;
+    border-radius: 1rem;
+    width: auto;
+    max-width: 95%;
+    border: 1px solid var(--border);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.message:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
 }
 
 .llm-message {
-    /* background-color: #dbdbdb; Light grey for LLM messages */
-    background-color: var(--card); /* Using card from new theme */
+    background-color: var(--card);
     color: var(--card-foreground);
-    align-self: flex-end; /* Align LLM messages to the right */
-}
-
-.llm-message img {
-    display: inline-block;
-    vertical-align: middle;
-    margin-left: 5px;
-    /* Removed margin-bottom to prevent vertical spacing */
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    z-index: 10;
-}
-
-.llm-message .copy-icons-container {
-    display: inline-flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    gap: 5px;
-    align-items: center;
-    /* Removed padding-bottom to prevent extra vertical space */
+    align-self: flex-end;
 }
 
 .user-message {
-    /* background-color: #b8ecf9; Primary color for user messages */
-    /* color: rgb(0, 0, 0); White text for user messages */
-    background-color: var(--primary); /* Using primary from new theme */
+    background-color: var(--primary);
     color: var(--primary-foreground);
-    align-self: flex-start; /* Align user messages to the left */
- width: fit-content;
-  max-width: 95%;
+    align-self: flex-start;
 }
 
 button {
-    background-color: var(--primary); /* Updated from var(--primary-color) */
-    color: var(--primary-foreground); /* Updated from white */
+    background-color: var(--primary);
+    color: var(--primary-foreground);
     padding: 0.6rem 1.2rem;
     border: none;
-    border-radius: var(--radius-md); /* Updated from 0.6rem */
+    border-radius: 9999px;
     cursor: pointer;
     font-weight: 500;
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
 }
 
 #send-button {
-    border-radius: 1.5rem; /* Custom, keep or use var(--radius-xl) */
-    background-color: var(--secondary); /* Updated from #004e5b */
-    color: var(--secondary-foreground); /* Updated from #a8ecff */
+    background-color: var(--secondary);
+    color: var(--secondary-foreground);
 }
 
 #clear-button {
-    margin-left: 0.5rem;
-    background-color: var(--destructive) !important; /* Updated from #ffb4ab */
-    color: var(--destructive-foreground) !important; /* Updated from #690005 */
-    border-radius: 1.5rem; /* Custom, keep or use var(--radius-xl) */
-    }
-
-#submitBtn {
-    background-color: var(--primary); /* Updated from #004e5b */
-    color: var(--primary-foreground); /* Updated from #a8ecff */
-}
-
-/* Adjust input area and buttons when sidebar is open */
-body.sidebar-open #input-area {
-    right: 300px; /* Adjust based on sidebar width */
-}
-
-body.sidebar-open #chat-area {
-    right: 300px; /* Adjust chat area when sidebar is open */
-}
-
-/* Custom dark theme toggle switch */
-#darkThemeToggle {
-  appearance: none;
-  width: 32px;
-  height: 20px;
-  background-color: #ccc;
-  border-radius: 10px;
-  position: relative;
-  transition: background-color 0.3s;
-  cursor: pointer;
-}
-
-#darkThemeToggle:checked {
-  background-color: #007bff;
-}
-
-#darkThemeToggle::before {
-  content: "";
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  background-color: white;
-  border-radius: 50%;
-  top: 1px;
-  left: 1px;
-  transition: left 0.3s;
-}
-
-#darkThemeToggle:checked::before {
-  left: 13px;
-}
-
-/* Add style for instructionInput */
-#instructionInput {
-  border-radius: 1.5rem;
+    background-color: var(--destructive);
+    color: var(--destructive-foreground);
 }
