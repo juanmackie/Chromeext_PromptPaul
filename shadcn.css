@@ -1,71 +1,65 @@
-/* Shadcn component styles aligned with the new Design System */
+/* Shadcn component styles aligned with the restored HSL/Hex Theme */
 
 /*
-  Note: The new design system provides variables for most of these properties.
-  The :root variables are expected to be defined in a global scope (e.g., options.css or chat.css).
+  The :root variables are expected to be defined in options.css.
   This file will primarily use those variables.
-  The oklch values for --primary and --ring are:
-  --primary: oklch(0.6 0.15 240)
-  --ring: oklch(0.6 0.15 240)
-  To create an rgba equivalent for box-shadow, we need to convert oklch to RGB.
-  oklch(0.6 0.15 240) is approximately rgb(62, 134, 230) or #3E86E6
+  --primary (restored): #0089d0 (approx rgb(0, 137, 208))
+  --ring (restored): #0089d0
 */
 
 .shadcn-input {
   display: flex;
-  height: var(--forms-inputStyle-height, 2.5rem); /* From Design System */
+  height: 2.5rem; /* Default height from original theme context */
   width: 100%;
-  padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem); /* From Design System */
-  border-radius: var(--borderRadius-input, var(--radius-sm)); /* From Design System */
-  border: 1px solid var(--forms-inputStyle-border, var(--border)); /* From Design System */
-  background-color: var(--forms-inputStyle-backgroundColor, var(--input)); /* From Design System */
-  color: var(--foreground);
-  font-size: var(--forms-inputStyle-fontSize, 0.875rem); /* From Design System */
-  transition: border-color 150ms ease-in-out, box-shadow 150ms ease-in-out; /* From Design System */
-  box-shadow: var(--shadows-button, var(--shadow-xs)); /* Applying a subtle shadow consistent with buttons */
+  padding: 0.5rem 1rem; /* Default padding */
+  border-radius: var(--radius-md, calc(var(--radius) - 2px)); /* Using theme radius */
+  border: 1px solid var(--input); /* Using theme variable --input for borders */
+  background-color: var(--background); /* Using theme variable */
+  color: var(--foreground); /* Using theme variable */
+  font-size: 0.875rem; /* Default font size */
+  transition: border-color 0.3s ease, box-shadow 0.3s ease; /* Original transition */
+  /* box-shadow: var(--shadow-xs); Removed to match original shadcn appearance more closely */
 }
 
 .shadcn-input:focus {
   outline: none;
-  border-color: var(--ring);
-  /* oklch(0.6 0.15 240) -> approx rgb(62, 134, 230) */
-  box-shadow: 0 0 0 2px rgba(62, 134, 230, 0.4); /* Ring effect with primary color, slightly more opaque */
+  border-color: var(--ring); /* Using theme variable --ring for focus */
+  box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2); /* Using RGB of #0089d0 */
 }
 
 .shadcn-textarea {
   display: flex;
   width: 100%;
-  min-height: 80px; /* Retaining existing min-height, can be themed if needed */
-  padding: var(--forms-inputStyle-padding, 0.5rem 0.75rem); /* From Design System */
-  border-radius: var(--borderRadius-input, var(--radius-sm)); /* From Design System */
-  border: 1px solid var(--forms-inputStyle-border, var(--border)); /* From Design System */
-  background-color: var(--forms-inputStyle-backgroundColor, var(--input)); /* From Design System */
+  min-height: 80px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md, calc(var(--radius) - 2px));
+  border: 1px solid var(--input);
+  background-color: var(--background);
   color: var(--foreground);
-  font-size: var(--forms-inputStyle-fontSize, 0.875rem); /* From Design System */
-  transition: border-color 150ms ease-in-out, box-shadow 150ms ease-in-out; /* From Design System */
-  box-shadow: var(--shadows-button, var(--shadow-xs));
+  font-size: 0.875rem;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  /* box-shadow: var(--shadow-xs); Removed */
 }
 
 .shadcn-textarea:focus {
   outline: none;
   border-color: var(--ring);
-  /* oklch(0.6 0.15 240) -> approx rgb(62, 134, 230) */
-  box-shadow: 0 0 0 2px rgba(62, 134, 230, 0.4); /* Ring effect with primary color */
+  box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2); /* Using RGB of #0089d0 */
 }
 
 .shadcn-checkbox {
-  height: 1rem; /* Standard checkbox size */
-  width: 1rem; /* Standard checkbox size */
-  border-radius: var(--radius-sm); /* Slightly smaller radius for checkboxes */
+  height: 1rem;
+  width: 1rem;
+  border-radius: var(--radius-sm, calc(var(--radius) - 4px));
   border: 1px solid var(--border);
-  background-color: var(--input); /* Use input background for unchecked state */
+  background-color: var(--background); /* Or var(--input) if preferred for unchecked state */
   cursor: pointer;
-  appearance: none; /* Remove default browser styling */
+  appearance: none;
   -webkit-appearance: none;
   display: inline-block;
   position: relative;
-  vertical-align: middle; /* Align with text */
-  transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out;
+  vertical-align: middle;
+  transition: background-color 0.2s ease, border-color 0.2s ease; /* Slightly faster transition for checkbox */
 }
 
 .shadcn-checkbox:checked {
@@ -73,20 +67,19 @@
   border-color: var(--primary);
 }
 
-/* Custom checkmark for checkbox */
 .shadcn-checkbox:checked::after {
   content: "";
   position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 4px;
-  height: 8px;
-  border: solid var(--primary-foreground); /* Checkmark color */
+  left: 5px; /* Adjust for checkmark position */
+  top: 2px;  /* Adjust for checkmark position */
+  width: 4px;  /* Checkmark size */
+  height: 8px; /* Checkmark size */
+  border: solid var(--primary-foreground); /* Color of the checkmark */
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 
 .shadcn-checkbox:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--ring); /* Ring effect for focus */
+  box-shadow: 0 0 0 2px var(--ring); /* Focus ring using theme color */
 }
