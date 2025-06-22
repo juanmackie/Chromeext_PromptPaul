@@ -216,8 +216,12 @@
   </section>
 
     <section class="card tools-card">
-      <h2>Tool Definitions</h2>
-      <p>Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
+      <h2 class="collapsible-header">
+        <span>Tool Definitions</span>
+        <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+      </h2>
+      <div class="collapsible-content">
+        <p>Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
 
       <div id="tools-list">
         <table id="toolsTable">
