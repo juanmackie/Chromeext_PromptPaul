@@ -339,6 +339,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
+// Add event listener for collapsible header
+document.querySelectorAll('.collapsible-header').forEach(header => {
+  header.addEventListener('click', () => {
+    const content = header.nextElementSibling;
+    content.classList.toggle('expanded');
+    header.classList.toggle('expanded');
+  });
+});
   setupToolHandlers(); // Add call to setup tool handlers
 
   // Add event listener for the Revert button

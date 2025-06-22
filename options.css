@@ -339,6 +339,8 @@ textarea:not(.shadcn-textarea) {
 #apiKey,
 #modelName {
   border-radius: 1.5rem;
+  background-color: var(--ext-input);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
 }
 
 /* Specific styling for System Prompt (Optional) textarea */
@@ -690,6 +692,33 @@ body.dark-theme #toolsTable {
   background-color: hsl(var(--ext-card-hsl), 0.8); /* Example: Slightly darker card color on hover */
 }
 
+/* Collapsible section styles */
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.collapsible-icon {
+  transition: transform 0.3s ease;
+  font-size: 1.5rem;
+}
+
+.collapsible-header.expanded .collapsible-icon {
+  transform: rotate(180deg);
+}
+
+.collapsible-content {
+  display: none;
+  padding-top: 1rem;
+}
+
+.collapsible-content.expanded {
+  display: block;
+}
+
 
 .instruction-form.card {
   background-color: hsl(var(--ext-card-hsl), 0.9); /* Example */
@@ -990,6 +1019,10 @@ footer a:hover {
   color: hsl(var(--foreground));
   font-size: 0.875rem;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#maxTokens {
+  width: 100%;
 }
 
 .shadcn-input:focus {
