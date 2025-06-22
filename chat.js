@@ -533,7 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearButton = document.getElementById('clear-button');
     clearButton.addEventListener('click', clearChat);
     userInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !userInput.disabled) {
+        if (event.key === 'Enter' && !event.shiftKey && !userInput.disabled) {
+            event.preventDefault();
             sendMessage();
         }
     });
