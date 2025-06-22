@@ -1268,6 +1268,67 @@ chrome.scripting.executeScript({
             }
         });
         return true; // Indicates that sendResponse will be called asynchronously.
+    } else if (request.action === 'getTabContentForOneOff') {
+        // This is very similar to 'getTabContent', but uses a different response action
+        // to allow chat.js to potentially handle it differently if needed in the future.
+        // For now, the core logic of fetching content is the same.
+        tabContentCallback = sendResponse; // Use the same callback mechanism
+        console.log('Background: getTabContentForOneOff received. Injecting content script for extraction.');
+
+        const timeoutId = setTimeout(() => {
+            if (tabContentCallback) {
+                console.error('Background: getTabContentForOneOff timed out.');
+                tabContentCallback({ action: 'tabContentResponseOneOff', success: false, error: 'Background: Content extraction timed out' });
+                tabContentCallback = null;
+            }
+        }, 30000); // 30 seconds timeout
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+                chrome.scripting.executeScript({
+                    target: { tabId: activeTabId },
+                    files: ['content_script_tab_summary.js'] // Reuse the same content script
+                }, (injectionResults) => {
+                    clearTimeout(timeoutId);
+                    if (chrome.runtime.lastError) {
+                        console.error('Background: Error executing content_script_tab_summary.js for getTabContentForOneOff:', chrome.runtime.lastError);
+                        if (tabContentCallback) {
+                            tabContentCallback({ action: 'tabContentResponseOneOff', success: false, error: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+                            tabContentCallback = null;
+                        }
+                        return;
+                    }
+                    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+                        const result = injectionResults[0].result;
+                        console.log('Background: getTabContentForOneOff - Result from content_script_tab_summary.js:', result);
+                        if (tabContentCallback) {
+                            tabContentCallback({
+                                action: 'tabContentResponseOneOff', // Specific response action
+                                success: result.success,
+                                content: result.data,
+                                error: result.error
+                            });
+                            tabContentCallback = null;
+                        }
+                    } else {
+                        console.error('Background: getTabContentForOneOff - No result from content_script_tab_summary.js');
+                        if (tabContentCallback) {
+                            tabContentCallback({ action: 'tabContentResponseOneOff', success: false, error: 'No result from content script', content: '' });
+                            tabContentCallback = null;
+                        }
+                    }
+                });
+            } else {
+                console.error('No active tab found for getTabContentForOneOff.');
+                clearTimeout(timeoutId);
+                if (tabContentCallback) {
+                    tabContentCallback({ action: 'tabContentResponseOneOff', success: false, error: 'No active tab found.' });
+                    tabContentCallback = null;
+                }
+            }
+        });
+        return true; // Async response.
     } else if (request.action === 'extractedTabContent') {
         // Handle content extracted by content_script_tab_summary.js
         // This message is sent by content_script_tab_summary.js
