@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const summarizeTabButton = document.getElementById('summarize-tab-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
     // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
+    const oneOffInstructionButton = document.getElementById('one-off-instruction-button'); // New button
 
     // Add event listeners for quick action buttons
     // summarizeTabButton listener moved to lines 878-905 to consolidate logic
@@ -48,6 +49,46 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.warn("Chat.js: Explain button - Received unexpected response action or missing action. Response:", response);
                     showToast('Received an unexpected response for explain action.');
                 }
+            });
+        });
+    }
+
+    if (oneOffInstructionButton) {
+        oneOffInstructionButton.addEventListener('click', () => {
+            showToast('Requesting tab context for one-off instruction...');
+            chrome.runtime.sendMessage({ action: 'getTabContentForOneOff' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Error sending getTabContentForOneOff message:", chrome.runtime.lastError.message);
+                    showToast(`Error: ${chrome.runtime.lastError.message}`);
+                    selectedText = "Error fetching tab content."; // Update selectedText with error
+                    selectedTextDiv.textContent = selectedText;
+                    return;
+                }
+
+                if (response && response.action === 'tabContentResponseOneOff') {
+                    if (response.success && response.content) {
+                        selectedText = response.content; // Store the fetched content
+                        selectedTextDiv.textContent = selectedText;
+                        showToast('Tab context received.');
+                    } else if (response.success && !response.content) {
+                        selectedText = "No textual content found on the current page."; // Store placeholder
+                        selectedTextDiv.textContent = selectedText;
+                        showToast('No textual content found on the page.');
+                    } else {
+                        selectedText = `Failed to get tab content: ${response.error || 'Unknown error'}`; // Store error
+                        selectedTextDiv.textContent = selectedText;
+                        showToast(`Failed to get tab content: ${response.error || 'Unknown error'}`);
+                    }
+                } else {
+                    selectedText = 'Received an unexpected response for tab content.'; // Store error
+                    selectedTextDiv.textContent = selectedText;
+                    showToast('Received an unexpected response for tab content.');
+                }
+                // Show the one-off instruction area
+                instructionInput.value = ''; // Clear previous instruction
+                chatMainArea.style.display = 'none';
+                oneoffInstructionArea.style.display = 'block';
+                instructionInput.focus();
             });
         });
     }
