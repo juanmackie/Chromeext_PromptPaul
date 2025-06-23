@@ -5,10 +5,14 @@
   "main": "background.js",
   "scripts": {
     "start": "node background.js",
-    "start:mcp-server": "node mcp_server.js"
+    "start:mcp-server": "node mcp_server.js",
+    "build": "tsc"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
     "extpay": "^3.0.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
   }
 }

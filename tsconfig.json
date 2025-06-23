@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", // Modern JavaScript version, compatible with Chrome extensions
+    "module": "ES2022", // Use ES module system
+    "outDir": ".", // Output .js files in the same directory as .ts files (root for this project)
+    "rootDir": ".", // Specify root directory of input files
+    "esModuleInterop": true, // Enables compatibility with CommonJS modules
+    "strict": true, // Enable all strict type-checking options
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true, // Disallow inconsistently-cased references to the same file
+    "moduleResolution": "node" // Use Node.js module resolution strategy
+  },
+  "include": [
+    "*.ts" // Include all .ts files in the root directory for compilation
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
