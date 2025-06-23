@@ -4,15 +4,10 @@
   "description": "Chrome extension for custom instructions",
   "main": "background.js",
   "scripts": {
-    "start": "node background.js",
-    "start:mcp-server": "node mcp_server.js",
-    "build": "tsc"
+    "start": "node background.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
     "extpay": "^3.0.7"
-  },
-  "devDependencies": {
-    "typescript": "^5.0.0"
   }
 }
