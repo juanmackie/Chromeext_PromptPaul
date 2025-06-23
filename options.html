@@ -318,6 +318,57 @@
       </div>
     </section>
 
+    <section class="card mcp-server-status-card">
+      <h2 class="collapsible-header">
+        <span>Local MCP Server Status & Control</span>
+        <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+      </h2>
+      <div class="collapsible-content">
+        <p>Check the status of your local MCP server and find instructions to manage it.</p>
+        <div class="form-group">
+          <label for="mcpServerPingUrl">MCP Server Ping URL:</label>
+          <input type="text" id="mcpServerPingUrl" value="http://localhost:3000/mcp" class="shadcn-input" style="margin-bottom: 10px;">
+          <button type="button" id="checkMcpServerStatusBtn" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 py-1">
+            <span class="material-symbols-outlined mr-1" style="font-size: 1em;">sync_problem</span> Check Status
+          </button>
+        </div>
+        <div class="form-group">
+          <label>Server Status:</label>
+          <p id="mcpServerStatusDisplay" style="font-weight: bold;">Unknown</p>
+        </div>
+        <div class="manual-instructions">
+          <h4>Manual Server Control:</h4>
+          <p>The Prompt Paul extension currently does not directly control the local MCP server process.</p>
+          <ul>
+            <li><strong>To Start Server:</strong> Open your terminal/command prompt, navigate to the directory where `mcp_server.js` and `package.json` are located, and run the command: <br><code>npm run start:mcp-server</code></li>
+            <li><strong>To Stop Server:</strong> In the terminal where the server is running, press <code>Ctrl+C</code>.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="card mcp-manifest-card">
+      <h2 class="collapsible-header">
+        <span>MCP Server Tool Manifest</span>
+        <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+      </h2>
+      <div class="collapsible-content">
+        <p>Displays the <code>tool_manifest.json</code> currently used by the local MCP server (if running and accessible).</p>
+        <div class="form-group">
+          <label for="mcpServerManifestUrl">MCP Server Manifest URL:</label>
+          <input type="text" id="mcpServerManifestUrl" value="http://localhost:3000/mcp/manifest" class="shadcn-input" style="margin-bottom: 10px;">
+          <button type="button" id="fetchMcpManifestBtn" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 py-1">
+            <span class="material-symbols-outlined mr-1" style="font-size: 1em;">refresh</span> Fetch Manifest
+          </button>
+        </div>
+        <div class="form-group">
+          <label for="mcpToolManifestDisplay">Tool Manifest Content (Read-only):</label>
+          <textarea id="mcpToolManifestDisplay" rows="15" readonly class="shadcn-textarea" style="font-family: monospace; white-space: pre;"></textarea>
+        </div>
+        <small>This manifest is read from the running MCP server. To edit it, you need to modify the <code>tool_manifest.json</code> file on your server and restart the server.</small>
+      </div>
+    </section>
+
     <section class="card config-card">
       <h3>Current Configuration</h3>
       <div class="form-group">

@@ -1211,4 +1211,137 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // The chrome.storage.onChanged listener above has been updated to include this logic.
     // No need for a separate listener here.
+
+    // --- Elicitation UI Handling ---
+    const elicitationModal = document.getElementById('elicitation-modal');
+    const elicitationTitle = document.getElementById('elicitation-title');
+    const elicitationContent = document.getElementById('elicitation-content');
+    const elicitationFormArea = document.getElementById('elicitation-form-area');
+    const elicitationSubmitButton = document.getElementById('elicitation-submit-button');
+    const elicitationCancelButton = document.getElementById('elicitation-cancel-button');
+    let currentElicitationRequestId = null;
+    let currentElicitationType = null; // 'missingParameters' or 'consent'
+
+    function showElicitationModal(title, contentHtml, type) {
+        elicitationTitle.textContent = title;
+        elicitationContent.innerHTML = contentHtml;
+        elicitationFormArea.innerHTML = ''; // Clear previous form
+        currentElicitationType = type;
+        elicitationModal.style.display = 'flex';
+    }
+
+    function hideElicitationModal() {
+        elicitationModal.style.display = 'none';
+        elicitationFormArea.innerHTML = '';
+        currentElicitationRequestId = null;
+        currentElicitationType = null;
+    }
+
+    elicitationCancelButton.addEventListener('click', () => {
+        if (currentElicitationType === 'missingParameters') {
+            // For missing parameters, "Cancel" could mean aborting the tool call.
+            // Send back an empty set of parameters or a specific "cancel" signal if the server supports it.
+            // For now, let's treat cancel as providing no parameters, which might lead to server error or re-prompt.
+            // Or, more appropriately, it should inform background.js to terminate this specific tool call flow.
+            // This part of the spec is not fully defined, so we'll just hide. The background will time out or error.
+            showToast("Tool parameter request cancelled by user.");
+        } else if (currentElicitationType === 'consent') {
+            // For consent, "Cancel" is equivalent to "Deny"
+            chrome.runtime.sendMessage({
+                action: 'userProvidedConsent',
+                elicitationRequestId: currentElicitationRequestId,
+                decision: 'deny'
+            });
+            showToast("Tool consent denied by user.");
+        }
+        hideElicitationModal();
+    });
+
+    elicitationSubmitButton.addEventListener('click', () => {
+        if (currentElicitationType === 'missingParameters') {
+            const params = {};
+            const inputs = elicitationFormArea.querySelectorAll('input, textarea');
+            inputs.forEach(input => {
+                params[input.name] = input.value;
+            });
+            chrome.runtime.sendMessage({
+                action: 'userProvidedMissingParameters',
+                elicitationRequestId: currentElicitationRequestId,
+                filledParameters: params
+            });
+            showToast("Parameters submitted...");
+        } else if (currentElicitationType === 'consent') {
+            // "Submit" for consent means "Allow"
+            chrome.runtime.sendMessage({
+                action: 'userProvidedConsent',
+                elicitationRequestId: currentElicitationRequestId,
+                decision: 'allow'
+            });
+            showToast("Consent granted...");
+        }
+        hideElicitationModal();
+    });
+
+    // New listeners in chat.js for elicitation requests from background.js
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'elicitMissingParameters') {
+            console.log("Chat.js: Received elicitMissingParameters", request);
+            currentElicitationRequestId = request.elicitationRequestId;
+            showElicitationModal(
+                `Parameters needed for: ${request.toolName}`,
+                `<p>The tool <strong>${request.toolName}</strong> requires the following parameters:</p>`,
+                'missingParameters'
+            );
+            elicitationSubmitButton.textContent = 'Submit Parameters';
+            elicitationCancelButton.textContent = 'Cancel Tool';
+
+            request.missingParameters.forEach(param => {
+                const paramGroup = document.createElement('div');
+                paramGroup.style.marginBottom = '10px';
+
+                const label = document.createElement('label');
+                label.textContent = `${param.name} (${param.type}): ${param.description}`;
+                label.style.display = 'block';
+                label.style.marginBottom = '5px';
+
+                let inputElement;
+                if (param.type === 'string' && param.description.toLowerCase().includes('multiline')) { // Heuristic for textarea
+                    inputElement = document.createElement('textarea');
+                    inputElement.rows = 3;
+                } else {
+                    inputElement = document.createElement('input');
+                    inputElement.type = (param.type === 'integer' || param.type === 'number') ? 'number' : 'text';
+                }
+                inputElement.name = param.name;
+                inputElement.style.width = '95%';
+                inputElement.style.padding = '8px';
+                inputElement.style.border = '1px solid #ccc';
+                inputElement.style.borderRadius = '4px';
+
+                paramGroup.appendChild(label);
+                paramGroup.appendChild(inputElement);
+                elicitationFormArea.appendChild(paramGroup);
+            });
+             // Add a message to the chat area as well
+            addMessage('System', `The tool "${request.toolName}" needs some parameters. Please provide them in the popup.`);
+
+
+        } else if (request.action === 'elicitConsent') {
+            console.log("Chat.js: Received elicitConsent", request);
+            currentElicitationRequestId = request.elicitationRequestId;
+            showElicitationModal(
+                `Consent required for: ${request.toolName}`,
+                `<p>The tool <strong>${request.toolName}</strong> is requesting permission to proceed.</p>
+                 <p><strong>Permissions Hint:</strong> ${request.permissionsHint || "No specific permissions hint provided."}</p>
+                 <p>Do you allow this tool to run?</p>`,
+                'consent'
+            );
+            elicitationSubmitButton.textContent = 'Allow';
+            elicitationCancelButton.textContent = 'Deny';
+             // Add a message to the chat area as well
+            addMessage('System', `The tool "${request.toolName}" requires your consent to run. Please respond in the popup.`);
+        }
+        // Ensure other message handlers are not affected or add 'return true' if async sendResponse is used by them.
+    });
+
 });

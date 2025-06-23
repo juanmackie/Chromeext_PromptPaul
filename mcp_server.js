@@ -51,6 +51,17 @@ const server = http.createServer((req, res) => {
   } else {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not Found' }));
+  } else if (req.method === 'GET' && req.url === '/mcp/manifest') {
+    if (toolManifest) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(toolManifest, null, 2));
+    } else {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Tool manifest not loaded or available on the server.' }));
+    }
+  } else {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
   }
 });
 
