@@ -1046,6 +1046,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+
+
     // --- Explain Tab Button Functionality --- (duplicate declaration removed)
 
     // --- Pinned Instructions Functionality ---

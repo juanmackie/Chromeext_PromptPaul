@@ -1548,6 +1548,19 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Indicates asynchronous response
+    } else if (request.action === 'QUICK_ACTION') {
+        console.log("Background: QUICK_ACTION received", request);
+        const { instruction, tabContent } = request;
+        if (!instruction || !tabContent) {
+            console.error("Background: Missing instruction or tabContent in QUICK_ACTION");
+            return;
+        }
+
+        const prompt = `${instruction}\n\n${tabContent}`;
+        console.log("Background: QUICK_ACTION prompt:", prompt.substring(0, 100) + "...");
+
+        // Call the existing LLM API function
+        makeLlmApiRequest(prompt, request.tabId);
     }
     // Handle other actions if any
 });
