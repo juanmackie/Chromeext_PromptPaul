@@ -4,7 +4,8 @@
   "description": "Chrome extension for custom instructions",
   "main": "background.js",
   "scripts": {
-    "start": "node background.js"
+    "start": "node background.js",
+    "start:mcp-server": "node mcp_server.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
