@@ -1188,26 +1188,93 @@ const toolImplementations = {
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // Flag to indicate if sendResponse has been called for this message
-    let responseSent = false;
-    const originalSendResponse = sendResponse;
 
-    // Wrap sendResponse to ensure it's only called once and to clear timeouts
-    sendResponse = (response) => {
-        if (!responseSent) {
-            originalSendResponse(response);
-            responseSent = true;
-            // Clear any associated timeouts here if they were set for this specific message
-            // (This requires passing timeoutId into the scope of this wrapped sendResponse)
+// Store pending elicitation callbacks: key is elicitation request_id, value is { mcpServerUrl, originalSendResponse, toolName, currentArgs }
+const pendingElicitations = new Map();
+
+async function processMcpToolCall(mcpServerUrl, mcpPayload, originalSendResponse, toolName, currentArgs) {
+    console.log(`processMcpToolCall: Sending to ${mcpServerUrl}, method: ${mcpPayload.method}, tool: ${toolName}, payload ID: ${mcpPayload.id}`);
+    try {
+        const mcpResponse = await sendMcpRequest(mcpServerUrl, mcpPayload); // sendMcpRequest handles {jsonrpc, id, result/error}
+
+        // mcpResponse.result is the actual payload from the server for this request.
+        // If the server responded with an elicitation request, mcpResponse.result will BE that request.
+        const serverResult = mcpResponse.result;
+
+        if (serverResult && serverResult.jsonrpc === "2.0" && serverResult.method) {
+            // This is an embedded JSON-RPC request from the server, meaning an elicitation.
+            console.log(`processMcpToolCall: Received elicitation method '${serverResult.method}' from server for tool '${toolName}'`);
+            const elicitationRequestId = serverResult.params.request_id;
+
+            pendingElicitations.set(elicitationRequestId, {
+                mcpServerUrl,
+                originalSendResponse, // This is the sendResponse for the original executePromptPaulTool call
+                toolName,
+                currentArgs, // The arguments known so far for the tool call
+                originalMcpRequestId: mcpPayload.id // The ID of the MCP request that resulted in this elicitation
+            });
+
+            if (serverResult.method === "tool/missingParameters") {
+                // Forward to chat.js to ask the user
+                chrome.runtime.sendMessage({
+                    action: 'elicitMissingParameters',
+                    toolName: serverResult.params.tool_name,
+                    missingParameters: serverResult.params.missing_parameters,
+                    elicitationRequestId: elicitationRequestId, // This ID must be sent back by chat.js
+                    // tabId: sender.tab ? sender.tab.id : null // Need a way to get the relevant tabId
+                }).catch(e => console.error("Error sending elicitMissingParameters to chat.js:", e));
+                // DO NOT call originalSendResponse here; wait for user input via another message.
+            } else if (serverResult.method === "tool/requestConsent") {
+                // Forward to chat.js to ask the user
+                chrome.runtime.sendMessage({
+                    action: 'elicitConsent',
+                    toolName: serverResult.params.tool_name,
+                    permissionsHint: serverResult.params.permissions_hint,
+                    elicitationRequestId: elicitationRequestId, // This ID must be sent back by chat.js
+                    // tabId: sender.tab ? sender.tab.id : null
+                }).catch(e => console.error("Error sending elicitConsent to chat.js:", e));
+                // DO NOT call originalSendResponse here.
+            } else {
+                console.error(`processMcpToolCall: Unknown elicitation method: ${serverResult.method}`);
+                originalSendResponse({ error: `Server requested unknown elicitation: ${serverResult.method}` });
+                pendingElicitations.delete(elicitationRequestId);
+            }
         } else {
-            console.warn("Background: Attempted to call sendResponse multiple times for the same message.");
+            // This is a direct result (success or error) for the mcpPayload.method
+            console.log(`processMcpToolCall: Received final result/error for ${mcpPayload.method} for tool '${toolName}'. Result:`, serverResult);
+            if (mcpResponse.error) { // This implies mcpResponse itself was an error to our request
+                 originalSendResponse({ error: mcpResponse.error.message || "Unknown MCP error" , details: mcpResponse.error });
+            } else {
+                 originalSendResponse({ result: serverResult }); // Final success response for the tool call
+            }
+        }
+    } catch (error) {
+        console.error(`processMcpToolCall: Error during MCP communication for tool '${toolName}', method '${mcpPayload.method}':`, error);
+        originalSendResponse({ error: `MCP communication error for ${toolName}: ${error.message}` });
+    }
+}
+
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Flag to indicate if sendResponse has been called for this message.
+    // This basic wrapper is kept for non-async sendResponse calls.
+    // For async operations (like most tool calls now), managing responseSent is more complex
+    // and typically handled by ensuring sendResponse is only called at the true end of an async chain.
+    let responseSent = false;
+    const originalSendResponseWrapper = sendResponse;
+    const wrappedSendResponse = (response) => {
+        if (!responseSent) {
+            originalSendResponseWrapper(response);
+            responseSent = true;
+        } else {
+            // console.warn("Background: Attempted to call wrappedSendResponse multiple times for the same message. Request action:", request.action);
         }
     };
 
+
     if (request.action === 'getTabContent') {
         if (tabContentCallback) {
-            sendResponse({ action: 'tabContentResponse', success: false, error: 'Another content extraction is already in progress' });
+            wrappedSendResponse({ action: 'tabContentResponse', success: false, error: 'Another content extraction is already in progress' });
             return true;
         }
         
@@ -1503,90 +1570,126 @@ chrome.scripting.executeScript({
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }
 
-                // === NEW MCP LOGIC STARTS HERE ===
                 if (toolDefinition.mcpServerUrl && toolDefinition.mcpServerUrl.trim() !== "") {
-                    console.log(`Executing '${name}' as an MCP tool via ${toolDefinition.mcpServerUrl}`);
-                    try {
-                        const session = await getMcpSession(toolDefinition.mcpServerUrl);
-                        if (!session || !session.initialized) {
-                            throw new Error("MCP session could not be initialized.");
-                        }
-                        
-                        // Add debug logging for MCP tool execution
-                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
-                        
-                        // Validate that the server supports this tool
-                        // Check if tools exists and is an array before using .some()
-                        const serverTools = session.tools;
-                        if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
-                            console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
-                            throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
-                        }
-
-                        const requestId = `mcp-tc-${Date.now()}`;
-                        const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
-
-                        // Assuming mcpServerUrl is the direct JSON-RPC endpoint for MCP.
-                        const mcpResponse = await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
-
-                        // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
-                        // The actual data might be in mcpResponse.result.content or just mcpResponse.result
-                        // For now, sending mcpResponse.result as per the generic structure.
-                        // The structure of 'result' from 'tools/call' should be: { content: "...", isError: false/true }
-                        // So, mcpResponse.result should be this object.
-                        sendResponse({ result: mcpResponse.result });
-
-                    } catch (mcpError) {
-                        console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
-                        // Enhanced error logging for TypeErrors
-                        // The existing mcpError.details logging seems correct as per the requirement.
-                        // The requirement states: "ensure the console.error in the catch (mcpError) block ... correctly logs mcpError.details if it exists, which it already seems to do."
-                        // The existing line is: console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details);
-                        // This already logs mcpError.details if it exists.
-                        if (mcpError instanceof TypeError) {
-                            // This debug info is helpful for TypeErrors which was the original problem.
-                            console.error('MCP Capabilities Debug Info during TypeError:', {
-                                serverCapabilities: session?.serverCapabilities, // Use optional chaining for session as well
-                                tools: session?.serverCapabilities?.tools
-                            });
-                        }
-                        let userFriendlyMessage;
-                        if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
-                            userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
-                        } else {
-                            userFriendlyMessage = `Failed to execute MCP tool '${name}': ${mcpError.message || 'An unknown error occurred during MCP tool execution.'}`;
-                        }
-                        sendResponse({ error: userFriendlyMessage });
+                    console.log(`Executing '${name}' as an MCP tool via ${toolDefinition.mcpServerUrl} (executePromptPaulTool async block)`);
+                    const session = await getMcpSession(toolDefinition.mcpServerUrl); // Ensure session is initialized
+                    if (!session || !session.initialized) {
+                        throw new Error("MCP session could not be initialized prior to tool call.");
                     }
-                } else if (toolDefinition.endpointUrl) { // Existing non-MCP tool logic
+                    // Validate server capabilities for the tool
+                    const serverTools = session.tools;
+                    if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
+                         console.warn(`Tool '${name}' not found in server capabilities. Server tools:`, serverTools);
+                         throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}'.`);
+                    }
+
+                    const requestId = `mcp-tools-call-${Date.now()}`; // Changed from mcp-tc for clarity
+                    // MCP standard is "tools/call", not "tool/execute"
+                    // The createMcpToolCallPayload already uses "tools/call"
+                    // The server-side code expects "tool/execute" as the entry point.
+                    // For now, I will stick to the server's "tool/execute" and adapt the client if needed,
+                    // or assume `createMcpToolCallPayload` is a generic helper and we override method for this specific server.
+                    // Given the server code uses 'tool/execute', let's make the payload match.
+                    // However, `createMcpToolCallPayload` is hardcoded to `tools/call`.
+                    // Let's create a specific payload for *this* server's `tool/execute`
+                     const mcpExecutePayload = {
+                        jsonrpc: "2.0",
+                        id: requestId,
+                        method: "tool/execute", // Matching our Node.js server
+                        params: {
+                            tool_name: toolDefinition.name,
+                            parameters: argsObject
+                        }
+                    };
+                    console.log("Prepared mcpExecutePayload:", JSON.stringify(mcpExecutePayload, null, 2));
+
+                    // processMcpToolCall will handle the response, including elicitation
+                    await processMcpToolCall(toolDefinition.mcpServerUrl, mcpExecutePayload, sendResponse, name, argsObject);
+                    // processMcpToolCall is responsible for calling sendResponse eventually.
+
+                } else if (toolDefinition.endpointUrl) {
                     console.log(`Executing '${name}' as a user-defined HTTP tool via ${toolDefinition.endpointUrl}`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
-                    console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
                     sendResponse({ result: result });
-                } else { // Existing built-in tool logic (if any)
+                } else {
                     const builtInFunction = toolImplementations[name];
                     if (builtInFunction) {
                         console.log(`Executing '${name}' as a built-in tool.`);
                         const result = await builtInFunction(argsObject);
-                        console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
                         sendResponse({ result: result });
                     } else {
-                        throw new Error(`Tool '${name}' is not properly configured: It has no mcpServerUrl, no endpointUrl, and no built-in implementation.`);
+                        throw new Error(`Tool '${name}' is not properly configured for any execution type.`);
                     }
                 }
-                // === MCP LOGIC ENDS HERE ===
-
-            } catch (error) { // General error catch for executePromptPaulTool
-                console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
-                // Provide more detailed error message for MCP tools
-                let errorMessage = error.message || 'Tool processing failed';
-                if (error.details) {
-                    errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
-                }
+            } catch (error) {
+                console.error(`Background: Error in executePromptPaulTool for '${name}':`, error, error.details);
+                let errorMessage = `Tool '${name}' execution failed: ${error.message}`;
+                if (error.details) errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
                 sendResponse({ error: errorMessage });
             }
         })();
         return true; // Crucial for async sendResponse
+    } else if (request.action === 'userProvidedMissingParameters') {
+        const { elicitationRequestId, filledParameters } = request;
+        const elicitationState = pendingElicitations.get(elicitationRequestId);
+
+        if (!elicitationState) {
+            console.error("Received userProvidedMissingParameters for unknown elicitationRequestId:", elicitationRequestId);
+            sendResponse({ error: "Unknown elicitation request ID."}); // Respond to chat.js if it's waiting
+            return true;
+        }
+        pendingElicitations.delete(elicitationRequestId); // Consume this elicitation
+
+        console.log(`Received userProvidedMissingParameters for ${elicitationState.toolName} (elicitation ID: ${elicitationRequestId}). Params:`, filledParameters);
+
+        // Merge with existing args if any (though current server logic expects all at once)
+        const newArgs = { ...elicitationState.currentArgs, ...filledParameters };
+
+        const mcpPayload = {
+            jsonrpc: "2.0",
+            // The ID for tool/parametersFilled itself can be new, but it's a notification to the server,
+            // so it might not require an ID, or the server might ignore it.
+            // The important part is params.request_id which is the elicitationRequestId.
+            // Let's make it a request for good measure, so server can ACK if it wants.
+            id: `mcp-paramsfilled-${Date.now()}`,
+            method: "tool/parametersFilled",
+            params: {
+                request_id: elicitationRequestId, // This links it to the server's pending elicitation
+                filled_parameters: filledParameters // Server expects { "param_name": "value", ... }
+            }
+        };
+        // Now call processMcpToolCall again, which will send this to the server
+        // and handle the server's next response (could be consent request or final result)
+        processMcpToolCall(elicitationState.mcpServerUrl, mcpPayload, elicitationState.originalSendResponse, elicitationState.toolName, newArgs);
+        if (sendResponse) sendResponse({success: true, message: "Parameters sent to server."}); // Acknowledge to chat.js
+        return true; // Async due to processMcpToolCall
+
+    } else if (request.action === 'userProvidedConsent') {
+        const { elicitationRequestId, decision } = request;
+        const elicitationState = pendingElicitations.get(elicitationRequestId);
+
+        if (!elicitationState) {
+            console.error("Received userProvidedConsent for unknown elicitationRequestId:", elicitationRequestId);
+            if (sendResponse) sendResponse({ error: "Unknown elicitation request ID."});
+            return true;
+        }
+        pendingElicitations.delete(elicitationRequestId);
+
+        console.log(`Received userProvidedConsent for ${elicitationState.toolName} (elicitation ID: ${elicitationRequestId}). Decision: ${decision}`);
+
+        const mcpPayload = {
+            jsonrpc: "2.0",
+            id: `mcp-consentresp-${Date.now()}`,
+            method: "tool/consentResponse",
+            params: {
+                request_id: elicitationRequestId, // Links to server's pending consent
+                decision: decision // "allow" or "deny"
+            }
+        };
+        processMcpToolCall(elicitationState.mcpServerUrl, mcpPayload, elicitationState.originalSendResponse, elicitationState.toolName, elicitationState.currentArgs);
+        if (sendResponse) sendResponse({success: true, message: "Consent decision sent to server."}); // Acknowledge to chat.js
+        return true; // Async due to processMcpToolCall
+
     } else if (request.action === 'getDiscoveredMcpToolSchema') {
         (async () => {
             const { mcpServerUrl, toolName } = request;
