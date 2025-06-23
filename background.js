@@ -20,7 +20,7 @@ let defaultMcpClient = null; // To hold a single, default MCP client instance
 // Key: elicitation_request_id (from server notification, e.g., params.request_id)
 // Value: { originalSendResponse: Function, toolName: string, currentArgs: object, originalLlmToolCallId: string }
 // originalLlmToolCallId is the ID of the tool_call from the LLM (request.toolCall.id in executePromptPaulTool)
-const pendingElicitations = new Map();
+// const pendingElicitations = new Map(); // Removed duplicate global declaration
 
 
 // Helper to get or initialize the default MCP client
@@ -954,7 +954,7 @@ const toolImplementations = {
 console.log("Background: Attempting to add onMessage listener NOW...");
 
 // Store pending elicitation callbacks: key is elicitation request_id, value is { mcpServerUrl, originalSendResponse, toolName, currentArgs }
-const pendingElicitations = new Map();
+// const pendingElicitations = new Map(); // Removed, should use the global one
 
 async function processMcpToolCall(mcpServerUrl, mcpPayload, originalSendResponse, toolName, currentArgs) {
     console.log(`processMcpToolCall: Sending to ${mcpServerUrl}, method: ${mcpPayload.method}, tool: ${toolName}, payload ID: ${mcpPayload.id}`);
