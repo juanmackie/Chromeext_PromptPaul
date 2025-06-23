@@ -13,12 +13,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Quick Actions Sidebar Elements
     const summarizeTabButton = document.getElementById('summarize-tab-button');
+    const quickAction1Button = document.getElementById('quick-action-1'); // Added this line
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
     // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
     // Add event listeners for quick action buttons
     // summarizeTabButton listener moved to lines 878-905 to consolidate logic
     // and prevent duplicate message sending.
+
+    if (quickAction1Button) {
+        quickAction1Button.addEventListener('click', () => {
+            showToast('Requesting tab content for one-off instruction...');
+            chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => { // Using getTabContent, similar to summarize
+                if (chrome.runtime.lastError) {
+                    console.error("Chat.js: Quick Action 1 - Error sending getTabContent message:", chrome.runtime.lastError.message);
+                    showToast(`Error: ${chrome.runtime.lastError.message}`);
+                    return;
+                }
+
+                if (response && response.action === 'tabContentResponse') {
+                    if (response.content) {
+                        console.log("Chat.js: Quick Action 1 - Content received, length:", response.content.length);
+                        selectedText = response.content; // Store the tab content
+                        tabId = response.tabId; // Store tabId if available from response, though getTabContent might not provide it.
+                                                // This might need adjustment if tabId is strictly required later and not in this response.
+
+                        selectedTextDiv.textContent = selectedText; // Display tab content in the one-off area
+                        instructionInput.value = ''; // Clear any previous instruction
+
+                        chatMainArea.style.display = 'none';
+                        oneoffInstructionArea.style.display = 'block';
+                        instructionInput.focus(); // Focus on the instruction input field
+                        showToast('Tab content loaded. Enter your one-off instruction.');
+                    } else {
+                        console.error("Chat.js: Quick Action 1 - Failed to get content or content missing. Success:", response.success, "Error:", response.error);
+                        showToast('No content received for one-off instruction: ' + (response.error || 'Content not available'));
+                    }
+                } else if (response && response.action === 'error') {
+                    showToast(`Error getting tab content: ${response.message}`);
+                } else {
+                    console.warn("Chat.js: Quick Action 1 - Received unexpected response action or missing action. Response:", response);
+                    showToast('Received an unexpected response for quick action.');
+                }
+            });
+        });
+    }
+
     const explainBtn = document.getElementById('explain-button');
     if (explainBtn) {
         explainBtn.addEventListener('click', () => {
