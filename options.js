@@ -1210,6 +1210,105 @@ function setupToolHandlers() {
   // Initial load of tools
   loadTools();
 
+  // --- MCP Tool Manifest Display ---
+  const fetchMcpManifestBtn = document.getElementById('fetchMcpManifestBtn');
+  const mcpToolManifestDisplay = document.getElementById('mcpToolManifestDisplay');
+  const mcpServerManifestUrlInput = document.getElementById('mcpServerManifestUrl');
+
+  async function fetchAndDisplayMcpManifest() {
+    const manifestUrl = mcpServerManifestUrlInput.value.trim();
+    if (!manifestUrl) {
+      showStatus("Please enter the MCP Server Manifest URL.", true);
+      mcpToolManifestDisplay.value = "Error: Manifest URL is empty.";
+      return;
+    }
+
+    showStatus("Fetching MCP tool manifest...", false, true);
+    try {
+      const response = await fetch(manifestUrl);
+      if (response.ok) {
+        const manifestData = await response.json();
+        mcpToolManifestDisplay.value = JSON.stringify(manifestData, null, 2);
+        showStatus("MCP Tool Manifest loaded successfully.", false, true);
+      } else {
+        const errorText = await response.text();
+        mcpToolManifestDisplay.value = `Error fetching manifest: ${response.status} ${response.statusText}\n${errorText}`;
+        showStatus(`Failed to fetch MCP manifest: ${response.status}`, true);
+      }
+    } catch (error) {
+      console.error("Error fetching MCP manifest:", error);
+      mcpToolManifestDisplay.value = `Error fetching manifest: ${error.message}`;
+      showStatus(`Error fetching MCP manifest: ${error.message}`, true);
+    }
+  }
+
+  if (fetchMcpManifestBtn) {
+    fetchMcpManifestBtn.addEventListener('click', fetchAndDisplayMcpManifest);
+  }
+  // Attempt to fetch on load if URL is present
+  if (mcpServerManifestUrlInput && mcpServerManifestUrlInput.value && fetchMcpManifestBtn) {
+    // fetchAndDisplayMcpManifest(); // Optional: Auto-fetch manifest on load if button exists
+  }
+
+  // --- MCP Server Status Check ---
+  const checkMcpServerStatusBtn = document.getElementById('checkMcpServerStatusBtn');
+  const mcpServerStatusDisplay = document.getElementById('mcpServerStatusDisplay');
+  const mcpServerPingUrlInput = document.getElementById('mcpServerPingUrl');
+
+  async function checkMcpServerStatus() {
+    const pingUrl = mcpServerPingUrlInput.value.trim();
+    if (!pingUrl) {
+      showStatus("Please enter the MCP Server Ping URL.", true);
+      mcpServerStatusDisplay.textContent = "Error: Ping URL is empty.";
+      mcpServerStatusDisplay.style.color = "red";
+      return;
+    }
+
+    mcpServerStatusDisplay.textContent = "Checking...";
+    mcpServerStatusDisplay.style.color = "orange";
+    showStatus("Pinging MCP server...", false, true);
+
+    try {
+      // We expect the /mcp endpoint to be POST only for JSON-RPC.
+      // A GET request might return 404 or 405, but if the server is up, it should respond.
+      // Alternatively, a dedicated /health or /status GET endpoint on the server would be better.
+      // For now, let's try a fetch and see if we get any response or a network error.
+      // A more robust check would be to actually send a benign JSON-RPC request like `mcp.echo` if the server supported it.
+      // Since our server's /mcp only handles POST, a GET will result in 404.
+      // However, if the server is down, fetch itself will fail.
+      // The /mcp/manifest GET endpoint is a good candidate for a health check too.
+      const healthCheckUrl = pingUrl.replace('/mcp', '/mcp/manifest'); // Use the manifest URL as a health check
+
+      const response = await fetch(healthCheckUrl, { method: 'GET', mode: 'cors' }); // mode: 'cors' is important for cross-origin checks if server is truly separate
+
+      if (response.ok) { // For /mcp/manifest, 200 OK means it's running and manifest is available.
+        mcpServerStatusDisplay.textContent = "Running";
+        mcpServerStatusDisplay.style.color = "green";
+        showStatus("MCP Server is running.", false, true);
+      } else {
+         // If /mcp/manifest gives non-OK, server is up but something is wrong with manifest or endpoint.
+         // If we pinged /mcp with GET and got 404/405, it means server is up but endpoint expects POST.
+        mcpServerStatusDisplay.textContent = `Potentially Running (Responded with ${response.status})`;
+        mcpServerStatusDisplay.style.color = "orange";
+        showStatus(`MCP Server responded with HTTP ${response.status}. It might be running but the ping URL isn't ideal for status.`, false, true);
+      }
+    } catch (error) {
+      console.error("Error pinging MCP server:", error);
+      mcpServerStatusDisplay.textContent = "Not Running / Unreachable";
+      mcpServerStatusDisplay.style.color = "red";
+      showStatus(`MCP Server is not running or unreachable: ${error.message}`, true);
+    }
+  }
+
+  if (checkMcpServerStatusBtn) {
+    checkMcpServerStatusBtn.addEventListener('click', checkMcpServerStatus);
+  }
+  // Optional: Auto-check status on load
+  if (mcpServerPingUrlInput && mcpServerPingUrlInput.value && checkMcpServerStatusBtn) {
+    // checkMcpServerStatus();
+  }
+
+
   if (fetchMcpToolInfoBtn) {
     fetchMcpToolInfoBtn.addEventListener('click', async () => { // Made async
       const toolMcpServerUrl = toolMcpServerUrlEl.value.trim();

@@ -256,6 +256,23 @@
             </div>
         </div>
 
+        <!-- Placeholder for Elicitation UI -->
+        <div id="elicitation-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+            <div style="background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 300px; max-width: 500px;">
+                <h3 id="elicitation-title">Tool Interaction Required</h3>
+                <div id="elicitation-content">
+                    <!-- Content will be populated by chat.js -->
+                </div>
+                <div id="elicitation-form-area">
+                    <!-- Parameter inputs will go here -->
+                </div>
+                <div id="elicitation-buttons" style="margin-top: 15px; text-align: right;">
+                    <button id="elicitation-cancel-button" style="margin-right: 10px; background-color: #ccc;">Cancel</button>
+                    <button id="elicitation-submit-button">Submit</button>
+                </div>
+            </div>
+        </div>
+
         <div id="oneoff-instruction-area" style="display:none;">
             <h3>One-off Instruction</h3>
             <div>
