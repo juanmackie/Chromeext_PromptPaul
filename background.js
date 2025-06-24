@@ -5,6 +5,14 @@ console.log('Background service worker script started.');
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
+let isSmartClipboardEnabled = false; // Cache the setting in background
+
+// Load initial smart clipboard setting
+chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
+    isSmartClipboardEnabled = !!result.enableSmartClipboard;
+    console.log("Background: Initial Smart Clipboard enabled state:", isSmartClipboardEnabled);
+});
+
 
 // MCP Session Management
 let mcpSessions = {};
@@ -537,7 +545,142 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
   await makeLlmApiRequest(promptContent, tab.id);
+  } else if (info.menuItemId === 'chat_with_pdf') {
+    console.log("Background: 'chat_with_pdf' context menu clicked.");
+    await chrome.sidePanel.open({ tabId: tab.id });
+
+    const pdfUrl = info.linkUrl || info.pageUrl;
+    if (!pdfUrl) {
+        console.error("Background: No PDF URL found for chat_with_pdf action.");
+        chrome.runtime.sendMessage({
+            action: 'displayErrorInChat',
+            errorMessage: "Could not determine the PDF URL.",
+            tabId: tab.id
+        }).catch(e => console.error("Error sending displayErrorInChat for no PDF URL:", e));
+        return;
+    }
+
+    // Scenario 1: User is currently viewing the PDF page.
+    if (info.pageUrl && info.pageUrl === tab.url && info.pageUrl.toLowerCase().endsWith('.pdf')) {
+        console.log(`Background: Requesting PDF text from current tab: ${tab.id}, URL: ${info.pageUrl}`);
+        chrome.tabs.sendMessage(tab.id, { action: 'extractPdfText' }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("Background: Error sending 'extractPdfText' to content script:", chrome.runtime.lastError.message);
+                chrome.runtime.sendMessage({
+                    action: 'displayErrorInChat',
+                    errorMessage: `Failed to communicate with PDF content script: ${chrome.runtime.lastError.message}`,
+                    tabId: tab.id
+                }).catch(e => console.error("Error sending displayErrorInChat for communication error:", e));
+                return;
+            }
+
+            if (response && response.success) {
+                console.log("Background: PDF text successfully extracted from current tab.");
+                chrome.runtime.sendMessage({
+                    action: 'startChatWithPdfContent',
+                    pdfText: response.content,
+                    pdfUrl: info.pageUrl,
+                    tabId: tab.id
+                }).catch(e => console.error("Error sending startChatWithPdfContent:", e));
+            } else {
+                console.error("Background: Failed to extract PDF text from current tab.", response ? response.error : "No response");
+                chrome.runtime.sendMessage({
+                    action: 'displayErrorInChat',
+                    errorMessage: `Failed to extract text from PDF: ${response ? response.error : 'Unknown error'}`,
+                    tabId: tab.id
+                }).catch(e => console.error("Error sending displayErrorInChat for extraction failure:", e));
+            }
+        });
+    }
+    // Scenario 2: User clicked a link to a PDF. (More complex, implement fully later)
+    else if (info.linkUrl && info.linkUrl.toLowerCase().endsWith('.pdf')) {
+        console.log(`Background: Clicked on a link to PDF: ${info.linkUrl}. This will be handled by opening in a new tab.`);
+        // Implementation for opening in new tab and then extracting
+        openPdfLinkAndExtract(info.linkUrl, tab.id);
+    } else {
+        console.warn("Background: 'chat_with_pdf' clicked, but URL doesn't seem to be a PDF or context is unclear.", info);
+        chrome.runtime.sendMessage({
+            action: 'displayErrorInChat',
+            errorMessage: "Could not identify a valid PDF to process from the current context.",
+            tabId: tab.id
+        }).catch(e => console.error("Error sending displayErrorInChat for unclear context:", e));
+    }
+  }
 });
+
+// Helper function to open PDF link in a new tab and manage extraction
+// This needs to be defined outside the onClicked listener to be accessible.
+const pdfLinkExtractionJobs = {}; // Store job details: { originalTabId, sendResponseToChat }
+
+async function openPdfLinkAndExtract(pdfLinkUrl, originalTabId) {
+    console.log(`Background: Opening PDF link in new tab for extraction: ${pdfLinkUrl}`);
+    try {
+        const newPdfTab = await chrome.tabs.create({ url: pdfLinkUrl, active: false });
+        pdfLinkExtractionJobs[newPdfTab.id] = { originalTabId, pdfUrl: pdfLinkUrl, status: 'opening' };
+        console.log(`Background: New tab ${newPdfTab.id} created for PDF. Job details stored.`);
+    } catch (error) {
+        console.error(`Background: Error creating new tab for PDF link ${pdfLinkUrl}:`, error);
+        chrome.runtime.sendMessage({
+            action: 'displayErrorInChat',
+            errorMessage: `Failed to open PDF link: ${error.message}`,
+            tabId: originalTabId
+        }).catch(e => console.error("Error sending displayErrorInChat for tab creation failure:", e));
+    }
+}
+
+
+// Listener for tab updates, specifically for our temporary PDF tabs
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    const job = pdfLinkExtractionJobs[tabId];
+    if (job && job.status === 'opening' && changeInfo.status === 'complete') {
+        console.log(`Background: Temporary PDF tab ${tabId} finished loading. URL: ${tab.url}`);
+        job.status = 'loaded';
+
+        // Wait a brief moment for content script to potentially initialize
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        console.log(`Background: Sending 'extractPdfText' to temporary tab ${tabId}`);
+        chrome.tabs.sendMessage(tabId, { action: 'extractPdfText' }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error(`Background: Error sending 'extractPdfText' to temp tab ${tabId}:`, chrome.runtime.lastError.message);
+                chrome.runtime.sendMessage({
+                    action: 'displayErrorInChat',
+                    errorMessage: `Failed to communicate with PDF content script in new tab: ${chrome.runtime.lastError.message}`,
+                    tabId: job.originalTabId
+                }).catch(e => console.error("Error sending displayErrorInChat for temp tab communication error:", e));
+            } else if (response && response.success) {
+                console.log(`Background: PDF text successfully extracted from temp tab ${tabId}.`);
+                chrome.runtime.sendMessage({
+                    action: 'startChatWithPdfContent',
+                    pdfText: response.content,
+                    pdfUrl: job.pdfUrl, // Use the original link URL for context
+                    tabId: job.originalTabId
+                }).catch(e => console.error("Error sending startChatWithPdfContent from temp tab:", e));
+            } else {
+                console.error(`Background: Failed to extract PDF text from temp tab ${tabId}.`, response ? response.error : "No response");
+                chrome.runtime.sendMessage({
+                    action: 'displayErrorInChat',
+                    errorMessage: `Failed to extract text from linked PDF: ${response ? response.error : 'Unknown error'}`,
+                    tabId: job.originalTabId
+                }).catch(e => console.error("Error sending displayErrorInChat for temp tab extraction failure:", e));
+            }
+
+            // Clean up: close the temporary tab and remove job
+            chrome.tabs.remove(tabId).catch(e => console.warn(`Error removing temp PDF tab ${tabId}:`, e));
+            delete pdfLinkExtractionJobs[tabId];
+            console.log(`Background: Temporary PDF tab ${tabId} closed and job removed.`);
+        });
+    } else if (job && job.status === 'opening' && changeInfo.status === 'loading' && tab.url && !tab.url.startsWith('chrome://')) {
+        // Sometimes PDF viewers might redirect or have intermediate loading states.
+        // If the URL changes to something that's not the initial PDF link (and not a chrome internal page),
+        // it might indicate an issue or a different PDF viewer.
+        // This is a heuristic and might need refinement.
+        if (tab.url !== job.pdfUrl && !tab.url.toLowerCase().endsWith('.pdf')) {
+             console.warn(`Background: Temporary PDF tab ${tabId} navigated to unexpected URL: ${tab.url}. Original: ${job.pdfUrl}`);
+        }
+    }
+});
+
 
 // Helper function to check for valid URL
 function isValidURL(string) {
@@ -931,6 +1074,15 @@ chrome.runtime.onInstalled.addListener(async () => {
     contexts: ['selection', 'image'],
   });
 
+  // Create "Chat with this PDF" menu item
+  chrome.contextMenus.create({
+    id: 'chat_with_pdf',
+    title: '📄 Chat with this PDF',
+    contexts: ['link', 'page'],
+    targetUrlPatterns: ["*://*/*.pdf", "*://*/*.PDF", "file://*/*.pdf", "file://*/*.PDF"],
+    documentUrlPatterns: ["*://*/*.pdf", "*://*/*.PDF", "file://*/*.pdf", "file://*/*.PDF"]
+  });
+
   // Create parent menu for Prompt Paul
   chrome.contextMenus.create({
     id: 'prompt_paul',
@@ -1245,7 +1397,7 @@ chrome.scripting.executeScript({
             tabContentCallback({
                 action: 'tabContentResponse',
                 success: result.success,
-                content: result.data, // Ensure 'content' field is used as expected by chat.js
+                content: result.content, // Changed from result.data
                 error: result.error
             });
             tabContentCallback = null;
@@ -1337,8 +1489,8 @@ chrome.scripting.executeScript({
             pinnedActionTabContentCallback({
                 action: 'pinnedActionTabContentResponse',
                 success: result.success,
-                content: result.data,
-                data: result.data,
+                content: result.content, // Changed from result.data
+                // data: result.data, // Removed redundant field
                 error: result.error,
                 instruction: request.instruction // Echo back instruction on success
             });
@@ -1400,7 +1552,7 @@ chrome.scripting.executeScript({
             tabContentCallback({
                 action: 'explainContentResponse',
                 success: result.success,
-                content: result.data, // Ensure 'content' field is used
+                content: result.content, // Changed from result.data
                 error: result.error
             });
             tabContentCallback = null;
@@ -1561,6 +1713,86 @@ chrome.scripting.executeScript({
 
         // Call the existing LLM API function
         makeLlmApiRequest(prompt, request.tabId);
+    } else if (request.action === 'smartClipboardSettingChanged') {
+        isSmartClipboardEnabled = !!request.enabled;
+        console.log("Background: Smart Clipboard setting changed to:", isSmartClipboardEnabled);
+        // No sendResponse needed for this notification
+    } else if (request.action === 'textCopied') {
+        if (isSmartClipboardEnabled) {
+            console.log("Background: Text copied and Smart Clipboard enabled. Copied text:", request.copiedText.substring(0, 100) + "...");
+            // Open side panel and send message to chat.js
+            // Need the current tab's ID to open the side panel in context.
+            // The 'sender' object in onMessage listener has a 'tab' property if sent from a content script.
+            if (sender && sender.tab && sender.tab.id) {
+                const currentTabId = sender.tab.id;
+                (async () => {
+                    try {
+                        await chrome.sidePanel.open({ tabId: currentTabId });
+                        // Send message to chat.js AFTER side panel is confirmed or attempted to open
+                        // Adding a small delay to ensure chat.js might be ready if panel was just opened.
+                        setTimeout(() => {
+                            chrome.runtime.sendMessage({
+                                action: 'showSmartClipboardUI',
+                                copiedText: request.copiedText,
+                                tabId: currentTabId // Pass tabId for chat.js if needed
+                            }).catch(err => console.warn("Background: Error sending 'showSmartClipboardUI' message, chat.js might not be ready.", err.message));
+                        }, 150); // 150ms delay
+                    } catch (e) {
+                        console.error("Background: Error opening side panel for smart clipboard.", e);
+                    }
+                })();
+            } else {
+                console.warn("Background: 'textCopied' received, but sender tab ID is missing. Cannot open side panel reliably.");
+            }
+        } else {
+            console.log("Background: Text copied, but Smart Clipboard is disabled.");
+        }
+        // No sendResponse needed for this notification
+    } else if (request.action === 'getTabUrlForDynamicActions') {
+        if (sender && sender.tab && sender.tab.id) {
+            chrome.tabs.get(sender.tab.id, (tab) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Background: Error getting tab URL for dynamic actions:", chrome.runtime.lastError.message);
+                    sendResponse({ success: false, error: chrome.runtime.lastError.message });
+                } else if (tab) {
+                    sendResponse({ success: true, url: tab.url, tabId: tab.id });
+                } else {
+                    sendResponse({ success: false, error: "Tab not found." });
+                }
+            });
+        } else {
+             // If not sent from a tab context (e.g. popup or options page, though less likely for this action)
+             // try to get the active tab of the current window.
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs && tabs.length > 0) {
+                    sendResponse({ success: true, url: tabs[0].url, tabId: tabs[0].id });
+                } else {
+                    console.error("Background: No active tab found for getTabUrlForDynamicActions.");
+                    sendResponse({ success: false, error: "No active tab found." });
+                }
+            });
+        }
+        return true; // Indicates asynchronous response
+    } else if (request.action === 'listToolsFromMcpServer') {
+        const { mcpServerUrl } = request;
+        if (!mcpServerUrl) {
+            sendResponse({ success: false, error: 'MCP Server URL is required.' });
+            return false; // No async work if URL is missing
+        }
+        (async () => {
+            try {
+                const session = await getMcpSession(mcpServerUrl); // This initializes and lists tools
+                if (session && session.tools) {
+                    sendResponse({ success: true, tools: session.tools });
+                } else {
+                    sendResponse({ success: false, error: 'Failed to initialize session or list tools from MCP server.' });
+                }
+            } catch (error) {
+                console.error(`Background: Error listing tools from MCP server ${mcpServerUrl}:`, error);
+                sendResponse({ success: false, error: `Failed to list tools: ${error.message}` });
+            }
+        })();
+        return true; // Indicates asynchronous response
     }
     // Handle other actions if any
 });

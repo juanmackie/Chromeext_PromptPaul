@@ -41,5 +41,5 @@
     }
 
     // Instead of sendMessage, return the object.
-    return { success: success, data: content, error: errorMessage };
+    return { success: success, content: content, error: errorMessage };
 })();

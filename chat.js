@@ -11,9 +11,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
 
+    // Smart Clipboard UI Elements
+    const smartClipboardNotice = document.getElementById('smart-clipboard-notice');
+    const smartClipboardTextPreview = document.getElementById('smart-clipboard-text-preview');
+    const smartClipboardSendButton = document.getElementById('smart-clipboard-send');
+    const smartClipboardDismissButton = document.getElementById('smart-clipboard-dismiss');
+    let fullCopiedText = ''; // To store the full text for the send button
+
     // Quick Actions Sidebar Elements
     const summarizeTabButton = document.getElementById('summarize-tab-button');
-    const quickAction1Button = document.getElementById('quick-action-1'); // Added this line
+    const processTabButton = document.getElementById('process-tab-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
     // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
@@ -21,39 +28,40 @@ document.addEventListener('DOMContentLoaded', () => {
     // summarizeTabButton listener moved to lines 878-905 to consolidate logic
     // and prevent duplicate message sending.
 
-    if (quickAction1Button) {
-        quickAction1Button.addEventListener('click', () => {
-            showToast('Requesting tab content for one-off instruction...');
-            chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => { // Using getTabContent, similar to summarize
+    if (processTabButton) {
+        processTabButton.addEventListener('click', () => {
+            const customInstruction = prompt("Enter your custom instruction for the current tab's content:");
+            if (customInstruction === null || customInstruction.trim() === "") {
+                showToast('Custom instruction cancelled or empty.');
+                return;
+            }
+
+            showToast('Requesting tab content for custom instruction...');
+            chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => {
                 if (chrome.runtime.lastError) {
-                    console.error("Chat.js: Quick Action 1 - Error sending getTabContent message:", chrome.runtime.lastError.message);
+                    console.error("Chat.js: Process Tab - Error sending getTabContent message:", chrome.runtime.lastError.message);
                     showToast(`Error: ${chrome.runtime.lastError.message}`);
                     return;
                 }
 
                 if (response && response.action === 'tabContentResponse') {
                     if (response.content) {
-                        console.log("Chat.js: Quick Action 1 - Content received, length:", response.content.length);
-                        selectedText = response.content; // Store the tab content
-                        tabId = response.tabId; // Store tabId if available from response, though getTabContent might not provide it.
-                                                // This might need adjustment if tabId is strictly required later and not in this response.
+                        console.log("Chat.js: Process Tab - Content received, length:", response.content.length);
+                        const promptText = customInstruction + "\n\nTab Content:\n" + response.content;
 
-                        selectedTextDiv.textContent = selectedText; // Display tab content in the one-off area
-                        instructionInput.value = ''; // Clear any previous instruction
-
-                        chatMainArea.style.display = 'none';
-                        oneoffInstructionArea.style.display = 'block';
-                        instructionInput.focus(); // Focus on the instruction input field
-                        showToast('Tab content loaded. Enter your one-off instruction.');
+                        chatMainArea.style.display = 'block';
+                        oneoffInstructionArea.style.display = 'none';
+                        makeApiCall(promptText);
+                        showToast('Tab content loaded. Processing with custom instruction.');
                     } else {
-                        console.error("Chat.js: Quick Action 1 - Failed to get content or content missing. Success:", response.success, "Error:", response.error);
-                        showToast('No content received for one-off instruction: ' + (response.error || 'Content not available'));
+                        console.error("Chat.js: Process Tab - Failed to get content or content missing. Success:", response.success, "Error:", response.error);
+                        showToast('No content received for processing: ' + (response.error || 'Content not available'));
                     }
                 } else if (response && response.action === 'error') {
                     showToast(`Error getting tab content: ${response.message}`);
                 } else {
-                    console.warn("Chat.js: Quick Action 1 - Received unexpected response action or missing action. Response:", response);
-                    showToast('Received an unexpected response for quick action.');
+                    console.warn("Chat.js: Process Tab - Received unexpected response action or missing action. Response:", response);
+                    showToast('Received an unexpected response for process tab action.');
                 }
             });
         });
@@ -396,7 +404,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         sendButton.disabled = false;
                         userInput.focus();
                     } else {
-                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        let resultDisplay = "";
+                        try {
+                            // Assuming response.result is an object/value that can be stringified
+                            resultDisplay = `\n\`\`\`json\n${JSON.stringify(response.result, null, 2)}\n\`\`\``;
+                        } catch (e) {
+                            resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
+                        }
+                        addMessage('System', `✅ Tool **${toolCall.function.name}** executed.\nResult:${resultDisplay}`);
                         conversationHistory.push({
                             role: 'tool',
                             tool_call_id: toolCall.id,
@@ -471,6 +486,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // activeStreamingToolCall is already null if it was processed earlier in this function.
             // toolCallWasHandledInThisStream is a local var and will be gone.
 
+        } else if (request.action === 'showSmartClipboardUI') {
+            if (smartClipboardNotice && smartClipboardTextPreview && request.copiedText) {
+                fullCopiedText = request.copiedText;
+                const previewText = request.copiedText.length > 70 ? request.copiedText.substring(0, 70) + "..." : request.copiedText;
+                smartClipboardTextPreview.textContent = `Copied: "${previewText}"`;
+                smartClipboardNotice.style.display = 'flex'; // Use flex for better alignment of items
+                smartClipboardNotice.style.alignItems = 'center';
+                smartClipboardNotice.style.justifyContent = 'center';
+            }
         } else if (request.action === 'streamApiToolCallChunk') {
             console.log("Chat: streamApiToolCallChunk handler invoked.", request);
             // console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk); // This is duplicative of the log above
@@ -502,15 +526,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     const allToolsStream = await getTools();
                     const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
                     if (currentStreamingContentElement) { // Check if element still exists
+                        let argsDisplay = "";
+                        try {
+                            // Attempt to parse and prettify if it's JSON
+                            const argsObject = JSON.parse(toolCall.function.arguments);
+                            argsDisplay = `\n\`\`\`json\n${JSON.stringify(argsObject, null, 2)}\n\`\`\``;
+                        } catch (e) {
+                            // If not JSON or parsing fails, display as plain text
+                            argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
+                        }
+
                         if (currentToolDefStream && currentToolDefStream.mcpServerUrl) {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**`);
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**\nArguments:${argsDisplay}`);
                         } else {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**\nArguments:${argsDisplay}`);
                         }
                         // chatArea.scrollTop = chatArea.scrollHeight; // Already present after this block
                     }
                 })();
-                console.log("Chat: UI updated to show 'Using tool' message.");
+                console.log("Chat: UI updated to show 'Using tool' message with arguments.");
 
                 // Potentially, actual arguments could be streamed. For now, just the name.
                 // If toolCall.function.arguments is a string of streamed arguments, append it:
@@ -518,6 +552,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
+        } else if (request.action === 'startChatWithPdfContent') {
+            console.log("Chat: startChatWithPdfContent received", request);
+            clearChat(); // Clear existing chat
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+
+            const pdfName = request.pdfUrl ? request.pdfUrl.substring(request.pdfUrl.lastIndexOf('/') + 1) : "the PDF";
+            addMessage('System', `Chatting with content from PDF: **${pdfName}**`);
+
+            // Display a portion of the PDF text, or a summary prompt
+            const initialDisplayPrompt = `The following text has been extracted from ${pdfName}. You can now ask questions about it or request a summary.`;
+            addMessage('User', initialDisplayPrompt + "\n\n--- Start of PDF Content ---\n" + request.pdfText.substring(0, 2000) + (request.pdfText.length > 2000 ? "\n... (content truncated for initial display)" : "") + "\n--- End of PDF Content ---");
+
+            // Add the full PDF text to conversation history for the LLM, prefixed by an instruction.
+            // This will be the first "user" message in this new conversation.
+            conversationHistory.push({
+                role: 'user',
+                content: `The following text was extracted from the PDF at ${request.pdfUrl}:\n\n${request.pdfText}\n\nPlease act as an assistant that can answer questions about this document.`
+            });
+
+            userInput.placeholder = `Ask something about ${pdfName}...`;
+            userInput.focus();
+            showToast(`PDF content loaded. Ready to chat about ${pdfName}.`);
+
+        } else if (request.action === 'displayErrorInChat') {
+            console.log("Chat: displayErrorInChat received", request);
+            const { messageDiv } = addMessage('System', `Error: ${request.errorMessage}`);
+            if (messageDiv) {
+                messageDiv.classList.add('system-error-message');
+            }
+            showToast(`Error: ${request.errorMessage}`);
+            // Ensure chat area is visible if an error occurs when it might be hidden
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+
         } else if (request.action === 'handleToolCallResponse') {
             console.log("Chat: handleToolCallResponse received", request);
             chatMainArea.style.display = 'block';
@@ -541,11 +610,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     const allToolsNonStream = await getTools(); // Already async
                     const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
 
-                    if (toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl) {
-                        addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
-                    } else {
-                        addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
+                        let argsDisplay = "";
+                        try {
+                            const argsObject = JSON.parse(toolCall.function.arguments);
+                            argsDisplay = `\n\`\`\`json\n${JSON.stringify(argsObject, null, 2)}\n\`\`\``;
+                        } catch (e) {
+                            argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
                     }
+
+                        const messagePrefix = toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl ?
+                            `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**` :
+                            `⚙️ Requesting execution for tool: **${toolCall.function.name}**`;
+
+                        addMessage('System', `${messagePrefix}\nArguments:${argsDisplay}`);
+
                     chrome.runtime.sendMessage({
                         action: 'executePromptPaulTool',
                         toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
@@ -557,7 +635,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
                         } else {
-                            addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                            let resultDisplay = "";
+                            try {
+                                resultDisplay = `\n\`\`\`json\n${JSON.stringify(response.result, null, 2)}\n\`\`\``;
+                            } catch (e) {
+                                resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
+                            }
+                            addMessage('System', `✅ Tool **${toolCall.function.name}** executed.\nResult:${resultDisplay}`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
                             makeApiCall();
                         }
@@ -876,12 +960,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         const allToolsNonStream = await getTools(); // Already async
                         const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
 
-                        if (toolDefinitionNonStream && toolDefinitionNonStream.mcpServerUrl) {
-                            addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
-                        } else {
-                            addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
+                        let argsDisplay = "";
+                        try {
+                            const argsObject = JSON.parse(toolCall.function.arguments);
+                            argsDisplay = `\n\`\`\`json\n${JSON.stringify(argsObject, null, 2)}\n\`\`\``;
+                        } catch (e) {
+                            argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
                         }
-                        const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
+
+                        const messagePrefix = toolDefinitionNonStream && toolDefinitionNonStream.mcpServerUrl ?
+                            `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**` :
+                            `⚙️ Requesting execution for tool: **${toolCall.function.name}**`;
+
+                        addMessage('System', `${messagePrefix}\nArguments:${argsDisplay}`);
+
+                        // const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
                         chrome.runtime.sendMessage({
                             action: 'executePromptPaulTool',
                             toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
@@ -891,7 +984,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
                              } else {
-                                addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                                let resultDisplay = "";
+                                try {
+                                    resultDisplay = `\n\`\`\`json\n${JSON.stringify(response.result, null, 2)}\n\`\`\``;
+                                } catch (e) {
+                                    resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
+                                }
+                                addMessage('System', `✅ Tool **${toolCall.function.name}** executed.\nResult:${resultDisplay}`);
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
                                 console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
                                 console.log(conversationHistory.slice(-3));
@@ -1210,6 +1309,140 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial rendering of pinned actions
     renderPinnedActions();
 
+    // Smart Clipboard Button Handlers
+    if (smartClipboardSendButton) {
+        smartClipboardSendButton.addEventListener('click', () => {
+            if (fullCopiedText) {
+                userInput.value = fullCopiedText;
+                userInput.focus();
+                // Optionally, auto-send: sendMessage();
+            }
+            if (smartClipboardNotice) smartClipboardNotice.style.display = 'none';
+            fullCopiedText = ''; // Clear after use
+        });
+    }
+
+    if (smartClipboardDismissButton) {
+        smartClipboardDismissButton.addEventListener('click', () => {
+            if (smartClipboardNotice) smartClipboardNotice.style.display = 'none';
+            fullCopiedText = ''; // Clear
+        });
+    }
+
+    // Hide smart clipboard notice if user starts typing or sends a message
+    userInput.addEventListener('input', () => {
+        if (smartClipboardNotice && smartClipboardNotice.style.display !== 'none') {
+            smartClipboardNotice.style.display = 'none';
+            fullCopiedText = '';
+        }
+    });
+
+
     // The chrome.storage.onChanged listener above has been updated to include this logic.
     // No need for a separate listener here.
+
+    // --- Dynamic Quick Actions ---
+    const dynamicActionsContainer = document.getElementById('dynamic-actions-container');
+
+    function clearDynamicActions() {
+        if (dynamicActionsContainer) {
+            dynamicActionsContainer.innerHTML = '';
+        }
+    }
+
+    async function fetchAndSummarizeReadme(repoOwner, repoName) {
+        showToast(`Fetching README for ${repoOwner}/${repoName}...`);
+        // Try common default branches: main, master
+        const branches = ['main', 'master'];
+        let readmeContent = null;
+        let readmeUrl = '';
+
+        for (const branch of branches) {
+            const url = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/README.md`;
+            try {
+                const response = await fetch(url);
+                if (response.ok) {
+                    readmeContent = await response.text();
+                    readmeUrl = url;
+                    break;
+                }
+            } catch (error) {
+                console.warn(`Chat.js: Error fetching README from ${url}:`, error);
+            }
+        }
+
+        if (readmeContent) {
+            showToast('README content fetched. Summarizing...');
+            const prompt = `Please summarize the following README content from the GitHub repository ${repoOwner}/${repoName} (source: ${readmeUrl}):\n\n${readmeContent}`;
+            makeApiCall(prompt);
+        } else {
+            showToast(`Could not fetch README for ${repoOwner}/${repoName}. Looked in branches: ${branches.join(', ')}.`);
+            addMessage('System', `Failed to fetch README for ${repoOwner}/${repoName}.`);
+        }
+    }
+
+    function renderDynamicGitHubActions(tabUrlStr) {
+        clearDynamicActions();
+        if (!dynamicActionsContainer || !tabUrlStr) return;
+
+        try {
+            const tabUrl = new URL(tabUrlStr);
+            if (tabUrl.hostname === 'github.com') {
+                const pathParts = tabUrl.pathname.split('/').filter(part => part.length > 0);
+                if (pathParts.length >= 2) {
+                    const repoOwner = pathParts[0];
+                    const repoName = pathParts[1];
+
+                    const summarizeReadmeBtn = document.createElement('button');
+                    summarizeReadmeBtn.textContent = 'R'; // Short for Readme
+                    summarizeReadmeBtn.title = `Summarize README for ${repoOwner}/${repoName}`;
+                    summarizeReadmeBtn.classList.add('quick-action-button', 'dynamic-action-item'); // Reuse existing styles
+                    summarizeReadmeBtn.style.backgroundColor = '#2da44e'; // GitHub-like green
+
+                    summarizeReadmeBtn.addEventListener('click', () => {
+                        fetchAndSummarizeReadme(repoOwner, repoName);
+                    });
+                    dynamicActionsContainer.appendChild(summarizeReadmeBtn);
+                }
+            }
+        } catch (e) {
+            console.error("Chat.js: Error parsing tab URL for dynamic actions:", e);
+        }
+    }
+
+    function requestTabUrlAndRenderDynamicActions() {
+        chrome.runtime.sendMessage({ action: 'getTabUrlForDynamicActions' }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error("Chat.js: Error getting tab URL for dynamic actions:", chrome.runtime.lastError.message);
+                clearDynamicActions();
+                return;
+            }
+            if (response && response.success && response.url) {
+                renderDynamicGitHubActions(response.url);
+            } else {
+                console.warn("Chat.js: Failed to get tab URL for dynamic actions.", response ? response.error : "No response");
+                clearDynamicActions();
+            }
+        });
+    }
+
+    // Initial call and listen for tab changes (simplified)
+    // A more robust solution would involve background.js notifying chat.js of tab URL changes
+    // if the chat panel is open. For now, call it on load.
+    requestTabUrlAndRenderDynamicActions();
+
+    // Also, when the chat window gets focus, it might be good to refresh dynamic actions
+    window.addEventListener('focus', requestTabUrlAndRenderDynamicActions);
+
+    // Listen for messages from background script that might indicate a tab change
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'activeTabChangedForChat') { // Assuming background sends this
+            if (request.tabUrl) {
+                renderDynamicGitHubActions(request.tabUrl);
+            } else {
+                clearDynamicActions();
+            }
+        }
+    });
+
 });
