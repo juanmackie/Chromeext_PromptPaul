@@ -231,7 +231,7 @@ function loadOptions() {
 
     // Add a "Add New Profile" option
     const addNewOption = document.createElement('option');
-    addNewOption.value = 'add_new_profile';
+    addNewOption.value = '_createNewProfile_'; // Changed value
     addNewOption.textContent = '+ Add New Profile...';
     profileSelectElement.appendChild(addNewOption);
     
@@ -373,52 +373,90 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
 
   // Event listener for profile selection change
   const profileSelectElement = document.getElementById('profileSelect');
+  const newProfileSection = document.getElementById('newProfileSection');
+  const newProfileNameInput = document.getElementById('newProfileNameInput');
+  const confirmNewProfileButton = document.getElementById('confirmNewProfileButton');
+  const cancelNewProfileButton = document.getElementById('cancelNewProfileButton');
+  let previousProfileId = 'default'; // To revert if new profile creation is cancelled
+
   if (profileSelectElement) {
     profileSelectElement.addEventListener('change', (event) => {
       const selectedProfileId = event.target.value;
       console.log(`[DEBUG] profileSelect change: Selected profile ID: ${selectedProfileId}`);
-      if (selectedProfileId === 'add_new_profile') {
-        const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
-        if (newProfileName && newProfileName.trim() !== '') {
-          chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-            let profiles = result.profiles || [];
-            // Ensure profileSelectElement is available before accessing its value.
-            const currentProfileId = profileSelectElement ? profileSelectElement.value : 'default';
-            const currentProfile = profiles.find(p => p.id === currentProfileId) || profiles.find(p => p.id === 'default') || {};
-
-            const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
-            const newProfile = {
-              id: newProfileId,
-              name: newProfileName.trim(),
-              llmEndpoint: document.getElementById('llmEndpoint').value.trim() || currentProfile.llmEndpoint,
-              apiKey: document.getElementById('apiKey').value.trim() || currentProfile.apiKey,
-              modelName: document.getElementById('modelName').value.trim() || currentProfile.modelName,
-              maxTokens: document.getElementById('maxTokens').value.trim() || currentProfile.maxTokens || 2048,
-              systemPrompt: document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
-              lastUpdated: new Date().toLocaleString()
-            };
-            profiles.push(newProfile);
-            chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
-              // populateProfileDropdown is called within loadOptions
-              loadOptions(); // Reload options to correctly populate and select.
-              // Explicitly set to new profile ID *after* loadOptions, as loadOptions might reset it.
-              profileSelectElement.value = newProfileId;
-              loadProfileSettings(newProfileId); // Load its settings into the form
-              showStatus(`Profile "${newProfile.name}" created. Review and save settings.`, false, true);
-            });
-          });
-        } else {
-          // User cancelled or entered empty name, revert to last selected
-          chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
-            if (profileSelectElement) {
-              profileSelectElement.value = res.lastSelectedProfileId || 'default';
-            }
-          });
-        }
+      if (selectedProfileId === '_createNewProfile_') {
+        newProfileSection.style.display = 'block';
+        newProfileNameInput.value = '';
+        newProfileNameInput.focus();
+        // Optionally clear main form or set to defaults
+        document.getElementById('llmEndpoint').value = 'https://api.mistral.ai/v1/chat/completions'; // Default example
+        document.getElementById('apiKey').value = '';
+        document.getElementById('modelName').value = 'mistral-small-latest'; // Default example
+        document.getElementById('maxTokens').value = 32000;
+        document.getElementById('systemPrompt').value = '';
+        showStatus('Enter a name for the new profile.', false, true);
       } else {
+        newProfileSection.style.display = 'none';
         chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
         loadProfileSettings(selectedProfileId);
+        previousProfileId = selectedProfileId; // Update previous profile
       }
+    });
+  }
+
+  if (confirmNewProfileButton) {
+    confirmNewProfileButton.addEventListener('click', () => {
+      const newProfileName = newProfileNameInput.value.trim();
+      if (!newProfileName) {
+        showStatus('Please enter a name for the new profile.', true);
+        newProfileNameInput.focus();
+        return;
+      }
+
+      chrome.storage.local.get(['profiles'], (result) => {
+        let profiles = result.profiles || [];
+        if (profiles.find(p => p.name.toLowerCase() === newProfileName.toLowerCase())) {
+            showStatus(`A profile named "${newProfileName}" already exists. Please choose a different name.`, true);
+            newProfileNameInput.focus();
+            return;
+        }
+
+        const newProfileId = 'profile_' + Date.now();
+        const newProfile = {
+          id: newProfileId,
+          name: newProfileName,
+          // Current form values will be saved when user explicitly hits "Save Settings" for this new profile.
+          // For now, create with some defaults or blank values that user will fill.
+          llmEndpoint: document.getElementById('llmEndpoint').value.trim() || 'https://api.mistral.ai/v1/chat/completions',
+          apiKey: document.getElementById('apiKey').value.trim(), // User should fill this
+          modelName: document.getElementById('modelName').value.trim() || 'mistral-small-latest',
+          maxTokens: document.getElementById('maxTokens').value.trim() || 32000,
+          systemPrompt: document.getElementById('systemPrompt').value.trim(),
+          lastUpdated: new Date().toLocaleString()
+        };
+        profiles.push(newProfile);
+        chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
+          loadOptions(); // This will repopulate dropdown and select the new profile
+          // loadProfileSettings(newProfileId) is called by loadOptions if newProfileId is lastSelected
+          newProfileSection.style.display = 'none';
+          showStatus(`Profile "${newProfile.name}" created. Please review and save its settings.`, false, true);
+          // Ensure the new profile is selected in the dropdown
+          setTimeout(() => { // Timeout to allow DOM update from loadOptions
+            if(profileSelectElement) profileSelectElement.value = newProfileId;
+             loadProfileSettings(newProfileId); // Explicitly load settings into form
+          }, 0);
+        });
+      });
+    });
+  }
+
+  if (cancelNewProfileButton) {
+    cancelNewProfileButton.addEventListener('click', () => {
+      newProfileSection.style.display = 'none';
+      if (profileSelectElement) {
+        profileSelectElement.value = previousProfileId; // Revert to previously selected profile
+      }
+      loadProfileSettings(previousProfileId); // Load its settings back
+      showStatus('New profile creation cancelled.', false, true);
     });
   }
 });
@@ -442,6 +480,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const isStreamingEnabled = enableStreamingToggle.checked;
       chrome.storage.sync.set({ enableStreaming: isStreamingEnabled }, () => {
         showStatus(`Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`, false, true);
+      });
+    });
+  }
+
+  // Smart Clipboard Toggle
+  const enableSmartClipboardToggle = document.getElementById('enableSmartClipboardToggle');
+  if (enableSmartClipboardToggle) {
+    // Load smart clipboard setting
+    chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
+      enableSmartClipboardToggle.checked = !!result.enableSmartClipboard;
+    });
+
+    // Save smart clipboard setting on change
+    enableSmartClipboardToggle.addEventListener('change', () => {
+      const isSmartClipboardEnabled = enableSmartClipboardToggle.checked;
+      chrome.storage.sync.set({ enableSmartClipboard: isSmartClipboardEnabled }, () => {
+        showStatus(`Smart Clipboard feature ${isSmartClipboardEnabled ? 'enabled' : 'disabled'}.`, false, true);
+        // Notify background script about the change immediately
+        chrome.runtime.sendMessage({ action: 'smartClipboardSettingChanged', enabled: isSmartClipboardEnabled });
       });
     });
   }
@@ -491,6 +548,98 @@ function checkAndPromptInstructionMigration() {
       }
     });
   });
+  setupToolTester(); // Call to setup tool tester logic
+}
+
+function setupToolTester() {
+  const toolTestSelect = document.getElementById('toolTestSelect');
+  const toolTestArguments = document.getElementById('toolTestArguments');
+  const toolTestRunButton = document.getElementById('toolTestRunButton');
+  const toolTestResult = document.getElementById('toolTestResult');
+
+  // Populate tool select dropdown
+  function populateToolTestDropdown() {
+    if (!toolTestSelect) return;
+    toolTestSelect.innerHTML = '<option value="">-- Select a Tool --</option>'; // Clear existing
+
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
+      const tools = result.promptPaulTools || [];
+      tools.forEach(tool => {
+        const option = document.createElement('option');
+        option.value = tool.id; // Use tool ID as value
+        option.textContent = tool.name;
+        toolTestSelect.appendChild(option);
+      });
+    });
+  }
+
+  // Call populate on initial load and whenever tools might change (e.g., after saving a tool)
+  populateToolTestDropdown();
+  // Also, make sure to call populateToolTestDropdown() inside loadTools() or after a tool is saved/deleted.
+  // For simplicity, we can rely on the user re-opening the section or manually triggering if list is stale,
+  // or add more robust refresh logic. For now, it populates on options page load.
+
+  if (toolTestRunButton) {
+    toolTestRunButton.addEventListener('click', () => {
+      const selectedToolId = toolTestSelect.value;
+      const argsString = toolTestArguments.value.trim();
+      toolTestResult.textContent = 'Testing...';
+
+      if (!selectedToolId) {
+        toolTestResult.textContent = 'Error: Please select a tool to test.';
+        return;
+      }
+
+      let argsObject;
+      try {
+        argsObject = argsString ? JSON.parse(argsString) : {};
+      } catch (e) {
+        toolTestResult.textContent = `Error: Arguments are not valid JSON.\n${e.message}`;
+        return;
+      }
+
+      // Get the full tool definition
+      chrome.storage.local.get(['promptPaulTools'], (result) => {
+        const tools = result.promptPaulTools || [];
+        const toolToTest = tools.find(t => t.id === selectedToolId);
+
+        if (!toolToTest) {
+          toolTestResult.textContent = 'Error: Selected tool not found.';
+          return;
+        }
+
+        console.log("Options.js: Testing tool:", toolToTest.name, "with args:", argsObject);
+
+        // Send to background script for execution
+        // Note: Background's executePromptPaulTool expects toolCall format.
+        // We adapt to that by creating a mock toolCall object.
+        const mockToolCall = {
+            id: 'test-call-' + Date.now(), // A unique ID for this test call
+            name: toolToTest.name,
+            arguments: JSON.stringify(argsObject) // executePromptPaulTool expects arguments as a string
+        };
+
+        chrome.runtime.sendMessage(
+          { action: 'executePromptPaulTool', toolCall: mockToolCall },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.error("Error sending 'executePromptPaulTool' for test:", chrome.runtime.lastError);
+              toolTestResult.textContent = `Error sending test request: ${chrome.runtime.lastError.message}`;
+              return;
+            }
+            if (response.error) {
+              toolTestResult.textContent = `Tool Execution Error:\n${response.error}`;
+            } else {
+              toolTestResult.textContent = `Tool Execution Success:\n${JSON.stringify(response.result, null, 2)}`;
+            }
+          }
+        );
+      });
+    });
+  }
+  // Ensure dropdown is populated when tools are loaded/changed
+  // This can be done by calling populateToolTestDropdown() in loadTools()
+  // and after saving/deleting tools in setupToolHandlers().
 }
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
@@ -1033,7 +1182,8 @@ function setupToolHandlers() {
               chrome.storage.local.set({ promptPaulTools: tools }, () => {
                 showStatus('Tool deleted!');
                 loadTools(); // Reload the table
-                populateToolDropdown(); // Update tool dropdown
+                populateToolDropdown(); // Update instruction tool dropdown
+                if (typeof populateToolTestDropdown === "function") populateToolTestDropdown(); // Update test tool dropdown
                 // Clear the form if the deleted tool was being edited
                 if (document.getElementById('toolId').value === toolId) {
                   clearToolForm();
@@ -1109,7 +1259,8 @@ function setupToolHandlers() {
 
         chrome.storage.local.set({ promptPaulTools: tools }, () => {
           loadTools(); // Reload the table
-          populateToolDropdown(); // Update tool dropdown
+          populateToolDropdown(); // Update instruction tool dropdown
+          if (typeof populateToolTestDropdown === "function") populateToolTestDropdown(); // Update test tool dropdown
           clearToolForm(); // Clear the form after saving
         });
       });
@@ -1211,112 +1362,119 @@ function setupToolHandlers() {
   loadTools();
 
   if (fetchMcpToolInfoBtn) {
-    fetchMcpToolInfoBtn.addEventListener('click', async () => { // Made async
+    fetchMcpToolInfoBtn.addEventListener('click', async () => {
       const toolMcpServerUrl = toolMcpServerUrlEl.value.trim();
-      const toolNameValue = document.getElementById('toolName').value.trim();
 
       if (!toolMcpServerUrl) {
         showStatus("Please enter an MCP Server URL first.", true);
         return;
       }
-      if (!toolNameValue) {
-        showStatus("Please enter a Tool Name to fetch its details.", true);
+      if (!isValidURL(toolMcpServerUrl)) {
+        showStatus("Invalid MCP Server URL format.", true);
         return;
       }
 
-      console.log(`Fetching tool info for "${toolNameValue}" from: ${toolMcpServerUrl}`);
+      showStatus("Fetching available tools from MCP server...", false, true);
+      clearDiscoveredToolsDisplay(); // Clear previous results
 
-      // TODO: Implement actual MCP client logic here to fetch tool information.
-      // This would involve:
-      // 1. Constructing the correct MCP API endpoint (e.g., `${toolMcpServerUrl}/tools/${toolNameFromForm}` or query `${toolMcpServerUrl}/tools`).
-      //    The exact endpoint depends on the MCP specification for fetching a single tool's definition.
-      // 2. Making an HTTP GET request using `fetch()` with appropriate MCP headers (e.g., 'MCP-Protocol-Version', 'Accept: application/json').
-      // 3. Handling the response:
-      //    - Check for HTTP errors (response.ok).
-      //    - Parse the JSON response.
-      //    - Validate if the response conforms to the MCP Tool schema.
-      //    - Extract `description` and `inputSchema`.
-      // 4. If successful, populate the form fields as done in the mock below.
-      // 5. If an error occurs (network, HTTP error, invalid response), show an appropriate status message
-      //    and ensure fields are reset to their editable state (as in the 'else' block below).
-      // The current implementation uses a mock fetch for demonstration and UI testing.
+      chrome.runtime.sendMessage({ action: 'listToolsFromMcpServer', mcpServerUrl: toolMcpServerUrl }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error("Error sending 'listToolsFromMcpServer' message:", chrome.runtime.lastError.message);
+          showStatus(`Error communicating with background: ${chrome.runtime.lastError.message}`, true);
+          return;
+        }
 
-      // --- Start of new fetch logic ---
-      showStatus("Fetching tool information...", false, true);
-      document.getElementById('toolDescription').readOnly = false;
-      document.getElementById('toolParameters').readOnly = false;
-      document.getElementById('toolDescription').classList.remove('read-only-mcp');
-      document.getElementById('toolParameters').classList.remove('read-only-mcp');
-
-      try {
-        const encodedToolName = encodeURIComponent(toolNameValue);
-        // Assuming MCP specification might use a path like /tools/{tool_name}
-        // This is an assumption; the actual MCP spec might differ.
-        const requestUrl = `${toolMcpServerUrl.endsWith('/') ? toolMcpServerUrl : toolMcpServerUrl + '/'}tools/${encodedToolName}`;
-
-        const response = await fetch(requestUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'MCP-Protocol-Version': '2025-06-18' // Example version, ideally from a constant
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-
-          // Basic validation of the received MCP tool structure
-          if (data && typeof data.name === 'string' && typeof data.description === 'string' && data.inputSchema && typeof data.inputSchema === 'object') {
-            document.getElementById('toolDescription').value = data.description;
-            document.getElementById('toolParameters').value = JSON.stringify(data.inputSchema, null, 2);
-
-            document.getElementById('toolDescription').readOnly = true;
-            document.getElementById('toolParameters').readOnly = true;
-            document.getElementById('toolDescription').classList.add('read-only-mcp');
-            document.getElementById('toolParameters').classList.add('read-only-mcp');
-            document.getElementById('toolDescriptionSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
-            document.getElementById('toolParametersSource').textContent = 'Source: MCP Server (Fetched successfully! Overrides local content.)';
-            document.getElementById('toolDescriptionSource').style.display = 'block';
-            document.getElementById('toolParametersSource').style.display = 'block';
-            showStatus('Tool information fetched and populated successfully!', false, true);
+        if (response && response.success && response.tools) {
+          if (response.tools.length > 0) {
+            showStatus(`Discovered ${response.tools.length} tools. Select one to populate form.`, false, true);
+            displayDiscoveredMcpTools(response.tools);
           } else {
-            // Tool name from server (data.name) might differ from what user typed (toolNameValue),
-            // but we are fetching based on toolNameValue as the identifier on the server.
-            // If data.name is important to display, it needs more UI consideration.
-            console.error('Fetched data structure from MCP server is not as expected. Received data:', JSON.stringify(data, null, 2)); // Log the stringified data
-            showStatus('Fetched data from server is not a valid MCP Tool definition. See console for details.', true); // Updated message
-            document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (Invalid data from MCP Server).';
-            document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (Invalid data from MCP Server).';
-            document.getElementById('toolDescriptionSource').style.display = 'block';
-            document.getElementById('toolParametersSource').style.display = 'block';
+            showStatus("No tools found on the MCP server.", false, true);
           }
         } else {
-          let errorDetail = `Server responded with status ${response.status}`;
-          try {
-            const errorData = await response.json();
-            errorDetail += `: ${JSON.stringify(errorData)}`;
-          } catch (e) { /* Ignore if error response is not JSON */ }
-          showStatus(`Failed to fetch tool information. ${errorDetail}`, true);
-          document.getElementById('toolDescriptionSource').textContent = `Source: Local fallback (Error: ${response.status}).`;
-          document.getElementById('toolParametersSource').textContent = `Source: Local fallback (Error: ${response.status}).`;
-          document.getElementById('toolDescriptionSource').style.display = 'block';
-          document.getElementById('toolParametersSource').style.display = 'block';
+          showStatus(`Failed to list tools: ${response ? response.error : 'Unknown error from background script.'}`, true);
         }
-      } catch (error) {
-        console.error('Error fetching MCP tool info:', error);
-        let errorMessage = 'Network error or server unreachable.';
-        if (error instanceof TypeError && error.message.includes('fetch')) {
-           errorMessage = 'Failed to fetch. This could be a CORS issue or network problem. Check browser console for details.'
-        } else if (error instanceof Error) {
-           errorMessage = error.message;
-        }
-        showStatus(`Error fetching tool information: ${errorMessage}`, true);
-        document.getElementById('toolDescriptionSource').textContent = 'Source: Local fallback (Fetch error).';
-        document.getElementById('toolParametersSource').textContent = 'Source: Local fallback (Fetch error).';
-        document.getElementById('toolDescriptionSource').style.display = 'block';
-        document.getElementById('toolParametersSource').style.display = 'block';
-      }
-      // --- End of new fetch logic ---
+      });
     });
+  }
+
+  function clearDiscoveredToolsDisplay() {
+    const container = document.getElementById('discovered-mcp-tools-container');
+    if (container) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+    }
+  }
+
+  function displayDiscoveredMcpTools(tools) {
+    let container = document.getElementById('discovered-mcp-tools-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'discovered-mcp-tools-container';
+        container.classList.add('discovered-tools-list', 'card'); // Add card class for styling
+        // Insert it after the MCP Server URL form group
+        const mcpServerUrlGroup = toolMcpServerUrlEl.closest('.form-group');
+        if (mcpServerUrlGroup && mcpServerUrlGroup.parentNode) {
+            mcpServerUrlGroup.parentNode.insertBefore(container, mcpServerUrlGroup.nextSibling);
+        } else { // Fallback if structure isn't as expected
+            toolMcpServerUrlEl.parentNode.appendChild(container);
+        }
+    }
+    container.innerHTML = '<h4>Available Tools on Server:</h4>';
+    container.style.display = 'block';
+    container.style.marginTop = '10px';
+    container.style.padding = '10px';
+    // container.style.border = '1px solid var(--ext-border)'; // Already handled by card
+    // container.style.borderRadius = 'var(--ext-radius-sm)'; // Already handled by card
+
+    const list = document.createElement('ul');
+    list.style.listStyleType = 'none';
+    list.style.paddingLeft = '0';
+
+    tools.forEach(tool => {
+        const listItem = document.createElement('li');
+        listItem.style.marginBottom = '5px';
+        const button = document.createElement('button');
+        button.textContent = `${tool.name}`;
+        button.title = tool.description || 'No description provided by server.';
+        button.classList.add('extension-button', 'secondary'); // Use existing button styles
+        button.style.marginRight = '5px';
+        button.style.fontSize = '0.9em';
+        button.style.padding = '3px 6px';
+
+
+        button.addEventListener('click', () => {
+            document.getElementById('toolName').value = tool.name;
+            document.getElementById('toolDescription').value = tool.description || '';
+            document.getElementById('toolParameters').value = tool.inputSchema ? JSON.stringify(tool.inputSchema, null, 2) : '{}';
+
+            // Mark fields as MCP sourced and potentially read-only
+            const toolDescriptionEl = document.getElementById('toolDescription');
+            const toolParametersEl = document.getElementById('toolParameters');
+            const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
+            const toolParametersSourceEl = document.getElementById('toolParametersSource');
+
+            toolDescriptionEl.readOnly = true;
+            toolParametersEl.readOnly = true;
+            toolDescriptionEl.classList.add('read-only-mcp');
+            toolParametersEl.classList.add('read-only-mcp');
+            toolDescriptionSourceEl.textContent = 'Source: MCP Server (Auto-populated). Local content is fallback.';
+            toolParametersSourceEl.textContent = 'Source: MCP Server (Auto-populated). Local content is fallback.';
+            toolDescriptionSourceEl.style.display = 'block';
+            toolParametersSourceEl.style.display = 'block';
+
+            showStatus(`Populated form with tool: ${tool.name}`, false, true);
+            // updateToolFieldStates(); // Ensure other fields are correctly enabled/disabled
+        });
+        listItem.appendChild(button);
+
+        const descSpan = document.createElement('span');
+        descSpan.textContent = `- ${tool.description ? (tool.description.substring(0,100) + (tool.description.length > 100 ? '...' : '')) : 'No description'}`;
+        descSpan.style.fontSize = '0.85em';
+        listItem.appendChild(descSpan);
+
+        list.appendChild(listItem);
+    });
+    container.appendChild(list);
   }
 }

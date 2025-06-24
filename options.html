@@ -102,6 +102,13 @@
 
         <div class="flex items-center space-x-2">
           <label class="flex items-center">
+            <input type="checkbox" id="enableSmartClipboardToggle" class="shadcn-checkbox">
+            <span class="ml-2 text-sm font-medium leading-none">Enable Smart Clipboard (Show "Send to Prompt Paul" on copy)</span>
+          </label>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <label class="flex items-center">
             <input type="checkbox" id="darkThemeToggle" class="shadcn-checkbox">
             <span id="darkThemeIcon" class="material-symbols-outlined ml-2 text-sm font-medium leading-none">brightness_2</span>
             <span class="ml-2 text-sm font-medium leading-none">Dark/Light Theme Toggle</span>
@@ -124,6 +131,22 @@
             </button>
           </div>
           <p class="text-sm text-muted-foreground mt-2">Select a profile, or choose "+ Add New Profile..." to create one.</p>
+
+          <div id="newProfileSection" class="mt-4 p-4 border rounded-md bg-background" style="display: none;">
+            <h4 class="text-md font-medium mb-2">Create New Profile</h4>
+            <div class="grid w-full items-center gap-1.5">
+              <label for="newProfileNameInput" class="text-sm font-medium leading-none">New Profile Name</label>
+              <input type="text" id="newProfileNameInput" class="shadcn-input" placeholder="Enter new profile name">
+            </div>
+            <div class="flex items-center gap-2 mt-3">
+              <button type="button" id="confirmNewProfileButton" class="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-3 py-1.5">
+                Create Profile
+              </button>
+              <button type="button" id="cancelNewProfileButton" class="inline-flex items-center justify-center rounded-md text-sm font-medium bg-secondary text-secondary-foreground hover:bg-secondary/90 h-9 px-3 py-1.5">
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       </form>
     </section>
@@ -314,6 +337,36 @@
           <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
           <input type="file" id="importToolsFile" accept=".json" style="display: none;">
           <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card tool-tester-card">
+      <h2 class="collapsible-header">
+        <span>Tool Tester</span>
+        <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+      </h2>
+      <div class="collapsible-content">
+        <p>Test your configured tools (HTTP or MCP) directly from here.</p>
+        <div class="form-group">
+          <label for="toolTestSelect">Select Tool to Test</label>
+          <select id="toolTestSelect" class="shadcn-input">
+            <option value="">-- Select a Tool --</option>
+            <!-- Tools will be populated by options.js -->
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="toolTestArguments">Arguments (JSON format)</label>
+          <textarea id="toolTestArguments" class="shadcn-textarea" placeholder='e.g., {"location": "London", "unit": "celsius"}' rows="4"></textarea>
+        </div>
+        <div class="button-group">
+          <button type="button" id="toolTestRunButton" class="save-button">
+            <span class="material-symbols-outlined">play_arrow</span> Test Tool
+          </button>
+        </div>
+        <div class="form-group" style="margin-top: 15px;">
+          <label>Test Result / Error</label>
+          <pre id="toolTestResult" class="shadcn-input" style="min-height: 100px; white-space: pre-wrap; word-wrap: break-word; background-color: var(--ext-muted); color: var(--ext-muted-foreground);"></pre>
         </div>
       </div>
     </section>

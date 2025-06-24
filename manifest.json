@@ -16,6 +16,12 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["vendor/pdfjs/pdf.worker.min.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "options_page": "options.html",
   "background": {
     "service_worker": "background.js",
@@ -41,6 +47,11 @@
       "matches": ["<all_urls>"],
       "js": ["content_script_tab_summary.js"],
       "all_frames": false
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["clipboard_listener_content_script.js"],
+      "all_frames": true
     }
   ]
 }
