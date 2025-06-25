@@ -689,67 +689,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
   await makeLlmApiRequest(promptContent, tab.id);
-  } else if (info.menuItemId === 'chat_with_pdf') {
-    console.log("Background: 'chat_with_pdf' context menu clicked.");
-    await chrome.sidePanel.open({ tabId: tab.id });
-
-    const pdfUrl = info.linkUrl || info.pageUrl;
-    if (!pdfUrl) {
-        console.error("Background: No PDF URL found for chat_with_pdf action.");
-        chrome.runtime.sendMessage({
-            action: 'displayErrorInChat',
-            errorMessage: "Could not determine the PDF URL.",
-            tabId: tab.id
-        }).catch(e => console.error("Error sending displayErrorInChat for no PDF URL:", e));
-        return;
-    }
-
-    // Scenario 1: User is currently viewing the PDF page.
-    if (info.pageUrl && info.pageUrl === tab.url && info.pageUrl.toLowerCase().endsWith('.pdf')) {
-        console.log(`Background: Requesting PDF text from current tab: ${tab.id}, URL: ${info.pageUrl}`);
-        chrome.tabs.sendMessage(tab.id, { action: 'extractPdfText' }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error("Background: Error sending 'extractPdfText' to content script:", chrome.runtime.lastError.message);
-                chrome.runtime.sendMessage({
-                    action: 'displayErrorInChat',
-                    errorMessage: `Failed to communicate with PDF content script: ${chrome.runtime.lastError.message}`,
-                    tabId: tab.id
-                }).catch(e => console.error("Error sending displayErrorInChat for communication error:", e));
-                return;
-            }
-
-            if (response && response.success) {
-                console.log("Background: PDF text successfully extracted from current tab.");
-                chrome.runtime.sendMessage({
-                    action: 'startChatWithPdfContent',
-                    pdfText: response.content,
-                    pdfUrl: info.pageUrl,
-                    tabId: tab.id
-                }).catch(e => console.error("Error sending startChatWithPdfContent:", e));
-            } else {
-                console.error("Background: Failed to extract PDF text from current tab.", response ? response.error : "No response");
-                chrome.runtime.sendMessage({
-                    action: 'displayErrorInChat',
-                    errorMessage: `Failed to extract text from PDF: ${response ? response.error : 'Unknown error'}`,
-                    tabId: tab.id
-                }).catch(e => console.error("Error sending displayErrorInChat for extraction failure:", e));
-            }
-        });
-    }
-    // Scenario 2: User clicked a link to a PDF. (More complex, implement fully later)
-    else if (info.linkUrl && info.linkUrl.toLowerCase().endsWith('.pdf')) {
-        console.log(`Background: Clicked on a link to PDF: ${info.linkUrl}. This will be handled by opening in a new tab.`);
-        // Implementation for opening in new tab and then extracting
-        openPdfLinkAndExtract(info.linkUrl, tab.id);
-    } else {
-        console.warn("Background: 'chat_with_pdf' clicked, but URL doesn't seem to be a PDF or context is unclear.", info);
-        chrome.runtime.sendMessage({
-            action: 'displayErrorInChat',
-            errorMessage: "Could not identify a valid PDF to process from the current context.",
-            tabId: tab.id
-        }).catch(e => console.error("Error sending displayErrorInChat for unclear context:", e));
-    }
-  }
 });
 
 // Helper function to open PDF link in a new tab and manage extraction
@@ -1863,6 +1802,7 @@ chrome.scripting.executeScript({
         // No sendResponse needed for this notification
     } else if (request.action === 'textCopied') {
         if (isSmartClipboardEnabled) {
+            console.log("Background: Received 'textCopied' message. Smart Clipboard is enabled. Proceeding."); // Added logging
             console.log("Background: Text copied and Smart Clipboard enabled. Copied text:", request.copiedText.substring(0, 100) + "...");
             // Open side panel and send message to chat.js
             // Need the current tab's ID to open the side panel in context.
@@ -1871,6 +1811,7 @@ chrome.scripting.executeScript({
                 const currentTabId = sender.tab.id;
                 (async () => {
                     try {
+                        console.log("Background: Attempting to open side panel for tab:", currentTabId); // Added logging
                         await chrome.sidePanel.open({ tabId: currentTabId });
                         // Send message to chat.js AFTER side panel is confirmed or attempted to open
                         // Adding a small delay to ensure chat.js might be ready if panel was just opened.
