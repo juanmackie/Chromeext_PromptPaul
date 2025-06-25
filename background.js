@@ -568,17 +568,40 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId.startsWith('custom_')) {
     const instructionId = info.menuItemId.replace('custom_', '');
     console.log("Handling custom instruction. ID:", instructionId);
-    const { instructions } = await chrome.storage.local.get(['instructions']);
-    const instruction = instructions.find(i => i.id === instructionId);
-    
-    if (instruction) {
-      promptContent = `${instruction.content}\n\n${promptContent}`;
-      console.log("Final promptContent with instruction (custom):", promptContent.substring(0, 100));
-      const toolChoice = instruction.tool_choice || 'none';
-      console.log("Calling makeLlmApiRequest for menuItemId (custom):", info.menuItemId, "with tool_choice:", toolChoice);
-      await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
-    } else {
-      console.error("Custom instruction not found for ID:", instructionId);
+    try {
+      const result = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(['instructions'], (data) => {
+          if (chrome.runtime.lastError) {
+            return reject(chrome.runtime.lastError);
+          }
+          resolve(data);
+        });
+      });
+
+      const instructions = result.instructions || []; // Default to empty array
+      const instruction = instructions.find(i => i.id === instructionId);
+
+      if (instruction) {
+        promptContent = `${instruction.content}\n\n${promptContent}`;
+        console.log("Final promptContent with instruction (custom):", promptContent.substring(0, 100));
+        const toolChoice = instruction.tool_choice || 'none';
+        console.log("Calling makeLlmApiRequest for menuItemId (custom):", info.menuItemId, "with tool_choice:", toolChoice);
+        await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
+      } else {
+        console.error("Custom instruction not found for ID:", instructionId);
+         chrome.runtime.sendMessage({
+            action: 'displayErrorInChat',
+            errorMessage: `Custom instruction with ID '${instructionId}' not found.`,
+            tabId: tab.id
+        }).catch(e => console.error("Error sending displayErrorInChat for missing custom instruction:", e));
+      }
+    } catch (error) {
+      console.error("Error fetching custom instructions:", error);
+      chrome.runtime.sendMessage({
+            action: 'displayErrorInChat',
+            errorMessage: `Error loading custom instruction: ${error.message}`,
+            tabId: tab.id
+        }).catch(e => console.error("Error sending displayErrorInChat for custom instruction load failure:", e));
     }
     return;
   } else if (info.menuItemId === 'chat_with_pdf') {
