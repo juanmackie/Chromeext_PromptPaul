@@ -35,7 +35,7 @@
   --ext-sidebar-primary-foreground: #f3faff;
   --ext-sidebar-accent: #00adba;
   --ext-sidebar-accent-foreground: #000001;
-  --ext-sidebar-border: #bdd1e0;
+  --ext-sidebar-border: #f3faff;
   --ext-sidebar-ring: #0089d0;
   
   /* Layout */
@@ -389,7 +389,7 @@ body[data-theme="dark"] ::selection {
 }
 
 .llm-message {
-    background-color: #dbdbdb; /* Light grey for LLM messages */
+    background-color: #00b9ff; /* Light grey for LLM messages */
     align-self: flex-end; /* Align LLM messages to the right */
 }
 
@@ -652,11 +652,12 @@ body.sidebar-open #chat-area {
     font-size: 0.85em; /* Slightly smaller font for pre */
 }
 
-body.dark-theme .message.system-message pre, /* Ensure dark theme is applied */
+body.dark-theme .message.system-message pre,
 .ext-dark .message.system-message pre {
-    background-color: var(--ext-input); /* Will use dark theme's --ext-input */
-    color: var(--ext-foreground); /* Will use dark theme's --ext-foreground */
-    border-color: var(--ext-border); /* Will use dark theme's --ext-border */
+    background-color: var(--ext-card); /* Match smart-clipboard's background */
+    color: var(--ext-card-foreground);
+    border: 1px solid var(--ext-border); /* Match smart-clipboard's border */
+    border-radius: var(--ext-radius-sm);
 }
 
 
@@ -730,8 +731,10 @@ body[data-theme="dark"] #smart-clipboard-notice, /* Use data-theme selector */
 
 /* Dark theme specific for system error messages, if needed, but above should cover it due to !important */
 body[data-theme="dark"] .message.system-message.system-error-message {
-    /* Base dark theme destructive variables should apply. Explicit override if needed: */
-    /* background-color: var(--ext-destructive) !important; */
+    background-color: var(--ext-card) !important;
+    border: 1px solid var(--ext-border) !important;
+    color: var(--ext-card-foreground) !important;
     /* color: var(--ext-destructive-foreground) !important; */
     /* border-left-color: var(--ext-destructive-foreground) !important; */
 }
+
