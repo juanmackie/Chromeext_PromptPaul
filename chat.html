@@ -41,7 +41,6 @@
         #input-area {
             display: flex;
             padding: 0.5rem;
-            border-top: 1px solid #e0e0e0; /* Fallback border */
         }
         #user-input {
             flex-grow: 1;
@@ -193,7 +192,7 @@
 <body>
     <div id="quick-actions-sidebar">
         <!-- Preset "Summarize this tab" button -->
-<button id="process-tab-button" class="quick-action-button" title="Process Tab with Custom Instruction">P</button>
+<button id="process-tab-button" class="quick-action-button" title="Process Tab with Custom Instruction">1</button>
         <button id="summarize-tab-button" class="quick-action-button" title="Summarize this tab">S</button>
         <button id="explain-button" class="quick-action-button" title="Explain this tab">E</button>
         <!-- Pinned instructions will be added here by chat.js -->
@@ -211,7 +210,7 @@
       </label>
     </div>
     <div class="chat-container">
-        <div id="chat-main-area" style="display: block;">
+        <div id="chat-main-area" style="display: flex;">
             <div id="chat-area"></div>
             <div id="smart-clipboard-notice" style="display: none; padding: 8px; background-color: var(--ext-card); border-top: 1px solid var(--ext-border); text-align: center;">
                 <span id="smart-clipboard-text-preview"></span>

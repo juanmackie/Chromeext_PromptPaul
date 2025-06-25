@@ -159,6 +159,7 @@ body {
     flex-grow: 1;
     overflow-y: auto;
     padding: 1rem;
+    padding-bottom: 80px; /* Add padding to make space for fixed input area */
     border-bottom: 1px solid var(--ext-border); /* Use theme variable */
     /* height: calc(100% - 60px); */ /* Let flexbox handle height */
     display: flex;
@@ -170,14 +171,16 @@ body {
 #input-area {
     display: flex;
     padding: 0.5rem;
-    padding-bottom: 1rem; /* From original inline style */
-    background-color: var(--ext-card); /* Use theme variable, was --surface-color */
-    /* position: absolute; /* This was in inline, handled by chat.html structure now */
-    /* bottom: 0; */
-    /* left: 0; */
-    /* right: 0; */
-    border-top: 1px solid var(--ext-border); /* Use theme variable */
-    box-shadow: 0 -2px 5px rgba(0,0,0,0.05); /* This could be a theme variable like --ext-shadow-top-sm */
+    padding-bottom: 1rem;
+    background-color: var(--ext-card);
+    width: 100%;
+    box-sizing: border-box;
+    border-top: 1px solid var(--ext-border);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 10;
 }
 
 #user-input {
@@ -737,4 +740,3 @@ body[data-theme="dark"] .message.system-message.system-error-message {
     /* color: var(--ext-destructive-foreground) !important; */
     /* border-left-color: var(--ext-destructive-foreground) !important; */
 }
-

@@ -1,6 +1,19 @@
 import { setupThemeToggle } from './themeUtils.js';
 
 document.addEventListener('DOMContentLoaded', () => {
+    function adjustChatAreaPadding() {
+        const inputArea = document.getElementById('input-area');
+        const chatArea = document.getElementById('chat-area');
+        if (inputArea && chatArea) {
+            const inputAreaHeight = inputArea.offsetHeight;
+            chatArea.style.paddingBottom = `${inputAreaHeight}px`;
+        }
+    }
+
+    // Adjust padding on load and window resize
+    adjustChatAreaPadding();
+    window.addEventListener('resize', adjustChatAreaPadding);
+
     console.log("DOMContentLoaded event fired in chat.js");
     const chatArea = document.getElementById('chat-area');
     const userInput = document.getElementById('user-input');
@@ -49,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.log("Chat.js: Process Tab - Content received, length:", response.content.length);
                         const promptText = customInstruction + "\n\nTab Content:\n" + response.content;
 
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
                         makeApiCall(promptText);
                         showToast('Tab content loaded. Processing with custom instruction.');
@@ -83,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.success && response.content) {
                         console.log("Chat.js: Explain button - Content received, length:", response.content.length);
                         const prompt = "Explain the following text:\n\n" + response.content;
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
                         console.log("Chat.js: Explain button - About to call makeApiCall. Prompt length:", prompt.length);
                         makeApiCall(prompt);
@@ -257,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         //     console.log("Chat.js: General onMessage listener processing 'explainContentResponse'", request);
         //     if (request.content) {
         //         const prompt = "Explain the following text:\n\n" + request.content;
-        //         chatMainArea.style.display = 'block';
+        //         chatMainArea.style.display = 'flex';
         //         oneoffInstructionArea.style.display = 'none';
         //         console.log("Chat.js: General onMessage - About to call makeApiCall for explain. Prompt length:", prompt.length);
         //         makeApiCall(prompt);
@@ -271,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedText = request.selectedText;
             tabId = request.tabId;
             if (request.fromStartChat) {
-                chatMainArea.style.display = 'block';
+                chatMainArea.style.display = 'flex';
                 oneoffInstructionArea.style.display = 'none';
                 conversationHistory = [];
             } else {
@@ -281,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'setApiResponse') {
             console.log("Chat: setApiResponse received", request);
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -308,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'streamApiStart') {
             console.log("Chat: streamApiStart received", request);
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = true;
             sendButton.disabled = true;
@@ -555,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (request.action === 'startChatWithPdfContent') {
             console.log("Chat: startChatWithPdfContent received", request);
             clearChat(); // Clear existing chat
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
 
             const pdfName = request.pdfUrl ? request.pdfUrl.substring(request.pdfUrl.lastIndexOf('/') + 1) : "the PDF";
@@ -584,12 +597,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             showToast(`Error: ${request.errorMessage}`);
             // Ensure chat area is visible if an error occurs when it might be hidden
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
 
         } else if (request.action === 'handleToolCallResponse') {
             console.log("Chat: handleToolCallResponse received", request);
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -668,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearChat() {
             chatArea.innerHTML = '';
             conversationHistory = [];
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             showToast('Chat history cleared');
     }
@@ -1050,7 +1063,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (effectiveEnableStreaming) {
                 requestBody.stream = true;
                 oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'block';
+                chatMainArea.style.display = 'flex';
                 userInput.disabled = true; sendButton.disabled = true;
 
                 const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
@@ -1088,7 +1101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         userInput.disabled = false; sendButton.disabled = false;
                         instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
                          oneoffInstructionArea.style.display = 'none';
-                         chatMainArea.style.display = 'block';
+                         chatMainArea.style.display = 'flex';
                         userInput.focus();
                         break;
                     }
@@ -1140,7 +1153,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedTextDiv.textContent = '';
                 selectedText = null;
                 oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'block';
+                chatMainArea.style.display = 'flex';
             }
         } catch (error) {
             // Show more detailed error messages
@@ -1169,7 +1182,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.content) {
                         const prompt = "Summarize the following text:\n\n" + response.content;
                         // Ensure chat area is visible
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
                         makeApiCall(prompt);
                         showToast('Tab content received, summarizing...');
@@ -1232,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     button.addEventListener('click', () => {
                         // Ensure chat area is visible
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
 
                         // Retrieve the instruction object

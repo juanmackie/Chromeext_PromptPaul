@@ -180,7 +180,7 @@ function loadProfileSettings(profileId) {
       console.log('Options: Populating form fields with selected profile data.'); // Added log
       document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
       document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
-      document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
+      document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-2506';
       document.getElementById('maxTokens').value = selectedProfile.maxTokens || 32000;
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
       updateCurrentConfig(
@@ -269,7 +269,7 @@ function loadOptions() {
         name: 'Default',
         llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
         apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-        modelName: 'mistral-small-latest',
+        modelName: 'mistral-small-2506',
         maxTokens: 32000,
         systemPrompt: 'You are a helpful assistant.',
         lastUpdated: new Date().toLocaleString()
@@ -356,7 +356,7 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
       // Get default values (these are defined in loadOptions)
       const defaultEndpoint = 'https://api.mistral.ai/v1/chat/completions';
       const defaultApiKey = 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
-      const defaultModelName = 'mistral-small-latest';
+      const defaultModelName = 'mistral-small-2506';
 
       // Set default values in the input fields
       document.getElementById('llmEndpoint').value = defaultEndpoint;
