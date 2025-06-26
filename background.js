@@ -502,7 +502,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
     await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
     return;
-  } else if (info.menuItemId === 'chat_with_pdf') {
+  } else if (info.menuItemId === 'chat_with_pdf_page' || info.menuItemId === 'chat_with_pdf_link') {
     console.log("Background: 'chat_with_pdf' context menu clicked.");
     // Side panel is already opened at the top of the onClicked listener.
 
@@ -604,67 +604,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         }).catch(e => console.error("Error sending displayErrorInChat for custom instruction load failure:", e));
     }
     return;
-  } else if (info.menuItemId === 'chat_with_pdf') {
-    console.log("Background: 'chat_with_pdf' context menu clicked.");
-    // Ensure side panel is open for the current tab
-    // await chrome.sidePanel.open({ tabId: tab.id }); // Already done at the top of onClicked
-
-    const pdfUrl = info.linkUrl || info.pageUrl;
-    if (!pdfUrl) {
-        console.error("Background: No PDF URL found for chat_with_pdf action.");
-        chrome.runtime.sendMessage({
-            action: 'displayErrorInChat',
-            errorMessage: "Could not determine the PDF URL.",
-            tabId: tab.id
-        }).catch(e => console.error("Error sending displayErrorInChat for no PDF URL:", e));
-        return;
-    }
-
-    // Scenario 1: User is currently viewing the PDF page.
-    if (info.pageUrl && info.pageUrl === tab.url && info.pageUrl.toLowerCase().endsWith('.pdf')) {
-        console.log(`Background: Requesting PDF text from current tab: ${tab.id}, URL: ${info.pageUrl}`);
-        chrome.tabs.sendMessage(tab.id, { action: 'extractPdfText' }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error("Background: Error sending 'extractPdfText' to content script:", chrome.runtime.lastError.message);
-                chrome.runtime.sendMessage({
-                    action: 'displayErrorInChat',
-                    errorMessage: `Failed to communicate with PDF content script: ${chrome.runtime.lastError.message}`,
-                    tabId: tab.id
-                }).catch(e => console.error("Error sending displayErrorInChat for communication error:", e));
-                return;
-            }
-
-            if (response && response.success) {
-                console.log("Background: PDF text successfully extracted from current tab.");
-                chrome.runtime.sendMessage({
-                    action: 'startChatWithPdfContent',
-                    pdfText: response.content,
-                    pdfUrl: info.pageUrl,
-                    tabId: tab.id
-                }).catch(e => console.error("Error sending startChatWithPdfContent:", e));
-            } else {
-                console.error("Background: Failed to extract PDF text from current tab.", response ? response.error : "No response");
-                chrome.runtime.sendMessage({
-                    action: 'displayErrorInChat',
-                    errorMessage: `Failed to extract text from PDF: ${response ? response.error : 'Unknown error'}`,
-                    tabId: tab.id
-                }).catch(e => console.error("Error sending displayErrorInChat for extraction failure:", e));
-            }
-        });
-    }
-    // Scenario 2: User clicked a link to a PDF.
-    else if (info.linkUrl && info.linkUrl.toLowerCase().endsWith('.pdf')) {
-        console.log(`Background: Clicked on a link to PDF: ${info.linkUrl}. This will be handled by opening in a new tab.`);
-        openPdfLinkAndExtract(info.linkUrl, tab.id);
-    } else {
-        console.warn("Background: 'chat_with_pdf' clicked, but URL doesn't seem to be a PDF or context is unclear.", info);
-        chrome.runtime.sendMessage({
-            action: 'displayErrorInChat',
-            errorMessage: "Could not identify a valid PDF to process from the current context.",
-            tabId: tab.id
-        }).catch(e => console.error("Error sending displayErrorInChat for unclear context:", e));
-    }
-    return; // Ensure this specific action pathway returns
   }
 
   // Handle predefined commands
@@ -1157,13 +1096,20 @@ chrome.runtime.onInstalled.addListener(async () => {
     contexts: ['selection', 'image'],
   });
 
-  // Create "Chat with this PDF" menu item
+  // Create "Chat with this PDF" for PDF pages
   chrome.contextMenus.create({
-    id: 'chat_with_pdf',
+    id: 'chat_with_pdf_page',
     title: '📄 Chat with this PDF',
-    contexts: ['link', 'page'],
-    targetUrlPatterns: ["*://*/*.pdf", "*://*/*.PDF", "file://*/*.pdf", "file://*/*.PDF"],
+    contexts: ['page'],
     documentUrlPatterns: ["*://*/*.pdf", "*://*/*.PDF", "file://*/*.pdf", "file://*/*.PDF"]
+  });
+
+  // Create "Chat with this PDF" for links to PDFs
+  chrome.contextMenus.create({
+    id: 'chat_with_pdf_link',
+    title: '📄 Chat with this PDF',
+    contexts: ['link'],
+    targetUrlPatterns: ["*://*/*.pdf", "*://*/*.PDF", "file://*/*.pdf", "file://*/*.PDF"]
   });
 
   // Create parent menu for Prompt Paul
