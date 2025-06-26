@@ -694,8 +694,8 @@ body.dark-theme .message.system-message pre,
     display: none; /* Hidden by default */
     padding: 10px;
     background-color: var(--ext-card);
-    border-top: 1px solid var(--ext-border);
-    border-bottom: 1px solid var(--ext-border); /* Added bottom border for separation */
+    border: 1px solid var(--ext-border);
+    border-radius: 1.5rem;
     text-align: center;
     font-size: 0.9em;
     color: var(--ext-card-foreground);
