@@ -7,6 +7,12 @@ let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 let isSmartClipboardEnabled = false; // Cache the setting in background
 
+function prependDateTimeToPrompt(prompt) {
+    const now = new Date();
+    const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
+    return `${currentDateTime}\n\n${prompt}`;
+}
+
 // Load initial smart clipboard setting
 chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
     isSmartClipboardEnabled = !!result.enableSmartClipboard;
@@ -500,7 +506,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     sendMessage('setSelectedText', { fromStartChat: true });
     console.log("Final promptContent with instruction (start_chat - implicit):", promptContent.substring(0, 100));
     console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
-    await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
+    await makeLlmApiRequest(prependDateTimeToPrompt(promptContent), tab.id, { isStartChat: true });
     return;
   } else if (info.menuItemId === 'chat_with_pdf_page' || info.menuItemId === 'chat_with_pdf_link') {
     console.log("Background: 'chat_with_pdf' context menu clicked.");
@@ -586,7 +592,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         console.log("Final promptContent with instruction (custom):", promptContent.substring(0, 100));
         const toolChoice = instruction.tool_choice || 'none';
         console.log("Calling makeLlmApiRequest for menuItemId (custom):", info.menuItemId, "with tool_choice:", toolChoice);
-        await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
+        await makeLlmApiRequest(prependDateTimeToPrompt(promptContent), tab.id, { customInstructionToolChoice: toolChoice });
       } else {
         console.error("Custom instruction not found for ID:", instructionId);
          chrome.runtime.sendMessage({
@@ -627,7 +633,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
-  await makeLlmApiRequest(promptContent, tab.id);
+  await makeLlmApiRequest(prependDateTimeToPrompt(promptContent), tab.id);
 });
 
 // Helper function to open PDF link in a new tab and manage extraction
@@ -804,6 +810,7 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+    console.log("makeLlmApiRequest received promptContent:", promptContent.substring(0, 200));
     let config, tools, enableStreaming;
     try {
         // Step 1: Validate configuration and get tool definitions
@@ -1741,7 +1748,7 @@ chrome.scripting.executeScript({
         console.log("Background: QUICK_ACTION prompt:", prompt.substring(0, 100) + "...");
 
         // Call the existing LLM API function
-        makeLlmApiRequest(prompt, request.tabId);
+        makeLlmApiRequest(prependDateTimeToPrompt(prompt), request.tabId);
     } else if (request.action === 'smartClipboardSettingChanged') {
         isSmartClipboardEnabled = !!request.enabled;
         console.log("Background: Smart Clipboard setting changed to:", isSmartClipboardEnabled);
