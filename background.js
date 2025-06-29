@@ -7,8 +7,11 @@ let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 let isSmartClipboardEnabled = false; // Cache the setting in background
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> parent of 9c28dd3 (Prepend current date and time to LLM prompts)
 // Load initial smart clipboard setting
 chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
     isSmartClipboardEnabled = !!result.enableSmartClipboard;
@@ -588,7 +591,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         console.log("Final promptContent with instruction (custom):", promptContent.substring(0, 100));
         const toolChoice = instruction.tool_choice || 'none';
         console.log("Calling makeLlmApiRequest for menuItemId (custom):", info.menuItemId, "with tool_choice:", toolChoice);
-        await makeLlmApiRequest(prependDateTimeToPrompt(promptContent), tab.id, { customInstructionToolChoice: toolChoice });
+        await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
       } else {
         console.error("Custom instruction not found for ID:", instructionId);
          chrome.runtime.sendMessage({
@@ -867,7 +870,6 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
-    console.log("makeLlmApiRequest received promptContent:", promptContent.substring(0, 200));
     let config, tools, enableStreaming;
     try {
         // Step 1: Validate configuration and get tool definitions

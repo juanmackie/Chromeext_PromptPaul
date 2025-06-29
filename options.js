@@ -257,7 +257,7 @@ function loadOptions() {
   chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
     console.log('Options: Storage get result for profiles and lastSelectedProfileId:', result);
     let profiles = result.profiles || [];
-    const lastSelectedProfileId = result.lastSelectedProfileId || 'default';s
+    const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
     console.log('Options: Loaded profiles:', profiles);
     console.log('Options: Loaded last selected profile ID:', lastSelectedProfileId);
 
