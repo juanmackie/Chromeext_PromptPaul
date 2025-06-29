@@ -695,10 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
-            const now = new Date();
-            const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
-            const messageWithDateTime = `${currentDateTime}\n\n${message}`;
-            makeApiCall(messageWithDateTime);
+            makeApiCall(message);
             userInput.value = '';
         }
     }
@@ -799,7 +796,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (userMessage) {
                 addMessage('User', userMessage);
-                conversationHistory.push({ role: 'user', content: userMessage });
+                const now = new Date();
+                const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
+                const messageWithDateTime = `${currentDateTime}\n\n${userMessage}`;
+                conversationHistory.push({ role: 'user', content: messageWithDateTime });
             }
             
             // START SHARED API REQUEST PREP LOGIC
@@ -1039,7 +1039,10 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const config = await getApiConfig();
             const prompt = instruction + '\n\n' + selectedText;
-            let oneOffHistory = [{ role: 'user', content: prompt }];
+            const now = new Date();
+            const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
+            const messageWithDateTime = `${currentDateTime}\n\n${prompt}`;
+            let oneOffHistory = [{ role: 'user', content: messageWithDateTime }];
 
             const requestBody = {
                 model: config.modelName,
@@ -1052,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Display user message in main chat UI
             addMessage('User', instruction + "\n\n[Selected text: " + selectedText.substring(0, 50) + (selectedText.length > 50 ? "..." : "") + "]");
             // Also add to main conversation history for context
-            conversationHistory.push({role: 'user', content: prompt});
+            conversationHistory.push({role: 'user', content: messageWithDateTime});
 
             let effectiveEnableStreaming = enableStreaming;
             // As per subtask, check global conversationHistory, not oneOffHistory for tool messages.
