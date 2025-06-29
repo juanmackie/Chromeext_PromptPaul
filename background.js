@@ -7,11 +7,7 @@ let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 let isSmartClipboardEnabled = false; // Cache the setting in background
 
-function prependDateTimeToPrompt(prompt) {
-    const now = new Date();
-    const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
-    return `${currentDateTime}\n\n${prompt}`;
-}
+
 
 // Load initial smart clipboard setting
 chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
@@ -506,7 +502,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     sendMessage('setSelectedText', { fromStartChat: true });
     console.log("Final promptContent with instruction (start_chat - implicit):", promptContent.substring(0, 100));
     console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
-    await makeLlmApiRequest(prependDateTimeToPrompt(promptContent), tab.id, { isStartChat: true });
+    await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
     return;
   } else if (info.menuItemId === 'chat_with_pdf_page' || info.menuItemId === 'chat_with_pdf_link') {
     console.log("Background: 'chat_with_pdf' context menu clicked.");
@@ -633,7 +629,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
-  await makeLlmApiRequest(prependDateTimeToPrompt(promptContent), tab.id);
+  await makeLlmApiRequest(promptContent, tab.id);
 });
 
 // Helper function to open PDF link in a new tab and manage extraction
@@ -1748,7 +1744,7 @@ chrome.scripting.executeScript({
         console.log("Background: QUICK_ACTION prompt:", prompt.substring(0, 100) + "...");
 
         // Call the existing LLM API function
-        makeLlmApiRequest(prependDateTimeToPrompt(prompt), request.tabId);
+        makeLlmApiRequest(prompt, request.tabId);
     } else if (request.action === 'smartClipboardSettingChanged') {
         isSmartClipboardEnabled = !!request.enabled;
         console.log("Background: Smart Clipboard setting changed to:", isSmartClipboardEnabled);

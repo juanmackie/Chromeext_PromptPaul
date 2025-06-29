@@ -695,7 +695,10 @@ document.addEventListener('DOMContentLoaded', () => {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
-            makeApiCall(message);
+            const now = new Date();
+            const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
+            const messageWithDateTime = `${currentDateTime}\n\n${message}`;
+            makeApiCall(messageWithDateTime);
             userInput.value = '';
         }
     }
