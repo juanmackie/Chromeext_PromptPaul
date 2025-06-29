@@ -58,7 +58,7 @@
 .dark-theme, /* This class is used in options.html and options.js */
 .ext-dark { /* General utility class */
   --ext-background: #000408;
-  --ext-foreground: #000000;
+  --ext-foreground: #373737;
   --ext-card: #010d16;
   --ext-card-foreground: #b1d3ec;
   --ext-popover: #010d16;
