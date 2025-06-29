@@ -7,11 +7,7 @@ let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 let isSmartClipboardEnabled = false; // Cache the setting in background
 
-<<<<<<< HEAD
 
-
-=======
->>>>>>> parent of 9c28dd3 (Prepend current date and time to LLM prompts)
 // Load initial smart clipboard setting
 chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
     isSmartClipboardEnabled = !!result.enableSmartClipboard;
