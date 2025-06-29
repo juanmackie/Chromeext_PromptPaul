@@ -910,11 +910,11 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             }
         }).filter(tool => tool !== null);
 
-        const messages = [];
-        if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-            messages.push({ role: 'system', content: config.systemPrompt });
-        }
-        messages.push({ role: 'user', content: promptContent });
+        const now = new Date();        const currentDateTime = `Current date and time: ${now.toLocaleString()}`;        const promptWithDateTime = `${currentDateTime}
+
+${promptContent}`;
+
+        const messages = [];        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            messages.push({ role: 'system', content: config.systemPrompt });        }        messages.push({ role: 'user', content: promptWithDateTime });
 
         // START SHARED API REQUEST PREP LOGIC (manual sync with chat.js)
         // Note: 'tools' variable here is 'allAvailableTools' in chat.js
