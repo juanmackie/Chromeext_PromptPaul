@@ -204,7 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function addMessage(sender, message) {
+    function addMessage(sender, message, options = {}) {
+    const { messageType, data } = options;
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
     let contentElement = messageDiv;
@@ -215,12 +216,74 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.textContent = 'You: ' + message;
     } else if (sender === 'System') {
         messageDiv.classList.add('system-message');
-        messageDiv.textContent = 'System: ' + message;
+
+        if (messageType === 'tool-result' && data) {
+            const { toolName, result } = data;
+            
+            const title = document.createElement('span');
+            title.innerHTML = `System: ✅ Tool <strong>${toolName}</strong> executed.`;
+            messageDiv.appendChild(title);
+
+            const details = document.createElement('details');
+            details.classList.add('tool-result-details');
+            
+            const summary = document.createElement('summary');
+            summary.textContent = 'View Result';
+            details.appendChild(summary);
+            
+            const resultContainer = document.createElement('div');
+            resultContainer.classList.add('tool-result-container');
+
+            const prettyView = document.createElement('div');
+            prettyView.classList.add('tool-result-pretty');
+            const prePretty = document.createElement('pre');
+            const codePretty = document.createElement('code');
+            codePretty.classList.add('json');
+            try {
+                codePretty.textContent = JSON.stringify(result, null, 2);
+            } catch (e) {
+                codePretty.textContent = String(result);
+            }
+            prePretty.appendChild(codePretty);
+            prettyView.appendChild(prePretty);
+            resultContainer.appendChild(prettyView);
+
+            const rawView = document.createElement('div');
+            rawView.classList.add('tool-result-raw');
+            rawView.style.display = 'none';
+            const preRaw = document.createElement('pre');
+            const codeRaw = document.createElement('code');
+            try {
+                codeRaw.textContent = JSON.stringify(result);
+            } catch (e) {
+                codeRaw.textContent = String(result);
+            }
+            preRaw.appendChild(codeRaw);
+            rawView.appendChild(preRaw);
+            resultContainer.appendChild(rawView);
+
+            const toggleButton = document.createElement('button');
+            toggleButton.textContent = 'Show Raw';
+            toggleButton.classList.add('tool-result-toggle');
+            toggleButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isRawVisible = rawView.style.display !== 'none';
+                rawView.style.display = isRawVisible ? 'none' : 'block';
+                prettyView.style.display = isRawVisible ? 'block' : 'none';
+                toggleButton.textContent = isRawVisible ? 'Show Raw' : 'Show Pretty';
+            });
+            
+            details.appendChild(toggleButton);
+            details.appendChild(resultContainer);
+            messageDiv.appendChild(details);
+
+        } else {
+            messageDiv.textContent = 'System: ' + message;
+        }
     } else if (sender === 'LLM') {
         messageDiv.classList.add('llm-message');
         const llmContentSpan = document.createElement('span');
         llmContentSpan.classList.add('llm-content-area');
-        // Ensure marked.parse is available or handle potential errors
         if (typeof marked !== 'undefined') {
             llmContentSpan.innerHTML = marked.parse(message || "");
         } else {
@@ -230,19 +293,15 @@ document.addEventListener('DOMContentLoaded', () => {
         contentElement = llmContentSpan;
         uniqueIdString = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
-        // --- Icon for copying raw text ---
         const copyIcon = document.createElement('img');
         copyIcon.id = `copy-icon-${uniqueIdString}`;
-        // Replaced base64 string with a file path
         copyIcon.src = 'icons\\copy markdown.png';
         copyIcon.alt = "Copy Raw";
         copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
         messageDiv.appendChild(copyIcon);
 
-        // --- Icon for copying formatted text ---
         const copyFormattedIcon = document.createElement('img');
         copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
-        // Replaced base64 string with a file path
         const formattedIconSrc = 'icons/copy formatted.png';
         copyFormattedIcon.src = formattedIconSrc;
         copyFormattedIcon.alt = "Copy Formatted";
@@ -253,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
             attachCopyListeners(message, contentElement, copyIcon, copyFormattedIcon);
         }
     } else {
-        messageDiv.textContent = message; // Should not happen if sender is always User, System, or LLM
+        messageDiv.textContent = message;
     }
     chatArea.appendChild(messageDiv);
 
@@ -424,7 +483,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         } catch (e) {
                             resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
                         }
-                        addMessage('System', `✅ Tool **${toolCall.function.name}** executed.\nResult:${resultDisplay}`);
+                        addMessage('System', null, {
+                            messageType: 'tool-result',
+                            data: { toolName: toolCall.function.name, result: response.result }
+                        });
                         conversationHistory.push({
                             role: 'tool',
                             tool_call_id: toolCall.id,
@@ -654,7 +716,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             } catch (e) {
                                 resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
                             }
-                            addMessage('System', `✅ Tool **${toolCall.function.name}** executed.\nResult:${resultDisplay}`);
+                            addMessage('System', null, {
+                            messageType: 'tool-result',
+                            data: { toolName: toolCall.function.name, result: response.result }
+                        });
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
                             makeApiCall();
                         }
@@ -1006,7 +1071,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 } catch (e) {
                                     resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
                                 }
-                                addMessage('System', `✅ Tool **${toolCall.function.name}** executed.\nResult:${resultDisplay}`);
+                                addMessage('System', null, {
+                            messageType: 'tool-result',
+                            data: { toolName: toolCall.function.name, result: response.result }
+                        });
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
                                 console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
                                 console.log(conversationHistory.slice(-3));

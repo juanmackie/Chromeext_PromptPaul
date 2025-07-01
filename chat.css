@@ -641,6 +641,51 @@ body.sidebar-open #chat-area {
 .ext-shadow { box-shadow: var(--ext-shadow); }
 
 /* Styles for tool arguments/results in system messages */
+.tool-result-details {
+    margin-top: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+.tool-result-details summary {
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.tool-result-container {
+    margin-top: 5px;
+}
+
+.tool-result-toggle {
+    margin-bottom: 5px;
+}
+
+.tool-result-pretty {
+    background-color: #f5f5f5;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.tool-result-raw {
+    background-color: #333;
+    color: #fff;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+body.dark-theme .tool-result-pretty {
+    background-color: #222;
+    color: #fff;
+}
+
+body.dark-theme .tool-result-raw {
+    background-color: #111;
+}
+
+body.dark-theme .tool-result-details {
+    border-color: #555;
+}
 .message.system-message pre {
     background-color: var(--ext-input); /* Use input background for slight differentiation */
     color: var(--ext-foreground);
