@@ -2,11 +2,373 @@ import './marked.min.js';
 console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
+// JSDoc type definitions (conceptually from mcp_types.js)
+/**
+ * @typedef {object} JsonRpcRequest
+ * @property {"2.0"} jsonrpc
+ * @property {string} method
+ * @property {any} [params]
+ * @property {string|number} [id]
+ */
+
+/**
+ * @typedef {object} JsonRpcError
+ * @property {number} code
+ * @property {string} message
+ * @property {any} [data]
+ */
+
+/**
+ * @typedef {object} JsonRpcResponse
+ * @property {"2.0"} jsonrpc
+ * @property {any} [result]
+ * @property {JsonRpcError} [error]
+ * @property {string|number|null} id
+ */
+
+/**
+ * @typedef {object} McpClientInfo
+ * @property {string} name
+ * @property {string} version
+ */
+
+/**
+ * @typedef {object} McpClientCapabilities
+ * @property {object} [experimental]
+ * @property {object} [elicitation]
+ */
+
+/**
+ * @typedef {object} McpToolDefinition
+ * @property {string} name
+ * @property {string} description
+ * @property {object} inputSchema MCP Schema object
+ * @property {object} [outputSchema] MCP Schema object
+ */
+
+/**
+ * @typedef {object} McpServerCapabilities
+ * @property {McpToolDefinition[]} [tools]
+ * @property {string[]} [supportedProtocolVersions]
+ */
+
+/**
+ * Represents the result of a tool call from the MCP server.
+ * @typedef {object} McpToolResult
+ * @property {string|object} content The content returned by the tool.
+ * @property {boolean} isError Indicates if the tool execution resulted in an error.
+ * @property {JsonRpcError} [errorDetails] Detailed error information if isError is true.
+ */
+
+// --- McpClient Class and Custom Errors (Pasted from mcp_client.js content) ---
+class McpError extends Error {
+    /** @param {string} message */
+    constructor(message) {
+        super(message);
+        this.name = "McpError";
+    }
+}
+class McpInitializationError extends McpError {
+    /** @param {string} message */
+    constructor(message) {
+        super(message);
+        this.name = "McpInitializationError";
+    }
+}
+class McpToolCallError extends McpError {
+    /**
+     * @param {string} message
+     * @param {JsonRpcError} [details]
+     */
+    constructor(message, details) {
+        super(message);
+        this.name = "McpToolCallError";
+        if (details) this.details = details;
+    }
+}
+class McpNetworkError extends McpError {
+    /** @param {string} message */
+    constructor(message) {
+        super(message);
+        this.name = "McpNetworkError";
+    }
+}
+class McpResponseParseError extends McpError {
+    /** @param {string} message */
+    constructor(message) {
+        super(message);
+        this.name = "McpResponseParseError";
+    }
+}
+
+class McpClient {
+    /**
+     * @param {string} serverUrl
+     * @param {McpClientInfo} clientInfo
+     * @param {McpClientCapabilities} clientCapabilities
+     */
+    constructor(serverUrl, clientInfo, clientCapabilities) {
+        this.serverUrl = serverUrl;
+        /** @type {string | null} */
+        this.mcpSessionId = null;
+        this.clientInfo = clientInfo;
+        this.clientCapabilities = clientCapabilities;
+        /** @type {McpServerCapabilities | null} */
+        this.serverCapabilities = null;
+        /** @type {string | null} */
+        this.protocolVersion = "0.1.0"; // Default client protocol version
+        /** @type {McpToolDefinition[] | null} */
+        this.tools = null;
+        this.isInitialized = false;
+        console.log(`McpClient created for ${serverUrl}`);
+    }
+
+    async initialize() {
+        if (this.isInitialized) {
+            console.log(`McpClient for ${this.serverUrl} is already initialized.`);
+            return;
+        }
+        console.log(`McpClient: Initializing session for ${this.serverUrl}`);
+        const requestId = `mcp-init-${Date.now()}`;
+        const initializeParams = {
+            protocolVersion: this.protocolVersion,
+            capabilities: this.clientCapabilities,
+            clientInfo: this.clientInfo
+        };
+        /** @type {JsonRpcRequest} */
+        const requestPayload = {
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "initialize",
+            params: initializeParams
+        };
+
+        try {
+            const response = await fetch(this.serverUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream'
+                },
+                body: JSON.stringify(requestPayload)
+            });
+
+            if (!response.ok) {
+                let errorBody = "";
+                try { errorBody = await response.text(); } catch(e) {/*ignore*/}
+                throw new McpNetworkError(`HTTP error ${response.status}: ${response.statusText}. Body: ${errorBody}`);
+            }
+
+            const mcpSessionIdHeader = response.headers.get('mcp-session-id');
+            if (!mcpSessionIdHeader) {
+                throw new McpInitializationError('mcp-session-id header not found in initialize response.');
+            }
+            this.mcpSessionId = mcpSessionIdHeader;
+            console.log(`McpClient: Received mcp-session-id: ${this.mcpSessionId}`);
+
+            const responseText = await response.text();
+            const initializeResult = await this._parseResponseFromStream(responseText, requestId, "initialize");
+
+            if (!initializeResult.result || !initializeResult.result.capabilities || !initializeResult.result.protocolVersion) {
+                console.error('McpClient: Invalid initialize result structure:', initializeResult);
+                throw new McpInitializationError('Invalid result structure from server for initialize request.');
+            }
+
+            this.serverCapabilities = initializeResult.result.capabilities;
+            this.protocolVersion = initializeResult.result.protocolVersion;
+            console.log(`McpClient: Session initialized. Server capabilities:`, this.serverCapabilities, `Protocol: ${this.protocolVersion}`);
+
+            this.isInitialized = true;
+            await this._sendNotification("initialized", {});
+            console.log(`McpClient: Sent 'initialized' notification to ${this.serverUrl}`);
+            await this._listTools();
+        } catch (error) {
+            this.isInitialized = false;
+            console.error(`McpClient: Error during session initialization for ${this.serverUrl}:`, error);
+            if (error instanceof McpError) throw error;
+            throw new McpInitializationError(`Session initialization failed: ${error.message}`);
+        }
+    }
+
+    async _listTools() {
+        if (!this.isInitialized) throw new McpError("Client not initialized. Cannot list tools.");
+        console.log(`McpClient: Listing tools from ${this.serverUrl}`);
+        const requestId = `mcp-listtools-${Date.now()}`;
+        /** @type {JsonRpcRequest} */
+        const requestPayload = {
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "tools/list",
+            params: {}
+        };
+        try {
+            const response = await this._sendRequest(requestPayload);
+            if (response.result && Array.isArray(response.result.tools)) {
+                this.tools = response.result.tools;
+                console.log(`McpClient: Discovered ${this.tools.length} tools from ${this.serverUrl}:`, this.tools);
+            } else {
+                this.tools = [];
+                console.warn(`McpClient: No tools found or unexpected format from tools/list for ${this.serverUrl}. Response:`, response);
+            }
+        } catch (error) {
+            this.tools = [];
+            console.error(`McpClient: Error listing tools from ${this.serverUrl}:`, error);
+        }
+    }
+
+    /** @returns {Promise<McpToolResult>} */
+    async callTool(toolName, toolArguments) {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+        if (!this.isToolAvailable(toolName)) {
+            throw new McpToolCallError(`Tool '${toolName}' not available or not advertised by the server ${this.serverUrl}.`);
+        }
+        console.log(`McpClient: Calling tool '${toolName}' on ${this.serverUrl} with args:`, toolArguments);
+        const requestId = `mcp-toolcall-${Date.now()}`;
+        /** @type {JsonRpcRequest} */
+        const requestPayload = {
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "tools/call",
+            params: { name: toolName, arguments: toolArguments }
+        };
+        try {
+            const response = await this._sendRequest(requestPayload);
+            if (response.result && typeof response.result.content !== 'undefined' && typeof response.result.isError !== 'undefined') {
+                /** @type {McpToolResult} */
+                const toolResult = response.result;
+                if (toolResult.isError) {
+                    console.warn(`McpClient: Tool '${toolName}' execution resulted in an error on server:`, toolResult.errorDetails || toolResult.content);
+                }
+                return toolResult;
+            } else {
+                console.error(`McpClient: Invalid tool call response structure from server for '${toolName}':`, response);
+                throw new McpToolCallError(`Invalid response structure from tool '${toolName}'.`, { code: -32001, message: "Invalid tool response structure" });
+            }
+        } catch (error) {
+            console.error(`McpClient: Error calling tool '${toolName}' on ${this.serverUrl}:`, error);
+            if (error instanceof McpToolCallError) throw error;
+            if (error instanceof McpError) throw new McpToolCallError(`Failed to call tool '${toolName}': ${error.message}`);
+            throw new McpToolCallError(`Failed to call tool '${toolName}': ${error.message}`);
+        }
+    }
+
+    /** @returns {Promise<JsonRpcResponse>} */
+    async _sendRequest(requestPayload) {
+        if (!this.mcpSessionId && requestPayload.method !== "initialize") {
+            throw new McpError("MCP session ID is not available. Initialize session first.");
+        }
+        console.debug(`McpClient._sendRequest to ${this.serverUrl}:`, requestPayload);
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/event-stream'
+        };
+        if (this.mcpSessionId) {
+            headers['mcp-session-id'] = this.mcpSessionId;
+        }
+        try {
+            const response = await fetch(this.serverUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestPayload)
+            });
+            if (!response.ok) {
+                let errorBody = "";
+                try { errorBody = await response.text(); } catch(e) {/*ignore*/}
+                throw new McpNetworkError(`HTTP error ${response.status} for method ${requestPayload.method}. Body: ${errorBody}`);
+            }
+            const responseText = await response.text();
+            return this._parseResponseFromStream(responseText, requestPayload.id, requestPayload.method);
+        } catch (error) {
+            console.error(`McpClient: Network or fetch error for method ${requestPayload.method} to ${this.serverUrl}:`, error);
+            if (error instanceof McpError) throw error;
+            throw new McpNetworkError(`Request failed for ${requestPayload.method}: ${error.message}`);
+        }
+    }
+
+    /** @returns {Promise<JsonRpcResponse>} */
+    async _parseResponseFromStream(responseText, targetId, methodName = "unknown") {
+        try {
+            const directJson = JSON.parse(responseText);
+            if (directJson.id === targetId && (directJson.result !== undefined || directJson.error !== undefined)) {
+                console.log(`McpClient: Parsed direct JSON response for ${methodName} (ID: ${targetId})`);
+                if (directJson.error) console.warn(`McpClient: JSON-RPC error in direct response for ${methodName} (ID: ${targetId}):`, directJson.error);
+                return directJson;
+            }
+        } catch (e) {
+            console.log(`McpClient: Not a direct JSON response for ${methodName} (ID: ${targetId}) or parse error, trying SSE. Error: ${e.message}`);
+        }
+        console.log(`McpClient: Attempting to parse SSE stream for ${methodName} (ID: ${targetId})`);
+        const lines = responseText.trim().split('\n');
+        for (const line of lines) {
+            if (line.startsWith('data:')) {
+                const jsonData = line.substring(5).trim();
+                if (jsonData) {
+                    try {
+                        const parsedEventData = JSON.parse(jsonData);
+                        if (parsedEventData.id === targetId && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
+                            console.log(`McpClient: Found JSON-RPC response for ${methodName} (ID: ${targetId}) in SSE data:`, parsedEventData);
+                            if (parsedEventData.error) console.warn(`McpClient: JSON-RPC error in SSE response for ${methodName} (ID: ${targetId}):`, parsedEventData.error);
+                            return parsedEventData;
+                        }
+                    } catch (e) {
+                        console.warn(`McpClient: Could not parse SSE data line as JSON or not the target response: "${jsonData}" for ${methodName} (ID: ${targetId})`, e);
+                    }
+                }
+            }
+        }
+        console.error(`McpClient: Response for ${methodName} (ID: ${targetId}) not found in response text. Full text:`, responseText.substring(0, 500) + "...");
+        throw new McpResponseParseError(`Response for ${methodName} (ID: ${targetId}) not found in stream.`);
+    }
+
+    async _sendNotification(method, params) {
+        if (!this.mcpSessionId) {
+             console.warn(`McpClient: mcpSessionId not set when sending notification '${method}'. This might be an issue.`);
+        }
+        console.log(`McpClient: Sending notification '${method}' to ${this.serverUrl} with params:`, params);
+        /** @type {JsonRpcRequest} */
+        const notificationPayload = {
+            jsonrpc: "2.0",
+            method: method,
+            params: params || {}
+        };
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.mcpSessionId) {
+            headers['mcp-session-id'] = this.mcpSessionId;
+        }
+        try {
+            const response = await fetch(this.serverUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(notificationPayload)
+            });
+            if (!response.ok) {
+                let errorBody = "";
+                try {errorBody = await response.text(); } catch(e) {/*ignore*/}
+                console.warn(`McpClient: Notification '${method}' to ${this.serverUrl} failed with HTTP status ${response.status}. Body: ${errorBody}`);
+            }
+        } catch (error) {
+            console.error(`McpClient: Error sending notification '${method}' to ${this.serverUrl}:`, error);
+        }
+    }
+
+    isToolAvailable(toolName) {
+        return !!(this.tools && this.tools.some(t => t.name === toolName));
+    }
+
+    /** @returns {McpToolDefinition | null} */
+    getToolSchema(toolName) {
+        if (!this.tools) return null;
+        return this.tools.find(t => t.name === toolName) || null;
+    }
+}
+// --- End of McpClient Class and Custom Errors ---
+
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 let isSmartClipboardEnabled = false; // Cache the setting in background
-
 
 // Load initial smart clipboard setting
 chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
@@ -14,387 +376,40 @@ chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
     console.log("Background: Initial Smart Clipboard enabled state:", isSmartClipboardEnabled);
 });
 
-
-// MCP Session Management
-let mcpSessions = {};
-const mcpClientCapabilities = {
-    experimental: {}, // For any experimental features client supports
-    // No 'roots' capability declared, as the extension doesn't primarily serve local file roots to tools.
-    // No 'sampling' capability declared, as tools don't typically ask the extension (client) to perform LLM sampling for them via MCP.
-    elicitation: {} // Declares that the client understands the elicitation protocol.
-                     // Actual handling of elicitation requests from the server would be a future enhancement.
+// MCP Client Management
+/** @type {Object<string, McpClient>} */
+let mcpClients = {};
+const PROMPT_PAUL_MCP_CLIENT_INFO = { "name": "PromptPaulExtension", "version": "4.20" }; // Updated version
+const PROMPT_PAUL_MCP_CLIENT_CAPABILITIES = {
+    experimental: {},
+    elicitation: {}
 };
-const mcpClientInfo = { "name": "PromptPaulExtension", "version": "0.1.0" }; // Use appropriate version
 
-async function sendMcpNotification(mcpServerUrl, method, params) {
-    console.log(`Sending MCP notification '${method}' to ${mcpServerUrl} with params:`, params);
-    const session = mcpSessions[mcpServerUrl]; // Get session, primarily for mcpSessionId
-
-    const notificationPayload = {
-        jsonrpc: "2.0",
-        method: method,
-        params: params || {}
-    };
-
-    const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream' // Keep this from previous fix
-    };
-
-    if (session && session.mcpSessionId) {
-        headers['mcp-session-id'] = session.mcpSessionId;
-        console.log(`Including mcp-session-id: ${session.mcpSessionId} in notification '${method}' to ${mcpServerUrl}`);
-    } else if (method === "initialized") {
-        // The 'initialized' notification is part of the session setup.
-        // If mcpSessionId was just obtained in initializeMcpSession and set into mcpSessions,
-        // it *should* be found here. If not, it's a problem or the server didn't provide one.
-        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This might be an issue if the server expects it even for 'initialized'.`);
-    } else {
-        // For other methods, we should have a session ID if the session was properly initialized
-        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This could cause issues if the server requires it.`);
+/**
+ * Gets or creates an McpClient for the given server URL.
+ * Initializes the client if it's new or not yet initialized.
+ * @param {string} mcpServerUrl
+ * @returns {Promise<McpClient>}
+ * @throws {McpInitializationError} if initialization fails
+ */
+async function getMcpClient(mcpServerUrl) {
+    if (!mcpClients[mcpServerUrl]) {
+        console.log(`Creating new McpClient for ${mcpServerUrl}`);
+        mcpClients[mcpServerUrl] = new McpClient(mcpServerUrl, PROMPT_PAUL_MCP_CLIENT_INFO, PROMPT_PAUL_MCP_CLIENT_CAPABILITIES);
     }
-
-
-    try {
-        const response = await fetch(mcpServerUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(notificationPayload)
-        });
-
-        if (!response.ok) {
-            // For notifications, we might not always get a body or a meaningful JSON error.
-            // The primary concern is whether the HTTP request itself succeeded.
-            console.warn(`MCP Notification HTTP error! Status: ${response.status} for method ${method}`);
-            // Optionally, try to read body if there's an issue.
-            try {
-                const errorBody = await response.text(); // Using text() as it might not be JSON
-                console.warn(`MCP Notification error body: ${errorBody}`);
-            } catch(e) { /* ignore */ }
-        }
-        // Notifications do not have responses to parse beyond HTTP status.
-    } catch (error) {
-        console.error(`Error sending MCP notification '${method}' to ${mcpServerUrl}:`, error);
-        // Depending on desired robustness, could throw or just log.
-    }
-}
-
-async function initializeMcpSession(mcpServerUrl) {
-    console.log(`Initializing MCP session for: ${mcpServerUrl} (expecting SSE response)`);
-    const requestId = `mcp-init-${Date.now()}`;
-    const initializeParams = {
-        protocolVersion: "0.1.0",
-        capabilities: mcpClientCapabilities,
-        clientInfo: mcpClientInfo
-    };
-    const requestPayload = {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "initialize",
-        params: initializeParams
-    };
-
-    try {
-        const response = await fetch(mcpServerUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/event-stream' // Correct Accept header
-            },
-            body: JSON.stringify(requestPayload)
-        });
-
-        if (!response.ok) {
-            let errorMsg = `MCP Initialize HTTP error! Status: ${response.status}`;
-            try {
-                const errorBody = await response.text(); // Use text() for potential non-JSON errors too
-                errorMsg += `, Body: ${errorBody}`;
-            } catch (e) { /* ignore */ }
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: HTTP status ${response.status}. Body: ${errorBody}`);
-        }
-
-        const mcpSessionId = response.headers.get('mcp-session-id');
-        if (!mcpSessionId) {
-            console.error(`MCP Initialize Error: mcp-session-id header not found in response from ${mcpServerUrl}. This is required for subsequent requests.`);
-            // This is now treated as an error since most servers will require the session ID
-            throw new Error(`MCP Initialize failed: mcp-session-id header missing in response from ${mcpServerUrl}`);
-        } else {
-            console.log(`MCP Initialize: Received mcp-session-id: ${mcpSessionId}`);
-        }
-
-        const responseText = await response.text();
-        let serverResponse = null;
-        let foundInitializeResult = false;
-
-        const lines = responseText.split('\n');
-        for (const line of lines) {
-            if (line.startsWith('data:')) {
-                const jsonData = line.substring(5).trim();
-                if (jsonData) {
-                    try {
-                        const parsedEventData = JSON.parse(jsonData);
-                        // Check if this event data is the JSON-RPC response we're looking for
-                        if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
-                            serverResponse = parsedEventData;
-                            foundInitializeResult = true;
-                            console.log("Found initialize result in SSE data:", serverResponse);
-                            break;
-                        }
-                    } catch (e) {
-                        // Not all data lines might be JSON, or not the one we want, so log and continue
-                        console.warn(`Could not parse SSE data line as JSON or not the target response: "${jsonData}"`, e);
-                    }
-                }
-            }
-        }
-
-        if (!foundInitializeResult || !serverResponse) {
-            console.error(`MCP Initialize: Full SSE response text from ${mcpServerUrl} when 'initialize' result was not found:\n${responseText}`);
-            console.error('MCP Initialize: Initialize result not found in SSE stream. Full response text:', responseText);
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: 'initialize' result not found in SSE stream.`);
-        }
-
-        if (serverResponse.error) {
-            console.error('MCP Initialize error response from SSE:', serverResponse.error);
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
-        }
-
-        if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
-            console.error('MCP Initialize invalid result structure in SSE:', serverResponse);
-            throw new Error('MCP Initialize failed: Invalid result structure from server in SSE.');
-        }
-
-        console.log("MCP Server Initialize Result (from SSE):", serverResponse.result);
-        if (serverResponse.result.protocolVersion !== initializeParams.protocolVersion) {
-            console.warn(`MCP Protocol version mismatch: Client sent ${initializeParams.protocolVersion}, Server responded with ${serverResponse.result.protocolVersion}. Proceeding.`);
-        }
-
-        const session = {
-            mcpSessionId: mcpSessionId, // Store the extracted session ID
-            serverUrl: mcpServerUrl,
-            serverCapabilities: serverResponse.result.capabilities,
-            protocolVersion: serverResponse.result.protocolVersion,
-            initialized: true
-        };
-        mcpSessions[mcpServerUrl] = session; // Cache the session
-        console.log(`MCP session (with mcpSessionId: ${mcpSessionId}) successfully initialized and cached for ${mcpServerUrl}`);
-
-        // Send "initialized" notification
-        await sendMcpNotification(mcpServerUrl, "initialized", {});
-
-        // Attempt to list tools from the MCP server
+    const client = mcpClients[mcpServerUrl];
+    if (!client.isInitialized) {
         try {
-            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
-            // This is okay because we've already cached it above.
-            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
-            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
-            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
-            const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
-            if (discoveredTools && discoveredTools.length > 0) {
-                session.tools = discoveredTools;
-                console.log(`MCP Initialize: Discovered ${discoveredTools.length} tools from ${mcpServerUrl}:`, discoveredTools);
-            } else {
-                session.tools = []; // Ensure session.tools is always an array
-                console.log(`MCP Initialize: No tools discovered or returned from ${mcpServerUrl}.`);
-            }
-        } catch (toolError) {
-            console.error(`MCP Initialize: Failed to list tools from ${mcpServerUrl}. Error:`, toolError.message);
-            session.tools = []; // Ensure session.tools is an array even on error
-            // Do not re-throw; session initialization can proceed without tools.
+            await client.initialize();
+        } catch (error) {
+            console.error(`Failed to initialize McpClient for ${mcpServerUrl}:`, error);
+            delete mcpClients[mcpServerUrl]; // Remove failed client from cache
+            throw error; // Re-throw to be caught by caller
         }
-
-        return session;
-
-    } catch (error) {
-        console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
-        delete mcpSessions[mcpServerUrl];
-        // Enhanced error message with more details
-        const enhancedError = new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
-        enhancedError.cause = error; // Attach the original error as cause
-        throw enhancedError;
     }
+    return client;
 }
 
-async function getMcpSession(mcpServerUrl) {
-    if (mcpSessions[mcpServerUrl] && mcpSessions[mcpServerUrl].initialized) {
-        console.log(`Returning existing MCP session for: ${mcpServerUrl}`);
-        return mcpSessions[mcpServerUrl];
-    }
-    console.log(`No existing session or not initialized, creating new MCP session for: ${mcpServerUrl}`);
-    return await initializeMcpSession(mcpServerUrl);
-}
-
-// New function to list tools from an MCP server
-async function listMcpTools(mcpServerUrl, sessionId) { // sessionId might not be strictly needed if sendMcpRequest uses global session
-    console.log(`Listing tools from MCP server: ${mcpServerUrl}`);
-    const requestId = `mcp-listtools-${Date.now()}`;
-    const requestPayload = {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "tools/list", // Standard MCP method for listing tools
-        params: {} // Typically no parameters for a list method
-    };
-
-    try {
-        // sendMcpRequest will use the mcpSessionId from the cached session for mcpServerUrl
-        const mcpResponse = await sendMcpRequest(mcpServerUrl, requestPayload);
-
-        if (mcpResponse && mcpResponse.result && Array.isArray(mcpResponse.result.tools)) {
-            console.log(`MCP tools/list: Received ${mcpResponse.result.tools.length} tools from ${mcpServerUrl}.`);
-            return mcpResponse.result.tools; // Expected structure { tools: [...] }
-        } else {
-            console.error(`MCP tools/list: Unexpected response format from ${mcpServerUrl}. Response:`, mcpResponse);
-            return []; // Return empty array on unexpected format
-        }
-    } catch (error) {
-        console.error(`MCP tools/list: Error listing tools from ${mcpServerUrl}: ${error.message}`);
-        // Depending on desired strictness, could throw error or return empty array.
-        // For robustness of session initialization, returning empty array.
-        return [];
-    }
-}
-
-function createMcpToolCallPayload(toolName, toolArguments, requestId) {
-    // Ensure toolArguments is an object, as expected by MCP for structured params.
-    // The LLM often sends arguments as a JSON string, which should be parsed *before* calling this.
-    // If toolArguments is already an object, this is fine. If it's a string,
-    // it indicates it wasn't parsed at the executePromptPaulTool level.
-    // For safety, though this function expects an object:
-    let paramsArguments = toolArguments;
-    // Ensure toolArguments is an object
-    if (typeof toolArguments === 'string') {
-        try {
-            paramsArguments = JSON.parse(toolArguments);
-        } catch (e) {
-            console.error("Tool arguments for MCP call were a string but not valid JSON:", toolArguments, e);
-            throw new Error("Tool arguments must be a valid JSON object or pre-parsed object.");
-        }
-    } else if (typeof toolArguments !== 'object' || toolArguments === null) {
-        console.error("Tool arguments must be an object:", toolArguments);
-        throw new Error("Tool arguments must be an object.");
-    }
-
-    const toolCallParams = {
-        name: toolName,
-        arguments: paramsArguments
-    };
-
-    const requestPayload = {
-        jsonrpc: "2.0",
-        id: requestId, // Caller should generate a unique ID for each request
-        method: "tools/call",
-        params: toolCallParams
-    };
-
-    console.log(`MCP tools/call Request Payload for ${toolName}:`, JSON.stringify(requestPayload, null, 2));
-    return requestPayload;
-}
-
-async function sendMcpRequest(mcpServerUrl, requestPayload) {
-    console.log(`Sending MCP request to ${mcpServerUrl} with payload:`, JSON.stringify(requestPayload, null, 2));
-    const session = mcpSessions[mcpServerUrl];
-    const headers = {
-        'Content-Type': 'application/json',
-
-        'Accept': 'application/json, text/event-stream'
-    };
-
-    if (session && session.mcpSessionId) {
-        headers['mcp-session-id'] = session.mcpSessionId;
-        console.log(`Including mcp-session-id: ${session.mcpSessionId} in request to ${mcpServerUrl}`);
-    } else {
-
-        console.warn(`No mcpSessionId found for ${mcpServerUrl} in sendMcpRequest.`);
-    }
-
-    try {
-        const response = await fetch(mcpServerUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestPayload)
-        });
-
-        if (!response.ok) {
-            let errorMsg = `MCP Request HTTP error! Status: ${response.status}`;
-            try {
-                const errorBody = await response.text(); // Use text() for more robust error body reading
-                errorMsg += `, Body: ${errorBody}`;
-            } catch (e) { /* ignore if body isn't text */ }
-            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: HTTP status ${response.status}. Body: ${errorBody}`);
-        }
-
-        const responseText = await response.text();
-        let serverResponse = null;
-        let foundResponse = false;
-
-        // Check for SSE format before parsing
-        if (responseText.includes('event: mes') || responseText.startsWith('data: ')) {
-            // Handle SSE response
-            const events = responseText.trim().split('\n\n');
-            for (const event of events) {
-                const lines = event.split('\n');
-                let data = '';
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        data += line.substring(6) + '\n';
-                    }
-                }
-                if (data) {
-                    try {
-                        const result = JSON.parse(data.trim());
-                        if (result.id === requestPayload.id && (result.result !== undefined || result.error !== undefined)) {
-                            serverResponse = result;
-                            foundResponse = true;
-                            console.log(`Found MCP response for ID ${requestPayload.id} in SSE data:`, serverResponse);
-                            break; // break out of events loop
-                        }
-                    } catch (e) {
-                        console.error('SSE parsing error', e);
-                    }
-                }
-            }
-        } else {
-            // Handle standard JSON response
-            try {
-                const json = JSON.parse(responseText);
-                if (json.id === requestPayload.id && (json.result !== undefined || json.error !== undefined)) {
-                    serverResponse = json;
-                    foundResponse = true;
-                    console.log(`Found MCP response for ID ${requestPayload.id} in JSON response:`, serverResponse);
-                }
-            } catch (e) {
-                console.error('JSON parsing error', e);
-            }
-        }
-
-        if (!foundResponse || !serverResponse) {
-            console.error(`MCP Request '${requestPayload.method}': Full SSE response text from ${mcpServerUrl} (ID: ${requestPayload.id}) when response was not found:\n${responseText}`);
-            console.error(`MCP Request: Response for ID ${requestPayload.id} (method: ${requestPayload.method}) not found in SSE stream. Full response text:`, responseText);
-            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} (ID: ${requestPayload.id}) failed: Response not found in SSE stream.`);
-        }
-
-        // serverResponse is now the JSON-RPC object like {jsonrpc, id, result} or {jsonrpc, id, error}
-
-        if (serverResponse.error) {
-            console.error(`MCP Request error response (for id: ${requestPayload.id}):`, serverResponse.error);
-            const mcpError = new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
-            mcpError.details = serverResponse.error; // Attach full error object
-            throw mcpError;
-        }
-
-        // ID check already implicitly done by finding the response in the stream by requestPayload.id
-        // if (serverResponse.id !== requestPayload.id) {
-        //     console.warn(`MCP Request ID mismatch: Expected ${requestPayload.id}, received ${serverResponse.id}`);
-        // }
-
-        console.log(`MCP Response for id ${requestPayload.id} (from SSE):`, serverResponse);
-        return serverResponse; // This will be the full JSON-RPC response {jsonrpc, id, result}
-
-    } catch (error) {
-        console.error(`Error sending MCP request '${requestPayload.method}' to ${mcpServerUrl}:`, error);
-        throw new Error(`MCP request '${requestPayload.method}' to ${mcpServerUrl} encountered an error: ${error.message}`);
-    }
-}
 
 // Enable the side panel on all pages
 chrome.sidePanel
