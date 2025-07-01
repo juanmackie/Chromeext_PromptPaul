@@ -1084,8 +1084,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     })();
                 } else if (responseMessage.content) {
                     addMessage('LLM', responseMessage.content);
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    userInput.focus();
                 } else {
                      addMessage('System', "Received an empty or unexpected response from LLM.");
+                     userInput.disabled = false;
+                     sendButton.disabled = false;
+                     userInput.focus();
                 }
             }
         } catch (error) {
