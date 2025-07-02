@@ -1,4 +1,3 @@
-@ -1,1064 +1,6 @@
 /* Extension Theme Variables */
 :root {
   --ext-background: #f3faff;
@@ -1062,10 +1061,4 @@ footer a:hover {
 .shadcn-checkbox:checked {
   background-color: hsl(var(--primary));
   border-color: hsl(var(--primary));
-}
-pre#toolTestResult {
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 200px; 
-    overflow-y: auto; 
 }
