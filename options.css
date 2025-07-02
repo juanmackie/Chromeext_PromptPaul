@@ -80,7 +80,7 @@
   --shadow-sm: var(--ext-shadow-sm);
   --shadow-md: var(--ext-shadow-md);
   --shadow-lg: var(--ext-shadow-lg);
-  --font-family: 'Inter', sans-serif;
+  --font-family: 'Roboto', sans-serif;
 }
 
 /* Dark theme */
