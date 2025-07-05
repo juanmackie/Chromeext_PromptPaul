@@ -661,6 +661,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 addMessage('User', userMessage);
                 conversationHistory.push({ role: 'user', content: userMessage });
             }
+
+            const now = new Date();
+            const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
+            let systemPromptContent = dateTimeString;
+            if (config.systemPrompt && config.systemPrompt.trim() !== '') {
+                systemPromptContent += `\n\n${config.systemPrompt}`;
+            }
+            const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
             
             // START SHARED API REQUEST PREP LOGIC
             // Now uses parametersForLlm from getTools()
@@ -705,7 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const requestBody = {
                 model: config.modelName,
-                messages: conversationHistory,
+                messages: messagesForRequest,
                 max_tokens: parseInt(config.maxTokens) || 2048,
                 ...toolChoicePayload // Spread the payload
             };
