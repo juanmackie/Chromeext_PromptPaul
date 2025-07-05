@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const copyIcon = document.createElement('img');
         copyIcon.id = `copy-icon-${uniqueIdString}`;
         // Replaced base64 string with a file path
-        copyIcon.src = 'icons\\copy markdown.png';
+        copyIcon.src = document.body.classList.contains('dark-theme') ? 'icons/light_copy markdown.png' : 'icons/copy markdown.png';
         copyIcon.alt = "Copy Raw";
         copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
         messageDiv.appendChild(copyIcon);
@@ -182,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const copyFormattedIcon = document.createElement('img');
         copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
         // Replaced base64 string with a file path
-        const formattedIconSrc = 'icons/copy formatted.png';
+        const formattedIconSrc = document.body.classList.contains('dark-theme') ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
         copyFormattedIcon.src = formattedIconSrc;
         copyFormattedIcon.alt = "Copy Formatted";
         copyFormattedIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";

@@ -173,7 +173,6 @@ body.dark-theme .quick-action-button:hover {
 }
 
 body.dark-theme .chat-container,
-body.dark-theme #input-area,
 body.dark-theme .message,
 body.dark-theme .llm-message,
 body.dark-theme .user-message {
@@ -181,8 +180,14 @@ body.dark-theme .user-message {
     /* Specific message backgrounds might need adjustment if they shouldn't be card-like */
 }
 
+body.dark-theme #input-area {
+    background-color: #000408 !important;
+    box-shadow: none !important; /* Remove shadow to check for faint line */
+    border-top: none !important; /* Remove border to check for faint line */
+}
+
 body.dark-theme #chat-area {
-    /* Should inherit --ext-background */
+    background-color: #000408; /* Ensure chat area background matches body in dark theme */
 }
 
 body.dark-theme .llm-message {
@@ -368,6 +373,10 @@ body.dark-theme ::selection {
     height: 14px;
     cursor: pointer;
     z-index: 10;
+}
+
+body.dark-theme .llm-message img {
+  filter: brightness(1.5); /* Make the image lighter in dark theme */
 }
 
 .llm-message .copy-icons-container {

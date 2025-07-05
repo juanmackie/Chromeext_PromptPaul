@@ -896,7 +896,7 @@ footer a:hover {
 
 /* Optional: Style for when a button is pinned */
 .pin-btn.pinned .material-symbols-outlined {
-  color: var(--ext-primary); /* Example: use brand color for pinned items */
+  color: #000408; /* Retain #000408 color for pinned items */
   /* Or use a specific fill/font variation for Material Symbols if applicable */
 }
 
