@@ -264,7 +264,7 @@ body {
     border-radius: 0.6rem; /* From original inline style, consider --ext-radius */
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); /* Could be themed if needed */
     background-color: var(--ext-input);
-    color: #919191;
+    color: #919191(--ext-foreground);
 }
 
 /* General button styling in chat - base for send, clear etc. */

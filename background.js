@@ -536,13 +536,20 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
                 console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e);
                 return null;
             }
-        }).filter(tool => tool !== null);
+}).filter(tool => tool !== null);
 
-        const now = new Date();        const currentDateTime = `Current date and time: ${now.toLocaleString()}`;        const promptWithDateTime = `${currentDateTime}\n\n${promptContent}`;
+        const now = new Date();
+        const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
+        const promptWithDateTime = `${currentDateTime}\n\n${promptContent}`;
 
-        const messages = [];        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            messages.push({ role: 'system', content: config.systemPrompt });        }        messages.push({ role: 'user', content: promptWithDateTime });
+        const messages = [];
+        if (config.systemPrompt && config.systemPrompt.trim() !== '') {
+            messages.push({ role: 'system', content: config.systemPrompt });
+        }
+        messages.push({ role: 'user', content: promptWithDateTime });
 
         // START SHARED API REQUEST PREP LOGIC (manual sync with chat.js)
+        // Note: 'tools' variable here is 'allAvailableTools' in chat.js
         // Note: 'tools' variable here is 'allAvailableTools' in chat.js
         // 'customInstructionToolChoice' is 'tool_choice' in chat.js makeApiCall signature
         const allAvailableToolsRaw = tools; // Alias for clarity within this block
