@@ -1,11 +1,11 @@
 import './marked.min.js';
-import { SandboxManager } from './sandbox_manager.js';
+// import { SandboxManager } from './sandbox_manager.js'; // SandboxManager removed
 console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
 
-const sandboxManager = new SandboxManager();
-const SANDBOX_INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+// const sandboxManager = new SandboxManager(); // SandboxManager removed
+// const SANDBOX_INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes // SandboxManager removed
 
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
@@ -1028,32 +1028,33 @@ const toolImplementations = {
 // Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'startSandbox') {
-        (async () => {
-            const tool = mcpClientRegistry.getToolSchema(request.toolId);
-            if (tool) {
-                try {
-                    await sandboxManager.startSandbox(tool);
-                    sendResponse({ success: true });
-                } catch (error) {
-                    sendResponse({ success: false, error: error.message });
-                }
-            } else {
-                sendResponse({ success: false, error: `Tool with id ${request.toolId} not found.` });
-            }
-        })();
-        return true;
-    } else if (request.action === 'stopSandbox') {
-        (async () => {
-            try {
-                await sandboxManager.stopSandbox(request.toolId);
-                sendResponse({ success: true });
-            } catch (error) {
-                sendResponse({ success: false, error: error.message });
-            }
-        })();
-        return true;
-    }
+    // Removed startSandbox and stopSandbox logic as MCP feature is deprecated.
+    // if (request.action === 'startSandbox') {
+    //     (async () => {
+    //         const tool = mcpClientRegistry.getToolSchema(request.toolId);
+    //         if (tool) {
+    //             try {
+    //                 await sandboxManager.startSandbox(tool);
+    //                 sendResponse({ success: true });
+    //             } catch (error) {
+    //                 sendResponse({ success: false, error: error.message });
+    //             }
+    //         } else {
+    //             sendResponse({ success: false, error: `Tool with id ${request.toolId} not found.` });
+    //         }
+    //     })();
+    //     return true;
+    // } else if (request.action === 'stopSandbox') {
+    //     (async () => {
+    //         try {
+    //             await sandboxManager.stopSandbox(request.toolId);
+    //             sendResponse({ success: true });
+    //         } catch (error) {
+    //             sendResponse({ success: false, error: error.message });
+    //         }
+    //     })();
+    //     return true;
+    // }
     // Flag to indicate if sendResponse has been called for this message
     let responseSent = false;
     const originalSendResponse = sendResponse;
@@ -1308,28 +1309,30 @@ chrome.scripting.executeScript({
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }
 
-                if (toolDefinition.type === 'stdio') {
-                    try {
-                        const sandbox = await sandboxManager.startSandbox(toolDefinition);
-                        // Assuming sandbox provides a way to call tools directly or a simplified client
-                        // For now, we'll assume direct execution if it's a stdio tool
-                        // In a real scenario, you'd have a client for stdio tools as well
-                        // For simplicity, we'll just return a mock result for now
-                        sendResponse({ result: { output: `Executed stdio tool ${name} with args ${JSON.stringify(argsObject)}` } });
+                // Removed stdio tool type handling as MCP feature is deprecated.
+                // if (toolDefinition.type === 'stdio') {
+                //     try {
+                //         const sandbox = await sandboxManager.startSandbox(toolDefinition);
+                //         // Assuming sandbox provides a way to call tools directly or a simplified client
+                //         // For now, we'll assume direct execution if it's a stdio tool
+                //         // In a real scenario, you'd have a client for stdio tools as well
+                //         // For simplicity, we'll just return a mock result for now
+                //         sendResponse({ result: { output: `Executed stdio tool ${name} with args ${JSON.stringify(argsObject)}` } });
 
-                        // Reset inactivity timer
-                        if (sandbox.inactivityTimer) {
-                            clearTimeout(sandbox.inactivityTimer);
-                        }
-                        sandbox.inactivityTimer = setTimeout(() => {
-                            sandboxManager.stopSandbox(toolDefinition.id);
-                        }, SANDBOX_INACTIVITY_TIMEOUT);
+                //         // Reset inactivity timer
+                //         if (sandbox.inactivityTimer) {
+                //             clearTimeout(sandbox.inactivityTimer);
+                //         }
+                //         sandbox.inactivityTimer = setTimeout(() => {
+                //             sandboxManager.stopSandbox(toolDefinition.id);
+                //         }, SANDBOX_INACTIVITY_TIMEOUT);
 
-                    } catch (error) {
-                        console.error(`Error executing tool ${name} in sandbox:`, error);
-                        sendResponse({ error: `Failed to execute tool ${name} in sandbox: ${error.message}` });
-                    }
-                } else if (toolDefinition.endpointUrl) {
+                //     } catch (error) {
+                //         console.error(`Error executing tool ${name} in sandbox:`, error);
+                //         sendResponse({ error: `Failed to execute tool ${name} in sandbox: ${error.message}` });
+                //     }
+                // } else
+                if (toolDefinition.endpointUrl) {
                     console.log(`Executing '${name}' as a user-defined HTTP tool via ${toolDefinition.endpointUrl}`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
                     console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
