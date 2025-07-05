@@ -14,7 +14,7 @@
     "*://*/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https://raw.githubusercontent.com;"
   },
   "web_accessible_resources": [
     {
@@ -37,11 +37,6 @@
       "matches": ["*://*/*.pdf", "file://*/*.pdf"],
       "js": ["pdf_content_script.js"],
       "all_frames": true
-    },
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content_script_explain.js"],
-      "all_frames": false
     },
     {
       "matches": ["<all_urls>"],

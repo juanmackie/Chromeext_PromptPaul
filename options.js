@@ -1070,10 +1070,8 @@ function isValidJson(str) {
 function setupToolHandlers() {
   const saveToolBtn = document.getElementById('saveTool');
   const clearToolFormBtn = document.getElementById('clearToolForm');
-  const toolMcpServerUrlEl = document.getElementById('toolMcpServerUrl');
   const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
   const toolHttpMethodEl = document.getElementById('toolHttpMethod');
-  const fetchMcpToolInfoBtn = document.getElementById('fetchMcpToolInfoBtn');
 
   function updateToolFieldStates() {
     const mcpUrl = toolMcpServerUrlEl.value.trim();
@@ -1141,7 +1139,7 @@ function setupToolHandlers() {
         row.innerHTML = `
           <td>${tool.name}</td>
           <td>${tool.description}</td>
-          <td>${tool.mcpServerUrl || ''}</td>
+          
           <td>
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
             <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
@@ -1163,8 +1161,6 @@ function setupToolHandlers() {
               document.getElementById('toolParameters').value = tool.parameters || '';
               document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
-              // toolMcpId is removed, so no need to load it into a field.
-              document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
               updateToolFieldStates(); // Update field states when a tool is loaded for editing
             }
@@ -1204,7 +1200,6 @@ function setupToolHandlers() {
       const toolParameters = document.getElementById('toolParameters').value.trim();
       const toolEndpointUrl = document.getElementById('toolEndpointUrl').value.trim();
       const toolHttpMethod = document.getElementById('toolHttpMethod').value;
-      let toolMcpServerUrl = document.getElementById('toolMcpServerUrl').value.trim();
       const toolId = document.getElementById('toolId').value;
 
       if (!toolName || !toolDescription) {
@@ -1233,7 +1228,7 @@ function setupToolHandlers() {
                 parameters: toolParameters,
                 endpointUrl: toolEndpointUrl,
                 httpMethod: toolHttpMethod,
-                mcpServerUrl: toolMcpServerUrl,
+
                 lastUpdated: now
               };
             }
@@ -1249,7 +1244,6 @@ function setupToolHandlers() {
             parameters: toolParameters,
             endpointUrl: toolEndpointUrl,
             httpMethod: toolHttpMethod,
-            mcpServerUrl: toolMcpServerUrl,
             createdAt: now,
             lastUpdated: now
           };
@@ -1278,18 +1272,12 @@ function setupToolHandlers() {
     document.getElementById('toolParameters').value = '';
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
-    // toolMcpId is removed, so no need to clear its field.
-    document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
     updateToolFieldStates(); // Reset field states when form is cleared
     showStatus('Tool form cleared.');
     // Ensure fields are reset to be editable and styling removed
     document.getElementById('toolDescription').readOnly = false;
     document.getElementById('toolParameters').readOnly = false;
-    document.getElementById('toolDescription').classList.remove('read-only-mcp');
-    document.getElementById('toolParameters').classList.remove('read-only-mcp');
-    document.getElementById('toolDescriptionSource').style.display = 'none';
-    document.getElementById('toolParametersSource').style.display = 'none';
   }
 
   // Export tools handler
@@ -1361,120 +1349,9 @@ function setupToolHandlers() {
   // Initial load of tools
   loadTools();
 
-  if (fetchMcpToolInfoBtn) {
-    fetchMcpToolInfoBtn.addEventListener('click', async () => {
-      const toolMcpServerUrl = toolMcpServerUrlEl.value.trim();
+  
 
-      if (!toolMcpServerUrl) {
-        showStatus("Please enter an MCP Server URL first.", true);
-        return;
-      }
-      if (!isValidURL(toolMcpServerUrl)) {
-        showStatus("Invalid MCP Server URL format.", true);
-        return;
-      }
+  
 
-      showStatus("Fetching available tools from MCP server...", false, true);
-      clearDiscoveredToolsDisplay(); // Clear previous results
-
-      chrome.runtime.sendMessage({ action: 'listToolsFromMcpServer', mcpServerUrl: toolMcpServerUrl }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error("Error sending 'listToolsFromMcpServer' message:", chrome.runtime.lastError.message);
-          showStatus(`Error communicating with background: ${chrome.runtime.lastError.message}`, true);
-          return;
-        }
-
-        if (response && response.success && response.tools) {
-          if (response.tools.length > 0) {
-            showStatus(`Discovered ${response.tools.length} tools. Select one to populate form.`, false, true);
-            displayDiscoveredMcpTools(response.tools);
-          } else {
-            showStatus("No tools found on the MCP server.", false, true);
-          }
-        } else {
-          showStatus(`Failed to list tools: ${response ? response.error : 'Unknown error from background script.'}`, true);
-        }
-      });
-    });
-  }
-
-  function clearDiscoveredToolsDisplay() {
-    const container = document.getElementById('discovered-mcp-tools-container');
-    if (container) {
-        container.innerHTML = '';
-        container.style.display = 'none';
-    }
-  }
-
-  function displayDiscoveredMcpTools(tools) {
-    let container = document.getElementById('discovered-mcp-tools-container');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'discovered-mcp-tools-container';
-        container.classList.add('discovered-tools-list', 'card'); // Add card class for styling
-        // Insert it after the MCP Server URL form group
-        const mcpServerUrlGroup = toolMcpServerUrlEl.closest('.form-group');
-        if (mcpServerUrlGroup && mcpServerUrlGroup.parentNode) {
-            mcpServerUrlGroup.parentNode.insertBefore(container, mcpServerUrlGroup.nextSibling);
-        } else { // Fallback if structure isn't as expected
-            toolMcpServerUrlEl.parentNode.appendChild(container);
-        }
-    }
-    container.innerHTML = '<h4>Available Tools on Server:</h4>';
-    container.style.display = 'block';
-    container.style.marginTop = '10px';
-    container.style.padding = '10px';
-    // container.style.border = '1px solid var(--ext-border)'; // Already handled by card
-    // container.style.borderRadius = 'var(--ext-radius-sm)'; // Already handled by card
-
-    const list = document.createElement('ul');
-    list.style.listStyleType = 'none';
-    list.style.paddingLeft = '0';
-
-    tools.forEach(tool => {
-        const listItem = document.createElement('li');
-        listItem.style.marginBottom = '5px';
-        const button = document.createElement('button');
-        button.textContent = `${tool.name}`;
-        button.title = tool.description || 'No description provided by server.';
-        button.classList.add('extension-button', 'secondary'); // Use existing button styles
-        button.style.marginRight = '5px';
-        button.style.fontSize = '0.9em';
-        button.style.padding = '3px 6px';
-
-
-        button.addEventListener('click', () => {
-            document.getElementById('toolName').value = tool.name;
-            document.getElementById('toolDescription').value = tool.description || '';
-            document.getElementById('toolParameters').value = tool.inputSchema ? JSON.stringify(tool.inputSchema, null, 2) : '{}';
-
-            // Mark fields as MCP sourced and potentially read-only
-            const toolDescriptionEl = document.getElementById('toolDescription');
-            const toolParametersEl = document.getElementById('toolParameters');
-            const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
-            const toolParametersSourceEl = document.getElementById('toolParametersSource');
-
-            toolDescriptionEl.readOnly = true;
-            toolParametersEl.readOnly = true;
-            toolDescriptionEl.classList.add('read-only-mcp');
-            toolParametersEl.classList.add('read-only-mcp');
-            toolDescriptionSourceEl.textContent = 'Source: MCP Server (Auto-populated). Local content is fallback.';
-            toolParametersSourceEl.textContent = 'Source: MCP Server (Auto-populated). Local content is fallback.';
-            toolDescriptionSourceEl.style.display = 'block';
-            toolParametersSourceEl.style.display = 'block';
-
-            showStatus(`Populated form with tool: ${tool.name}`, false, true);
-            // updateToolFieldStates(); // Ensure other fields are correctly enabled/disabled
-        });
-        listItem.appendChild(button);
-
-        const descSpan = document.createElement('span');
-        descSpan.textContent = `- ${tool.description ? (tool.description.substring(0,100) + (tool.description.length > 100 ? '...' : '')) : 'No description'}`;
-        descSpan.style.fontSize = '0.85em';
-        listItem.appendChild(descSpan);
-
-        list.appendChild(listItem);
-    });
-    container.appendChild(list);
-  }
+  
 }

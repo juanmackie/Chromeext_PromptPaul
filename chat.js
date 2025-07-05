@@ -572,59 +572,38 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'streamApiToolCallChunk') {
             console.log("Chat: streamApiToolCallChunk handler invoked.", request);
-            // console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk); // This is duplicative of the log above
-            console.log("Chat: streamApiToolCallChunk - Pre-condition check:", {
-                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
-                currentStreamingContentElementExists: !!currentStreamingContentElement,
-                requestToolCallChunk: request.toolCallChunk, // Keep this for visual inspection
-                isToolCallChunkArray: Array.isArray(request.toolCallChunk),
-                typeofToolCallChunk: typeof request.toolCallChunk,
-                toolCallChunkLength: (request.toolCallChunk && typeof request.toolCallChunk.length !== 'undefined') ? request.toolCallChunk.length : 'length property is undefined or chunk is null',
-                condition_currentStreamingMessageDiv: !!currentStreamingMessageDiv,
-                condition_currentStreamingContentElement: !!currentStreamingContentElement,
-                condition_requestToolCallChunk: !!request.toolCallChunk,
-                condition_requestToolCallChunkLengthGreaterThanZero: !!(request.toolCallChunk && request.toolCallChunk.length > 0)
-            });
             if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
-                console.log("Chat: streamApiToolCallChunk - DEBUG: Entered 'if' block for processing toolCallChunk.");
-                const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
-                console.log("Chat: Extracted toolCall from chunk:", toolCall);
-                activeStreamingToolCall = toolCall; // Store the active tool call
-                console.log("Chat: activeStreamingToolCall has been set to:", activeStreamingToolCall);
+                const toolCallDelta = request.toolCallChunk[0];
 
-                // Clear previous accumulated text from display
-                // accumulatedStreamedText = ""; // Preserve accumulated text
-                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
-
-                // Asynchronously fetch tool definition to update UI for MCP tool
-                (async () => {
-                    const allToolsStream = await getTools();
-                    const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
-                    if (currentStreamingContentElement) { // Check if element still exists
-                        let argsDisplay = "";
-                        try {
-                            // Attempt to parse and prettify if it's JSON
-                            const argsObject = JSON.parse(toolCall.function.arguments);
-                            argsDisplay = `\n\`\`\`json\n${JSON.stringify(argsObject, null, 2)}\n\`\`\``;
-                        } catch (e) {
-                            // If not JSON or parsing fails, display as plain text
-                            argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
+                if (!activeStreamingToolCall) {
+                    // First chunk of a new tool call
+                    activeStreamingToolCall = {
+                        id: toolCallDelta.id,
+                        function: {
+                            name: toolCallDelta.function.name || '',
+                            arguments: toolCallDelta.function.arguments || ''
                         }
-
-                        if (currentToolDefStream && currentToolDefStream.mcpServerUrl) {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**\nArguments:${argsDisplay}`);
-                        } else {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**\nArguments:${argsDisplay}`);
-                        }
-                        // chatArea.scrollTop = chatArea.scrollHeight; // Already present after this block
+                    };
+                    // Clear previous accumulated text from display
+                    currentStreamingContentElement.innerHTML = '';
+                } else {
+                    // Subsequent chunks, append arguments
+                    if (toolCallDelta.function && toolCallDelta.function.arguments) {
+                        activeStreamingToolCall.function.arguments += toolCallDelta.function.arguments;
                     }
-                })();
-                console.log("Chat: UI updated to show 'Using tool' message with arguments.");
+                }
 
-                // Potentially, actual arguments could be streamed. For now, just the name.
-                // If toolCall.function.arguments is a string of streamed arguments, append it:
-                // currentStreamingContentElement.innerHTML += marked.parse("```\n" + toolCall.function.arguments + "\n```");
+                // Update UI with partial arguments (optional, but good for responsiveness)
+                let partialArgsDisplay = activeStreamingToolCall.function.arguments;
+                try {
+                    // Try to parse and prettify if it's valid JSON so far
+                    const parsedPartial = JSON.parse(partialArgsDisplay);
+                    partialArgsDisplay = JSON.stringify(parsedPartial, null, 2);
+                } catch (e) {
+                    // If not valid JSON yet, just display as plain text
+                }
 
+                currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${activeStreamingToolCall.function.name}**\nArguments:\n\`\`\`json\n${partialArgsDisplay}\n\`\`\``);
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
         } else if (request.action === 'startChatWithPdfContent') {
@@ -693,8 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
                     }
 
-                        const messagePrefix = toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl ?
-                            `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**` :
+                        const messagePrefix =
                             `⚙️ Requesting execution for tool: **${toolCall.function.name}**`;
 
                         addMessage('System', `${messagePrefix}\nArguments:${argsDisplay}`);
@@ -766,95 +744,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function getTools() {
-        console.log("Chat: getTools - Starting to fetch and process tool definitions.");
-        const { promptPaulTools: definedTools = [] } = await new Promise((resolve) => {
-            chrome.storage.local.get(['promptPaulTools'], resolve);
-        });
-        console.log("Chat: getTools - Defined tools from storage:", definedTools);
-
-        const processedTools = [];
-
-        for (const tool of definedTools) {
-            let parametersForLlm = {};
-            let source = 'manual'; // Default source
-
-            if (tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "") {
-                console.log(`Chat: getTools - Processing MCP tool: ${tool.name} from ${tool.mcpServerUrl}`);
-                try {
-                    const response = await new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage(
-                            { action: 'getDiscoveredMcpToolSchema', mcpServerUrl: tool.mcpServerUrl, toolName: tool.name },
-                            (res) => {
-                                if (chrome.runtime.lastError) {
-                                    console.error(`Chat: getTools - Error getting schema for MCP tool ${tool.name}:`, chrome.runtime.lastError.message);
-                                    // Resolve with failure to allow fallback, rather than rejecting the whole getTools
-                                    resolve({ success: false, error: chrome.runtime.lastError.message });
-                                    return;
-                                }
-                                resolve(res);
-                            }
-                        );
-                    });
-
-                    if (response && response.success && response.toolSchema) {
-                        console.log(`Chat: getTools - Successfully fetched schema for MCP tool ${tool.name}:`, response.toolSchema);
-                        // MCP standard is often "inputSchema" for parameters.
-                        // The discoveredTool object itself might be the schema {name, description, inputSchema}
-                        parametersForLlm = response.toolSchema.inputSchema || {}; // Ensure it's an object
-                        source = 'mcp_discovered';
-                        // Use discovered name and description if available and different, or stick to stored ones.
-                        // For now, we assume the 'name' matches and 'description' from storage is fine,
-                        // primarily focusing on 'inputSchema' for 'parameters'.
-                    } else {
-                        console.warn(`Chat: getTools - Failed to get dynamic schema for MCP tool ${tool.name}. Error: ${response ? response.error : 'Unknown error'}. Falling back to manual config.`);
-                        source = 'manual_fallback_mcp';
-                        if (tool.parameters) {
-                            try {
-                                parametersForLlm = JSON.parse(tool.parameters);
-                            } catch (e) {
-                                console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name}:`, e);
-                                addMessage('System', `Error: Invalid JSON Schema (fallback) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                                parametersForLlm = {}; // Keep it an empty object if parsing fails
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Chat: getTools - Exception while fetching schema for MCP tool ${tool.name}:`, error);
-                    source = 'manual_fallback_mcp_exception';
-                    if (tool.parameters) {
-                        try {
-                            parametersForLlm = JSON.parse(tool.parameters);
-                        } catch (e) {
-                            console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name} after exception:`, e);
-                             addMessage('System', `Error: Invalid JSON Schema (fallback after exception) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                            parametersForLlm = {};
-                        }
-                    }
-                }
-            } else { // Not an MCP tool, use manual parameters
-                console.log(`Chat: getTools - Processing non-MCP tool: ${tool.name}`);
-                if (tool.parameters) {
-                    try {
-                        parametersForLlm = JSON.parse(tool.parameters);
-                    } catch (e) {
-                        console.error(`Chat: getTools - Error parsing parameters for manual tool ${tool.name}:`, e);
-                        addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                        parametersForLlm = {}; // Keep it an empty object if parsing fails
-                    }
-                }
+        console.log("Chat: getTools - Starting to fetch and process tool definitions from tool_registry.json.");
+        try {
+            const response = await fetch('tool_registry.json');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch tool registry: ${response.statusText}`);
             }
+            const definedTools = await response.json();
+            console.log("Chat: getTools - Tools from registry:", definedTools);
 
-            processedTools.push({
-                ...tool, // Spread original tool properties
-                parametersForLlm: parametersForLlm, // Add the processed parameters
-                source: source // Add the source for debugging/info
-            });
+            const processedTools = definedTools.map(tool => ({
+                ...tool,
+                parametersForLlm: tool.inputSchema || {},
+                source: 'manual'
+            }));
+
+            console.log("Chat: getTools - Finished processing tools. Result:", processedTools);
+            return processedTools;
+        } catch (error) {
+            console.error("Chat: getTools - Error fetching or processing tool registry:", error);
+            addMessage('System', `Error: Could not load tool definitions. ${error.message}`);
+            return []; // Return empty array on error
         }
-        console.log("Chat: getTools - Finished processing tools. Result:", processedTools);
-        return processedTools;
     }
 
-    async function makeApiCall(userMessage = null, tool_choice = 'none') { // Added tool_choice, default to 'none'
+    async function makeApiCall(userMessage = null) { // Removed tool_choice from parameters
         try {
             const config = await getApiConfig();
             const allAvailableTools = await getTools();
@@ -875,7 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return {
                     type: 'function',
                     function: {
-                        name: tool.name,
+                        name: tool.functionName,
                         description: tool.description,
                         parameters: tool.parametersForLlm // Directly use the pre-processed parameters
                     }
@@ -883,7 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).filter(tool => tool !== null); // filter might not be strictly necessary if getTools ensures valid entries or empty schemas
 
             let toolChoicePayload = {};
-            const current_tool_choice_option = tool_choice; // Parameter to this function
+            const current_tool_choice_option = formattedTools.length > 0 ? 'auto' : 'none'; // Default to auto if tools are available
 
             if (current_tool_choice_option === 'none' || formattedTools.length === 0) {
                 toolChoicePayload = {};
@@ -1049,8 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
                         }
 
-                        const messagePrefix = toolDefinitionNonStream && toolDefinitionNonStream.mcpServerUrl ?
-                            `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**` :
+                        const messagePrefix =
                             `⚙️ Requesting execution for tool: **${toolCall.function.name}**`;
 
                         addMessage('System', `${messagePrefix}\nArguments:${argsDisplay}`);

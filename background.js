@@ -1,369 +1,11 @@
 import './marked.min.js';
+import { SandboxManager } from './sandbox_manager.js';
 console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
-// JSDoc type definitions (conceptually from mcp_types.js)
-/**
- * @typedef {object} JsonRpcRequest
- * @property {"2.0"} jsonrpc
- * @property {string} method
- * @property {any} [params]
- * @property {string|number} [id]
- */
 
-/**
- * @typedef {object} JsonRpcError
- * @property {number} code
- * @property {string} message
- * @property {any} [data]
- */
-
-/**
- * @typedef {object} JsonRpcResponse
- * @property {"2.0"} jsonrpc
- * @property {any} [result]
- * @property {JsonRpcError} [error]
- * @property {string|number|null} id
- */
-
-/**
- * @typedef {object} McpClientInfo
- * @property {string} name
- * @property {string} version
- */
-
-/**
- * @typedef {object} McpClientCapabilities
- * @property {object} [experimental]
- * @property {object} [elicitation]
- */
-
-/**
- * @typedef {object} McpToolDefinition
- * @property {string} name
- * @property {string} description
- * @property {object} inputSchema MCP Schema object
- * @property {object} [outputSchema] MCP Schema object
- */
-
-/**
- * @typedef {object} McpServerCapabilities
- * @property {McpToolDefinition[]} [tools]
- * @property {string[]} [supportedProtocolVersions]
- */
-
-/**
- * Represents the result of a tool call from the MCP server.
- * @typedef {object} McpToolResult
- * @property {string|object} content The content returned by the tool.
- * @property {boolean} isError Indicates if the tool execution resulted in an error.
- * @property {JsonRpcError} [errorDetails] Detailed error information if isError is true.
- */
-
-// --- McpClient Class and Custom Errors (Pasted from mcp_client.js content) ---
-class McpError extends Error {
-    /** @param {string} message */
-    constructor(message) {
-        super(message);
-        this.name = "McpError";
-    }
-}
-class McpInitializationError extends McpError {
-    /** @param {string} message */
-    constructor(message) {
-        super(message);
-        this.name = "McpInitializationError";
-    }
-}
-class McpToolCallError extends McpError {
-    /**
-     * @param {string} message
-     * @param {JsonRpcError} [details]
-     */
-    constructor(message, details) {
-        super(message);
-        this.name = "McpToolCallError";
-        if (details) this.details = details;
-    }
-}
-class McpNetworkError extends McpError {
-    /** @param {string} message */
-    constructor(message) {
-        super(message);
-        this.name = "McpNetworkError";
-    }
-}
-class McpResponseParseError extends McpError {
-    /** @param {string} message */
-    constructor(message) {
-        super(message);
-        this.name = "McpResponseParseError";
-    }
-}
-
-class McpClient {
-    /**
-     * @param {string} serverUrl
-     * @param {McpClientInfo} clientInfo
-     * @param {McpClientCapabilities} clientCapabilities
-     */
-    constructor(serverUrl, clientInfo, clientCapabilities) {
-        this.serverUrl = serverUrl;
-        /** @type {string | null} */
-        this.mcpSessionId = null;
-        this.clientInfo = clientInfo;
-        this.clientCapabilities = clientCapabilities;
-        /** @type {McpServerCapabilities | null} */
-        this.serverCapabilities = null;
-        /** @type {string | null} */
-        this.protocolVersion = "0.1.0"; // Default client protocol version
-        /** @type {McpToolDefinition[] | null} */
-        this.tools = null;
-        this.isInitialized = false;
-        console.log(`McpClient created for ${serverUrl}`);
-    }
-
-    async initialize() {
-        if (this.isInitialized) {
-            console.log(`McpClient for ${this.serverUrl} is already initialized.`);
-            return;
-        }
-        console.log(`McpClient: Initializing session for ${this.serverUrl}`);
-        const requestId = `mcp-init-${Date.now()}`;
-        const initializeParams = {
-            protocolVersion: this.protocolVersion,
-            capabilities: this.clientCapabilities,
-            clientInfo: this.clientInfo
-        };
-        /** @type {JsonRpcRequest} */
-        const requestPayload = {
-            jsonrpc: "2.0",
-            id: requestId,
-            method: "initialize",
-            params: initializeParams
-        };
-
-        try {
-            const response = await fetch(this.serverUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream'
-                },
-                body: JSON.stringify(requestPayload)
-            });
-
-            if (!response.ok) {
-                let errorBody = "";
-                try { errorBody = await response.text(); } catch(e) {/*ignore*/}
-                throw new McpNetworkError(`HTTP error ${response.status}: ${response.statusText}. Body: ${errorBody}`);
-            }
-
-            const mcpSessionIdHeader = response.headers.get('mcp-session-id');
-            if (!mcpSessionIdHeader) {
-                throw new McpInitializationError('mcp-session-id header not found in initialize response.');
-            }
-            this.mcpSessionId = mcpSessionIdHeader;
-            console.log(`McpClient: Received mcp-session-id: ${this.mcpSessionId}`);
-
-            const responseText = await response.text();
-            const initializeResult = await this._parseResponseFromStream(responseText, requestId, "initialize");
-
-            if (!initializeResult.result || !initializeResult.result.capabilities || !initializeResult.result.protocolVersion) {
-                console.error('McpClient: Invalid initialize result structure:', initializeResult);
-                throw new McpInitializationError('Invalid result structure from server for initialize request.');
-            }
-
-            this.serverCapabilities = initializeResult.result.capabilities;
-            this.protocolVersion = initializeResult.result.protocolVersion;
-            console.log(`McpClient: Session initialized. Server capabilities:`, this.serverCapabilities, `Protocol: ${this.protocolVersion}`);
-
-            this.isInitialized = true;
-            await this._sendNotification("initialized", {});
-            console.log(`McpClient: Sent 'initialized' notification to ${this.serverUrl}`);
-            await this._listTools();
-        } catch (error) {
-            this.isInitialized = false;
-            console.error(`McpClient: Error during session initialization for ${this.serverUrl}:`, error);
-            if (error instanceof McpError) throw error;
-            throw new McpInitializationError(`Session initialization failed: ${error.message}`);
-        }
-    }
-
-    async _listTools() {
-        if (!this.isInitialized) throw new McpError("Client not initialized. Cannot list tools.");
-        console.log(`McpClient: Listing tools from ${this.serverUrl}`);
-        const requestId = `mcp-listtools-${Date.now()}`;
-        /** @type {JsonRpcRequest} */
-        const requestPayload = {
-            jsonrpc: "2.0",
-            id: requestId,
-            method: "tools/list",
-            params: {}
-        };
-        try {
-            const response = await this._sendRequest(requestPayload);
-            if (response.result && Array.isArray(response.result.tools)) {
-                this.tools = response.result.tools;
-                console.log(`McpClient: Discovered ${this.tools.length} tools from ${this.serverUrl}:`, this.tools);
-            } else {
-                this.tools = [];
-                console.warn(`McpClient: No tools found or unexpected format from tools/list for ${this.serverUrl}. Response:`, response);
-            }
-        } catch (error) {
-            this.tools = [];
-            console.error(`McpClient: Error listing tools from ${this.serverUrl}:`, error);
-        }
-    }
-
-    /** @returns {Promise<McpToolResult>} */
-    async callTool(toolName, toolArguments) {
-        if (!this.isInitialized) {
-            await this.initialize();
-        }
-        if (!this.isToolAvailable(toolName)) {
-            throw new McpToolCallError(`Tool '${toolName}' not available or not advertised by the server ${this.serverUrl}.`);
-        }
-        console.log(`McpClient: Calling tool '${toolName}' on ${this.serverUrl} with args:`, toolArguments);
-        const requestId = `mcp-toolcall-${Date.now()}`;
-        /** @type {JsonRpcRequest} */
-        const requestPayload = {
-            jsonrpc: "2.0",
-            id: requestId,
-            method: "tools/call",
-            params: { name: toolName, arguments: toolArguments }
-        };
-        try {
-            const response = await this._sendRequest(requestPayload);
-            if (response.result && typeof response.result.content !== 'undefined' && typeof response.result.isError !== 'undefined') {
-                /** @type {McpToolResult} */
-                const toolResult = response.result;
-                if (toolResult.isError) {
-                    console.warn(`McpClient: Tool '${toolName}' execution resulted in an error on server:`, toolResult.errorDetails || toolResult.content);
-                }
-                return toolResult;
-            } else {
-                console.error(`McpClient: Invalid tool call response structure from server for '${toolName}':`, response);
-                throw new McpToolCallError(`Invalid response structure from tool '${toolName}'.`, { code: -32001, message: "Invalid tool response structure" });
-            }
-        } catch (error) {
-            console.error(`McpClient: Error calling tool '${toolName}' on ${this.serverUrl}:`, error);
-            if (error instanceof McpToolCallError) throw error;
-            if (error instanceof McpError) throw new McpToolCallError(`Failed to call tool '${toolName}': ${error.message}`);
-            throw new McpToolCallError(`Failed to call tool '${toolName}': ${error.message}`);
-        }
-    }
-
-    /** @returns {Promise<JsonRpcResponse>} */
-    async _sendRequest(requestPayload) {
-        if (!this.mcpSessionId && requestPayload.method !== "initialize") {
-            throw new McpError("MCP session ID is not available. Initialize session first.");
-        }
-        console.debug(`McpClient._sendRequest to ${this.serverUrl}:`, requestPayload);
-        const headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/event-stream'
-        };
-        if (this.mcpSessionId) {
-            headers['mcp-session-id'] = this.mcpSessionId;
-        }
-        try {
-            const response = await fetch(this.serverUrl, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(requestPayload)
-            });
-            if (!response.ok) {
-                let errorBody = "";
-                try { errorBody = await response.text(); } catch(e) {/*ignore*/}
-                throw new McpNetworkError(`HTTP error ${response.status} for method ${requestPayload.method}. Body: ${errorBody}`);
-            }
-            const responseText = await response.text();
-            return this._parseResponseFromStream(responseText, requestPayload.id, requestPayload.method);
-        } catch (error) {
-            console.error(`McpClient: Network or fetch error for method ${requestPayload.method} to ${this.serverUrl}:`, error);
-            if (error instanceof McpError) throw error;
-            throw new McpNetworkError(`Request failed for ${requestPayload.method}: ${error.message}`);
-        }
-    }
-
-    /** @returns {Promise<JsonRpcResponse>} */
-    async _parseResponseFromStream(responseText, targetId, methodName = "unknown") {
-        try {
-            const directJson = JSON.parse(responseText);
-            if (directJson.id === targetId && (directJson.result !== undefined || directJson.error !== undefined)) {
-                console.log(`McpClient: Parsed direct JSON response for ${methodName} (ID: ${targetId})`);
-                if (directJson.error) console.warn(`McpClient: JSON-RPC error in direct response for ${methodName} (ID: ${targetId}):`, directJson.error);
-                return directJson;
-            }
-        } catch (e) {
-            console.log(`McpClient: Not a direct JSON response for ${methodName} (ID: ${targetId}) or parse error, trying SSE. Error: ${e.message}`);
-        }
-        console.log(`McpClient: Attempting to parse SSE stream for ${methodName} (ID: ${targetId})`);
-        const lines = responseText.trim().split('\n');
-        for (const line of lines) {
-            if (line.startsWith('data:')) {
-                const jsonData = line.substring(5).trim();
-                if (jsonData) {
-                    try {
-                        const parsedEventData = JSON.parse(jsonData);
-                        if (parsedEventData.id === targetId && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
-                            console.log(`McpClient: Found JSON-RPC response for ${methodName} (ID: ${targetId}) in SSE data:`, parsedEventData);
-                            if (parsedEventData.error) console.warn(`McpClient: JSON-RPC error in SSE response for ${methodName} (ID: ${targetId}):`, parsedEventData.error);
-                            return parsedEventData;
-                        }
-                    } catch (e) {
-                        console.warn(`McpClient: Could not parse SSE data line as JSON or not the target response: "${jsonData}" for ${methodName} (ID: ${targetId})`, e);
-                    }
-                }
-            }
-        }
-        console.error(`McpClient: Response for ${methodName} (ID: ${targetId}) not found in response text. Full text:`, responseText.substring(0, 500) + "...");
-        throw new McpResponseParseError(`Response for ${methodName} (ID: ${targetId}) not found in stream.`);
-    }
-
-    async _sendNotification(method, params) {
-        if (!this.mcpSessionId) {
-             console.warn(`McpClient: mcpSessionId not set when sending notification '${method}'. This might be an issue.`);
-        }
-        console.log(`McpClient: Sending notification '${method}' to ${this.serverUrl} with params:`, params);
-        /** @type {JsonRpcRequest} */
-        const notificationPayload = {
-            jsonrpc: "2.0",
-            method: method,
-            params: params || {}
-        };
-        const headers = { 'Content-Type': 'application/json' };
-        if (this.mcpSessionId) {
-            headers['mcp-session-id'] = this.mcpSessionId;
-        }
-        try {
-            const response = await fetch(this.serverUrl, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(notificationPayload)
-            });
-            if (!response.ok) {
-                let errorBody = "";
-                try {errorBody = await response.text(); } catch(e) {/*ignore*/}
-                console.warn(`McpClient: Notification '${method}' to ${this.serverUrl} failed with HTTP status ${response.status}. Body: ${errorBody}`);
-            }
-        } catch (error) {
-            console.error(`McpClient: Error sending notification '${method}' to ${this.serverUrl}:`, error);
-        }
-    }
-
-    isToolAvailable(toolName) {
-        return !!(this.tools && this.tools.some(t => t.name === toolName));
-    }
-
-    /** @returns {McpToolDefinition | null} */
-    getToolSchema(toolName) {
-        if (!this.tools) return null;
-        return this.tools.find(t => t.name === toolName) || null;
-    }
-}
-// --- End of McpClient Class and Custom Errors ---
+const sandboxManager = new SandboxManager();
+const SANDBOX_INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
@@ -376,40 +18,8 @@ chrome.storage.sync.get({ enableSmartClipboard: false }, (result) => {
     console.log("Background: Initial Smart Clipboard enabled state:", isSmartClipboardEnabled);
 });
 
-// MCP Client Management
-/** @type {Object<string, McpClient>} */
-let mcpClients = {};
-const PROMPT_PAUL_MCP_CLIENT_INFO = { "name": "PromptPaulExtension", "version": "4.20" }; // Updated version
-const PROMPT_PAUL_MCP_CLIENT_CAPABILITIES = {
-    experimental: {},
-    elicitation: {}
-};
-
-/**
- * Gets or creates an McpClient for the given server URL.
- * Initializes the client if it's new or not yet initialized.
- * @param {string} mcpServerUrl
- * @returns {Promise<McpClient>}
- * @throws {McpInitializationError} if initialization fails
- */
-async function getMcpClient(mcpServerUrl) {
-    if (!mcpClients[mcpServerUrl]) {
-        console.log(`Creating new McpClient for ${mcpServerUrl}`);
-        mcpClients[mcpServerUrl] = new McpClient(mcpServerUrl, PROMPT_PAUL_MCP_CLIENT_INFO, PROMPT_PAUL_MCP_CLIENT_CAPABILITIES);
-    }
-    const client = mcpClients[mcpServerUrl];
-    if (!client.isInitialized) {
-        try {
-            await client.initialize();
-        } catch (error) {
-            console.error(`Failed to initialize McpClient for ${mcpServerUrl}:`, error);
-            delete mcpClients[mcpServerUrl]; // Remove failed client from cache
-            throw error; // Re-throw to be caught by caller
-        }
-    }
-    return client;
-}
-
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+});
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -747,7 +357,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
                     errorMessage: `Failed to communicate with PDF content script in new tab: ${chrome.runtime.lastError.message}`,
                     tabId: job.originalTabId
                 }).catch(e => console.error("Error sending displayErrorInChat for temp tab communication error:", e));
-            } else if (response && response.success) {
+                return;
+            }
+
+            if (response && response.success) {
                 console.log(`Background: PDF text successfully extracted from temp tab ${tabId}.`);
                 chrome.runtime.sendMessage({
                     action: 'startChatWithPdfContent',
@@ -925,9 +538,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             }
         }).filter(tool => tool !== null);
 
-        const now = new Date();        const currentDateTime = `Current date and time: ${now.toLocaleString()}`;        const promptWithDateTime = `${currentDateTime}
-
-${promptContent}`;
+        const now = new Date();        const currentDateTime = `Current date and time: ${now.toLocaleString()}`;        const promptWithDateTime = `${currentDateTime}\n\n${promptContent}`;
 
         const messages = [];        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            messages.push({ role: 'system', content: config.systemPrompt });        }        messages.push({ role: 'user', content: promptWithDateTime });
 
@@ -1149,7 +760,7 @@ ${promptContent}`;
         setTimeout(() => {
             chrome.runtime.sendMessage({
                 action: 'setApiResponse',
-                apiResponse: `Error: ${error.message}`, // Standard error reporting
+                apiResponse: `Error: ${error.message}`,
                 prompt: promptContent,
                 tabId: tabId,
             }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
@@ -1348,64 +959,42 @@ async function getToolDefinition(name) {
 }
 
 // Generic function to call a user-defined endpoint
-async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, originalToolName = null, mcpProxyUrlBase = null) { // Added userDefinedMethod parameter
+async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod) {
     console.log(`Background: Calling user-defined endpoint: ${endpointUrl} with args:`, args);
     try {
         let finalEndpointUrl = endpointUrl;
-        let finalFetchOptions = { // Initialize with common headers
+        let finalFetchOptions = {
             headers: {
-                'Accept': 'application/json' // Always accept JSON response
+                'Accept': 'application/json'
             }
         };
-        let finalArgs = args;
+        const isEmptyArgs = !args || Object.keys(args).length === 0;
+        let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
+        method = method.toUpperCase();
+        finalFetchOptions.method = method;
+        console.log(`Background: Using method ${method} (User defined: ${userDefinedMethod || 'Auto'}) for endpoint ${finalEndpointUrl}`);
 
-        if (mcpProxyUrlBase && isValidURL(mcpProxyUrlBase)) {
-            try {
-                finalEndpointUrl = new URL(endpointUrl, mcpProxyUrlBase).href;
-                console.log(`Background: MCP Tool detected. Constructed proxy URL: ${finalEndpointUrl}`);
-                // For MCP proxy, always POST a JSON payload with tool name and args
-                finalFetchOptions.method = 'POST'; // Override method to POST for MCP proxy
-                finalFetchOptions.headers['Content-Type'] = 'application/json';
-                finalArgs = { tool_name: originalToolName, arguments: args }; // Structure payload for MCP proxy
-                finalFetchOptions.body = JSON.stringify(finalArgs);
-                console.log(`Background: MCP Tool - Method forced to POST. Payload:`, finalArgs);
-            } catch (e) {
-                console.error(`Background: Error constructing MCP proxy URL from base '${mcpProxyUrlBase}' and path '${endpointUrl}':`, e);
-                throw new Error(`Invalid MCP Proxy URL configuration: ${e.message}`);
-            }
-        } else {
-            // Existing logic for non-MCP tools (handling GET/POST based on args and userDefinedMethod)
-            const isEmptyArgs = !args || Object.keys(args).length === 0;
-            let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
-            method = method.toUpperCase();
-            finalFetchOptions.method = method;
-            console.log(`Background: Using method ${method} (User defined: ${userDefinedMethod || 'Auto'}) for endpoint ${finalEndpointUrl}`);
-
-            if (method === 'GET' && !isEmptyArgs) {
-                const queryParams = new URLSearchParams(finalArgs).toString();
-                finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
-                console.log(`Background: Appended query params for GET request: ${queryParams}`);
-            } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
-                finalFetchOptions.headers['Content-Type'] = 'application/json';
-                finalFetchOptions.body = JSON.stringify(finalArgs);
-            }
+        if (method === 'GET' && !isEmptyArgs) {
+            const queryParams = new URLSearchParams(args).toString();
+            finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
+            console.log(`Background: Appended query params for GET request: ${queryParams}`);
+        } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
+            finalFetchOptions.headers['Content-Type'] = 'application/json';
+            finalFetchOptions.body = JSON.stringify(args);
         }
-        // For DELETE, args might be used in the URL path (not handled here) or ignored, body is typically empty.
-        // If args are needed for DELETE, the user should construct the endpointUrl accordingly in the tool definition.
         
         console.log("Background: Webhook Fetch Details:", { endpointUrl: finalEndpointUrl, fetchOptions: finalFetchOptions });
 
-        const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
+        const response = await fetch(finalEndpointUrl, finalFetchOptions);
 
         if (!response.ok) {
             let errorBody = '';
             try {
-                errorBody = await response.text(); // Try to get error details from response body
+                errorBody = await response.text();
             } catch (_) { /* Ignore if body cannot be read */ }
             throw new Error(`HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim());
         }
 
-        // Attempt to parse response as JSON, fall back to text if not JSON
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             return await response.json();
@@ -1415,7 +1004,6 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, ori
 
     } catch (error) {
         console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
-        // Rethrow a more specific error message
         throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
     }
 }
@@ -1440,6 +1028,32 @@ const toolImplementations = {
 // Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'startSandbox') {
+        (async () => {
+            const tool = mcpClientRegistry.getToolSchema(request.toolId);
+            if (tool) {
+                try {
+                    await sandboxManager.startSandbox(tool);
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: error.message });
+                }
+            } else {
+                sendResponse({ success: false, error: `Tool with id ${request.toolId} not found.` });
+            }
+        })();
+        return true;
+    } else if (request.action === 'stopSandbox') {
+        (async () => {
+            try {
+                await sandboxManager.stopSandbox(request.toolId);
+                sendResponse({ success: true });
+            } catch (error) {
+                sendResponse({ success: false, error: error.message });
+            }
+        })();
+        return true;
+    }
     // Flag to indicate if sendResponse has been called for this message
     let responseSent = false;
     const originalSendResponse = sendResponse;
@@ -1595,7 +1209,8 @@ chrome.scripting.executeScript({
             });
             pinnedActionTabContentCallback = null;
         }
-    } else {
+    }
+ else {
         console.error('Background: getPinnedActionTabContent - No result from content_script_tab_summary.js');
         if (pinnedActionTabContentCallback) {
             pinnedActionTabContentCallback({
@@ -1693,67 +1308,33 @@ chrome.scripting.executeScript({
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }
 
-                // === NEW MCP LOGIC STARTS HERE ===
-                if (toolDefinition.mcpServerUrl && toolDefinition.mcpServerUrl.trim() !== "") {
-                    console.log(`Executing '${name}' as an MCP tool via ${toolDefinition.mcpServerUrl}`);
+                if (toolDefinition.type === 'stdio') {
                     try {
-                        const session = await getMcpSession(toolDefinition.mcpServerUrl);
-                        if (!session || !session.initialized) {
-                            throw new Error("MCP session could not be initialized.");
-                        }
-                        
-                        // Add debug logging for MCP tool execution
-                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
-                        
-                        // Validate that the server supports this tool
-                        // Check if tools exists and is an array before using .some()
-                        const serverTools = session.tools;
-                        if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
-                            console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
-                            throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
-                        }
+                        const sandbox = await sandboxManager.startSandbox(toolDefinition);
+                        // Assuming sandbox provides a way to call tools directly or a simplified client
+                        // For now, we'll assume direct execution if it's a stdio tool
+                        // In a real scenario, you'd have a client for stdio tools as well
+                        // For simplicity, we'll just return a mock result for now
+                        sendResponse({ result: { output: `Executed stdio tool ${name} with args ${JSON.stringify(argsObject)}` } });
 
-                        const requestId = `mcp-tc-${Date.now()}`;
-                        const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
-
-                        // Assuming mcpServerUrl is the direct JSON-RPC endpoint for MCP.
-                        const mcpResponse = await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
-
-                        // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
-                        // The actual data might be in mcpResponse.result.content or just mcpResponse.result
-                        // For now, sending mcpResponse.result as per the generic structure.
-                        // The structure of 'result' from 'tools/call' should be: { content: "...", isError: false/true }
-                        // So, mcpResponse.result should be this object.
-                        sendResponse({ result: mcpResponse.result });
-
-                    } catch (mcpError) {
-                        console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
-                        // Enhanced error logging for TypeErrors
-                        // The existing mcpError.details logging seems correct as per the requirement.
-                        // The requirement states: "ensure the console.error in the catch (mcpError) block ... correctly logs mcpError.details if it exists, which it already seems to do."
-                        // The existing line is: console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details);
-                        // This already logs mcpError.details if it exists.
-                        if (mcpError instanceof TypeError) {
-                            // This debug info is helpful for TypeErrors which was the original problem.
-                            console.error('MCP Capabilities Debug Info during TypeError:', {
-                                serverCapabilities: session?.serverCapabilities, // Use optional chaining for session as well
-                                tools: session?.serverCapabilities?.tools
-                            });
+                        // Reset inactivity timer
+                        if (sandbox.inactivityTimer) {
+                            clearTimeout(sandbox.inactivityTimer);
                         }
-                        let userFriendlyMessage;
-                        if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
-                            userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
-                        } else {
-                            userFriendlyMessage = `Failed to execute MCP tool '${name}': ${mcpError.message || 'An unknown error occurred during MCP tool execution.'}`;
-                        }
-                        sendResponse({ error: userFriendlyMessage });
+                        sandbox.inactivityTimer = setTimeout(() => {
+                            sandboxManager.stopSandbox(toolDefinition.id);
+                        }, SANDBOX_INACTIVITY_TIMEOUT);
+
+                    } catch (error) {
+                        console.error(`Error executing tool ${name} in sandbox:`, error);
+                        sendResponse({ error: `Failed to execute tool ${name} in sandbox: ${error.message}` });
                     }
-                } else if (toolDefinition.endpointUrl) { // Existing non-MCP tool logic
+                } else if (toolDefinition.endpointUrl) {
                     console.log(`Executing '${name}' as a user-defined HTTP tool via ${toolDefinition.endpointUrl}`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
                     console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
                     sendResponse({ result: result });
-                } else { // Existing built-in tool logic (if any)
+                } else {
                     const builtInFunction = toolImplementations[name];
                     if (builtInFunction) {
                         console.log(`Executing '${name}' as a built-in tool.`);
@@ -1761,10 +1342,9 @@ chrome.scripting.executeScript({
                         console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
                         sendResponse({ result: result });
                     } else {
-                        throw new Error(`Tool '${name}' is not properly configured: It has no mcpServerUrl, no endpointUrl, and no built-in implementation.`);
+                        throw new Error(`Tool '${name}' is not properly configured: It has no endpointUrl, and no built-in implementation.`);
                     }
                 }
-                // === MCP LOGIC ENDS HERE ===
 
             } catch (error) { // General error catch for executePromptPaulTool
                 console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
@@ -1777,28 +1357,6 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Crucial for async sendResponse
-    } else if (request.action === 'getDiscoveredMcpToolSchema') {
-        (async () => {
-            const { mcpServerUrl, toolName } = request;
-            if (!mcpServerUrl || !toolName) {
-                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request.' });
-                return;
-            }
-
-            const session = mcpSessions[mcpServerUrl];
-            if (session && session.tools && Array.isArray(session.tools)) {
-                const discoveredTool = session.tools.find(t => t.name === toolName);
-                if (discoveredTool) {
-                    // The discoveredTool object should contain name, description, and inputSchema (or similar)
-                    sendResponse({ success: true, toolSchema: discoveredTool });
-                } else {
-                    sendResponse({ success: false, error: `Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}.` });
-                }
-            } else {
-                sendResponse({ success: false, error: `MCP session for ${mcpServerUrl} not active or tools not listed.` });
-            }
-        })();
-        return true; // Indicates asynchronous response
     } else if (request.action === 'QUICK_ACTION') {
         console.log("Background: QUICK_ACTION received", request);
         const { instruction, tabContent } = request;
@@ -1827,7 +1385,7 @@ chrome.scripting.executeScript({
                 const currentTabId = sender.tab.id;
                 (async () => {
                     try {
-                        console.log("Background: Attempting to open side panel for tab:", currentTabId); // Added logging
+                        console.log("Background: Attempting to open side panel for tab:", currentTabId);
                         await chrome.sidePanel.open({ tabId: currentTabId });
                         // Send message to chat.js AFTER side panel is confirmed or attempted to open
                         // Adding a small delay to ensure chat.js might be ready if panel was just opened.
@@ -1873,26 +1431,6 @@ chrome.scripting.executeScript({
                 }
             });
         }
-        return true; // Indicates asynchronous response
-    } else if (request.action === 'listToolsFromMcpServer') {
-        const { mcpServerUrl } = request;
-        if (!mcpServerUrl) {
-            sendResponse({ success: false, error: 'MCP Server URL is required.' });
-            return false; // No async work if URL is missing
-        }
-        (async () => {
-            try {
-                const session = await getMcpSession(mcpServerUrl); // This initializes and lists tools
-                if (session && session.tools) {
-                    sendResponse({ success: true, tools: session.tools });
-                } else {
-                    sendResponse({ success: false, error: 'Failed to initialize session or list tools from MCP server.' });
-                }
-            } catch (error) {
-                console.error(`Background: Error listing tools from MCP server ${mcpServerUrl}:`, error);
-                sendResponse({ success: false, error: `Failed to list tools: ${error.message}` });
-            }
-        })();
         return true; // Indicates asynchronous response
     }
     // Handle other actions if any

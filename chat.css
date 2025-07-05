@@ -1,3 +1,76 @@
+.sandbox-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--ext-muted);
+    margin-left: auto;
+}
+
+.sandbox-status.running {
+    background-color: var(--ext-chart-2);
+}
+
+.stop-sandbox-button {
+    background-color: var(--ext-destructive);
+    color: var(--ext-destructive-foreground);
+    border: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--ext-radius-sm);
+    font-size: 0.8rem;
+    cursor: pointer;
+    margin-top: 0.5rem;
+}
+
+/* Tool Marketplace Styles */
+#tool-marketplace-container {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    gap: 1rem;
+    overflow-y: auto;
+    height: 100%;
+    border-right: 1px solid var(--ext-border);
+}
+
+.tool-card {
+    background-color: var(--ext-card);
+    border: 1px solid var(--ext-border);
+    border-radius: var(--ext-radius-md);
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tool-card:hover {
+    background-color: var(--ext-accent);
+    color: var(--ext-accent-foreground);
+}
+
+.tool-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.tool-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.tool-name {
+    font-weight: 600;
+}
+
+.tool-description {
+    font-size: 0.9rem;
+    color: var(--ext-muted-foreground);
+}
+
+.error-message {
+    color: var(--ext-destructive);
+}
+
 /* Extension Theme Variables */
 :root {
   /* Light theme colors */
