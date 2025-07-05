@@ -1,19 +1,6 @@
 import { setupThemeToggle } from './themeUtils.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-    function adjustChatAreaPadding() {
-        const inputArea = document.getElementById('input-area');
-        const chatArea = document.getElementById('chat-area');
-        if (inputArea && chatArea) {
-            const inputAreaHeight = inputArea.offsetHeight;
-            chatArea.style.paddingBottom = `${inputAreaHeight}px`;
-        }
-    }
-
-    // Adjust padding on load and window resize
-    adjustChatAreaPadding();
-    window.addEventListener('resize', adjustChatAreaPadding);
-
     console.log("DOMContentLoaded event fired in chat.js");
     const chatArea = document.getElementById('chat-area');
     const userInput = document.getElementById('user-input');
@@ -24,62 +11,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
 
-    // Smart Clipboard UI Elements
-    const smartClipboardNotice = document.getElementById('smart-clipboard-notice');
-    const smartClipboardTextPreview = document.getElementById('smart-clipboard-text-preview');
-    const smartClipboardSendButton = document.getElementById('smart-clipboard-send');
-    const smartClipboardDismissButton = document.getElementById('smart-clipboard-dismiss');
-    let fullCopiedText = ''; // To store the full text for the send button
-
     // Quick Actions Sidebar Elements
     const summarizeTabButton = document.getElementById('summarize-tab-button');
-    const processTabButton = document.getElementById('process-tab-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
     // const managePinnedActionsButton = document.getElementById('manage-pinned-actions-button'); // Removed
 
     // Add event listeners for quick action buttons
     // summarizeTabButton listener moved to lines 878-905 to consolidate logic
     // and prevent duplicate message sending.
-
-    if (processTabButton) {
-        processTabButton.addEventListener('click', () => {
-            const customInstruction = prompt("Enter your custom instruction for the current tab's content:");
-            if (customInstruction === null || customInstruction.trim() === "") {
-                showToast('Custom instruction cancelled or empty.');
-                return;
-            }
-
-            showToast('Requesting tab content for custom instruction...');
-            chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Chat.js: Process Tab - Error sending getTabContent message:", chrome.runtime.lastError.message);
-                    showToast(`Error: ${chrome.runtime.lastError.message}`);
-                    return;
-                }
-
-                if (response && response.action === 'tabContentResponse') {
-                    if (response.content) {
-                        console.log("Chat.js: Process Tab - Content received, length:", response.content.length);
-                        const promptText = customInstruction + "\n\nTab Content:\n" + response.content;
-
-                        chatMainArea.style.display = 'flex';
-                        oneoffInstructionArea.style.display = 'none';
-                        makeApiCall(promptText);
-                        showToast('Tab content loaded. Processing with custom instruction.');
-                    } else {
-                        console.error("Chat.js: Process Tab - Failed to get content or content missing. Success:", response.success, "Error:", response.error);
-                        showToast('No content received for processing: ' + (response.error || 'Content not available'));
-                    }
-                } else if (response && response.action === 'error') {
-                    showToast(`Error getting tab content: ${response.message}`);
-                } else {
-                    console.warn("Chat.js: Process Tab - Received unexpected response action or missing action. Response:", response);
-                    showToast('Received an unexpected response for process tab action.');
-                }
-            });
-        });
-    }
-
     const explainBtn = document.getElementById('explain-button');
     if (explainBtn) {
         explainBtn.addEventListener('click', () => {
@@ -96,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.success && response.content) {
                         console.log("Chat.js: Explain button - Content received, length:", response.content.length);
                         const prompt = "Explain the following text:\n\n" + response.content;
-                        chatMainArea.style.display = 'flex';
+                        chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
                         console.log("Chat.js: Explain button - About to call makeApiCall. Prompt length:", prompt.length);
                         makeApiCall(prompt);
@@ -204,8 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function addMessage(sender, message, options = {}) {
-    const { messageType, data } = options;
+    function addMessage(sender, message) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
     let contentElement = messageDiv;
@@ -216,74 +154,12 @@ document.addEventListener('DOMContentLoaded', () => {
         messageDiv.textContent = 'You: ' + message;
     } else if (sender === 'System') {
         messageDiv.classList.add('system-message');
-
-        if (messageType === 'tool-result' && data) {
-            const { toolName, result } = data;
-            
-            const title = document.createElement('span');
-            title.innerHTML = `System: ✅ Tool <strong>${toolName}</strong> executed.`;
-            messageDiv.appendChild(title);
-
-            const details = document.createElement('details');
-            details.classList.add('tool-result-details');
-            
-            const summary = document.createElement('summary');
-            summary.textContent = 'View Result';
-            details.appendChild(summary);
-            
-            const resultContainer = document.createElement('div');
-            resultContainer.classList.add('tool-result-container');
-
-            const prettyView = document.createElement('div');
-            prettyView.classList.add('tool-result-pretty');
-            const prePretty = document.createElement('pre');
-            const codePretty = document.createElement('code');
-            codePretty.classList.add('json');
-            try {
-                codePretty.textContent = JSON.stringify(result, null, 2);
-            } catch (e) {
-                codePretty.textContent = String(result);
-            }
-            prePretty.appendChild(codePretty);
-            prettyView.appendChild(prePretty);
-            resultContainer.appendChild(prettyView);
-
-            const rawView = document.createElement('div');
-            rawView.classList.add('tool-result-raw');
-            rawView.style.display = 'none';
-            const preRaw = document.createElement('pre');
-            const codeRaw = document.createElement('code');
-            try {
-                codeRaw.textContent = JSON.stringify(result);
-            } catch (e) {
-                codeRaw.textContent = String(result);
-            }
-            preRaw.appendChild(codeRaw);
-            rawView.appendChild(preRaw);
-            resultContainer.appendChild(rawView);
-
-            const toggleButton = document.createElement('button');
-            toggleButton.textContent = 'Show Raw';
-            toggleButton.classList.add('tool-result-toggle');
-            toggleButton.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const isRawVisible = rawView.style.display !== 'none';
-                rawView.style.display = isRawVisible ? 'none' : 'block';
-                prettyView.style.display = isRawVisible ? 'block' : 'none';
-                toggleButton.textContent = isRawVisible ? 'Show Raw' : 'Show Pretty';
-            });
-            
-            details.appendChild(toggleButton);
-            details.appendChild(resultContainer);
-            messageDiv.appendChild(details);
-
-        } else {
-            messageDiv.textContent = 'System: ' + message;
-        }
+        messageDiv.textContent = 'System: ' + message;
     } else if (sender === 'LLM') {
         messageDiv.classList.add('llm-message');
         const llmContentSpan = document.createElement('span');
         llmContentSpan.classList.add('llm-content-area');
+        // Ensure marked.parse is available or handle potential errors
         if (typeof marked !== 'undefined') {
             llmContentSpan.innerHTML = marked.parse(message || "");
         } else {
@@ -293,15 +169,19 @@ document.addEventListener('DOMContentLoaded', () => {
         contentElement = llmContentSpan;
         uniqueIdString = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
+        // --- Icon for copying raw text ---
         const copyIcon = document.createElement('img');
         copyIcon.id = `copy-icon-${uniqueIdString}`;
+        // Replaced base64 string with a file path
         copyIcon.src = 'icons\\copy markdown.png';
         copyIcon.alt = "Copy Raw";
         copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
         messageDiv.appendChild(copyIcon);
 
+        // --- Icon for copying formatted text ---
         const copyFormattedIcon = document.createElement('img');
         copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
+        // Replaced base64 string with a file path
         const formattedIconSrc = 'icons/copy formatted.png';
         copyFormattedIcon.src = formattedIconSrc;
         copyFormattedIcon.alt = "Copy Formatted";
@@ -312,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
             attachCopyListeners(message, contentElement, copyIcon, copyFormattedIcon);
         }
     } else {
-        messageDiv.textContent = message;
+        messageDiv.textContent = message; // Should not happen if sender is always User, System, or LLM
     }
     chatArea.appendChild(messageDiv);
 
@@ -329,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         //     console.log("Chat.js: General onMessage listener processing 'explainContentResponse'", request);
         //     if (request.content) {
         //         const prompt = "Explain the following text:\n\n" + request.content;
-        //         chatMainArea.style.display = 'flex';
+        //         chatMainArea.style.display = 'block';
         //         oneoffInstructionArea.style.display = 'none';
         //         console.log("Chat.js: General onMessage - About to call makeApiCall for explain. Prompt length:", prompt.length);
         //         makeApiCall(prompt);
@@ -343,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedText = request.selectedText;
             tabId = request.tabId;
             if (request.fromStartChat) {
-                chatMainArea.style.display = 'flex';
+                chatMainArea.style.display = 'block';
                 oneoffInstructionArea.style.display = 'none';
                 conversationHistory = [];
             } else {
@@ -353,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'setApiResponse') {
             console.log("Chat: setApiResponse received", request);
-            chatMainArea.style.display = 'flex';
+            chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -380,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'streamApiStart') {
             console.log("Chat: streamApiStart received", request);
-            chatMainArea.style.display = 'flex';
+            chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = true;
             sendButton.disabled = true;
@@ -476,17 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         sendButton.disabled = false;
                         userInput.focus();
                     } else {
-                        let resultDisplay = "";
-                        try {
-                            // Assuming response.result is an object/value that can be stringified
-                            resultDisplay = `\n\`\`\`json\n${JSON.stringify(response.result, null, 2)}\n\`\`\``;
-                        } catch (e) {
-                            resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
-                        }
-                        addMessage('System', null, {
-                            messageType: 'tool-result',
-                            data: { toolName: toolCall.function.name, result: response.result }
-                        });
+                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                         conversationHistory.push({
                             role: 'tool',
                             tool_call_id: toolCall.id,
@@ -561,89 +431,56 @@ document.addEventListener('DOMContentLoaded', () => {
             // activeStreamingToolCall is already null if it was processed earlier in this function.
             // toolCallWasHandledInThisStream is a local var and will be gone.
 
-        } else if (request.action === 'showSmartClipboardUI') {
-            if (smartClipboardNotice && smartClipboardTextPreview && request.copiedText) {
-                fullCopiedText = request.copiedText;
-                const previewText = request.copiedText.length > 70 ? request.copiedText.substring(0, 70) + "..." : request.copiedText;
-                smartClipboardTextPreview.textContent = `Copied: "${previewText}"`;
-                smartClipboardNotice.style.display = 'flex'; // Use flex for better alignment of items
-                smartClipboardNotice.style.alignItems = 'center';
-                smartClipboardNotice.style.justifyContent = 'center';
-            }
         } else if (request.action === 'streamApiToolCallChunk') {
             console.log("Chat: streamApiToolCallChunk handler invoked.", request);
+            // console.log("Chat: Received streamApiToolCallChunk:", request.toolCallChunk); // This is duplicative of the log above
+            console.log("Chat: streamApiToolCallChunk - Pre-condition check:", {
+                currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
+                currentStreamingContentElementExists: !!currentStreamingContentElement,
+                requestToolCallChunk: request.toolCallChunk, // Keep this for visual inspection
+                isToolCallChunkArray: Array.isArray(request.toolCallChunk),
+                typeofToolCallChunk: typeof request.toolCallChunk,
+                toolCallChunkLength: (request.toolCallChunk && typeof request.toolCallChunk.length !== 'undefined') ? request.toolCallChunk.length : 'length property is undefined or chunk is null',
+                condition_currentStreamingMessageDiv: !!currentStreamingMessageDiv,
+                condition_currentStreamingContentElement: !!currentStreamingContentElement,
+                condition_requestToolCallChunk: !!request.toolCallChunk,
+                condition_requestToolCallChunkLengthGreaterThanZero: !!(request.toolCallChunk && request.toolCallChunk.length > 0)
+            });
             if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
-                const toolCallDelta = request.toolCallChunk[0];
+                console.log("Chat: streamApiToolCallChunk - DEBUG: Entered 'if' block for processing toolCallChunk.");
+                const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
+                console.log("Chat: Extracted toolCall from chunk:", toolCall);
+                activeStreamingToolCall = toolCall; // Store the active tool call
+                console.log("Chat: activeStreamingToolCall has been set to:", activeStreamingToolCall);
 
-                if (!activeStreamingToolCall) {
-                    // First chunk of a new tool call
-                    activeStreamingToolCall = {
-                        id: toolCallDelta.id,
-                        function: {
-                            name: toolCallDelta.function.name || '',
-                            arguments: toolCallDelta.function.arguments || ''
+                // Clear previous accumulated text from display
+                // accumulatedStreamedText = ""; // Preserve accumulated text
+                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
+
+                // Asynchronously fetch tool definition to update UI for MCP tool
+                (async () => {
+                    const allToolsStream = await getTools();
+                    const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
+                    if (currentStreamingContentElement) { // Check if element still exists
+                        if (currentToolDefStream && currentToolDefStream.mcpServerUrl) {
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**`);
+                        } else {
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
                         }
-                    };
-                    // Clear previous accumulated text from display
-                    currentStreamingContentElement.innerHTML = '';
-                } else {
-                    // Subsequent chunks, append arguments
-                    if (toolCallDelta.function && toolCallDelta.function.arguments) {
-                        activeStreamingToolCall.function.arguments += toolCallDelta.function.arguments;
+                        // chatArea.scrollTop = chatArea.scrollHeight; // Already present after this block
                     }
-                }
+                })();
+                console.log("Chat: UI updated to show 'Using tool' message.");
 
-                // Update UI with partial arguments (optional, but good for responsiveness)
-                let partialArgsDisplay = activeStreamingToolCall.function.arguments;
-                try {
-                    // Try to parse and prettify if it's valid JSON so far
-                    const parsedPartial = JSON.parse(partialArgsDisplay);
-                    partialArgsDisplay = JSON.stringify(parsedPartial, null, 2);
-                } catch (e) {
-                    // If not valid JSON yet, just display as plain text
-                }
+                // Potentially, actual arguments could be streamed. For now, just the name.
+                // If toolCall.function.arguments is a string of streamed arguments, append it:
+                // currentStreamingContentElement.innerHTML += marked.parse("```\n" + toolCall.function.arguments + "\n```");
 
-                currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${activeStreamingToolCall.function.name}**\nArguments:\n\`\`\`json\n${partialArgsDisplay}\n\`\`\``);
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
-        } else if (request.action === 'startChatWithPdfContent') {
-            console.log("Chat: startChatWithPdfContent received", request);
-            clearChat(); // Clear existing chat
-            chatMainArea.style.display = 'flex';
-            oneoffInstructionArea.style.display = 'none';
-
-            const pdfName = request.pdfUrl ? request.pdfUrl.substring(request.pdfUrl.lastIndexOf('/') + 1) : "the PDF";
-            addMessage('System', `Chatting with content from PDF: **${pdfName}**`);
-
-            // Display a portion of the PDF text, or a summary prompt
-            const initialDisplayPrompt = `The following text has been extracted from ${pdfName}. You can now ask questions about it or request a summary.`;
-            addMessage('User', initialDisplayPrompt + "\n\n--- Start of PDF Content ---\n" + request.pdfText.substring(0, 2000) + (request.pdfText.length > 2000 ? "\n... (content truncated for initial display)" : "") + "\n--- End of PDF Content ---");
-
-            // Add the full PDF text to conversation history for the LLM, prefixed by an instruction.
-            // This will be the first "user" message in this new conversation.
-            conversationHistory.push({
-                role: 'user',
-                content: `The following text was extracted from the PDF at ${request.pdfUrl}:\n\n${request.pdfText}\n\nPlease act as an assistant that can answer questions about this document.`
-            });
-
-            userInput.placeholder = `Ask something about ${pdfName}...`;
-            userInput.focus();
-            showToast(`PDF content loaded. Ready to chat about ${pdfName}.`);
-
-        } else if (request.action === 'displayErrorInChat') {
-            console.log("Chat: displayErrorInChat received", request);
-            const { messageDiv } = addMessage('System', `Error: ${request.errorMessage}`);
-            if (messageDiv) {
-                messageDiv.classList.add('system-error-message');
-            }
-            showToast(`Error: ${request.errorMessage}`);
-            // Ensure chat area is visible if an error occurs when it might be hidden
-            chatMainArea.style.display = 'flex';
-            oneoffInstructionArea.style.display = 'none';
-
         } else if (request.action === 'handleToolCallResponse') {
             console.log("Chat: handleToolCallResponse received", request);
-            chatMainArea.style.display = 'flex';
+            chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -664,19 +501,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     const allToolsNonStream = await getTools(); // Already async
                     const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
 
-                        let argsDisplay = "";
-                        try {
-                            const argsObject = JSON.parse(toolCall.function.arguments);
-                            argsDisplay = `\n\`\`\`json\n${JSON.stringify(argsObject, null, 2)}\n\`\`\``;
-                        } catch (e) {
-                            argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
+                    if (toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl) {
+                        addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
+                    } else {
+                        addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
                     }
-
-                        const messagePrefix =
-                            `⚙️ Requesting execution for tool: **${toolCall.function.name}**`;
-
-                        addMessage('System', `${messagePrefix}\nArguments:${argsDisplay}`);
-
                     chrome.runtime.sendMessage({
                         action: 'executePromptPaulTool',
                         toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
@@ -688,16 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
                         } else {
-                            let resultDisplay = "";
-                            try {
-                                resultDisplay = `\n\`\`\`json\n${JSON.stringify(response.result, null, 2)}\n\`\`\``;
-                            } catch (e) {
-                                resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
-                            }
-                            addMessage('System', null, {
-                            messageType: 'tool-result',
-                            data: { toolName: toolCall.function.name, result: response.result }
-                        });
+                            addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                             conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
                             makeApiCall();
                         }
@@ -724,7 +544,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearChat() {
             chatArea.innerHTML = '';
             conversationHistory = [];
-            chatMainArea.style.display = 'flex';
+            chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             showToast('Chat history cleared');
     }
@@ -744,41 +564,102 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function getTools() {
-        console.log("Chat: getTools - Starting to fetch and process tool definitions from tool_registry.json.");
-        try {
-            const response = await fetch('tool_registry.json');
-            if (!response.ok) {
-                throw new Error(`Failed to fetch tool registry: ${response.statusText}`);
+        console.log("Chat: getTools - Starting to fetch and process tool definitions.");
+        const { promptPaulTools: definedTools = [] } = await new Promise((resolve) => {
+            chrome.storage.local.get(['promptPaulTools'], resolve);
+        });
+        console.log("Chat: getTools - Defined tools from storage:", definedTools);
+
+        const processedTools = [];
+
+        for (const tool of definedTools) {
+            let parametersForLlm = {};
+            let source = 'manual'; // Default source
+
+            if (tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "") {
+                console.log(`Chat: getTools - Processing MCP tool: ${tool.name} from ${tool.mcpServerUrl}`);
+                try {
+                    const response = await new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage(
+                            { action: 'getDiscoveredMcpToolSchema', mcpServerUrl: tool.mcpServerUrl, toolName: tool.name },
+                            (res) => {
+                                if (chrome.runtime.lastError) {
+                                    console.error(`Chat: getTools - Error getting schema for MCP tool ${tool.name}:`, chrome.runtime.lastError.message);
+                                    // Resolve with failure to allow fallback, rather than rejecting the whole getTools
+                                    resolve({ success: false, error: chrome.runtime.lastError.message });
+                                    return;
+                                }
+                                resolve(res);
+                            }
+                        );
+                    });
+
+                    if (response && response.success && response.toolSchema) {
+                        console.log(`Chat: getTools - Successfully fetched schema for MCP tool ${tool.name}:`, response.toolSchema);
+                        // MCP standard is often "inputSchema" for parameters.
+                        // The discoveredTool object itself might be the schema {name, description, inputSchema}
+                        parametersForLlm = response.toolSchema.inputSchema || {}; // Ensure it's an object
+                        source = 'mcp_discovered';
+                        // Use discovered name and description if available and different, or stick to stored ones.
+                        // For now, we assume the 'name' matches and 'description' from storage is fine,
+                        // primarily focusing on 'inputSchema' for 'parameters'.
+                    } else {
+                        console.warn(`Chat: getTools - Failed to get dynamic schema for MCP tool ${tool.name}. Error: ${response ? response.error : 'Unknown error'}. Falling back to manual config.`);
+                        source = 'manual_fallback_mcp';
+                        if (tool.parameters) {
+                            try {
+                                parametersForLlm = JSON.parse(tool.parameters);
+                            } catch (e) {
+                                console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name}:`, e);
+                                addMessage('System', `Error: Invalid JSON Schema (fallback) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                                parametersForLlm = {}; // Keep it an empty object if parsing fails
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Chat: getTools - Exception while fetching schema for MCP tool ${tool.name}:`, error);
+                    source = 'manual_fallback_mcp_exception';
+                    if (tool.parameters) {
+                        try {
+                            parametersForLlm = JSON.parse(tool.parameters);
+                        } catch (e) {
+                            console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name} after exception:`, e);
+                             addMessage('System', `Error: Invalid JSON Schema (fallback after exception) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                            parametersForLlm = {};
+                        }
+                    }
+                }
+            } else { // Not an MCP tool, use manual parameters
+                console.log(`Chat: getTools - Processing non-MCP tool: ${tool.name}`);
+                if (tool.parameters) {
+                    try {
+                        parametersForLlm = JSON.parse(tool.parameters);
+                    } catch (e) {
+                        console.error(`Chat: getTools - Error parsing parameters for manual tool ${tool.name}:`, e);
+                        addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                        parametersForLlm = {}; // Keep it an empty object if parsing fails
+                    }
+                }
             }
-            const definedTools = await response.json();
-            console.log("Chat: getTools - Tools from registry:", definedTools);
 
-            const processedTools = definedTools.map(tool => ({
-                ...tool,
-                parametersForLlm: tool.inputSchema || {},
-                source: 'manual'
-            }));
-
-            console.log("Chat: getTools - Finished processing tools. Result:", processedTools);
-            return processedTools;
-        } catch (error) {
-            console.error("Chat: getTools - Error fetching or processing tool registry:", error);
-            addMessage('System', `Error: Could not load tool definitions. ${error.message}`);
-            return []; // Return empty array on error
+            processedTools.push({
+                ...tool, // Spread original tool properties
+                parametersForLlm: parametersForLlm, // Add the processed parameters
+                source: source // Add the source for debugging/info
+            });
         }
+        console.log("Chat: getTools - Finished processing tools. Result:", processedTools);
+        return processedTools;
     }
 
-    async function makeApiCall(userMessage = null) { // Removed tool_choice from parameters
+    async function makeApiCall(userMessage = null, tool_choice = 'none') { // Added tool_choice, default to 'none'
         try {
             const config = await getApiConfig();
             const allAvailableTools = await getTools();
 
             if (userMessage) {
                 addMessage('User', userMessage);
-                const now = new Date();
-                const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
-                const messageWithDateTime = `${currentDateTime}\n\n${userMessage}`;
-                conversationHistory.push({ role: 'user', content: messageWithDateTime });
+                conversationHistory.push({ role: 'user', content: userMessage });
             }
             
             // START SHARED API REQUEST PREP LOGIC
@@ -789,7 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return {
                     type: 'function',
                     function: {
-                        name: tool.functionName,
+                        name: tool.name,
                         description: tool.description,
                         parameters: tool.parametersForLlm // Directly use the pre-processed parameters
                     }
@@ -797,7 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).filter(tool => tool !== null); // filter might not be strictly necessary if getTools ensures valid entries or empty schemas
 
             let toolChoicePayload = {};
-            const current_tool_choice_option = formattedTools.length > 0 ? 'auto' : 'none'; // Default to auto if tools are available
+            const current_tool_choice_option = tool_choice; // Parameter to this function
 
             if (current_tool_choice_option === 'none' || formattedTools.length === 0) {
                 toolChoicePayload = {};
@@ -955,20 +836,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const allToolsNonStream = await getTools(); // Already async
                         const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
 
-                        let argsDisplay = "";
-                        try {
-                            const argsObject = JSON.parse(toolCall.function.arguments);
-                            argsDisplay = `\n\`\`\`json\n${JSON.stringify(argsObject, null, 2)}\n\`\`\``;
-                        } catch (e) {
-                            argsDisplay = `\n\`\`\`text\n${toolCall.function.arguments}\n\`\`\``;
+                        if (toolDefinitionNonStream && toolDefinitionNonStream.mcpServerUrl) {
+                            addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
+                        } else {
+                            addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
                         }
-
-                        const messagePrefix =
-                            `⚙️ Requesting execution for tool: **${toolCall.function.name}**`;
-
-                        addMessage('System', `${messagePrefix}\nArguments:${argsDisplay}`);
-
-                        // const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
+                        const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
                         chrome.runtime.sendMessage({
                             action: 'executePromptPaulTool',
                             toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
@@ -978,16 +851,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
                              } else {
-                                let resultDisplay = "";
-                                try {
-                                    resultDisplay = `\n\`\`\`json\n${JSON.stringify(response.result, null, 2)}\n\`\`\``;
-                                } catch (e) {
-                                    resultDisplay = `\n\`\`\`text\n${String(response.result)}\n\`\`\``;
-                                }
-                                addMessage('System', null, {
-                            messageType: 'tool-result',
-                            data: { toolName: toolCall.function.name, result: response.result }
-                        });
+                                addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
                                 console.log("Chat: Preparing to call makeApiCall after tool execution (makeApiCall non-streaming). Current conversationHistory (last 3 messages):");
                                 console.log(conversationHistory.slice(-3));
@@ -997,14 +861,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     })();
                 } else if (responseMessage.content) {
                     addMessage('LLM', responseMessage.content);
-                    userInput.disabled = false;
-                    sendButton.disabled = false;
-                    userInput.focus();
                 } else {
                      addMessage('System', "Received an empty or unexpected response from LLM.");
-                     userInput.disabled = false;
-                     sendButton.disabled = false;
-                     userInput.focus();
                 }
             }
         } catch (error) {
@@ -1026,10 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const config = await getApiConfig();
             const prompt = instruction + '\n\n' + selectedText;
-            const now = new Date();
-            const currentDateTime = `Current date and time: ${now.toLocaleString()}`;
-            const messageWithDateTime = `${currentDateTime}\n\n${prompt}`;
-            let oneOffHistory = [{ role: 'user', content: messageWithDateTime }];
+            let oneOffHistory = [{ role: 'user', content: prompt }];
 
             const requestBody = {
                 model: config.modelName,
@@ -1042,7 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Display user message in main chat UI
             addMessage('User', instruction + "\n\n[Selected text: " + selectedText.substring(0, 50) + (selectedText.length > 50 ? "..." : "") + "]");
             // Also add to main conversation history for context
-            conversationHistory.push({role: 'user', content: messageWithDateTime});
+            conversationHistory.push({role: 'user', content: prompt});
 
             let effectiveEnableStreaming = enableStreaming;
             // As per subtask, check global conversationHistory, not oneOffHistory for tool messages.
@@ -1056,7 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (effectiveEnableStreaming) {
                 requestBody.stream = true;
                 oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'flex';
+                chatMainArea.style.display = 'block';
                 userInput.disabled = true; sendButton.disabled = true;
 
                 const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
@@ -1094,7 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         userInput.disabled = false; sendButton.disabled = false;
                         instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
                          oneoffInstructionArea.style.display = 'none';
-                         chatMainArea.style.display = 'flex';
+                         chatMainArea.style.display = 'block';
                         userInput.focus();
                         break;
                     }
@@ -1146,7 +1001,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedTextDiv.textContent = '';
                 selectedText = null;
                 oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'flex';
+                chatMainArea.style.display = 'block';
             }
         } catch (error) {
             // Show more detailed error messages
@@ -1175,7 +1030,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.content) {
                         const prompt = "Summarize the following text:\n\n" + response.content;
                         // Ensure chat area is visible
-                        chatMainArea.style.display = 'flex';
+                        chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
                         makeApiCall(prompt);
                         showToast('Tab content received, summarizing...');
@@ -1190,8 +1045,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
-
-
 
     // --- Explain Tab Button Functionality --- (duplicate declaration removed)
 
@@ -1238,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     button.addEventListener('click', () => {
                         // Ensure chat area is visible
-                        chatMainArea.style.display = 'flex';
+                        chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
 
                         // Retrieve the instruction object
@@ -1315,140 +1168,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial rendering of pinned actions
     renderPinnedActions();
 
-    // Smart Clipboard Button Handlers
-    if (smartClipboardSendButton) {
-        smartClipboardSendButton.addEventListener('click', () => {
-            if (fullCopiedText) {
-                userInput.value = fullCopiedText;
-                userInput.focus();
-                // Optionally, auto-send: sendMessage();
-            }
-            if (smartClipboardNotice) smartClipboardNotice.style.display = 'none';
-            fullCopiedText = ''; // Clear after use
-        });
-    }
-
-    if (smartClipboardDismissButton) {
-        smartClipboardDismissButton.addEventListener('click', () => {
-            if (smartClipboardNotice) smartClipboardNotice.style.display = 'none';
-            fullCopiedText = ''; // Clear
-        });
-    }
-
-    // Hide smart clipboard notice if user starts typing or sends a message
-    userInput.addEventListener('input', () => {
-        if (smartClipboardNotice && smartClipboardNotice.style.display !== 'none') {
-            smartClipboardNotice.style.display = 'none';
-            fullCopiedText = '';
-        }
-    });
-
-
     // The chrome.storage.onChanged listener above has been updated to include this logic.
     // No need for a separate listener here.
-
-    // --- Dynamic Quick Actions ---
-    const dynamicActionsContainer = document.getElementById('dynamic-actions-container');
-
-    function clearDynamicActions() {
-        if (dynamicActionsContainer) {
-            dynamicActionsContainer.innerHTML = '';
-        }
-    }
-
-    async function fetchAndSummarizeReadme(repoOwner, repoName) {
-        showToast(`Fetching README for ${repoOwner}/${repoName}...`);
-        // Try common default branches: main, master
-        const branches = ['main', 'master'];
-        let readmeContent = null;
-        let readmeUrl = '';
-
-        for (const branch of branches) {
-            const url = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/README.md`;
-            try {
-                const response = await fetch(url);
-                if (response.ok) {
-                    readmeContent = await response.text();
-                    readmeUrl = url;
-                    break;
-                }
-            } catch (error) {
-                console.warn(`Chat.js: Error fetching README from ${url}:`, error);
-            }
-        }
-
-        if (readmeContent) {
-            showToast('README content fetched. Summarizing...');
-            const prompt = `Please summarize the following README content from the GitHub repository ${repoOwner}/${repoName} (source: ${readmeUrl}):\n\n${readmeContent}`;
-            makeApiCall(prompt);
-        } else {
-            showToast(`Could not fetch README for ${repoOwner}/${repoName}. Looked in branches: ${branches.join(', ')}.`);
-            addMessage('System', `Failed to fetch README for ${repoOwner}/${repoName}.`);
-        }
-    }
-
-    function renderDynamicGitHubActions(tabUrlStr) {
-        clearDynamicActions();
-        if (!dynamicActionsContainer || !tabUrlStr) return;
-
-        try {
-            const tabUrl = new URL(tabUrlStr);
-            if (tabUrl.hostname === 'github.com') {
-                const pathParts = tabUrl.pathname.split('/').filter(part => part.length > 0);
-                if (pathParts.length >= 2) {
-                    const repoOwner = pathParts[0];
-                    const repoName = pathParts[1];
-
-                    const summarizeReadmeBtn = document.createElement('button');
-                    summarizeReadmeBtn.textContent = 'R'; // Short for Readme
-                    summarizeReadmeBtn.title = `Summarize README for ${repoOwner}/${repoName}`;
-                    summarizeReadmeBtn.classList.add('quick-action-button', 'dynamic-action-item'); // Reuse existing styles
-                    summarizeReadmeBtn.style.backgroundColor = '#2da44e'; // GitHub-like green
-
-                    summarizeReadmeBtn.addEventListener('click', () => {
-                        fetchAndSummarizeReadme(repoOwner, repoName);
-                    });
-                    dynamicActionsContainer.appendChild(summarizeReadmeBtn);
-                }
-            }
-        } catch (e) {
-            console.error("Chat.js: Error parsing tab URL for dynamic actions:", e);
-        }
-    }
-
-    function requestTabUrlAndRenderDynamicActions() {
-        chrome.runtime.sendMessage({ action: 'getTabUrlForDynamicActions' }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.error("Chat.js: Error getting tab URL for dynamic actions:", chrome.runtime.lastError.message);
-                clearDynamicActions();
-                return;
-            }
-            if (response && response.success && response.url) {
-                renderDynamicGitHubActions(response.url);
-            } else {
-                console.warn("Chat.js: Failed to get tab URL for dynamic actions.", response ? response.error : "No response");
-                clearDynamicActions();
-            }
-        });
-    }
-
-    // Initial call and listen for tab changes (simplified)
-    // A more robust solution would involve background.js notifying chat.js of tab URL changes
-    // if the chat panel is open. For now, call it on load.
-    requestTabUrlAndRenderDynamicActions();
-
-    // Also, when the chat window gets focus, it might be good to refresh dynamic actions
-    window.addEventListener('focus', requestTabUrlAndRenderDynamicActions);
-
-    // Listen for messages from background script that might indicate a tab change
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === 'activeTabChangedForChat') { // Assuming background sends this
-            if (request.tabUrl) {
-                renderDynamicGitHubActions(request.tabUrl);
-            } else {
-                clearDynamicActions();
-            }
-        }
-    });
-
 });

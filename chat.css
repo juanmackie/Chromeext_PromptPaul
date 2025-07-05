@@ -1,76 +1,3 @@
-.sandbox-status {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background-color: var(--ext-muted);
-    margin-left: auto;
-}
-
-.sandbox-status.running {
-    background-color: var(--ext-chart-2);
-}
-
-.stop-sandbox-button {
-    background-color: var(--ext-destructive);
-    color: var(--ext-destructive-foreground);
-    border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: var(--ext-radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    margin-top: 0.5rem;
-}
-
-/* Tool Marketplace Styles */
-#tool-marketplace-container {
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-    gap: 1rem;
-    overflow-y: auto;
-    height: 100%;
-    border-right: 1px solid var(--ext-border);
-}
-
-.tool-card {
-    background-color: var(--ext-card);
-    border: 1px solid var(--ext-border);
-    border-radius: var(--ext-radius-md);
-    padding: 1rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.tool-card:hover {
-    background-color: var(--ext-accent);
-    color: var(--ext-accent-foreground);
-}
-
-.tool-card-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-}
-
-.tool-icon {
-    width: 24px;
-    height: 24px;
-}
-
-.tool-name {
-    font-weight: 600;
-}
-
-.tool-description {
-    font-size: 0.9rem;
-    color: var(--ext-muted-foreground);
-}
-
-.error-message {
-    color: var(--ext-destructive);
-}
-
 /* Extension Theme Variables */
 :root {
   /* Light theme colors */
@@ -108,7 +35,7 @@
   --ext-sidebar-primary-foreground: #f3faff;
   --ext-sidebar-accent: #00adba;
   --ext-sidebar-accent-foreground: #000001;
-  --ext-sidebar-border: #f3faff;
+  --ext-sidebar-border: #bdd1e0;
   --ext-sidebar-ring: #0089d0;
   
   /* Layout */
@@ -131,7 +58,7 @@
 .dark-theme, /* This class is used in options.html and options.js */
 .ext-dark { /* General utility class */
   --ext-background: #000408;
-  --ext-foreground: #373737;
+  --ext-foreground: #c1e3fc;
   --ext-card: #010d16;
   --ext-card-foreground: #b1d3ec;
   --ext-popover: #010d16;
@@ -227,142 +154,70 @@ body {
     background-color: var(--ext-background); /* Ensure chat container also uses theme */
 }
 
-/* Chat area specific styles */
-#chat-area {
-    flex-grow: 1;
-    overflow-y: auto;
-    padding: 1rem;
-    padding-bottom: 80px; /* Add padding to make space for fixed input area */
-    border-bottom: 1px solid var(--ext-border); /* Use theme variable */
-    /* height: calc(100% - 60px); */ /* Let flexbox handle height */
-    display: flex;
-    flex-direction: column;
-    background-color: transparent !important; /* Ensure it doesn't override body background */
-}
-
-/* Input area specific styles */
-#input-area {
-    display: flex;
-    padding: 0.5rem;
-    padding-bottom: 1rem;
-    background-color: var(--ext-card);
-    width: 100%;
-    box-sizing: border-box;
-    border-top: 1px solid var(--ext-border);
-    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    z-index: 10;
-}
-
-#user-input {
-    flex-grow: 1;
-    margin-right: 0.5rem;
-    padding: 0.6rem 1rem; /* From original inline style */
-    border: 2px solid var(--ext-border); /* Use theme variable */
-    border-radius: 0.6rem; /* From original inline style, consider --ext-radius */
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); /* Could be themed if needed */
-    background-color: var(--ext-input);
-    color: #919191(--ext-foreground);
-}
-
-/* General button styling in chat - base for send, clear etc. */
-/* This was in inline style, now unified here */
-.chat-container button {
-    background-color: var(--ext-primary);
-    color: var(--ext-primary-foreground);
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: var(--ext-radius-md); /* Use theme variable */
-    cursor: pointer;
-    font-weight: 500; /* From original inline style */
-    box-shadow: var(--ext-shadow-sm); /* Use theme variable */
-}
-.chat-container button:hover {
-    opacity: 0.9;
-}
-
-
 /* Dark Theme Overrides */
 /* The .dark-theme class is applied to the body by themeUtils.js */
-body[data-theme="dark"] { /* Using data-theme as per themeUtils.js */
+body.dark-theme {
     /* All dark theme variables are already defined in .ext-dark, which will be on the body */
 }
 
-body[data-theme="dark"] #quick-actions-sidebar {
-    /* Already covered by --ext-sidebar variables */
+body.dark-theme #quick-actions-sidebar {
+    /* Already covered by --ext-sidebar variables when .ext-dark is on body */
 }
 
-body[data-theme="dark"] .quick-action-button {
-    /* Already covered by --ext-sidebar-primary etc. */
+body.dark-theme .quick-action-button {
+    /* Already covered by --ext-sidebar-primary etc. when .ext-dark is on body */
 }
 
-body[data-theme="dark"] .quick-action-button:hover {
-    /* Already covered by --ext-sidebar-accent etc. */
+body.dark-theme .quick-action-button:hover {
+    /* Already covered by --ext-sidebar-accent etc. when .ext-dark is on body */
 }
 
-body[data-theme="dark"] .chat-container,
-body[data-theme="dark"] #input-area,
-body[data-theme="dark"] .message,
-body[data-theme="dark"] .llm-message, /* Will be more specific below */
-body[data-theme="dark"] .user-message { /* Will be more specific below */
-    /* General inheritance is fine, specific overrides follow */
+body.dark-theme .chat-container,
+body.dark-theme #input-area,
+body.dark-theme .message,
+body.dark-theme .llm-message,
+body.dark-theme .user-message {
+    /* These will inherit from body's --ext-background, --ext-foreground, --ext-border */
+    /* Specific message backgrounds might need adjustment if they shouldn't be card-like */
 }
 
-body[data-theme="dark"] #chat-area {
-    border-bottom-color: var(--ext-border);
+body.dark-theme #chat-area {
+    /* Should inherit --ext-background */
 }
 
-body[data-theme="dark"] #input-area {
-    background-color: var(--ext-card);
-    border-top-color: var(--ext-border);
-}
-body[data-theme="dark"] #user-input {
-    background-color: var(--ext-input);
-    color: var(--ext-foreground);
-    border-color: var(--ext-border);
-}
-
-body[data-theme="dark"] .llm-message {
-    background-color: var(--ext-card) !important;
+body.dark-theme .llm-message {
+    background-color: var(--ext-card) !important; /* Example: Use card background for messages */
     color: var(--ext-card-foreground) !important;
     border: 1px solid var(--ext-border) !important;
 }
 
-body[data-theme="dark"] .user-message {
-    background-color: var(--ext-primary) !important;
+body.dark-theme .user-message {
+    background-color: var(--ext-primary) !important; /* Example: User messages with primary color */
     color: var(--ext-primary-foreground) !important;
-    border: 1px solid var(--ext-ring) !important; /* Or var(--ext-primary) if ring is too contrasted */
+    border: 1px solid var(--ext-ring) !important;
 }
 
-body[data-theme="dark"] .chat-container button {
-    background-color: var(--ext-primary);
-    color: var(--ext-primary-foreground);
+body.dark-theme button {
+    /* General buttons will use --ext-primary and --ext-primary-foreground */
 }
-body[data-theme="dark"] #send-button {
-     background-color: var(--ext-primary); /* Dark theme send button */
-     color: var(--ext-primary-foreground);
+body.dark-theme #send-button {
+    /* Can be more specific if needed, or rely on general button styling */
 }
 
-body[data-theme="dark"] #clear-button {
-    background-color: var(--ext-destructive) !important;
-    color: var(--ext-destructive-foreground) !important;
-}
-body[data-theme="dark"] #submitBtn { /* One-off instruction submit */
-    background-color: var(--ext-primary);
-    color: var(--ext-primary-foreground);
+body.dark-theme #clear-button {
+    background-color: var(--ext-destructive) !important; /* Updated */
+    color: var(--ext-destructive-foreground) !important; /* Updated */
 }
 
-body[data-theme="dark"] pre,
-body[data-theme="dark"] code { /* General pre/code, not specific to messages yet */
-    background-color: var(--ext-muted) !important;
+body.dark-theme pre,
+body.dark-theme code {
+    background-color: var(--ext-muted) !important; /* Example: Using muted for code blocks */
     color: var(--ext-muted-foreground) !important;
 }
 
-body[data-theme="dark"] ::selection {
-    background: var(--ext-accent);
-    color: var(--ext-accent-foreground) !important;
+body.dark-theme ::selection {
+    background: var(--ext-accent); /* Updated */
+    color: var(--ext-accent-foreground) !important; /* Updated */
 }
 
 .light { /* This class seems to be for Material Design tokens, not directly theme related. Keep as is or review separately. */
@@ -417,11 +272,46 @@ body[data-theme="dark"] ::selection {
   --md-sys-color-surface-container-highest: rgb(222 227 229);
 }
 
-/* #chat-area, #input-area, #user-input rules are now defined above the dark theme overrides */
-/* Ensure their base styles use --ext variables or appropriate fallbacks */
+#chat-area {
+    position: relative;
+    height: calc(100vh - 150px); /* Account for input area height */
+    overflow-y: auto; /* Single scrollable area */
+    scroll-behavior: smooth;
+    z-index: 50;
+    padding-bottom: 20px; /* Reduced padding since height is calculated */
+}
 
-#toast-container { /* This seems to be a more generic toast container, ensure it's styled with theme vars if needed */
-    position: absolute; /* Was fixed, but absolute might be better if chat-container is the offset parent */
+#input-area {
+    display: flex;
+    padding: 0.5rem;
+    padding-bottom: 1rem;
+    background-color: var(--surface-color);
+    position: fixed; /* Changed back to fixed */
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+    z-index: 100; /* Higher z-index to ensure it's above other elements */
+    pointer-events: auto !important; /* Ensure clicks are registered */
+}
+
+#user-input {
+    flex-grow: 1;
+    margin-right: 0.5rem;
+    padding: 0.6rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 1.5rem;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    pointer-events: auto !important;
+}
+
+#send-button, #clear-button {
+    pointer-events: auto !important; /* Explicitly enable pointer events */
+}
+
+#toast-container {
+    position: absolute;
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
@@ -465,7 +355,7 @@ body[data-theme="dark"] ::selection {
 }
 
 .llm-message {
-    background-color: #00b9ff; /* Light grey for LLM messages */
+    background-color: #dbdbdb; /* Light grey for LLM messages */
     align-self: flex-end; /* Align LLM messages to the right */
 }
 
@@ -712,149 +602,3 @@ body.sidebar-open #chat-area {
 .ext-border { border-color: var(--ext-border); }
 .ext-rounded { border-radius: var(--ext-radius); }
 .ext-shadow { box-shadow: var(--ext-shadow); }
-
-/* Styles for tool arguments/results in system messages */
-.tool-result-details {
-    margin-top: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    padding: 5px;
-}
-
-.tool-result-details summary {
-    cursor: pointer;
-    font-weight: bold;
-}
-
-.tool-result-container {
-    margin-top: 5px;
-}
-
-.tool-result-toggle {
-    margin-bottom: 5px;
-}
-
-.tool-result-pretty {
-    background-color: #f5f5f5;
-    padding: 10px;
-    border-radius: 4px;
-}
-
-.tool-result-raw {
-    background-color: #333;
-    color: #fff;
-    padding: 10px;
-    border-radius: 4px;
-}
-
-body.dark-theme .tool-result-pretty {
-    background-color: #222;
-    color: #fff;
-}
-
-body.dark-theme .tool-result-raw {
-    background-color: #111;
-}
-
-body.dark-theme .tool-result-details {
-    border-color: #555;
-}
-.message.system-message pre {
-    background-color: var(--ext-input); /* Use input background for slight differentiation */
-    color: var(--ext-foreground);
-    padding: 0.5rem;
-    border-radius: var(--ext-radius-sm);
-    border: 1px solid var(--ext-border);
-    white-space: pre-wrap;       /* CSS3 */
-    word-wrap: break-word;       /* IE 5.5+ */
-    max-height: 200px;           /* Limit height for long content */
-    overflow-y: auto;            /* Add scroll for overflow */
-    margin-top: 0.5rem;
-    font-size: 0.85em; /* Slightly smaller font for pre */
-}
-
-body.dark-theme .message.system-message pre,
-.ext-dark .message.system-message pre {
-    background-color: var(--ext-card); /* Match smart-clipboard's background */
-    color: var(--ext-card-foreground);
-    border: 1px solid var(--ext-border); /* Match smart-clipboard's border */
-    border-radius: var(--ext-radius-sm);
-}
-
-
-/* New quick action button styles */
-#process-tab-button { /* Updated ID */
-    width: 40px;
-    height: 40px;
-    margin-bottom: 5px;
-    padding: 0;
-    border: 1px solid var(--ext-sidebar-border);
-    border-radius: 5px;
-    background-color: var(--ext-sidebar-primary);
-    color: var(--ext-sidebar-primary-foreground);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.4em;
-    font-weight: bold;
-    overflow: hidden;
-    box-sizing: border-box;
-}
-
-#process-tab-button:hover { /* Updated ID */
-    background-color: var(--ext-sidebar-accent);
-    border-color: var(--ext-sidebar-ring);
-}
-
-/* Smart Clipboard Notice Styles */
-#smart-clipboard-notice {
-    display: none; /* Hidden by default */
-    padding: 10px;
-    background-color: var(--ext-card);
-    border: 1px solid var(--ext-border);
-    border-radius: 1.5rem;
-    text-align: center;
-    font-size: 0.9em;
-    color: var(--ext-card-foreground);
-    position: relative; /* To keep it in flow, above input area */
-    z-index: 90; /* Below input area's z-index if input is fixed, but above chat area */
-}
-
-#smart-clipboard-notice span {
-    margin-right: 10px;
-}
-
-#smart-clipboard-notice button {
-    /* Using general .extension-button styles from options.html for consistency */
-    /* Specific overrides if needed: */
-    padding: 5px 10px;
-    font-size: 0.9em;
-    margin-left: 5px;
-}
-
-/* Ensure dark theme variables apply */
-body[data-theme="dark"] #smart-clipboard-notice, /* Use data-theme selector */
-.ext-dark #smart-clipboard-notice { /* Keep .ext-dark for broader compatibility if used elsewhere */
-    background-color: var(--ext-card);
-    border-color: var(--ext-border);
-    color: var(--ext-card-foreground);
-}
-
-/* Styling for System Error Messages */
-.message.system-message.system-error-message {
-    background-color: var(--ext-destructive) !important;
-    color: var(--ext-destructive-foreground) !important;
-    border-left: 3px solid var(--ext-destructive-foreground) !important; /* Make border contrast */
-    font-style: normal; /* Override italic for errors */
-    font-weight: 500;
-}
-
-/* Dark theme specific for system error messages, if needed, but above should cover it due to !important */
-body[data-theme="dark"] .message.system-message.system-error-message {
-    background-color: var(--ext-card) !important;
-    border: 1px solid var(--ext-border) !important;
-    color: var(--ext-card-foreground) !important;
-    /* color: var(--ext-destructive-foreground) !important; */
-    /* border-left-color: var(--ext-destructive-foreground) !important; */
-}

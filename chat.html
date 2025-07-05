@@ -5,53 +5,92 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
-        /* Inline styles from chat.html are being moved to chat.css and will use --ext variables */
-        /* This style block can be significantly reduced or removed if all styles are in chat.css */
+        :root {
+          --primary-color: #306794;
+          --surface-color: #ffffff;
+          --background-color: #f8fafc;
+          --text-color: #1e293b;
+          --border-color: #e2e8f0;
+          --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+          --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1);
+          --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
+        }
 
-        body { /* Basic body setup, theme variables will take over colors */
+        body {
             font-family: 'Inter', sans-serif;
             height: 100vh; /* Use viewport height */
             width: 100%; /* Make width responsive */
             display: flex;
             flex-direction: column;
-            /* background-color will be set by --ext-background via chat.css */
-            /* color will be set by --ext-foreground via chat.css */
+            background-color: var(--background-color);
+            color: var(--text-color);
             padding: 0;
             margin: 0;
             overflow: hidden;
         }
-        /* Most other rules from the original inline style block like .chat-container,
-           #chat-area, #input-area, .message, etc. should be defined in chat.css
-           and use --ext-* variables. */
-
-        /* Minimal style to ensure basic layout before chat.css loads or if it fails */
         .chat-container {
             display: flex;
-            height: 100%;
+            height: 100%; /* Take up full height */
             width: 100%;
-            overflow: hidden;
+            overflow: hidden; /* Hide overflow at container level */
+            background-color: var(--surface-color);
         }
-         #chat-area {
+        .main-content {
             flex-grow: 1;
-            overflow-y: auto;
-            padding: 1rem; /* Basic padding */
             display: flex;
             flex-direction: column;
+            height: 100%; /* Set height to 100% */
+            overflow-y: auto; /* Enable vertical scroll */
+        }
+        #chat-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            height: calc(100% - 60px); /* Leave space for input area */
+            display: flex;
+            flex-direction: column;
+            background-color: transparent !important;
         }
         #input-area {
             display: flex;
             padding: 0.5rem;
+            padding-bottom: 1rem;
+            background-color: var(--surface-color);
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            border-top: 1px solid var(--border-color);
+            box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
         }
         #user-input {
             flex-grow: 1;
             margin-right: 0.5rem;
+            padding: 0.6rem 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: 0.6rem;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 0.6rem;
+            cursor: pointer;
+            font-weight: 500;
+            box-shadow: var(--shadow-sm);
         }
         .message {
             padding: 0.6rem;
             margin-bottom: 0.6rem;
             border-radius: 0.6rem;
+            background-color: var(--background-color);
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border-color);
             width: 100%;
-            box-sizing: border-box;
+            box-sizing: border-box; /* Include padding in width calculation */
             overflow-wrap: break-word; /* Ensure text wraps properly */
             word-break: break-word; /* Break words to prevent overflow */
         }
@@ -192,14 +231,10 @@
 <body>
     <div id="quick-actions-sidebar">
         <!-- Preset "Summarize this tab" button -->
-<button id="process-tab-button" class="quick-action-button" title="Process Tab with Custom Instruction">1</button>
         <button id="summarize-tab-button" class="quick-action-button" title="Summarize this tab">S</button>
         <button id="explain-button" class="quick-action-button" title="Explain this tab">E</button>
         <!-- Pinned instructions will be added here by chat.js -->
         <div id="pinned-actions-container"></div>
-        <div id="dynamic-actions-container" style="margin-top: 10px;">
-            <!-- Dynamic actions will be added here by chat.js -->
-        </div>
         <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
     </div>
     <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
@@ -210,14 +245,8 @@
       </label>
     </div>
     <div class="chat-container">
-        <div id="chat-main-area" style="display: flex;">
-            <div id="tool-marketplace-container"></div>
+        <div id="chat-main-area" style="display: block;">
             <div id="chat-area"></div>
-            <div id="smart-clipboard-notice" style="display: none; padding: 8px; background-color: var(--ext-card); border-top: 1px solid var(--ext-border); text-align: center;">
-                <span id="smart-clipboard-text-preview"></span>
-                <button id="smart-clipboard-send" class="extension-button" style="margin-left: 10px; padding: 4px 8px; font-size: 0.9em;">Send to Chat</button>
-                <button id="smart-clipboard-dismiss" class="extension-button secondary" style="margin-left: 5px; padding: 4px 8px; font-size: 0.9em;">Dismiss</button>
-            </div>
             <div id="input-area">
                 <textarea id="user-input" placeholder="Type your message here" rows="1"></textarea>
                 <button id="send-button">Send</button>
