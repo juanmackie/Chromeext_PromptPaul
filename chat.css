@@ -1,7 +1,42 @@
 /* Extension Theme Variables */
 :root {
   /* Light theme colors */
-  /* Variables replaced with static values */
+  --ext-background: #f3faff;
+  --ext-foreground: #00182a;
+  --ext-card: #ecf3f8;
+  --ext-card-foreground: #00182a;
+  --ext-popover: #ecf3f8;
+  --ext-popover-foreground: #00182a;
+  --ext-primary: #0089d0;
+  --ext-primary-foreground: #f3faff;
+  --ext-secondary: #4aadc9;
+  --ext-secondary-foreground: #f3faff;
+  --ext-muted: #d3e0ea;
+  --ext-muted-foreground: #49677d;
+  --ext-accent: #00adba;
+  --ext-accent-foreground: #000001;
+  --ext-destructive: #f1003b;
+  --ext-destructive-foreground: #f3faff;
+  --ext-border: #bdd1e0;
+  --ext-input: #d9e7f1;
+  --ext-ring: #0089d0;
+  
+  /* Chart colors */
+  --ext-chart-1: #0089d0;
+  --ext-chart-2: #00adba;
+  --ext-chart-3: #62b289;
+  --ext-chart-4: #9fa5f9;
+  --ext-chart-5: #c5b3ea;
+  
+  /* Sidebar colors */
+  --ext-sidebar: #f3faff;
+  --ext-sidebar-foreground: #00182a;
+  --ext-sidebar-primary: #0089d0;
+  --ext-sidebar-primary-foreground: #f3faff;
+  --ext-sidebar-accent: #00adba;
+  --ext-sidebar-accent-foreground: #000001;
+  --ext-sidebar-border: #bdd1e0;
+  --ext-sidebar-ring: #0089d0;
   
   /* Layout */
   --ext-radius: 0.5rem;
@@ -22,7 +57,38 @@
 [data-theme="dark"],
 .dark-theme, /* This class is used in options.html and options.js */
 .ext-dark { /* General utility class */
-  /* Variables replaced with static values */
+  --ext-background: #000408;
+  --ext-foreground: #c1e3fc;
+  --ext-card: #010d16;
+  --ext-card-foreground: #b1d3ec;
+  --ext-popover: #010d16;
+  --ext-popover-foreground: #b1d3ec;
+  --ext-primary: #00b9ff;
+  --ext-primary-foreground: #000408;
+  --ext-secondary: #00b2de;
+  --ext-secondary-foreground: #000408;
+  --ext-muted: #062437;
+  --ext-muted-foreground: #7494ab;
+  --ext-accent: #00e1f0;
+  --ext-accent-foreground: #000408;
+  --ext-destructive: #ff0657;
+  --ext-destructive-foreground: #000408;
+  --ext-border: #00314d;
+  --ext-input: #031826;
+  --ext-ring: #00b9ff;
+  --ext-chart-1: #00b9ff;
+  --ext-chart-2: #00e1f0;
+  --ext-chart-3: #3dca8d;
+  --ext-chart-4: #a9adff;
+  --ext-chart-5: #dabcff;
+  --ext-sidebar: #000408;
+  --ext-sidebar-foreground: #c1e3fc;
+  --ext-sidebar-primary: #00b9ff;
+  --ext-sidebar-primary-foreground: #000408;
+  --ext-sidebar-accent: #00e1f0;
+  --ext-sidebar-accent-foreground: #000408;
+  --ext-sidebar-border: #00314d;
+  --ext-sidebar-ring: #00b9ff;
 }
 body {
     font-family: 'Inter', sans-serif;
@@ -30,8 +96,8 @@ body {
     width: 100vw;
     display: flex;
     flex-direction: row;
-    background-color: #f3faff; /* Updated */
-    color: #00182a; /* Updated */
+    background-color: var(--ext-background); /* Updated */
+    color: var(--ext-foreground); /* Updated */
     padding: 0;
     margin: 0;
     overflow: hidden;
@@ -42,7 +108,7 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background-color: #f3faff; /* Updated */
+    background-color: var(--ext-sidebar); /* Updated */
     padding: 10px 5px;
     align-items: center;
     box-sizing: border-box;
@@ -53,10 +119,10 @@ body {
     height: 40px;
     margin-bottom: 5px;
     padding: 0;
-    border: 1px solid #bdd1e0; /* Updated */
+    border: 1px solid var(--ext-sidebar-border); /* Updated */
     border-radius: 5px; /* Consider using --ext-radius-sm */
-    background-color: #0089d0; /* Updated */
-    color: #f3faff; /* Updated */
+    background-color: var(--ext-sidebar-primary); /* Updated */
+    color: var(--ext-sidebar-primary-foreground); /* Updated */
     cursor: pointer;
     word-wrap: break-word;
     display: flex;
@@ -69,8 +135,8 @@ body {
 }
 
 .quick-action-button:hover {
-    background-color: #00adba; /* Updated */
-    border-color: #0089d0; /* Updated */
+    background-color: var(--ext-sidebar-accent); /* Updated */
+    border-color: var(--ext-sidebar-ring); /* Updated */
 }
 
 #manage-pinned-actions-button {
@@ -85,7 +151,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background-color: #f3faff; /* Ensure chat container also uses theme */
+    background-color: var(--ext-background); /* Ensure chat container also uses theme */
 }
 
 /* Dark Theme Overrides */
@@ -120,15 +186,15 @@ body.dark-theme #chat-area {
 }
 
 body.dark-theme .llm-message {
-    background-color: #010d16 !important; /* Example: Use card background for messages */
-    color: #b1d3ec !important;
-    border: 1px solid #00314d !important;
+    background-color: var(--ext-card) !important; /* Example: Use card background for messages */
+    color: var(--ext-card-foreground) !important;
+    border: 1px solid var(--ext-border) !important;
 }
 
 body.dark-theme .user-message {
-    background-color: #00b9ff !important; /* Example: User messages with primary color */
-    color: #000408 !important;
-    border: 1px solid #00b9ff !important;
+    background-color: var(--ext-primary) !important; /* Example: User messages with primary color */
+    color: var(--ext-primary-foreground) !important;
+    border: 1px solid var(--ext-ring) !important;
 }
 
 body.dark-theme button {
@@ -139,19 +205,19 @@ body.dark-theme #send-button {
 }
 
 body.dark-theme #clear-button {
-    background-color: #ff0657 !important; /* Updated */
-    color: #000408 !important; /* Updated */
+    background-color: var(--ext-destructive) !important; /* Updated */
+    color: var(--ext-destructive-foreground) !important; /* Updated */
 }
 
 body.dark-theme pre,
 body.dark-theme code {
-    background-color: #062437 !important; /* Example: Using muted for code blocks */
-    color: #7494ab !important;
+    background-color: var(--ext-muted) !important; /* Example: Using muted for code blocks */
+    color: var(--ext-muted-foreground) !important;
 }
 
 body.dark-theme ::selection {
-    background: #00e1f0; /* Updated */
-    color: #000408 !important; /* Updated */
+    background: var(--ext-accent); /* Updated */
+    color: var(--ext-accent-foreground) !important; /* Updated */
 }
 
 .light { /* This class seems to be for Material Design tokens, not directly theme related. Keep as is or review separately. */
@@ -322,14 +388,14 @@ body.dark-theme ::selection {
 }
 
 button {
-    background-color: #0089d0; /* Replaced --primary-color with static value */
+    background-color: var(--primary-color);
     color: white;
     padding: 0.6rem 1.2rem;
     border: none;
     border-radius: 0.6rem;
     cursor: pointer;
     font-weight: 500;
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Replaced --shadow-sm with static value */
+    box-shadow: var(--shadow-sm);
 }
 
 #send-button {
@@ -450,33 +516,35 @@ body.sidebar-open #chat-area {
 
 /* Extension-specific base styles */
 .extension-container {
-  background-color: #f3faff;
-  color: #00182a;
+  background-color: var(--ext-background);
+  color: var(--ext-foreground);
   font-size: 14px;
   line-height: 1.5;
-  border-radius: 0.5rem;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border-radius: var(--ext-radius);
+  box-shadow: var(--ext-shadow-lg);
+  min-width: 320px;
+  max-width: 480px;
 }
 
 .extension-header {
-  background-color: #ecf3f8;
-  color: #00182a;
+  background-color: var(--ext-card);
+  color: var(--ext-card-foreground);
   padding: 1rem;
-  border-bottom: 1px solid #bdd1e0;
-  border-radius: 0.5rem 0.5rem 0 0;
+  border-bottom: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius) var(--ext-radius) 0 0;
 }
 
 .extension-content {
   padding: 1rem;
-  background-color: #f3faff;
+  background-color: var(--ext-background);
 }
 
 .extension-button {
-  background-color: #0089d0;
-  color: #f3faff;
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
+  border-radius: var(--ext-radius-md);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -484,20 +552,20 @@ body.sidebar-open #chat-area {
 
 .extension-button:hover {
   opacity: 0.9;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  box-shadow: var(--ext-shadow);
 }
 
 .extension-button.secondary {
-  background-color: #4aadc9;
-  color: #f3faff;
+  background-color: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
 }
 
 .extension-input {
-  background-color: #d9e7f1;
-  color: #00182a;
-  border: 1px solid #bdd1e0;
+  background-color: var(--ext-input);
+  color: var(--ext-foreground);
+  border: 1px solid var(--ext-border);
   padding: 0.5rem;
-  border-radius: 0.25rem;
+  border-radius: var(--ext-radius-sm);
   font-size: 14px;
   width: 100%;
   box-sizing: border-box;
@@ -505,32 +573,32 @@ body.sidebar-open #chat-area {
 
 .extension-input:focus {
   outline: none;
-  border-color: #0089d0;
+  border-color: var(--ext-ring);
   box-shadow: 0 0 0 2px rgba(0, 137, 208, 0.2);
 }
 
 .extension-card {
-  background-color: #ecf3f8;
-  color: #00182a;
-  border: 1px solid #bdd1e0;
-  border-radius: 0.5rem;
+  background-color: var(--ext-card);
+  color: var(--ext-card-foreground);
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius);
   padding: 1rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: var(--ext-shadow-sm);
 }
 
 .extension-muted {
-  color: #49677d;
+  color: var(--ext-muted-foreground);
   font-size: 12px;
 }
 
 /* Utility classes */
-.ext-text-primary { color: #0089d0; }
-.ext-text-secondary { color: #4aadc9; }
-.ext-text-accent { color: #00adba; }
-.ext-text-muted { color: #49677d; }
-.ext-bg-primary { background-color: #0089d0; }
-.ext-bg-secondary { background-color: #4aadc9; }
-.ext-bg-card { background-color: #ecf3f8; }
-.ext-border { border-color: #bdd1e0; }
-.ext-rounded { border-radius: 0.5rem; }
-.ext-shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+.ext-text-primary { color: var(--ext-primary); }
+.ext-text-secondary { color: var(--ext-secondary); }
+.ext-text-accent { color: var(--ext-accent); }
+.ext-text-muted { color: var(--ext-muted-foreground); }
+.ext-bg-primary { background-color: var(--ext-primary); }
+.ext-bg-secondary { background-color: var(--ext-secondary); }
+.ext-bg-card { background-color: var(--ext-card); }
+.ext-border { border-color: var(--ext-border); }
+.ext-rounded { border-radius: var(--ext-radius); }
+.ext-shadow { box-shadow: var(--ext-shadow); }
