@@ -41,11 +41,11 @@
   --ext-radius-xl: 0.75rem;
 
   /* Shadows - Simplified for extension UI */
-  --ext-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --ext-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-  --ext-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --ext-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-  --ext-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --ext-shadow-sm: 0 1px 2px 0 #0000000D;
+  --ext-shadow: 0 1px 3px 0 #0000001A, 0 1px 2px 0 #0000000F;
+  --ext-shadow-md: 0 4px 6px -1px #0000001A, 0 2px 4px -1px #0000000F;
+  --ext-shadow-lg: 0 10px 15px -3px #0000001A, 0 4px 6px -2px #0000000D;
+  --ext-shadow-xl: 0 20px 25px -5px #0000001A, 0 10px 10px -5px #0000000A;
 
   /* Shadcn theme variables mapped to --ext variables */
   --background: var(--ext-background);
@@ -283,8 +283,8 @@ body {
   bottom: 0;
   background: linear-gradient(
     120deg,
-    hsla(var(--ext-primary-hsl), 0.2) 0%, /* Example: Using primary with alpha */
-    hsla(var(--ext-primary-hsl), 0.05) 100%
+    #0089D033 0%, /* Example: Using primary with alpha */
+    #0089D00D 100%
   );
   pointer-events: none;
   border-radius: 1rem;
@@ -352,7 +352,7 @@ input[type="text"]:hover,
 input[type="number"]:hover,
 textarea:hover {
   border-color: var(--ext-secondary); /* Adjusted */
-  background-color: hsl(var(--ext-input-hsl), 0.95); /* Example: Lighten input color on hover */
+  background-color: #D9E7F1F2; /* Example: Lighten input color on hover */
   box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--ext-shadow-sm);
 }
 
@@ -362,7 +362,7 @@ textarea:focus {
   outline: none;
   border-color: var(--ext-primary); /* Adjusted */
   background-color: var(--ext-background); /* Adjusted */
-  box-shadow: 0 0 0 3px hsla(var(--ext-primary-hsl), 0.15), var(--ext-shadow-md); /* Example: Using primary with alpha */
+  box-shadow: 0 0 0 3px #0089D026, var(--ext-shadow-md); /* Example: Using primary with alpha */
   transform: translateY(-1px);
 }
 
@@ -626,8 +626,8 @@ button:disabled {
   bottom: 0;
   background: linear-gradient(
     45deg,
-    hsla(var(--ext-popover-hsl), 0.1) 0%, /* Example */
-    hsla(var(--ext-popover-hsl), 0) 100%
+    #ECF3F81A 0%, /* Example */
+    #ECF3F800 100%
   );
   pointer-events: none;
   border-radius: 0.75rem;
@@ -678,7 +678,7 @@ button:disabled {
 }
 
 #instructionsTable tbody tr:nth-child(even) {
-  background-color: hsl(var(--ext-card-hsl), 0.7); /* Example: Lighter card color */
+  background-color: #ECF3F8B3; /* Example: Lighter card color */
 }
 body.dark-theme #instructionsTable tbody tr:nth-child(even) {
   background: var(--ext-card) !important; /* Adjusted */
@@ -689,7 +689,7 @@ body.dark-theme #toolsTable {
 }
 
 #instructionsTable tbody tr:hover {
-  background-color: hsl(var(--ext-card-hsl), 0.8); /* Example: Slightly darker card color on hover */
+  background-color: #ECF3F8CC; /* Example: Slightly darker card color on hover */
 }
 
 /* Collapsible section styles */
@@ -722,12 +722,12 @@ body.dark-theme #toolsTable {
 
 .instruction-form.card {
   background-color: hsl(var(--ext-card-hsl), 0.9); /* Example */
-  border: 1px solid hsl(var(--ext-border-hsl), 0.2); /* Example */
+  border: 1px solid #BDD1E033; /* Example */
 }
 
 .import-export.card {
   background-color: hsl(var(--ext-card-hsl), 0.9); /* Example */
-  border: 1px solid hsl(var(--ext-border-hsl), 0.2); /* Example */
+  border: 1px solid #BDD1E033; /* Example */
 }
 
 
@@ -851,12 +851,12 @@ footer a:hover {
 .improve-btn {
   margin-right: 0.1rem;
   margin-bottom: 0.5rem;
-  background-color: #ff0000; /* Fallback color */
+  background-color: #FF0000; /* Fallback color */
   background-image: linear-gradient(90deg,
       red, orange, yellow, green, blue, indigo, violet, red);
   background-size: 800%;
   animation: rainbow 10s linear infinite;
-  color: white; /* Ensure text is readable on rainbow background */
+  color: #FFFFFF; /* Ensure text is readable on rainbow background */
   border-radius: 1.5rem;
 }
 
@@ -903,7 +903,7 @@ footer a:hover {
 .mcp-sourced {
   border-left: 3px solid var(--ext-primary); /* Uses existing theme variable */
   padding-left: 8px;
-  background-color: color-mix(in srgb, var(--ext-primary) 5%, var(--ext-background)); /* Slight tint */
+  background-color: #0089D00D; /* Slight tint */
 }
 .mcp-data-source-note {
   font-size: 0.75rem;
@@ -978,7 +978,7 @@ footer a:hover {
 .extension-input:focus {
   outline: none;
   border-color: var(--ext-ring);
-  box-shadow: 0 0 0 2px hsla(var(--ext-ring-hsl), 0.2); /* Example */
+  box-shadow: 0 0 0 2px #0089D033; /* Example */
 }
 
 .extension-card {
@@ -1059,6 +1059,6 @@ footer a:hover {
 }
 
 .shadcn-checkbox:checked {
-  background-color: hsl(var(--primary));
+  background-color: #0089D0;
   border-color: hsl(var(--primary));
 }
