@@ -269,12 +269,11 @@
           <input type="text" id="toolName" placeholder="e.g., getWeather">
         </div>
         <div class="form-group">
-          <label for="toolDescription">Tool Description (Fallback for MCP)</label>
+          <label for="toolDescription">Tool Description</label>
           <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
-          <p id="toolDescriptionSource" class="mcp-data-source-note" style="display: none;">Source: MCP Server (dynamic)</p>
         </div>
         <div class="form-group">
-          <label for="toolParameters">Parameters (JSON Schema - Fallback for MCP)</label>
+          <label for="toolParameters">Parameters (JSON Schema)</label>
           <textarea id="toolParameters" placeholder='e.g., {
   "type": "object",
   "properties": {
@@ -282,23 +281,17 @@
   },
   "required": ["location"]
 }' rows="6"></textarea>
-          <p id="toolParametersSource" class="mcp-data-source-note" style="display: none;">Source: MCP Server (dynamic)</p>
           <small>Define the input parameters for the tool using JSON Schema format.</small>
         </div>
         <div class="form-group">
         </div>
         <div class="form-group">
-          <label for="toolEndpointUrl">Endpoint URL (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
+          <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
           <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
           <small>If this tool calls an external API or webhook, enter the URL here.</small>
         </div>
         <div class="form-group">
-          <label for="toolMcpProxyUrl">MCP Proxy URL (Optional - for custom tool routing)</label>
-          <input type="url" id="toolMcpProxyUrl" placeholder="e.g., https://mcp-proxy.example.com">
-          <small>If your tool needs to be called via a specific proxy server (which then might call another service or an MCP server), enter its URL here. This is typically for non-standard setups. If you use 'MCP Server URL' below, this field is usually not needed.</small>
-        </div>
-        <div class="form-group">
-          <label for="toolHttpMethod">HTTP Method (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
+          <label for="toolHttpMethod">HTTP Method (Optional)</label>
           <select id="toolHttpMethod">
             <option value="">Auto (GET if no params, POST if params)</option>
             <option value="GET">GET</option>
@@ -308,16 +301,6 @@
             <option value="PATCH">PATCH</option>
           </select>
           <small>Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</small>
-        </div>
-        <div class="form-group">
-          <label for="toolMcpServerUrl">MCP Server URL (Optional - for standard MCP tools)</label>
-          <input type="url" id="toolMcpServerUrl" placeholder="e.g., https://mcp.example.com">
-          <button type="button" id="fetchMcpToolInfoBtn" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 py-1 mt-1 ml-2">
-            <span class="material-symbols-outlined mr-1" style="font-size: 1em;">sync</span> Fetch Tool Info
-          </button>
-          <small>If this tool is provided by a standard Model Context Protocol (MCP) server, enter the server's base URL here (e.g., https://mcp.example.com).
-            <p class="mcp-note" style="font-size: 0.8em; margin-top: 0.5em;"><strong>Note:</strong> When an MCP Server URL is specified, the extension will attempt to fetch the tool's name, description, and input schema dynamically from that server. The 'Tool Name' you enter above will be used as a local alias. The 'Tool Description' and 'Parameters (JSON Schema)' fields above will serve as fallbacks if the server doesn't provide them or if the dynamic fetch fails. Fields like 'Endpoint URL' and 'HTTP Method' are ignored when MCP Server URL is used.</p>
-          </small>
         </div>
         <input type="hidden" id="toolId">
         <div class="button-group">
