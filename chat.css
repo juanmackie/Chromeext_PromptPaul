@@ -360,7 +360,8 @@ body.dark-theme ::selection {
 }
 
 .llm-message {
-    background-color: #dbdbdb; /* Light grey for LLM messages */
+    background-color: var(--ext-card);
+    color: var(--ext-card-foreground);
     align-self: flex-end; /* Align LLM messages to the right */
 }
 
@@ -389,11 +390,21 @@ body.dark-theme .llm-message img {
 }
 
 .user-message {
-    background-color: #b8ecf9; /* Primary color for user messages */
-    color: #000000; /* White text for user messages */
+    background-color: var(--ext-primary);
+    color: var(--ext-primary-foreground);
     align-self: flex-start; /* Align user messages to the left */
- width: fit-content;
-  max-width: 95%;
+    width: fit-content;
+    max-width: 95%;
+}
+
+.system-message {
+    background-color: var(--ext-muted);
+    color: var(--ext-muted-foreground);
+    align-self: center;
+    font-style: italic;
+    font-size: 0.9em;
+    width: fit-content;
+    max-width: 95%;
 }
 
 button {

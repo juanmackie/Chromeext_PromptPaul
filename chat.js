@@ -70,6 +70,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStreamingUniqueId = null;
     let accumulatedStreamedText = "";
     let activeStreamingToolCall = null;
+    let currentAbortController = null;
+
+    function stopApiRequest() {
+        if (currentAbortController) {
+            currentAbortController.abort();
+        }
+    }
 
     async function getApiConfig() {
         return new Promise((resolve, reject) => {
@@ -531,7 +538,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     sendButton.addEventListener('click', sendMessage);
     const clearButton = document.getElementById('clear-button');
-    clearButton.addEventListener('click', clearChat);
+    clearButton.addEventListener('click', () => {
+        if (clearButton.textContent === 'Stop') {
+            stopApiRequest();
+        } else {
+            clearChat();
+        }
+    });
     userInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey && !userInput.disabled) {
             event.preventDefault();
@@ -734,6 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 requestBody.stream = true;
                 userInput.disabled = true;
                 sendButton.disabled = true;
+                clearButton.textContent = 'Stop';
 
                 const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
                 currentStreamingMessageDiv = messageDiv;
@@ -741,10 +755,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStreamingUniqueId = uniqueIdString;
                 accumulatedStreamedText = ""; // Reset for this new stream
 
+                currentAbortController = new AbortController();
+                const signal = currentAbortController.signal;
+
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
                     body: JSON.stringify(requestBody),
+                    signal,
                 });
 
                 if (!apiResponse.ok) {
@@ -780,6 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Reset UI and state
                         userInput.disabled = false;
                         sendButton.disabled = false;
+                        clearButton.textContent = 'Clear';
                         currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
                         userInput.focus();
                         break;
@@ -874,10 +893,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (error) {
-            console.error("makeApiCall Error:", error);
-            addMessage('System', 'Error: ' + error.message);
+            if (error.name === 'AbortError') {
+                addMessage('System', 'Response stopped');
+            } else {
+                console.error("makeApiCall Error:", error);
+                addMessage('System', 'Error: ' + error.message);
+            }
             userInput.disabled = false;
             sendButton.disabled = false;
+            clearButton.textContent = 'Clear';
             userInput.focus();
         }
     }
@@ -921,6 +945,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
                 userInput.disabled = true; sendButton.disabled = true;
+                clearButton.textContent = 'Stop';
 
                 const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
                 currentStreamingMessageDiv = messageDiv;
@@ -928,10 +953,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStreamingUniqueId = uniqueIdString;
                 accumulatedStreamedText = "";
 
+                currentAbortController = new AbortController();
+                const signal = currentAbortController.signal;
+
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
                     body: JSON.stringify(requestBody),
+                    signal,
                 });
                  if (!apiResponse.ok) {
                     const errorText = await apiResponse.text();
@@ -955,6 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
                         currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
                         userInput.disabled = false; sendButton.disabled = false;
+                        clearButton.textContent = 'Clear';
                         instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
                          oneoffInstructionArea.style.display = 'none';
                          chatMainArea.style.display = 'block';
@@ -1013,14 +1043,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             // Show more detailed error messages
-            let errorMsg = error.message;
-            if (error.details) {
-                errorMsg += ` (Details: ${JSON.stringify(error.details)})`;
+            if (error.name === 'AbortError') {
+                addMessage('System', 'Response stopped');
+            } else {
+                let errorMsg = error.message;
+                if (error.details) {
+                    errorMsg += ` (Details: ${JSON.stringify(error.details)})`;
+                }
+                showToast('Error: ' + errorMsg);
+                console.error("Error in one-off instruction submission:", error);
             }
-            showToast('Error: ' + errorMsg);
-            console.error("Error in one-off instruction submission:", error);
             userInput.disabled = false;
             sendButton.disabled = false;
+            clearButton.textContent = 'Clear';
         }
     });
 
