@@ -250,23 +250,72 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStreamingUniqueId = null;
                 accumulatedStreamedText = "";
             }
-            if (request.apiResponse) {
-                if (request.prompt) { // For setApiResponse, prompt is usually the full original prompt
-                    const lastMessage = conversationHistory[conversationHistory.length - 1];
-                    if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
-                         addMessage('User', request.prompt.split('\n')[0]);
-                         conversationHistory.push({ role: 'user', content: request.prompt });
-                    }
-                }
-                addMessage('LLM', request.apiResponse);
-                // Ensure not to add duplicate assistant message if it's already the last one
-                const lastAssistantMessage = conversationHistory.length > 0 && conversationHistory[conversationHistory.length -1].role === 'assistant' ? conversationHistory[conversationHistory.length -1].content : null;
-                if(lastAssistantMessage !== request.apiResponse){
-                    conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+            if (request.prompt) { // Add user prompt to history if not already there
+                const lastMessage = conversationHistory[conversationHistory.length - 1];
+                if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
+                    addMessage('User', request.prompt.split('\n')[0]); // Display shortened prompt
+                    conversationHistory.push({ role: 'user', content: request.prompt });
                 }
             }
+
+            if (request.isAnthropicMcp && typeof request.apiResponse === 'object' && request.apiResponse.content && Array.isArray(request.apiResponse.content)) {
+                // This branch handles a non-streaming response from an Anthropic endpoint where the MCP Connector was used.
+                // `request.apiResponse` is the full message object from Anthropic,
+                // and `request.apiResponse.content` is an array of content blocks (text, mcp_tool_use, mcp_tool_result).
+                console.log("Chat: Handling Anthropic MCP response blocks (non-streaming):", request.apiResponse.content);
+                let accumulatedTextForDisplay = ""; // Accumulate text for a single LLM message bubble if desired
+
+                request.apiResponse.content.forEach(block => {
+                    if (block.type === 'text') {
+                        accumulatedTextForDisplay += block.text;
+                    } else if (block.type === 'mcp_tool_use') {
+                        // If there was preceding text, display it first.
+                        if (accumulatedTextForDisplay) {
+                            addMessage('LLM', accumulatedTextForDisplay);
+                            accumulatedTextForDisplay = ""; // Reset
+                        }
+                        addMessage('System', `⚙️ LLM is using MCP tool (Anthropic): **${block.name}** (Server: ${block.server_name}). Input: ${JSON.stringify(block.input)}`);
+                    } else if (block.type === 'mcp_tool_result') {
+                        if (accumulatedTextForDisplay) {
+                            addMessage('LLM', accumulatedTextForDisplay);
+                            accumulatedTextForDisplay = ""; // Reset
+                        }
+                        let contentDisplay = "Tool result content not directly displayable.";
+                        if (block.content && Array.isArray(block.content) && block.content.length > 0 && block.content[0].type === 'text') {
+                            contentDisplay = block.content[0].text; // Display first text block of the result
+                        } else if (typeof block.content === 'string') { // Some simple results might be a string
+                            contentDisplay = block.content;
+                        } else if (block.is_error) {
+                            contentDisplay = "Error in tool execution.";
+                        }
+                        addMessage('System', `✅ MCP Tool Result (Anthropic) for ID ${block.tool_use_id} from server ${request.apiResponse.server_name || block.server_name || 'unknown'}: ${block.is_error ? 'Error: ' : ''}${contentDisplay}`);
+                    }
+                });
+
+                // Add any remaining accumulated text as a final LLM message.
+                if (accumulatedTextForDisplay) {
+                    addMessage('LLM', accumulatedTextForDisplay);
+                }
+
+                // The full Anthropic message object (request.apiResponse) is added to history.
+                // This object contains the 'role': 'assistant' and the 'content' array with all blocks.
+                conversationHistory.push(request.apiResponse);
+                console.log("Chat: Added full Anthropic message object to history (non-streaming):", request.apiResponse);
+
+            } else if (request.apiResponse && typeof request.apiResponse === 'string') {
+                // Standard text response (OpenAI, or Anthropic without MCP blocks, or error string)
+                addMessage('LLM', request.apiResponse);
+                const lastAssistantMessage = conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'assistant' ? conversationHistory[conversationHistory.length - 1].content : null;
+                if (lastAssistantMessage !== request.apiResponse) {
+                    conversationHistory.push({ role: 'assistant', content: request.apiResponse });
+                }
+            } else if (request.apiResponse) { // Fallback for unexpected structure
+                 console.warn("Chat: setApiResponse received apiResponse in unexpected format:", request.apiResponse);
+                 addMessage('LLM', JSON.stringify(request.apiResponse));
+                 conversationHistory.push({ role: 'assistant', content: JSON.stringify(request.apiResponse) });
+            }
         } else if (request.action === 'streamApiStart') {
-            console.log("Chat: streamApiStart received", request);
+            console.log("Chat: streamApiStart received for prompt:", request.prompt);
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = true;
@@ -296,13 +345,37 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'streamApiEnd') {
             console.log("Chat: streamApiEnd handler invoked.", request);
-            console.log("Chat: Current activeStreamingToolCall (at start of streamApiEnd):", activeStreamingToolCall);
-            console.log("Chat: Current accumulatedStreamedText (at start of streamApiEnd):", accumulatedStreamedText);
-            // console.log("Chat: streamApiEnd received", request); // Duplicative of the first log.
-            let toolCallWasHandledInThisStream = false;
 
-            // Tool call execution logic STARTS HERE (moved before UI finalization for current bubble)
-            if (activeStreamingToolCall) {
+            // Check if Anthropic stream was already finalized by 'streamApiAnthropicMessageStop'
+            // This flag is set by the streamApiAnthropicMessageStop handler to prevent this streamApiEnd handler
+            // from duplicating UI resets and history additions for Anthropic streams.
+            if (window.anthropicStreamFinalizedByStopEvent) {
+                console.log("Chat: streamApiEnd - Anthropic stream was finalized by streamApiAnthropicMessageStop. This handler will now skip most operations.");
+                window.anthropicStreamFinalizedByStopEvent = false; // Reset flag for the next stream.
+
+                // Perform only minimal, truly shared cleanup if any.
+                // Most UI resets and history additions are handled by streamApiAnthropicMessageStop.
+                // Ensure these are not redundantly called.
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                clearButton.textContent = 'Clear';
+                userInput.focus();
+
+                // Reset streaming variables, though streamApiAnthropicMessageStop should also do this.
+                currentStreamingMessageDiv = null;
+                currentStreamingContentElement = null;
+                currentStreamingUniqueId = null;
+                accumulatedStreamedText = "";
+                activeStreamingToolCall = null;
+                return; // Exit early
+            }
+
+            console.log("Chat: Current activeStreamingToolCall (at start of streamApiEnd, non-Anthropic or Anthropic pre-stop):", activeStreamingToolCall);
+            console.log("Chat: Current accumulatedStreamedText (at start of streamApiEnd, non-Anthropic or Anthropic pre-stop):", accumulatedStreamedText);
+            let toolCallWasHandledInThisStream = false; // Specific to OpenAI-style tool calls
+
+            // Tool call execution logic (FOR OPENAI-STYLE Client-Managed tools)
+            if (activeStreamingToolCall) { // This implies it's an OpenAI-style tool call
                 console.log("Chat: streamApiEnd - activeStreamingToolCall is TRUE.");
                 toolCallWasHandledInThisStream = true; // Mark that a tool call is being handled in this stream event
                 const toolCall = activeStreamingToolCall; // Clarity
@@ -485,8 +558,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
-        } else if (request.action === 'handleToolCallResponse') {
-            console.log("Chat: handleToolCallResponse received", request);
+        } else if (request.action === 'streamApiAnthropicContentBlockStart') {
+            console.log("Chat: streamApiAnthropicContentBlockStart received", request.contentBlock);
+            if (currentStreamingContentElement && request.contentBlock) {
+                const block = request.contentBlock;
+                if (block.type === 'mcp_tool_use') {
+                    // Display tool usage. For streaming, we might just show the intent to use the tool.
+                    // The actual result will come in a separate 'mcp_tool_result' block or event.
+                    // accumulatedStreamedText might need to be cleared or handled carefully here if text was streaming before this block.
+                    // For now, append this system message.
+                    const toolUseMessage = `⚙️ Using MCP tool (Anthropic): **${block.name}** (Server: ${block.server_name})`;
+                    // Add this as a system message for now, or integrate into the current LLM bubble if desired
+                    addMessage('System', toolUseMessage);
+                    // We don't set activeStreamingToolCall here because Anthropic handles the execution.
+                    // History for this 'mcp_tool_use' block will be part of the assistant's message content.
+                } else if (block.type === 'text') {
+                    // If a text block starts, we can append its initial content if any.
+                    // However, 'content_block_delta' for text is usually handled by 'streamApiResponseChunk'.
+                    // This handler is more for non-text blocks or initial setup of a text block if needed.
+                    console.log("Chat: Anthropic stream started a text block:", block.text || "(empty initial text)");
+                }
+                 chatArea.scrollTop = chatArea.scrollHeight;
+            }
+        } else if (request.action === 'streamApiAnthropicMessageStop') {
+            // This handler is called when background.js receives a 'message_stop' event from an Anthropic stream,
+            // indicating the end of the message. request.anthropicMessage contains the complete final message object.
+            console.log("Chat: streamApiAnthropicMessageStop received, full Anthropic message:", request.anthropicMessage);
+            if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
+                // The accumulatedStreamedText should reflect the text parts.
+                // The full message from Anthropic (request.anthropicMessage) contains all blocks.
+                // Finalize the display with accumulatedStreamedText (which should be the text part)
+                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
+                const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
+                if (copyIconElem && copyFormattedIconElem) {
+                    attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                }
+            }
+
+            // Add the complete Anthropic message object to history
+            if (request.anthropicMessage) {
+                conversationHistory.push(request.anthropicMessage); // This is the assistant's message object
+                console.log("Chat: Added full Anthropic message to history from streamApiAnthropicMessageStop:", request.anthropicMessage);
+            }
+
+            // Reset UI
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            clearButton.textContent = 'Clear'; // Assuming 'Stop' was set at streamApiStart
+            userInput.focus();
+
+            // Reset streaming variables
+            currentStreamingMessageDiv = null;
+            currentStreamingContentElement = null;
+            currentStreamingUniqueId = null;
+            accumulatedStreamedText = "";
+            activeStreamingToolCall = null; // Should be null for Anthropic MCP anyway
+
+            // Set a flag to prevent streamApiEnd from duplicating actions
+            window.anthropicStreamFinalizedByStopEvent = true;
+
+        } else if (request.action === 'handleToolCallResponse') { // This handles OpenAI-style non-streaming tool calls
+            console.log("Chat: handleToolCallResponse (OpenAI-style) received", request);
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
@@ -597,27 +730,31 @@ document.addEventListener('DOMContentLoaded', () => {
                             { action: 'getDiscoveredMcpToolSchema', mcpServerUrl: tool.mcpServerUrl, toolName: tool.name },
                             (res) => {
                                 if (chrome.runtime.lastError) {
-                                    console.error(`Chat: getTools - Error getting schema for MCP tool ${tool.name}:`, chrome.runtime.lastError.message);
-                                    // Resolve with failure to allow fallback, rather than rejecting the whole getTools
-                                    resolve({ success: false, error: chrome.runtime.lastError.message });
+                                    console.error(`Chat: getTools - Error sending 'getDiscoveredMcpToolSchema' message for MCP tool ${tool.name}:`, chrome.runtime.lastError.message);
+                                    resolve({ success: false, error: `Message sending failed: ${chrome.runtime.lastError.message}` });
                                     return;
                                 }
+                                if (!res) {
+                                    console.error(`Chat: getTools - No response received from 'getDiscoveredMcpToolSchema' for MCP tool ${tool.name}. This might indicate an issue in background.js or the MCP server connection.`);
+                                    resolve({ success: false, error: 'No response from background script.' });
+                                    return;
+                                }
+                                console.log(`Chat: getTools - Response from 'getDiscoveredMcpToolSchema' for MCP tool ${tool.name}:`, res);
                                 resolve(res);
                             }
                         );
                     });
 
                     if (response && response.success && response.toolSchema) {
-                        console.log(`Chat: getTools - Successfully fetched schema for MCP tool ${tool.name}:`, response.toolSchema);
-                        // MCP standard is often "inputSchema" for parameters.
-                        // The discoveredTool object itself might be the schema {name, description, inputSchema}
+                        console.log(`Chat: getTools - Successfully fetched live schema for MCP tool ${tool.name}. Schema:`, response.toolSchema);
+                        // MCP standard is that response.toolSchema IS the tool definition, including name, description, inputSchema
                         parametersForLlm = response.toolSchema.inputSchema || {}; // Ensure it's an object
+                        // Optionally, update tool.description if the live one is preferred, though current plan uses stored one as primary.
+                        // tool.description = response.toolSchema.description || tool.description;
                         source = 'mcp_discovered';
-                        // Use discovered name and description if available and different, or stick to stored ones.
-                        // For now, we assume the 'name' matches and 'description' from storage is fine,
-                        // primarily focusing on 'inputSchema' for 'parameters'.
+                        console.log(`Chat: getTools - Using discovered inputSchema for MCP tool ${tool.name}:`, parametersForLlm);
                     } else {
-                        console.warn(`Chat: getTools - Failed to get dynamic schema for MCP tool ${tool.name}. Error: ${response ? response.error : 'Unknown error'}. Falling back to manual config.`);
+                        console.warn(`Chat: getTools - Failed to get dynamic schema for MCP tool ${tool.name}. Response success: ${response ? response.success : 'N/A'}, Error: ${response ? response.error : 'Response object itself was null/undefined'}. Falling back to manually configured parameters for tool '${tool.name}'.`);
                         source = 'manual_fallback_mcp';
                         if (tool.parameters) {
                             try {
@@ -728,22 +865,73 @@ document.addEventListener('DOMContentLoaded', () => {
                 model: config.modelName,
                 messages: messagesForRequest,
                 max_tokens: parseInt(config.maxTokens) || 2048,
-                ...toolChoicePayload // Spread the payload
+                // toolChoicePayload will be spread conditionally below
             };
 
+            const fetchHeaders = {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + config.apiKey,
+            };
+
+            // --- Anthropic MCP Connector Logic for chat.js ---
+            // This section mirrors the logic in background.js's makeLlmApiRequest.
+            // If the endpoint is Anthropic and MCP tools are defined with mcpServerUrl,
+            // it prepares the request for Anthropic's Managed MCP approach.
+            const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
+            let usingAnthropicMcpConnector = false;
+
+            if (isAnthropicEndpoint) {
+                console.log("Chat: Anthropic endpoint detected. Checking for MCP tools to use with MCP Connector.");
+                // allAvailableTools is already fetched and processed by getTools()
+                const mcpConfiguredTools = allAvailableTools.filter(tool => tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "");
+
+                if (mcpConfiguredTools.length > 0) {
+                    usingAnthropicMcpConnector = true;
+                    fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header for Anthropic MCP
+
+                    requestBody.mcp_servers = mcpConfiguredTools.map(tool => {
+                        const serverEntry = {
+                            type: "url",
+                            url: tool.mcpServerUrl,
+                            name: tool.name, // Use tool's defined name as the server name for Anthropic
+                        };
+                        // TODO: Add authorization_token if available in tool definition (e.g., tool.mcpAuthToken)
+                        // This would require tool definitions to store this token.
+                        // if (tool.mcpAuthToken) { // Assuming mcpAuthToken is where it would be stored
+                        //     serverEntry.authorization_token = tool.mcpAuthToken;
+                        // }
+                        return serverEntry;
+                    });
+                    console.log("Chat: Using Anthropic MCP Connector. mcp_servers payload:", JSON.stringify(requestBody.mcp_servers, null, 2));
+                    // When using Anthropic MCP Connector, OpenAI-style 'tools' and 'tool_choice' are not sent.
+                } else {
+                    console.log("Chat: Anthropic endpoint, but no MCP-configured tools found. Proceeding with standard tool definition if any.");
+                    Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
+                }
+            } else {
+                // Not an Anthropic endpoint, use standard OpenAI-style tool definition
+                Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
+            }
+            // --- End Anthropic MCP Connector Logic ---
+
+
             console.log("Chat: makeApiCall - Final requestBody before sending:", JSON.stringify(requestBody, null, 2));
+            console.log("Chat: makeApiCall - Final fetchHeaders:", JSON.stringify(fetchHeaders, null, 2));
 
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
             let effectiveEnableStreaming = enableStreaming;
+            // For Anthropic MCP, tool results are part of the stream, so this check might not be needed or behave differently.
+            // For now, keeping the existing logic for disabling streaming if a 'tool' role message is in history.
             const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
 
-            if (hasToolMessage && enableStreaming) {
+            if (hasToolMessage && enableStreaming && !usingAnthropicMcpConnector) { // Only disable for non-Anthropic MCP if tool in history
                 effectiveEnableStreaming = false;
-                console.log("Chat: Tool result detected in history, temporarily disabling streaming for this call.");
+                console.log("Chat: Tool result detected in history for non-Anthropic MCP, temporarily disabling streaming for this call.");
             }
 
-            if (effectiveEnableStreaming) {
+
+            if (effectiveEnableStreaming) { // This includes Anthropic MCP streaming
                 requestBody.stream = true;
                 userInput.disabled = true;
                 sendButton.disabled = true;
@@ -760,7 +948,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    headers: fetchHeaders, // Use potentially modified headers
                     body: JSON.stringify(requestBody),
                     signal,
                 });
