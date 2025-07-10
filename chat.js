@@ -1025,10 +1025,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             } else { // Non-streaming for chat input
+                userInput.disabled = true;
+                sendButton.disabled = true;
+                clearButton.textContent = 'Stop';
+                currentAbortController = new AbortController();
+                const signal = currentAbortController.signal;
+
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
                     body: JSON.stringify(requestBody),
+                    signal,
                 });
 
                 if (!apiResponse.ok) {
@@ -1061,10 +1068,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             action: 'executePromptPaulTool',
                             toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
                         }, (response) => {
-                             if (chrome.runtime.lastError) { addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return; }
+                             if (chrome.runtime.lastError) {
+                                 addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
+                                 userInput.disabled = false;
+                                 sendButton.disabled = false;
+                                 clearButton.textContent = 'Clear';
+                                 currentAbortController = null;
+                                 userInput.focus();
+                                 return;
+                             }
                              if (response.error) {
                                 addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                                userInput.disabled = false;
+                                sendButton.disabled = false;
+                                clearButton.textContent = 'Clear';
+                                currentAbortController = null;
+                                userInput.focus();
                              } else {
                                 addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
@@ -1076,8 +1096,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     })();
                 } else if (responseMessage.content) {
                     addMessage('LLM', responseMessage.content);
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    clearButton.textContent = 'Clear';
+                    currentAbortController = null;
                 } else {
                      addMessage('System', "Received an empty or unexpected response from LLM.");
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    clearButton.textContent = 'Clear';
+                    currentAbortController = null;
                 }
             }
         } catch (error) {
@@ -1090,6 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
             userInput.disabled = false;
             sendButton.disabled = false;
             clearButton.textContent = 'Clear';
+            currentAbortController = null;
             userInput.focus();
         }
     }
@@ -1204,10 +1233,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             } else {
+                userInput.disabled = true;
+                sendButton.disabled = true;
+                clearButton.textContent = 'Stop';
+                currentAbortController = new AbortController();
+                const signal = currentAbortController.signal;
+
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
                     body: JSON.stringify(requestBody),
+                    signal,
                 });
                 if (!apiResponse.ok) {
                     const errorText = await apiResponse.text();
@@ -1228,6 +1264,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedText = null;
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
+
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                clearButton.textContent = 'Clear';
+                currentAbortController = null;
             }
         } catch (error) {
             // Show more detailed error messages
@@ -1244,6 +1285,7 @@ document.addEventListener('DOMContentLoaded', () => {
             userInput.disabled = false;
             sendButton.disabled = false;
             clearButton.textContent = 'Clear';
+            currentAbortController = null;
         }
     });
 
@@ -1380,7 +1422,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
 
                                 // Pass the tool_choice from the original instruction
-                                makeApiCall(prompt, originalInstruction.tool_choice);
+                                //makeApiCall(prompt, originalInstruction.tool_choice);
+                                chrome.runtime.sendMessage({
+                                    action: 'executeLlmApiRequest',
+                                    prompt: prompt,
+                                    tool_choice: originalInstruction.tool_choice
+                                });
                             }
                         );
                     });

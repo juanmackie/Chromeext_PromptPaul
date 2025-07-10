@@ -1769,6 +1769,12 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Indicates asynchronous response
+    } else if (request.action === 'executeLlmApiRequest') {
+        const { prompt, tool_choice } = request;
+        (async () => {
+            await makeLlmApiRequest(prompt, null, { customInstructionToolChoice: tool_choice });
+        })();
+        return true;
     }
     // Handle other actions if any
 });
