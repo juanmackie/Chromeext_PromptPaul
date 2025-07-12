@@ -407,6 +407,21 @@ body.dark-theme .llm-message img {
     max-width: 95%;
 }
 
+.llm-message pre {
+    background-color: var(--ext-muted);
+    color: var(--ext-muted-foreground);
+    padding: 1rem;
+    border-radius: var(--ext-radius-md);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.llm-message code {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
 button {
     background-color: var(--primary-color);
     color: white;

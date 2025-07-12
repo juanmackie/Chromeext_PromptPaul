@@ -477,13 +477,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     // History for assistant *requesting* the tool is already added within the toolCallWasHandledInThisStream block.
                 } else {
                     // This is the original path: finalize with accumulatedStreamedText
-                    const finalContent = accumulatedStreamedText;
-                    if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
-                        currentStreamingContentElement.innerHTML = marked.parse(finalContent);
-                         if (copyIconElem && copyFormattedIconElem) {
-                            attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                        }
+                const finalContent = accumulatedStreamedText;
+                if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
+                    currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                     if (copyIconElem && copyFormattedIconElem) {
+                        attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
                     }
+                }
 
                     // Add to history if there's actual content and it wasn't a tool call
                     if (finalContent.trim()) {
