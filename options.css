@@ -1066,3 +1066,51 @@ footer a:hover {
   background-color: #0089D0;
   border-color: hsl(var(--primary));
 }
+
+/* Styles for the Tools Table */
+#toolsTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  table-layout: fixed; /* Prevent long URLs from breaking layout */
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: var(--ext-shadow-sm);
+}
+
+#toolsTable thead {
+  background-color: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
+  font-weight: 500;
+}
+
+#toolsTable th,
+#toolsTable td {
+  padding: 0.9rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ext-border);
+  word-wrap: break-word; /* For wrapping long text */
+}
+
+/* Column Widths */
+#toolsTable th:nth-child(1) { width: 20%; } /* Name */
+#toolsTable th:nth-child(2) { width: 35%; } /* Description */
+#toolsTable th:nth-child(3) { width: 30%; word-break: break-all; } /* MCP URL */
+#toolsTable th:nth-child(4) { width: 15%; text-align: center; } /* Actions */
+
+
+#toolsTable tbody tr:nth-child(even) {
+  background-color: #ECF3F8B3;
+}
+
+body.dark-theme #toolsTable tbody tr:nth-child(even) {
+  background: var(--ext-card) !important;
+}
+
+#toolsTable tbody tr:hover {
+  background-color: #ECF3F8CC;
+}
+
+body.dark-theme #toolsTable tbody tr:hover {
+    background-color: #062437 !important;
+}
