@@ -667,6 +667,7 @@ button:disabled {
   border-radius: 0.5rem;
   overflow: hidden; /* Ensures rounded corners are respected */
   box-shadow: var(--ext-shadow-sm);
+  table-layout: fixed; /* Prevent content from breaking layout */
 }
 
 #instructionsTable thead {
@@ -679,6 +680,36 @@ button:disabled {
 #instructionsTable td {
   padding: 0.9rem 1rem; /* Slightly increased padding */
   text-align: left;
+  word-wrap: break-word; /* Allow long words to wrap */
+  overflow-wrap: break-word; /* Modern browsers */
+  vertical-align: top; /* Align content to top for better readability */
+}
+
+/* Column width distribution for instructions table */
+#instructionsTable th:nth-child(1) { width: 15%; } /* Name */
+#instructionsTable th:nth-child(2) { width: 45%; } /* Content - give more space */
+#instructionsTable th:nth-child(3) { width: 15%; } /* Tool Choice */
+#instructionsTable th:nth-child(4) { width: 8%; }  /* Pin */
+#instructionsTable th:nth-child(5) { width: 17%; } /* Actions */
+
+/* Specific styling for content column to handle long text */
+#instructionsTable td:nth-child(2) {
+  max-width: 0; /* Forces the cell to respect the width setting */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Show full content on hover */
+#instructionsTable td:nth-child(2):hover {
+  white-space: normal;
+  overflow: visible;
+  position: relative;
+  z-index: 10;
+  background-color: var(--ext-card);
+  box-shadow: var(--ext-shadow-md);
+  border-radius: 0.25rem;
+  padding: 1rem;
 }
 
 #instructionsTable tbody tr:nth-child(even) {
