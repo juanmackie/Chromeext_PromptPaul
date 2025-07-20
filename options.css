@@ -263,7 +263,7 @@ body {
 
 .card {
   background: var(--ext-card);
-  border-radius: 1rem;
+  border-radius: 1.5rem;
   padding: 2rem;
   margin-bottom: 2rem;
   box-shadow: var(--ext-shadow-md);
