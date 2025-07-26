@@ -17,6 +17,176 @@ const mcpClientCapabilities = {
 };
 const mcpClientInfo = { "name": "PromptPaulExtension", "version": "0.1.0" }; // Use appropriate version
 
+// Session lifecycle management constants
+const MCP_SESSION_TIMEOUT = 30000; // 30 seconds for requests
+const MCP_SESSION_MAX_AGE = 300000; // 5 minutes session lifetime
+const MCP_SESSION_CLEANUP_INTERVAL = 60000; // 1 minute cleanup interval
+const MCP_MAX_RETRY_ATTEMPTS = 3;
+const MCP_RETRY_DELAY = 1000; // 1 second base delay
+
+// Session cleanup timer
+let sessionCleanupTimer = null;
+
+// Circuit breaker for MCP servers
+const mcpCircuitBreakers = {};
+const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
+const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
+const CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS = 3;
+
+class CircuitBreaker {
+    constructor(serverUrl) {
+        this.serverUrl = serverUrl;
+        this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+        this.failureCount = 0;
+        this.lastFailureTime = null;
+        this.halfOpenCallCount = 0;
+    }
+    
+    async execute(operation) {
+        if (this.state === 'OPEN') {
+            if (Date.now() - this.lastFailureTime > CIRCUIT_BREAKER_TIMEOUT) {
+                this.state = 'HALF_OPEN';
+                this.halfOpenCallCount = 0;
+                console.log(`Circuit breaker for ${this.serverUrl} moving to HALF_OPEN state`);
+            } else {
+                throw new Error(`Circuit breaker OPEN for ${this.serverUrl}. Server temporarily unavailable.`);
+            }
+        }
+        
+        if (this.state === 'HALF_OPEN' && this.halfOpenCallCount >= CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS) {
+            throw new Error(`Circuit breaker HALF_OPEN limit reached for ${this.serverUrl}. Server still unstable.`);
+        }
+        
+        try {
+            const result = await operation();
+            this.onSuccess();
+            return result;
+        } catch (error) {
+            this.onFailure();
+            throw error;
+        }
+    }
+    
+    onSuccess() {
+        this.failureCount = 0;
+        if (this.state === 'HALF_OPEN') {
+            this.state = 'CLOSED';
+            console.log(`Circuit breaker for ${this.serverUrl} recovered to CLOSED state`);
+        }
+    }
+    
+    onFailure() {
+        this.failureCount++;
+        this.lastFailureTime = Date.now();
+        
+        if (this.state === 'HALF_OPEN') {
+            this.halfOpenCallCount++;
+        }
+        
+        if (this.failureCount >= CIRCUIT_BREAKER_FAILURE_THRESHOLD) {
+            this.state = 'OPEN';
+            console.log(`Circuit breaker for ${this.serverUrl} tripped to OPEN state after ${this.failureCount} failures`);
+        }
+    }
+}
+
+function getCircuitBreaker(serverUrl) {
+    if (!mcpCircuitBreakers[serverUrl]) {
+        mcpCircuitBreakers[serverUrl] = new CircuitBreaker(serverUrl);
+    }
+    return mcpCircuitBreakers[serverUrl];
+}
+
+// Start session cleanup timer
+function startSessionCleanup() {
+    if (sessionCleanupTimer) return; // Already running
+    
+    sessionCleanupTimer = setInterval(() => {
+        const now = Date.now();
+        const sessionsToCleanup = [];
+        
+        for (const [url, session] of Object.entries(mcpSessions)) {
+            if (session.lastUsed && (now - session.lastUsed) > MCP_SESSION_MAX_AGE) {
+                sessionsToCleanup.push(url);
+            }
+        }
+        
+        for (const url of sessionsToCleanup) {
+            console.log(`MCP Session cleanup: Removing stale session for ${url}`);
+            delete mcpSessions[url];
+        }
+        
+        if (Object.keys(mcpSessions).length === 0 && sessionCleanupTimer) {
+            clearInterval(sessionCleanupTimer);
+            sessionCleanupTimer = null;
+            console.log('MCP Session cleanup: No active sessions, stopping cleanup timer');
+        }
+    }, MCP_SESSION_CLEANUP_INTERVAL);
+    
+    console.log('MCP Session cleanup: Started cleanup timer');
+}
+
+// Enhanced session health check
+function isSessionHealthy(session) {
+    if (!session || !session.initialized) return false;
+    
+    const now = Date.now();
+    if (session.lastUsed && (now - session.lastUsed) > MCP_SESSION_MAX_AGE) {
+        return false;
+    }
+    
+    return true;
+}
+
+// Timeout wrapper for fetch requests
+async function fetchWithTimeout(url, options, timeoutMs = MCP_SESSION_TIMEOUT) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeoutMs}ms`);
+        }
+        throw error;
+    }
+}
+
+// Retry wrapper with exponential backoff
+async function retryWithBackoff(operation, maxAttempts = MCP_MAX_RETRY_ATTEMPTS, baseDelay = MCP_RETRY_DELAY) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+            
+            if (attempt === maxAttempts) {
+                break;
+            }
+            
+            // Don't retry on certain errors
+            if (error.message.includes('404') || error.message.includes('401') || error.message.includes('403')) {
+                break;
+            }
+            
+            const delay = baseDelay * Math.pow(2, attempt - 1);
+            console.log(`MCP Retry: Attempt ${attempt} failed, retrying in ${delay}ms. Error:`, error.message);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    
+    throw lastError;
+}
+
 async function sendMcpNotification(mcpServerUrl, method, params) {
     console.log(`Sending MCP notification '${method}' to ${mcpServerUrl} with params:`, params);
     const session = mcpSessions[mcpServerUrl]; // Get session, primarily for mcpSessionId
@@ -47,7 +217,7 @@ async function sendMcpNotification(mcpServerUrl, method, params) {
 
 
     try {
-        const response = await fetch(mcpServerUrl, {
+        const response = await fetchWithTimeout(mcpServerUrl, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(notificationPayload)
@@ -72,27 +242,34 @@ async function sendMcpNotification(mcpServerUrl, method, params) {
 
 async function initializeMcpSession(mcpServerUrl) {
     console.log(`Initializing MCP session for: ${mcpServerUrl} (expecting SSE response)`);
-    const requestId = `mcp-init-${Date.now()}`;
-    const initializeParams = {
-        protocolVersion: "0.1.0",
-        capabilities: mcpClientCapabilities,
-        clientInfo: mcpClientInfo
-    };
-    const requestPayload = {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "initialize",
-        params: initializeParams
-    };
+    
+    // Check circuit breaker before attempting initialization
+    const circuitBreaker = getCircuitBreaker(mcpServerUrl);
+    
+    return await circuitBreaker.execute(async () => {
+        const requestId = `mcp-init-${Date.now()}`;
+        const initializeParams = {
+            protocolVersion: "0.1.0",
+            capabilities: mcpClientCapabilities,
+            clientInfo: mcpClientInfo
+        };
+        const requestPayload = {
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "initialize",
+            params: initializeParams
+        };
 
     try {
-        const response = await fetch(mcpServerUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/event-stream' // Correct Accept header
-            },
-            body: JSON.stringify(requestPayload)
+        const response = await retryWithBackoff(async () => {
+            return await fetchWithTimeout(mcpServerUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream' // Correct Accept header
+                },
+                body: JSON.stringify(requestPayload)
+            });
         });
 
         if (!response.ok) {
@@ -206,10 +383,15 @@ async function initializeMcpSession(mcpServerUrl) {
             serverUrl: mcpServerUrl,
             serverCapabilities: serverResponse.result.capabilities,
             protocolVersion: serverResponse.result.protocolVersion,
-            initialized: true
+            initialized: true,
+            createdAt: Date.now(),
+            lastUsed: Date.now()
         };
         mcpSessions[mcpServerUrl] = session; // Cache the session
         console.log(`MCP session (with mcpSessionId: ${mcpSessionId}) successfully initialized and cached for ${mcpServerUrl}`);
+        
+        // Start cleanup timer if this is the first session
+        startSessionCleanup();
 
         // Send "initialized" notification
         await sendMcpNotification(mcpServerUrl, "initialized", {});
@@ -245,13 +427,23 @@ async function initializeMcpSession(mcpServerUrl) {
         enhancedError.cause = error; // Attach the original error as cause
         throw enhancedError;
     }
+    }); // Close circuit breaker execute
 }
 
 async function getMcpSession(mcpServerUrl) {
-    if (mcpSessions[mcpServerUrl] && mcpSessions[mcpServerUrl].initialized) {
-        console.log(`Returning existing MCP session for: ${mcpServerUrl}`);
-        return mcpSessions[mcpServerUrl];
+    const existingSession = mcpSessions[mcpServerUrl];
+    
+    if (existingSession && isSessionHealthy(existingSession)) {
+        console.log(`Returning existing healthy MCP session for: ${mcpServerUrl}`);
+        existingSession.lastUsed = Date.now(); // Update last used timestamp
+        return existingSession;
     }
+    
+    if (existingSession && !isSessionHealthy(existingSession)) {
+        console.log(`Existing session for ${mcpServerUrl} is stale, removing and creating new session`);
+        delete mcpSessions[mcpServerUrl];
+    }
+    
     console.log(`No existing session or not initialized, creating new MCP session for: ${mcpServerUrl}`);
     return await initializeMcpSession(mcpServerUrl);
 }
@@ -347,10 +539,12 @@ async function sendMcpRequest(mcpServerUrl, requestPayload) {
     }
 
     try {
-        const response = await fetch(mcpServerUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestPayload)
+        const response = await retryWithBackoff(async () => {
+            return await fetchWithTimeout(mcpServerUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestPayload)
+            });
         });
 
         if (!response.ok) {
@@ -881,6 +1075,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
 
             if (mcpConfiguredTools.length > 0) {
                 usingAnthropicMcpConnector = true;
+                usingAnthropicMcpConnectorGlobal = true; // Fix: Set global variable for streaming
                 fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header
 
                 apiRequestBody.mcp_servers = mcpConfiguredTools.map(tool => {
@@ -1331,22 +1526,31 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, ori
         console.log("Background: Webhook Fetch Details:", { endpointUrl: finalEndpointUrl, fetchOptions: finalFetchOptions });
 
         const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
+        console.log(`Background: Fetch response received. Status: ${response.status}, StatusText: ${response.statusText}`);
 
         if (!response.ok) {
             let errorBody = '';
             try {
                 errorBody = await response.text(); // Try to get error details from response body
             } catch (_) { /* Ignore if body cannot be read */ }
-            throw new Error(`HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim());
+            const errorMsg = `HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim();
+            console.error(`Background: HTTP error for ${finalEndpointUrl}:`, errorMsg);
+            throw new Error(errorMsg);
         }
 
         // Attempt to parse response as JSON, fall back to text if not JSON
         const contentType = response.headers.get('content-type');
+        console.log(`Background: Response content-type: ${contentType}`);
+        
+        let result;
         if (contentType && contentType.includes('application/json')) {
-            return await response.json();
+            result = await response.json();
         } else {
-            return await response.text();
+            result = await response.text();
         }
+        
+        console.log(`Background: Parsed response result:`, result);
+        return result;
 
     } catch (error) {
         console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
@@ -1371,6 +1575,9 @@ const toolImplementations = {
    _callUserDefinedEndpoint: callUserDefinedEndpoint
 };
 
+
+// Track active tool executions to prevent duplicates
+const activeToolExecutions = new Set();
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
@@ -1612,6 +1819,16 @@ chrome.scripting.executeScript({
         const { id, name, arguments: argsString } = request.toolCall;
         console.log(`Background: Received request to execute tool '${name}' with id '${id}' (executePromptPaulTool entry)`);
 
+        // Prevent duplicate executions
+        const executionKey = `${id}-${name}`;
+        if (activeToolExecutions.has(executionKey)) {
+            console.log(`Background: Tool execution '${executionKey}' already in progress, ignoring duplicate request`);
+            return true;
+        }
+        
+        activeToolExecutions.add(executionKey);
+        console.log(`Background: Added '${executionKey}' to active executions. Active count: ${activeToolExecutions.size}`);
+
         (async () => {
             try {
                 const allTools = await getAllToolDefinitions();
@@ -1637,6 +1854,9 @@ chrome.scripting.executeScript({
                             throw new Error("MCP session could not be initialized.");
                         }
                         
+                        // Update session last used timestamp
+                        session.lastUsed = Date.now();
+                        
                         // Add debug logging for MCP tool execution
                         console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
                         
@@ -1651,8 +1871,11 @@ chrome.scripting.executeScript({
                         const requestId = `mcp-tc-${Date.now()}`;
                         const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
 
-                        // Assuming mcpServerUrl is the direct JSON-RPC endpoint for MCP.
-                        const mcpResponse = await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
+                        // Execute MCP request with circuit breaker protection
+                        const circuitBreaker = getCircuitBreaker(toolDefinition.mcpServerUrl);
+                        const mcpResponse = await circuitBreaker.execute(async () => {
+                            return await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
+                        });
 
                         // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
                         // The actual data might be in mcpResponse.result.content or just mcpResponse.result
@@ -1709,6 +1932,10 @@ chrome.scripting.executeScript({
                     errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
                 }
                 sendResponse({ error: errorMessage });
+            } finally {
+                // Always remove from active executions when done
+                activeToolExecutions.delete(executionKey);
+                console.log(`Background: Removed '${executionKey}' from active executions. Active count: ${activeToolExecutions.size}`);
             }
         })();
         return true; // Crucial for async sendResponse
@@ -1779,3 +2006,55 @@ chrome.scripting.executeScript({
     // Handle other actions if any
 });
 console.log("Background: onMessage listener function HAS BEEN registered.");
+
+// Cleanup function for extension shutdown
+function cleanupMcpSessions() {
+    console.log('MCP Cleanup: Cleaning up all sessions and timers');
+    
+    // Clear session cleanup timer
+    if (sessionCleanupTimer) {
+        clearInterval(sessionCleanupTimer);
+        sessionCleanupTimer = null;
+    }
+    
+    // Clear all sessions
+    const sessionCount = Object.keys(mcpSessions).length;
+    mcpSessions = {};
+    
+    // Clear circuit breakers
+    const breakerCount = Object.keys(mcpCircuitBreakers).length;
+    for (const url in mcpCircuitBreakers) {
+        delete mcpCircuitBreakers[url];
+    }
+    
+    console.log(`MCP Cleanup: Cleared ${sessionCount} sessions and ${breakerCount} circuit breakers`);
+}
+
+// Handle extension lifecycle events
+chrome.runtime.onSuspend?.addListener(() => {
+    console.log('Extension suspending, cleaning up MCP resources');
+    cleanupMcpSessions();
+});
+
+// Add periodic health check for sessions
+function performSessionHealthCheck() {
+    const now = Date.now();
+    let healthyCount = 0;
+    let unhealthyCount = 0;
+    
+    for (const [url, session] of Object.entries(mcpSessions)) {
+        if (isSessionHealthy(session)) {
+            healthyCount++;
+        } else {
+            unhealthyCount++;
+            console.log(`MCP Health Check: Session for ${url} is unhealthy, will be cleaned up`);
+        }
+    }
+    
+    if (healthyCount > 0 || unhealthyCount > 0) {
+        console.log(`MCP Health Check: ${healthyCount} healthy, ${unhealthyCount} unhealthy sessions`);
+    }
+}
+
+// Run health check every 2 minutes
+setInterval(performSessionHealthCheck, 120000);
