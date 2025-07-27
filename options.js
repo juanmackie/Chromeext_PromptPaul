@@ -661,6 +661,13 @@ function setupInstructionHandlers() {
                 toolChoiceInput.value = 'none';
               }
             }
+
+            // Set the modality checkboxes
+            const modalities = instruction.modalities || ['text']; // Default to text if not set
+            document.getElementById('modalityText').checked = modalities.includes('text');
+            document.getElementById('modalityImage').checked = modalities.includes('image');
+            document.getElementById('modalityVideo').checked = modalities.includes('video');
+            document.getElementById('modalityAudio').checked = modalities.includes('audio');
           }
         });
       });
@@ -739,6 +746,13 @@ function setupInstructionHandlers() {
       const toolChoiceInput = document.getElementById('instructionToolChoice');
       const toolChoiceValue = toolChoiceInput.value.trim();
 
+      // Get selected modalities
+      const modalities = [];
+      if (document.getElementById('modalityText').checked) modalities.push('text');
+      if (document.getElementById('modalityImage').checked) modalities.push('image');
+      if (document.getElementById('modalityVideo').checked) modalities.push('video');
+      if (document.getElementById('modalityAudio').checked) modalities.push('audio');
+
       if (!instructionName || !instructionContent) {
         showStatus('Instruction name and content are required.', true);
         return;
@@ -757,6 +771,7 @@ function setupInstructionHandlers() {
                 name: instructionName,
                 content: instructionContent,
                 tool_choice: toolChoiceValue || 'none', // Save as string
+                modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
                 lastUpdated: now
               };
             }
@@ -770,6 +785,7 @@ function setupInstructionHandlers() {
             name: instructionName,
             content: instructionContent,
             tool_choice: toolChoiceValue || 'none', // Save as string
+            modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
             createdAt: now,
             lastUpdated: now
           };
@@ -795,6 +811,13 @@ function setupInstructionHandlers() {
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
     document.getElementById('instructionToolChoice').value = '';
+    
+    // Reset modality checkboxes - Text checked by default, others unchecked
+    document.getElementById('modalityText').checked = true;
+    document.getElementById('modalityImage').checked = false;
+    document.getElementById('modalityVideo').checked = false;
+    document.getElementById('modalityAudio').checked = false;
+    
     showStatus('Form cleared.');
   }
 

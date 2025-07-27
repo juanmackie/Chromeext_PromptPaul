@@ -196,6 +196,44 @@
           </select>
           <small>Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</small>
         </div>
+        
+        <div class="form-group">
+          <label>Available Modalities</label>
+          <div class="modality-checkboxes">
+            <div class="modality-option">
+              <input type="checkbox" id="modalityText" value="text" checked>
+              <label for="modalityText">
+                <span class="modality-icon">📝</span>
+                <span class="modality-label">Text</span>
+                <small>Context menus, selected text, page content</small>
+              </label>
+            </div>
+            <div class="modality-option">
+              <input type="checkbox" id="modalityImage" value="image">
+              <label for="modalityImage">
+                <span class="modality-icon">🖼️</span>
+                <span class="modality-label">Images</span>
+                <small>Right-click image analysis</small>
+              </label>
+            </div>
+            <div class="modality-option">
+              <input type="checkbox" id="modalityVideo" value="video">
+              <label for="modalityVideo">
+                <span class="modality-icon">🎥</span>
+                <span class="modality-label">Video</span>
+                <small>Right-click video analysis</small>
+              </label>
+            </div>
+            <div class="modality-option">
+              <input type="checkbox" id="modalityAudio" value="audio">
+              <label for="modalityAudio">
+                <span class="modality-icon">🎵</span>
+                <span class="modality-label">Audio</span>
+              </label>
+            </div>
+          </div>
+          <small>Select which types of content this instruction can be applied to. Text is always available for general use.(Ensure your model supports multi modality)</small>
+        </div>
         <input type="hidden" id="instructionId">
         <div class="button-group">
           <button type="button" id="saveInstruction" class="save-instruction-button"><span class="material-symbols-outlined">save</span> Save Instruction</button>
