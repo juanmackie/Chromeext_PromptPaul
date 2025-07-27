@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let accumulatedStreamedText = "";
     let activeStreamingToolCall = null;
     let currentAbortController = null;
+    let currentMediaData = null; // Store media data for analysis
 
     function stopApiRequest() {
         if (currentAbortController) {
@@ -240,6 +241,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedTextDiv.textContent = selectedText;
                 chatMainArea.style.display = 'none';
                 oneoffInstructionArea.style.display = 'block';
+            }
+        } else if (request.action === 'setMediaForAnalysis') {
+            // Handle media data from context menu
+            const mediaData = request.mediaData;
+            tabId = request.tabId;
+            
+            // Show chat area
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            
+            if (mediaData.loading) {
+                // Show loading state
+                addMessage('System', `📥 Loading ${mediaData.type} for analysis...`);
+            } else if (mediaData.error) {
+                // Show error
+                addMessage('System', `❌ Error loading ${mediaData.type}: ${mediaData.error}`);
+            } else if (mediaData.base64) {
+                // Media loaded successfully
+                currentMediaData = mediaData;
+                
+                // Add media preview to chat
+                addMediaPreview(currentMediaData);
+                
+                // Auto-prompt for analysis
+                const analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
+                console.log('About to call makeApiCallWithMedia with:', {
+                    type: currentMediaData.type,
+                    mimeType: currentMediaData.mimeType,
+                    base64Length: currentMediaData.base64 ? currentMediaData.base64.length : 0,
+                    hasBase64: !!currentMediaData.base64
+                });
+                makeApiCallWithMedia(analysisPrompt, currentMediaData);
             }
         } else if (request.action === 'setApiResponse') {
             console.log("Chat: setApiResponse received", request);
@@ -693,9 +726,223 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearChat() {
             chatArea.innerHTML = '';
             conversationHistory = [];
+            currentMediaData = null; // Clear media data
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             showToast('Chat history cleared');
+    }
+
+    function addMediaPreview(mediaData) {
+        const previewDiv = document.createElement('div');
+        previewDiv.classList.add('message', 'system-message');
+        previewDiv.style.cssText = 'background: #e3f2fd; border-left: 4px solid #2196f3; margin-bottom: 10px;';
+        
+        if (mediaData.type === 'image') {
+            previewDiv.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img src="data:${mediaData.mimeType};base64,${mediaData.base64}" 
+                         style="max-width: 200px; max-height: 150px; border-radius: 4px;" 
+                         alt="Image for analysis">
+                    <div>
+                        <strong>📷 Image Analysis</strong><br>
+                        <small>Right-clicked image ready for analysis</small>
+                    </div>
+                </div>
+            `;
+        } else if (mediaData.type === 'video') {
+            previewDiv.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <video src="data:${mediaData.mimeType};base64,${mediaData.base64}" 
+                           style="max-width: 200px; max-height: 150px; border-radius: 4px;" 
+                           controls>
+                    </video>
+                    <div>
+                        <strong>🎥 Video Analysis</strong><br>
+                        <small>Right-clicked video ready for analysis</small>
+                    </div>
+                </div>
+            `;
+        } else if (mediaData.type === 'audio') {
+            previewDiv.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <audio src="data:${mediaData.mimeType};base64,${mediaData.base64}" 
+                           style="width: 200px;" 
+                           controls>
+                    </audio>
+                    <div>
+                        <strong>🎵 Audio Analysis</strong><br>
+                        <small>Right-clicked audio ready for analysis</small>
+                    </div>
+                </div>
+            `;
+        }
+        
+        chatArea.appendChild(previewDiv);
+        chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    async function makeApiCallWithMedia(userMessage, mediaData, tool_choice = 'none') {
+        try {
+            const config = await getApiConfig();
+            const allAvailableTools = await getTools();
+
+            if (userMessage) {
+                addMessage('User', userMessage);
+                
+                // Create message content with media
+                const messageContent = [];
+                
+                // Add text content
+                messageContent.push({
+                    type: 'text',
+                    text: userMessage
+                });
+                
+                // Add media content for vision models (OpenAI format)
+                if (mediaData.type === 'image') {
+                    messageContent.push({
+                        type: 'image_url',
+                        image_url: {
+                            url: `data:${mediaData.mimeType};base64,${mediaData.base64}`
+                            // Note: "detail" parameter is optional for OpenAI, removed for compatibility
+                        }
+                    });
+                }
+                
+                conversationHistory.push({ 
+                    role: 'user', 
+                    content: messageContent 
+                });
+            }
+
+            const now = new Date();
+            const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
+            let systemPromptContent = dateTimeString;
+            if (config.systemPrompt && config.systemPrompt.trim() !== '') {
+                systemPromptContent += `\n\n${config.systemPrompt}`;
+            }
+            const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
+            
+            // Use existing tool preparation logic
+            const formattedTools = allAvailableTools.map(tool => {
+                return {
+                    type: 'function',
+                    function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: tool.parametersForLlm
+                    }
+                };
+            }).filter(tool => tool !== null);
+
+            let toolChoicePayload = {};
+            if (tool_choice === 'none' || formattedTools.length === 0) {
+                toolChoicePayload = {};
+            } else if (tool_choice === 'auto') {
+                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+            }
+
+            const requestBody = {
+                model: config.modelName,
+                messages: messagesForRequest,
+                max_tokens: parseInt(config.maxTokens) || 2048,
+                ...toolChoicePayload
+            };
+
+            // Check if this is an Anthropic endpoint and format accordingly
+            const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
+            if (isAnthropicEndpoint && mediaData && mediaData.type === 'image') {
+                // Anthropic Claude format for images
+                const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
+                if (lastUserMessage && lastUserMessage.role === 'user' && Array.isArray(lastUserMessage.content)) {
+                    // Convert to Anthropic format
+                    lastUserMessage.content = lastUserMessage.content.map(content => {
+                        if (content.type === 'image_url') {
+                            return {
+                                type: 'image',
+                                source: {
+                                    type: 'base64',
+                                    media_type: mediaData.mimeType,
+                                    data: mediaData.base64
+                                }
+                            };
+                        }
+                        return content;
+                    });
+                }
+            }
+
+            const fetchHeaders = {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + config.apiKey,
+            };
+
+            console.log("Chat: makeApiCallWithMedia - Final requestBody (without base64 data):", {
+                ...requestBody,
+                messages: requestBody.messages.map(msg => ({
+                    ...msg,
+                    content: Array.isArray(msg.content) ? 
+                        msg.content.map(c => c.type === 'image_url' ? 
+                            {...c, image_url: {...c.image_url, url: `[BASE64_DATA_${c.image_url.url.split(',')[0]}]`}} : c
+                        ) : msg.content
+                }))
+            });
+
+            // Use non-streaming for media analysis to ensure proper handling
+            userInput.disabled = true;
+            sendButton.disabled = true;
+            clearButton.textContent = 'Stop';
+            currentAbortController = new AbortController();
+            const signal = currentAbortController.signal;
+
+            const apiResponse = await fetch(config.llmEndpoint, {
+                method: 'POST',
+                headers: fetchHeaders,
+                body: JSON.stringify(requestBody),
+                signal,
+            });
+
+            if (!apiResponse.ok) {
+                const errorText = await apiResponse.text();
+                let errorDetail = errorText;
+                try { 
+                    const errorJson = JSON.parse(errorText); 
+                    errorDetail = errorJson.error ? errorJson.error.message : errorText;
+                } catch (e) { /* ignore */ }
+                throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+            }
+
+            const responseData = await apiResponse.json();
+            if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
+                throw new Error('Invalid response format from API (no choices or message)');
+            }
+
+            const responseMessage = responseData.choices[0].message;
+            conversationHistory.push(responseMessage);
+
+            if (responseMessage.content) {
+                addMessage('LLM', responseMessage.content);
+            }
+
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            clearButton.textContent = 'Clear';
+            currentAbortController = null;
+            userInput.focus();
+
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                addMessage('System', 'Response stopped');
+            } else {
+                console.error("makeApiCallWithMedia Error:", error);
+                addMessage('System', 'Error: ' + error.message);
+            }
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            clearButton.textContent = 'Clear';
+            currentAbortController = null;
+            userInput.focus();
+        }
     }
     
     // Removed handleSummarizeTabButtonClick as its logic is now consolidated
@@ -707,7 +954,12 @@ document.addEventListener('DOMContentLoaded', () => {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
-            makeApiCall(message);
+            if (currentMediaData) {
+                makeApiCallWithMedia(message, currentMediaData);
+                currentMediaData = null; // Clear media after use
+            } else {
+                makeApiCall(message);
+            }
             userInput.value = '';
         }
     }
@@ -812,7 +1064,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (userMessage) {
                 addMessage('User', userMessage);
-                conversationHistory.push({ role: 'user', content: userMessage });
+                
+                // Check if we have media data to include
+                if (currentMediaData && currentMediaData.type === 'image') {
+                    const messageContent = [
+                        {
+                            type: 'text',
+                            text: userMessage
+                        },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: `data:${currentMediaData.mimeType};base64,${currentMediaData.base64}`
+                            }
+                        }
+                    ];
+                    conversationHistory.push({ role: 'user', content: messageContent });
+                } else {
+                    conversationHistory.push({ role: 'user', content: userMessage });
+                }
             }
 
             const now = new Date();
@@ -876,11 +1146,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Authorization': 'Bearer ' + config.apiKey,
             };
 
+            // --- Handle media data formatting for different providers ---
+            const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
+            const isOpenAIEndpoint = config.llmEndpoint.includes('api.openai.com') || config.llmEndpoint.includes('openai');
+            
+            // Convert image format for Anthropic if needed
+            if (isAnthropicEndpoint && currentMediaData && currentMediaData.type === 'image') {
+                const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
+                if (lastUserMessage && lastUserMessage.role === 'user' && Array.isArray(lastUserMessage.content)) {
+                    lastUserMessage.content = lastUserMessage.content.map(content => {
+                        if (content.type === 'image_url') {
+                            return {
+                                type: 'image',
+                                source: {
+                                    type: 'base64',
+                                    media_type: currentMediaData.mimeType,
+                                    data: currentMediaData.base64
+                                }
+                            };
+                        }
+                        return content;
+                    });
+                }
+            }
+
             // --- Anthropic MCP Connector Logic for chat.js ---
             // This section mirrors the logic in background.js's makeLlmApiRequest.
             // If the endpoint is Anthropic and MCP tools are defined with mcpServerUrl,
             // it prepares the request for Anthropic's Managed MCP approach.
-            const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
             let usingAnthropicMcpConnector = false;
 
             if (isAnthropicEndpoint) {

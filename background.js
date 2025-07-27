@@ -1,4 +1,178 @@
 import './marked.min.js';
+
+// Create context menus for images and other media
+chrome.runtime.onInstalled.addListener(() => {
+    // Context menu for images
+    chrome.contextMenus.create({
+        id: "analyzeImage",
+        title: "Analyze with Prompt Paul",
+        contexts: ["image"]
+    });
+    
+    // Context menu for videos
+    chrome.contextMenus.create({
+        id: "analyzeVideo",
+        title: "Analyze with Prompt Paul",
+        contexts: ["video"]
+    });
+    
+    // Context menu for audio
+    chrome.contextMenus.create({
+        id: "analyzeAudio",
+        title: "Analyze with Prompt Paul",
+        contexts: ["audio"]
+    });
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio") {
+        try {
+            // Open side panel FIRST (must be in direct response to user gesture)
+            await chrome.sidePanel.open({ tabId: tab.id });
+            
+            // Get the media URL
+            const mediaUrl = info.srcUrl;
+            const mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
+            
+            // Show loading message immediately (with error handling)
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'setMediaForAnalysis',
+                    mediaData: {
+                        type: mediaType,
+                        base64: null, // Will be set later
+                        url: mediaUrl,
+                        mimeType: getMimeTypeFromUrl(mediaUrl),
+                        loading: true
+                    },
+                    tabId: tab.id
+                });
+            } catch (error) {
+                console.log('Side panel not ready yet, will send message after image loads');
+            }
+            
+            // Convert media to base64 for API (async operation)
+            fetchMediaAsBase64(mediaUrl).then(base64Data => {
+                const mimeType = getMimeTypeFromUrl(mediaUrl);
+                console.log('Sending media data:', {
+                    type: mediaType,
+                    url: mediaUrl,
+                    mimeType: mimeType,
+                    base64Length: base64Data.length
+                });
+                
+                // Send the actual media data (with retry logic for side panel)
+                const sendMediaData = () => {
+                    try {
+                        chrome.runtime.sendMessage({
+                            action: 'setMediaForAnalysis',
+                            mediaData: {
+                                type: mediaType,
+                                base64: base64Data,
+                                url: mediaUrl,
+                                mimeType: mimeType,
+                                loading: false
+                            },
+                            tabId: tab.id
+                        });
+                    } catch (error) {
+                        console.log('Retrying message send in 500ms...');
+                        setTimeout(sendMediaData, 500);
+                    }
+                };
+                
+                // Give side panel time to load if it was just opened
+                setTimeout(sendMediaData, 1000);
+            }).catch(error => {
+                console.error('Error fetching media:', error);
+                chrome.runtime.sendMessage({
+                    action: 'setMediaForAnalysis',
+                    mediaData: {
+                        type: mediaType,
+                        base64: null,
+                        url: mediaUrl,
+                        mimeType: getMimeTypeFromUrl(mediaUrl),
+                        error: error.message
+                    },
+                    tabId: tab.id
+                });
+            });
+            
+        } catch (error) {
+            console.error('Error processing media:', error);
+        }
+    }
+});
+
+// Helper function to fetch media and convert to base64
+async function fetchMediaAsBase64(url) {
+    try {
+        console.log('Fetching media from URL:', url);
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        console.log('Blob size:', blob.size, 'Type:', blob.type);
+        
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                console.log('DataURL prefix:', dataUrl.substring(0, 50));
+                const base64 = dataUrl.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+                console.log('Base64 length:', base64.length);
+                console.log('Base64 sample:', base64.substring(0, 100));
+                resolve(base64);
+            };
+            reader.onerror = (error) => {
+                console.error('FileReader error:', error);
+                reject(error);
+            };
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        console.error('Error fetching media:', error);
+        throw error;
+    }
+}
+
+// Helper function to determine MIME type from URL
+function getMimeTypeFromUrl(url) {
+    try {
+        // Handle query parameters and fragments
+        const cleanUrl = url.split('?')[0].split('#')[0];
+        const extension = cleanUrl.split('.').pop().toLowerCase();
+        console.log('Detected extension:', extension, 'from URL:', cleanUrl);
+        
+        const mimeTypes = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'svg': 'image/svg+xml',
+            'bmp': 'image/bmp',
+            'tiff': 'image/tiff',
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'ogg': 'video/ogg',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'flac': 'audio/flac'
+        };
+        
+        const mimeType = mimeTypes[extension] || 'image/jpeg'; // Default to jpeg for images
+        console.log('Determined MIME type:', mimeType);
+        return mimeType;
+    } catch (error) {
+        console.error('Error determining MIME type:', error);
+        return 'image/jpeg'; // Safe default
+    }
+}
 console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
@@ -660,6 +834,11 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 
 // Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // Skip media analysis menu items - they're handled by the new multimodal handler above
+  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio") {
+    return; // Let the new handler above handle these
+  }
+  
   console.log("Context Menu Clicked:", info.menuItemId, "Initial selectionText:", info.selectionText);
   await chrome.sidePanel.open({ tabId: tab.id });
 
