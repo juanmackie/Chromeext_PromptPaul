@@ -40,21 +40,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     });
     
     // Load and add custom instructions for images
-    try {
-        const { instructions } = await chrome.storage.local.get(['instructions']);
-        if (instructions && instructions.length > 0) {
-            instructions.forEach(instruction => {
-                chrome.contextMenus.create({
-                    id: `imageCustom_${instruction.id}`,
-                    parentId: "imageAnalysis",
-                    title: `⚡ ${instruction.name}`,
-                    contexts: ["image"]
-                });
-            });
-        }
-    } catch (error) {
-        console.log('No custom instructions found for image context menus');
-    }
+    await updateImageCustomInstructions();
     
     // Create parent menu for videos
     chrome.contextMenus.create({
@@ -220,6 +206,74 @@ async function fetchMediaAsBase64(url) {
         throw error;
     }
 }
+
+// Track existing image custom instruction menu items
+let existingImageCustomMenuItems = new Set();
+
+// Helper function to update image custom instructions in context menu
+async function updateImageCustomInstructions() {
+    try {
+        // Remove existing custom instruction menu items that we know exist
+        for (const menuItemId of existingImageCustomMenuItems) {
+            try {
+                await new Promise((resolve, reject) => {
+                    chrome.contextMenus.remove(menuItemId, () => {
+                        if (chrome.runtime.lastError) {
+                            // Menu item doesn't exist, that's fine
+                            resolve();
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            } catch (e) {
+                // Ignore errors for non-existent menu items
+            }
+        }
+        existingImageCustomMenuItems.clear();
+        
+        // Add current custom instructions
+        const { instructions } = await chrome.storage.local.get(['instructions']);
+        if (instructions && instructions.length > 0) {
+            for (const instruction of instructions) {
+                const menuItemId = `imageCustom_${instruction.id}`;
+                try {
+                    await new Promise((resolve, reject) => {
+                        chrome.contextMenus.create({
+                            id: menuItemId,
+                            parentId: "imageAnalysis",
+                            title: `⚡ ${instruction.name}`,
+                            contexts: ["image"]
+                        }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.warn(`Failed to create menu item ${menuItemId}:`, chrome.runtime.lastError.message);
+                                resolve();
+                            } else {
+                                existingImageCustomMenuItems.add(menuItemId);
+                                resolve();
+                            }
+                        });
+                    });
+                } catch (e) {
+                    console.warn(`Error creating menu item for instruction ${instruction.name}:`, e);
+                }
+            }
+            console.log(`Updated image context menu with ${existingImageCustomMenuItems.size} custom instructions`);
+        } else {
+            console.log('No custom instructions found for image context menus');
+        }
+    } catch (error) {
+        console.error('Error updating image custom instructions:', error);
+    }
+}
+
+// Listen for storage changes to update context menus
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.instructions) {
+        console.log('Custom instructions changed, updating image context menus...');
+        updateImageCustomInstructions();
+    }
+});
 
 // Helper function to determine MIME type from URL
 function getMimeTypeFromUrl(url) {
