@@ -1,39 +1,118 @@
 import './marked.min.js';
 
 // Create context menus for images and other media
-chrome.runtime.onInstalled.addListener(() => {
-    // Context menu for images
+chrome.runtime.onInstalled.addListener(async () => {
+    // Create parent menu for images
     chrome.contextMenus.create({
-        id: "analyzeImage",
-        title: "Analyze with Prompt Paul",
+        id: "imageAnalysis",
+        title: "Analyze Image with Prompt Paul",
         contexts: ["image"]
     });
     
-    // Context menu for videos
+    // Quick actions for images
     chrome.contextMenus.create({
-        id: "analyzeVideo",
-        title: "Analyze with Prompt Paul",
+        id: "analyzeImage",
+        parentId: "imageAnalysis",
+        title: "🔍 General Analysis",
+        contexts: ["image"]
+    });
+    
+    chrome.contextMenus.create({
+        id: "summarizeImage", 
+        parentId: "imageAnalysis",
+        title: "📝 Summarize Image",
+        contexts: ["image"]
+    });
+    
+    chrome.contextMenus.create({
+        id: "explainImage",
+        parentId: "imageAnalysis", 
+        title: "💡 Explain Image",
+        contexts: ["image"]
+    });
+    
+    // Add separator
+    chrome.contextMenus.create({
+        id: "imageSeparator",
+        parentId: "imageAnalysis",
+        type: "separator",
+        contexts: ["image"]
+    });
+    
+    // Load and add custom instructions for images
+    try {
+        const { instructions } = await chrome.storage.local.get(['instructions']);
+        if (instructions && instructions.length > 0) {
+            instructions.forEach(instruction => {
+                chrome.contextMenus.create({
+                    id: `imageCustom_${instruction.id}`,
+                    parentId: "imageAnalysis",
+                    title: `⚡ ${instruction.name}`,
+                    contexts: ["image"]
+                });
+            });
+        }
+    } catch (error) {
+        console.log('No custom instructions found for image context menus');
+    }
+    
+    // Create parent menu for videos
+    chrome.contextMenus.create({
+        id: "videoAnalysis",
+        title: "Analyze Video with Prompt Paul", 
         contexts: ["video"]
     });
     
-    // Context menu for audio
+    chrome.contextMenus.create({
+        id: "analyzeVideo",
+        parentId: "videoAnalysis",
+        title: "🎥 General Analysis",
+        contexts: ["video"]
+    });
+    
+    // Create parent menu for audio
+    chrome.contextMenus.create({
+        id: "audioAnalysis", 
+        title: "Analyze Audio with Prompt Paul",
+        contexts: ["audio"]
+    });
+    
     chrome.contextMenus.create({
         id: "analyzeAudio",
-        title: "Analyze with Prompt Paul",
+        parentId: "audioAnalysis",
+        title: "🎵 General Analysis", 
         contexts: ["audio"]
     });
 });
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio") {
+    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
+        info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
+        info.menuItemId.startsWith("imageCustom_")) {
         try {
             // Open side panel FIRST (must be in direct response to user gesture)
             await chrome.sidePanel.open({ tabId: tab.id });
             
-            // Get the media URL
+            // Get the media URL and determine action type
             const mediaUrl = info.srcUrl;
-            const mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
+            let mediaType, actionType, instructionId;
+            
+            if (info.menuItemId.startsWith("imageCustom_")) {
+                mediaType = "image";
+                actionType = "custom";
+                instructionId = info.menuItemId.replace("imageCustom_", "");
+            } else if (info.menuItemId === "summarizeImage") {
+                mediaType = "image";
+                actionType = "summarize";
+            } else if (info.menuItemId === "explainImage") {
+                mediaType = "image";
+                actionType = "explain";
+            } else {
+                // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
+                mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
+                actionType = "analyze";
+            }
             
             // Show loading message immediately (with error handling)
             try {
@@ -72,7 +151,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                                 base64: base64Data,
                                 url: mediaUrl,
                                 mimeType: mimeType,
-                                loading: false
+                                loading: false,
+                                actionType: actionType,
+                                instructionId: instructionId
                             },
                             tabId: tab.id
                         });
@@ -835,7 +916,10 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 // Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Skip media analysis menu items - they're handled by the new multimodal handler above
-  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio") {
+  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
+      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
+      info.menuItemId.startsWith("imageCustom_") || 
+      info.menuItemId === "imageAnalysis" || info.menuItemId === "videoAnalysis" || info.menuItemId === "audioAnalysis") {
     return; // Let the new handler above handle these
   }
   
@@ -891,9 +975,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
   
-  // Handle image context
+  // Handle image context (only for non-multimodal menu items)
   // This should be applied *after* potentially fetching tab content if selection was empty
-  if (info.mediaType === 'image' && info.srcUrl) {
+  // Skip this for our new multimodal menu items since they're handled separately
+  if (info.mediaType === 'image' && info.srcUrl && 
+      !info.menuItemId.includes("Image") && !info.menuItemId.includes("Video") && !info.menuItemId.includes("Audio")) {
     // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
     promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
     console.log("Image context added. Updated promptContent:", promptContent.substring(0, 100));

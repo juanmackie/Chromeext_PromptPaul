@@ -264,13 +264,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Add media preview to chat
                 addMediaPreview(currentMediaData);
                 
-                // Auto-prompt for analysis
-                const analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
+                // Generate prompt based on action type
+                let analysisPrompt;
+                if (mediaData.actionType === "custom" && mediaData.instructionId) {
+                    // Handle custom instruction
+                    chrome.storage.local.get(['instructions'], (result) => {
+                        const instructions = result.instructions || [];
+                        const instruction = instructions.find(i => i.id === mediaData.instructionId);
+                        if (instruction) {
+                            analysisPrompt = instruction.content;
+                            addMessage('System', `🎯 Using custom instruction: "${instruction.name}"`);
+                        } else {
+                            analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
+                        }
+                        
+                        console.log('About to call makeApiCallWithMedia with custom instruction:', {
+                            type: currentMediaData.type,
+                            mimeType: currentMediaData.mimeType,
+                            base64Length: currentMediaData.base64 ? currentMediaData.base64.length : 0,
+                            hasBase64: !!currentMediaData.base64,
+                            actionType: mediaData.actionType,
+                            prompt: analysisPrompt.substring(0, 100) + '...'
+                        });
+                        makeApiCallWithMedia(analysisPrompt, currentMediaData);
+                    });
+                    return; // Exit early for async custom instruction handling
+                } else if (mediaData.actionType === "summarize") {
+                    analysisPrompt = `Please summarize this ${currentMediaData.type} into a bullet list of key points. Focus on the main elements, text, objects, and overall message or purpose.`;
+                    addMessage('System', `📝 Summarizing ${currentMediaData.type}...`);
+                } else if (mediaData.actionType === "explain") {
+                    analysisPrompt = `Explain this ${currentMediaData.type} to me in a short concise MECE approach. Break down what you see into clear, structured categories.`;
+                    addMessage('System', `💡 Explaining ${currentMediaData.type}...`);
+                } else {
+                    // Default analysis
+                    analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
+                    addMessage('System', `🔍 Analyzing ${currentMediaData.type}...`);
+                }
+                
                 console.log('About to call makeApiCallWithMedia with:', {
                     type: currentMediaData.type,
                     mimeType: currentMediaData.mimeType,
                     base64Length: currentMediaData.base64 ? currentMediaData.base64.length : 0,
-                    hasBase64: !!currentMediaData.base64
+                    hasBase64: !!currentMediaData.base64,
+                    actionType: mediaData.actionType,
+                    prompt: analysisPrompt.substring(0, 100) + '...'
                 });
                 makeApiCallWithMedia(analysisPrompt, currentMediaData);
             }
