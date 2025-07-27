@@ -579,11 +579,11 @@ function setupInstructionHandlers() {
         }
 
         row.innerHTML = `
-          <td>${instruction.name}</td>
-          <td>${instruction.content}</td>
-          <td>${toolChoiceDisplay}</td>
-          <td><button class="pin-btn" data-id="${instruction.id}" title="Toggle Pin"><span class="material-symbols-outlined">hourglass_empty</span></button></td>
-          <td>
+          <td data-label="Name">${instruction.name}</td>
+          <td data-label="Content">${instruction.content}</td>
+          <td data-label="Tool Choice">${toolChoiceDisplay}</td>
+          <td data-label="Pin"><button class="pin-btn" data-id="${instruction.id}" title="Toggle Pin"><span class="material-symbols-outlined">hourglass_empty</span></button></td>
+          <td data-label="Actions">
             <button class="edit-btn" data-id="${instruction.id}">Edit</button>
             <button class="improve-btn" data-id="${instruction.id}">Improve</button>
             <button class="delete-btn" data-id="${instruction.id}">Delete</button>
@@ -999,10 +999,10 @@ function setupToolHandlers() {
       tools.forEach(tool => {
         const row = document.createElement('tr');
         row.innerHTML = `
-          <td>${tool.name}</td>
-          <td>${tool.description}</td>
-          <td>${tool.mcpServerUrl || ''}</td>
-          <td>
+          <td data-label="Name">${tool.name}</td>
+          <td data-label="Description">${tool.description}</td>
+          <td data-label="MCP Server URL">${tool.mcpServerUrl || ''}</td>
+          <td data-label="Actions">
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
             <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
           </td>
