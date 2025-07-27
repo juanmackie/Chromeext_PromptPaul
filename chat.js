@@ -1,4 +1,5 @@
 import { setupThemeToggle } from './themeUtils.js';
+import { loadingManager } from './loadingManager.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOMContentLoaded event fired in chat.js");
@@ -87,7 +88,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
                     console.error("Chat: Configuration is incomplete or missing.");
-                    reject(new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'));
+                    const error = new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.');
+                    loadingManager.showToast('Please configure API settings in options', 'error');
+                    reject(error);
                 } else {
                     resolve(selectedProfile);
                 }
@@ -946,6 +949,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentAbortController = new AbortController();
                 const signal = currentAbortController.signal;
 
+                // Show loading state
+                const loaderId = loadingManager.showLoading('#chat-area', 'Processing your request...');
+                loadingManager.showConnectionStatus('#chat-area', 'connecting');
+                
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
                     headers: fetchHeaders, // Use potentially modified headers
@@ -953,11 +960,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     signal,
                 });
 
+                // Hide loading state
+                loadingManager.hideLoading(loaderId);
+                loadingManager.showConnectionStatus('#chat-area', 'connected');
+
                 if (!apiResponse.ok) {
                     const errorText = await apiResponse.text();
                     let errorDetail = errorText;
                     try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
-                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                    const error = new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                    loadingManager.showToast(`API Error: ${apiResponse.status} ${apiResponse.statusText}`, 'error');
+                    loadingManager.showConnectionStatus('#chat-area', 'disconnected');
+                    throw error;
                 }
 
                 const reader = apiResponse.body.getReader();
@@ -1109,11 +1123,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (error) {
+            loadingManager.hideLoading('#chat-area');
+            loadingManager.showConnectionStatus('#chat-area', 'disconnected');
+            
             if (error.name === 'AbortError') {
                 addMessage('System', 'Response stopped');
+                loadingManager.showToast('Request stopped by user', 'warning');
             } else {
                 console.error("makeApiCall Error:", error);
                 addMessage('System', 'Error: ' + error.message);
+                
+                // Show user-friendly error with retry option
+                loadingManager.showError('#chat-area', error, {
+                    title: 'API Request Failed',
+                    retry: () => {
+                        // Retry the same request
+                        makeApiCall(userMessage, tool_choice);
+                    }
+                });
             }
             userInput.disabled = false;
             sendButton.disabled = false;

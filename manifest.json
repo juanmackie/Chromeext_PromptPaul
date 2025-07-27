@@ -34,12 +34,7 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content_script_explain.js"],
-      "all_frames": false
-    },
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content_script_tab_summary.js"],
+      "js": ["content_script_unified.js"],
       "all_frames": false
     }
   ]

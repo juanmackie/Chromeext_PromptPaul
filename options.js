@@ -1,9 +1,18 @@
+import { loadingManager } from './loadingManager.js';
+
 // Function to show status message
 function showStatus(message, isError = false, isToast = false) {
   const status = document.getElementById('status');
   status.textContent = message;
   status.className = `status ${isError ? 'error' : 'success'}`;
   status.style.display = 'block';
+
+  // Also show toast notification
+  if (isError) {
+    loadingManager.showToast(message, 'error');
+  } else {
+    loadingManager.showToast(message, 'success');
+  }
 
   let timeoutDuration = 2000; // Default timeout
   if (isToast) {
@@ -1049,6 +1058,7 @@ function setupToolHandlers() {
   // Save tool handler
   if (saveToolBtn) {
     saveToolBtn.addEventListener('click', () => {
+      loadingManager.setButtonLoading(saveToolBtn, true);
       const toolName = document.getElementById('toolName').value.trim();
       const toolDescription = document.getElementById('toolDescription').value.trim();
       const toolParameters = document.getElementById('toolParameters').value.trim();
@@ -1111,6 +1121,7 @@ function setupToolHandlers() {
           loadTools(); // Reload the table
           populateToolDropdown(); // Update tool dropdown
           clearToolForm(); // Clear the form after saving
+          loadingManager.setButtonLoading(saveToolBtn, false);
         });
       });
     });
