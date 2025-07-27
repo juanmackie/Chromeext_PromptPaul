@@ -7,12 +7,19 @@
  * @param {boolean} isDark - Whether to apply dark theme
  */
 export function applyDarkTheme(isDark) {
+  // Apply theme class to document root for better CSS cascade
+  const root = document.documentElement;
+  const body = document.body;
+  
   if (isDark) {
-    document.body.classList.add('dark-theme');
+    root.setAttribute('data-theme', 'dark');
+    body.classList.add('dark-theme', 'ext-dark');
     const icon = document.getElementById('darkThemeIcon');
     if (icon) icon.textContent = 'wb_sunny';
   } else {
-    document.body.classList.remove('dark-theme');
+    root.setAttribute('data-theme', 'light');
+    body.classList.remove('dark-theme', 'ext-dark');
+    body.classList.add('light-theme', 'ext-light');
     const icon = document.getElementById('darkThemeIcon');
     if (icon) icon.textContent = 'brightness_2';
   }
@@ -28,6 +35,11 @@ export function applyDarkTheme(isDark) {
   copyFormattedIcons.forEach(icon => {
     icon.src = isDark ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
   });
+  
+  // Dispatch theme change event for other components
+  window.dispatchEvent(new CustomEvent('themeChanged', { 
+    detail: { isDark, theme: isDark ? 'dark' : 'light' } 
+  }));
 }
 
 /**
