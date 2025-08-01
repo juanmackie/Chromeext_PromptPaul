@@ -49,10 +49,10 @@
   </style>
 </head>
 <body>
-  <main class="container max-w-4xl mx-auto p-6">
-    <div class="flex flex-col items-center mb-8">
-      <h1 class="text-3xl font-bold text-primary">&#10024; Prompt Paul</h1>
-      <p class="text-muted-foreground text-center mt-2">Context aware instant AI Insights, a mouse click away</p>
+  <main class="container">
+    <div class="page-header">
+      <h1>&#10024; Prompt Paul</h1>
+      <p class="subtitle">Context aware instant AI Insights, a mouse click away</p>
     </div>
 
     <!-- Connection Section -->
@@ -80,109 +80,137 @@
 
       <form id="optionsForm" class="grid-form">
         <div class="form-field col-span-12">
-          <label for="llmEndpoint" class="form-label">LLM API Endpoint</label>
-          <input type="text" id="llmEndpoint" class="shadcn-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+          <label for="llmEndpoint" class="form-label">
+            LLM API Endpoint
+            <button type="button" class="help-tooltip" data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <input type="url" id="llmEndpoint" class="shadcn-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+          <div class="field-error" id="llmEndpointError"></div>
         </div>
 
         <div class="form-field col-span-12">
-          <label for="apiKey" class="form-label">API Key</label>
-          <input type="text" id="apiKey" class="shadcn-input" placeholder="AClt4XnMjO5eUjBjXbq3XpEiiHBtQuGW" required>
-        </div>
-      </form>
-    </section>
-
-    <!-- Models Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">psychology</span>
-          Models
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      
-      <div class="grid-form">
-        <div class="form-field col-span-8">
-          <label for="modelName" class="form-label">Model Name</label>
-          <input type="text" id="modelName" class="shadcn-input" placeholder="mistral-small-latest" required>
+          <label for="apiKey" class="form-label">
+            API Key
+            <button type="button" class="help-tooltip" data-tooltip="Your API key for authentication. Keep this secure and never share it publicly.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <div class="password-input-container">
+            <input type="password" id="apiKey" class="shadcn-input password-input" placeholder="sk-..." required>
+            <button type="button" class="password-toggle" id="apiKeyToggle">
+              <span class="material-symbols-outlined">visibility</span>
+            </button>
+            <button type="button" class="copy-button" id="apiKeyCopy">
+              <span class="material-symbols-outlined">content_copy</span>
+            </button>
+          </div>
+          <div class="field-error" id="apiKeyError"></div>
         </div>
 
+        <!-- Model Configuration Fields -->
         <div class="form-field col-span-4">
-          <label for="maxTokens" class="form-label">Max Tokens</label>
-          <input type="number" id="maxTokens" class="shadcn-input" placeholder="Enter max tokens" value="2048" required>
+          <label for="modelName" class="form-label">
+            Model Name
+            <button type="button" class="help-tooltip" data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <div class="model-selector-container">
+            <input type="text" id="modelName" class="shadcn-input" placeholder="Enter model name" required>
+          </div>
+          <div class="field-error" id="modelNameError"></div>
+        </div>
+
+        <div class="form-field col-span-8">
+          <label for="maxTokens" class="form-label">
+            Max Tokens
+            <button type="button" class="help-tooltip" data-tooltip="Maximum number of tokens the model can generate. Higher values allow longer responses but cost more.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <div class="token-input-container">
+            <input type="range" id="maxTokensSlider" class="token-slider" min="1" max="32000" value="16000" step="1">
+            <input type="number" id="maxTokens" class="shadcn-input token-number-input" min="1" max="32000" value="16000" required>
+          </div>
+          <div class="token-info">
+            <span id="tokenValue">16000</span> tokens
+            <span id="contextHint" class="context-hint"></span>
+          </div>
+          <div class="field-error" id="maxTokensError"></div>
         </div>
 
         <div class="form-field col-span-12">
-          <label for="systemPrompt" class="form-label">System Prompt (Optional)</label>
-          <textarea id="systemPrompt" class="shadcn-textarea" placeholder="Define the AI's role or persona, e.g., 'You are a helpful assistant.'" rows="4"></textarea>
-        </div>
-      </div>
-    </section>
-
-    <!-- Behavior Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">settings</span>
-          Behavior
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      
-      <div class="inline-settings-row">
-        <div class="setting-toggle">
-          <label class="toggle-label">
-            <input type="checkbox" id="enableStreamingToggle" class="toggle-input">
-            <span class="toggle-slider"></span>
-            <span class="toggle-text">Enable Streaming Responses</span>
+          <label for="systemPrompt" class="form-label">
+            System Prompt (Optional)
+            <button type="button" class="help-tooltip" data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
           </label>
+          <div class="system-prompt-controls">
+            <select id="promptTemplate" class="template-selector">
+              <option value="">Insert template...</option>
+              <option value="general">General Helper</option>
+              <option value="code">Code Reviewer</option>
+              <option value="summarizer">Summarizer</option>
+              <option value="analyst">Data Analyst</option>
+              <option value="writer">Creative Writer</option>
+            </select>
+          </div>
+          <textarea id="systemPrompt" class="shadcn-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
+          <div class="character-counter">
+            <span id="charCount">0</span> characters
+          </div>
+          <div class="field-error" id="systemPromptError"></div>
         </div>
-      </div>
-    </section>
 
-    <!-- Display Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">palette</span>
-          Display
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      
-      <div class="inline-settings-row">
-        <div class="setting-toggle">
-          <label class="toggle-label">
-            <input type="checkbox" id="darkThemeToggle" class="toggle-input">
-            <span class="toggle-slider"></span>
-            <span id="darkThemeIcon" class="material-symbols-outlined toggle-icon">brightness_2</span>
-            <span class="toggle-text">Dark Theme</span>
+        <!-- Behavior Settings -->
+        <div class="form-field col-span-6">
+          <label class="form-label">Streaming Responses</label>
+          <div class="setting-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" id="enableStreamingToggle" class="toggle-input">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">Enable Streaming</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-field col-span-6">
+          <label class="form-label">Theme</label>
+          <div class="setting-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" id="darkThemeToggle" class="toggle-input">
+              <span class="toggle-slider"></span>
+              <span id="darkThemeIcon" class="material-symbols-outlined toggle-icon">brightness_2</span>
+              <span class="toggle-text">Dark Theme</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Profile Management -->
+        <div class="form-field col-span-6">
+          <label for="profileSelect" class="form-label">
+            Current Profile
+            <button type="button" class="help-tooltip" data-tooltip="Profiles save different API configurations. Switch between them for different use cases.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
           </label>
-        </div>
-      </div>
-    </section>
-
-    <!-- Profiles Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">person</span>
-          Profiles
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      
-      <div class="grid-form">
-        <div class="form-field col-span-8">
-          <label for="profileSelect" class="form-label">Profile Management</label>
           <select id="profileSelect" class="shadcn-input">
             <!-- Options will be populated by JavaScript -->
           </select>
-          <p class="field-description">Select a profile, or choose "+ Add New Profile..." to create one.</p>
         </div>
-        <div class="form-field col-span-4 flex items-end">
-          <button type="button" id="deleteProfileButton" class="btn-destructive w-full">
-            Delete Profile
+        <div class="form-field col-span-3">
+          <label class="form-label">&nbsp;</label>
+          <button type="button" id="addProfileButton" class="btn-secondary w-full">
+            <span class="material-symbols-outlined">add</span> New Profile
+          </button>
+        </div>
+        <div class="form-field col-span-3">
+          <label class="form-label">&nbsp;</label>
+          <button type="button" id="deleteProfileButton" class="btn-destructive w-full" disabled>
+            <span class="material-symbols-outlined">delete</span> Delete
           </button>
         </div>
         
@@ -191,8 +219,10 @@
             <span class="material-symbols-outlined mr-2">save</span> Save Settings
           </button>
         </div>
-      </div>
+      </form>
     </section>
+
+    <!-- Configuration Complete -->
 
     <!-- Instructions Section -->
     <section class="section-card">
@@ -206,7 +236,7 @@
       </div>
       <div class="collapsible-content">
 
-      <div id="migrationPrompt" class="migration-prompt card" style="display: none; margin-bottom: 1em;">
+      <div id="migrationPrompt" class="migration-prompt" style="display: none; margin-bottom: 1em; padding: 1rem; background: var(--ext-accent); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
         <span>
           <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
         </span>
@@ -240,7 +270,7 @@
         </div>
       </div>
 
-      <div class="instruction-form card">
+      <div class="instruction-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
         <h3>Add/Edit Instruction</h3>
         <div class="form-group">
           <label for="instructionName">Instruction Name</label>
@@ -307,7 +337,7 @@
         </div>
       </div>
 
-      <div class="import-export card">
+      <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
         <h3>Import/Export Instructions</h3>
         <div class="button-group">
           <button type="button" id="exportInstructions" class="export-button"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
@@ -354,7 +384,7 @@
         </div>
       </div>
 
-      <div class="tool-form card">
+      <div class="tool-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
         <h3>Add/Edit Tool</h3>
         <div class="form-group">
           <label for="toolName">Tool Name</label>
@@ -423,7 +453,7 @@
         </div>
       </div>
 
-      <div class="import-export card">
+      <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
         <h3>Import/Export Tools</h3>
         <div class="button-group">
           <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
@@ -448,7 +478,7 @@
       </div>
       <div class="form-group">
         <label>API Key</label>
-        <p id="currentApiKey">Not set</p>
+        <p id="currentApiKey" class="masked-value">Not set</p>
       </div>
       <div class="form-group">
         <label>Model Name</label>
@@ -480,6 +510,7 @@
   <div id="status" class="status"></div>
 
   <script src="collapsible.js"></script>
+  <script src="input-controls.js"></script>
   <script type="module" src="options.js"></script>
 </body>
 </html>
