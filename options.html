@@ -46,6 +46,40 @@
       --input: #2C323A;
       --ring: #006879;
     }
+
+    #addProfileButton {
+      border-radius: 1.5rem;
+    }
+
+    #promptTemplate {
+      border-radius: 1.5rem;
+    }
+
+    .button-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    /* Ensure the three action buttons share the same horizontal centre */
+    .button-container .ko-fi-button,
+    .button-container #revertDefaultsButton,
+    .button-container #feedbackButton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      /* Prevent differing intrinsic widths from shifting center alignment perception */
+      text-align: center;
+    }
+
+    /* Ensure anchor tags within the button container behave correctly in flex layout */
+    .button-container a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
   </style>
 </head>
 <body>
@@ -459,6 +493,107 @@
           <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
           <input type="file" id="importToolsFile" accept=".json" style="display: none;">
           <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
+        </div>
+      </div>
+
+      <!-- NEW: MCP Servers Management (config-first, no default servers) -->
+      <div class="section-divider" style="margin: 2rem 0;"></div>
+      <section id="mcpSection" class="section-card" style="margin-top: 1rem;">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined section-icon">hub</span>
+            MCP Servers
+          </h2>
+          <div class="section-divider"></div>
+        </div>
+        <p class="hint">Config-first. No default servers. Add a server to enable MCP tool access.</p>
+        <div class="form-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button id="mcpAddServerBtn" class="btn-primary">
+            <span class="material-symbols-outlined">add</span> Add Server
+          </button>
+          <button id="mcpExportBtn" class="btn-secondary">
+            <span class="material-symbols-outlined">upload</span> Export Config
+          </button>
+          <input type="file" id="mcpImportFile" accept="application/json" style="display:none">
+          <button id="mcpImportBtn" class="btn-secondary">
+            <span class="material-symbols-outlined">download</span> Import Config
+          </button>
+          <label class="inline" style="display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="mcpVerboseLogsToggle"> Verbose logs
+          </label>
+        </div>
+
+        <div class="table-container" style="margin-top: 1rem;">
+          <table class="responsive-table" id="mcpServersTable">
+            <thead class="sticky-header">
+              <tr>
+                <th>Name</th>
+                <th>URL (wss://)</th>
+                <th>Allowlisted</th>
+                <th>Enabled</th>
+                <th>Status</th>
+                <th>Tools</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="mcpServersTbody">
+              <!-- populated by options.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:1rem;">Logs</h3>
+        <div id="mcpLogs" class="log-viewer" style="max-height:200px; overflow:auto; background: var(--ext-muted); border:1px solid var(--ext-border); border-radius:8px; padding:8px;"></div>
+      </section>
+
+      <!-- Modal for Add/Edit Server -->
+      <div id="mcpServerModal" class="modal hidden">
+        <div class="modal-content">
+          <h3 id="mcpModalTitle">Add MCP Server</h3>
+          <div class="form-group">
+            <label for="mcpName">Name</label>
+            <input id="mcpName" type="text" placeholder="My Server">
+          </div>
+          <div class="form-group">
+            <label for="mcpUrl">WSS URL</label>
+            <input id="mcpUrl" type="text" placeholder="wss://server.example.com/ws">
+            <div id="mcpUrlError" class="error-message"></div>
+          </div>
+          <div class="form-group">
+            <label for="mcpAuth">Authorization (Bearer ...)</label>
+            <input id="mcpAuth" type="password" placeholder="Bearer TOKEN (optional)">
+          </div>
+          <div class="form-row" style="display:flex; gap:12px; flex-wrap:wrap;">
+            <label class="inline"><input type="checkbox" id="mcpAllowlisted"> Allowlisted</label>
+            <label class="inline"><input type="checkbox" id="mcpEnabled" checked> Enabled</label>
+            <label class="inline"><input type="checkbox" id="mcpSensitiveConfirm" checked> Sensitive tools require confirm</label>
+          </div>
+          <div class="form-row" style="display:grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap:12px;">
+            <div class="form-group small">
+              <label for="mcpTimeout">Call Timeout (ms)</label>
+              <input id="mcpTimeout" type="number" value="20000" min="1000" step="500">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffBase">Backoff Base (ms)</label>
+              <input id="mcpBackoffBase" type="number" value="500" min="100" step="100">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffMax">Backoff Max (ms)</label>
+              <input id="mcpBackoffMax" type="number" value="10000" min="1000" step="500">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffFactor">Backoff Factor</label>
+              <input id="mcpBackoffFactor" type="number" value="2" min="1" step="0.1">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffJitter">Backoff Jitter</label>
+              <input id="mcpBackoffJitter" type="number" value="0.2" min="0" step="0.05">
+            </div>
+          </div>
+          <div class="form-row" style="display:flex; gap:8px; justify-content:flex-end;">
+            <button id="mcpSaveServerBtn" class="btn-primary">Save</button>
+            <button id="mcpCancelServerBtn" class="btn-secondary">Cancel</button>
+          </div>
         </div>
       </div>
     </section>

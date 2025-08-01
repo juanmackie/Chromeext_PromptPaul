@@ -311,9 +311,52 @@ function getMimeTypeFromUrl(url) {
 console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
+import { McpRegistry } from "./mcp/registry.js";
+
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
+
+// --- MCP Registry Host (Phase 1) ---
+const mcpRegistry = new McpRegistry({
+    onLog: (e) => {
+        // Redacted, structured logs; store last N logs in memory and in storage for Options page viewer
+        const entry = {
+            ts: Date.now(),
+            level: e.level || "info",
+            type: e.type || "info",
+            serverId: e.serverId,
+            url: e.url,
+            msg: e.msg,
+            payload: e.payload,
+            latencyMs: e.latencyMs,
+            details: {
+                attempt: e.attempt,
+                delayMs: e.delayMs,
+                code: e.code,
+                reason: e.reason,
+                wasClean: e.wasClean,
+                tool: e.tool,
+                protocolVersion: e.protocolVersion
+            }
+        };
+        appendMcpLog(entry);
+    }
+});
+
+const MAX_MCP_LOGS = 500;
+let mcpLogsBuffer = [];
+
+function appendMcpLog(entry) {
+    try {
+        mcpLogsBuffer.push(entry);
+        if (mcpLogsBuffer.length > MAX_MCP_LOGS) {
+            mcpLogsBuffer.shift();
+        }
+    } catch (_) {}
+    // Persist a rolling window for options viewer
+    chrome.storage.local.set({ mcpLogs: mcpLogsBuffer.slice(-MAX_MCP_LOGS) });
+}
 
 // MCP Session Management
 let mcpSessions = {};
@@ -1916,6 +1959,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.warn("Background: Attempted to call sendResponse multiple times for the same message.");
         }
     };
+
+    // --- MCP Management API (Phase 1, config-first: no default servers) ---
+    if (request.action === 'mcp.addServer') {
+        (async () => {
+            try {
+                const cfg = await mcpRegistry.addServer(request.config);
+                sendResponse({ success: true, config: cfg });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.updateServer') {
+        (async () => {
+            try {
+                const cfg = await mcpRegistry.updateServer(request.config);
+                sendResponse({ success: true, config: cfg });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.removeServer') {
+        (async () => {
+            try {
+                await mcpRegistry.removeServer(request.serverId);
+                sendResponse({ success: true });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.listServers') {
+        (async () => {
+            try {
+                const servers = await mcpRegistry.listServers();
+                sendResponse({ success: true, servers });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.testConnect') {
+        (async () => {
+            try {
+                const res = await mcpRegistry.testConnect(request.serverId);
+                sendResponse({ success: res.ok, ...res });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.listTools') {
+        (async () => {
+            try {
+                const tools = await mcpRegistry.listTools(request.serverId);
+                sendResponse({ success: true, tools });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.callTool') {
+        (async () => {
+            try {
+                const result = await mcpRegistry.callTool(request.serverId, request.toolName, request.params || {});
+                sendResponse({ success: true, result });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.getLogs') {
+        const limit = typeof request.limit === 'number' ? request.limit : 200;
+        const slice = mcpLogsBuffer.slice(-limit);
+        sendResponse({ success: true, logs: slice });
+        return true;
+    } else if (request.action === 'mcp.getState') {
+        try {
+            const st = mcpRegistry.getState(request.serverId);
+            sendResponse({ success: true, state: st });
+        } catch (e) {
+            sendResponse({ success: false, error: String(e.message || e) });
+        }
+        return true;
+    }
 
     if (request.action === 'getTabContent') {
         if (tabContentCallback) {

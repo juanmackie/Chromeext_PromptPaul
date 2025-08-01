@@ -26,6 +26,334 @@ function showStatus(message, isError = false, isToast = false) {
   }
 }
 
+// ================= MCP Options UI wiring (Phase 1, config-first) =================
+
+function redactAuth(value) {
+  if (!value) return '';
+  // Preserve scheme e.g. 'Bearer ' then mask token
+  const parts = value.split(/\s+/, 2);
+  if (parts.length === 2) {
+    const token = parts[1];
+    const masked = token.length > 8 ? token.slice(0, 2) + '•'.repeat(token.length - 4) + token.slice(-2) : '•'.repeat(token.length);
+    return parts[0] + ' ' + masked;
+  }
+  return '•'.repeat(Math.min(12, value.length));
+}
+
+function bindMcpOptionsUI() {
+  const addBtn = document.getElementById('mcpAddServerBtn');
+  const exportBtn = document.getElementById('mcpExportBtn');
+  const importBtn = document.getElementById('mcpImportBtn');
+  const importFile = document.getElementById('mcpImportFile');
+  const verboseToggle = document.getElementById('mcpVerboseLogsToggle');
+  const serversTbody = document.getElementById('mcpServersTbody');
+  const logsDiv = document.getElementById('mcpLogs');
+
+  const modal = document.getElementById('mcpServerModal');
+  const modalTitle = document.getElementById('mcpModalTitle');
+  const nameEl = document.getElementById('mcpName');
+  const urlEl = document.getElementById('mcpUrl');
+  const urlErr = document.getElementById('mcpUrlError');
+  const authEl = document.getElementById('mcpAuth');
+  const allowlistedEl = document.getElementById('mcpAllowlisted');
+  const enabledEl = document.getElementById('mcpEnabled');
+  const sensitiveEl = document.getElementById('mcpSensitiveConfirm');
+  const timeoutEl = document.getElementById('mcpTimeout');
+  const backoffBaseEl = document.getElementById('mcpBackoffBase');
+  const backoffMaxEl = document.getElementById('mcpBackoffMax');
+  const backoffFactorEl = document.getElementById('mcpBackoffFactor');
+  const backoffJitterEl = document.getElementById('mcpBackoffJitter');
+  const modalSave = document.getElementById('mcpSaveServerBtn');
+  const modalCancel = document.getElementById('mcpCancelServerBtn');
+
+  let editingServerId = null;
+
+  function validateWss(u) {
+    try {
+      const x = new URL(u);
+      return x.protocol === 'wss:';
+    } catch {
+      return false;
+    }
+  }
+
+  function closeModal() {
+    editingServerId = null;
+    modal.classList.add('hidden');
+    nameEl.value = '';
+    urlEl.value = '';
+    authEl.value = '';
+    allowlistedEl.checked = false;
+    enabledEl.checked = true;
+    sensitiveEl.checked = true;
+    timeoutEl.value = 20000;
+    backoffBaseEl.value = 500;
+    backoffMaxEl.value = 10000;
+    backoffFactorEl.value = 2;
+    backoffJitterEl.value = 0.2;
+    urlErr.textContent = '';
+  }
+
+  function openModal(server) {
+    modal.classList.remove('hidden');
+    if (server) {
+      editingServerId = server.id;
+      modalTitle.textContent = 'Edit MCP Server';
+      nameEl.value = server.name || '';
+      urlEl.value = server.url || '';
+      authEl.value = (server.headers && server.headers.Authorization) || '';
+      allowlistedEl.checked = !!server.allowlisted;
+      enabledEl.checked = !!server.enabled;
+      sensitiveEl.checked = !!(server.policy && server.policy.sensitiveRequireConfirm);
+      timeoutEl.value = (server.timeouts && server.timeouts.callMs) || 20000;
+      backoffBaseEl.value = (server.backoff && server.backoff.baseMs) || 500;
+      backoffMaxEl.value = (server.backoff && server.backoff.maxMs) || 10000;
+      backoffFactorEl.value = (server.backoff && server.backoff.factor) || 2;
+      backoffJitterEl.value = (server.backoff && server.backoff.jitter) || 0.2;
+    } else {
+      editingServerId = null;
+      modalTitle.textContent = 'Add MCP Server';
+    }
+  }
+
+  function renderServers(servers) {
+    serversTbody.innerHTML = '';
+    servers.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td data-label="Name">${s.name || ''}</td>
+        <td data-label="URL">${s.url || ''}</td>
+        <td data-label="Allowlisted">${s.allowlisted ? 'Yes' : 'No'}</td>
+        <td data-label="Enabled">
+          <input type="checkbox" data-action="toggle-enabled" data-id="${s.id}" ${s.enabled ? 'checked' : ''}/>
+        </td>
+        <td data-label="Status">${s.status || 'idle'}</td>
+        <td data-label="Tools">${Array.isArray(s.tools) ? s.tools.length : 0}</td>
+        <td data-label="Actions">
+          <button data-action="test" data-id="${s.id}">Test</button>
+          <button data-action="edit" data-id="${s.id}">Edit</button>
+          <button data-action="remove" data-id="${s.id}">Remove</button>
+          <button data-action="listtools" data-id="${s.id}">List Tools</button>
+        </td>
+      `;
+      serversTbody.appendChild(tr);
+    });
+  }
+
+  function renderLogs(serverId) {
+    chrome.runtime.sendMessage({ action: 'mcp.getLogs', serverId, limit: 200 }, (res) => {
+      if (!res || !res.success) {
+        logsDiv.textContent = 'No logs.';
+        return;
+      }
+      const entries = res.logs || [];
+      logsDiv.innerHTML = entries.map(e => {
+        const payload = JSON.stringify(e.payloadRedacted ?? e.redactedPayload ?? {}, null, 0);
+        return `<div style="font-family:monospace; font-size: 12px;">
+          [${new Date(e.ts).toLocaleTimeString()}] ${e.dir || e.direction || ''} ${e.type || ''} ${e.status || ''} ${e.latencyMs ? e.latencyMs + 'ms' : ''}
+          <pre style="white-space:pre-wrap; margin:4px 0;">${payload}</pre>
+        </div>`;
+      }).join('');
+    });
+  }
+
+  function refreshServers() {
+    chrome.runtime.sendMessage({ action: 'mcp.getServers' }, (res) => {
+      if (!res || !res.success) {
+        renderServers([]);
+        return;
+      }
+      renderServers(res.servers || []);
+    });
+  }
+
+  // initial load
+  refreshServers();
+
+  // add server
+  if (addBtn) {
+    addBtn.addEventListener('click', () => openModal(null));
+  }
+
+  // export config
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'mcp.exportConfig' }, (res) => {
+        if (!res || !res.success) {
+          showStatus('Failed to export MCP config', true);
+          return;
+        }
+        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(res.config, null, 2));
+        const a = document.createElement('a');
+        a.href = dataStr;
+        a.download = 'mcp_config.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+    });
+  }
+
+  // import config
+  if (importBtn && importFile) {
+    importBtn.addEventListener('click', () => importFile.click());
+    importFile.addEventListener('change', () => {
+      const file = importFile.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          chrome.runtime.sendMessage({ action: 'mcp.importConfig', configs: parsed }, (res) => {
+            if (!res || !res.success) {
+              showStatus('Failed to import MCP config', true);
+              return;
+            }
+            showStatus('Imported MCP config', false, true);
+            refreshServers();
+          });
+        } catch (e) {
+          showStatus('Invalid MCP config JSON', true);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  // verbose logs toggle
+  if (verboseToggle) {
+    chrome.storage.local.get({ mcpVerboseLogs: false }, ({ mcpVerboseLogs }) => {
+      verboseToggle.checked = !!mcpVerboseLogs;
+    });
+    verboseToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ mcpVerboseLogs: !!verboseToggle.checked });
+      showStatus(`MCP verbose logs ${verboseToggle.checked ? 'enabled' : 'disabled'}.`, false, true);
+    });
+  }
+
+  // table actions
+  if (serversTbody) {
+    serversTbody.addEventListener('click', (e) => {
+      const target = e.target.closest('button,input');
+      if (!target) return;
+      const action = target.dataset.action;
+      const id = target.dataset.id;
+      if (!action || !id) return;
+
+      if (action === 'edit') {
+        chrome.runtime.sendMessage({ action: 'mcp.getServers' }, (res) => {
+          const server = (res.servers || []).find(s => s.id === id);
+          if (server) openModal(server);
+        });
+      } else if (action === 'remove') {
+        chrome.runtime.sendMessage({ action: 'mcp.removeServer', serverId: id }, (res) => {
+          if (!res || !res.success) {
+            showStatus('Failed to remove server', true);
+            return;
+          }
+          showStatus('Server removed', false, true);
+          refreshServers();
+        });
+      } else if (action === 'test') {
+        chrome.runtime.sendMessage({ action: 'mcp.testConnect', serverId: id }, (res) => {
+          if (!res || !res.success) {
+            showStatus(`Test failed: ${res && res.error ? res.error : 'unknown error'}`, true, true);
+            renderLogs(id);
+            refreshServers();
+            return;
+          }
+          showStatus('Connection successful', false, true);
+          renderLogs(id);
+          refreshServers();
+        });
+      } else if (action === 'listtools') {
+        chrome.runtime.sendMessage({ action: 'mcp.listTools', serverId: id }, (res) => {
+          if (!res || !res.success) {
+            showStatus(`List tools failed: ${res && res.error ? res.error : 'unknown error'}`, true, true);
+            renderLogs(id);
+            refreshServers();
+            return;
+          }
+          showStatus(`Discovered ${Array.isArray(res.tools) ? res.tools.length : 0} tools`, false, true);
+          renderLogs(id);
+          refreshServers();
+        });
+      } else if (action === 'toggle-enabled' && target.type === 'checkbox') {
+        const enabled = target.checked;
+        chrome.runtime.sendMessage({ action: 'mcp.getServers' }, (res) => {
+          const server = (res.servers || []).find(s => s.id === id);
+          if (!server) return;
+          const updated = { ...server, enabled };
+          chrome.runtime.sendMessage({ action: 'mcp.updateServer', config: updated }, (r) => {
+            if (!r || !r.success) {
+              showStatus('Failed to update server', true);
+              refreshServers();
+              return;
+            }
+            showStatus(`Server ${enabled ? 'enabled' : 'disabled'}`, false, true);
+            refreshServers();
+          });
+        });
+      }
+    });
+  }
+
+  // modal events
+  if (modalCancel) modalCancel.addEventListener('click', closeModal);
+  if (modalSave) {
+    modalSave.addEventListener('click', () => {
+      const name = nameEl.value.trim();
+      const url = urlEl.value.trim();
+      const auth = authEl.value.trim();
+      const allowlisted = !!allowlistedEl.checked;
+      const enabled = !!enabledEl.checked;
+      const sensitiveRequireConfirm = !!sensitiveEl.checked;
+      const callMs = Math.max(1000, Number(timeoutEl.value) || 20000);
+      const backoff = {
+        baseMs: Math.max(0, Number(backoffBaseEl.value) || 500),
+        maxMs: Math.max(0, Number(backoffMaxEl.value) || 10000),
+        factor: Math.max(1, Number(backoffFactorEl.value) || 2),
+        jitter: Math.max(0, Number(backoffJitterEl.value) || 0.2)
+      };
+
+      if (!name) { showStatus('Name is required', true); return; }
+      if (!validateWss(url)) {
+        urlErr.textContent = 'Enter a valid wss:// URL';
+        return;
+      }
+      urlErr.textContent = '';
+
+      const headers = {};
+      if (auth) headers.Authorization = auth;
+
+      const config = {
+        id: editingServerId || ('mcp_' + Date.now()),
+        name,
+        url,
+        headers,
+        enabled,
+        allowlisted,
+        timeouts: { callMs },
+        backoff,
+        policy: { sensitiveRequireConfirm },
+        clientMeta: { name: 'PromptPaul', version: '1.0.0' }
+      };
+
+      const action = editingServerId ? 'mcp.updateServer' : 'mcp.addServer';
+      chrome.runtime.sendMessage({ action, config }, (res) => {
+        if (!res || !res.success) {
+          showStatus(`Failed to ${editingServerId ? 'update' : 'add'} server`, true);
+          return;
+        }
+        showStatus(`Server ${editingServerId ? 'updated' : 'added'}`, false, true);
+        closeModal();
+        refreshServers();
+      });
+    });
+  }
+}
+
+
 function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, profile) {
   document.getElementById('currentEndpoint').textContent = endpoint || 'Not set';
   document.getElementById('currentApiKey').textContent = key ? '********' + key.slice(-4) : 'Not set';

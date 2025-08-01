@@ -8,6 +8,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
-    "extpay": "^3.0.7"
+    "extpay": "^3.0.7",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
   }
 }
