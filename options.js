@@ -636,6 +636,22 @@ document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
   const deleteProfileButton = document.getElementById('deleteProfileButton');
 
+  // Analytics consent toggle (opt-out, default ON)
+  const analyticsConsentToggle = document.getElementById('analyticsConsentToggle');
+  if (analyticsConsentToggle) {
+    // Initialize from storage (default true when missing)
+    chrome.storage.local.get(['analyticsConsent'], (res) => {
+      const consent = (res && Object.prototype.hasOwnProperty.call(res, 'analyticsConsent')) ? !!res.analyticsConsent : true;
+      analyticsConsentToggle.checked = consent;
+    });
+    // Persist on change
+    analyticsConsentToggle.addEventListener('change', () => {
+      const checked = !!analyticsConsentToggle.checked;
+      chrome.storage.local.set({ analyticsConsent: checked });
+      showStatus(`Anonymous analytics ${checked ? 'enabled' : 'disabled'}.`, false, true);
+    });
+  }
+
   if (deleteProfileButton) {
     deleteProfileButton.addEventListener('click', () => {
       const profileSelectElement = document.getElementById('profileSelect');
