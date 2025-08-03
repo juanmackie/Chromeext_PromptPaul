@@ -191,11 +191,9 @@
             </button>
           </label>
           <div class="token-input-container">
-            <input type="range" id="maxTokensSlider" class="token-slider" min="1" max="32000" value="16000" step="1">
-            <input type="number" id="maxTokens" class="shadcn-input token-number-input" min="1" max="32000" value="16000" required>
+            <input type="number" id="maxTokens" class="shadcn-input" min="1" value="16000" required placeholder="Enter max tokens (e.g., 200000)">
           </div>
           <div class="token-info">
-            <span id="tokenValue">16000</span> tokens
             <span id="contextHint" class="context-hint"></span>
           </div>
           <div class="field-error" id="maxTokensError"></div>
