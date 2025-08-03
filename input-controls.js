@@ -74,6 +74,7 @@ document.addEventListener('DOMContentLoaded', function() {
             'mistral-large-latest': 32000
         };
         
+        const modelSelector = document.getElementById('modelName');
         const limit = modelContextLimits[modelName || modelSelector?.value];
         if (limit) {
             const remaining = limit - currentTokens;

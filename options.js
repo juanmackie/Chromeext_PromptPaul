@@ -1,28 +1,12 @@
 import { loadingManager } from './loadingManager.js';
 
-// Function to show status message
+// Function to show status message (toast notifications only)
 function showStatus(message, isError = false, isToast = false) {
-  const status = document.getElementById('status');
-  status.textContent = message;
-  status.className = `status ${isError ? 'error' : 'success'}`;
-  status.style.display = 'block';
-
-  // Also show toast notification
+  // Only show toast notification (top right green/red notifications)
   if (isError) {
     loadingManager.showToast(message, 'error');
   } else {
     loadingManager.showToast(message, 'success');
-  }
-
-  let timeoutDuration = 2000; // Default timeout
-  if (isToast) {
-    timeoutDuration = 5000; // Longer timeout for toasts
-  }
-
-  if (!isError) { // Apply timeout for both success and toast messages, but not errors
-    setTimeout(() => {
-      status.style.display = 'none';
-    }, timeoutDuration);
   }
 }
 
