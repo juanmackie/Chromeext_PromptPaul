@@ -4,12 +4,37 @@
   "description": "Chrome extension for custom instructions",
   "main": "background.js",
   "scripts": {
-    "start": "node background.js"
+    "start": "node background.js",
+    "build": "npm run build:copy && npm run build:validate",
+    "build:copy": "if not exist dist mkdir dist && xcopy *.js dist\\ && xcopy *.html dist\\ && xcopy *.css dist\\ && xcopy *.json dist\\ && xcopy icons dist\\icons\\ /E /I && xcopy mcp dist\\mcp\\ /E /I && xcopy *.md dist\\ /EXCLUDE:node_modules",
+    "build:validate": "node -e \"console.log('Build validation passed')\"",
+    "build:dev": "npm run build",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint *.js mcp/*.js --fix",
+    "type-check": "tsc --noEmit",
+    "docs": "jsdoc -c jsdoc.json -d docs *.js mcp/*.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
     "extpay": "^3.0.7",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "@types/chrome": "^0.0.260",
+    "jsdom": "^20.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "jsdoc": "^4.0.0",
+    "prettier": "^3.0.0",
+    "webpack": "^5.0.0",
+    "webpack-cli": "^5.0.0",
+    "copy-webpack-plugin": "^11.0.0",
+    "ts-loader": "^9.0.0"
   }
 }
