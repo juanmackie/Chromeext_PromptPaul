@@ -32,14 +32,28 @@ document.addEventListener('DOMContentLoaded', function() {
     
     
     
-    // Token input handling (no slider, unlimited tokens)
+    // Token slider and input synchronization
+    const tokenSlider = document.getElementById('maxTokensSlider');
     const tokenInput = document.getElementById('maxTokens');
+    const tokenValue = document.getElementById('tokenValue');
+    
+    function syncTokenInputs(value) {
+        if (tokenSlider) tokenSlider.value = value;
+        if (tokenInput) tokenInput.value = value;
+        if (tokenValue) tokenValue.textContent = value;
+        updateContextHint();
+    }
+    
+    if (tokenSlider) {
+        tokenSlider.addEventListener('input', function() {
+            syncTokenInputs(this.value);
+        });
+    }
     
     if (tokenInput) {
         tokenInput.addEventListener('input', function() {
-            const value = Math.max(1, parseInt(this.value) || 1);
-            this.value = value;
-            updateContextHint();
+            const value = Math.max(100, Math.min(32000, parseInt(this.value) || 100));
+            syncTokenInputs(value);
         });
     }
     
@@ -60,7 +74,6 @@ document.addEventListener('DOMContentLoaded', function() {
             'mistral-large-latest': 32000
         };
         
-        const modelSelector = document.getElementById('modelName');
         const limit = modelContextLimits[modelName || modelSelector?.value];
         if (limit) {
             const remaining = limit - currentTokens;

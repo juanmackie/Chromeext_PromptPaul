@@ -1,12 +1,28 @@
 import { loadingManager } from './loadingManager.js';
 
-// Function to show status message (toast notifications only)
+// Function to show status message
 function showStatus(message, isError = false, isToast = false) {
-  // Only show toast notification (top right green/red notifications)
+  const status = document.getElementById('status');
+  status.textContent = message;
+  status.className = `status ${isError ? 'error' : 'success'}`;
+  status.style.display = 'block';
+
+  // Also show toast notification
   if (isError) {
     loadingManager.showToast(message, 'error');
   } else {
     loadingManager.showToast(message, 'success');
+  }
+
+  let timeoutDuration = 2000; // Default timeout
+  if (isToast) {
+    timeoutDuration = 5000; // Longer timeout for toasts
+  }
+
+  if (!isError) { // Apply timeout for both success and toast messages, but not errors
+    setTimeout(() => {
+      status.style.display = 'none';
+    }, timeoutDuration);
   }
 }
 
@@ -503,6 +519,8 @@ function loadProfileSettings(profileId) {
       document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
       document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
       document.getElementById('maxTokens').value = selectedProfile.maxTokens || 16000;
+      document.getElementById('maxTokensSlider').value = selectedProfile.maxTokens || 16000;
+      document.getElementById('tokenValue').textContent = selectedProfile.maxTokens || 16000;
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
       updateCurrentConfig(
         selectedProfile.llmEndpoint,
@@ -702,6 +720,8 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
 
       // Optionally, clear maxTokens and systemPrompt or set to their defaults if needed
       document.getElementById('maxTokens').value = '16000'; // Default max tokens
+      document.getElementById('maxTokensSlider').value = '16000';
+      document.getElementById('tokenValue').textContent = '16000';
       // document.getElementById('systemPrompt').value = ''; // Default system prompt
 
       showStatus('Settings reverted to defaults. Click "Save Settings" to apply.', false, true); // Show as a toast
@@ -832,7 +852,37 @@ function checkAndPromptInstructionMigration() {
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
 
-// Token input is now unlimited and handled in input-controls.js
+// --- Sync slider and number input + constraints ---
+(function setupTokenControls(){
+  const slider = document.getElementById('maxTokensSlider');
+  const number = document.getElementById('maxTokens');
+  const tokenValue = document.getElementById('tokenValue');
+  if (!slider || !number || !tokenValue) return;
+
+  // Normalize within bounds helper
+  const clamp = (v) => {
+    const min = Number(number.min) || 1;
+    const max = Number(number.max) || 32000;
+    v = Math.round(Number(v) || 0);
+    if (v < min) v = min;
+    if (v > max) v = max;
+    return v;
+  };
+
+  const updateFrom = (v) => {
+    const val = clamp(v);
+    slider.value = String(val);
+    number.value = String(val);
+    tokenValue.textContent = String(val);
+  };
+
+  // Initialize display
+  updateFrom(number.value || slider.value || 16000);
+
+  slider.addEventListener('input', e => updateFrom(e.target.value));
+  number.addEventListener('input', e => updateFrom(e.target.value));
+  number.addEventListener('blur', () => updateFrom(number.value));
+})();
 
 // --- Tool Dropdown Population ---
 async function populateToolDropdown() {

@@ -1,7 +1,5 @@
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
-import { errorHandler, withErrorBoundary, enhanceError } from './errorHandler.js';
-import { VirtualScroller, MessagePaginator, ContentExtractor } from './virtualScroll.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("DOMContentLoaded event fired in chat.js");
@@ -13,9 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submitBtn');
     const chatMainArea = document.getElementById('chat-main-area');
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
-
-    // Initialize performance optimizations
-    initializePerformanceOptimizations(chatArea);
 
     // Quick Actions Sidebar Elements
     const summarizeTabButton = document.getElementById('summarize-tab-button');
@@ -78,90 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeStreamingToolCall = null;
     let currentAbortController = null;
     let currentMediaData = null; // Store media data for analysis
-
-    // Performance optimizations
-    let virtualScroller = null;
-    let messagePaginator = null;
-    let contentExtractor = new ContentExtractor();
-    let chatMessages = []; // Store all messages for pagination
-    let isVirtualScrollingEnabled = false;
-
-    // Initialize performance optimizations
-    function initializePerformanceOptimizations(chatContainer) {
-        // Initialize message paginator
-        messagePaginator = new MessagePaginator({
-            pageSize: 50,
-            maxPagesInMemory: 3,
-            onLoadPage: async (pageNumber, pageSize) => {
-                // This would typically load from storage or API
-                const startIndex = pageNumber * pageSize;
-                const endIndex = startIndex + pageSize;
-                const pageItems = chatMessages.slice(startIndex, endIndex);
-
-                return {
-                    items: pageItems,
-                    totalCount: chatMessages.length
-                };
-            }
-        });
-
-        // Initialize virtual scroller (enable for large chat histories)
-        if (chatMessages.length > 100) {
-            enableVirtualScrolling(chatContainer);
-        }
-
-        // Content extraction optimizations
-        console.log('Performance optimizations initialized');
-    }
-
-    function enableVirtualScrolling(chatContainer) {
-        if (isVirtualScrollingEnabled) return;
-
-        virtualScroller = new VirtualScroller(chatContainer, {
-            itemHeight: 60, // Estimated height per message
-            buffer: 3,
-            renderItem: renderMessageItem,
-            onScrollEnd: () => {
-                // Load more messages if available
-                console.log('Scrolled to end, loading more messages...');
-            }
-        });
-
-        // Convert existing messages to virtual scrolling
-        if (chatMessages.length > 0) {
-            virtualScroller.setItems(chatMessages);
-        }
-
-        isVirtualScrollingEnabled = true;
-        console.log('Virtual scrolling enabled for chat history');
-    }
-
-    function renderMessageItem(message, index) {
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message');
-
-        if (message.sender === 'User') {
-            messageDiv.classList.add('user-message');
-            messageDiv.textContent = `You: ${message.content}`;
-        } else if (message.sender === 'System') {
-            messageDiv.classList.add('system-message');
-            messageDiv.textContent = `System: ${message.content}`;
-        } else if (message.sender === 'LLM') {
-            messageDiv.classList.add('llm-message');
-            const llmContentSpan = document.createElement('span');
-            llmContentSpan.classList.add('llm-content-area');
-
-            if (typeof marked !== 'undefined') {
-                llmContentSpan.innerHTML = marked.parse(message.content || "");
-            } else {
-                llmContentSpan.textContent = message.content || "";
-            }
-
-            messageDiv.appendChild(llmContentSpan);
-        }
-
-        return messageDiv;
-    }
 
     function stopApiRequest() {
         if (currentAbortController) {
@@ -244,97 +155,63 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addMessage(sender, message) {
-        // Optimize content extraction for LLM messages
-        let processedMessage = message;
-        if (sender === 'LLM' && message) {
-            // Extract and optimize content
-            const extracted = contentExtractor.extract(message, ['url', 'codeBlock', 'inlineCode']);
-            // Cache extraction results for potential reuse
-            processedMessage = message;
-        }
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message');
+    let contentElement = messageDiv;
+    let uniqueIdString = '';
 
-        // Create message object for storage
-        const messageObj = {
-            id: Date.now() + '_' + Math.random().toString(36).substring(2, 9),
-            sender,
-            content: processedMessage,
-            timestamp: new Date().toISOString()
-        };
-
-        // Add to message array for pagination
-        chatMessages.push(messageObj);
-
-        // Check if we should enable virtual scrolling
-        if (!isVirtualScrollingEnabled && chatMessages.length > 100) {
-            enableVirtualScrolling(chatArea);
-        }
-
-        if (isVirtualScrollingEnabled && virtualScroller) {
-            // Use virtual scroller
-            virtualScroller.addItem(messageObj);
-            virtualScroller.scrollToBottom();
-            return { messageDiv: null, contentElement: null, uniqueIdString: messageObj.id };
+    if (sender === 'User') {
+        messageDiv.classList.add('user-message');
+        messageDiv.textContent = 'You: ' + message;
+    } else if (sender === 'System') {
+        messageDiv.classList.add('system-message');
+        messageDiv.textContent = 'System: ' + message;
+    } else if (sender === 'LLM') {
+        messageDiv.classList.add('llm-message');
+        const llmContentSpan = document.createElement('span');
+        llmContentSpan.classList.add('llm-content-area');
+        // Ensure marked.parse is available or handle potential errors
+        if (typeof marked !== 'undefined') {
+            llmContentSpan.innerHTML = marked.parse(message || "");
         } else {
-            // Traditional DOM approach
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message');
-            let contentElement = messageDiv;
-            let uniqueIdString = messageObj.id;
-
-            if (sender === 'User') {
-                messageDiv.classList.add('user-message');
-                messageDiv.textContent = 'You: ' + processedMessage;
-            } else if (sender === 'System') {
-                messageDiv.classList.add('system-message');
-                messageDiv.textContent = 'System: ' + processedMessage;
-            } else if (sender === 'LLM') {
-                messageDiv.classList.add('llm-message');
-                const llmContentSpan = document.createElement('span');
-                llmContentSpan.classList.add('llm-content-area');
-                // Ensure marked.parse is available or handle potential errors
-                if (typeof marked !== 'undefined') {
-                    llmContentSpan.innerHTML = marked.parse(processedMessage || "");
-                } else {
-                    llmContentSpan.textContent = processedMessage || "";
-                }
-                messageDiv.appendChild(llmContentSpan);
-                contentElement = llmContentSpan;
-
-                // --- Icon for copying raw text ---
-                const copyIcon = document.createElement('img');
-                copyIcon.id = `copy-icon-${uniqueIdString}`;
-                // Replaced base64 string with a file path
-                copyIcon.src = document.body.classList.contains('dark-theme') ? 'icons/light_copy markdown.png' : 'icons/copy markdown.png';
-                copyIcon.alt = "Copy Raw";
-                copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
-                messageDiv.appendChild(copyIcon);
-
-                // --- Icon for copying formatted text ---
-                const copyFormattedIcon = document.createElement('img');
-                copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
-                // Replaced base64 string with a file path
-                const formattedIconSrc = document.body.classList.contains('dark-theme') ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
-                copyFormattedIcon.src = formattedIconSrc;
-                copyFormattedIcon.alt = "Copy Formatted";
-                copyFormattedIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
-                messageDiv.appendChild(copyFormattedIcon);
-
-                if (processedMessage) {
-                    attachCopyListeners(processedMessage, contentElement, copyIcon, copyFormattedIcon);
-                }
-            } else {
-                messageDiv.textContent = processedMessage; // Should not happen if sender is always User, System, or LLM
-            }
-
-            chatArea.appendChild(messageDiv);
-
-            setTimeout(() => {
-                chatArea.scrollTop = chatArea.scrollHeight;
-            }, 10);
-
-            return { messageDiv, contentElement, uniqueIdString };
+            llmContentSpan.textContent = message || "";
         }
+        messageDiv.appendChild(llmContentSpan);
+        contentElement = llmContentSpan;
+        uniqueIdString = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+
+        // --- Icon for copying raw text ---
+        const copyIcon = document.createElement('img');
+        copyIcon.id = `copy-icon-${uniqueIdString}`;
+        // Replaced base64 string with a file path
+        copyIcon.src = document.body.classList.contains('dark-theme') ? 'icons/light_copy markdown.png' : 'icons/copy markdown.png';
+        copyIcon.alt = "Copy Raw";
+        copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
+        messageDiv.appendChild(copyIcon);
+
+        // --- Icon for copying formatted text ---
+        const copyFormattedIcon = document.createElement('img');
+        copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
+        // Replaced base64 string with a file path
+        const formattedIconSrc = document.body.classList.contains('dark-theme') ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
+        copyFormattedIcon.src = formattedIconSrc;
+        copyFormattedIcon.alt = "Copy Formatted";
+        copyFormattedIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
+        messageDiv.appendChild(copyFormattedIcon);
+
+        if (message) {
+            attachCopyListeners(message, contentElement, copyIcon, copyFormattedIcon);
+        }
+    } else {
+        messageDiv.textContent = message; // Should not happen if sender is always User, System, or LLM
     }
+    chatArea.appendChild(messageDiv);
+
+    setTimeout(() => {
+        chatArea.scrollTop = chatArea.scrollHeight;
+    }, 10);
+    return { messageDiv, contentElement, uniqueIdString };
+}
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // if (request.action === 'explainContentResponse') {
@@ -884,33 +761,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let conversationHistory = [];
 
     function clearChat() {
-        // Clear traditional DOM elements
-        if (!isVirtualScrollingEnabled) {
             chatArea.innerHTML = '';
-        }
-
-        // Clear virtual scroller if enabled
-        if (virtualScroller) {
-            virtualScroller.clear();
-        }
-
-        // Clear message arrays and pagination
-        chatMessages = [];
-        conversationHistory = [];
-        currentMediaData = null; // Clear media data
-
-        // Reset performance optimizations
-        if (isVirtualScrollingEnabled) {
-            isVirtualScrollingEnabled = false;
-            virtualScroller = null;
-        }
-
-        // Clear content extractor cache
-        contentExtractor.clearCache();
-
-        chatMainArea.style.display = 'block';
-        oneoffInstructionArea.style.display = 'none';
-        showToast('Chat history cleared');
+            conversationHistory = [];
+            currentMediaData = null; // Clear media data
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            showToast('Chat history cleared');
     }
 
     function addMediaPreview(mediaData) {
@@ -1076,40 +932,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentAbortController = new AbortController();
             const signal = currentAbortController.signal;
 
-            // Use retry mechanism for network requests
-            const apiResponse = await errorHandler.withRetry(
-                async () => {
-                    const response = await fetch(config.llmEndpoint, {
-                        method: 'POST',
-                        headers: fetchHeaders,
-                        body: JSON.stringify(requestBody),
-                        signal,
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        let errorDetail = errorText;
-                        try {
-                            const errorJson = JSON.parse(errorText);
-                            errorDetail = errorJson.error ? errorJson.error.message : errorText;
-                        } catch (e) { /* ignore */ }
-
-                        const error = new Error(`API request failed: ${response.status} ${response.statusText} - ${errorDetail}`);
-                        error.status = response.status;
-                        throw error;
-                    }
-
-                    return response;
-                },
-                {
-                    maxRetries: 3,
-                    baseDelay: 1000,
-                    retryCondition: (error) => errorHandler.isRetryableError(error),
-                    onRetry: (error, attempt, delay) => {
-                        loadingManager.showToast(`Network error, retrying in ${Math.round(delay/1000)}s... (attempt ${attempt + 1}/3)`, 'warning');
-                    }
-                }
-            );
+            const apiResponse = await fetch(config.llmEndpoint, {
+                method: 'POST',
+                headers: fetchHeaders,
+                body: JSON.stringify(requestBody),
+                signal,
+            });
 
             if (!apiResponse.ok) {
                 const errorText = await apiResponse.text();
@@ -1547,36 +1375,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentAbortController = new AbortController();
                 const signal = currentAbortController.signal;
 
-                // Use retry mechanism for non-streaming requests
-                const apiResponse = await errorHandler.withRetry(
-                    async () => {
-                        const response = await fetch(config.llmEndpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                            body: JSON.stringify(requestBody),
-                            signal,
-                        });
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    body: JSON.stringify(requestBody),
+                    signal,
+                });
 
-                        if (!apiResponse.ok) {
-                            const errorText = await response.text();
-                            let errorDetail = errorText;
-                            try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
-                            const error = new Error(`API request failed: ${response.status} ${response.statusText} - ${errorDetail}`);
-                            error.status = response.status;
-                            throw error;
-                        }
-
-                        return response;
-                    },
-                    {
-                        maxRetries: 3,
-                        baseDelay: 1000,
-                        retryCondition: (error) => errorHandler.isRetryableError(error),
-                        onRetry: (error, attempt, delay) => {
-                            loadingManager.showToast(`Network error, retrying in ${Math.round(delay/1000)}s... (attempt ${attempt + 1}/3)`, 'warning');
-                        }
-                    }
-                );
+                if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    let errorDetail = errorText;
+                     try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
+                    throw new Error( `API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                }
                 const responseData = await apiResponse.json();
                 if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
                     throw new Error('Invalid response format from API (no choices or message)');
@@ -1652,27 +1463,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error("makeApiCall Error:", error);
                 addMessage('System', 'Error: ' + error.message);
                 
-                // Enhanced error handling with user-friendly messages
-                const friendlyError = errorHandler.getUserFriendlyMessage(error);
-
+                // Show user-friendly error with retry option
                 loadingManager.showError('#chat-area', error, {
-                    title: friendlyError.title,
-                    message: friendlyError.message,
+                    title: 'API Request Failed',
                     retry: () => {
-                        // Retry the same request with error boundary
-                        withErrorBoundary(() => makeApiCall(userMessage, tool_choice), (retryError) => {
-                            loadingManager.showToast('Retry failed. Please check your connection.', 'error');
-                        })();
-                    },
-                    suggestions: friendlyError.suggestions
-                });
-
-                // Log enhanced error for debugging
-                errorHandler.logError(error, {
-                    action: 'makeApiCall',
-                    userMessage: userMessage?.substring(0, 100),
-                    tool_choice,
-                    streamingEnabled: effectiveEnableStreaming
+                        // Retry the same request
+                        makeApiCall(userMessage, tool_choice);
+                    }
                 });
             }
             userInput.disabled = false;
@@ -1733,36 +1530,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentAbortController = new AbortController();
                 const signal = currentAbortController.signal;
 
-                // Use retry mechanism for one-off requests
-                const apiResponse = await errorHandler.withRetry(
-                    async () => {
-                        const response = await fetch(config.llmEndpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                            body: JSON.stringify(requestBody),
-                            signal,
-                        });
-
-                        if (!response.ok) {
-                            const errorText = await response.text();
-                            let errorDetail = errorText;
-                            try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
-                            const error = new Error(`API request failed: ${response.status} ${response.statusText} - ${errorDetail}`);
-                            error.status = response.status;
-                            throw error;
-                        }
-
-                        return response;
-                    },
-                    {
-                        maxRetries: 3,
-                        baseDelay: 1000,
-                        retryCondition: (error) => errorHandler.isRetryableError(error),
-                        onRetry: (error, attempt, delay) => {
-                            loadingManager.showToast(`Network error, retrying in ${Math.round(delay/1000)}s... (attempt ${attempt + 1}/3)`, 'warning');
-                        }
-                    }
-                );
+                const apiResponse = await fetch(config.llmEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                    body: JSON.stringify(requestBody),
+                    signal,
+                });
+                 if (!apiResponse.ok) {
+                    const errorText = await apiResponse.text();
+                    let errorDetail = errorText;
+                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
+                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                }
                 const reader = apiResponse.body.getReader();
                 const decoder = new TextDecoder();
                 let sseBuffer = "";
@@ -1849,25 +1628,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentAbortController = null;
             }
         } catch (error) {
-            // Enhanced error handling for one-off instructions
+            // Show more detailed error messages
             if (error.name === 'AbortError') {
                 addMessage('System', 'Response stopped');
-                loadingManager.showToast('Request stopped by user', 'warning');
             } else {
-                const friendlyError = errorHandler.getUserFriendlyMessage(error);
-
-                loadingManager.showError('#chat-area', error, {
-                    title: friendlyError.title,
-                    message: friendlyError.message,
-                    suggestions: friendlyError.suggestions
-                });
-
-                // Log enhanced error for debugging
-                errorHandler.logError(error, {
-                    action: 'oneOffInstruction',
-                    instruction: instruction?.substring(0, 100),
-                    selectedText: selectedText?.substring(0, 100)
-                });
+                let errorMsg = error.message;
+                if (error.details) {
+                    errorMsg += ` (Details: ${JSON.stringify(error.details)})`;
+                }
+                showToast('Error: ' + errorMsg);
+                console.error("Error in one-off instruction submission:", error);
             }
             userInput.disabled = false;
             sendButton.disabled = false;

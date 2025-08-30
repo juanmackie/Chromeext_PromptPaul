@@ -136,12 +136,6 @@ body.dark-theme ::selection {
     color: var(--ext-accent-foreground) !important; /* Updated */
 }
 
-body.dark-theme #selectedText {
-    background-color: var(--ext-card) !important;
-    color: var(--ext-card-foreground) !important;
-    border-color: var(--ext-border) !important;
-}
-
 .light { /* This class seems to be for Material Design tokens, not directly theme related. Keep as is or review separately. */
   --md-sys-color-primary: #006879;
   --md-sys-color-surface-tint: #006879;
