@@ -226,37 +226,7 @@ body.dark-theme ::selection {
     pointer-events: auto !important; /* Explicitly enable pointer events */
 }
 
-#toast-container {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1;
-    pointer-events: none;
-    width: 80%;
-    max-width: 600px;
-    background-color: transparent !important;
-}
-
-.toast {
-    position: absolute;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #333333F2 !important;
-    color: white;
-    padding: 10px 20px;
-    border-radius: 5px;
-    transition: opacity 0.5s;
-    max-width: 80%;
-    text-align: center;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    z-index: 1;
-}
-
-.toast.fade-out {
-    opacity: 0;
-}
+/* Removed bottom-centered toast styles to avoid duplication. Using global top-right toast styles from loading-states.css */
 
 .message {
     display: flex; /* Use flexbox for message alignment */

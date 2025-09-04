@@ -99,29 +99,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function showToast(message) {
-        let toastContainer = document.getElementById('toast-container');
-        if (!toastContainer) {
-            toastContainer = document.createElement('div');
-            toastContainer.id = 'toast-container';
-            document.body.appendChild(toastContainer);
-        }
-        const toast = document.createElement('div');
-        toast.classList.add('toast');
-        toast.textContent = message;
-        toastContainer.appendChild(toast);
-        setTimeout(() => {
-            toast.classList.add('fade-out');
-            setTimeout(() => {
-                if (toast.parentNode === toastContainer) {
-                    toastContainer.removeChild(toast);
-                }
-                if (toastContainer.children.length === 0 && toastContainer.parentNode) {
-                     toastContainer.parentNode.removeChild(toastContainer);
-                }
-            }, 500);
-        }, 2500);
-    }
+    // Removed local showToast; route all toast notifications through loadingManager.showToast
+    const showToast = (...args) => loadingManager.showToast(...args);
 
     function attachCopyListeners(rawMessage, contentElement, copyIconElement, copyFormattedIconElement) {
         const newCopyIcon = copyIconElement.cloneNode(true);

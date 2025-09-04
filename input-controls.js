@@ -33,9 +33,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     
     // Token slider and input synchronization
-    const tokenSlider = document.getElementById('maxTokensSlider');
+    const tokenSlider = null; // slider removed; rely on number input only
     const tokenInput = document.getElementById('maxTokens');
     const tokenValue = document.getElementById('tokenValue');
+    
+    // Model input for context hint
+    const modelSelector = document.getElementById('modelName');
+    if (modelSelector) {
+        modelSelector.addEventListener('input', function() {
+            updateContextHint(this.value);
+        });
+        // Initial render based on current model value
+        setTimeout(() => updateContextHint(modelSelector.value), 0);
+    } else {
+        // Fallback initial render
+        setTimeout(() => updateContextHint(), 0);
+    }
     
     function syncTokenInputs(value) {
         if (tokenSlider) tokenSlider.value = value;
@@ -74,7 +87,8 @@ document.addEventListener('DOMContentLoaded', function() {
             'mistral-large-latest': 32000
         };
         
-        const limit = modelContextLimits[modelName || modelSelector?.value];
+        const name = modelName || document.getElementById('modelName')?.value;
+        const limit = modelContextLimits[name];
         if (limit) {
             const remaining = limit - currentTokens;
             contextHint.textContent = ` (${remaining.toLocaleString()} remaining of ${limit.toLocaleString()})`;
