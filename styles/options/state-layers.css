@@ -1,0 +1,408 @@
+/* ==========================================================================
+   Material Design 3 State Layer System
+   ==========================================================================
+
+   This file implements the MD3 state layer system with proper opacity values,
+   animations, and accessibility compliance. State layers provide visual feedback
+   for interactive elements through subtle background overlays.
+
+   State Layer Opacity Values (MD3 Specification):
+   - Hover: 8% opacity
+   - Focus: 12% opacity
+   - Pressed: 16% opacity
+
+   Usage:
+   - Apply state layer classes to interactive elements
+   - Use .md3-interactive for complete state layer behavior
+   - Combine with component styles for full MD3 compliance
+*/
+
+/* ==========================================================================
+   Base State Layer Implementation
+   ========================================================================== */
+
+.md3-state-layer {
+  position: relative;
+  overflow: hidden;
+}
+
+.md3-state-layer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   State Layer Opacity Variants
+   ========================================================================== */
+
+/* 8% Opacity - Hover State */
+.md3-state-layer-8::before {
+  opacity: 0.08;
+}
+
+/* 12% Opacity - Focus State */
+.md3-state-layer-12::before {
+  opacity: 0.12;
+}
+
+/* 16% Opacity - Pressed State */
+.md3-state-layer-16::before {
+  opacity: 0.16;
+}
+
+/* ==========================================================================
+   Individual State Treatments
+   ========================================================================== */
+
+/* Hover State */
+.md3-state-hover {
+  position: relative;
+  overflow: hidden;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-state-hover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-state-hover:hover::before {
+  opacity: 0.08;
+}
+
+.md3-state-hover:active::before {
+  opacity: 0.16;
+  transition-duration: 50ms;
+}
+
+/* Focus State */
+.md3-state-focus {
+  position: relative;
+  overflow: hidden;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-state-focus::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-state-focus:focus-visible::before {
+  opacity: 0.12;
+}
+
+/* Pressed State */
+.md3-state-pressed {
+  position: relative;
+  overflow: hidden;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-state-pressed::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 50ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-state-pressed:active::before {
+  opacity: 0.16;
+}
+
+/* ==========================================================================
+   Composite Interactive Class
+   ========================================================================== */
+
+/*
+  .md3-interactive provides complete state layer behavior for interactive elements.
+  It combines hover, focus, and pressed states with proper layering and accessibility.
+*/
+.md3-interactive {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Ensure proper focus ring visibility */
+  outline: none;
+}
+
+/* State layer overlay for .md3-interactive */
+.md3-interactive::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+}
+
+/* Hover state for interactive elements */
+.md3-interactive:hover::before {
+  opacity: 0.08;
+}
+
+/* Focus state for interactive elements */
+.md3-interactive:focus-visible::before {
+  opacity: 0.12;
+}
+
+/* Active/pressed state for interactive elements */
+.md3-interactive:active::before {
+  opacity: 0.16;
+  transition-duration: 50ms;
+}
+
+/* ==========================================================================
+   Accessibility Enhancements
+   ========================================================================== */
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .md3-interactive::before {
+    opacity: 0;
+  }
+
+  .md3-interactive:hover::before,
+  .md3-interactive:focus-visible::before {
+    opacity: 0.2;
+  }
+
+  .md3-interactive:active::before {
+    opacity: 0.3;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .md3-interactive,
+  .md3-interactive::before,
+  .md3-state-hover,
+  .md3-state-hover::before,
+  .md3-state-focus,
+  .md3-state-focus::before,
+  .md3-state-pressed,
+  .md3-state-pressed::before {
+    transition-duration: 0ms;
+  }
+}
+
+/* ==========================================================================
+   Touch Interaction States
+   ========================================================================== */
+
+/* Touch hover simulation for mobile devices */
+.md3-interactive.touch-hover::before {
+  opacity: 0.08;
+}
+
+/* Touch active state */
+.md3-interactive.touch-active::before {
+  opacity: 0.16;
+  transition-duration: 50ms;
+}
+
+/* ==========================================================================
+   Disabled State Handling
+   ========================================================================== */
+
+/* Disabled interactive elements */
+.md3-interactive:disabled,
+.md3-interactive[disabled],
+.md3-interactive[aria-disabled="true"] {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.md3-interactive:disabled::before,
+.md3-interactive[disabled]::before,
+.md3-interactive[aria-disabled="true"]::before {
+  opacity: 0;
+  transition: none;
+}
+
+/* Disabled state layer (for styling disabled elements with state layers) */
+.md3-state-disabled {
+  position: relative;
+  overflow: hidden;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.md3-state-disabled::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.04; /* Subtle indication for disabled state */
+  transition: none;
+}
+
+/* ==========================================================================
+   State Layer Stacking for Complex Interactions
+   ========================================================================== */
+
+/*
+  For elements requiring multiple simultaneous state treatments,
+  use these classes to properly stack state layers.
+*/
+
+.md3-state-stack {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Base layer for stacking */
+.md3-state-stack::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+}
+
+/* Stack modifiers */
+.md3-state-stack-hover::before {
+  opacity: 0.08;
+}
+
+.md3-state-stack-focus::before {
+  opacity: 0.12;
+}
+
+.md3-state-stack-active::before {
+  opacity: 0.16;
+}
+
+/* ==========================================================================
+   Focus Ring Implementation
+   ========================================================================== */
+
+/*
+  Focus rings should be applied to interactive elements alongside state layers.
+  These provide visible focus indication for keyboard navigation.
+*/
+
+.md3-focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-focus-ring:focus-visible {
+  outline-color: currentColor;
+}
+
+/* High contrast focus ring */
+@media (prefers-contrast: high) {
+  .md3-focus-ring:focus-visible {
+    outline-width: 3px;
+    outline-offset: 2px;
+  }
+}
+
+/* ==========================================================================
+   Utility Classes for Common Patterns
+   ========================================================================== */
+
+/* State layer with focus ring combo */
+.md3-state-interactive {
+  @extend .md3-interactive;
+  @extend .md3-focus-ring;
+}
+
+/* Minimal state layer (reduced opacity for subtle elements) */
+.md3-state-minimal::before {
+  opacity: 0.04;
+}
+
+.md3-state-minimal:hover::before,
+.md3-state-minimal:focus-visible::before {
+  opacity: 0.08;
+}
+
+.md3-state-minimal:active::before {
+  opacity: 0.12;
+}
+
+/* ==========================================================================
+   Integration Helpers
+   ========================================================================== */
+
+/*
+  Helper classes for integrating state layers with existing components.
+  These ensure proper layering and prevent conflicts.
+*/
+
+.md3-state-overlay {
+  position: relative;
+  z-index: 1;
+}
+
+.md3-state-underlay {
+  position: relative;
+  z-index: 0;
+}
+
+/* Ensure state layers work properly with transforms */
+.md3-state-transform {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* ==========================================================================
+   Performance Optimizations
+   ========================================================================== */
+
+/*
+  For high-performance scenarios, use these optimized state layer classes
+  that reduce transition complexity.
+*/
+
+.md3-state-perf {
+  transition: opacity 100ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;
+}
+
+.md3-state-perf::before {
+  transition: opacity 100ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;
+}
+
+/* Clean up will-change after interactions */
+.md3-state-perf:hover::before,
+.md3-state-perf:focus-visible::before,
+.md3-state-perf:active::before {
+  will-change: auto;
+}

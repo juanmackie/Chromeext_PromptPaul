@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MD3 Advanced Animations Demo</title>
+    <link rel="stylesheet" href="advanced-animations.css">
+    <link rel="stylesheet" href="motion-system.css">
+    <link rel="stylesheet" href="themes.css">
+</head>
+<body>
+    <div class="md3-theme-light">
+        <div style="padding: 2rem; max-width: 1200px; margin: 0 auto;">
+
+            <!-- Stagger Animations Demo -->
+            <section class="md3-scroll-animate md3-scroll-reveal" style="margin-bottom: 4rem;">
+                <h1>Advanced Stagger Animations</h1>
+
+                <!-- List Stagger -->
+                <div class="md3-stagger-list md3-stagger-fade-in-up md3-stagger-container" style="margin-bottom: 2rem;">
+                    <div class="md3-stagger-manual" data-md3-stagger="1">List Item 1</div>
+                    <div class="md3-stagger-manual" data-md3-stagger="2">List Item 2</div>
+                    <div class="md3-stagger-manual" data-md3-stagger="3">List Item 3</div>
+                    <div class="md3-stagger-manual" data-md3-stagger="4">List Item 4</div>
+                    <div class="md3-stagger-manual" data-md3-stagger="5">List Item 5</div>
+                </div>
+
+                <!-- Grid Stagger -->
+                <div class="md3-stagger-grid md3-stagger-scale-in md3-stagger-container" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                    <div>Grid Item 1</div>
+                    <div>Grid Item 2</div>
+                    <div>Grid Item 3</div>
+                    <div>Grid Item 4</div>
+                    <div>Grid Item 5</div>
+                    <div>Grid Item 6</div>
+                </div>
+
+                <!-- Wave Stagger -->
+                <div class="md3-stagger-wave md3-stagger-fade-in-left md3-stagger-container" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+                    <div>Wave Item 1</div>
+                    <div>Wave Item 2</div>
+                    <div>Wave Item 3</div>
+                    <div>Wave Item 4</div>
+                    <div>Wave Item 5</div>
+                    <div>Wave Item 6</div>
+                    <div>Wave Item 7</div>
+                    <div>Wave Item 8</div>
+                </div>
+            </section>
+
+            <!-- Morphing Transitions Demo -->
+            <section class="md3-scroll-animate md3-scroll-reveal-slide-up" style="margin-bottom: 4rem;">
+                <h1>Morphing Transitions</h1>
+                <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                    <button class="md3-morph-transition md3-morph-expand">Expand</button>
+                    <button class="md3-morph-transition md3-morph-collapse">Collapse</button>
+                    <button class="md3-morph-transition md3-morph-rotate">Rotate</button>
+                    <button class="md3-animate-morph-expand-in">Morph In</button>
+                    <button class="md3-animate-morph-state-change">State Change</button>
+                </div>
+            </section>
+
+            <!-- Parallax Effects Demo -->
+            <section class="md3-parallax-container md3-scroll-animate md3-scroll-reveal" style="height: 400px; position: relative; margin-bottom: 4rem;">
+                <h1 style="text-align: center; padding-top: 2rem;">Parallax Effects</h1>
+                <div class="md3-parallax-layer md3-parallax-background" style="background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);">
+                    Background Layer
+                </div>
+                <div class="md3-parallax-layer md3-parallax-midground" style="background: rgba(255,255,255,0.8);">
+                    Midground Layer
+                </div>
+                <div class="md3-parallax-layer md3-parallax-foreground" style="background: rgba(255,255,255,0.9);">
+                    Foreground Layer
+                </div>
+            </section>
+
+            <!-- Theme Switching Demo -->
+            <section class="md3-scroll-animate md3-scroll-reveal-scale-in" style="margin-bottom: 4rem;">
+                <h1>Theme Switching Animations</h1>
+                <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                    <button class="md3-theme-transition" onclick="document.body.classList.toggle('md3-theme-light')">Light Theme</button>
+                    <button class="md3-theme-transition" onclick="document.body.classList.toggle('md3-theme-dark')">Dark Theme</button>
+                    <button class="md3-theme-morph" onclick="document.body.classList.add('md3-theme-switching')">Switching</button>
+                </div>
+            </section>
+
+            <!-- Scroll Animations Demo -->
+            <section style="margin-bottom: 4rem;">
+                <h1>Scroll-Triggered Animations</h1>
+                <div style="height: 100px;"></div>
+
+                <div class="md3-scroll-animate md3-scroll-reveal" style="padding: 2rem; background: #f0f0f0; margin-bottom: 2rem;">
+                    <h2>Scroll Reveal Up</h2>
+                    <p>This content fades in from bottom when scrolled into view.</p>
+                </div>
+
+                <div class="md3-scroll-animate md3-scroll-reveal-slide-up" style="padding: 2rem; background: #e0e0e0; margin-bottom: 2rem;">
+                    <h2>Scroll Reveal Slide Up</h2>
+                    <p>This content slides up when scrolled into view.</p>
+                </div>
+
+                <div class="md3-scroll-animate md3-scroll-reveal-scale-in" style="padding: 2rem; background: #d0d0d0; margin-bottom: 2rem;">
+                    <h2>Scroll Reveal Scale In</h2>
+                    <p>This content scales in when scrolled into view.</p>
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <script src="advanced-animations.js"></script>
+    <script>
+        // Initialize scroll animations when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            // Register scroll-triggered elements
+            document.querySelectorAll('.md3-scroll-animate, .md3-scroll-reveal, .md3-parallax-container').forEach(el => {
+                window.MD3AdvancedAnimations.observe(el);
+            });
+
+            // Register stagger containers for resize handling
+            document.querySelectorAll('.md3-stagger-container').forEach(el => {
+                window.MD3AdvancedAnimations.observeResize(el);
+            });
+        });
+    </script>
+</body>
+</html>

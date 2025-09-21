@@ -1,0 +1,424 @@
+/* ==========================================================================
+   MD3 Token System - Design Tokens & Utilities
+   ==========================================================================
+
+   This file implements the comprehensive Material Design 3 token system
+   with CSS custom properties and utility classes.
+
+   Structure:
+   1. Color System (Primary, Secondary, Tertiary, Error, Neutral)
+   2. Shape System (Corner radius scales)
+   3. Elevation System (Shadow levels)
+   4. Spacing System (Consistent scale)
+   5. Typography Tokens (Type scales)
+   6. Utility Classes (Color, shape, elevation, spacing)
+
+   Usage:
+   - Import this file to access all MD3 tokens
+   - Use utility classes for quick styling
+   - Reference CSS custom properties for component styling
+*/
+
+/* ==========================================================================
+   COLOR SYSTEM - MD3 Color Roles
+   ==========================================================================
+
+   MD3 uses semantic color roles that adapt to light/dark themes.
+   Each role has container, on-container, and variant colors for proper contrast.
+*/
+
+/* Primary Color Role */
+:root {
+  /* Primary colors */
+  --md3-primary: #1976d2;
+  --md3-on-primary: #ffffff;
+  --md3-primary-container: #d3e4fd;
+  --md3-on-primary-container: #001b3e;
+
+  /* Primary variants for states */
+  --md3-primary-hover: #1565c0;
+  --md3-primary-focus: #0d47a1;
+  --md3-primary-pressed: #0d47a1;
+
+  /* Secondary Color Role */
+  --md3-secondary: #565f71;
+  --md3-on-secondary: #ffffff;
+  --md3-secondary-container: #dae2f9;
+  --md3-on-secondary-container: #131c2b;
+
+  /* Secondary variants */
+  --md3-secondary-hover: #455a64;
+  --md3-secondary-focus: #37474f;
+  --md3-secondary-pressed: #37474f;
+
+  /* Tertiary Color Role */
+  --md3-tertiary: #705575;
+  --md3-on-tertiary: #ffffff;
+  --md3-tertiary-container: #f9d8fd;
+  --md3-on-tertiary-container: #28132e;
+
+  /* Tertiary variants */
+  --md3-tertiary-hover: #5e4a62;
+  --md3-tertiary-focus: #4e3b53;
+  --md3-tertiary-pressed: #4e3b53;
+
+  /* Error Color Role */
+  --md3-error: #ba1a1a;
+  --md3-on-error: #ffffff;
+  --md3-error-container: #ffdad6;
+  --md3-on-error-container: #410002;
+
+  /* Error variants */
+  --md3-error-hover: #d32f2f;
+  --md3-error-focus: #b71c1c;
+  --md3-error-pressed: #b71c1c;
+
+  /* Neutral Color Roles */
+  --md3-background: #fef7ff;
+  --md3-on-background: #1a1c1e;
+  --md3-surface: #fef7ff;
+  --md3-on-surface: #1a1c1e;
+  --md3-surface-variant: #dde3ea;
+  --md3-on-surface-variant: #41484d;
+
+  /* Neutral containers */
+  --md3-surface-container-lowest: #f8fafc;
+  --md3-surface-container-low: #f0f4f9;
+  --md3-surface-container: #e6eaef;
+  --md3-surface-container-high: #dce4e9;
+  --md3-surface-container-highest: #d2dbe0;
+  --md3-on-surface-container: #0e1114;
+
+  /* Outline colors */
+  --md3-outline: #71787e;
+  --md3-outline-variant: #c1c7ce;
+
+  /* Special surfaces */
+  --md3-inverse-surface: #2e3133;
+  --md3-inverse-on-surface: #f0f0f4;
+  --md3-inverse-primary: #aec7ff;
+
+  /* Scrim for modals/overlays */
+  --md3-scrim: rgba(0, 0, 0, 0.32);
+
+  /* Shadow color */
+  --md3-shadow: #000000;
+}
+
+/* ==========================================================================
+   SHAPE SYSTEM - Corner Radius Scale
+   ==========================================================================
+
+   MD3 uses a consistent shape scale for corner radius.
+   All values are based on a 4px base unit for consistency.
+*/
+
+:root {
+  /* Shape scale tokens */
+  --md3-shape-none: 0px;
+  --md3-shape-xs: 4px;      /* Extra small corners */
+  --md3-shape-sm: 8px;      /* Small corners */
+  --md3-shape-md: 12px;     /* Medium corners (default) */
+  --md3-shape-lg: 16px;     /* Large corners */
+  --md3-shape-xl: 28px;     /* Extra large corners */
+  --md3-shape-full: 9999px; /* Fully rounded (stadium) */
+}
+
+/* ==========================================================================
+   ELEVATION SYSTEM - Shadow Levels
+   ==========================================================================
+
+   MD3 elevation system provides consistent shadow definitions
+   for different elevation levels (0-5).
+*/
+
+:root {
+  /* Elevation shadow tokens */
+  --md3-elevation-0: none;
+  --md3-elevation-1: 0px 1px 2px rgba(0, 0, 0, 0.3), 0px 1px 3px rgba(0, 0, 0, 0.15);
+  --md3-elevation-2: 0px 1px 2px rgba(0, 0, 0, 0.3), 0px 2px 6px rgba(0, 0, 0, 0.15);
+  --md3-elevation-3: 0px 1px 3px rgba(0, 0, 0, 0.3), 0px 4px 8px rgba(0, 0, 0, 0.15);
+  --md3-elevation-4: 0px 2px 3px rgba(0, 0, 0, 0.3), 0px 6px 10px rgba(0, 0, 0, 0.15);
+  --md3-elevation-5: 0px 4px 4px rgba(0, 0, 0, 0.3), 0px 8px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ==========================================================================
+   SPACING SYSTEM - MD3 Scale
+   ==========================================================================
+
+   MD3 spacing uses a consistent 4px base unit scale.
+   Values increase by multiples for predictable layouts.
+*/
+
+:root {
+  /* Base spacing scale (4px = 1x) */
+  --md3-space-0: 0px;    /* No spacing */
+  --md3-space-0-5: 2px;  /* 0.5x - Very tight spacing */
+  --md3-space-1: 4px;    /* 1x - Base unit */
+  --md3-space-1-5: 6px;  /* 1.5x - Compact spacing */
+  --md3-space-2: 8px;    /* 2x - Small spacing */
+  --md3-space-2-5: 10px; /* 2.5x - Small-medium spacing */
+  --md3-space-3: 12px;   /* 3x - Medium spacing */
+  --md3-space-4: 16px;   /* 4x - Standard spacing */
+  --md3-space-4-5: 18px; /* 4.5x - Standard-large spacing */
+  --md3-space-5: 20px;   /* 5x - Large spacing */
+  --md3-space-6: 24px;   /* 6x - Extra large spacing */
+  --md3-space-7: 28px;   /* 7x - Very large spacing */
+  --md3-space-8: 32px;   /* 8x - Maximum spacing */
+}
+
+/* ==========================================================================
+   TYPOGRAPHY TOKENS - MD3 Type Scale
+   ==========================================================================
+
+   MD3 typography system with consistent sizing and line heights.
+*/
+
+:root {
+  /* Display styles */
+  --md3-display-large: 3.5rem;      /* 57px */
+  --md3-display-medium: 2.8125rem;  /* 45px */
+  --md3-display-small: 2.25rem;     /* 36px */
+
+  /* Headline styles */
+  --md3-headline-large: 2rem;       /* 32px */
+  --md3-headline-medium: 1.75rem;   /* 28px */
+  --md3-headline-small: 1.5rem;     /* 24px */
+
+  /* Title styles */
+  --md3-title-large: 1.375rem;      /* 22px */
+  --md3-title-medium: 1rem;         /* 16px */
+  --md3-title-small: 0.875rem;      /* 14px */
+
+  /* Body styles */
+  --md3-body-large: 1rem;           /* 16px */
+  --md3-body-medium: 0.875rem;      /* 14px */
+  --md3-body-small: 0.75rem;        /* 12px */
+
+  /* Label styles */
+  --md3-label-large: 0.875rem;      /* 14px */
+  --md3-label-medium: 0.75rem;      /* 12px */
+  --md3-label-small: 0.6875rem;     /* 11px */
+
+  /* Line heights for consistent vertical rhythm */
+  --md3-line-height-display: 1.1;
+  --md3-line-height-headline: 1.2;
+  --md3-line-height-title: 1.3;
+  --md3-line-height-body: 1.4;
+  --md3-line-height-label: 1.2;
+
+  /* Font weights */
+  --md3-font-weight-light: 300;
+  --md3-font-weight-regular: 400;
+  --md3-font-weight-medium: 500;
+  --md3-font-weight-semibold: 600;
+  --md3-font-weight-bold: 700;
+}
+
+/* ==========================================================================
+   MOTION TOKENS - MD3 Animation System
+   ==========================================================================
+
+   Consistent timing and easing functions for smooth interactions.
+*/
+
+:root {
+  /* Duration tokens */
+  --md3-duration-short1: 50ms;
+  --md3-duration-short2: 100ms;
+  --md3-duration-short3: 150ms;
+  --md3-duration-short4: 200ms;
+  --md3-duration-medium1: 250ms;
+  --md3-duration-medium2: 300ms;
+  --md3-duration-medium3: 350ms;
+  --md3-duration-medium4: 400ms;
+  --md3-duration-long1: 450ms;
+  --md3-duration-long2: 500ms;
+  --md3-duration-long3: 550ms;
+  --md3-duration-long4: 600ms;
+  --md3-duration-extra-long1: 700ms;
+  --md3-duration-extra-long2: 800ms;
+  --md3-duration-extra-long3: 900ms;
+  --md3-duration-extra-long4: 1000ms;
+
+  /* Easing tokens */
+  --md3-easing-linear: cubic-bezier(0, 0, 1, 1);
+  --md3-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md3-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --md3-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  --md3-easing-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md3-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md3-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+
+/* ==========================================================================
+   UTILITY CLASSES - Color Roles
+   ==========================================================================
+
+   Utility classes for quick application of MD3 color tokens.
+   Use these classes to apply colors without writing custom CSS.
+*/
+
+/* Primary color utilities */
+.md3-primary { background-color: var(--md3-primary); color: var(--md3-on-primary); }
+.md3-on-primary { color: var(--md3-on-primary); }
+.md3-primary-container { background-color: var(--md3-primary-container); color: var(--md3-on-primary-container); }
+.md3-on-primary-container { color: var(--md3-on-primary-container); }
+
+/* Secondary color utilities */
+.md3-secondary { background-color: var(--md3-secondary); color: var(--md3-on-secondary); }
+.md3-on-secondary { color: var(--md3-on-secondary); }
+.md3-secondary-container { background-color: var(--md3-secondary-container); color: var(--md3-on-secondary-container); }
+.md3-on-secondary-container { color: var(--md3-on-secondary-container); }
+
+/* Tertiary color utilities */
+.md3-tertiary { background-color: var(--md3-tertiary); color: var(--md3-on-tertiary); }
+.md3-on-tertiary { color: var(--md3-on-tertiary); }
+.md3-tertiary-container { background-color: var(--md3-tertiary-container); color: var(--md3-on-tertiary-container); }
+.md3-on-tertiary-container { color: var(--md3-on-tertiary-container); }
+
+/* Error color utilities */
+.md3-error { background-color: var(--md3-error); color: var(--md3-on-error); }
+.md3-on-error { color: var(--md3-on-error); }
+.md3-error-container { background-color: var(--md3-error-container); color: var(--md3-on-error-container); }
+.md3-on-error-container { color: var(--md3-on-error-container); }
+
+/* Surface color utilities */
+.md3-surface { background-color: var(--md3-surface); color: var(--md3-on-surface); }
+.md3-on-surface { color: var(--md3-on-surface); }
+.md3-surface-container-lowest { background-color: var(--md3-surface-container-lowest); color: var(--md3-on-surface); }
+.md3-surface-container-low { background-color: var(--md3-surface-container-low); color: var(--md3-on-surface); }
+.md3-surface-container { background-color: var(--md3-surface-container); color: var(--md3-on-surface-container); }
+.md3-surface-container-high { background-color: var(--md3-surface-container-high); color: var(--md3-on-surface); }
+.md3-surface-container-highest { background-color: var(--md3-surface-container-highest); color: var(--md3-on-surface); }
+
+/* Text and outline utilities */
+.md3-on-surface-variant { color: var(--md3-on-surface-variant); }
+.md3-outline { border-color: var(--md3-outline); }
+.md3-outline-variant { border-color: var(--md3-outline-variant); }
+.md3-inverse-surface { background-color: var(--md3-inverse-surface); color: var(--md3-inverse-on-surface); }
+.md3-inverse-on-surface { color: var(--md3-inverse-on-surface); }
+.md3-inverse-primary { background-color: var(--md3-inverse-primary); color: var(--md3-on-primary); }
+
+/* ==========================================================================
+   UTILITY CLASSES - Shape System
+   ==========================================================================
+
+   Utility classes for quick application of MD3 shape tokens.
+*/
+
+/* Shape utility classes */
+.md3-shape-none { border-radius: var(--md3-shape-none); }
+.md3-shape-xs { border-radius: var(--md3-shape-xs); }
+.md3-shape-sm { border-radius: var(--md3-shape-sm); }
+.md3-shape-md { border-radius: var(--md3-shape-md); }
+.md3-shape-lg { border-radius: var(--md3-shape-lg); }
+.md3-shape-xl { border-radius: var(--md3-shape-xl); }
+.md3-shape-full { border-radius: var(--md3-shape-full); }
+
+/* ==========================================================================
+   UTILITY CLASSES - Elevation System
+   ==========================================================================
+
+   Utility classes for quick application of MD3 elevation tokens.
+*/
+
+/* Elevation utility classes */
+.md3-elevation-0 { box-shadow: var(--md3-elevation-0); }
+.md3-elevation-1 { box-shadow: var(--md3-elevation-1); }
+.md3-elevation-2 { box-shadow: var(--md3-elevation-2); }
+.md3-elevation-3 { box-shadow: var(--md3-elevation-3); }
+.md3-elevation-4 { box-shadow: var(--md3-elevation-4); }
+.md3-elevation-5 { box-shadow: var(--md3-elevation-5); }
+
+/* ==========================================================================
+   UTILITY CLASSES - Spacing System
+   ==========================================================================
+
+   Utility classes for quick application of MD3 spacing tokens.
+   These classes provide consistent spacing using padding and margin.
+*/
+
+/* Padding utilities */
+.md3-space-p-0 { padding: var(--md3-space-0); }
+.md3-space-p-0-5 { padding: var(--md3-space-0-5); }
+.md3-space-p-1 { padding: var(--md3-space-1); }
+.md3-space-p-1-5 { padding: var(--md3-space-1-5); }
+.md3-space-p-2 { padding: var(--md3-space-2); }
+.md3-space-p-2-5 { padding: var(--md3-space-2-5); }
+.md3-space-p-3 { padding: var(--md3-space-3); }
+.md3-space-p-4 { padding: var(--md3-space-4); }
+.md3-space-p-4-5 { padding: var(--md3-space-4-5); }
+.md3-space-p-5 { padding: var(--md3-space-5); }
+.md3-space-p-6 { padding: var(--md3-space-6); }
+.md3-space-p-7 { padding: var(--md3-space-7); }
+.md3-space-p-8 { padding: var(--md3-space-8); }
+
+/* Margin utilities */
+.md3-space-m-0 { margin: var(--md3-space-0); }
+.md3-space-m-0-5 { margin: var(--md3-space-0-5); }
+.md3-space-m-1 { margin: var(--md3-space-1); }
+.md3-space-m-1-5 { margin: var(--md3-space-1-5); }
+.md3-space-m-2 { margin: var(--md3-space-2); }
+.md3-space-m-2-5 { margin: var(--md3-space-2-5); }
+.md3-space-m-3 { margin: var(--md3-space-3); }
+.md3-space-m-4 { margin: var(--md3-space-4); }
+.md3-space-m-4-5 { margin: var(--md3-space-4-5); }
+.md3-space-m-5 { margin: var(--md3-space-5); }
+.md3-space-m-6 { margin: var(--md3-space-6); }
+.md3-space-m-7 { margin: var(--md3-space-7); }
+.md3-space-m-8 { margin: var(--md3-space-8); }
+
+/* Gap utilities for flexbox/grid */
+.md3-space-gap-0 { gap: var(--md3-space-0); }
+.md3-space-gap-0-5 { gap: var(--md3-space-0-5); }
+.md3-space-gap-1 { gap: var(--md3-space-1); }
+.md3-space-gap-1-5 { gap: var(--md3-space-1-5); }
+.md3-space-gap-2 { gap: var(--md3-space-2); }
+.md3-space-gap-2-5 { gap: var(--md3-space-2-5); }
+.md3-space-gap-3 { gap: var(--md3-space-3); }
+.md3-space-gap-4 { gap: var(--md3-space-4); }
+.md3-space-gap-4-5 { gap: var(--md3-space-4-5); }
+.md3-space-gap-5 { gap: var(--md3-space-5); }
+.md3-space-gap-6 { gap: var(--md3-space-6); }
+.md3-space-gap-7 { gap: var(--md3-space-7); }
+.md3-space-gap-8 { gap: var(--md3-space-8); }
+
+/* ==========================================================================
+   UTILITY CLASSES - Typography System
+   ==========================================================================
+
+   Utility classes for quick application of MD3 typography tokens.
+*/
+
+/* Display styles */
+.md3-display-large { font-size: var(--md3-display-large); line-height: var(--md3-line-height-display); }
+.md3-display-medium { font-size: var(--md3-display-medium); line-height: var(--md3-line-height-display); }
+.md3-display-small { font-size: var(--md3-display-small); line-height: var(--md3-line-height-display); }
+
+/* Headline styles */
+.md3-headline-large { font-size: var(--md3-headline-large); line-height: var(--md3-line-height-headline); }
+.md3-headline-medium { font-size: var(--md3-headline-medium); line-height: var(--md3-line-height-headline); }
+.md3-headline-small { font-size: var(--md3-headline-small); line-height: var(--md3-line-height-headline); }
+
+/* Title styles */
+.md3-title-large { font-size: var(--md3-title-large); line-height: var(--md3-line-height-title); }
+.md3-title-medium { font-size: var(--md3-title-medium); line-height: var(--md3-line-height-title); }
+.md3-title-small { font-size: var(--md3-title-small); line-height: var(--md3-line-height-title); }
+
+/* Body styles */
+.md3-body-large { font-size: var(--md3-body-large); line-height: var(--md3-line-height-body); }
+.md3-body-medium { font-size: var(--md3-body-medium); line-height: var(--md3-line-height-body); }
+.md3-body-small { font-size: var(--md3-body-small); line-height: var(--md3-line-height-body); }
+
+/* Label styles */
+.md3-label-large { font-size: var(--md3-label-large); line-height: var(--md3-line-height-label); }
+.md3-label-medium { font-size: var(--md3-label-medium); line-height: var(--md3-line-height-label); }
+.md3-label-small { font-size: var(--md3-label-small); line-height: var(--md3-line-height-label); }
+
+/* Font weight utilities */
+.md3-font-weight-light { font-weight: var(--md3-font-weight-light); }
+.md3-font-weight-regular { font-weight: var(--md3-font-weight-regular); }
+.md3-font-weight-medium { font-weight: var(--md3-font-weight-medium); }
+.md3-font-weight-semibold { font-weight: var(--md3-font-weight-semibold); }
+.md3-font-weight-bold { font-weight: var(--md3-font-weight-bold); }

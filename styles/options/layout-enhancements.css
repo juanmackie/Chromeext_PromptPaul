@@ -1,0 +1,906 @@
+/* ==========================================================================
+   MD3 Layout Enhancements System
+   ==========================================================================
+
+   This file implements a comprehensive layout system following Material Design 3
+   principles with modern CSS Grid, Flexbox, and Container Query capabilities.
+
+   Structure:
+   1. MD3 Breakpoint System
+   2. Responsive Grid System
+   3. Container Query Support
+   4. Flexible Layout Utilities
+   5. Spacing Hierarchy System
+   6. Layout Debugging Tools
+
+   Usage:
+   - Import this file to access comprehensive layout utilities
+   - Use utility classes for quick responsive layouts
+   - Combine with existing MD3 token system for consistent design
+
+   Dependencies:
+   - styles/options/tokens.css (for MD3 tokens)
+   - styles/options/layout.css (for base layout styles)
+*/
+
+/* ==========================================================================
+   MD3 BREAKPOINT SYSTEM
+   ==========================================================================
+
+   Material Design 3 breakpoint system for consistent responsive design.
+   Mobile-first approach with semantic breakpoint names.
+*/
+
+:root {
+  /* MD3 Breakpoint Tokens - Based on common device sizes */
+  --md3-breakpoint-xs: 360px;   /* Extra small devices (phones) */
+  --md3-breakpoint-sm: 600px;   /* Small devices (large phones) */
+  --md3-breakpoint-md: 840px;   /* Medium devices (tablets) */
+  --md3-breakpoint-lg: 1200px;  /* Large devices (small laptops) */
+  --md3-breakpoint-xl: 1600px;  /* Extra large devices (desktops) */
+
+  /* Container Query Units - For component-level responsive design */
+  --md3-container-xs: 320px;
+  --md3-container-sm: 480px;
+  --md3-container-md: 640px;
+  --md3-container-lg: 800px;
+  --md3-container-xl: 1024px;
+
+  /* Layout Grid Configuration */
+  --md3-grid-columns: 12;
+  --md3-grid-gap-xs: var(--md3-space-1);
+  --md3-grid-gap-sm: var(--md3-space-2);
+  --md3-grid-gap-md: var(--md3-space-3);
+  --md3-grid-gap-lg: var(--md3-space-4);
+  --md3-grid-gap-xl: var(--md3-space-5);
+}
+
+/* ==========================================================================
+   RESPONSIVE GRID SYSTEM
+   ==========================================================================
+
+   Modern CSS Grid system with MD3 breakpoints and responsive behavior.
+   Supports auto-fit, auto-fill, and custom grid configurations.
+*/
+
+/* Base Grid Container */
+.md3-grid {
+  display: grid;
+  gap: var(--md3-grid-gap-md);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Responsive Grid Columns */
+.md3-grid-1 { grid-template-columns: 1fr; }
+.md3-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.md3-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.md3-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.md3-grid-5 { grid-template-columns: repeat(5, 1fr); }
+.md3-grid-6 { grid-template-columns: repeat(6, 1fr); }
+.md3-grid-12 { grid-template-columns: repeat(12, 1fr); }
+
+/* Auto-responsive Grids */
+.md3-grid-auto-fit {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.md3-grid-auto-fill {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.md3-grid-auto-fit-sm {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.md3-grid-auto-fill-sm {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.md3-grid-auto-fit-lg {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.md3-grid-auto-fill-lg {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+/* Responsive Grid Behavior at Breakpoints */
+@media (max-width: 599px) {
+  .md3-grid-responsive {
+    grid-template-columns: 1fr;
+    gap: var(--md3-grid-gap-sm);
+  }
+
+  .md3-grid-responsive-2 {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+}
+
+@media (min-width: 600px) and (max-width: 839px) {
+  .md3-grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--md3-grid-gap-md);
+  }
+
+  .md3-grid-responsive-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 840px) and (max-width: 1199px) {
+  .md3-grid-responsive {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--md3-grid-gap-lg);
+  }
+
+  .md3-grid-responsive-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .md3-grid-responsive {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--md3-grid-gap-xl);
+  }
+
+  .md3-grid-responsive-5 {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .md3-grid-responsive-6 {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* Grid Item Spanning */
+.md3-grid-item-1 { grid-column: span 1; }
+.md3-grid-item-2 { grid-column: span 2; }
+.md3-grid-item-3 { grid-column: span 3; }
+.md3-grid-item-4 { grid-column: span 4; }
+.md3-grid-item-5 { grid-column: span 5; }
+.md3-grid-item-6 { grid-column: span 6; }
+.md3-grid-item-7 { grid-column: span 7; }
+.md3-grid-item-8 { grid-column: span 8; }
+.md3-grid-item-9 { grid-column: span 9; }
+.md3-grid-item-10 { grid-column: span 10; }
+.md3-grid-item-11 { grid-column: span 11; }
+.md3-grid-item-12 { grid-column: span 12; }
+.md3-grid-item-full { grid-column: 1 / -1; }
+
+/* Grid Item Responsive Spanning */
+@media (max-width: 599px) {
+  .md3-grid-item-mobile-1 { grid-column: span 1; }
+  .md3-grid-item-mobile-2 { grid-column: span 2; }
+  .md3-grid-item-mobile-full { grid-column: 1 / -1; }
+}
+
+@media (min-width: 600px) and (max-width: 839px) {
+  .md3-grid-item-tablet-1 { grid-column: span 1; }
+  .md3-grid-item-tablet-2 { grid-column: span 2; }
+  .md3-grid-item-tablet-3 { grid-column: span 3; }
+  .md3-grid-item-tablet-full { grid-column: 1 / -1; }
+}
+
+@media (min-width: 840px) and (max-width: 1199px) {
+  .md3-grid-item-desktop-1 { grid-column: span 1; }
+  .md3-grid-item-desktop-2 { grid-column: span 2; }
+  .md3-grid-item-desktop-3 { grid-column: span 3; }
+  .md3-grid-item-desktop-4 { grid-column: span 4; }
+  .md3-grid-item-desktop-full { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1200px) {
+  .md3-grid-item-large-1 { grid-column: span 1; }
+  .md3-grid-item-large-2 { grid-column: span 2; }
+  .md3-grid-item-large-3 { grid-column: span 3; }
+  .md3-grid-item-large-4 { grid-column: span 4; }
+  .md3-grid-item-large-5 { grid-column: span 5; }
+  .md3-grid-item-large-6 { grid-column: span 6; }
+  .md3-grid-item-large-full { grid-column: 1 / -1; }
+}
+
+/* ==========================================================================
+   CONTAINER QUERY SUPPORT
+   ==========================================================================
+
+   Component-level responsive design using container queries.
+   Allows components to respond to their container size rather than viewport.
+*/
+
+/* Container Query Base */
+.md3-container {
+  container-type: inline-size;
+  width: 100%;
+}
+
+.md3-container-block {
+  container-type: inline-size;
+  display: block;
+  width: 100%;
+}
+
+.md3-container-grid {
+  container-type: inline-size;
+  display: grid;
+  width: 100%;
+}
+
+.md3-container-flex {
+  container-type: inline-size;
+  display: flex;
+  width: 100%;
+}
+
+/* Container Query Breakpoints */
+@container (max-width: 319px) {
+  .md3-container-xs-only {
+    display: block;
+  }
+
+  .md3-container-sm-up,
+  .md3-container-md-up,
+  .md3-container-lg-up,
+  .md3-container-xl-up {
+    display: none;
+  }
+}
+
+@container (min-width: 320px) and (max-width: 479px) {
+  .md3-container-xs-only,
+  .md3-container-sm-only {
+    display: block;
+  }
+
+  .md3-container-md-up,
+  .md3-container-lg-up,
+  .md3-container-xl-up {
+    display: none;
+  }
+}
+
+@container (min-width: 480px) and (max-width: 639px) {
+  .md3-container-sm-only,
+  .md3-container-md-only,
+  .md3-container-sm-up {
+    display: block;
+  }
+
+  .md3-container-xs-only,
+  .md3-container-lg-up,
+  .md3-container-xl-up {
+    display: none;
+  }
+}
+
+@container (min-width: 640px) and (max-width: 799px) {
+  .md3-container-md-only,
+  .md3-container-md-up,
+  .md3-container-sm-up {
+    display: block;
+  }
+
+  .md3-container-xs-only,
+  .md3-container-sm-only,
+  .md3-container-lg-up,
+  .md3-container-xl-up {
+    display: none;
+  }
+}
+
+@container (min-width: 800px) and (max-width: 1023px) {
+  .md3-container-lg-only,
+  .md3-container-md-up,
+  .md3-container-sm-up {
+    display: block;
+  }
+
+  .md3-container-xs-only,
+  .md3-container-sm-only,
+  .md3-container-md-only,
+  .md3-container-xl-up {
+    display: none;
+  }
+}
+
+@container (min-width: 1024px) {
+  .md3-container-xl-up,
+  .md3-container-lg-up,
+  .md3-container-md-up,
+  .md3-container-sm-up {
+    display: block;
+  }
+
+  .md3-container-xs-only,
+  .md3-container-sm-only,
+  .md3-container-md-only,
+  .md3-container-lg-only {
+    display: none;
+  }
+}
+
+/* Container Query Grid Behaviors */
+@container (max-width: 479px) {
+  .md3-container-grid-1 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container (min-width: 480px) and (max-width: 799px) {
+  .md3-container-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@container (min-width: 800px) {
+  .md3-container-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ==========================================================================
+   FLEXIBLE LAYOUT UTILITIES
+   ==========================================================================
+
+   Comprehensive flexbox utilities for modern layout patterns.
+   Supports common layout scenarios with consistent naming.
+*/
+
+/* Flexbox Base Classes */
+.md3-layout-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.md3-layout-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.md3-layout-row-reverse {
+  display: flex;
+  flex-direction: row-reverse;
+}
+
+.md3-layout-column-reverse {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+/* Flex Wrapping */
+.md3-flex-wrap { flex-wrap: wrap; }
+.md3-flex-nowrap { flex-wrap: nowrap; }
+.md3-flex-wrap-reverse { flex-wrap: wrap-reverse; }
+
+/* Justify Content */
+.md3-justify-start { justify-content: flex-start; }
+.md3-justify-center { justify-content: center; }
+.md3-justify-end { justify-content: flex-end; }
+.md3-justify-between { justify-content: space-between; }
+.md3-justify-around { justify-content: space-around; }
+.md3-justify-evenly { justify-content: space-evenly; }
+
+/* Align Items */
+.md3-align-start { align-items: flex-start; }
+.md3-align-center { align-items: center; }
+.md3-align-end { align-items: flex-end; }
+.md3-align-stretch { align-items: stretch; }
+.md3-align-baseline { align-items: baseline; }
+
+/* Flex Grow/Shrink */
+.md3-flex-1 { flex: 1; }
+.md3-flex-auto { flex: auto; }
+.md3-flex-none { flex: none; }
+.md3-flex-grow { flex-grow: 1; }
+.md3-flex-shrink { flex-shrink: 1; }
+.md3-flex-no-grow { flex-grow: 0; }
+.md3-flex-no-shrink { flex-shrink: 0; }
+
+/* Flex Basis */
+.md3-flex-basis-auto { flex-basis: auto; }
+.md3-flex-basis-0 { flex-basis: 0; }
+.md3-flex-basis-25 { flex-basis: 25%; }
+.md3-flex-basis-50 { flex-basis: 50%; }
+.md3-flex-basis-75 { flex-basis: 75%; }
+.md3-flex-basis-100 { flex-basis: 100%; }
+
+/* Common Layout Patterns */
+.md3-layout-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.md3-layout-space-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.md3-layout-space-around {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.md3-layout-distribute {
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+}
+
+/* Column layouts */
+.md3-columns-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--md3-space-4);
+}
+
+.md3-columns-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--md3-space-4);
+}
+
+.md3-columns-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--md3-space-4);
+}
+
+/* ==========================================================================
+   SPACING HIERARCHY SYSTEM
+   ==========================================================================
+
+   Enhanced spacing utilities using MD3 spacing scale.
+   Provides consistent spacing across all components.
+*/
+
+/* Padding Utilities - All Sides */
+.md3-padding-0 { padding: var(--md3-space-0); }
+.md3-padding-0-5 { padding: var(--md3-space-0-5); }
+.md3-padding-1 { padding: var(--md3-space-1); }
+.md3-padding-1-5 { padding: var(--md3-space-1-5); }
+.md3-padding-2 { padding: var(--md3-space-2); }
+.md3-padding-2-5 { padding: var(--md3-space-2-5); }
+.md3-padding-3 { padding: var(--md3-space-3); }
+.md3-padding-4 { padding: var(--md3-space-4); }
+.md3-padding-4-5 { padding: var(--md3-space-4-5); }
+.md3-padding-5 { padding: var(--md3-space-5); }
+.md3-padding-6 { padding: var(--md3-space-6); }
+.md3-padding-7 { padding: var(--md3-space-7); }
+.md3-padding-8 { padding: var(--md3-space-8); }
+
+/* Margin Utilities - All Sides */
+.md3-margin-0 { margin: var(--md3-space-0); }
+.md3-margin-0-5 { margin: var(--md3-space-0-5); }
+.md3-margin-1 { margin: var(--md3-space-1); }
+.md3-margin-1-5 { margin: var(--md3-space-1-5); }
+.md3-margin-2 { margin: var(--md3-space-2); }
+.md3-margin-2-5 { margin: var(--md3-space-2-5); }
+.md3-margin-3 { margin: var(--md3-space-3); }
+.md3-margin-4 { margin: var(--md3-space-4); }
+.md3-margin-4-5 { margin: var(--md3-space-4-5); }
+.md3-margin-5 { margin: var(--md3-space-5); }
+.md3-margin-6 { margin: var(--md3-space-6); }
+.md3-margin-7 { margin: var(--md3-space-7); }
+.md3-margin-8 { margin: var(--md3-space-8); }
+
+/* Individual Side Spacing */
+.md3-padding-top-0 { padding-top: var(--md3-space-0); }
+.md3-padding-top-0-5 { padding-top: var(--md3-space-0-5); }
+.md3-padding-top-1 { padding-top: var(--md3-space-1); }
+.md3-padding-top-1-5 { padding-top: var(--md3-space-1-5); }
+.md3-padding-top-2 { padding-top: var(--md3-space-2); }
+.md3-padding-top-2-5 { padding-top: var(--md3-space-2-5); }
+.md3-padding-top-3 { padding-top: var(--md3-space-3); }
+.md3-padding-top-4 { padding-top: var(--md3-space-4); }
+.md3-padding-top-4-5 { padding-top: var(--md3-space-4-5); }
+.md3-padding-top-5 { padding-top: var(--md3-space-5); }
+.md3-padding-top-6 { padding-top: var(--md3-space-6); }
+.md3-padding-top-7 { padding-top: var(--md3-space-7); }
+.md3-padding-top-8 { padding-top: var(--md3-space-8); }
+
+.md3-padding-right-0 { padding-right: var(--md3-space-0); }
+.md3-padding-right-0-5 { padding-right: var(--md3-space-0-5); }
+.md3-padding-right-1 { padding-right: var(--md3-space-1); }
+.md3-padding-right-1-5 { padding-right: var(--md3-space-1-5); }
+.md3-padding-right-2 { padding-right: var(--md3-space-2); }
+.md3-padding-right-2-5 { padding-right: var(--md3-space-2-5); }
+.md3-padding-right-3 { padding-right: var(--md3-space-3); }
+.md3-padding-right-4 { padding-right: var(--md3-space-4); }
+.md3-padding-right-4-5 { padding-right: var(--md3-space-4-5); }
+.md3-padding-right-5 { padding-right: var(--md3-space-5); }
+.md3-padding-right-6 { padding-right: var(--md3-space-6); }
+.md3-padding-right-7 { padding-right: var(--md3-space-7); }
+.md3-padding-right-8 { padding-right: var(--md3-space-8); }
+
+.md3-padding-bottom-0 { padding-bottom: var(--md3-space-0); }
+.md3-padding-bottom-0-5 { padding-bottom: var(--md3-space-0-5); }
+.md3-padding-bottom-1 { padding-bottom: var(--md3-space-1); }
+.md3-padding-bottom-1-5 { padding-bottom: var(--md3-space-1-5); }
+.md3-padding-bottom-2 { padding-bottom: var(--md3-space-2); }
+.md3-padding-bottom-2-5 { padding-bottom: var(--md3-space-2-5); }
+.md3-padding-bottom-3 { padding-bottom: var(--md3-space-3); }
+.md3-padding-bottom-4 { padding-bottom: var(--md3-space-4); }
+.md3-padding-bottom-4-5 { padding-bottom: var(--md3-space-4-5); }
+.md3-padding-bottom-5 { padding-bottom: var(--md3-space-5); }
+.md3-padding-bottom-6 { padding-bottom: var(--md3-space-6); }
+.md3-padding-bottom-7 { padding-bottom: var(--md3-space-7); }
+.md3-padding-bottom-8 { padding-bottom: var(--md3-space-8); }
+
+.md3-padding-left-0 { padding-left: var(--md3-space-0); }
+.md3-padding-left-0-5 { padding-left: var(--md3-space-0-5); }
+.md3-padding-left-1 { padding-left: var(--md3-space-1); }
+.md3-padding-left-1-5 { padding-left: var(--md3-space-1-5); }
+.md3-padding-left-2 { padding-left: var(--md3-space-2); }
+.md3-padding-left-2-5 { padding-left: var(--md3-space-2-5); }
+.md3-padding-left-3 { padding-left: var(--md3-space-3); }
+.md3-padding-left-4 { padding-left: var(--md3-space-4); }
+.md3-padding-left-4-5 { padding-left: var(--md3-space-4-5); }
+.md3-padding-left-5 { padding-left: var(--md3-space-5); }
+.md3-padding-left-6 { padding-left: var(--md3-space-6); }
+.md3-padding-left-7 { padding-left: var(--md3-space-7); }
+.md3-padding-left-8 { padding-left: var(--md3-space-8); }
+
+.md3-margin-top-0 { margin-top: var(--md3-space-0); }
+.md3-margin-top-0-5 { margin-top: var(--md3-space-0-5); }
+.md3-margin-top-1 { margin-top: var(--md3-space-1); }
+.md3-margin-top-1-5 { margin-top: var(--md3-space-1-5); }
+.md3-margin-top-2 { margin-top: var(--md3-space-2); }
+.md3-margin-top-2-5 { margin-top: var(--md3-space-2-5); }
+.md3-margin-top-3 { margin-top: var(--md3-space-3); }
+.md3-margin-top-4 { margin-top: var(--md3-space-4); }
+.md3-margin-top-4-5 { margin-top: var(--md3-space-4-5); }
+.md3-margin-top-5 { margin-top: var(--md3-space-5); }
+.md3-margin-top-6 { margin-top: var(--md3-space-6); }
+.md3-margin-top-7 { margin-top: var(--md3-space-7); }
+.md3-margin-top-8 { margin-top: var(--md3-space-8); }
+
+.md3-margin-right-0 { margin-right: var(--md3-space-0); }
+.md3-margin-right-0-5 { margin-right: var(--md3-space-0-5); }
+.md3-margin-right-1 { margin-right: var(--md3-space-1); }
+.md3-margin-right-1-5 { margin-right: var(--md3-space-1-5); }
+.md3-margin-right-2 { margin-right: var(--md3-space-2); }
+.md3-margin-right-2-5 { margin-right: var(--md3-space-2-5); }
+.md3-margin-right-3 { margin-right: var(--md3-space-3); }
+.md3-margin-right-4 { margin-right: var(--md3-space-4); }
+.md3-margin-right-4-5 { margin-right: var(--md3-space-4-5); }
+.md3-margin-right-5 { margin-right: var(--md3-space-5); }
+.md3-margin-right-6 { margin-right: var(--md3-space-6); }
+.md3-margin-right-7 { margin-right: var(--md3-space-7); }
+.md3-margin-right-8 { margin-right: var(--md3-space-8); }
+
+.md3-margin-bottom-0 { margin-bottom: var(--md3-space-0); }
+.md3-margin-bottom-0-5 { margin-bottom: var(--md3-space-0-5); }
+.md3-margin-bottom-1 { margin-bottom: var(--md3-space-1); }
+.md3-margin-bottom-1-5 { margin-bottom: var(--md3-space-1-5); }
+.md3-margin-bottom-2 { margin-bottom: var(--md3-space-2); }
+.md3-margin-bottom-2-5 { margin-bottom: var(--md3-space-2-5); }
+.md3-margin-bottom-3 { margin-bottom: var(--md3-space-3); }
+.md3-margin-bottom-4 { margin-bottom: var(--md3-space-4); }
+.md3-margin-bottom-4-5 { margin-bottom: var(--md3-space-4-5); }
+.md3-margin-bottom-5 { margin-bottom: var(--md3-space-5); }
+.md3-margin-bottom-6 { margin-bottom: var(--md3-space-6); }
+.md3-margin-bottom-7 { margin-bottom: var(--md3-space-7); }
+.md3-margin-bottom-8 { margin-bottom: var(--md3-space-8); }
+
+.md3-margin-left-0 { margin-left: var(--md3-space-0); }
+.md3-margin-left-0-5 { margin-left: var(--md3-space-0-5); }
+.md3-margin-left-1 { margin-left: var(--md3-space-1); }
+.md3-margin-left-1-5 { margin-left: var(--md3-space-1-5); }
+.md3-margin-left-2 { margin-left: var(--md3-space-2); }
+.md3-margin-left-2-5 { margin-left: var(--md3-space-2-5); }
+.md3-margin-left-3 { margin-left: var(--md3-space-3); }
+.md3-margin-left-4 { margin-left: var(--md3-space-4); }
+.md3-margin-left-4-5 { margin-left: var(--md3-space-4-5); }
+.md3-margin-left-5 { margin-left: var(--md3-space-5); }
+.md3-margin-left-6 { margin-left: var(--md3-space-6); }
+.md3-margin-left-7 { margin-left: var(--md3-space-7); }
+.md3-margin-left-8 { margin-left: var(--md3-space-8); }
+
+/* ==========================================================================
+   LAYOUT DEBUGGING TOOLS
+   ==========================================================================
+
+   Visual debugging tools for development and troubleshooting.
+   Helps identify layout issues and spacing problems.
+*/
+
+/* Debug Grid Overlay */
+.md3-debug-grid {
+  position: relative;
+  background-image:
+    linear-gradient(rgba(255, 0, 0, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.md3-debug-grid::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(rgba(0, 255, 0, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 0, 0.2) 1px, transparent 1px);
+  background-size: 100px 100px;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* Debug Spacing Visualization */
+.md3-debug-spacing {
+  position: relative;
+  outline: 2px dashed red;
+  outline-offset: -2px;
+}
+
+.md3-debug-spacing::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 2px solid blue;
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Debug Container Boundaries */
+.md3-debug-container {
+  outline: 3px solid magenta;
+  outline-offset: 3px;
+  background: rgba(255, 0, 255, 0.1);
+}
+
+/* Debug Flexbox Items */
+.md3-debug-flex-item {
+  outline: 2px solid orange;
+  background: rgba(255, 165, 0, 0.1);
+}
+
+.md3-debug-flex-item::before {
+  content: 'flex-item';
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: orange;
+  color: white;
+  font-size: 10px;
+  padding: 2px 4px;
+  z-index: 1001;
+}
+
+/* Debug Grid Items */
+.md3-debug-grid-item {
+  outline: 2px solid cyan;
+  background: rgba(0, 255, 255, 0.1);
+}
+
+.md3-debug-grid-item::before {
+  content: 'grid-item';
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: cyan;
+  color: black;
+  font-size: 10px;
+  padding: 2px 4px;
+  z-index: 1001;
+}
+
+/* Debug Layout Flow */
+.md3-debug-flow {
+  position: relative;
+}
+
+.md3-debug-flow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(circle at center, transparent 1px, rgba(255, 255, 0, 0.3) 2px, transparent 3px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Debug Breakpoint Indicator */
+.md3-debug-breakpoint::after {
+  content: 'DEBUG: Layout System Active';
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: monospace;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+/* Responsive Debug Helpers */
+@media (max-width: 599px) {
+  .md3-debug-mobile::after {
+    content: 'MOBILE (< 600px)';
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    background: red;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    z-index: 10000;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 839px) {
+  .md3-debug-tablet::after {
+    content: 'TABLET (600px - 839px)';
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    background: orange;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    z-index: 10000;
+  }
+}
+
+@media (min-width: 840px) and (max-width: 1199px) {
+  .md3-debug-desktop::after {
+    content: 'DESKTOP (840px - 1199px)';
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    background: green;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    z-index: 10000;
+  }
+}
+
+@media (min-width: 1200px) {
+  .md3-debug-large::after {
+    content: 'LARGE (≥ 1200px)';
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    background: blue;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    z-index: 10000;
+  }
+}
+
+/* Development-only debug classes */
+.md3-debug-only {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .md3-debug-only {
+    display: block;
+  }
+}
+
+/* ==========================================================================
+   PERFORMANCE OPTIMIZATIONS
+   ==========================================================================
+
+   CSS containment and performance optimizations for better rendering.
+*/
+
+/* Layout Containment for Performance */
+.md3-contain-layout {
+  contain: layout;
+}
+
+.md3-contain-style {
+  contain: style;
+}
+
+.md3-contain-paint {
+  contain: paint;
+}
+
+.md3-contain-size {
+  contain: size;
+}
+
+.md3-contain-all {
+  contain: layout style paint size;
+}
+
+/* Content Visibility for Performance */
+.md3-content-auto {
+  content-visibility: auto;
+}
+
+.md3-content-hidden {
+  content-visibility: hidden;
+}
+
+.md3-content-visible {
+  content-visibility: visible;
+}
+
+/* ==========================================================================
+   ACCESSIBILITY ENHANCEMENTS
+   ==========================================================================
+
+   Layout-specific accessibility improvements.
+*/
+
+/* Focus Management for Layout Components */
+.md3-layout-focus-within:focus-within {
+  outline: 2px solid var(--md3-primary);
+  outline-offset: 2px;
+}
+
+/* Skip Links for Layout Navigation */
+.md3-skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+  padding: 8px;
+  text-decoration: none;
+  border-radius: var(--md3-shape-sm);
+  z-index: 1000;
+  transition: top var(--md3-duration-short2);
+}
+
+.md3-skip-link:focus {
+  top: 6px;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .md3-debug-grid {
+    background-image:
+      linear-gradient(black 1px, transparent 1px),
+      linear-gradient(90deg, black 1px, transparent 1px);
+  }
+
+  .md3-debug-grid::before {
+    background-image:
+      linear-gradient(white 1px, transparent 1px),
+      linear-gradient(90deg, white 1px, transparent 1px);
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .md3-debug-grid,
+  .md3-debug-grid::before {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .md3-debug-breakpoint::after,
+  .md3-debug-mobile::after,
+  .md3-debug-tablet::after,
+  .md3-debug-desktop::after,
+  .md3-debug-large::after {
+    display: none !important;
+  }
+}

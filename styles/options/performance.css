@@ -1,0 +1,455 @@
+/* ==========================================================================
+   PERFORMANCE OPTIMIZATIONS
+   ==========================================================================
+   Hardware-accelerated animations, CSS containment, critical rendering path
+   optimization, and lazy loading utilities for optimal performance.
+
+   This file implements performance optimizations following the single
+   responsibility principle - handling ONLY performance-related CSS.
+   ========================================================================== */
+
+/* ==========================================================================
+   HARDWARE ACCELERATION
+   ========================================================================== */
+
+.md3-hardware-accelerated {
+  /* Force hardware acceleration for smooth animations */
+  transform: translateZ(0);
+  /* Optimize for GPU compositing */
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+.md3-gpu-layer {
+  /* Create new GPU layer for better performance */
+  will-change: transform;
+  /* Prevent layout thrashing */
+  contain: layout style paint;
+}
+
+.md3-transform-optimized {
+  /* Use only transform and opacity for animations */
+  transition: transform 0.3s ease, opacity 0.2s ease;
+  /* Enable GPU acceleration */
+  transform: translateZ(0);
+}
+
+/* Hardware acceleration hints with will-change property */
+.md3-will-change-transform {
+  will-change: transform;
+}
+
+.md3-will-change-opacity {
+  will-change: opacity;
+}
+
+.md3-will-change-scroll {
+  will-change: scroll-position;
+}
+
+/* ==========================================================================
+   PREFERES-REDUCED-MOTION SUPPORT
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .md3-hardware-accelerated,
+  .md3-gpu-layer,
+  .md3-transform-optimized {
+    /* Disable animations for users who prefer reduced motion */
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .md3-will-change-transform,
+  .md3-will-change-opacity,
+  .md3-will-change-scroll {
+    /* Reset will-change properties */
+    will-change: auto !important;
+  }
+}
+
+.md3-respect-motion {
+  /* Base class for elements that should respect motion preferences */
+  transition: transform 0.3s ease, opacity 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md3-respect-motion {
+    transition: opacity 0.1s ease !important;
+  }
+}
+
+/* ==========================================================================
+   CSS CONTAINMENT
+   ========================================================================== */
+
+.md3-contain-layout {
+  /* Optimize layout calculations */
+  contain: layout;
+}
+
+.md3-contain-paint {
+  /* Optimize paint operations */
+  contain: paint;
+}
+
+.md3-contain-size {
+  /* Optimize size calculations */
+  contain: size;
+}
+
+.md3-contain-style {
+  /* Optimize style calculations */
+  contain: style;
+}
+
+.md3-contain-content {
+  /* Optimize content-based layout */
+  contain: content;
+}
+
+.md3-contain-all {
+  /* Full containment for maximum optimization */
+  contain: layout style paint size;
+}
+
+.md3-contain-strict {
+  /* Strict containment for isolated components */
+  contain: strict;
+}
+
+.md3-contain-none {
+  /* Reset containment */
+  contain: none;
+}
+
+/* Containment utilities for specific use cases */
+.md3-contain-card {
+  contain: layout style paint;
+  /* Optimize card components */
+  will-change: auto;
+}
+
+.md3-contain-modal {
+  contain: layout style paint size;
+  /* Optimize modal positioning and sizing */
+  position: fixed;
+  z-index: 1000;
+}
+
+.md3-contain-list {
+  contain: layout style;
+  /* Optimize list rendering */
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   CRITICAL RENDERING PATH OPTIMIZATION
+   ========================================================================== */
+
+.md3-critical {
+  /* Critical resources that must load first */
+  display: block !important;
+  visibility: visible !important;
+}
+
+.md3-critical-above-fold {
+  /* Above-the-fold content optimization */
+  content-visibility: visible;
+  contain-intrinsic-size: auto auto;
+}
+
+.md3-non-critical {
+  /* Non-critical resources for deferred loading */
+  content-visibility: hidden;
+  contain-intrinsic-size: 0 0;
+}
+
+.md3-critical-path {
+  /* Optimize critical rendering path */
+  contain: layout style paint;
+  will-change: auto;
+}
+
+/* Critical resource loading strategies */
+.md3-load-immediate {
+  /* Force immediate loading */
+  loading: eager;
+}
+
+.md3-load-deferred {
+  /* Defer loading until needed */
+  loading: lazy;
+}
+
+/* Font loading optimization */
+.md3-font-critical {
+  font-display: block;
+}
+
+.md3-font-swap {
+  font-display: swap;
+}
+
+.md3-font-optional {
+  font-display: optional;
+}
+
+/* ==========================================================================
+   LAZY LOADING UTILITIES
+   ========================================================================== */
+
+.md3-lazy {
+  /* Base lazy loading class */
+  content-visibility: hidden;
+  contain-intrinsic-size: 1px 100px;
+}
+
+.md3-lazy-load {
+  /* Lazy load with intersection observer */
+  content-visibility: auto;
+  contain-intrinsic-size: auto auto;
+}
+
+.md3-lazy-animate {
+  /* Lazy load animations */
+  animation-play-state: paused;
+}
+
+.md3-lazy-image {
+  /* Optimize image lazy loading */
+  loading: lazy;
+  decode: async;
+}
+
+.md3-lazy-component {
+  /* Lazy load heavy components */
+  contain: layout style paint;
+  content-visibility: hidden;
+}
+
+/* Intersection observer utilities */
+.md3-lazy-visible {
+  content-visibility: visible;
+  animation-play-state: running;
+}
+
+.md3-lazy-hidden {
+  content-visibility: hidden;
+  animation-play-state: paused;
+}
+
+/* Performance-optimized lazy loading states */
+.md3-lazy-loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.md3-lazy-loaded {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.3s ease;
+}
+
+.md3-lazy-error {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   PERFORMANCE UTILITY CLASSES
+   ========================================================================== */
+
+.md3-performance-gpu {
+  /* GPU-accelerated rendering */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.md3-performance-optimize-transforms {
+  /* Transform-only animations */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-performance-optimize-opacity {
+  /* Opacity-only animations */
+  transition: opacity 0.2s ease;
+}
+
+.md3-performance-layer-promotion {
+  /* Promote to new layer */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+/* Memory optimization utilities */
+.md3-performance-memory-light {
+  /* Light memory footprint */
+  will-change: auto;
+  contain: layout style;
+}
+
+.md3-performance-memory-heavy {
+  /* Heavy components that need optimization */
+  contain: strict;
+  will-change: transform;
+}
+
+/* Animation performance utilities */
+.md3-performance-smooth {
+  /* Smooth 60fps animations */
+  transition: transform 0.016s linear;
+}
+
+.md3-performance-batched {
+  /* Batched animations for better performance */
+  transition-delay: 0s;
+  transition-duration: 0.2s;
+}
+
+/* ==========================================================================
+   PERFORMANCE MONITORING UTILITIES
+   ========================================================================== */
+
+/* Performance debugging utilities - remove in production */
+.md3-performance-debug {
+  /* Add performance debugging borders */
+  outline: 2px solid red !important;
+  outline-offset: 2px;
+}
+
+.md3-performance-debug::after {
+  content: attr(data-perf-info);
+  position: absolute;
+  top: -20px;
+  left: 0;
+  background: red;
+  color: white;
+  padding: 2px 4px;
+  font-size: 10px;
+  z-index: 9999;
+}
+
+/* Layer promotion debugging */
+.md3-performance-debug-layers::before {
+  content: "GPU Layer";
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: rgba(255, 0, 0, 0.8);
+  color: white;
+  padding: 2px 4px;
+  font-size: 10px;
+  z-index: 9998;
+}
+
+/* Repaint region debugging */
+.md3-performance-debug-repaint {
+  background: linear-gradient(45deg,
+    rgba(255, 0, 0, 0.1) 0%,
+    transparent 50%,
+    rgba(255, 0, 0, 0.1) 100%);
+}
+
+/* ==========================================================================
+   ADVANCED PERFORMANCE FEATURES
+   ========================================================================== */
+
+/* CSS containment for complex layouts */
+.md3-contain-grid {
+  contain: layout style paint;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.md3-contain-flex {
+  contain: layout style paint;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+/* Critical resource prioritization */
+.md3-critical-css {
+  /* Inline critical CSS */
+  display: block;
+}
+
+.md3-critical-js {
+  /* Critical JavaScript */
+  async: false;
+}
+
+/* Memory-efficient animations */
+.md3-memory-efficient {
+  /* Reduce memory usage for animations */
+  transform: translateZ(0);
+  will-change: transform;
+  animation-fill-mode: forwards;
+}
+
+/* Battery-conscious optimizations */
+@media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
+  .md3-memory-efficient {
+    animation: none !important;
+    transition: opacity 0.1s ease !important;
+  }
+}
+
+/* ==========================================================================
+   PERFORMANCE PRESETS
+   ========================================================================== */
+
+/* High-performance preset for critical animations */
+.md3-performance-high {
+  contain: layout style paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Medium-performance preset for general use */
+.md3-performance-medium {
+  contain: layout style;
+  transform: translateZ(0);
+  transition: transform 0.2s ease;
+}
+
+/* Low-performance preset for non-critical elements */
+.md3-performance-low {
+  contain: layout;
+  transition: opacity 0.1s ease;
+}
+
+/* ==========================================================================
+   UTILITY COMBINATIONS
+   ========================================================================== */
+
+/* Common performance combinations */
+.md3-optimized-card {
+  @extend .md3-contain-card;
+  @extend .md3-performance-medium;
+}
+
+.md3-optimized-modal {
+  @extend .md3-contain-modal;
+  @extend .md3-performance-high;
+}
+
+.md3-optimized-list {
+  @extend .md3-contain-list;
+  @extend .md3-performance-medium;
+}
+
+/* Hardware-accelerated with lazy loading */
+.md3-hw-lazy {
+  @extend .md3-hardware-accelerated;
+  @extend .md3-lazy;
+}
+
+/* Critical path with hardware acceleration */
+.md3-critical-hw {
+  @extend .md3-critical;
+  @extend .md3-hardware-accelerated;
+}

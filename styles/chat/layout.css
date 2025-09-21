@@ -1,0 +1,89 @@
+/* Chat Layout Styles */
+
+body {
+    font-family: 'Inter', sans-serif;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: row;
+    background-color: var(--ext-background);
+    color: var(--ext-foreground);
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+#main-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#messages-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem;
+    padding-bottom: 6rem;
+    background-color: var(--ext-background);
+    border: none;
+    outline: none;
+    max-height: calc(100vh - 80px);
+    scroll-behavior: smooth;
+}
+
+#input-container {
+    display: flex;
+    padding: 0.5rem;
+    padding-bottom: 1rem;
+    background-color: var(--ext-card);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--ext-border);
+    box-shadow: 0 -2px 5px #0000000D;
+    z-index: 100;
+    pointer-events: auto !important;
+}
+
+#user-input {
+    flex-grow: 1;
+    margin-right: 0.5rem;
+    padding: 0.6rem 1rem;
+    border: 2px solid var(--ext-border);
+    border-radius: 1.5rem;
+    box-shadow: inset 0 1px 3px #0000001A;
+    pointer-events: auto !important;
+}
+
+#send-button, #clear-button {
+    pointer-events: auto !important;
+}
+
+/* Extension-specific base styles */
+.extension-container {
+    background-color: var(--ext-background);
+    color: var(--ext-foreground);
+    font-size: 14px;
+    line-height: 1.5;
+    border-radius: var(--ext-radius);
+    box-shadow: var(--ext-shadow-lg);
+    min-width: 320px;
+    max-width: 480px;
+}
+
+.extension-header {
+    background-color: var(--ext-card);
+    color: var(--ext-card-foreground);
+    padding: 1rem;
+    border-bottom: 1px solid var(--ext-border);
+    border-radius: var(--ext-radius) var(--ext-radius) 0 0;
+}
+
+.extension-content {
+    padding: 1rem;
+    background-color: var(--ext-background);
+}

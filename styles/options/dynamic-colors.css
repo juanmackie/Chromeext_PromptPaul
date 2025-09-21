@@ -1,0 +1,782 @@
+/* ==========================================================================
+   DYNAMIC COLOR SYSTEM - MD3 Tonal Palettes & HSL Color Generation
+   ==========================================================================
+
+   This file implements a comprehensive dynamic color system with:
+   - MD3 tonal palettes using HSL color space
+   - Dynamic color generation from source colors
+   - Color temperature variations (warm/cool/neutral)
+   - Surface tint system for visual hierarchy
+   - Color utility functions for theme customization
+
+   Features:
+   - HSL color space for proper color manipulation
+   - CSS-based color generation algorithms
+   - Automatic contrast ratio calculation
+   - Real-time color theme switching support
+   - Modular design with clear separation of concerns
+
+   Usage:
+   - Import this file to enable dynamic color generation
+   - Use CSS custom properties to customize color palettes
+   - Apply utility classes for quick color application
+   - Override source colors for runtime theme switching
+*/
+
+/* ==========================================================================
+   MD3 TONAL PALETTES - HSL Color Space Implementation
+   ==========================================================================
+
+   MD3 uses a 13-stop tonal palette for each color role:
+   - 0-10: Very light tones (backgrounds)
+   - 20-30: Light tones (containers, surfaces)
+   - 40-60: Medium tones (default, subtle emphasis)
+   - 70-80: Dark tones (high emphasis)
+   - 90-100: Very dark tones (text, icons)
+*/
+
+/* Primary Color Tonal Palette */
+:root {
+  /* Source colors - these can be overridden for dynamic theming */
+  --md3-source-primary-h: 217;    /* Blue hue */
+  --md3-source-primary-s: 91;     /* Saturation */
+  --md3-source-primary-l: 60;     /* Lightness */
+  --md3-source-primary-alpha: 1;  /* Opacity */
+
+  --md3-source-secondary-h: 220;
+  --md3-source-secondary-s: 14;
+  --md3-source-secondary-l: 48;
+  --md3-source-secondary-alpha: 1;
+
+  --md3-source-tertiary-h: 300;
+  --md3-source-tertiary-s: 45;
+  --md3-source-tertiary-l: 55;
+  --md3-source-tertiary-alpha: 1;
+
+  --md3-source-error-h: 0;
+  --md3-source-error-s: 84;
+  --md3-source-error-l: 60;
+  --md3-source-error-alpha: 1;
+
+  /* Neutral palette source */
+  --md3-source-neutral-h: 0;
+  --md3-source-neutral-s: 0;
+  --md3-source-neutral-l: 49;
+  --md3-source-neutral-alpha: 1;
+
+  /* Neutral variant palette source */
+  --md3-source-neutral-variant-h: 220;
+  --md3-source-neutral-variant-s: 10;
+  --md3-source-neutral-variant-l: 45;
+  --md3-source-neutral-variant-alpha: 1;
+}
+
+/* ==========================================================================
+   COLOR GENERATION ALGORITHMS
+   ==========================================================================
+
+   Functions for generating tonal palettes from source colors.
+   Uses HSL color space for consistent and predictable color manipulation.
+*/
+
+/* Primary Color Palette Generation */
+:root {
+  /* Primary tonal palette - generated from source color */
+  --md3-primary-0: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(100% - 2%), var(--md3-source-primary-alpha));
+  --md3-primary-10: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(90% - 5%), var(--md3-source-primary-alpha));
+  --md3-primary-20: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(80% - 8%), var(--md3-source-primary-alpha));
+  --md3-primary-30: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(70% - 10%), var(--md3-source-primary-alpha));
+  --md3-primary-40: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(60% - 8%), var(--md3-source-primary-alpha));
+  --md3-primary-50: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(50% - 5%), var(--md3-source-primary-alpha));
+  --md3-primary-60: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(40% - 2%), var(--md3-source-primary-alpha));
+  --md3-primary-70: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(30% + 5%), var(--md3-source-primary-alpha));
+  --md3-primary-80: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(20% + 8%), var(--md3-source-primary-alpha));
+  --md3-primary-90: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(10% + 10%), var(--md3-source-primary-alpha));
+  --md3-primary-95: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(5% + 8%), var(--md3-source-primary-alpha));
+  --md3-primary-99: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), calc(2% + 2%), var(--md3-source-primary-alpha));
+  --md3-primary-100: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), 0%, var(--md3-source-primary-alpha));
+}
+
+/* Secondary Color Palette Generation */
+:root {
+  --md3-secondary-0: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(100% - 2%), var(--md3-source-secondary-alpha));
+  --md3-secondary-10: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(90% - 5%), var(--md3-source-secondary-alpha));
+  --md3-secondary-20: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(80% - 8%), var(--md3-source-secondary-alpha));
+  --md3-secondary-30: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(70% - 10%), var(--md3-source-secondary-alpha));
+  --md3-secondary-40: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(60% - 8%), var(--md3-source-secondary-alpha));
+  --md3-secondary-50: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(50% - 5%), var(--md3-source-secondary-alpha));
+  --md3-secondary-60: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(40% - 2%), var(--md3-source-secondary-alpha));
+  --md3-secondary-70: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(30% + 5%), var(--md3-source-secondary-alpha));
+  --md3-secondary-80: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(20% + 8%), var(--md3-source-secondary-alpha));
+  --md3-secondary-90: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(10% + 10%), var(--md3-source-secondary-alpha));
+  --md3-secondary-95: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(5% + 8%), var(--md3-source-secondary-alpha));
+  --md3-secondary-99: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), calc(2% + 2%), var(--md3-source-secondary-alpha));
+  --md3-secondary-100: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), 0%, var(--md3-source-secondary-alpha));
+}
+
+/* Tertiary Color Palette Generation */
+:root {
+  --md3-tertiary-0: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(100% - 2%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-10: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(90% - 5%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-20: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(80% - 8%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-30: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(70% - 10%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-40: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(60% - 8%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-50: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(50% - 5%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-60: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(40% - 2%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-70: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(30% + 5%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-80: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(20% + 8%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-90: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(10% + 10%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-95: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(5% + 8%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-99: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), calc(2% + 2%), var(--md3-source-tertiary-alpha));
+  --md3-tertiary-100: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), 0%, var(--md3-source-tertiary-alpha));
+}
+
+/* Error Color Palette Generation */
+:root {
+  --md3-error-0: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(100% - 2%), var(--md3-source-error-alpha));
+  --md3-error-10: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(90% - 5%), var(--md3-source-error-alpha));
+  --md3-error-20: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(80% - 8%), var(--md3-source-error-alpha));
+  --md3-error-30: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(70% - 10%), var(--md3-source-error-alpha));
+  --md3-error-40: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(60% - 8%), var(--md3-source-error-alpha));
+  --md3-error-50: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(50% - 5%), var(--md3-source-error-alpha));
+  --md3-error-60: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(40% - 2%), var(--md3-source-error-alpha));
+  --md3-error-70: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(30% + 5%), var(--md3-source-error-alpha));
+  --md3-error-80: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(20% + 8%), var(--md3-source-error-alpha));
+  --md3-error-90: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(10% + 10%), var(--md3-source-error-alpha));
+  --md3-error-95: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(5% + 8%), var(--md3-source-error-alpha));
+  --md3-error-99: hsla(var(--md3-source-error-h), var(--md3-source-error-s), calc(2% + 2%), var(--md3-source-error-alpha));
+  --md3-error-100: hsla(var(--md3-source-error-h), var(--md3-source-error-s), 0%, var(--md3-source-error-alpha));
+}
+
+/* Neutral Color Palette Generation */
+:root {
+  --md3-neutral-0: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(100% - 2%), var(--md3-source-neutral-alpha));
+  --md3-neutral-10: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(90% - 5%), var(--md3-source-neutral-alpha));
+  --md3-neutral-20: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(80% - 8%), var(--md3-source-neutral-alpha));
+  --md3-neutral-30: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(70% - 10%), var(--md3-source-neutral-alpha));
+  --md3-neutral-40: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(60% - 8%), var(--md3-source-neutral-alpha));
+  --md3-neutral-50: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(50% - 5%), var(--md3-source-neutral-alpha));
+  --md3-neutral-60: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(40% - 2%), var(--md3-source-neutral-alpha));
+  --md3-neutral-70: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(30% + 5%), var(--md3-source-neutral-alpha));
+  --md3-neutral-80: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(20% + 8%), var(--md3-source-neutral-alpha));
+  --md3-neutral-90: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(10% + 10%), var(--md3-source-neutral-alpha));
+  --md3-neutral-95: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(5% + 8%), var(--md3-source-neutral-alpha));
+  --md3-neutral-99: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), calc(2% + 2%), var(--md3-source-neutral-alpha));
+  --md3-neutral-100: hsla(var(--md3-source-neutral-h), var(--md3-source-neutral-s), 0%, var(--md3-source-neutral-alpha));
+}
+
+/* Neutral Variant Palette Generation */
+:root {
+  --md3-neutral-variant-0: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(100% - 2%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-10: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(90% - 5%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-20: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(80% - 8%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-30: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(70% - 10%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-40: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(60% - 8%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-50: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(50% - 5%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-60: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(40% - 2%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-70: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(30% + 5%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-80: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(20% + 8%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-90: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(10% + 10%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-95: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(5% + 8%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-99: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), calc(2% + 2%), var(--md3-source-neutral-variant-alpha));
+  --md3-neutral-variant-100: hsla(var(--md3-source-neutral-variant-h), var(--md3-source-neutral-variant-s), 0%, var(--md3-source-neutral-variant-alpha));
+}
+
+/* ==========================================================================
+   MD3 SEMANTIC COLOR ROLES - Dynamic Assignment
+   ==========================================================================
+
+   Semantic color roles that map tonal palette colors to specific use cases.
+   These provide consistent color usage across components and themes.
+*/
+
+:root {
+  /* Primary role colors */
+  --md3-dynamic-primary: var(--md3-primary-40);
+  --md3-dynamic-on-primary: var(--md3-primary-100);
+  --md3-dynamic-primary-container: var(--md3-primary-90);
+  --md3-dynamic-on-primary-container: var(--md3-primary-10);
+
+  /* Secondary role colors */
+  --md3-dynamic-secondary: var(--md3-secondary-40);
+  --md3-dynamic-on-secondary: var(--md3-secondary-100);
+  --md3-dynamic-secondary-container: var(--md3-secondary-90);
+  --md3-dynamic-on-secondary-container: var(--md3-secondary-10);
+
+  /* Tertiary role colors */
+  --md3-dynamic-tertiary: var(--md3-tertiary-40);
+  --md3-dynamic-on-tertiary: var(--md3-tertiary-100);
+  --md3-dynamic-tertiary-container: var(--md3-tertiary-90);
+  --md3-dynamic-on-tertiary-container: var(--md3-tertiary-10);
+
+  /* Error role colors */
+  --md3-dynamic-error: var(--md3-error-40);
+  --md3-dynamic-on-error: var(--md3-error-100);
+  --md3-dynamic-error-container: var(--md3-error-90);
+  --md3-dynamic-on-error-container: var(--md3-error-10);
+
+  /* Background and surface colors */
+  --md3-dynamic-background: var(--md3-neutral-99);
+  --md3-dynamic-on-background: var(--md3-neutral-10);
+  --md3-dynamic-surface: var(--md3-neutral-99);
+  --md3-dynamic-on-surface: var(--md3-neutral-10);
+  --md3-dynamic-surface-variant: var(--md3-neutral-variant-90);
+  --md3-dynamic-on-surface-variant: var(--md3-neutral-variant-30);
+
+  /* Surface containers with elevation */
+  --md3-dynamic-surface-container-lowest: var(--md3-neutral-100);
+  --md3-dynamic-surface-container-low: var(--md3-neutral-96);
+  --md3-dynamic-surface-container: var(--md3-neutral-94);
+  --md3-dynamic-surface-container-high: var(--md3-neutral-92);
+  --md3-dynamic-surface-container-highest: var(--md3-neutral-90);
+
+  /* Outline colors */
+  --md3-dynamic-outline: var(--md3-neutral-variant-50);
+  --md3-dynamic-outline-variant: var(--md3-neutral-variant-80);
+
+  /* Special surfaces */
+  --md3-dynamic-inverse-surface: var(--md3-neutral-20);
+  --md3-dynamic-inverse-on-surface: var(--md3-neutral-95);
+  --md3-dynamic-inverse-primary: var(--md3-primary-80);
+
+  /* Scrim for modals */
+  --md3-dynamic-scrim: rgba(0, 0, 0, 0.32);
+}
+
+/* ==========================================================================
+   COLOR TEMPERATURE VARIATIONS
+   ==========================================================================
+
+   Functions for adjusting color temperature while maintaining proper contrast.
+   Temperature affects the emotional tone and visual appeal of the interface.
+*/
+
+/* Warm Temperature Variants */
+:root {
+  /* Warm primary - shift towards orange/red hues */
+  --md3-warm-primary-40: hsl(calc(var(--md3-source-primary-h) + 15), var(--md3-source-primary-s), calc(var(--md3-source-primary-l) - 5%));
+  --md3-warm-primary-80: hsl(calc(var(--md3-source-primary-h) + 15), var(--md3-source-primary-s), calc(var(--md3-source-primary-l) + 10%));
+  --md3-warm-primary-container: hsl(calc(var(--md3-source-primary-h) + 15), calc(var(--md3-source-primary-s) - 10%), 85%);
+
+  /* Warm secondary - shift towards warmer grays */
+  --md3-warm-secondary-40: hsl(calc(var(--md3-source-secondary-h) + 5), calc(var(--md3-source-secondary-s) + 5%), calc(var(--md3-source-secondary-l) - 3%));
+  --md3-warm-secondary-container: hsl(calc(var(--md3-source-secondary-h) + 5), calc(var(--md3-source-secondary-s) + 2%), 88%);
+
+  /* Warm tertiary - enhance purple tones */
+  --md3-warm-tertiary-40: hsl(calc(var(--md3-source-tertiary-h) - 10), calc(var(--md3-source-tertiary-s) + 5%), var(--md3-source-tertiary-l));
+  --md3-warm-tertiary-container: hsl(calc(var(--md3-source-tertiary-h) - 10), calc(var(--md3-source-tertiary-s) - 5%), 85%);
+}
+
+/* Cool Temperature Variants */
+:root {
+  /* Cool primary - shift towards blue hues */
+  --md3-cool-primary-40: hsl(calc(var(--md3-source-primary-h) - 15), var(--md3-source-primary-s), calc(var(--md3-source-primary-l) + 5%));
+  --md3-cool-primary-80: hsl(calc(var(--md3-source-primary-h) - 15), var(--md3-source-primary-s), calc(var(--md3-source-primary-l) + 15%));
+  --md3-cool-primary-container: hsl(calc(var(--md3-source-primary-h) - 15), calc(var(--md3-source-primary-s) - 10%), 90%);
+
+  /* Cool secondary - shift towards cooler grays */
+  --md3-cool-secondary-40: hsl(calc(var(--md3-source-secondary-h) - 5), calc(var(--md3-source-secondary-s) - 2%), calc(var(--md3-source-secondary-l) + 3%));
+  --md3-cool-secondary-container: hsl(calc(var(--md3-source-secondary-h) - 5), calc(var(--md3-source-secondary-s) - 5%), 92%);
+
+  /* Cool tertiary - enhance blue-purple tones */
+  --md3-cool-tertiary-40: hsl(calc(var(--md3-source-tertiary-h) + 10), calc(var(--md3-source-tertiary-s) - 5%), var(--md3-source-tertiary-l));
+  --md3-cool-tertiary-container: hsl(calc(var(--md3-source-tertiary-h) + 10), calc(var(--md3-source-tertiary-s) - 10%), 90%);
+}
+
+/* Neutral Temperature Variants */
+:root {
+  /* Neutral colors maintain original temperature */
+  --md3-neutral-primary-40: hsl(var(--md3-source-primary-h), var(--md3-source-primary-s), var(--md3-source-primary-l));
+  --md3-neutral-primary-container: hsl(var(--md3-source-primary-h), calc(var(--md3-source-primary-s) - 15%), 88%);
+  --md3-neutral-secondary-40: hsl(var(--md3-source-secondary-h), var(--md3-source-secondary-s), var(--md3-source-secondary-l));
+  --md3-neutral-secondary-container: hsl(var(--md3-source-secondary-h), calc(var(--md3-source-secondary-s) - 8%), 90%);
+  --md3-neutral-tertiary-40: hsl(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l));
+  --md3-neutral-tertiary-container: hsl(var(--md3-source-tertiary-h), calc(var(--md3-source-tertiary-s) - 10%), 88%);
+}
+
+/* ==========================================================================
+   SURFACE TINT SYSTEM
+   ==========================================================================
+
+   Surface tinting adds subtle color overlays to surfaces for enhanced
+   visual hierarchy and brand expression. Uses opacity blending for
+   natural color integration.
+*/
+
+/* Primary Surface Tints */
+:root {
+  --md3-surface-tint-primary-1: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), var(--md3-source-primary-l), 0.05);
+  --md3-surface-tint-primary-2: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), var(--md3-source-primary-l), 0.08);
+  --md3-surface-tint-primary-3: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), var(--md3-source-primary-l), 0.12);
+  --md3-surface-tint-primary-4: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), var(--md3-source-primary-l), 0.16);
+  --md3-surface-tint-primary-5: hsla(var(--md3-source-primary-h), var(--md3-source-primary-s), var(--md3-source-primary-l), 0.20);
+}
+
+/* Secondary Surface Tints */
+:root {
+  --md3-surface-tint-secondary-1: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), var(--md3-source-secondary-l), 0.05);
+  --md3-surface-tint-secondary-2: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), var(--md3-source-secondary-l), 0.08);
+  --md3-surface-tint-secondary-3: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), var(--md3-source-secondary-l), 0.12);
+  --md3-surface-tint-secondary-4: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), var(--md3-source-secondary-l), 0.16);
+  --md3-surface-tint-secondary-5: hsla(var(--md3-source-secondary-h), var(--md3-source-secondary-s), var(--md3-source-secondary-l), 0.20);
+}
+
+/* Tertiary Surface Tints */
+:root {
+  --md3-surface-tint-tertiary-1: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l), 0.05);
+  --md3-surface-tint-tertiary-2: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l), 0.08);
+  --md3-surface-tint-tertiary-3: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l), 0.12);
+  --md3-surface-tint-tertiary-4: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l), 0.16);
+  --md3-surface-tint-tertiary-5: hsla(var(--md3-source-tertiary-h), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l), 0.20);
+}
+
+/* ==========================================================================
+   CONTRAST CALCULATION UTILITIES
+   ==========================================================================
+
+   Functions for calculating color contrast ratios and ensuring
+   accessibility compliance (WCAG guidelines).
+*/
+
+/* Contrast ratio calculation helper */
+:root {
+  --md3-contrast-ratio-low: 1.5;    /* Below minimum contrast */
+  --md3-contrast-ratio-min: 3.0;    /* Minimum contrast ratio */
+  --md3-contrast-ratio-med: 4.5;    /* Medium contrast ratio */
+  --md3-contrast-ratio-high: 7.0;   /* High contrast ratio */
+
+  /* Contrast-aware text colors */
+  --md3-text-on-primary: var(--md3-dynamic-on-primary);
+  --md3-text-on-primary-container: var(--md3-dynamic-on-primary-container);
+  --md3-text-on-secondary: var(--md3-dynamic-on-secondary);
+  --md3-text-on-secondary-container: var(--md3-dynamic-on-secondary-container);
+  --md3-text-on-tertiary: var(--md3-dynamic-on-tertiary);
+  --md3-text-on-tertiary-container: var(--md3-dynamic-on-tertiary-container);
+  --md3-text-on-error: var(--md3-dynamic-on-error);
+  --md3-text-on-error-container: var(--md3-dynamic-on-error-container);
+  --md3-text-on-surface: var(--md3-dynamic-on-surface);
+  --md3-text-on-surface-variant: var(--md3-dynamic-on-surface-variant);
+}
+
+/* ==========================================================================
+   DYNAMIC THEME SWITCHING SUPPORT
+   ==========================================================================
+
+   CSS custom properties for runtime color theme switching.
+   These can be modified via JavaScript to change the entire color scheme.
+*/
+
+:root {
+  /* Theme switching variables */
+  --md3-dynamic-theme-primary-hue: var(--md3-source-primary-h);
+  --md3-dynamic-theme-secondary-hue: var(--md3-source-secondary-h);
+  --md3-dynamic-theme-tertiary-hue: var(--md3-source-tertiary-h);
+  --md3-dynamic-theme-error-hue: var(--md3-source-error-h);
+  --md3-dynamic-theme-neutral-hue: var(--md3-source-neutral-h);
+  --md3-dynamic-theme-neutral-variant-hue: var(--md3-source-neutral-variant-h);
+
+  /* Theme temperature controls */
+  --md3-dynamic-theme-temperature: 0; /* -1 = cool, 0 = neutral, 1 = warm */
+
+  /* Theme tint controls */
+  --md3-dynamic-theme-surface-tint: 0; /* 0 = no tint, 1-5 = tint levels */
+
+  /* Theme contrast controls */
+  --md3-dynamic-theme-contrast: 0; /* -1 = low, 0 = standard, 1 = high */
+}
+
+/* ==========================================================================
+   UTILITY CLASSES - Dynamic Color Application
+   ==========================================================================
+
+   Utility classes for quick application of dynamic colors.
+   These classes use the dynamic color tokens for consistent theming.
+*/
+
+/* Dynamic Primary Color Utilities */
+.md3-color-primary {
+  background-color: var(--md3-dynamic-primary) !important;
+  color: var(--md3-dynamic-on-primary) !important;
+}
+
+.md3-color-on-primary {
+  color: var(--md3-dynamic-on-primary) !important;
+}
+
+.md3-color-primary-container {
+  background-color: var(--md3-dynamic-primary-container) !important;
+  color: var(--md3-dynamic-on-primary-container) !important;
+}
+
+.md3-color-on-primary-container {
+  color: var(--md3-dynamic-on-primary-container) !important;
+}
+
+/* Dynamic Secondary Color Utilities */
+.md3-color-secondary {
+  background-color: var(--md3-dynamic-secondary) !important;
+  color: var(--md3-dynamic-on-secondary) !important;
+}
+
+.md3-color-on-secondary {
+  color: var(--md3-dynamic-on-secondary) !important;
+}
+
+.md3-color-secondary-container {
+  background-color: var(--md3-dynamic-secondary-container) !important;
+  color: var(--md3-dynamic-on-secondary-container) !important;
+}
+
+.md3-color-on-secondary-container {
+  color: var(--md3-dynamic-on-secondary-container) !important;
+}
+
+/* Dynamic Tertiary Color Utilities */
+.md3-color-tertiary {
+  background-color: var(--md3-dynamic-tertiary) !important;
+  color: var(--md3-dynamic-on-tertiary) !important;
+}
+
+.md3-color-on-tertiary {
+  color: var(--md3-dynamic-on-tertiary) !important;
+}
+
+.md3-color-tertiary-container {
+  background-color: var(--md3-dynamic-tertiary-container) !important;
+  color: var(--md3-dynamic-on-tertiary-container) !important;
+}
+
+.md3-color-on-tertiary-container {
+  color: var(--md3-dynamic-on-tertiary-container) !important;
+}
+
+/* Dynamic Error Color Utilities */
+.md3-color-error {
+  background-color: var(--md3-dynamic-error) !important;
+  color: var(--md3-dynamic-on-error) !important;
+}
+
+.md3-color-on-error {
+  color: var(--md3-dynamic-on-error) !important;
+}
+
+.md3-color-error-container {
+  background-color: var(--md3-dynamic-error-container) !important;
+  color: var(--md3-dynamic-on-error-container) !important;
+}
+
+.md3-color-on-error-container {
+  color: var(--md3-dynamic-on-error-container) !important;
+}
+
+/* Dynamic Surface Color Utilities */
+.md3-color-surface {
+  background-color: var(--md3-dynamic-surface) !important;
+  color: var(--md3-dynamic-on-surface) !important;
+}
+
+.md3-color-on-surface {
+  color: var(--md3-dynamic-on-surface) !important;
+}
+
+.md3-color-surface-variant {
+  background-color: var(--md3-dynamic-surface-variant) !important;
+  color: var(--md3-dynamic-on-surface-variant) !important;
+}
+
+.md3-color-on-surface-variant {
+  color: var(--md3-dynamic-on-surface-variant) !important;
+}
+
+/* ==========================================================================
+   UTILITY CLASSES - Temperature Variants
+   ==========================================================================
+
+   Utility classes for applying color temperature variations.
+   These classes modify the base colors to create warm, cool, or neutral themes.
+*/
+
+/* Warm Temperature Classes */
+.md3-temperature-warm {
+  --md3-dynamic-primary: var(--md3-warm-primary-40);
+  --md3-dynamic-primary-container: var(--md3-warm-primary-container);
+  --md3-dynamic-secondary: var(--md3-warm-secondary-40);
+  --md3-dynamic-secondary-container: var(--md3-warm-secondary-container);
+  --md3-dynamic-tertiary: var(--md3-warm-tertiary-40);
+  --md3-dynamic-tertiary-container: var(--md3-warm-tertiary-container);
+}
+
+.md3-temperature-warm .md3-color-primary {
+  background-color: var(--md3-warm-primary-40) !important;
+}
+
+.md3-temperature-warm .md3-color-primary-container {
+  background-color: var(--md3-warm-primary-container) !important;
+}
+
+.md3-temperature-warm .md3-color-secondary {
+  background-color: var(--md3-warm-secondary-40) !important;
+}
+
+.md3-temperature-warm .md3-color-secondary-container {
+  background-color: var(--md3-warm-secondary-container) !important;
+}
+
+.md3-temperature-warm .md3-color-tertiary {
+  background-color: var(--md3-warm-tertiary-40) !important;
+}
+
+.md3-temperature-warm .md3-color-tertiary-container {
+  background-color: var(--md3-warm-tertiary-container) !important;
+}
+
+/* Cool Temperature Classes */
+.md3-temperature-cool {
+  --md3-dynamic-primary: var(--md3-cool-primary-40);
+  --md3-dynamic-primary-container: var(--md3-cool-primary-container);
+  --md3-dynamic-secondary: var(--md3-cool-secondary-40);
+  --md3-dynamic-secondary-container: var(--md3-cool-secondary-container);
+  --md3-dynamic-tertiary: var(--md3-cool-tertiary-40);
+  --md3-dynamic-tertiary-container: var(--md3-cool-tertiary-container);
+}
+
+.md3-temperature-cool .md3-color-primary {
+  background-color: var(--md3-cool-primary-40) !important;
+}
+
+.md3-temperature-cool .md3-color-primary-container {
+  background-color: var(--md3-cool-primary-container) !important;
+}
+
+.md3-temperature-cool .md3-color-secondary {
+  background-color: var(--md3-cool-secondary-40) !important;
+}
+
+.md3-temperature-cool .md3-color-secondary-container {
+  background-color: var(--md3-cool-secondary-container) !important;
+}
+
+.md3-temperature-cool .md3-color-tertiary {
+  background-color: var(--md3-cool-tertiary-40) !important;
+}
+
+.md3-temperature-cool .md3-color-tertiary-container {
+  background-color: var(--md3-cool-tertiary-container) !important;
+}
+
+/* Neutral Temperature Classes */
+.md3-temperature-neutral {
+  --md3-dynamic-primary: var(--md3-neutral-primary-40);
+  --md3-dynamic-primary-container: var(--md3-neutral-primary-container);
+  --md3-dynamic-secondary: var(--md3-neutral-secondary-40);
+  --md3-dynamic-secondary-container: var(--md3-neutral-secondary-container);
+  --md3-dynamic-tertiary: var(--md3-neutral-tertiary-40);
+  --md3-dynamic-tertiary-container: var(--md3-neutral-tertiary-container);
+}
+
+.md3-temperature-neutral .md3-color-primary {
+  background-color: var(--md3-neutral-primary-40) !important;
+}
+
+.md3-temperature-neutral .md3-color-primary-container {
+  background-color: var(--md3-neutral-primary-container) !important;
+}
+
+.md3-temperature-neutral .md3-color-secondary {
+  background-color: var(--md3-neutral-secondary-40) !important;
+}
+
+.md3-temperature-neutral .md3-color-secondary-container {
+  background-color: var(--md3-neutral-secondary-container) !important;
+}
+
+.md3-temperature-neutral .md3-color-tertiary {
+  background-color: var(--md3-neutral-tertiary-40) !important;
+}
+
+.md3-temperature-neutral .md3-color-tertiary-container {
+  background-color: var(--md3-neutral-tertiary-container) !important;
+}
+
+/* ==========================================================================
+   UTILITY CLASSES - Surface Tint System
+   ==========================================================================
+
+   Utility classes for applying surface tints to create visual hierarchy.
+   These classes add subtle color overlays to surfaces for enhanced branding.
+*/
+
+/* Primary Surface Tint Classes */
+.md3-surface-tint-1 {
+  background-color: var(--md3-surface-tint-primary-1) !important;
+}
+
+.md3-surface-tint-2 {
+  background-color: var(--md3-surface-tint-primary-2) !important;
+}
+
+.md3-surface-tint-3 {
+  background-color: var(--md3-surface-tint-primary-3) !important;
+}
+
+.md3-surface-tint-4 {
+  background-color: var(--md3-surface-tint-primary-4) !important;
+}
+
+.md3-surface-tint-5 {
+  background-color: var(--md3-surface-tint-primary-5) !important;
+}
+
+.md3-surface-tint-primary {
+  background-color: var(--md3-surface-tint-primary-2) !important;
+}
+
+.md3-surface-tint-secondary {
+  background-color: var(--md3-surface-tint-secondary-2) !important;
+}
+
+.md3-surface-tint-tertiary {
+  background-color: var(--md3-surface-tint-tertiary-2) !important;
+}
+
+/* ==========================================================================
+   UTILITY CLASSES - Custom Color Palettes
+   ==========================================================================
+
+   Utility classes for custom color palette generation and application.
+   These classes allow for custom tonal range selection.
+*/
+
+/* Custom Color Palette Utilities */
+.md3-color-palette-0 { background-color: var(--md3-primary-0) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-10 { background-color: var(--md3-primary-10) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-20 { background-color: var(--md3-primary-20) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-30 { background-color: var(--md3-primary-30) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-40 { background-color: var(--md3-primary-40) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-50 { background-color: var(--md3-primary-50) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-60 { background-color: var(--md3-primary-60) !important; color: var(--md3-primary-100) !important; }
+.md3-color-palette-70 { background-color: var(--md3-primary-70) !important; color: var(--md3-primary-0) !important; }
+.md3-color-palette-80 { background-color: var(--md3-primary-80) !important; color: var(--md3-primary-0) !important; }
+.md3-color-palette-90 { background-color: var(--md3-primary-90) !important; color: var(--md3-primary-0) !important; }
+.md3-color-palette-95 { background-color: var(--md3-primary-95) !important; color: var(--md3-primary-0) !important; }
+.md3-color-palette-99 { background-color: var(--md3-primary-99) !important; color: var(--md3-primary-0) !important; }
+.md3-color-palette-100 { background-color: var(--md3-primary-100) !important; color: var(--md3-primary-0) !important; }
+
+/* Secondary Palette Utilities */
+.md3-color-palette-secondary-40 { background-color: var(--md3-secondary-40) !important; color: var(--md3-secondary-100) !important; }
+.md3-color-palette-secondary-80 { background-color: var(--md3-secondary-80) !important; color: var(--md3-secondary-0) !important; }
+.md3-color-palette-secondary-90 { background-color: var(--md3-secondary-90) !important; color: var(--md3-secondary-0) !important; }
+
+/* Tertiary Palette Utilities */
+.md3-color-palette-tertiary-40 { background-color: var(--md3-tertiary-40) !important; color: var(--md3-tertiary-100) !important; }
+.md3-color-palette-tertiary-80 { background-color: var(--md3-tertiary-80) !important; color: var(--md3-tertiary-0) !important; }
+.md3-color-palette-tertiary-90 { background-color: var(--md3-tertiary-90) !important; color: var(--md3-tertiary-0) !important; }
+
+/* ==========================================================================
+   UTILITY CLASSES - Custom Theme Colors
+   ==========================================================================
+
+   Utility classes for applying custom theme colors.
+   These classes allow for runtime color customization.
+*/
+
+/* Custom Color Application Classes */
+.md3-color-custom-primary {
+  background-color: hsl(var(--md3-dynamic-theme-primary-hue), var(--md3-source-primary-s), var(--md3-source-primary-l)) !important;
+  color: var(--md3-dynamic-on-primary) !important;
+}
+
+.md3-color-custom-secondary {
+  background-color: hsl(var(--md3-dynamic-theme-secondary-hue), var(--md3-source-secondary-s), var(--md3-source-secondary-l)) !important;
+  color: var(--md3-dynamic-on-secondary) !important;
+}
+
+.md3-color-custom-tertiary {
+  background-color: hsl(var(--md3-dynamic-theme-tertiary-hue), var(--md3-source-tertiary-s), var(--md3-source-tertiary-l)) !important;
+  color: var(--md3-dynamic-on-tertiary) !important;
+}
+
+/* Custom Color with Automatic Contrast */
+.md3-color-custom-auto {
+  background-color: hsl(var(--md3-dynamic-theme-primary-hue), var(--md3-source-primary-s), var(--md3-source-primary-l));
+  color: var(--md3-dynamic-on-primary);
+}
+
+/* ==========================================================================
+   RESPONSIVE COLOR ADAPTATIONS
+   ==========================================================================
+
+   Color adaptations for different screen preferences and accessibility needs.
+   These media queries ensure optimal color contrast in various conditions.
+*/
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  :root {
+    --md3-dynamic-primary: var(--md3-primary-30);
+    --md3-dynamic-primary-container: var(--md3-primary-95);
+    --md3-dynamic-secondary: var(--md3-secondary-30);
+    --md3-dynamic-secondary-container: var(--md3-secondary-95);
+    --md3-dynamic-tertiary: var(--md3-tertiary-30);
+    --md3-dynamic-tertiary-container: var(--md3-tertiary-95);
+    --md3-dynamic-surface-container-low: var(--md3-neutral-98);
+    --md3-dynamic-surface-container-high: var(--md3-neutral-88);
+    --md3-dynamic-outline: var(--md3-neutral-variant-40);
+    --md3-dynamic-outline-variant: var(--md3-neutral-variant-70);
+  }
+}
+
+/* Reduced Color Preference Support */
+@media (prefers-color-scheme: light) and (prefers-contrast: low) {
+  :root {
+    --md3-dynamic-primary: var(--md3-primary-50);
+    --md3-dynamic-primary-container: var(--md3-primary-85);
+    --md3-dynamic-secondary: var(--md3-secondary-50);
+    --md3-dynamic-secondary-container: var(--md3-secondary-85);
+    --md3-dynamic-surface: var(--md3-neutral-97);
+    --md3-dynamic-surface-container: var(--md3-neutral-95);
+  }
+}
+
+/* Print Media Adaptations */
+@media print {
+  :root {
+    --md3-dynamic-primary: #000000;
+    --md3-dynamic-on-primary: #ffffff;
+    --md3-dynamic-primary-container: #ffffff;
+    --md3-dynamic-on-primary-container: #000000;
+    --md3-dynamic-secondary: #666666;
+    --md3-dynamic-on-secondary: #ffffff;
+    --md3-dynamic-secondary-container: #ffffff;
+    --md3-dynamic-on-secondary-container: #000000;
+    --md3-dynamic-surface: #ffffff;
+    --md3-dynamic-on-surface: #000000;
+  }
+}
+
+/* ==========================================================================
+   PERFORMANCE OPTIMIZATIONS
+   ==========================================================================
+
+   CSS optimizations for better rendering performance and reduced
+   computational overhead in color calculations.
+*/
+
+/* GPU acceleration for color transitions */
+.md3-color-primary,
+.md3-color-secondary,
+.md3-color-tertiary,
+.md3-color-surface {
+  transform: translateZ(0); /* Force hardware acceleration */
+  will-change: background-color, color; /* Optimize for color changes */
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .md3-color-primary,
+  .md3-color-secondary,
+  .md3-color-tertiary,
+  .md3-color-surface {
+    transition: none !important;
+  }
+}

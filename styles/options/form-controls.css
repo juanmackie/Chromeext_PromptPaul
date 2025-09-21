@@ -1,0 +1,647 @@
+/* ==========================================================================
+   Material Design 3 Form Controls Implementation
+   ==========================================================================
+
+   This file implements comprehensive MD3 form controls with proper animations,
+   state layers, and accessibility features. Follows single responsibility principle
+   and focuses exclusively on form control styling.
+
+   Components Implemented:
+   - MD3 Filled Input Fields with Floating Labels
+   - MD3 Outlined Input Fields with Floating Labels
+   - MD3 Select Dropdowns with Custom Indicators
+   - MD3 Toggle Switches with Smooth Animations
+   - MD3 Button Variants with State Layer Integration
+
+   Technical Requirements:
+   - Under 500 lines total
+   - Uses MD3 token system for consistent design
+   - Implements floating label animations with proper timing
+   - Integrates with state layer system
+   - Proper accessibility treatments
+   - Form validation states support
+
+   Usage:
+   - Import this file after tokens.css and state-layers.css
+   - Apply utility classes to form elements
+   - Ensure proper ARIA attributes for accessibility
+*/
+
+/* ==========================================================================
+   MD3 FILLED INPUT FIELDS
+   ========================================================================== */
+
+.md3-input-filled {
+  position: relative;
+  display: block;
+  margin-bottom: var(--md3-space-4);
+}
+
+.md3-input-filled input,
+.md3-input-filled textarea {
+  width: 100%;
+  padding: var(--md3-space-4) var(--md3-space-4) var(--md3-space-1);
+  border: none;
+  border-radius: var(--md3-shape-sm) var(--md3-shape-sm) 0 0;
+  background-color: var(--md3-surface-container-highest);
+  color: var(--md3-on-surface);
+  font-size: var(--md3-body-large);
+  line-height: var(--md3-line-height-body);
+  font-family: inherit;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-standard);
+  outline: none;
+  box-sizing: border-box;
+}
+
+/* Filled input focus and hover states */
+.md3-input-filled input:hover,
+.md3-input-filled textarea:hover {
+  background-color: var(--md3-surface-container-high);
+}
+
+.md3-input-filled input:focus,
+.md3-input-filled textarea:focus {
+  background-color: var(--md3-surface-container-highest);
+}
+
+/* Floating Label Implementation */
+.md3-input-filled label {
+  position: absolute;
+  left: var(--md3-space-4);
+  top: var(--md3-space-4);
+  color: var(--md3-on-surface-variant);
+  font-size: var(--md3-body-large);
+  line-height: var(--md3-line-height-body);
+  pointer-events: none;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-emphasized);
+  transform-origin: left top;
+  background-color: transparent;
+  padding: 0 var(--md3-space-1);
+  margin: 0;
+}
+
+/* Floating label animation when input has content or focus */
+.md3-input-filled input:focus + label,
+.md3-input-filled input:not(:placeholder-shown) + label,
+.md3-input-filled textarea:focus + label,
+.md3-input-filled textarea:not(:placeholder-shown) + label {
+  top: var(--md3-space-1);
+  left: var(--md3-space-3);
+  font-size: var(--md3-label-medium);
+  color: var(--md3-primary);
+  transform: scale(0.85);
+}
+
+/* ==========================================================================
+   MD3 OUTLINED INPUT FIELDS
+   ========================================================================== */
+
+.md3-input-outlined {
+  position: relative;
+  display: block;
+  margin-bottom: var(--md3-space-4);
+}
+
+.md3-input-outlined input,
+.md3-input-outlined textarea {
+  width: 100%;
+  padding: var(--md3-space-4);
+  border: 1px solid var(--md3-outline);
+  border-radius: var(--md3-shape-sm);
+  background-color: transparent;
+  color: var(--md3-on-surface);
+  font-size: var(--md3-body-large);
+  line-height: var(--md3-line-height-body);
+  font-family: inherit;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-standard);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.md3-input-outlined input:hover,
+.md3-input-outlined textarea:hover {
+  border-color: var(--md3-on-surface-variant);
+}
+
+.md3-input-outlined input:focus,
+.md3-input-outlined textarea:focus {
+  border-color: var(--md3-primary);
+  border-width: 2px;
+  padding: calc(var(--md3-space-4) - 1px);
+}
+
+/* Outlined input floating label */
+.md3-input-outlined label {
+  position: absolute;
+  left: var(--md3-space-4);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--md3-on-surface-variant);
+  font-size: var(--md3-body-large);
+  pointer-events: none;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-emphasized);
+  background-color: var(--md3-surface);
+  padding: 0 var(--md3-space-1);
+  margin: 0;
+  line-height: 1;
+}
+
+/* Outlined floating label animation */
+.md3-input-outlined input:focus + label,
+.md3-input-outlined input:not(:placeholder-shown) + label,
+.md3-input-outlined textarea:focus + label,
+.md3-input-outlined textarea:not(:placeholder-shown) + label {
+  top: 0;
+  left: var(--md3-space-3);
+  font-size: var(--md3-label-small);
+  color: var(--md3-primary);
+  transform: translateY(-50%);
+}
+
+/* ==========================================================================
+   MD3 SELECT DROPDOWNS
+   ========================================================================== */
+
+.md3-select-filled,
+.md3-select-outlined {
+  position: relative;
+  display: block;
+  margin-bottom: var(--md3-space-4);
+}
+
+.md3-select-filled select,
+.md3-select-outlined select {
+  width: 100%;
+  padding: var(--md3-space-4);
+  padding-right: var(--md3-space-8);
+  background-color: var(--md3-surface-container-highest);
+  color: var(--md3-on-surface);
+  font-size: var(--md3-body-large);
+  line-height: var(--md3-line-height-body);
+  font-family: inherit;
+  border: none;
+  border-radius: var(--md3-shape-sm);
+  cursor: pointer;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-standard);
+  outline: none;
+  appearance: none;
+  box-sizing: border-box;
+}
+
+.md3-select-outlined select {
+  background-color: transparent;
+  border: 1px solid var(--md3-outline);
+}
+
+.md3-select-filled select:hover,
+.md3-select-outlined select:hover {
+  background-color: var(--md3-surface-container-high);
+}
+
+.md3-select-outlined select:hover {
+  border-color: var(--md3-on-surface-variant);
+}
+
+.md3-select-filled select:focus,
+.md3-select-outlined select:focus {
+  background-color: var(--md3-surface-container-highest);
+  outline: 2px solid var(--md3-primary);
+  outline-offset: -2px;
+}
+
+.md3-select-outlined select:focus {
+  border-color: var(--md3-primary);
+  border-width: 2px;
+  padding: calc(var(--md3-space-4) - 1px);
+}
+
+/* Custom dropdown indicator */
+.md3-select-filled::after,
+.md3-select-outlined::after {
+  content: '';
+  position: absolute;
+  right: var(--md3-space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--md3-on-surface-variant);
+  pointer-events: none;
+  transition: transform var(--md3-duration-short2) var(--md3-easing-standard);
+}
+
+.md3-select-filled select:focus + label ~ ::after,
+.md3-select-outlined select:focus + label ~ ::after {
+  border-top-color: var(--md3-primary);
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* Select labels */
+.md3-select-filled label,
+.md3-select-outlined label {
+  position: absolute;
+  left: var(--md3-space-4);
+  top: var(--md3-space-4);
+  color: var(--md3-on-surface-variant);
+  font-size: var(--md3-body-large);
+  pointer-events: none;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-emphasized);
+  background-color: transparent;
+  padding: 0 var(--md3-space-1);
+  margin: 0;
+}
+
+.md3-select-outlined label {
+  background-color: var(--md3-surface);
+}
+
+.md3-select-filled select:focus + label,
+.md3-select-filled select:not([value=""]) + label,
+.md3-select-outlined select:focus + label,
+.md3-select-outlined select:not([value=""]) + label {
+  top: var(--md3-space-1);
+  left: var(--md3-space-3);
+  font-size: var(--md3-label-medium);
+  color: var(--md3-primary);
+  transform: scale(0.85);
+}
+
+.md3-select-outlined select:focus + label,
+.md3-select-outlined select:not([value=""]) + label {
+  top: 0;
+  left: var(--md3-space-3);
+  transform: translateY(-50%);
+  font-size: var(--md3-label-small);
+}
+
+/* ==========================================================================
+   MD3 TOGGLE SWITCHES
+   ========================================================================== */
+
+.md3-toggle {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 32px;
+  cursor: pointer;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-standard);
+}
+
+.md3-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.md3-toggle-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--md3-surface-container-highest);
+  border-radius: 16px;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-standard);
+}
+
+.md3-toggle-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background-color: var(--md3-outline);
+  border-radius: 50%;
+  transition: all var(--md3-duration-medium2) var(--md3-easing-standard);
+  box-shadow: var(--md3-elevation-1);
+}
+
+/* Toggle states */
+.md3-toggle input:checked + .md3-toggle-track {
+  background-color: var(--md3-primary-container);
+}
+
+.md3-toggle input:checked + .md3-toggle-track .md3-toggle-thumb {
+  background-color: var(--md3-primary);
+  transform: translateX(20px);
+}
+
+.md3-toggle input:checked ~ .md3-toggle-track {
+  background-color: var(--md3-primary-container);
+}
+
+.md3-toggle input:checked ~ .md3-toggle-track .md3-toggle-thumb {
+  background-color: var(--md3-primary);
+  transform: translateX(20px);
+}
+
+/* Hover states */
+.md3-toggle:hover .md3-toggle-track {
+  background-color: var(--md3-surface-container-high);
+}
+
+.md3-toggle:hover input:checked + .md3-toggle-track {
+  background-color: var(--md3-primary);
+}
+
+.md3-toggle:hover input:checked + .md3-toggle-track .md3-toggle-thumb {
+  background-color: var(--md3-on-primary);
+}
+
+/* Focus state */
+.md3-toggle input:focus-visible + .md3-toggle-track {
+  outline: 2px solid var(--md3-primary);
+  outline-offset: 2px;
+}
+
+/* Disabled state */
+.md3-toggle input:disabled + .md3-toggle-track {
+  background-color: var(--md3-surface-container-highest);
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.md3-toggle input:disabled + .md3-toggle-track .md3-toggle-thumb {
+  background-color: var(--md3-on-surface);
+  opacity: 0.38;
+}
+
+/* Toggle label styling */
+.md3-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--md3-space-3);
+  cursor: pointer;
+  font-size: var(--md3-body-medium);
+  color: var(--md3-on-surface);
+}
+
+/* ==========================================================================
+   MD3 BUTTON VARIANTS
+   ========================================================================== */
+
+.md3-button-filled {
+  @extend .md3-interactive;
+  @extend .md3-shape-sm;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-2-5) var(--md3-space-6);
+  background-color: var(--md3-primary);
+  color: var(--md3-on-primary);
+  font-size: var(--md3-label-large);
+  font-weight: var(--md3-font-weight-medium);
+  line-height: var(--md3-line-height-label);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+
+.md3-button-filled:hover {
+  background-color: var(--md3-primary-hover);
+}
+
+.md3-button-filled:focus-visible {
+  background-color: var(--md3-primary-focus);
+}
+
+.md3-button-filled:active {
+  background-color: var(--md3-primary-pressed);
+}
+
+.md3-button-outlined {
+  @extend .md3-interactive;
+  @extend .md3-shape-sm;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-2-5) var(--md3-space-6);
+  background-color: transparent;
+  color: var(--md3-primary);
+  font-size: var(--md3-label-large);
+  font-weight: var(--md3-font-weight-medium);
+  line-height: var(--md3-line-height-label);
+  text-decoration: none;
+  border: 1px solid var(--md3-outline);
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.md3-button-outlined:hover {
+  background-color: var(--md3-primary-container);
+  border-color: var(--md3-primary);
+}
+
+.md3-button-outlined:focus-visible {
+  background-color: var(--md3-primary-container);
+  border-color: var(--md3-primary);
+}
+
+.md3-button-outlined:active {
+  background-color: var(--md3-primary-container);
+  border-color: var(--md3-primary-pressed);
+}
+
+.md3-button-text {
+  @extend .md3-interactive;
+  @extend .md3-shape-sm;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-2-5) var(--md3-space-4);
+  background-color: transparent;
+  color: var(--md3-primary);
+  font-size: var(--md3-label-large);
+  font-weight: var(--md3-font-weight-medium);
+  line-height: var(--md3-line-height-label);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.md3-button-text:hover {
+  background-color: var(--md3-surface-container-highest);
+}
+
+.md3-button-text:focus-visible {
+  background-color: var(--md3-surface-container-highest);
+}
+
+.md3-button-text:active {
+  background-color: var(--md3-surface-container-highest);
+}
+
+.md3-button-tonal {
+  @extend .md3-interactive;
+  @extend .md3-shape-sm;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-2-5) var(--md3-space-6);
+  background-color: var(--md3-primary-container);
+  color: var(--md3-on-primary-container);
+  font-size: var(--md3-label-large);
+  font-weight: var(--md3-font-weight-medium);
+  line-height: var(--md3-line-height-label);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.md3-button-tonal:hover {
+  background-color: var(--md3-primary);
+  color: var(--md3-on-primary);
+}
+
+.md3-button-tonal:focus-visible {
+  background-color: var(--md3-primary-focus);
+  color: var(--md3-on-primary);
+}
+
+.md3-button-tonal:active {
+  background-color: var(--md3-primary-pressed);
+  color: var(--md3-on-primary);
+}
+
+/* ==========================================================================
+   FORM VALIDATION STATES
+   ========================================================================== */
+
+.md3-input-filled input.error,
+.md3-input-outlined input.error,
+.md3-select-filled select.error,
+.md3-select-outlined select.error {
+  border-color: var(--md3-error);
+  color: var(--md3-error);
+}
+
+.md3-input-filled input.error:focus,
+.md3-input-outlined input.error:focus,
+.md3-select-filled select.error:focus,
+.md3-select-outlined select.error:focus {
+  border-color: var(--md3-error);
+}
+
+.md3-input-filled input.success,
+.md3-input-outlined input.success,
+.md3-select-filled select.success,
+.md3-select-outlined select.success {
+  border-color: var(--md3-tertiary);
+  color: var(--md3-tertiary);
+}
+
+.md3-input-filled input.success:focus,
+.md3-input-outlined input.success:focus,
+.md3-select-filled select.success:focus,
+.md3-select-outlined select.success:focus {
+  border-color: var(--md3-tertiary);
+}
+
+/* Error label styling */
+.md3-input-filled input.error + label,
+.md3-input-outlined input.error + label,
+.md3-select-filled select.error + label,
+.md3-select-outlined select.error + label {
+  color: var(--md3-error);
+}
+
+.md3-input-filled input.success + label,
+.md3-input-outlined input.success + label,
+.md3-select-filled select.success + label,
+.md3-select-outlined select.success + label {
+  color: var(--md3-tertiary);
+}
+
+/* ==========================================================================
+   HELPER TEXT AND CHARACTER COUNTER
+   ========================================================================== */
+
+.md3-helper-text {
+  font-size: var(--md3-body-small);
+  line-height: var(--md3-line-height-body);
+  color: var(--md3-on-surface-variant);
+  margin-top: var(--md3-space-1);
+  display: block;
+}
+
+.md3-helper-text.error {
+  color: var(--md3-error);
+}
+
+.md3-helper-text.success {
+  color: var(--md3-tertiary);
+}
+
+.md3-character-counter {
+  font-size: var(--md3-body-small);
+  line-height: var(--md3-line-height-body);
+  color: var(--md3-on-surface-variant);
+  text-align: right;
+  margin-top: var(--md3-space-1);
+  display: block;
+}
+
+.md3-character-counter.exceeded {
+  color: var(--md3-error);
+}
+
+/* ==========================================================================
+   ACCESSIBILITY ENHANCEMENTS
+   ========================================================================== */
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .md3-input-filled input:focus,
+  .md3-input-outlined input:focus,
+  .md3-select-filled select:focus,
+  .md3-select-outlined select:focus {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .md3-input-filled label,
+  .md3-input-outlined label,
+  .md3-select-filled label,
+  .md3-select-outlined label,
+  .md3-toggle-track,
+  .md3-toggle-thumb {
+    transition-duration: 0ms;
+  }
+}
+
+/* ==========================================================================
+   RESPONSIVE ADJUSTMENTS
+   ========================================================================== */
+
+@media (max-width: 600px) {
+  .md3-input-filled input,
+  .md3-input-filled textarea,
+  .md3-input-outlined input,
+  .md3-input-outlined textarea,
+  .md3-select-filled select,
+  .md3-select-outlined select {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+}

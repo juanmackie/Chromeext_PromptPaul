@@ -1,0 +1,85 @@
+<!-- Options Instructions Section Template -->
+<section class="section-card">
+  <div class="section-header">
+    <h2 class="section-title collapsible-header">
+      <span class="material-symbols-outlined section-icon">description</span>
+      Instructions
+      <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+    </h2>
+    <div class="section-divider"></div>
+  </div>
+  <div class="collapsible-content">
+    <div id="migrationPrompt" class="migration-prompt" style="display: none; margin-bottom: 1em; padding: 1rem; background: var(--ext-accent); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
+      <span>
+        <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
+      </span>
+      <div class="button-group" style="margin-top: 0.5em;">
+        <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">&#128190; Migrate</button>
+        <button type="button" id="dismissMigrationBtn" class="clear-form-button">&#10006; Dismiss</button>
+      </div>
+    </div>
+
+    <div id="instructions-list">
+      <div class="table-container">
+        <table id="instructionsTable" class="responsive-table">
+          <thead class="sticky-header">
+            <tr>
+              <th>Name</th>
+              <th>Content</th>
+              <th>Tool Choice</th>
+              <th>Pin</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Instructions will be populated here by options.js -->
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Mobile card view -->
+      <div class="mobile-cards">
+        <!-- Mobile cards will be populated here by options.js -->
+      </div>
+    </div>
+
+    <!-- Instruction Form -->
+    <div class="instruction-form card">
+      <h3 id="instructionFormTitle">Add New Instruction</h3>
+      <form id="instructionForm">
+        <div class="form-group">
+          <label for="instructionName">Name:</label>
+          <input type="text" id="instructionName" placeholder="e.g., Summarize" required>
+        </div>
+        <div class="form-group">
+          <label for="instructionContent">Content:</label>
+          <textarea id="instructionContent" rows="4" placeholder="e.g., Please provide a brief summary of the following text..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label for="instructionEmoji">Emoji (optional):</label>
+          <input type="text" id="instructionEmoji" placeholder="📝" maxlength="2">
+        </div>
+        <div class="form-group">
+          <label for="instructionToolChoice">Tool Choice (optional):</label>
+          <select id="instructionToolChoice" multiple>
+            <!-- Tool options will be populated by JavaScript -->
+          </select>
+        </div>
+        <div class="button-group">
+          <button type="submit" id="saveInstructionBtn" class="save-instruction-button">💾 Save Instruction</button>
+          <button type="button" id="clearFormBtn" class="clear-form-button">🧹 Clear Form</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Import/Export Section -->
+    <div class="import-export card">
+      <h3>📤 Import/Export Instructions</h3>
+      <div class="button-group">
+        <button id="exportInstructionsBtn" class="export-button">📥 Export Instructions</button>
+        <input type="file" id="importInstructionsInput" accept=".json" style="display: none;">
+        <button id="importInstructionsBtn" class="import-button">📤 Import Instructions</button>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,364 @@
+/* Enhanced Options Form Styles */
+
+/* Form Group Component */
+.form-group {
+  margin-bottom: var(--spacing-lg);
+  position: relative;
+  animation: slideIn var(--transition-normal) ease-out;
+}
+
+.form-group:focus-within {
+  z-index: 10;
+}
+
+/* Enhanced Label Styling */
+label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--ext-foreground);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+label::after {
+  content: '*';
+  color: var(--ext-destructive);
+  margin-left: 0.25rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.form-group.required label::after {
+  opacity: 1;
+}
+
+.form-group:focus-within label {
+  color: var(--ext-primary);
+  transform: translateX(2px);
+}
+
+/* Enhanced Input Component */
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+input[type="text"]:not(.shadcn-input),
+input[type="number"],
+textarea:not(.shadcn-textarea) {
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 2px solid var(--ext-border);
+  border-radius: var(--border-radius);
+  background-color: var(--ext-input);
+  transition: all var(--transition-normal);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  color: var(--ext-foreground);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+}
+
+/* Enhanced Input States */
+input[type="text"]:not(.shadcn-input):hover,
+input[type="number"]:hover,
+textarea:not(.shadcn-textarea):hover {
+  border-color: var(--ext-secondary);
+  background-color: hsl(var(--ext-input-hsl), 0.95);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+input[type="text"]:not(.shadcn-input):focus,
+input[type="number"]:focus,
+textarea:not(.shadcn-textarea):focus {
+  border-color: var(--ext-primary);
+  background-color: var(--ext-background);
+  box-shadow: 0 0 0 4px hsla(var(--ext-primary-hsl), 0.15), var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Enhanced Input Validation States */
+input[type="text"]:not(.shadcn-input).valid,
+input[type="number"].valid,
+textarea:not(.shadcn-textarea).valid {
+  border-color: var(--ext-green);
+  background-color: hsl(var(--ext-green-hsl), 0.05);
+}
+
+input[type="text"]:not(.shadcn-input).invalid,
+input[type="number"].invalid,
+textarea:not(.shadcn-textarea).invalid {
+  border-color: var(--ext-destructive);
+  background-color: hsl(var(--ext-destructive-hsl), 0.05);
+}
+
+/* Enhanced Placeholder Styling */
+input[type="text"]::placeholder,
+input[type="number"]::placeholder,
+textarea::placeholder {
+  color: var(--ext-muted-foreground);
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* Enhanced Select Component */
+select#profileSelect,
+select#instructionToolChoice {
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 2px solid var(--ext-border);
+  border-radius: var(--border-radius);
+  background-color: var(--ext-input);
+  transition: all var(--transition-normal);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  line-height: var(--leading-normal);
+  color: var(--ext-foreground);
+  box-shadow: var(--shadow-sm);
+  outline: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2364748b%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.4-5.4-12.8z%22%2F%3E%3C%2Fsvg%3E');
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-lg) center;
+  background-size: 1em auto;
+  padding-right: 3rem;
+}
+
+/* Enhanced Select States */
+select#profileSelect:hover,
+select#instructionToolChoice:hover {
+  border-color: var(--ext-secondary);
+  background-color: hsl(var(--ext-input-hsl), 0.95);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+select#profileSelect:focus,
+select#instructionToolChoice:focus {
+  border-color: var(--ext-primary);
+  background-color: var(--ext-background);
+  box-shadow: 0 0 0 4px hsla(var(--ext-primary-hsl), 0.15), var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Enhanced Multi-select Styling */
+select#instructionToolChoice {
+  min-height: 3rem;
+  padding-top: var(--spacing-md);
+  padding-bottom: var(--spacing-md);
+}
+
+/* Enhanced Button Group Component */
+.button-group {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: var(--spacing-lg);
+  animation: slideIn var(--transition-normal) ease-out;
+}
+
+.button-group button {
+  flex-grow: 1;
+  min-width: 120px;
+}
+
+/* Enhanced Button System */
+.btn {
+  border: none;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--border-radius);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn:hover::before {
+  left: 100%;
+}
+
+.btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:focus {
+  outline: 2px solid var(--ext-primary);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--ext-primary) 0%, var(--ext-secondary) 100%);
+  color: var(--ext-primary-foreground);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--ext-secondary) 0%, var(--ext-primary) 100%);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-secondary {
+  background: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
+}
+
+.btn-secondary:hover {
+  background: hsl(var(--ext-secondary-hsl), 0.9);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-destructive {
+  background: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+}
+
+.btn-destructive:hover {
+  background: hsl(var(--ext-destructive-hsl), 0.9);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-accent {
+  background: var(--ext-accent);
+  color: var(--ext-accent-foreground);
+}
+
+.btn-accent:hover {
+  background: hsl(var(--ext-accent-hsl), 0.9);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-success {
+  background: var(--ext-green);
+  color: var(--ext-green-foreground);
+}
+
+.btn-success:hover {
+  background: hsl(var(--ext-green-hsl), 0.9);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-icon {
+  padding: var(--spacing-sm);
+  border-radius: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon:hover {
+  transform: scale(1.1);
+}
+
+/* Button Loading State */
+.btn.loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+}
+
+/* Button Size Variants */
+.btn-sm {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-xs);
+}
+
+.btn-lg {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  font-size: var(--font-size-base);
+}
+
+.btn-xl {
+  padding: var(--spacing-xl) var(--spacing-2xl);
+  font-size: var(--font-size-lg);
+}
+
+/* Legacy Button Compatibility */
+.save-button,
+.save-instruction-button {
+  background: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
+}
+
+.clear-form-button {
+  background: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+}
+
+.export-button,
+.import-button {
+  background: var(--ext-accent);
+  color: var(--ext-accent-foreground);
+}
+
+.delete-tool-btn,
+.delete-btn {
+  background: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+}
+
+/* Animations */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

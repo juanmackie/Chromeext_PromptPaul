@@ -1,5 +1,23 @@
 /* Unified Extension Theme System */
 /* This file contains all theme variables and should be imported first in all HTML files */
+/* Material Design 3 Expressive Integration */
+@import 'styles/options/tokens.css';
+@import 'styles/options/typography.css';
+@import 'styles/options/state-layers.css';
+@import 'styles/options/component-variants.css';
+@import 'styles/options/form-controls.css';
+@import 'styles/options/surface-system.css';
+@import 'styles/options/motion-system.css';
+@import 'styles/options/micro-interactions.css';
+@import 'styles/options/dynamic-colors.css';
+@import 'styles/options/visual-effects.css';
+@import 'styles/options/layout-enhancements.css';
+@import 'styles/options/accessibility.css';
+@import 'styles/options/performance.css';
+@import 'styles/options/browser-compatibility.css';
+@import 'styles/options/dev-tools.css';
+@import 'styles/options/build-integration.css';
+@import 'styles/options/documentation.css';
 
 :root {
   /* Core Colors - Light Theme */

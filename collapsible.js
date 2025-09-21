@@ -1,53 +1,56 @@
 // Enhanced collapsible functionality for sections
-document.addEventListener('DOMContentLoaded', function() {
-    // Find all collapsible headers
-    const collapsibleHeaders = document.querySelectorAll('.collapsible-header');
+// Load saved states from localStorage
+function loadCollapsibleStates() {
+    const saved = localStorage.getItem('collapsibleStates');
+    return saved ? JSON.parse(saved) : {};
+}
+
+// Save states to localStorage
+function saveCollapsibleStates(states) {
+    localStorage.setItem('collapsibleStates', JSON.stringify(states));
+}
+
+// Get section identifier from header
+function getSectionId(header) {
+    const titleText = header.textContent.trim().toLowerCase();
+    return titleText.replace(/\s+/g, '-');
+}
+
+// Toggle section visibility
+function toggleSection(header, forceState = null) {
+    const content = header.parentElement.nextElementSibling;
+    const icon = header.querySelector('.collapsible-icon');
+    const sectionId = getSectionId(header);
     
-    // Load saved states from localStorage
-    function loadCollapsibleStates() {
-        const saved = localStorage.getItem('collapsibleStates');
-        return saved ? JSON.parse(saved) : {};
-    }
-    
-    // Save states to localStorage
-    function saveCollapsibleStates(states) {
-        localStorage.setItem('collapsibleStates', JSON.stringify(states));
-    }
-    
-    // Get section identifier from header
-    function getSectionId(header) {
-        const titleText = header.textContent.trim().toLowerCase();
-        return titleText.replace(/\s+/g, '-');
-    }
-    
-    // Toggle section visibility
-    function toggleSection(header, forceState = null) {
-        const content = header.parentElement.nextElementSibling;
-        const icon = header.querySelector('.collapsible-icon');
-        const sectionId = getSectionId(header);
+    if (content && content.classList.contains('collapsible-content')) {
+        const isExpanded = forceState !== null ? forceState : content.style.display !== 'none';
+        const newState = !isExpanded;
         
-        if (content && content.classList.contains('collapsible-content')) {
-            const isExpanded = forceState !== null ? forceState : content.style.display !== 'none';
-            const newState = !isExpanded;
-            
-            // Update display
-            content.style.display = newState ? 'block' : 'none';
-            icon.textContent = newState ? 'expand_less' : 'expand_more';
-            header.setAttribute('aria-expanded', newState.toString());
-            
-            // Save state
-            const states = loadCollapsibleStates();
-            states[sectionId] = newState;
-            saveCollapsibleStates(states);
-            
-            return newState;
-        }
-        return false;
+        // Update display
+        content.style.display = newState ? 'block' : 'none';
+        icon.textContent = newState ? 'expand_less' : 'expand_more';
+        header.setAttribute('aria-expanded', newState.toString());
+        
+        // Save state
+        const states = loadCollapsibleStates();
+        states[sectionId] = newState;
+        saveCollapsibleStates(states);
+        
+        return newState;
     }
+    return false;
+}
+
+// Initialize collapsible functionality for existing or new headers
+function initializeCollapsibleHeaders(container = document) {
+    const collapsibleHeaders = container.querySelectorAll('.collapsible-header:not([data-collapsible-initialized])');
     
     collapsibleHeaders.forEach(header => {
         const sectionId = getSectionId(header);
         const savedStates = loadCollapsibleStates();
+        
+        // Mark as initialized to prevent duplicate event listeners
+        header.setAttribute('data-collapsible-initialized', 'true');
         
         // Set up accessibility
         header.setAttribute('role', 'button');
@@ -81,4 +84,15 @@ document.addEventListener('DOMContentLoaded', function() {
             this.style.outline = 'none';
         });
     });
+}
+
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCollapsibleHeaders();
+});
+
+// Re-initialize when templates are loaded
+document.addEventListener('templatesLoaded', function() {
+    console.log('Templates loaded, initializing collapsible headers for dynamic content');
+    initializeCollapsibleHeaders();
 });

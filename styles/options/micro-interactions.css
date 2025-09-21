@@ -1,0 +1,599 @@
+/**
+ * MD3 Micro-interactions System
+ *
+ * This file implements comprehensive micro-interactions following Material Design 3
+ * specifications. Integrates with the motion system for consistent timing and easing.
+ *
+ * Micro-interactions included:
+ * - Ripple effects for interactive elements
+ * - Button press feedback with scale animations
+ * - Loading state animations (spinners, skeletons)
+ * - Notification slide-in effects with positioning
+ * - Smooth page transitions for navigation
+ *
+ * @section Ripple Effects
+ * @section Button Feedback
+ * @section Loading States
+ * @section Notifications
+ * @section Page Transitions
+ * @section Utility Classes
+ * @section Accessibility
+ */
+
+/* =================================================================
+   MD3 Micro-interaction Tokens - CSS Custom Properties
+   ================================================================= */
+:root {
+  /* Ripple Effect Properties */
+  --md3-ripple-opacity: 0.16;
+  --md3-ripple-scale: 2.5;
+  --md3-ripple-duration: var(--md3-motion-duration-short2);
+
+  /* Button Press Properties */
+  --md3-button-press-scale: 0.96;
+  --md3-button-press-duration: var(--md3-motion-duration-extra-short);
+
+  /* Loading Spinner Properties */
+  --md3-spinner-size-small: 16px;
+  --md3-spinner-size-medium: 24px;
+  --md3-spinner-size-large: 40px;
+  --md3-spinner-stroke: 2px;
+
+  /* Skeleton Properties */
+  --md3-skeleton-height: 1.2em;
+  --md3-skeleton-wave-duration: 1.6s;
+
+  /* Notification Properties */
+  --md3-notification-slide-distance: 100%;
+  --md3-notification-max-width: 400px;
+}
+
+/* =================================================================
+   Ripple Effects System
+   ================================================================= */
+
+/* Base ripple container - must be positioned relative */
+.md3-ripple-surface {
+  position: relative;
+  overflow: hidden;
+  transform: translateZ(0); /* Hardware acceleration */
+}
+
+/* Ripple element - created via JavaScript */
+.md3-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background-color: currentColor;
+  opacity: var(--md3-ripple-opacity);
+  transform: scale(0);
+  transition: transform var(--md3-ripple-duration) var(--md3-motion-easing-standard),
+              opacity var(--md3-ripple-duration) var(--md3-motion-easing-standard);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Active ripple state */
+.md3-ripple.md3-ripple-active {
+  transform: scale(var(--md3-ripple-scale));
+  opacity: 0;
+}
+
+/* Customizable ripple colors */
+.md3-ripple-primary {
+  background-color: rgb(var(--md3-sys-color-primary));
+}
+
+.md3-ripple-secondary {
+  background-color: rgb(var(--md3-sys-color-secondary));
+}
+
+.md3-ripple-tertiary {
+  background-color: rgb(var(--md3-sys-color-tertiary));
+}
+
+/* =================================================================
+   Button Press Feedback System
+   ================================================================= */
+
+/* Button press feedback with scale and state layer */
+.md3-button-press {
+  transition: transform var(--md3-button-press-duration) var(--md3-motion-easing-standard);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.md3-button-press:active {
+  transform: scale(var(--md3-button-press-scale));
+}
+
+/* Enhanced button feedback with state layer integration */
+.md3-button-feedback {
+  position: relative;
+  transition:
+    transform var(--md3-button-press-duration) var(--md3-motion-easing-standard),
+    box-shadow var(--md3-motion-duration-short) var(--md3-motion-easing-standard);
+  transform-origin: center;
+  will-change: transform, box-shadow;
+}
+
+.md3-button-feedback::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: currentColor;
+  opacity: 0;
+  transition: opacity var(--md3-motion-duration-short) var(--md3-motion-easing-standard);
+  pointer-events: none;
+}
+
+.md3-button-feedback:hover::before {
+  opacity: 0.04;
+}
+
+.md3-button-feedback:focus::before {
+  opacity: 0.12;
+}
+
+.md3-button-feedback:active {
+  transform: scale(var(--md3-button-press-scale));
+}
+
+.md3-button-feedback:active::before {
+  opacity: 0.16;
+}
+
+/* =================================================================
+   Loading State Animations
+   ================================================================= */
+
+/* Spinner Animations */
+@keyframes md3-spinner-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes md3-spinner-dash {
+  0% {
+    stroke-dasharray: 1, 200;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 89, 200;
+    stroke-dashoffset: -35px;
+  }
+  100% {
+    stroke-dasharray: 89, 200;
+    stroke-dashoffset: -124px;
+  }
+}
+
+/* Spinner Components */
+.md3-loading-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: md3-spinner-rotate 1.4s linear infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.md3-spinner-circle {
+  stroke: currentColor;
+  stroke-dasharray: 89, 200;
+  stroke-dashoffset: -35px;
+  animation: md3-spinner-dash 1.4s ease-in-out infinite;
+  transform-origin: center;
+  fill: none;
+  stroke-width: var(--md3-spinner-stroke);
+  stroke-linecap: round;
+}
+
+/* Spinner Size Variants */
+.md3-spinner-small {
+  width: var(--md3-spinner-size-small);
+  height: var(--md3-spinner-size-small);
+}
+
+.md3-spinner-medium {
+  width: var(--md3-spinner-size-medium);
+  height: var(--md3-spinner-size-medium);
+}
+
+.md3-spinner-large {
+  width: var(--md3-spinner-size-large);
+  height: var(--md3-spinner-size-large);
+}
+
+/* Skeleton Loading Animations */
+@keyframes md3-skeleton-wave {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+@keyframes md3-skeleton-pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Skeleton Components */
+.md3-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--md3-sys-color-surface-variant)) 25%,
+    rgb(var(--md3-sys-color-surface-container-highest)) 50%,
+    rgb(var(--md3-sys-color-surface-variant)) 75%
+  );
+  background-size: 200px 100%;
+  animation: md3-skeleton-wave var(--md3-skeleton-wave-duration) ease-in-out infinite;
+  border-radius: 4px;
+  will-change: background-position;
+}
+
+.md3-skeleton-pulse {
+  animation: md3-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Skeleton Size Variants */
+.md3-skeleton-text {
+  height: var(--md3-skeleton-height);
+  margin: 0.25em 0;
+}
+
+.md3-skeleton-text.md3-skeleton-small {
+  height: calc(var(--md3-skeleton-height) * 0.75);
+}
+
+.md3-skeleton-text.md3-skeleton-large {
+  height: calc(var(--md3-skeleton-height) * 1.25);
+}
+
+.md3-skeleton-rect {
+  height: 48px;
+  margin: 8px 0;
+}
+
+.md3-skeleton-circle {
+  border-radius: 50%;
+  aspect-ratio: 1;
+}
+
+/* =================================================================
+   Notification Slide-in Effects
+   ================================================================= */
+
+@keyframes md3-notification-slide-in {
+  from {
+    transform: translateX(var(--md3-notification-slide-distance));
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes md3-notification-slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(var(--md3-notification-slide-distance));
+    opacity: 0;
+  }
+}
+
+@keyframes md3-notification-slide-in-up {
+  from {
+    transform: translateY(var(--md3-notification-slide-distance));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes md3-notification-slide-out-down {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(var(--md3-notification-slide-distance));
+    opacity: 0;
+  }
+}
+
+/* Notification Container */
+.md3-notification-slide-in {
+  animation: md3-notification-slide-in var(--md3-motion-duration-medium) var(--md3-motion-easing-emphasized) both;
+  max-width: var(--md3-notification-max-width);
+  will-change: transform, opacity;
+}
+
+.md3-notification-slide-out {
+  animation: md3-notification-slide-out var(--md3-motion-duration-medium) var(--md3-motion-easing-standard) both;
+  max-width: var(--md3-notification-max-width);
+  will-change: transform, opacity;
+}
+
+.md3-notification-slide-in-up {
+  animation: md3-notification-slide-in-up var(--md3-motion-duration-medium) var(--md3-motion-easing-emphasized) both;
+  max-width: var(--md3-notification-max-width);
+  will-change: transform, opacity;
+}
+
+.md3-notification-slide-out-down {
+  animation: md3-notification-slide-out-down var(--md3-motion-duration-medium) var(--md3-motion-easing-standard) both;
+  max-width: var(--md3-notification-max-width);
+  will-change: transform, opacity;
+}
+
+/* Notification Positioning */
+.md3-notification-top-right {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+}
+
+.md3-notification-top-left {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1000;
+}
+
+.md3-notification-bottom-right {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+}
+
+.md3-notification-bottom-left {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 1000;
+}
+
+.md3-notification-top-center {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+}
+
+/* =================================================================
+   Page Transition System
+   ================================================================= */
+
+@keyframes md3-page-transition-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes md3-page-transition-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+
+@keyframes md3-page-transition-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes md3-page-transition-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes md3-page-transition-slide-down {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Page Transition Classes */
+.md3-page-transition-in {
+  animation: md3-page-transition-in var(--md3-motion-duration-medium) var(--md3-motion-easing-emphasized) both;
+  will-change: transform, opacity;
+}
+
+.md3-page-transition-out {
+  animation: md3-page-transition-out var(--md3-motion-duration-medium) var(--md3-motion-easing-standard) both;
+  will-change: transform, opacity;
+}
+
+.md3-page-transition-fade-in {
+  animation: md3-page-transition-fade-in var(--md3-motion-duration-medium) var(--md3-motion-easing-standard) both;
+  will-change: opacity;
+}
+
+.md3-page-transition-slide-up {
+  animation: md3-page-transition-slide-up var(--md3-motion-duration-medium) var(--md3-motion-easing-emphasized) both;
+  will-change: transform;
+}
+
+.md3-page-transition-slide-down {
+  animation: md3-page-transition-slide-down var(--md3-motion-duration-medium) var(--md3-motion-easing-emphasized) both;
+  will-change: transform;
+}
+
+/* =================================================================
+   Micro-interaction Utility Classes
+   ================================================================= */
+
+/* Combined utility classes for common patterns */
+.md3-interactive {
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    transform var(--md3-motion-duration-short2) var(--md3-motion-easing-standard),
+    box-shadow var(--md3-motion-duration-short2) var(--md3-motion-easing-standard);
+  will-change: transform, box-shadow;
+}
+
+.md3-interactive:hover {
+  transform: translateY(-1px);
+}
+
+.md3-interactive:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Loading state containers */
+.md3-loading-container {
+  position: relative;
+  pointer-events: none;
+}
+
+.md3-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(var(--md3-sys-color-surface), 0.8);
+  backdrop-filter: blur(2px);
+  z-index: 10;
+}
+
+/* Notification stack management */
+.md3-notification-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.md3-notification-stack > * {
+  pointer-events: auto;
+}
+
+/* =================================================================
+   Performance Optimizations
+   ================================================================= */
+
+/* Hardware acceleration for micro-interactions */
+.md3-micro-optimized {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform, opacity;
+}
+
+/* Reduced repaints for ripple effects */
+.md3-ripple-container {
+  contain: layout style paint;
+  isolation: isolate;
+}
+
+/* =================================================================
+   Accessibility Support - Reduced Motion
+   ================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .md3-ripple,
+  .md3-button-press,
+  .md3-button-feedback,
+  .md3-loading-spinner,
+  .md3-skeleton,
+  .md3-skeleton-pulse,
+  .md3-notification-slide-in,
+  .md3-notification-slide-out,
+  .md3-page-transition-in,
+  .md3-page-transition-out {
+    animation: none;
+    transition: none;
+    transform: none;
+  }
+
+  /* Instant feedback for reduced motion */
+  .md3-interactive:hover,
+  .md3-interactive:active {
+    transform: none;
+  }
+
+  .md3-button-feedback::before {
+    transition: none;
+  }
+}
+
+/* =================================================================
+   ARIA Live Region Support for Notifications
+   ================================================================= */
+
+/* Screen reader announcements for dynamic content */
+.md3-sr-notification[aria-live="polite"] {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.md3-sr-notification[aria-live="assertive"] {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Notification role attributes for accessibility */
+.md3-notification-container {
+  role: status;
+  aria-live: polite;
+  aria-atomic: false;
+}
+
+/* High priority notification */
+.md3-notification-container[aria-live="assertive"] {
+  role: alert;
+  aria-live: assertive;
+  aria-atomic: true;
+}

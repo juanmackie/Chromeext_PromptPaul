@@ -1,0 +1,676 @@
+/* ================================================
+   MD3 BUILD SYSTEM INTEGRATION
+   ================================================
+   Automated token generation, CSS optimization,
+   build-time validation, testing, and monitoring
+   for the Material Design 3 system.
+   ================================================ */
+
+/* ================================================
+   BUILD CONFIGURATION VARIABLES
+   ================================================ */
+:root {
+  /* Build-time configuration */
+  --md3-build-mode: production;
+  --md3-build-optimize: true;
+  --md3-build-minify: true;
+  --md3-build-validate: true;
+  --md3-build-test: true;
+  --md3-build-monitor: true;
+
+  /* Token generation settings */
+  --md3-token-source: design-tokens.json;
+  --md3-token-output: tokens.css;
+  --md3-token-format: css;
+
+  /* Optimization thresholds */
+  --md3-optimize-threshold: 1024;
+  --md3-minify-threshold: 2048;
+  --md3-compress-level: 9;
+
+  /* Testing configuration */
+  --md3-test-coverage: 85;
+  --md3-test-threshold: 95;
+  --md3-test-timeout: 30000;
+
+  /* Performance monitoring */
+  --md3-monitor-interval: 5000;
+  --md3-monitor-threshold: 1000;
+  --md3-monitor-batch-size: 50;
+}
+
+/* ================================================
+   AUTOMATED TOKEN GENERATION
+   ================================================ */
+
+/* Build-time token generation utilities */
+.md3-build-token-gen {
+  --md3-token-generator: enabled;
+  --md3-token-watch: false;
+  --md3-token-sync: true;
+  --md3-token-validate: true;
+}
+
+.md3-build-token-gen[data-mode="watch"] {
+  --md3-token-watch: true;
+}
+
+.md3-build-token-gen[data-mode="sync"] {
+  --md3-token-sync: true;
+  --md3-token-validate: true;
+}
+
+/* Token generation pipeline */
+.md3-token-pipeline {
+  display: none; /* Hidden from runtime */
+  --md3-pipeline-steps: 5;
+  --md3-pipeline-current: 0;
+}
+
+.md3-token-pipeline[data-step="1"] {
+  --md3-pipeline-current: 1;
+  content: "Loading design tokens...";
+}
+
+.md3-token-pipeline[data-step="2"] {
+  --md3-pipeline-current: 2;
+  content: "Processing token hierarchy...";
+}
+
+.md3-token-pipeline[data-step="3"] {
+  --md3-pipeline-current: 3;
+  content: "Generating CSS variables...";
+}
+
+.md3-token-pipeline[data-step="4"] {
+  --md3-pipeline-current: 4;
+  content: "Validating token consistency...";
+}
+
+.md3-token-pipeline[data-step="5"] {
+  --md3-pipeline-current: 5;
+  content: "Writing output files...";
+}
+
+/* Token validation states */
+.md3-token-validation {
+  --md3-validation-status: pending;
+  --md3-validation-errors: 0;
+  --md3-validation-warnings: 0;
+}
+
+.md3-token-validation[data-valid="true"] {
+  --md3-validation-status: valid;
+  --md3-validation-errors: 0;
+}
+
+.md3-token-validation[data-valid="false"] {
+  --md3-validation-status: invalid;
+}
+
+.md3-token-validation::after {
+  content: "Token validation: " var(--md3-validation-status);
+}
+
+/* ================================================
+   CSS OPTIMIZATION PIPELINE
+   ================================================ */
+
+/* Build optimization utilities */
+.md3-build-optimized {
+  --md3-optimization-level: high;
+  --md3-compression-enabled: true;
+  --md3-dead-code-removal: true;
+  --md3-unused-selector-removal: true;
+}
+
+.md3-build-optimized[data-level="low"] {
+  --md3-optimization-level: low;
+  --md3-compression-enabled: false;
+}
+
+.md3-build-optimized[data-level="medium"] {
+  --md3-optimization-level: medium;
+  --md3-compression-enabled: true;
+  --md3-dead-code-removal: false;
+}
+
+/* CSS minification utilities */
+.md3-css-minify {
+  --md3-minify-selectors: true;
+  --md3-minify-properties: true;
+  --md3-minify-values: true;
+  --md3-remove-comments: true;
+  --md3-compress-whitespace: true;
+}
+
+.md3-css-minify[data-preserve="comments"] {
+  --md3-remove-comments: false;
+}
+
+.md3-css-minify[data-preserve="whitespace"] {
+  --md3-compress-whitespace: false;
+}
+
+/* Dead code elimination */
+.md3-dead-code-elimination {
+  --md3-elimination-threshold: 0.1;
+  --md3-elimination-aggressive: false;
+  --md3-elimination-safe: true;
+}
+
+.md3-dead-code-elimination[data-mode="aggressive"] {
+  --md3-elimination-aggressive: true;
+  --md3-elimination-safe: false;
+  --md3-elimination-threshold: 0.05;
+}
+
+/* Unused selector removal */
+.md3-unused-selector-removal {
+  --md3-selector-usage-threshold: 1;
+  --md3-selector-scan-depth: 3;
+  --md3-selector-preserve-patterns: "md3-*, *md3*";
+}
+
+.md3-unused-selector-removal[data-depth="shallow"] {
+  --md3-selector-scan-depth: 1;
+}
+
+.md3-unused-selector-removal[data-depth="deep"] {
+  --md3-selector-scan-depth: 5;
+}
+
+/* ================================================
+   COMPONENT TESTING SUITE
+   ================================================ */
+
+/* Testing framework utilities */
+.md3-test-component {
+  --md3-test-framework: automated;
+  --md3-test-coverage: enabled;
+  --md3-test-visual: enabled;
+  --md3-test-accessibility: enabled;
+  --md3-test-performance: enabled;
+}
+
+.md3-test-component[data-type="unit"] {
+  --md3-test-framework: unit;
+  --md3-test-coverage: true;
+}
+
+.md3-test-component[data-type="integration"] {
+  --md3-test-framework: integration;
+  --md3-test-coverage: true;
+  --md3-test-visual: true;
+}
+
+/* Visual regression testing */
+.md3-test-visual-regression {
+  --md3-visual-threshold: 0.01;
+  --md3-visual-breakpoints: "xs, sm, md, lg, xl";
+  --md3-visual-formats: "png, webp";
+  --md3-visual-quality: 95;
+  --md3-visual-diff-enabled: true;
+}
+
+.md3-test-visual-regression[data-strict="true"] {
+  --md3-visual-threshold: 0.001;
+  --md3-visual-diff-enabled: true;
+}
+
+.md3-test-visual-regression[data-compare="baseline"] {
+  --md3-visual-compare-mode: baseline;
+}
+
+/* Test result reporting */
+.md3-test-results {
+  --md3-test-passed: 0;
+  --md3-test-failed: 0;
+  --md3-test-skipped: 0;
+  --md3-test-duration: 0;
+}
+
+.md3-test-results[data-status="pass"] {
+  --md3-test-passed: calc(var(--md3-test-passed) + 1);
+}
+
+.md3-test-results[data-status="fail"] {
+  --md3-test-failed: calc(var(--md3-test-failed) + 1);
+}
+
+/* Test coverage tracking */
+.md3-test-coverage {
+  --md3-coverage-statements: 0;
+  --md3-coverage-branches: 0;
+  --md3-coverage-functions: 0;
+  --md3-coverage-lines: 0;
+  --md3-coverage-percentage: 0;
+}
+
+.md3-test-coverage[data-metric="statements"] {
+  --md3-coverage-statements: var(--md3-coverage-percentage);
+}
+
+.md3-test-coverage[data-metric="branches"] {
+  --md3-coverage-branches: var(--md3-coverage-percentage);
+}
+
+/* ================================================
+   PERFORMANCE MONITORING
+   ================================================ */
+
+/* Performance monitoring utilities */
+.md3-monitor-performance {
+  --md3-monitor-metrics: enabled;
+  --md3-monitor-core-web-vitals: true;
+  --md3-monitor-resource-timing: true;
+  --md3-monitor-memory-usage: true;
+  --md3-monitor-network-requests: true;
+}
+
+.md3-monitor-performance[data-mode="lite"] {
+  --md3-monitor-core-web-vitals: true;
+  --md3-monitor-resource-timing: false;
+  --md3-monitor-memory-usage: false;
+}
+
+.md3-monitor-performance[data-mode="comprehensive"] {
+  --md3-monitor-metrics: enabled;
+  --md3-monitor-core-web-vitals: true;
+  --md3-monitor-resource-timing: true;
+  --md3-monitor-memory-usage: true;
+  --md3-monitor-network-requests: true;
+}
+
+/* Core Web Vitals tracking */
+.md3-core-web-vitals {
+  --md3-cwv-lcp: 0;
+  --md3-cwv-fid: 0;
+  --md3-cwv-cls: 0;
+  --md3-cwv-fcp: 0;
+  --md3-cwv-ttfb: 0;
+}
+
+.md3-core-web-vitals[data-lcp] {
+  --md3-cwv-lcp: var(--md3-cwv-lcp);
+}
+
+.md3-core-web-vitals[data-fid] {
+  --md3-cwv-fid: var(--md3-cwv-fid);
+}
+
+/* Resource timing monitoring */
+.md3-resource-timing {
+  --md3-resource-fetch-duration: 0;
+  --md3-resource-cache-hits: 0;
+  --md3-resource-cache-misses: 0;
+  --md3-resource-compression-ratio: 0;
+}
+
+.md3-resource-timing[data-type="css"] {
+  --md3-resource-css-count: 0;
+  --md3-resource-css-size: 0;
+}
+
+.md3-resource-timing[data-type="js"] {
+  --md3-resource-js-count: 0;
+  --md3-resource-js-size: 0;
+}
+
+/* Memory usage tracking */
+.md3-memory-monitor {
+  --md3-memory-heap-used: 0;
+  --md3-memory-heap-total: 0;
+  --md3-memory-external: 0;
+  --md3-memory-rss: 0;
+}
+
+.md3-memory-monitor[data-alert="high"] {
+  --md3-memory-alert: true;
+  border: 2px solid #f44336;
+}
+
+/* ================================================
+   CI/CD INTEGRATION
+   ================================================ */
+
+/* CI validation utilities */
+.md3-ci-validation {
+  --md3-ci-validate-tokens: true;
+  --md3-ci-validate-css: true;
+  --md3-ci-validate-components: true;
+  --md3-ci-validate-accessibility: true;
+  --md3-ci-validate-performance: true;
+}
+
+.md3-ci-validation[data-fast="true"] {
+  --md3-ci-validate-tokens: true;
+  --md3-ci-validate-css: true;
+  --md3-ci-validate-components: false;
+  --md3-ci-validate-accessibility: false;
+  --md3-ci-validate-performance: false;
+}
+
+/* Compatibility testing */
+.md3-ci-compatibility {
+  --md3-ci-browsers: "chrome, firefox, safari, edge";
+  --md3-ci-browser-versions: "latest, latest-1, latest-2";
+  --md3-ci-screen-sizes: "320px, 768px, 1024px, 1920px";
+  --md3-ci-orientations: "portrait, landscape";
+}
+
+.md3-ci-compatibility[data-mobile="only"] {
+  --md3-ci-screen-sizes: "320px, 375px, 414px, 768px";
+  --md3-ci-orientations: "portrait, landscape";
+}
+
+/* CI pipeline status */
+.md3-ci-pipeline {
+  --md3-ci-status: pending;
+  --md3-ci-stage: 0;
+  --md3-ci-total-stages: 5;
+  --md3-ci-progress: 0;
+}
+
+.md3-ci-pipeline[data-status="running"] {
+  --md3-ci-status: running;
+  --md3-ci-stage: var(--md3-ci-stage);
+}
+
+.md3-ci-pipeline[data-status="success"] {
+  --md3-ci-status: success;
+  --md3-ci-stage: var(--md3-ci-total-stages);
+}
+
+.md3-ci-pipeline[data-status="failed"] {
+  --md3-ci-status: failed;
+}
+
+/* ================================================
+   BUILD AUTOMATION
+   ================================================ */
+
+/* Token synchronization */
+.md3-automation-token-sync {
+  --md3-sync-source: design-tokens;
+  --md3-sync-target: css-variables;
+  --md3-sync-frequency: 30000;
+  --md3-sync-watch: true;
+  --md3-sync-backup: true;
+}
+
+.md3-automation-token-sync[data-mode="manual"] {
+  --md3-sync-frequency: 0;
+  --md3-sync-watch: false;
+}
+
+.md3-automation-token-sync[data-mode="continuous"] {
+  --md3-sync-frequency: 5000;
+  --md3-sync-watch: true;
+}
+
+/* Export automation */
+.md3-automation-export {
+  --md3-export-formats: "css, scss, js, json";
+  --md3-export-destinations: "dist, docs, packages";
+  --md3-export-compress: true;
+  --md3-export-version: true;
+  --md3-export-metadata: true;
+}
+
+.md3-automation-export[data-format="css-only"] {
+  --md3-export-formats: "css";
+}
+
+.md3-automation-export[data-format="all"] {
+  --md3-export-formats: "css, scss, js, json, ts";
+}
+
+/* Build artifact management */
+.md3-automation-artifacts {
+  --md3-artifact-retention: 30;
+  --md3-artifact-compression: true;
+  --md3-artifact-indexing: true;
+  --md3-artifact-cleanup: true;
+}
+
+.md3-automation-artifacts[data-retention="short"] {
+  --md3-artifact-retention: 7;
+}
+
+.md3-automation-artifacts[data-retention="long"] {
+  --md3-artifact-retention: 90;
+}
+
+/* ================================================
+   BUILD-TIME FEATURE DETECTION
+   ================================================ */
+
+/* Feature detection utilities */
+@supports (--md3-build-mode: production) {
+  .md3-build-feature-detected {
+    --md3-build-features: supported;
+  }
+}
+
+@supports not (--md3-build-mode: production) {
+  .md3-build-feature-unsupported {
+    --md3-build-features: unsupported;
+  }
+}
+
+/* Build environment detection */
+.md3-build-environment {
+  --md3-env-production: false;
+  --md3-env-development: false;
+  --md3-env-testing: false;
+}
+
+[data-environment="production"] .md3-build-environment {
+  --md3-env-production: true;
+}
+
+[data-environment="development"] .md3-build-environment {
+  --md3-env-development: true;
+}
+
+[data-environment="testing"] .md3-build-environment {
+  --md3-env-testing: true;
+}
+
+/* Build tool detection */
+.md3-build-tools {
+  --md3-tool-webpack: false;
+  --md3-tool-vite: false;
+  --md3-tool-parcel: false;
+  --md3-tool-gulp: false;
+  --md3-tool-grunt: false;
+}
+
+[data-tool="webpack"] .md3-build-tools {
+  --md3-tool-webpack: true;
+}
+
+[data-tool="vite"] .md3-build-tools {
+  --md3-tool-vite: true;
+}
+
+[data-tool="parcel"] .md3-build-tools {
+  --md3-tool-parcel: true;
+}
+
+[data-tool="gulp"] .md3-build-tools {
+  --md3-tool-gulp: true;
+}
+
+[data-tool="grunt"] .md3-build-tools {
+  --md3-tool-grunt: true;
+}
+
+/* ================================================
+   BUILD ARTIFACT VALIDATION
+   ================================================ */
+
+/* Artifact validation */
+.md3-artifact-validation {
+  --md3-artifact-valid: true;
+  --md3-artifact-size: 0;
+  --md3-artifact-hash: "";
+  --md3-artifact-timestamp: 0;
+}
+
+.md3-artifact-validation[data-valid="false"] {
+  --md3-artifact-valid: false;
+  border: 2px solid #ff9800;
+}
+
+/* Build reporting */
+.md3-build-report {
+  --md3-report-format: json;
+  --md3-report-destination: reports;
+  --md3-report-compress: true;
+  --md3-report-include-assets: true;
+}
+
+.md3-build-report[data-format="xml"] {
+  --md3-report-format: xml;
+}
+
+.md3-build-report[data-format="html"] {
+  --md3-report-format: html;
+  --md3-report-compress: false;
+}
+
+/* Build completion status */
+.md3-build-complete {
+  --md3-build-success: true;
+  --md3-build-duration: 0;
+  --md3-build-size: 0;
+  --md3-build-optimized: 0;
+}
+
+.md3-build-complete[data-success="false"] {
+  --md3-build-success: false;
+}
+
+/* ================================================
+   PERFORMANCE BENCHMARKING
+   ================================================ */
+
+/* Benchmark tracking */
+.md3-benchmark-track {
+  --md3-benchmark-baseline: 0;
+  --md3-benchmark-current: 0;
+  --md3-benchmark-improvement: 0;
+  --md3-benchmark-regression: 0;
+}
+
+.md3-benchmark-track[data-type="css-size"] {
+  --md3-benchmark-metric: css-size;
+}
+
+.md3-benchmark-track[data-type="load-time"] {
+  --md3-benchmark-metric: load-time;
+}
+
+/* Performance thresholds */
+.md3-performance-thresholds {
+  --md3-threshold-lcp: 2500;
+  --md3-threshold-fid: 100;
+  --md3-threshold-cls: 0.1;
+  --md3-threshold-fcp: 1800;
+  --md3-threshold-ttfb: 800;
+}
+
+.md3-performance-thresholds[data-strict="true"] {
+  --md3-threshold-lcp: 1200;
+  --md3-threshold-fid: 50;
+  --md3-threshold-cls: 0.05;
+}
+
+/* ================================================
+   BUILD SYSTEM HOOKS
+   ================================================ */
+
+/* Pre-build hooks */
+.md3-pre-build-hook {
+  --md3-hook-type: pre-build;
+  --md3-hook-priority: 10;
+  --md3-hook-enabled: true;
+}
+
+.md3-pre-build-hook[data-priority="high"] {
+  --md3-hook-priority: 20;
+}
+
+.md3-pre-build-hook[data-priority="low"] {
+  --md3-hook-priority: 5;
+}
+
+/* Post-build hooks */
+.md3-post-build-hook {
+  --md3-hook-type: post-build;
+  --md3-hook-priority: 10;
+  --md3-hook-enabled: true;
+  --md3-hook-actions: "validate, optimize, report";
+}
+
+.md3-post-build-hook[data-actions="minimal"] {
+  --md3-hook-actions: "validate";
+}
+
+.md3-post-build-hook[data-actions="full"] {
+  --md3-hook-actions: "validate, optimize, report, test, deploy";
+}
+
+/* Build error handling */
+.md3-build-error-handler {
+  --md3-error-type: build;
+  --md3-error-severity: error;
+  --md3-error-recovery: auto;
+  --md3-error-reporting: enabled;
+}
+
+.md3-build-error-handler[data-recovery="manual"] {
+  --md3-error-recovery: manual;
+}
+
+/* ================================================
+   BUILD CACHE MANAGEMENT
+   ================================================ */
+
+/* Cache utilities */
+.md3-build-cache {
+  --md3-cache-enabled: true;
+  --md3-cache-location: .build/cache;
+  --md3-cache-max-size: 100;
+  --md3-cache-ttl: 3600000;
+  --md3-cache-compression: true;
+}
+
+.md3-build-cache[data-enabled="false"] {
+  --md3-cache-enabled: false;
+}
+
+.md3-build-cache[data-compression="false"] {
+  --md3-cache-compression: false;
+}
+
+/* Cache invalidation */
+.md3-cache-invalidation {
+  --md3-invalidation-strategy: timestamp;
+  --md3-invalidation-auto: true;
+  --md3-invalidation-batch-size: 10;
+}
+
+.md3-cache-invalidation[data-strategy="hash"] {
+  --md3-invalidation-strategy: hash;
+}
+
+.md3-cache-invalidation[data-auto="false"] {
+  --md3-invalidation-auto: false;
+}
+
+/* ================================================
+   END OF BUILD SYSTEM INTEGRATION
+   ================================================ */

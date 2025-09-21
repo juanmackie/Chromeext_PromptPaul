@@ -1,0 +1,483 @@
+/* ================================================
+   MD3 Browser Compatibility System
+   ================================================
+   Comprehensive cross-browser compatibility solution
+   Handles fallbacks, progressive enhancement, and feature detection
+   Follows single responsibility principle - only browser compatibility
+   ================================================ */
+
+/* ================================================
+   BROWSER-SPECIFIC FIXES
+   ================================================ */
+
+/* Chrome-specific fixes */
+.md3-browser-chrome {
+  /* Fix for Chrome's aggressive font rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Fix for Chrome's scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--md3-sys-color-outline) transparent;
+}
+
+/* Firefox-specific fixes */
+.md3-browser-firefox {
+  /* Fix for Firefox's different box-sizing behavior */
+  box-sizing: border-box;
+  /* Fix for Firefox's scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--md3-sys-color-outline) transparent;
+}
+
+/* Safari-specific fixes */
+.md3-browser-safari {
+  /* Fix for Safari's different flexbox behavior */
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  /* Fix for Safari's backdrop-filter support */
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  /* Fix for Safari's different transform origin */
+  -webkit-transform-origin: center;
+  transform-origin: center;
+}
+
+/* Edge-specific fixes */
+.md3-browser-edge {
+  /* Fix for Edge's different font rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Fix for Edge's scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--md3-sys-color-outline) transparent;
+}
+
+/* ================================================
+   FEATURE DETECTION UTILITIES
+   ================================================ */
+
+/* Modern CSS Feature Detection */
+.md3-supports-grid {
+  display: grid;
+}
+
+.md3-supports-flexbox {
+  display: flex;
+}
+
+.md3-supports-container-queries {
+  container-type: inline-size;
+}
+
+.md3-supports-subgrid {
+  grid-template-rows: subgrid;
+}
+
+.md3-supports-logical-properties {
+  margin-inline: auto;
+  padding-block: 1rem;
+}
+
+.md3-supports-color-mix {
+  background-color: color-mix(in srgb, var(--md3-sys-color-primary) 50%, transparent);
+}
+
+/* ================================================
+   FALLBACKS FOR UNSUPPORTED FEATURES
+   ================================================ */
+
+/* CSS Grid Fallbacks */
+.md3-fallback-grid {
+  /* Fallback to flexbox for older browsers */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+/* Container Queries Fallbacks */
+.md3-fallback-container-queries {
+  /* Fallback to media queries */
+  width: 100%;
+}
+
+/* Subgrid Fallbacks */
+.md3-fallback-subgrid {
+  /* Fallback to regular grid */
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+/* Logical Properties Fallbacks */
+.md3-fallback-logical-properties {
+  /* Fallback to physical properties */
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+/* Color-mix Fallbacks */
+.md3-fallback-color-mix {
+  /* Fallback to solid colors */
+  background-color: var(--md3-sys-color-primary);
+}
+
+/* ================================================
+   PROGRESSIVE ENHANCEMENT
+   ================================================ */
+
+/* Progressive enhancement containers */
+.md3-progressive-base {
+  /* Base styles for all browsers */
+  display: block;
+  width: 100%;
+}
+
+.md3-progressive-enhanced {
+  /* Enhanced styles for modern browsers */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* Feature-specific progressive enhancement */
+.md3-enhance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.md3-enhance-flexbox {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.md3-enhance-container-queries {
+  container-type: inline-size;
+  container-name: card-container;
+}
+
+/* ================================================
+   BROWSER COMPATIBILITY MATRIX
+   ================================================ */
+
+/* Browser capability testing utilities */
+.md3-browser-support-grid {
+  /* CSS Grid support indicator */
+  display: grid;
+}
+
+.md3-browser-support-flexbox {
+  /* Flexbox support indicator */
+  display: flex;
+}
+
+.md3-browser-support-container-queries {
+  /* Container Queries support indicator */
+  container-type: inline-size;
+}
+
+.md3-browser-support-custom-properties {
+  /* CSS Custom Properties support indicator */
+  --test-property: #000;
+  color: var(--test-property);
+}
+
+/* ================================================
+   POLYFILL UTILITIES
+   ================================================ */
+
+/* Polyfill for older browser support */
+.md3-polyfill-display-grid {
+  display: -ms-grid;
+  display: grid;
+}
+
+.md3-polyfill-display-flex {
+  display: -webkit-flex;
+  display: -ms-flexbox;
+  display: flex;
+}
+
+.md3-polyfill-backdrop-filter {
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* ================================================
+   BROWSER-SPECIFIC CSS CUSTOM PROPERTIES
+   ================================================ */
+
+/* Chrome-specific custom properties */
+@supports (-webkit-appearance: none) {
+  .md3-browser-chrome {
+    --md3-chrome-specific-padding: 0.5rem;
+    --md3-chrome-specific-border-radius: 0.375rem;
+  }
+}
+
+/* Firefox-specific custom properties */
+@-moz-document url-prefix() {
+  .md3-browser-firefox {
+    --md3-firefox-specific-font-smoothing: antialiased;
+    --md3-firefox-specific-scrollbar-width: thin;
+  }
+}
+
+/* Safari-specific custom properties */
+@supports (-webkit-hyphens: none) {
+  .md3-browser-safari {
+    --md3-safari-specific-flexbox-fix: -webkit-box;
+    --md3-safari-specific-backdrop-filter: blur(8px);
+  }
+}
+
+/* ================================================
+   FEATURE DETECTION WITH @SUPPORTS
+   ================================================ */
+
+/* Grid support detection */
+@supports (display: grid) {
+  .md3-feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+@supports not (display: grid) {
+  .md3-feature-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+}
+
+/* Container Queries support detection */
+@supports (container-type: inline-size) {
+  .md3-feature-container-queries {
+    container-type: inline-size;
+    container-name: feature-container;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  .md3-feature-container-queries {
+    width: 100%;
+  }
+}
+
+/* Subgrid support detection */
+@supports (grid-template-rows: subgrid) {
+  .md3-feature-subgrid {
+    grid-template-rows: subgrid;
+  }
+}
+
+@supports not (grid-template-rows: subgrid) {
+  .md3-feature-subgrid {
+    grid-template-rows: 1fr;
+  }
+}
+
+/* Logical Properties support detection */
+@supports (margin-inline: auto) {
+  .md3-feature-logical-properties {
+    margin-inline: auto;
+    padding-block: 1rem;
+  }
+}
+
+@supports not (margin-inline: auto) {
+  .md3-feature-logical-properties {
+    margin-left: auto;
+    margin-right: auto;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+}
+
+/* Color-mix support detection */
+@supports (color: color-mix(in srgb, red 50%, blue 50%)) {
+  .md3-feature-color-mix {
+    background-color: color-mix(in srgb, var(--md3-sys-color-primary) 50%, transparent);
+  }
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue 50%)) {
+  .md3-feature-color-mix {
+    background-color: var(--md3-sys-color-primary);
+    opacity: 0.5;
+  }
+}
+
+/* ================================================
+   PERFORMANCE-OPTIMIZED COMPATIBILITY
+   ================================================ */
+
+/* Optimized compatibility for older browsers */
+.md3-compat-legacy {
+  /* Simplified styles for older browsers */
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Modern browser optimizations */
+.md3-compat-modern {
+  /* Advanced features for modern browsers */
+  display: grid;
+  container-type: inline-size;
+  contain: layout style paint;
+}
+
+/* ================================================
+   BROWSER COMPATIBILITY DOCUMENTATION
+   ================================================
+
+   BROWSER SUPPORT MATRIX:
+   - Chrome 88+     : Full support for all features
+   - Firefox 85+    : Full support for all features
+   - Safari 14+     : Full support for all features
+   - Edge 88+       : Full support for all features
+   - IE 11          : Basic support with fallbacks
+   - Older browsers : Progressive enhancement only
+
+   FEATURE SUPPORT:
+   - CSS Grid           : Chrome 57+, Firefox 52+, Safari 10.1+, Edge 16+
+   - Container Queries  : Chrome 105+, Firefox 110+, Safari 16+, Edge 105+
+   - Subgrid            : Chrome 117+, Firefox 129+, Safari 18+, Edge 117+
+   - Logical Properties : Chrome 88+, Firefox 85+, Safari 15+, Edge 88+
+   - Color-mix          : Chrome 111+, Firefox 113+, Safari 16.4+, Edge 111+
+
+   USAGE:
+   1. Apply browser-specific classes: .md3-browser-chrome, .md3-browser-firefox, etc.
+   2. Use feature detection classes: .md3-supports-grid, .md3-supports-container-queries
+   3. Apply fallbacks: .md3-fallback-grid, .md3-fallback-container-queries
+   4. Enable progressive enhancement: .md3-progressive-enhanced, .md3-enhance-grid
+   5. Use polyfills: .md3-polyfill-display-grid, .md3-polyfill-backdrop-filter
+
+   ================================================ */
+
+/* ================================================
+   CROSS-BROWSER RESET NORMALIZATION
+   ================================================ */
+
+/* Ensure consistent behavior across browsers */
+.md3-browser-reset {
+  /* Reset margins and padding */
+  margin: 0;
+  padding: 0;
+  /* Consistent box-sizing */
+  box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  -moz-box-sizing: border-box;
+  /* Consistent font rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Consistent line-height */
+  line-height: 1.5;
+}
+
+/* Focus management across browsers */
+.md3-browser-reset *:focus {
+  outline: 2px solid var(--md3-sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* Button reset across browsers */
+.md3-browser-reset button {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* Form element reset across browsers */
+.md3-browser-reset input,
+.md3-browser-reset textarea,
+.md3-browser-reset select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  border: 1px solid var(--md3-sys-color-outline);
+  border-radius: var(--md3-sys-shape-corner-small);
+}
+
+/* ================================================
+   ADVANCED BROWSER CAPABILITY TESTING
+   ================================================ */
+
+/* Browser capability indicators */
+.md3-capability-grid::before {
+  content: "CSS Grid: Supported";
+  display: none;
+}
+
+@supports (display: grid) {
+  .md3-capability-grid::before {
+    content: "CSS Grid: Supported";
+    display: block;
+  }
+}
+
+.md3-capability-container-queries::before {
+  content: "Container Queries: Not Supported";
+  display: none;
+}
+
+@supports (container-type: inline-size) {
+  .md3-capability-container-queries::before {
+    content: "Container Queries: Supported";
+    display: block;
+  }
+}
+
+.md3-capability-subgrid::before {
+  content: "Subgrid: Not Supported";
+  display: none;
+}
+
+@supports (grid-template-rows: subgrid) {
+  .md3-capability-subgrid::before {
+    content: "Subgrid: Supported";
+    display: block;
+  }
+}
+
+/* Modern feature support indicators */
+.md3-support-indicator {
+  position: relative;
+}
+
+.md3-support-indicator::after {
+  content: "❌";
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 12px;
+}
+
+@supports (display: grid) {
+  .md3-support-indicator.md3-grid-supported::after {
+    content: "✅";
+  }
+}
+
+@supports (container-type: inline-size) {
+  .md3-support-indicator.md3-container-queries-supported::after {
+    content: "✅";
+  }
+}
+
+@supports (grid-template-rows: subgrid) {
+  .md3-support-indicator.md3-subgrid-supported::after {
+    content: "✅";
+  }
+}
+
+/* ================================================
+   END OF BROWSER COMPATIBILITY SYSTEM
+   ================================================ */

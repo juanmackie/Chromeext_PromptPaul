@@ -26,21 +26,10 @@
     }
   </style>
 </head>
-<body>
+<body class="md3-expressive">
   <h1>Error</h1>
   <pre id="error-message"></pre>
 
-  <script>
-    // Get error message from URL parameters and display it
-    const urlParams = new URLSearchParams(window.location.search);
-    const errorMessage = urlParams.get('message');
-    if (errorMessage) {
-      // Decode the error message and display it
-      const decodedErrorMessage = decodeURIComponent(errorMessage);
-      document.getElementById('error-message').textContent = decodedErrorMessage;
-    } else {
-      document.getElementById('error-message').textContent = 'No error message available.';
-    }
-  </script>
+  <script src="error.js"></script>
 </body>
 </html>

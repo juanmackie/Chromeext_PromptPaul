@@ -1,0 +1,576 @@
+/**
+ * MD3 Motion System - Material Design 3 Motion Tokens and Utilities
+ *
+ * This file implements the complete MD3 motion system following Material Design 3
+ * specifications for consistent, accessible animations throughout the application.
+ *
+ * Motion Principles:
+ * - Emphasized: More pronounced motion for important interactions (primary actions)
+ * - Standard: Subtle motion for everyday interactions (secondary actions)
+ * - Comprehensive duration scale for different animation speeds
+ * - Performance-optimized animations using transform and opacity
+ * - Accessibility-aware with reduced motion support
+ *
+ * @section Motion Tokens
+ * @section Duration Scale
+ * @section Easing Curves
+ * @section Utility Classes
+ * @section Performance Optimizations
+ * @section Accessibility Support
+ */
+
+/* =================================================================
+   MD3 Motion Tokens - CSS Custom Properties
+   ================================================================= */
+:root {
+  /* Duration Scale - MD3 Specification */
+  --md3-motion-duration-extra-short: 50ms;
+  --md3-motion-duration-short: 100ms;
+  --md3-motion-duration-short2: 150ms;
+  --md3-motion-duration-short3: 200ms;
+  --md3-motion-duration-short4: 250ms;
+  --md3-motion-duration-medium: 300ms;
+  --md3-motion-duration-medium1: 350ms;
+  --md3-motion-duration-medium2: 400ms;
+  --md3-motion-duration-long: 500ms;
+  --md3-motion-duration-extra-long: 700ms;
+
+  /* Easing Curves - MD3 Specification */
+  --md3-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md3-motion-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --md3-motion-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  --md3-motion-easing-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md3-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md3-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md3-motion-easing-legacy: cubic-bezier(0.4, 0, 0.2, 1);
+  --md3-motion-easing-legacy-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --md3-motion-easing-legacy-decelerate: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Motion Types */
+  --md3-motion-duration-emphasized: var(--md3-motion-duration-medium2);
+  --md3-motion-duration-standard: var(--md3-motion-duration-medium);
+  --md3-motion-easing-emphasized: var(--md3-motion-easing-emphasized);
+  --md3-motion-easing-standard: var(--md3-motion-easing-standard);
+
+  /* Stagger Animation Settings */
+  --md3-motion-stagger-initial: 0ms;
+  --md3-motion-stagger-increment: 50ms;
+  --md3-motion-stagger-max: 300ms;
+}
+
+/* =================================================================
+   MD3 Motion Utility Classes
+   ================================================================= */
+
+/* Motion Types - Apply to elements for consistent motion behavior */
+.md3-motion-emphasized {
+  --md3-current-duration: var(--md3-motion-duration-emphasized);
+  --md3-current-easing: var(--md3-motion-easing-emphasized);
+}
+
+.md3-motion-standard {
+  --md3-current-duration: var(--md3-motion-duration-standard);
+  --md3-current-easing: var(--md3-motion-easing-standard);
+}
+
+/* Duration Scale Classes */
+.md3-duration-extra-short {
+  --md3-current-duration: var(--md3-motion-duration-extra-short);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-short {
+  --md3-current-duration: var(--md3-motion-duration-short);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-short2 {
+  --md3-current-duration: var(--md3-motion-duration-short2);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-short3 {
+  --md3-current-duration: var(--md3-motion-duration-short3);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-short4 {
+  --md3-current-duration: var(--md3-motion-duration-short4);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-medium {
+  --md3-current-duration: var(--md3-motion-duration-medium);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-medium1 {
+  --md3-current-duration: var(--md3-motion-duration-medium1);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-medium2 {
+  --md3-current-duration: var(--md3-motion-duration-medium2);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-long {
+  --md3-current-duration: var(--md3-motion-duration-long);
+  transition-duration: var(--md3-current-duration);
+}
+
+.md3-duration-extra-long {
+  --md3-current-duration: var(--md3-motion-duration-extra-long);
+  transition-duration: var(--md3-current-duration);
+}
+
+/* Easing Curve Classes */
+.md3-easing-standard {
+  transition-timing-function: var(--md3-motion-easing-standard);
+}
+
+.md3-easing-standard-accelerate {
+  transition-timing-function: var(--md3-motion-easing-standard-accelerate);
+}
+
+.md3-easing-standard-decelerate {
+  transition-timing-function: var(--md3-motion-easing-standard-decelerate);
+}
+
+.md3-easing-emphasized {
+  transition-timing-function: var(--md3-motion-easing-emphasized);
+}
+
+.md3-easing-emphasized-accelerate {
+  transition-timing-function: var(--md3-motion-easing-emphasized-accelerate);
+}
+
+.md3-easing-emphasized-decelerate {
+  transition-timing-function: var(--md3-motion-easing-emphasized-decelerate);
+}
+
+.md3-easing-legacy {
+  transition-timing-function: var(--md3-motion-easing-legacy);
+}
+
+.md3-easing-legacy-accelerate {
+  transition-timing-function: var(--md3-motion-easing-legacy-accelerate);
+}
+
+.md3-easing-legacy-decelerate {
+  transition-timing-function: var(--md3-motion-easing-legacy-decelerate);
+}
+
+/* =================================================================
+   MD3 Transition Utility Classes
+   ================================================================= */
+
+/* Common Transition Patterns */
+.md3-transition-opacity {
+  transition: opacity var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-transform {
+  transition: transform var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-color {
+  transition: color var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+              background-color var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+              border-color var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-shadow {
+  transition: box-shadow var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-size {
+  transition: width var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+              height var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+              font-size var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-all {
+  transition: all var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-none {
+  transition: none;
+}
+
+/* Interactive Element Transitions */
+.md3-transition-interactive {
+  transition:
+    transform var(--md3-current-duration, var(--md3-motion-duration-short2)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+    box-shadow var(--md3-current-duration, var(--md3-motion-duration-short2)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+    background-color var(--md3-current-duration, var(--md3-motion-duration-short)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+.md3-transition-interactive:hover {
+  transform: translateY(-1px);
+}
+
+.md3-transition-interactive:active {
+  transform: translateY(0);
+}
+
+/* =================================================================
+   MD3 Animation Keyframes
+   ================================================================= */
+
+/* Fade Animations */
+@keyframes md3-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes md3-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes md3-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes md3-fade-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes md3-fade-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes md3-fade-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Scale Animations */
+@keyframes md3-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes md3-scale-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes md3-scale-bounce-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Slide Animations */
+@keyframes md3-slide-in-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes md3-slide-in-down {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes md3-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes md3-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* =================================================================
+   MD3 Animation Utility Classes
+   ================================================================= */
+
+/* Fade Animation Classes */
+.md3-animate-fade-in {
+  animation: md3-fade-in var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)) both;
+}
+
+.md3-animate-fade-out {
+  animation: md3-fade-out var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)) both;
+}
+
+.md3-animate-fade-in-up {
+  animation: md3-fade-in-up var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+.md3-animate-fade-in-down {
+  animation: md3-fade-in-down var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+.md3-animate-fade-in-left {
+  animation: md3-fade-in-left var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+.md3-animate-fade-in-right {
+  animation: md3-fade-in-right var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+/* Scale Animation Classes */
+.md3-animate-scale-in {
+  animation: md3-scale-in var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)) both;
+}
+
+.md3-animate-scale-out {
+  animation: md3-scale-out var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)) both;
+}
+
+.md3-animate-scale-bounce-in {
+  animation: md3-scale-bounce-in var(--md3-current-duration, var(--md3-motion-duration-medium2)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+/* Slide Animation Classes */
+.md3-animate-slide-in-up {
+  animation: md3-slide-in-up var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+.md3-animate-slide-in-down {
+  animation: md3-slide-in-down var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+.md3-animate-slide-in-left {
+  animation: md3-slide-in-left var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+.md3-animate-slide-in-right {
+  animation: md3-slide-in-right var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-emphasized)) both;
+}
+
+/* =================================================================
+   MD3 Motion Choreography - Stagger Animations
+   ================================================================= */
+
+/* Stagger Container Classes */
+.md3-stagger-container > * {
+  opacity: 0;
+  animation-fill-mode: both;
+}
+
+.md3-stagger-fade-in-up > * {
+  animation-name: md3-fade-in-up;
+  animation-duration: var(--md3-current-duration, var(--md3-motion-duration-medium));
+  animation-timing-function: var(--md3-current-easing, var(--md3-motion-easing-emphasized));
+}
+
+/* Automatic stagger delays */
+.md3-stagger-fade-in-up > *:nth-child(1) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 0); }
+.md3-stagger-fade-in-up > *:nth-child(2) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 1); }
+.md3-stagger-fade-in-up > *:nth-child(3) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 2); }
+.md3-stagger-fade-in-up > *:nth-child(4) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 3); }
+.md3-stagger-fade-in-up > *:nth-child(5) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 4); }
+.md3-stagger-fade-in-up > *:nth-child(6) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 5); }
+.md3-stagger-fade-in-up > *:nth-child(7) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 6); }
+.md3-stagger-fade-in-up > *:nth-child(8) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 7); }
+.md3-stagger-fade-in-up > *:nth-child(9) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 8); }
+.md3-stagger-fade-in-up > *:nth-child(10) { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 9); }
+
+/* Manual stagger control with data attributes */
+.md3-stagger-fade-in-up [data-md3-stagger] {
+  animation-delay: var(--md3-motion-stagger-initial);
+}
+
+.md3-stagger-fade-in-up [data-md3-stagger="1"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 1); }
+.md3-stagger-fade-in-up [data-md3-stagger="2"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 2); }
+.md3-stagger-fade-in-up [data-md3-stagger="3"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 3); }
+.md3-stagger-fade-in-up [data-md3-stagger="4"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 4); }
+.md3-stagger-fade-in-up [data-md3-stagger="5"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 5); }
+.md3-stagger-fade-in-up [data-md3-stagger="6"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 6); }
+.md3-stagger-fade-in-up [data-md3-stagger="7"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 7); }
+.md3-stagger-fade-in-up [data-md3-stagger="8"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 8); }
+.md3-stagger-fade-in-up [data-md3-stagger="9"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 9); }
+.md3-stagger-fade-in-up [data-md3-stagger="10"] { animation-delay: calc(var(--md3-motion-stagger-initial) + var(--md3-motion-stagger-increment) * 10); }
+
+/* =================================================================
+   Performance Optimizations
+   ================================================================= */
+
+/* Hardware Acceleration Classes */
+.md3-hardware-accelerated {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+.md3-will-change-transform {
+  will-change: transform;
+}
+
+.md3-will-change-opacity {
+  will-change: opacity;
+}
+
+.md3-will-change-auto {
+  will-change: auto;
+}
+
+/* Performance-optimized transition base class */
+.md3-performance-optimized {
+  /* Use transform and opacity for better performance */
+  transition: transform var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard)),
+              opacity var(--md3-current-duration, var(--md3-motion-duration-medium)) var(--md3-current-easing, var(--md3-motion-easing-standard));
+}
+
+/* =================================================================
+   Accessibility Support - Reduced Motion
+   ================================================================= */
+
+/* Respect user's reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --md3-motion-duration-extra-short: 0ms;
+    --md3-motion-duration-short: 0ms;
+    --md3-motion-duration-short2: 0ms;
+    --md3-motion-duration-short3: 0ms;
+    --md3-motion-duration-short4: 0ms;
+    --md3-motion-duration-medium: 0ms;
+    --md3-motion-duration-medium1: 0ms;
+    --md3-motion-duration-medium2: 0ms;
+    --md3-motion-duration-long: 0ms;
+    --md3-motion-duration-extra-long: 0ms;
+    --md3-motion-stagger-increment: 0ms;
+  }
+
+  /* Disable animations for reduced motion users */
+  .md3-animate-fade-in,
+  .md3-animate-fade-out,
+  .md3-animate-fade-in-up,
+  .md3-animate-fade-in-down,
+  .md3-animate-fade-in-left,
+  .md3-animate-fade-in-right,
+  .md3-animate-scale-in,
+  .md3-animate-scale-out,
+  .md3-animate-scale-bounce-in,
+  .md3-animate-slide-in-up,
+  .md3-animate-slide-in-down,
+  .md3-animate-slide-in-left,
+  .md3-animate-slide-in-right {
+    animation: none;
+  }
+
+  /* Provide instant transitions for reduced motion */
+  .md3-transition-all,
+  .md3-transition-opacity,
+  .md3-transition-transform,
+  .md3-transition-color,
+  .md3-transition-shadow,
+  .md3-transition-size,
+  .md3-transition-interactive {
+    transition-duration: 0ms;
+  }
+
+  /* Disable stagger animations */
+  .md3-stagger-container > * {
+    animation-delay: 0ms;
+  }
+}
+
+/* =================================================================
+   Motion System Reset and Utilities
+   ================================================================= */
+
+/* Motion reset for specific elements */
+.md3-motion-reset {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+
+/* Force enable motion (use sparingly, accessibility concern) */
+.md3-motion-force-enabled {
+  animation-duration: var(--md3-motion-duration-medium) !important;
+  animation-timing-function: var(--md3-motion-easing-standard) !important;
+  transition-duration: var(--md3-motion-duration-medium) !important;
+  transition-timing-function: var(--md3-motion-easing-standard) !important;
+}
+
+/* Debug mode - visualize motion system */
+.md3-debug-motion * {
+  outline: 1px solid red;
+  outline-offset: 1px;
+}
+
+.md3-debug-motion .md3-motion-emphasized {
+  outline-color: blue;
+}
+
+.md3-debug-motion .md3-motion-standard {
+  outline-color: green;
+}

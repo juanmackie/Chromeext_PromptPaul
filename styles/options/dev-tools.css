@@ -1,0 +1,929 @@
+/* ==========================================================================
+   MD3 Development Tools - Design System Development Utilities
+   ==========================================================================
+
+   This file provides comprehensive development tools for the MD3 design system:
+   1. Design token documentation with visual displays
+   2. Token validation system for consistency checking
+   3. CSS custom property debugging tools
+   4. Component showcase utilities for design system preview
+   5. Theme customization interface for real-time editing
+
+   Usage:
+   - Add class 'md3-dev-mode' to body for development tools activation
+   - Use utility classes for token inspection and debugging
+   - Enable component showcase with 'md3-showcase-mode'
+   - Use theme customizer with 'md3-theme-customizer'
+
+   Note: This file ONLY handles development tools - no production impact
+*/
+
+/* ==========================================================================
+   DEVELOPMENT MODE ACTIVATION
+   ========================================================================== */
+
+/* Enable development mode - activates all development tools */
+.md3-dev-mode {
+  --md3-dev-mode: 1;
+  position: relative;
+}
+
+.md3-dev-mode::before {
+  content: "🔧 DEV MODE";
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  background: var(--md3-error);
+  color: var(--md3-on-error);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   DESIGN TOKEN DOCUMENTATION & VISUAL DISPLAY
+   ========================================================================== */
+
+/* Token palette container */
+.md3-token-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-4);
+  background: var(--md3-surface);
+  border-radius: var(--md3-shape-md);
+  border: 1px solid var(--md3-outline-variant);
+}
+
+/* Individual token display */
+.md3-token-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--md3-space-1);
+  padding: var(--md3-space-3);
+  background: var(--md3-surface-container);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline-variant);
+  position: relative;
+}
+
+.md3-token-display::before {
+  content: attr(data-token-name);
+  font-size: var(--md3-label-small);
+  color: var(--md3-on-surface-variant);
+  font-family: monospace;
+  font-weight: 500;
+}
+
+.md3-token-display::after {
+  content: attr(data-token-value);
+  font-size: var(--md3-label-small);
+  color: var(--md3-on-surface);
+  font-family: monospace;
+  margin-top: auto;
+}
+
+/* Color token swatch */
+.md3-token-color {
+  width: 100%;
+  height: 60px;
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform var(--md3-duration-short2) var(--md3-easing-standard);
+}
+
+.md3-token-color:hover {
+  transform: scale(1.05);
+}
+
+.md3-token-color::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: calc(var(--md3-shape-sm) - 4px);
+  border: 2px solid var(--md3-on-primary);
+  opacity: 0;
+  transition: opacity var(--md3-duration-short2) var(--md3-easing-standard);
+}
+
+.md3-token-color:hover::after {
+  opacity: 1;
+}
+
+/* Typography token display */
+.md3-token-typography {
+  background: var(--md3-surface-container);
+  padding: var(--md3-space-3);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline-variant);
+}
+
+.md3-token-typography .md3-token-name {
+  font-size: var(--md3-label-small);
+  color: var(--md3-on-surface-variant);
+  font-family: monospace;
+  margin-bottom: var(--md3-space-1);
+}
+
+.md3-token-typography .md3-token-value {
+  font-size: var(--md3-label-small);
+  color: var(--md3-on-surface);
+  font-family: monospace;
+}
+
+/* Shape token display */
+.md3-token-shape {
+  display: flex;
+  align-items: center;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-2);
+  background: var(--md3-surface-container);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline-variant);
+}
+
+.md3-token-shape::before {
+  content: "";
+  width: 40px;
+  height: 40px;
+  border-radius: var(--md3-shape-none);
+  background: var(--md3-primary);
+  border: 1px solid var(--md3-outline);
+}
+
+/* Spacing token display */
+.md3-token-spacing {
+  display: flex;
+  align-items: center;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-2);
+  background: var(--md3-surface-container);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline-variant);
+}
+
+.md3-token-spacing::before {
+  content: "";
+  width: var(--md3-space-4);
+  height: 16px;
+  background: var(--md3-primary);
+  border-radius: var(--md3-shape-xs);
+  border: 1px solid var(--md3-outline);
+}
+
+/* Elevation token display */
+.md3-token-elevation {
+  padding: var(--md3-space-3);
+  background: var(--md3-surface-container);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline-variant);
+  position: relative;
+}
+
+.md3-token-elevation::before {
+  content: "";
+  position: absolute;
+  top: var(--md3-space-2);
+  left: var(--md3-space-2);
+  right: var(--md3-space-2);
+  height: 40px;
+  background: var(--md3-primary);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline);
+}
+
+/* ==========================================================================
+   TOKEN VALIDATION SYSTEM
+   ========================================================================== */
+
+/* Token validation container */
+.md3-token-validator {
+  position: fixed;
+  top: 50px;
+  right: 8px;
+  width: 300px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--md3-surface);
+  border: 1px solid var(--md3-outline);
+  border-radius: var(--md3-shape-md);
+  box-shadow: var(--md3-elevation-3);
+  z-index: 9999;
+  font-size: var(--md3-label-small);
+}
+
+.md3-token-validator-header {
+  padding: var(--md3-space-3);
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+  border-radius: var(--md3-shape-md) var(--md3-shape-md) 0 0;
+  font-weight: 500;
+}
+
+.md3-token-validator-item {
+  padding: var(--md3-space-2) var(--md3-space-3);
+  border-bottom: 1px solid var(--md3-outline-variant);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.md3-token-validator-item:last-child {
+  border-bottom: none;
+}
+
+.md3-token-validator-item.error {
+  background: var(--md3-error-container);
+  color: var(--md3-on-error-container);
+}
+
+.md3-token-validator-item.warning {
+  background: var(--md3-tertiary-container);
+  color: var(--md3-on-tertiary-container);
+}
+
+.md3-token-validator-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--md3-on-primary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+}
+
+/* Token inspection overlay */
+.md3-token-inspect {
+  position: relative;
+  cursor: help;
+}
+
+.md3-token-inspect:hover::after {
+  content: attr(data-token-info);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--md3-surface);
+  color: var(--md3-on-surface);
+  padding: var(--md3-space-2);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline);
+  box-shadow: var(--md3-elevation-2);
+  font-size: var(--md3-label-small);
+  white-space: nowrap;
+  z-index: 1000;
+  margin-bottom: var(--md3-space-1);
+}
+
+/* ==========================================================================
+   CSS CUSTOM PROPERTY DEBUGGING TOOLS
+   ========================================================================== */
+
+/* CSS property debugger panel */
+.md3-debug-properties {
+  position: fixed;
+  bottom: 8px;
+  left: 8px;
+  width: 350px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--md3-surface);
+  border: 1px solid var(--md3-outline);
+  border-radius: var(--md3-shape-md);
+  box-shadow: var(--md3-elevation-3);
+  z-index: 9999;
+  font-size: var(--md3-label-small);
+  font-family: monospace;
+}
+
+.md3-debug-properties-header {
+  padding: var(--md3-space-3);
+  background: var(--md3-secondary);
+  color: var(--md3-on-secondary);
+  border-radius: var(--md3-shape-md) var(--md3-shape-md) 0 0;
+  font-weight: 500;
+}
+
+.md3-debug-property {
+  padding: var(--md3-space-1) var(--md3-space-3);
+  border-bottom: 1px solid var(--md3-outline-variant);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.md3-debug-property:last-child {
+  border-bottom: none;
+}
+
+.md3-debug-property-name {
+  color: var(--md3-on-surface-variant);
+  font-weight: 500;
+}
+
+.md3-debug-property-value {
+  color: var(--md3-on-surface);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md3-debug-values {
+  position: relative;
+}
+
+.md3-debug-values::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 8px,
+    rgba(255, 193, 7, 0.1) 8px,
+    rgba(255, 193, 7, 0.1) 16px
+  );
+  pointer-events: none;
+  border-radius: var(--md3-shape-sm);
+  border: 2px dashed var(--md3-tertiary);
+}
+
+/* ==========================================================================
+   COMPONENT SHOWCASE SYSTEM
+   ========================================================================== */
+
+/* Showcase container */
+.md3-showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--md3-space-4);
+  padding: var(--md3-space-4);
+  background: var(--md3-surface);
+  border: 2px solid var(--md3-primary);
+  border-radius: var(--md3-shape-lg);
+  position: relative;
+}
+
+.md3-showcase-grid::before {
+  content: "🎨 COMPONENT SHOWCASE";
+  position: absolute;
+  top: -12px;
+  left: var(--md3-space-4);
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+  padding: 4px 12px;
+  border-radius: var(--md3-shape-full);
+  font-size: var(--md3-label-small);
+  font-weight: 600;
+}
+
+/* Component showcase card */
+.md3-showcase-component {
+  background: var(--md3-surface-container);
+  border: 1px solid var(--md3-outline-variant);
+  border-radius: var(--md3-shape-md);
+  padding: var(--md3-space-3);
+  position: relative;
+  transition: all var(--md3-duration-short2) var(--md3-easing-standard);
+}
+
+.md3-showcase-component:hover {
+  border-color: var(--md3-primary);
+  box-shadow: var(--md3-elevation-2);
+  transform: translateY(-2px);
+}
+
+.md3-showcase-component::before {
+  content: attr(data-component-name);
+  position: absolute;
+  top: -8px;
+  left: var(--md3-space-2);
+  background: var(--md3-surface);
+  color: var(--md3-on-surface);
+  padding: 2px 8px;
+  border-radius: var(--md3-shape-full);
+  font-size: var(--md3-label-small);
+  font-weight: 500;
+  border: 1px solid var(--md3-outline);
+}
+
+/* Component variant showcase */
+.md3-showcase-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--md3-space-2);
+  margin-top: var(--md3-space-2);
+}
+
+.md3-showcase-variant {
+  padding: var(--md3-space-1) var(--md3-space-2);
+  background: var(--md3-surface-container-low);
+  border: 1px solid var(--md3-outline-variant);
+  border-radius: var(--md3-shape-sm);
+  font-size: var(--md3-label-small);
+  position: relative;
+}
+
+/* Interactive showcase controls */
+.md3-showcase-controls {
+  display: flex;
+  gap: var(--md3-space-2);
+  margin-top: var(--md3-space-3);
+  padding-top: var(--md3-space-2);
+  border-top: 1px solid var(--md3-outline-variant);
+}
+
+.md3-showcase-control {
+  padding: var(--md3-space-1) var(--md3-space-2);
+  background: var(--md3-primary-container);
+  color: var(--md3-on-primary-container);
+  border: none;
+  border-radius: var(--md3-shape-sm);
+  font-size: var(--md3-label-small);
+  cursor: pointer;
+  transition: all var(--md3-duration-short1) var(--md3-easing-standard);
+}
+
+.md3-showcase-control:hover {
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+}
+
+/* ==========================================================================
+   THEME CUSTOMIZATION INTERFACE
+   ========================================================================== */
+
+/* Theme customizer panel */
+.md3-theme-customizer {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  max-height: 500px;
+  background: var(--md3-surface);
+  border: 2px solid var(--md3-primary);
+  border-radius: var(--md3-shape-lg);
+  box-shadow: var(--md3-elevation-5);
+  z-index: 10000;
+  overflow: hidden;
+}
+
+.md3-theme-customizer-header {
+  padding: var(--md3-space-4);
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+  text-align: center;
+  font-weight: 600;
+}
+
+.md3-theme-customizer-content {
+  padding: var(--md3-space-4);
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.md3-theme-customizer-section {
+  margin-bottom: var(--md3-space-4);
+}
+
+.md3-theme-customizer-section:last-child {
+  margin-bottom: 0;
+}
+
+.md3-theme-customizer-section h4 {
+  margin: 0 0 var(--md3-space-2) 0;
+  color: var(--md3-on-surface);
+  font-size: var(--md3-title-small);
+}
+
+.md3-theme-customizer-input {
+  width: 100%;
+  padding: var(--md3-space-2);
+  border: 1px solid var(--md3-outline);
+  border-radius: var(--md3-shape-sm);
+  background: var(--md3-surface-container);
+  color: var(--md3-on-surface);
+  font-size: var(--md3-label-medium);
+  margin-bottom: var(--md3-space-2);
+}
+
+.md3-theme-customizer-input:focus {
+  outline: 2px solid var(--md3-primary);
+  border-color: var(--md3-primary);
+}
+
+.md3-theme-customizer-buttons {
+  display: flex;
+  gap: var(--md3-space-2);
+  justify-content: flex-end;
+  padding: var(--md3-space-3);
+  background: var(--md3-surface-container-low);
+  border-top: 1px solid var(--md3-outline-variant);
+}
+
+.md3-theme-customizer-btn {
+  padding: var(--md3-space-2) var(--md3-space-3);
+  border: 1px solid var(--md3-outline);
+  border-radius: var(--md3-shape-sm);
+  background: var(--md3-surface-container);
+  color: var(--md3-on-surface);
+  cursor: pointer;
+  font-size: var(--md3-label-medium);
+  transition: all var(--md3-duration-short1) var(--md3-easing-standard);
+}
+
+.md3-theme-customizer-btn:hover {
+  background: var(--md3-primary-container);
+  border-color: var(--md3-primary);
+}
+
+.md3-theme-customizer-btn.primary {
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+  border-color: var(--md3-primary);
+}
+
+/* Theme preview */
+.md3-theme-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--md3-space-2);
+  padding: var(--md3-space-3);
+  background: var(--md3-surface-container);
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline-variant);
+  margin-top: var(--md3-space-2);
+}
+
+.md3-theme-preview-item {
+  padding: var(--md3-space-2);
+  border-radius: var(--md3-shape-sm);
+  text-align: center;
+  font-size: var(--md3-label-small);
+}
+
+.md3-theme-preview-item.primary {
+  background: var(--md3-primary);
+  color: var(--md3-on-primary);
+}
+
+.md3-theme-preview-item.surface {
+  background: var(--md3-surface);
+  color: var(--md3-on-surface);
+  border: 1px solid var(--md3-outline);
+}
+
+/* ==========================================================================
+   DEVELOPMENT GRID & LAYOUT DEBUGGING
+   ========================================================================== */
+
+/* Development grid overlay */
+.md3-dev-grid {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background-image:
+    linear-gradient(rgba(255, 193, 7, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 193, 7, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.md3-dev-grid.dense {
+  background-size: 10px 10px;
+}
+
+.md3-dev-grid.sparse {
+  background-size: 40px 40px;
+}
+
+/* Layout debugging helpers */
+.md3-dev-outline {
+  outline: 2px dashed var(--md3-error) !important;
+  outline-offset: 2px;
+}
+
+.md3-dev-outline-children > * {
+  outline: 1px solid var(--md3-tertiary) !important;
+  outline-offset: 1px;
+}
+
+/* Spacing debugging */
+.md3-dev-spacing::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 8px,
+    rgba(255, 193, 7, 0.2) 8px,
+    rgba(255, 193, 7, 0.2) 16px
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Dimension debugging */
+.md3-dev-dimensions::after {
+  content: attr(data-dimensions);
+  position: absolute;
+  top: -20px;
+  left: 0;
+  background: var(--md3-surface);
+  color: var(--md3-on-surface);
+  padding: 2px 6px;
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline);
+  font-size: var(--md3-label-small);
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   RESPONSIVE DEVELOPMENT TOOLS
+   ========================================================================== */
+
+/* Breakpoint indicators */
+.md3-dev-breakpoints {
+  position: fixed;
+  bottom: 8px;
+  right: 8px;
+  background: var(--md3-surface);
+  border: 1px solid var(--md3-outline);
+  border-radius: var(--md3-shape-md);
+  padding: var(--md3-space-2);
+  font-size: var(--md3-label-small);
+  box-shadow: var(--md3-elevation-2);
+  z-index: 9999;
+}
+
+.md3-dev-breakpoint {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--md3-shape-sm);
+  margin-left: var(--md3-space-1);
+  font-weight: 500;
+}
+
+.md3-dev-breakpoint.mobile {
+  background: var(--md3-error-container);
+  color: var(--md3-on-error-container);
+}
+
+.md3-dev-breakpoint.tablet {
+  background: var(--md3-tertiary-container);
+  color: var(--md3-on-tertiary-container);
+}
+
+.md3-dev-breakpoint.desktop {
+  background: var(--md3-primary-container);
+  color: var(--md3-on-primary-container);
+}
+
+/* Touch target debugging */
+.md3-dev-touch-targets [role="button"],
+.md3-dev-touch-targets button,
+.md3-dev-touch-targets input[type="button"],
+.md3-dev-touch-targets input[type="submit"],
+.md3-dev-touch-targets input[type="reset"] {
+  position: relative;
+}
+
+.md3-dev-touch-targets [role="button"]::after,
+.md3-dev-touch-targets button::after,
+.md3-dev-touch-targets input[type="button"]::after,
+.md3-dev-touch-targets input[type="submit"]::after,
+.md3-dev-touch-targets input[type="reset"]::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border: 2px solid var(--md3-tertiary);
+  border-radius: calc(var(--md3-shape-sm) + 16px);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* ==========================================================================
+   PERFORMANCE DEBUGGING TOOLS
+   ========================================================================== */
+
+/* Animation debugging */
+.md3-dev-animations {
+  position: relative;
+}
+
+.md3-dev-animations::before {
+  content: "🎭 ANIMATIONS";
+  position: fixed;
+  bottom: 50px;
+  right: 8px;
+  background: var(--md3-secondary);
+  color: var(--md3-on-secondary);
+  padding: 4px 8px;
+  border-radius: var(--md3-shape-sm);
+  font-size: var(--md3-label-small);
+  z-index: 9999;
+}
+
+/* Layer debugging */
+.md3-dev-layers {
+  position: relative;
+}
+
+.md3-dev-layers::after {
+  content: attr(data-layer-info);
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  background: var(--md3-surface);
+  color: var(--md3-on-surface);
+  padding: 4px 8px;
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline);
+  font-size: var(--md3-label-small);
+  z-index: 9999;
+}
+
+/* Focus debugging */
+.md3-dev-focus {
+  outline: 3px solid var(--md3-error) !important;
+  outline-offset: 2px;
+}
+
+.md3-dev-focus::after {
+  content: "🎯 FOCUSED";
+  position: absolute;
+  top: -24px;
+  left: 0;
+  background: var(--md3-error);
+  color: var(--md3-on-error);
+  padding: 2px 6px;
+  border-radius: var(--md3-shape-sm);
+  font-size: var(--md3-label-small);
+  z-index: 1000;
+}
+
+/* ==========================================================================
+   ACCESSIBILITY DEBUGGING TOOLS
+   ========================================================================== */
+
+/* Color contrast checker */
+.md3-dev-contrast {
+  position: relative;
+}
+
+.md3-dev-contrast::after {
+  content: attr(data-contrast-ratio);
+  position: absolute;
+  bottom: -20px;
+  left: 0;
+  background: var(--md3-surface);
+  color: var(--md3-on-surface);
+  padding: 2px 6px;
+  border-radius: var(--md3-shape-sm);
+  border: 1px solid var(--md3-outline);
+  font-size: var(--md3-label-small);
+  font-family: monospace;
+  z-index: 1000;
+}
+
+/* Screen reader debugging */
+.md3-dev-screen-reader {
+  position: relative;
+}
+
+.md3-dev-screen-reader::before {
+  content: "🔍 SR ONLY";
+  position: absolute;
+  top: -20px;
+  left: 0;
+  background: var(--md3-tertiary);
+  color: var(--md3-on-tertiary);
+  padding: 2px 6px;
+  border-radius: var(--md3-shape-sm);
+  font-size: var(--md3-label-small);
+  z-index: 1000;
+}
+
+/* ==========================================================================
+   UTILITY CLASSES FOR COMMON DEVELOPMENT TASKS
+   ========================================================================== */
+
+/* Quick token reference */
+.md3-token-ref {
+  position: relative;
+  cursor: help;
+}
+
+.md3-token-ref::after {
+  content: attr(data-token-ref);
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  background: var(--md3-inverse-surface);
+  color: var(--md3-inverse-on-surface);
+  padding: var(--md3-space-1) var(--md3-space-2);
+  border-radius: var(--md3-shape-sm);
+  font-size: var(--md3-label-small);
+  font-family: monospace;
+  white-space: nowrap;
+  z-index: 1000;
+  margin-bottom: var(--md3-space-1);
+}
+
+/* Development state indicators */
+.md3-dev-todo {
+  background: var(--md3-tertiary-container);
+  border: 2px dashed var(--md3-tertiary);
+  padding: var(--md3-space-2);
+  border-radius: var(--md3-shape-sm);
+  color: var(--md3-on-tertiary-container);
+}
+
+.md3-dev-wip {
+  background: var(--md3-secondary-container);
+  border: 2px dashed var(--md3-secondary);
+  padding: var(--md3-space-2);
+  border-radius: var(--md3-shape-sm);
+  color: var(--md3-on-secondary-container);
+}
+
+.md3-dev-test {
+  background: var(--md3-error-container);
+  border: 2px dashed var(--md3-error);
+  padding: var(--md3-space-2);
+  border-radius: var(--md3-shape-sm);
+  color: var(--md3-on-error-container);
+}
+
+/* Development-only content */
+.md3-dev-only {
+  display: none;
+}
+
+.md3-dev-mode .md3-dev-only {
+  display: block;
+}
+
+/* Hide production content in dev mode */
+.md3-dev-mode .md3-prod-only {
+  display: none;
+}
+
+/* Show development grid only in dev mode */
+.md3-dev-mode.md3-dev-grid-enabled .md3-dev-grid {
+  display: block;
+}
+
+/* Responsive helpers */
+.md3-dev-mobile-only {
+  display: block;
+}
+
+.md3-dev-tablet-only {
+  display: none;
+}
+
+.md3-dev-desktop-only {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .md3-dev-mobile-only {
+    display: none;
+  }
+
+  .md3-dev-tablet-only {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .md3-dev-tablet-only {
+    display: none;
+  }
+
+  .md3-dev-desktop-only {
+    display: block;
+  }
+}
