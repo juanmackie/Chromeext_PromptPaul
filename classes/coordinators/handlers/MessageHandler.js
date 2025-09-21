@@ -51,11 +51,50 @@ export class MessageHandler extends BaseManager {
    * @param {Function} sendResponse - Response function
    */
   handleGetTabContent(request, sender, sendResponse) {
-    if (this.coordinator.tabContentCallback) {
-      this.coordinator.tabContentCallback(request, sender, sendResponse);
-    } else {
-      sendResponse({ error: 'No tab content callback registered' });
-    }
+    (async () => {
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab) {
+          sendResponse({ action: 'tabContentResponse', success: false, message: 'No active tab found' });
+          return;
+        }
+
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          function: () => {
+            function extractPageContent() {
+              // Get selected text if any
+              const selection = window.getSelection().toString().trim();
+              if (selection) {
+                return selection;
+              }
+
+              // Fall back to page content
+              const content = document.body.innerText || document.body.textContent || '';
+              return content.slice(0, 10000); // Limit to 10KB
+            }
+
+            return extractPageContent();
+          }
+        });
+
+        if (results && results[0]) {
+          sendResponse({
+            action: 'tabContentResponse',
+            success: true,
+            content: results[0].result,
+            url: activeTab.url,
+            title: activeTab.title
+          });
+        } else {
+          sendResponse({ action: 'tabContentResponse', success: false, message: 'Failed to extract content' });
+        }
+      } catch (error) {
+        console.error('Error getting tab content:', error);
+        sendResponse({ action: 'tabContentResponse', success: false, message: error.message || String(error) });
+      }
+    })();
+    return true;
   }
 
   /**
@@ -65,11 +104,51 @@ export class MessageHandler extends BaseManager {
    * @param {Function} sendResponse - Response function
    */
   handleGetPinnedActionTabContent(request, sender, sendResponse) {
-    if (this.coordinator.pinnedActionTabContentCallback) {
-      this.coordinator.pinnedActionTabContentCallback(request, sender, sendResponse);
-    } else {
-      sendResponse({ error: 'No pinned action tab content callback registered' });
-    }
+    (async () => {
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab) {
+          sendResponse({ action: 'pinnedActionTabContentResponse', success: false, content: 'No active tab found', instruction: request.instruction });
+          return;
+        }
+
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          function: () => {
+            function extractPageContent() {
+              // Get selected text if any
+              const selection = window.getSelection().toString().trim();
+              if (selection) {
+                return selection;
+              }
+
+              // Fall back to page content
+              const content = document.body.innerText || document.body.textContent || '';
+              return content.slice(0, 10000); // Limit to 10KB
+            }
+
+            return extractPageContent();
+          }
+        });
+
+        if (results && results[0]) {
+          sendResponse({
+            action: 'pinnedActionTabContentResponse',
+            success: true,
+            content: results[0].result,
+            url: activeTab.url,
+            title: activeTab.title,
+            instruction: request.instruction
+          });
+        } else {
+          sendResponse({ action: 'pinnedActionTabContentResponse', success: false, content: 'Failed to extract content', instruction: request.instruction });
+        }
+      } catch (error) {
+        console.error('Error getting pinned action tab content:', error);
+        sendResponse({ action: 'pinnedActionTabContentResponse', success: false, content: error.message || String(error), instruction: request.instruction });
+      }
+    })();
+    return true;
   }
 
   /**
@@ -93,7 +172,21 @@ export class MessageHandler extends BaseManager {
       // Extract content from the active tab
       const results = await chrome.scripting.executeScript({
         target: { tabId: activeTab.id },
-        function: this.extractPageContent
+        function: () => {
+          function extractPageContent() {
+            // Get selected text if any
+            const selection = window.getSelection().toString().trim();
+            if (selection) {
+              return selection;
+            }
+
+            // Fall back to page content
+            const content = document.body.innerText || document.body.textContent || '';
+            return content.slice(0, 10000); // Limit to 10KB
+          }
+
+          return extractPageContent();
+        }
       });
       
       if (results && results[0]) {
@@ -202,7 +295,7 @@ export class MessageHandler extends BaseManager {
   }
 
   /**
-   * Extract page content (injected function)
+   * Extract page content (standalone function for injection)
    */
   extractPageContent() {
     // Get selected text if any
@@ -210,10 +303,31 @@ export class MessageHandler extends BaseManager {
     if (selection) {
       return selection;
     }
-    
+
     // Fall back to page content
     const content = document.body.innerText || document.body.textContent || '';
     return content.slice(0, 10000); // Limit to 10KB
+  }
+
+  /**
+   * Get the standalone extractPageContent function as a string for injection
+   */
+  getExtractPageContentFunction() {
+    return `
+      function extractPageContent() {
+        // Get selected text if any
+        const selection = window.getSelection().toString().trim();
+        if (selection) {
+          return selection;
+        }
+
+        // Fall back to page content
+        const content = document.body.innerText || document.body.textContent || '';
+        return content.slice(0, 10000); // Limit to 10KB
+      }
+
+      return extractPageContent();
+    `;
   }
 
   /**
