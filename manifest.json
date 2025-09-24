@@ -17,10 +17,6 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
-  "action": {
-    "default_popup": "",
-    "default_title": "Open Prompt Paul"
-  },
   "options_page": "options.html",
   "background": {
     "service_worker": "background.js",
