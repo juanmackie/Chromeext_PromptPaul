@@ -12,10 +12,14 @@
   ],
   "host_permissions": [
     "*://*/*",
-    "https://cloud.umami.is/*"
+    "https://cloud.umami.is/*",
+    "file:///*/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;"
+  },
+  "side_panel": {
+    "default_path": "chat.html"
   },
   "options_page": "options.html",
   "background": {

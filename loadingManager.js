@@ -140,7 +140,7 @@ export class LoadingManager {
         const closeBtn = document.createElement('button');
         closeBtn.className = 'toast-close';
         closeBtn.innerHTML = '×';
-        closeBtn.onclick = () => this.hideToast(toast);
+        closeBtn.addEventListener('click', () => this.hideToast(toast));
         
         toast.appendChild(icon);
         toast.appendChild(content);
@@ -212,7 +212,7 @@ export class LoadingManager {
                 const retryBtn = document.createElement('button');
                 retryBtn.className = 'error-retry-btn';
                 retryBtn.textContent = 'Retry';
-                retryBtn.onclick = options.retry;
+                retryBtn.addEventListener('click', options.retry);
                 actions.appendChild(retryBtn);
             }
             
@@ -220,7 +220,7 @@ export class LoadingManager {
                 const dismissBtn = document.createElement('button');
                 dismissBtn.className = 'error-dismiss-btn';
                 dismissBtn.textContent = 'Dismiss';
-                dismissBtn.onclick = () => this.clearError(element);
+                dismissBtn.addEventListener('click', () => this.clearError(element));
                 actions.appendChild(dismissBtn);
             }
             
