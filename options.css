@@ -1549,6 +1549,15 @@ footer a:hover {
   display: none;
 }
 
+/* Hint text for privacy toggle */
+.hint {
+  font-size: 0.75rem;
+  color: var(--ext-muted-foreground);
+  margin-top: 0.25rem;
+  line-height: 1.4;
+  max-width: 500px;
+}
+
 .field-error.show {
   display: block;
 }

@@ -8,28 +8,30 @@ import { McpManager } from './mcpManager.js';
 import { setupThemeToggle } from './themeUtils.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
-  console.log('Options page loaded, initializing managers...');
+ console.log('🔍 DEBUG: Options page loaded, initializing managers...');
 
-  // Initialize all managers
-  const profileManager = new ProfileManager();
-  const instructionManager = new InstructionManager();
-  const toolManager = new ToolManager();
-  const mcpManager = new McpManager();
+ // Initialize all managers
+ const profileManager = new ProfileManager();
+ const instructionManager = new InstructionManager();
+ const toolManager = new ToolManager();
+ const mcpManager = new McpManager();
 
-  // Expose managers globally for HTML onclick handlers
-  window.profileManager = profileManager;
-  window.instructionManager = instructionManager;
-  window.toolManager = toolManager;
-  window.mcpManager = mcpManager;
+ // Expose managers globally for HTML onclick handlers
+ window.profileManager = profileManager;
+ window.instructionManager = instructionManager;
+ window.toolManager = toolManager;
+ window.mcpManager = mcpManager;
 
-  // Setup all event handlers
-  profileManager.setupEventHandlers();
-  instructionManager.setupEventHandlers();
-  toolManager.setupEventHandlers();
-  mcpManager.setupEventHandlers();
+ // Setup all event handlers
+ console.log('🔍 DEBUG: Setting up event handlers...');
+ profileManager.setupEventHandlers();
+ instructionManager.setupEventHandlers();
+ toolManager.setupEventHandlers();
+ mcpManager.setupEventHandlers();
 
   // Initialize data loading
   try {
+    console.log('🔍 DEBUG: Loading data in parallel...');
     // Load all data in parallel
     await Promise.all([
       profileManager.loadProfiles(),
@@ -38,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       mcpManager.renderServers(),
       mcpManager.renderLogs()
     ]);
+    console.log('🔍 DEBUG: Data loading complete');
 
     // Check for instruction migration
     await instructionManager.checkAndPromptInstructionMigration();
@@ -49,15 +52,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const mcpResult = await new Promise(resolve => {
       chrome.storage.local.get(['mcpVerboseLogs'], resolve);
     });
-    
+
     const verboseToggle = document.getElementById('mcpVerboseLogsToggle');
     if (verboseToggle) {
       verboseToggle.checked = mcpResult.mcpVerboseLogs || false;
     }
 
-    console.log('Options page initialization complete');
+    console.log('🔍 DEBUG: Options page initialization complete');
   } catch (error) {
-    console.error('Error during options page initialization:', error);
+    console.error('🔍 DEBUG ERROR: Error during options page initialization:', error);
     loadingManager.showToast('Error loading options page: ' + error.message, 'error');
   }
 
@@ -191,11 +194,18 @@ window.showStatus = (message, isError = false) => {
 };
 
 function setupBasicUIControls() {
-  // Dark Theme Toggle
-  const darkThemeToggle = document.getElementById('darkThemeToggle');
-  if (darkThemeToggle) {
-    setupThemeToggle(darkThemeToggle);
-  }
+   console.log('🔍 DEBUG: Setting up basic UI controls...');
+
+   // Dark Theme Toggle
+   const darkThemeToggle = document.getElementById('darkThemeToggle');
+   console.log('🔍 DEBUG: Dark theme toggle element:', darkThemeToggle);
+   if (darkThemeToggle) {
+     console.log('🔍 DEBUG: Setting up theme toggle...');
+     setupThemeToggle(darkThemeToggle);
+     console.log('🔍 DEBUG: Theme toggle setup complete');
+   } else {
+     console.error('🔍 DEBUG ERROR: Dark theme toggle element not found!');
+   }
 
   // Analytics consent toggle (opt-out, default ON)
   const analyticsConsentToggle = document.getElementById('analyticsConsentToggle');

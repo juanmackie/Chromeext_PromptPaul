@@ -430,31 +430,38 @@ class McpManager {
 
     try {
       const text = await file.text();
-      const importedServers = JSON.parse(text);
+      const importData = JSON.parse(text);
       
-      if (!Array.isArray(importedServers)) {
-        throw new Error('Invalid file format. Expected an array of servers.');
+      let importResults = { imported: 0, skipped: 0, errors: [] };
+
+      // Handle standard MCP format
+      if (importData.mcpServers && typeof importData.mcpServers === 'object') {
+        importResults = await this.importStandardFormat(importData.mcpServers);
+      }
+      // Handle legacy array format
+      else if (Array.isArray(importData)) {
+        importResults = await this.importLegacyFormat(importData);
+      }
+      // Handle legacy format with different structure
+      else if (Array.isArray(importData.legacyServers)) {
+        importResults = await this.importLegacyFormat(importData.legacyServers);
+      }
+      else {
+        throw new Error('Invalid file format. Expected standard MCP format or legacy array format.');
       }
 
-      // Validate server structure
-      for (const server of importedServers) {
-        if (!server.id || !server.name || !server.url) {
-          throw new Error('Invalid server format. Missing required fields.');
-        }
-      }
-
-      // Merge with existing servers (avoid duplicates by ID)
-      const existingIds = new Set(this.servers.map(server => server.id));
-      const newServers = importedServers.filter(server => !existingIds.has(server.id));
-      
-      this.servers = [...this.servers, ...newServers];
-      
       await new Promise(resolve => {
         chrome.storage.local.set({ mcpServers: this.servers }, resolve);
       });
 
       this.renderServers();
-      this.showStatus(`Successfully imported ${newServers.length} MCP servers!`);
+      
+      const message = `Import completed: ${importResults.imported} imported, ${importResults.skipped} skipped`;
+      this.showStatus(message + (importResults.errors.length > 0 ? ` (${importResults.errors.length} errors)` : ''));
+      
+      if (importResults.errors.length > 0) {
+        console.warn('Import errors:', importResults.errors);
+      }
       
       // Clear the file input
       event.target.value = '';
@@ -462,6 +469,107 @@ class McpManager {
       console.error('Error importing MCP servers:', error);
       this.showStatus('Error importing MCP servers: ' + error.message, true);
     }
+  }
+
+  /**
+   * Import servers from standard MCP format
+   */
+  async importStandardFormat(mcpServers) {
+    const results = { imported: 0, skipped: 0, errors: [] };
+
+    for (const [name, serverConfig] of Object.entries(mcpServers)) {
+      try {
+        // Check if server with this name already exists
+        if (this.servers.find(s => s.name === name)) {
+          results.skipped++;
+          continue;
+        }
+
+        // Convert standard format to legacy format for compatibility
+        const legacyServer = this.convertStandardToLegacy(name, serverConfig);
+        this.servers.push(legacyServer);
+        results.imported++;
+      } catch (error) {
+        results.errors.push({ name, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Import servers from legacy format
+   */
+  async importLegacyFormat(serversArray) {
+    const results = { imported: 0, skipped: 0, errors: [] };
+
+    for (const serverConfig of serversArray) {
+      try {
+        if (!serverConfig.id || !serverConfig.name || !serverConfig.url) {
+          results.errors.push({ 
+            server: serverConfig, 
+            error: 'Missing required fields (id, name, url)' 
+          });
+          continue;
+        }
+
+        if (this.servers.find(s => s.id === serverConfig.id)) {
+          results.skipped++;
+          continue;
+        }
+
+        this.servers.push(serverConfig);
+        results.imported++;
+      } catch (error) {
+        results.errors.push({ 
+          server: serverConfig, 
+          error: error.message 
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Convert standard MCP format to legacy format
+   */
+  convertStandardToLegacy(name, serverConfig) {
+    const server = {
+      id: `mcp_${name}_${Date.now()}`,
+      name: name,
+      enabled: serverConfig.enabled !== false,
+      allowlisted: serverConfig.allowlisted === true,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    // Handle different transport types
+    if (serverConfig.command) {
+      // Stdio transport - convert to WebSocket-like format for legacy compatibility
+      server.url = `stdio://${serverConfig.command}`;
+      server.auth = JSON.stringify({
+        type: 'stdio',
+        command: serverConfig.command,
+        args: serverConfig.args || [],
+        env: serverConfig.env || {}
+      });
+      server.timeout = 30000;
+    } else if (serverConfig.url) {
+      // HTTP/SSE or WebSocket transport
+      server.url = serverConfig.url;
+      server.auth = serverConfig.auth || '';
+      server.timeout = serverConfig.timeout || 30000;
+      
+      // Store additional config for HTTP/SSE
+      if (serverConfig.headers) {
+        server.headers = serverConfig.headers;
+      }
+    } else {
+      throw new Error('Invalid server configuration: missing command or url');
+    }
+
+    return server;
   }
 }
 

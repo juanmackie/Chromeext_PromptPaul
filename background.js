@@ -5,7 +5,7 @@ import { trackInstalled, trackErrorEvent, trackInstructionUsed, initializeAnalyt
 import { initializeContextMenus, fetchMediaAsBase64, getMimeTypeFromUrl } from './contextMenuService.js';
 import { makeLlmApiRequest } from './apiService.js';
 import { getAllToolDefinitions, executeToolCall } from './toolService.js';
-import { initializeMcpService, cleanupMcpSessions } from './mcpService.js';
+import { createMcpSystem, createMcpClient } from './mcp/index.js';
 
 // Global state for message handling
 let messageListenerAdded = false;
@@ -28,8 +28,14 @@ async function initializeBackgroundServices() {
     // Initialize context menus
     await initializeContextMenus();
     
-    // Initialize MCP service
-    initializeMcpService();
+    // Initialize MCP system
+    try {
+      globalThis.mcpSystem = createMcpSystem();
+      await globalThis.mcpSystem.initialize();
+      console.log('MCP system initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize MCP system:', error);
+    }
     
     // Track installation
     await trackInstalled();
@@ -359,6 +365,46 @@ function openOptionsPage() {
   chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
 }
 
+// MCP server testing handler
+async function handleTestMcpServer(request) {
+  try {
+    const { serverUrl, serverAuth } = request;
+    
+    if (!globalThis.mcpSystem) {
+      return { success: false, error: 'MCP system not initialized' };
+    }
+
+    // Create a temporary transport to test the connection
+    
+    // Determine config based on URL
+    let config;
+    if (serverUrl.startsWith('wss://') || serverUrl.startsWith('ws://')) {
+      config = {
+        type: 'websocket',
+        url: serverUrl,
+        auth: serverAuth
+      };
+    } else if (serverUrl.startsWith('http://') || serverUrl.startsWith('https://')) {
+      config = {
+        type: 'http-sse',
+        url: serverUrl,
+        headers: serverAuth ? { 'Authorization': serverAuth } : {}
+      };
+    } else {
+      return { success: false, error: 'Unsupported server URL format' };
+    }
+
+    // Test connection with timeout
+    const client = await createMcpClient(config);
+    await client.disconnect();
+    
+    return { success: true, message: 'Connection test successful' };
+  } catch (error) {
+    console.error('MCP server test failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Main message listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Background: Received message:", request.action, "from:", sender.tab?.id || 'extension');
@@ -396,6 +442,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'handleToolCallResponse':
           await handleToolCallResponse(request);
           return { success: true };
+
+        case 'testMcpServer':
+          return await handleTestMcpServer(request);
 
         default:
           console.warn('Unknown action:', request.action);
@@ -586,9 +635,16 @@ chrome.runtime.onStartup.addListener(async () => {
   await initializeBackgroundServices();
 });
 
-chrome.runtime.onSuspend?.addListener(() => {
+chrome.runtime.onSuspend?.addListener(async () => {
   console.log('Extension suspending, cleaning up resources');
-  cleanupMcpSessions();
+  try {
+    if (globalThis.mcpSystem) {
+      await globalThis.mcpSystem.destroy();
+      console.log('MCP system cleaned up successfully');
+    }
+  } catch (error) {
+    console.error('Error cleaning up MCP system:', error);
+  }
 });
 
 // Initialize services immediately

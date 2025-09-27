@@ -351,22 +351,28 @@ class InstructionManager {
   }
 
   // Wire up page event handlers
-  setupEventHandlers() {
-    // Save / Clear
-    const saveBtn = document.getElementById('saveInstruction');
-    if (saveBtn) saveBtn.addEventListener('click', () => this.saveInstruction());
-    const clearBtn = document.getElementById('clearForm');
-    if (clearBtn) clearBtn.addEventListener('click', () => this.clearForm());
+   setupEventHandlers() {
+     console.log('🔍 DEBUG: Setting up instruction manager event handlers...');
 
-    // Export / Import
-    const exportBtn = document.getElementById('exportInstructions');
-    if (exportBtn) exportBtn.addEventListener('click', () => this.exportInstructions());
-    const importBtn = document.getElementById('importInstructions');
-    const importFile = document.getElementById('importFile');
-    if (importBtn && importFile) {
-      importBtn.addEventListener('click', () => importFile.click());
-      importFile.addEventListener('change', (e) => this.importInstructionsFromFile(e.target.files?.[0] || null));
-    }
+     // Save / Clear
+     const saveBtn = document.getElementById('saveInstruction');
+     const clearBtn = document.getElementById('clearForm');
+     console.log('🔍 DEBUG: Save/Clear buttons:', { saveBtn, clearBtn });
+     if (saveBtn) saveBtn.addEventListener('click', () => this.saveInstruction());
+     if (clearBtn) clearBtn.addEventListener('click', () => this.clearForm());
+
+     // Export / Import
+     const exportBtn = document.getElementById('exportInstructions');
+     const importBtn = document.getElementById('importInstructions');
+     const importFile = document.getElementById('importFile');
+     console.log('🔍 DEBUG: Import/Export buttons:', { exportBtn, importBtn, importFile });
+     if (exportBtn) exportBtn.addEventListener('click', () => this.exportInstructions());
+     if (importBtn && importFile) {
+       importBtn.addEventListener('click', () => importFile.click());
+       importFile.addEventListener('change', (e) => this.importInstructionsFromFile(e.target.files?.[0] || null));
+     } else {
+       console.error('🔍 DEBUG ERROR: Import/Export elements not found!');
+     }
 
     // Table and cards action delegation
     const tbody = document.querySelector('#instructionsTable tbody');

@@ -114,13 +114,35 @@ class ProfileManager {
         chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], resolve);
       });
 
-      const profiles = result.profiles || [];
+      let profiles = result.profiles || [];
       const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+
+      // Ensure default profile exists
+      const defaultProfile = profiles.find(p => p.id === 'default');
+      if (!defaultProfile) {
+        const newDefaultProfile = {
+          id: 'default',
+          name: 'Default Profile',
+          llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
+          apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
+          modelName: 'mistral-small-latest',
+          systemPrompt: '',
+          maxTokens: 16000,
+          createdAt: Date.now(),
+          lastUpdated: Date.now()
+        };
+        profiles.unshift(newDefaultProfile);
+        
+        // Save the updated profiles with default
+        await new Promise(resolve => {
+          chrome.storage.local.set({ profiles: profiles }, resolve);
+        });
+      }
 
       this.populateProfileDropdown(profiles, lastSelectedProfileId);
       
-      if (profiles.length > 0) {
-        const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId) || profiles[0];
+      const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId) || profiles.find(p => p.id === 'default') || profiles[0];
+      if (selectedProfile) {
         this.loadProfileSettings(selectedProfile.id);
       }
 

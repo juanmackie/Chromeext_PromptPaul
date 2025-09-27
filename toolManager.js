@@ -347,38 +347,45 @@ class ToolManager {
   }
 
   setupEventHandlers() {
-    // MCP server URL input handler
-    const mcpUrlInput = document.getElementById('tool-mcp-server-url');
-    if (mcpUrlInput) {
-      mcpUrlInput.addEventListener('input', () => this.updateToolFieldStates());
-    }
+     console.log('🔍 DEBUG: Setting up tool manager event handlers...');
 
-    // Clear form button
-    const clearBtn = document.getElementById('clearToolForm');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => this.clearToolForm());
-    }
+     // MCP server URL input handler
+     const mcpUrlInput = document.getElementById('tool-mcp-server-url');
+     if (mcpUrlInput) {
+       mcpUrlInput.addEventListener('input', () => this.updateToolFieldStates());
+     }
 
-    // Submit button
-    const submitBtn = document.getElementById('saveTool');
-    if (submitBtn) {
-      submitBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.saveTool();
-      });
-    }
+     // Clear form button
+     const clearBtn = document.getElementById('clearToolForm');
+     if (clearBtn) {
+       clearBtn.addEventListener('click', () => this.clearToolForm());
+     }
 
-    // Export tools button
-    const exportBtn = document.getElementById('exportTools');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', () => this.exportTools());
-    }
+     // Submit button
+     const submitBtn = document.getElementById('saveTool');
+     if (submitBtn) {
+       submitBtn.addEventListener('click', (e) => {
+         e.preventDefault();
+         this.saveTool();
+       });
+     }
 
-    // Import tools input
-    const importInput = document.getElementById('importToolsFile');
-    if (importInput) {
-      importInput.addEventListener('change', (e) => this.importTools(e));
-    }
+     // Export tools button
+     const exportBtn = document.getElementById('exportTools');
+     const importBtn = document.getElementById('importTools');
+     const importInput = document.getElementById('importToolsFile');
+     console.log('🔍 DEBUG: Tool import/export buttons:', { exportBtn, importBtn, importInput });
+     if (exportBtn) {
+       exportBtn.addEventListener('click', () => this.exportTools());
+     }
+
+     // Import tools button
+     if (importBtn && importInput) {
+       importBtn.addEventListener('click', () => importInput.click());
+       importInput.addEventListener('change', (e) => this.importTools(e));
+     } else {
+       console.error('🔍 DEBUG ERROR: Import/Export elements not found!');
+     }
     
     // Add event delegation for table and cards action buttons
     const tbody = document.querySelector('#toolsTable tbody');

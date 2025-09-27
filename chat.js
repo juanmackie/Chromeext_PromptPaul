@@ -1,7 +1,7 @@
 // ===== Main Chat Script - Orchestrates chat functionality =====
 
 import { setupThemeToggle } from './themeUtils.js';
-import { loadingManager } from './loadingManager.js';
+
 import { ChatStateManager } from './chatStateManager.js';
 import { ChatUIRenderer } from './chatUIRenderer.js';
 import { ChatMessageHandler } from './chatMessageHandler.js';

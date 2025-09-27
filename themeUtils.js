@@ -47,18 +47,21 @@ export function applyDarkTheme(isDark) {
  * @param {HTMLInputElement} toggleElement - Theme toggle element
  */
 export function setupThemeToggle(toggleElement) {
-  // Load initial state
-  chrome.storage.sync.get({ darkTheme: false }, (result) => {
-    toggleElement.checked = !!result.darkTheme;
-    applyDarkTheme(!!result.darkTheme);
-  });
+   console.log('🔍 DEBUG: Setting up theme toggle...');
+   // Load initial state
+   chrome.storage.sync.get({ darkTheme: false }, (result) => {
+     console.log('🔍 DEBUG: Theme storage result:', result);
+     toggleElement.checked = !!result.darkTheme;
+     applyDarkTheme(!!result.darkTheme);
+   });
 
-  // Handle toggle changes
-  toggleElement.addEventListener('change', () => {
-    const isDark = toggleElement.checked;
-    chrome.storage.sync.set({ darkTheme: isDark });
-    applyDarkTheme(isDark);
-  });
+   // Handle toggle changes
+   toggleElement.addEventListener('change', () => {
+     const isDark = toggleElement.checked;
+     console.log('🔍 DEBUG: Theme toggle changed to:', isDark);
+     chrome.storage.sync.set({ darkTheme: isDark });
+     applyDarkTheme(isDark);
+   });
 
   // Sync across extension components
   chrome.storage.onChanged.addListener((changes, area) => {
