@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Enhanced Thinking Block Streaming</title>
+    <script src="marked.min.js"></script>
+    <script src="enhanced-thinking-block.js"></script>
+</head>
+<body>
+    <h1>Test Enhanced Thinking Block Streaming</h1>
+    
+    <h2>Test 1: Streaming with Content Attribute</h2>
+    <enhanced-thinking-block id="test1" streaming="true"></enhanced-thinking-block>
+    
+    <h2>Test 2: Streaming with Think/Answer Attributes</h2>
+    <enhanced-thinking-block id="test2" streaming="true"></enhanced-thinking-block>
+    
+    <button onclick="testStreaming()">Start Streaming Test</button>
+    <button onclick="testContentAttribute()">Test Content Attribute</button>
+    
+    <script>
+        function testStreaming() {
+            const block1 = document.getElementById('test1');
+            const block2 = document.getElementById('test2');
+            
+            // Test 1: Using content attribute (enhanced way)
+            let content1 = '<thinking>Let me think about this problem step by step.</thinking>';
+            block1.setAttribute('content', content1);
+            
+            setTimeout(() => {
+                content1 += '\nThis is the answer part.';
+                block1.setAttribute('content', content1);
+            }, 1000);
+            
+            // Test 2: Using separate think/answer attributes (legacy way)
+            block2.setAttribute('think', 'Let me think about this problem step by step.');
+            setTimeout(() => {
+                block2.setAttribute('answer', 'This is the answer part.');
+            }, 1000);
+        }
+        
+        function testContentAttribute() {
+            const block1 = document.getElementById('test1');
+            const testContent = `<thinking>
+I need to analyze this problem carefully.
+
+Let me break it down:
+1. First, I'll examine the requirements
+2. Then I'll consider the constraints  
+3. Finally, I'll propose a solution
+</thinking>
+
+Based on my analysis, here's the solution:
+
+The approach should be to implement a streaming-optimized thinking block that:
+- Reduces DOM updates during streaming
+- Disables animations to prevent flashing
+- Uses incremental updates instead of full rebuilds
+`;
+            
+            block1.setAttribute('streaming', 'false');
+            block1.setAttribute('content', testContent);
+        }
+    </script>
+</body>
+</html>

@@ -124,9 +124,9 @@ export class LoadingManager {
         
         // Icon based on type
         const icons = {
-            success: '✓',
+            success: '\u2713',
             error: '✕',
-            warning: '⚠',
+            warning: '\u26A0',
             info: 'ℹ'
         };
         
@@ -186,7 +186,7 @@ export class LoadingManager {
         
         const icon = document.createElement('span');
         icon.className = 'error-icon';
-        icon.innerHTML = '⚠';
+        icon.innerHTML = '\u26A0';
         
         const content = document.createElement('div');
         content.className = 'error-content';

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Thinking Block</title>
+    <link rel="stylesheet" href="chat.css">
+    <link rel="stylesheet" href="theme.css">
+    <script src="marked.min.js"></script>
+    <script src="thinking-block.js" defer></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .test-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .test-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #3b82f6;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+        .test-button:hover {
+            background: #2563eb;
+        }
+        .test-button:active {
+            background: #1d4ed8;
+        }
+        .test-button.secondary {
+            background: #6b7280;
+        }
+        .test-button.secondary:hover {
+            background: #4b5563;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+        h1 {
+            color: #1f2937;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #374151;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        .description {
+            color: #6b7280;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <h1>&#x1F9E0; Thinking Block Test Suite</h1>
+    
+    <div class="test-container">
+        <h2>Basic Thinking Block</h2>
+        <p class="description">Test the basic functionality with simple thinking and answer content.</p>
+        
+        <thinking-block 
+            think="1. First, I need to understand the user's request
+2. Then, I'll analyze the problem step by step
+3. Finally, I'll provide a comprehensive solution"
+            answer="Here is my comprehensive answer to your question. I've broken down the problem into manageable steps and provided a detailed solution that addresses all aspects of your inquiry.">
+        </thinking-block>
+    </div>
+
+    <div class="test-container">
+        <h2>Tool Call Example</h2>
+        <p class="description">Test the structured display of tool calls with input and output.</p>
+        
+        <thinking-block 
+            think="Tool: run_shell_command
+Input: npm test
+Output: All tests passed successfully.
+
+Step: Verify test results
+The test suite completed with 100% success rate. All 42 tests passed."
+            answer="&#x2705; All tests passed! Your code is working correctly and all test cases are passing.">
+        </thinking-block>
+    </div>
+
+    <div class="test-container">
+        <h2>Streaming Simulation</h2>
+        <p class="description">Test the streaming state with animated indicators.</p>
+        
+        <thinking-block 
+            streaming="true"
+            think="1. Analyzing the request...
+2. Processing the data...
+3. Generating response..."
+            answer="This is a streaming response that is currently being generated.">
+        </thinking-block>
+    </div>
+
+    <div class="test-container">
+        <h2>Interactive Tests</h2>
+        <p class="description">Use the controls below to test different scenarios with the thinking block.</p>
+        
+        <div class="test-controls">
+            <button class="test-button" onclick="updateThinkingContent()">Update Thinking</button>
+            <button class="test-button" onclick="updateAnswerContent()">Update Answer</button>
+            <button class="test-button" onclick="toggleStreaming()">Toggle Streaming</button>
+            <button class="test-button secondary" onclick="clearContent()">Clear</button>
+            <button class="test-button secondary" onclick="addToolExample()">Add Tool Example</button>
+        </div>
+        
+        <textarea id="thinkingInput" placeholder="Enter thinking content here...">1. Understanding the problem
+2. Breaking it down into components
+3. Analyzing each component
+4. Synthesizing the solution</textarea>
+        
+        <textarea id="answerInput" placeholder="Enter answer content here...">Based on my analysis, here's the solution to your problem...</textarea>
+        
+        <thinking-block id="interactiveBlock"></thinking-block>
+    </div>
+
+    <script>
+        function updateThinkingContent() {
+            const block = document.getElementById('interactiveBlock');
+            const thinking = document.getElementById('thinkingInput').value;
+            block.setAttribute('think', thinking);
+        }
+
+        function updateAnswerContent() {
+            const block = document.getElementById('interactiveBlock');
+            const answer = document.getElementById('answerInput').value;
+            block.setAttribute('answer', answer);
+        }
+
+        function toggleStreaming() {
+            const block = document.getElementById('interactiveBlock');
+            const isStreaming = block.getAttribute('streaming') === 'true';
+            block.setAttribute('streaming', !isStreaming);
+        }
+
+        function clearContent() {
+            const block = document.getElementById('interactiveBlock');
+            block.setAttribute('think', '');
+            block.setAttribute('answer', '');
+            block.setAttribute('streaming', 'false');
+            document.getElementById('thinkingInput').value = '';
+            document.getElementById('answerInput').value = '';
+        }
+
+        function addToolExample() {
+            const block = document.getElementById('interactiveBlock');
+            const toolExample = `Tool: file_search
+Input: {"pattern": "*.js", "path": "/src"}
+Output: Found 15 JavaScript files in /src directory.
+
+Step: Review found files
+The search returned 15 JavaScript files. I'll now examine each file to understand the codebase structure.`;
+            
+            const currentThinking = block.getAttribute('think') || '';
+            const newThinking = currentThinking + (currentThinking ? '\n\n' : '') + toolExample;
+            
+            block.setAttribute('think', newThinking);
+            document.getElementById('thinkingInput').value = newThinking;
+        }
+
+        // Initialize with some content
+        document.addEventListener('DOMContentLoaded', () => {
+            updateThinkingContent();
+            updateAnswerContent();
+        });
+    </script>
+</body>
+</html>

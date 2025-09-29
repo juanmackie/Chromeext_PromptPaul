@@ -57,6 +57,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    // Get reference to model selector (typically in options.html)
+    const modelSelector = document.getElementById('modelName');
+    
     // Context hint based on model
     function updateContextHint(modelName) {
         const contextHint = document.getElementById('contextHint');
@@ -74,7 +77,8 @@ document.addEventListener('DOMContentLoaded', function() {
             'mistral-large-latest': 32000
         };
         
-        const limit = modelContextLimits[modelName || modelSelector?.value];
+        const modelValue = modelName || modelSelector?.value;
+        const limit = modelValue ? modelContextLimits[modelValue] : undefined;
         if (limit) {
             const remaining = limit - currentTokens;
             contextHint.textContent = ` (${remaining.toLocaleString()} remaining of ${limit.toLocaleString()})`;

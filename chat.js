@@ -73,12 +73,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeStreamingToolCall = null;
     let currentAbortController = null;
     let currentMediaData = null; // Store media data for analysis
+    let currentThinkingBlockElement = null; // Holds the thinking-block element during streaming
 
     function stopApiRequest() {
         if (currentAbortController) {
             currentAbortController.abort();
         }
     }
+
+    const inflightRequests = new Map(); // requestId -> { element, type }
 
     async function getApiConfig() {
         return new Promise((resolve, reject) => {
@@ -213,6 +216,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return { messageDiv, contentElement, uniqueIdString };
 }
 
+    // Render a single assistant answer using enhanced-thinking-block (non-streaming)
+    function appendEnhancedAnswer(answerText) {
+        const block = document.createElement('enhanced-thinking-block');
+        block.setAttribute('streaming', 'false');
+        block.setAttribute('answer', typeof answerText === 'string' ? answerText : (answerText || ''));
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message llm-message';
+        messageDiv.appendChild(block);
+        chatArea.appendChild(messageDiv);
+        setTimeout(() => { chatArea.scrollTop = chatArea.scrollHeight; }, 10);
+        return block;
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // if (request.action === 'explainContentResponse') {
         //     // This logic is now moved directly into the explainBtn's sendMessage callback (around lines 26-45)
@@ -222,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         //         const prompt = "Explain the following text:\n\n" + request.content;
         //         chatMainArea.style.display = 'block';
         //         oneoffInstructionArea.style.display = 'none';
-        //         console.log("Chat.js: General onMessage - About to call makeApiCall for explain. Prompt length:", prompt.length);
+        //         console.log("Chat: General onMessage - About to call makeApiCall for explain. Prompt length:", prompt.length);
         //         makeApiCall(prompt);
         //         showToast('Tab content received, explaining...');
         //     } else {
@@ -298,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     // Default analysis
                     analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
-                    addMessage('System', `🔍 Analyzing ${currentMediaData.type}...`);
+                    addMessage('System', `\uD83D\uDD0D Analyzing ${currentMediaData.type}...`);
                 }
                 
                 console.log('About to call makeApiCallWithMedia with:', {
@@ -312,6 +328,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 makeApiCallWithMedia(analysisPrompt, currentMediaData);
             }
         } else if (request.action === 'setApiResponse') {
+            if (request.requestId) {
+                const block = document.createElement('enhanced-thinking-block');
+                block.setAttribute('streaming', 'false');
+                block.setAttribute('answer', typeof request.apiResponse === 'string' ? request.apiResponse : (request.apiResponse?.content?.map?.(b => b.type === 'text' ? b.text : '').join('') || ''));
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message llm-message';
+                messageDiv.appendChild(block);
+                chatArea.appendChild(messageDiv);
+                inflightRequests.delete(request.requestId);
+                return;
+            }
             console.log("Chat: setApiResponse received", request);
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
@@ -330,64 +357,59 @@ document.addEventListener('DOMContentLoaded', () => {
                     conversationHistory.push({ role: 'user', content: request.prompt });
                 }
             }
-
-            if (request.isAnthropicMcp && typeof request.apiResponse === 'object' && request.apiResponse.content && Array.isArray(request.apiResponse.content)) {
-                // This branch handles a non-streaming response from an Anthropic endpoint where the MCP Connector was used.
-                // `request.apiResponse` is the full message object from Anthropic,
-                // and `request.apiResponse.content` is an array of content blocks (text, mcp_tool_use, mcp_tool_result).
-                console.log("Chat: Handling Anthropic MCP response blocks (non-streaming):", request.apiResponse.content);
-                let accumulatedTextForDisplay = ""; // Accumulate text for a single LLM message bubble if desired
-
-                request.apiResponse.content.forEach(block => {
-                    if (block.type === 'text') {
-                        accumulatedTextForDisplay += block.text;
-                    } else if (block.type === 'mcp_tool_use') {
-                        // If there was preceding text, display it first.
-                        if (accumulatedTextForDisplay) {
-                            addMessage('LLM', accumulatedTextForDisplay);
-                            accumulatedTextForDisplay = ""; // Reset
-                        }
-                        addMessage('System', `⚙️ LLM is using MCP tool (Anthropic): **${block.name}** (Server: ${block.server_name}). Input: ${JSON.stringify(block.input)}`);
-                    } else if (block.type === 'mcp_tool_result') {
-                        if (accumulatedTextForDisplay) {
-                            addMessage('LLM', accumulatedTextForDisplay);
-                            accumulatedTextForDisplay = ""; // Reset
-                        }
-                        let contentDisplay = "Tool result content not directly displayable.";
-                        if (block.content && Array.isArray(block.content) && block.content.length > 0 && block.content[0].type === 'text') {
-                            contentDisplay = block.content[0].text; // Display first text block of the result
-                        } else if (typeof block.content === 'string') { // Some simple results might be a string
-                            contentDisplay = block.content;
-                        } else if (block.is_error) {
-                            contentDisplay = "Error in tool execution.";
-                        }
-                        addMessage('System', `✅ MCP Tool Result (Anthropic) for ID ${block.tool_use_id} from server ${request.apiResponse.server_name || block.server_name || 'unknown'}: ${block.is_error ? 'Error: ' : ''}${contentDisplay}`);
-                    }
-                });
-
-                // Add any remaining accumulated text as a final LLM message.
-                if (accumulatedTextForDisplay) {
-                    addMessage('LLM', accumulatedTextForDisplay);
-                }
-
-                // The full Anthropic message object (request.apiResponse) is added to history.
-                // This object contains the 'role': 'assistant' and the 'content' array with all blocks.
-                conversationHistory.push(request.apiResponse);
-                console.log("Chat: Added full Anthropic message object to history (non-streaming):", request.apiResponse);
-
-            } else if (request.apiResponse && typeof request.apiResponse === 'string') {
+            if (request.apiResponse && typeof request.apiResponse === 'string') {
                 // Standard text response (OpenAI, or Anthropic without MCP blocks, or error string)
-                addMessage('LLM', request.apiResponse);
+                appendEnhancedAnswer(request.apiResponse);
                 const lastAssistantMessage = conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'assistant' ? conversationHistory[conversationHistory.length - 1].content : null;
                 if (lastAssistantMessage !== request.apiResponse) {
                     conversationHistory.push({ role: 'assistant', content: request.apiResponse });
                 }
             } else if (request.apiResponse) { // Fallback for unexpected structure
                  console.warn("Chat: setApiResponse received apiResponse in unexpected format:", request.apiResponse);
-                 addMessage('LLM', JSON.stringify(request.apiResponse));
+                 appendEnhancedAnswer(JSON.stringify(request.apiResponse));
                  conversationHistory.push({ role: 'assistant', content: JSON.stringify(request.apiResponse) });
             }
+        } else if (request.action === 'setThinkingApiResponse') {
+            // Handle non-streaming responses with thinking blocks
+            console.log("Chat: setThinkingApiResponse received", request);
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            
+            if (request.prompt) { // Add user prompt to history if not already there
+                const lastMessage = conversationHistory[conversationHistory.length - 1];
+                if (!lastMessage || !(lastMessage.role === 'user' && lastMessage.content === request.prompt)) {
+                    addMessage('User', request.prompt.split('\n')[0]); // Display shortened prompt
+                    conversationHistory.push({ role: 'user', content: request.prompt });
+                }
+            }
+            
+            // Create a thinking block with the thought and answer parts
+            const thinkingBlock = document.createElement('thinking-block');
+            thinkingBlock.setAttribute('think', request.think || '');
+            thinkingBlock.setAttribute('answer', request.answer || '');
+            chatArea.appendChild(thinkingBlock);
+            
+            // Also add the answer to history
+            if (request.answer && request.answer.trim()) {
+                conversationHistory.push({ role: 'assistant', content: request.answer });
+            }
         } else if (request.action === 'streamApiStart') {
+            // Create enhanced-thinking-block keyed by requestId
+            if (request.requestId) {
+                const thinkingBlock = document.createElement('enhanced-thinking-block');
+                thinkingBlock.setAttribute('streaming', 'true');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message llm-message';
+                messageDiv.appendChild(thinkingBlock);
+                chatArea.appendChild(messageDiv);
+                inflightRequests.set(request.requestId, { element: thinkingBlock, type: 'stream' });
+                currentStreamingMessageDiv = thinkingBlock;
+                currentStreamingContentElement = thinkingBlock;
+                currentStreamingUniqueId = request.requestId;
+            }
+            // Old path below will be effectively ignored due to requestId handling
             console.log("Chat: streamApiStart received for prompt:", request.prompt);
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
@@ -400,23 +422,114 @@ document.addEventListener('DOMContentLoaded', () => {
                     conversationHistory.push({ role: 'user', content: request.prompt });
                 }
             }
+            
             accumulatedStreamedText = "";
-            const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-            currentStreamingMessageDiv = messageDiv;
-            currentStreamingContentElement = contentElement;
-            currentStreamingUniqueId = uniqueIdString;
+            const thinkingBlock = document.createElement('thinking-block');
+            // Set initial streaming state
+            thinkingBlock.setAttribute('streaming', 'true');
+            chatArea.appendChild(thinkingBlock);
+
+            // Use the thinking-block for both thinking and answer parts
+            currentStreamingMessageDiv = thinkingBlock;
+            currentThinkingBlockElement = thinkingBlock;
+            // Reset reasoning accumulator
+            currentThinkingBlockElement.reasoningAccumulator = "";
+            // Instead of accessing shadowRoot directly, use the element's attributes to update content
+            // The thinking-block handles its internal shadow DOM updates
+            currentStreamingContentElement = thinkingBlock; // We'll use the element itself to update content via attributes
+
             console.log("Chat: streamApiStart - Values set: ", {
+                currentThinkingBlockElementExists: !!currentThinkingBlockElement,
                 currentStreamingMessageDivExists: !!currentStreamingMessageDiv,
                 currentStreamingContentElementExists: !!currentStreamingContentElement
             });
+        } else if (request.action === 'streamApiThinkingChunk') {
+            const info = request.requestId ? inflightRequests.get(request.requestId) : null;
+            if (info && info.element) {
+                // For enhanced-thinking-block, use 'content' attribute to handle <thinking> tags
+                if (info.element.tagName === 'ENHANCED-THINKING-BLOCK') {
+                    let content = '';
+                    if (request.think !== undefined) {
+                        content += `<thinking>${request.think}</thinking>\n`;
+                    }
+                    if (request.answer !== undefined) {
+                        content += request.answer;
+                    }
+                    info.element.setAttribute('content', content);
+                } else {
+                    // Fallback for old thinking-block
+                    if (request.think !== undefined) info.element.setAttribute('think', request.think);
+                    if (request.answer !== undefined) info.element.setAttribute('answer', request.answer);
+                }
+                chatArea.scrollTop = chatArea.scrollHeight;
+                return;
+            }
+            // Handle streaming chunks with think/answer separation
+            if (currentThinkingBlockElement) {
+                if (request.think !== undefined) {
+                    currentThinkingBlockElement.setAttribute('think', request.think);
+                }
+                if (request.answer !== undefined) {
+                    currentThinkingBlockElement.setAttribute('answer', request.answer);
+                    accumulatedStreamedText = request.answer; // Keep accumulatedStreamedText in sync
+                }
+            }
+            chatArea.scrollTop = chatArea.scrollHeight;
         } else if (request.action === 'streamApiResponseChunk') {
+            const info = request.requestId ? inflightRequests.get(request.requestId) : null;
+            if (info && info.element && request.chunk != null) {
+                if (info.element.tagName === 'ENHANCED-THINKING-BLOCK') {
+                    // For enhanced thinking block, accumulate content and update using 'content' attribute
+                    const currentContent = info.element.getAttribute('content') || '';
+                    const thinkingMatch = currentContent.match(/<thinking>(.*?)<\/thinking>/s);
+                    const thinkingPart = thinkingMatch ? `<thinking>${thinkingMatch[1]}</thinking>\n` : '';
+                    const answerPart = currentContent.replace(/<thinking>.*?<\/thinking>\s*/s, '') + request.chunk;
+                    info.element.setAttribute('content', thinkingPart + answerPart);
+                } else {
+                    // Fallback for old thinking-block
+                    info.element.setAttribute('answer', (info.element.getAttribute('answer') || '') + request.chunk);
+                }
+                chatArea.scrollTop = chatArea.scrollHeight;
+                return;
+            }
             if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
-            if (currentStreamingContentElement && request.chunk != null) {
-                accumulatedStreamedText += request.chunk;
-                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+            if (currentStreamingContentElement && (request.chunk != null || request.reasoningChunk != null)) {
+                // Handle reasoning content if present
+                if (request.reasoningChunk != null && currentThinkingBlockElement) {
+                    // Initialize reasoning accumulator if not exists
+                    if (!currentThinkingBlockElement.reasoningAccumulator) {
+                        currentThinkingBlockElement.reasoningAccumulator = '';
+                    }
+                    currentThinkingBlockElement.reasoningAccumulator += request.reasoningChunk;
+                    // Update the thinking block with accumulated reasoning
+                    currentThinkingBlockElement.setAttribute('think', currentThinkingBlockElement.reasoningAccumulator);
+                }
+
+                // Handle regular content if present
+                if (request.chunk != null) {
+                    accumulatedStreamedText += request.chunk;
+                    if (currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                        // Update the answer portion in our thinking block
+                        currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
+                    } else {
+                        // Fallback to original behavior if not using thinking block
+                        currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                    }
+                }
+
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
         } else if (request.action === 'streamApiEnd') {
+            const info = request.requestId ? inflightRequests.get(request.requestId) : null;
+            if (info && info.element) {
+                info.element.setAttribute('streaming', 'false');
+                inflightRequests.delete(request.requestId);
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                clearButton.textContent = 'Clear';
+                userInput.focus();
+                return;
+            }
             console.log("Chat: streamApiEnd handler invoked.", request);
 
             // Check if Anthropic stream was already finalized by 'streamApiAnthropicMessageStop'
@@ -536,41 +649,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
             // Finalize the original LLM message bubble based on whether a tool was called
-            if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
-                const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-
-                if (toolCallWasHandledInThisStream) {
-                    // The content of currentStreamingContentElement is "⚙️ Using tool: ..."
-                    // It was set by streamApiToolCallChunk. We just need to attach copy listeners.
-                    if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
-                        const toolMessageContent = currentStreamingContentElement.innerText;
-                        attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+            if (currentStreamingMessageDiv && currentStreamingContentElement) {
+                // If we're using a thinking block, finalize both thinking and answer content
+                if (currentStreamingMessageDiv?.tagName === 'THINKING-BLOCK') {
+                    // Finalize the thinking block - turn off streaming state
+                    if (currentThinkingBlockElement) {
+                        currentThinkingBlockElement.setAttribute('streaming', 'false');
+                        // Keep the accumulated reasoning in the think attribute
+                        if (currentThinkingBlockElement.reasoningAccumulator) {
+                            currentStreamingMessageDiv.setAttribute('think', currentThinkingBlockElement.reasoningAccumulator);
+                        }
+                        // Preserve the final answer content in the answer attribute
+                        currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
                     }
-                    // History for assistant *requesting* the tool is already added within the toolCallWasHandledInThisStream block.
-                } else {
-                    // This is the original path: finalize with accumulatedStreamedText
-                const finalContent = accumulatedStreamedText;
-                if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
-                    currentStreamingContentElement.innerHTML = marked.parse(finalContent);
-                     if (copyIconElem && copyFormattedIconElem) {
-                        attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                    }
-                }
 
-                    // Add to history if there's actual content and it wasn't a tool call
-                    if (finalContent.trim()) {
+                    // Add to history
+                    if (accumulatedStreamedText.trim()) {
                         const lastMessage = conversationHistory[conversationHistory.length - 1];
-                        // Check if the last message is not the same text content from the same assistant
-                        if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
-                             // Also ensure the last message wasn't an assistant message that just made a tool call (avoid double history)
-                             let lastMessageWasToolCallRequest = false;
-                             if(lastMessage && lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0){
-                                 lastMessageWasToolCallRequest = true;
-                             }
-                             if(!lastMessageWasToolCallRequest){
-                                conversationHistory.push({ role: 'assistant', content: finalContent });
-                             }
+                        if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === accumulatedStreamedText)) {
+                            conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
+                        }
+                    }
+                } else if (currentStreamingUniqueId) { // Only do this for regular messages
+                    // Original behavior for regular message divs
+                    const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
+                    const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
+
+                    if (toolCallWasHandledInThisStream) {
+                        // The content of currentStreamingContentElement is "⚙️ Using tool: ..."
+                        // It was set by streamApiToolCallChunk. We just need to attach copy listeners.
+                        if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
+                            const toolMessageContent = currentStreamingContentElement.innerText;
+                            attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                        }
+                        // History for assistant *requesting* the tool is already added within the toolCallWasHandledInThisStream block.
+                    } else {
+                        // This is the original path: finalize with accumulatedStreamedText
+                        const finalContent = accumulatedStreamedText;
+                        if (currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                            // Update the answer portion in our thinking block
+                            currentStreamingMessageDiv.setAttribute('answer', finalContent);
+                        } else {
+                            if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
+                                currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                                if (copyIconElem && copyFormattedIconElem) {
+                                    attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                                }
+                            }
+                        }
+
+                        // Add to history if there's actual content and it wasn't a tool call
+                        if (finalContent.trim()) {
+                            const lastMessage = conversationHistory[conversationHistory.length - 1];
+                            // Check if the last message is not the same text content from the same assistant
+                            if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
+                                 // Also ensure the last message wasn't an assistant message that just made a tool call (avoid double history)
+                                 let lastMessageWasToolCallRequest = false;
+                                 if(lastMessage && lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0){
+                                     lastMessageWasToolCallRequest = true;
+                                 }
+                                 if(!lastMessageWasToolCallRequest){
+                                    conversationHistory.push({ role: 'assistant', content: finalContent });
+                                 }
+                            }
                         }
                     }
                 }
@@ -581,6 +722,12 @@ document.addEventListener('DOMContentLoaded', () => {
             currentStreamingContentElement = null;
             currentStreamingUniqueId = null;
             accumulatedStreamedText = "";
+            // Reset reasoning accumulator and clear thinking block reference
+            if (currentThinkingBlockElement) {
+                currentThinkingBlockElement.setAttribute('streaming', 'false');
+                currentThinkingBlockElement.reasoningAccumulator = "";
+                currentThinkingBlockElement = null;
+            }
             // activeStreamingToolCall is already null if it was processed earlier in this function.
             // toolCallWasHandledInThisStream is a local var and will be gone.
 
@@ -608,15 +755,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Clear previous accumulated text from display
                 // accumulatedStreamedText = ""; // Preserve accumulated text
-                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
-
+                if (currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                    // Update the thinking block to show tool usage
+                    currentStreamingMessageDiv.setAttribute('answer', `⚙️ Using tool: **${toolCall.function.name}**`);
+                } else {
+                    currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
+                }
+                
                 // Asynchronously fetch tool definition to update UI for MCP tool
                 (async () => {
                     const allToolsStream = await getTools();
                     const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
                     if (currentStreamingContentElement) { // Check if element still exists
-                        if (true) {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
+                        if (currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                            currentStreamingMessageDiv.setAttribute('answer', `⚙️ Using tool: **${toolCall.function.name}**`);
                         } else {
                             currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
                         }
@@ -627,69 +779,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Potentially, actual arguments could be streamed. For now, just the name.
                 // If toolCall.function.arguments is a string of streamed arguments, append it:
-                // currentStreamingContentElement.innerHTML += marked.parse("```\n" + toolCall.function.arguments + "\n```");
+                // currentStreamingContentElement.innerHTML += marked.parse("\n```\n" + toolCall.function.arguments + "\n```\n");
 
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
-        } else if (request.action === 'streamApiAnthropicContentBlockStart') {
-            console.log("Chat: streamApiAnthropicContentBlockStart received", request.contentBlock);
-            if (currentStreamingContentElement && request.contentBlock) {
-                const block = request.contentBlock;
-                if (block.type === 'mcp_tool_use') {
-                    // Display tool usage. For streaming, we might just show the intent to use the tool.
-                    // The actual result will come in a separate 'mcp_tool_result' block or event.
-                    // accumulatedStreamedText might need to be cleared or handled carefully here if text was streaming before this block.
-                    // For now, append this system message.
-                    const toolUseMessage = `⚙️ Using MCP tool (Anthropic): **${block.name}** (Server: ${block.server_name})`;
-                    // Add this as a system message for now, or integrate into the current LLM bubble if desired
-                    addMessage('System', toolUseMessage);
-                    // We don't set activeStreamingToolCall here because Anthropic handles the execution.
-                    // History for this 'mcp_tool_use' block will be part of the assistant's message content.
-                } else if (block.type === 'text') {
-                    // If a text block starts, we can append its initial content if any.
-                    // However, 'content_block_delta' for text is usually handled by 'streamApiResponseChunk'.
-                    // This handler is more for non-text blocks or initial setup of a text block if needed.
-                    console.log("Chat: Anthropic stream started a text block:", block.text || "(empty initial text)");
-                }
-                 chatArea.scrollTop = chatArea.scrollHeight;
-            }
-        } else if (request.action === 'streamApiAnthropicMessageStop') {
-            // This handler is called when background.js receives a 'message_stop' event from an Anthropic stream,
-            // indicating the end of the message. request.anthropicMessage contains the complete final message object.
-            console.log("Chat: streamApiAnthropicMessageStop received, full Anthropic message:", request.anthropicMessage);
-            if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
-                // The accumulatedStreamedText should reflect the text parts.
-                // The full message from Anthropic (request.anthropicMessage) contains all blocks.
-                // Finalize the display with accumulatedStreamedText (which should be the text part)
-                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                if (copyIconElem && copyFormattedIconElem) {
-                    attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                }
-            }
-
-            // Add the complete Anthropic message object to history
-            if (request.anthropicMessage) {
-                conversationHistory.push(request.anthropicMessage); // This is the assistant's message object
-                console.log("Chat: Added full Anthropic message to history from streamApiAnthropicMessageStop:", request.anthropicMessage);
-            }
-
-            // Reset UI
-            userInput.disabled = false;
-            sendButton.disabled = false;
-            clearButton.textContent = 'Clear'; // Assuming 'Stop' was set at streamApiStart
-            userInput.focus();
-
-            // Reset streaming variables
-            currentStreamingMessageDiv = null;
-            currentStreamingContentElement = null;
-            currentStreamingUniqueId = null;
-            accumulatedStreamedText = "";
-            activeStreamingToolCall = null; // Should be null for Anthropic MCP anyway
-
-            // Set a flag to prevent streamApiEnd from duplicating actions
-            window.anthropicStreamFinalizedByStopEvent = true;
+        
 
         } else if (request.action === 'handleToolCallResponse') { // This handles OpenAI-style non-streaming tool calls
             console.log("Chat: handleToolCallResponse (OpenAI-style) received", request);
@@ -790,7 +884,7 @@ document.addEventListener('DOMContentLoaded', () => {
                            controls>
                     </video>
                     <div>
-                        <strong>🎥 Video Analysis</strong><br>
+                        <strong>\uD83C\uDFA5 Video Analysis</strong><br>
                         <small>Right-clicked video ready for analysis</small>
                     </div>
                 </div>
@@ -803,7 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
                            controls>
                     </audio>
                     <div>
-                        <strong>🎵 Audio Analysis</strong><br>
+                        <strong>\uD83C\uDFB5 Audio Analysis</strong><br>
                         <small>Right-clicked audio ready for analysis</small>
                     </div>
                 </div>
@@ -1203,45 +1297,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // --- Anthropic MCP Connector Logic for chat.js ---
-            // This section mirrors the logic in background.js's makeLlmApiRequest.
-            // If the endpoint is Anthropic and MCP tools are defined with mcpServerUrl,
-            // it prepares the request for Anthropic's Managed MCP approach.
-            let usingAnthropicMcpConnector = false;
-
-            if (isAnthropicEndpoint) {
-                console.log("Chat: Anthropic endpoint detected. Checking for MCP tools to use with MCP Connector.");
-                // allAvailableTools is already fetched and processed by getTools()
-                const mcpConfiguredTools = allAvailableTools.filter(tool => tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "");
-
-                if (mcpConfiguredTools.length > 0) {
-                    usingAnthropicMcpConnector = true;
-                    fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header for Anthropic MCP
-
-                    requestBody.mcp_servers = mcpConfiguredTools.map(tool => {
-                        const serverEntry = {
-                            type: "url",
-                            url: tool.mcpServerUrl,
-                            name: tool.name, // Use tool's defined name as the server name for Anthropic
-                        };
-                        // TODO: Add authorization_token if available in tool definition (e.g., tool.mcpAuthToken)
-                        // This would require tool definitions to store this token.
-                        // if (tool.mcpAuthToken) { // Assuming mcpAuthToken is where it would be stored
-                        //     serverEntry.authorization_token = tool.mcpAuthToken;
-                        // }
-                        return serverEntry;
-                    });
-                    console.log("Chat: Using Anthropic MCP Connector. mcp_servers payload:", JSON.stringify(requestBody.mcp_servers, null, 2));
-                    // When using Anthropic MCP Connector, OpenAI-style 'tools' and 'tool_choice' are not sent.
-                } else {
-                    console.log("Chat: Anthropic endpoint, but no MCP-configured tools found. Proceeding with standard tool definition if any.");
-                    Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
-                }
-            } else {
-                // Not an Anthropic endpoint, use standard OpenAI-style tool definition
-                Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
-            }
-            // --- End Anthropic MCP Connector Logic ---
+            // Not an Anthropic endpoint, use standard OpenAI-style tool definition
+            Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
 
 
             console.log("Chat: makeApiCall - Final requestBody before sending:", JSON.stringify(requestBody, null, 2));
@@ -1254,22 +1311,36 @@ document.addEventListener('DOMContentLoaded', () => {
             // For now, keeping the existing logic for disabling streaming if a 'tool' role message is in history.
             const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
 
-            if (hasToolMessage && enableStreaming && !usingAnthropicMcpConnector) { // Only disable for non-Anthropic MCP if tool in history
+            if (hasToolMessage && enableStreaming) { // Disable streaming when tool result is in history
                 effectiveEnableStreaming = false;
-                console.log("Chat: Tool result detected in history for non-Anthropic MCP, temporarily disabling streaming for this call.");
+                console.log("Chat: Tool result detected in history, temporarily disabling streaming for this call.");
             }
 
 
             if (effectiveEnableStreaming) { // This includes Anthropic MCP streaming
+                // Delegate streaming entirely to background.js with a requestId
+                const requestId = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+                inflightRequests.set(requestId, { element: null, type: 'stream' });
+                chrome.runtime.sendMessage({ action: 'startApiRequest', requestId, prompt: userMessage, tool_choice });
+                return;
                 requestBody.stream = true;
                 userInput.disabled = true;
                 sendButton.disabled = true;
                 clearButton.textContent = 'Stop';
 
-                const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-                currentStreamingMessageDiv = messageDiv;
-                currentStreamingContentElement = contentElement;
-                currentStreamingUniqueId = uniqueIdString;
+                // Create enhanced thinking block for streaming content with thinking tags support
+                const thinkingBlock = document.createElement('enhanced-thinking-block');
+                thinkingBlock.setAttribute('streaming', 'true');
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message llm-message';
+                messageDiv.appendChild(thinkingBlock);
+                
+                chatArea.appendChild(messageDiv);
+                
+                currentStreamingMessageDiv = thinkingBlock; // Use the enhanced thinking block
+                currentStreamingContentElement = thinkingBlock;
+                currentStreamingUniqueId = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
                 accumulatedStreamedText = ""; // Reset for this new stream
 
                 currentAbortController = new AbortController();
@@ -1352,7 +1423,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                     if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
                                         accumulatedStreamedText += parsed.choices[0].delta.content;
                                         if(currentStreamingContentElement) {
-                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                            // Update the enhanced thinking block with streaming content
+                                            if(currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'ENHANCED-THINKING-BLOCK') {
+                                                // Always use 'content' attribute for enhanced thinking block
+                                                currentStreamingMessageDiv.setAttribute('content', accumulatedStreamedText);
+                                            } else {
+                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                            }
                                         }
                                         chatArea.scrollTop = chatArea.scrollHeight;
                                     }
@@ -1572,7 +1649,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                     if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
                                         accumulatedStreamedText += parsed.choices[0].delta.content;
                                         if(currentStreamingContentElement) {
-                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                            if(currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                                                currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
+                                            } else {
+                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                            }
                                         }
                                         chatArea.scrollTop = chatArea.scrollHeight;
                                     }
