@@ -115,7 +115,15 @@ This is the final answer based on the thinking process.">
     </div>
 
     <div class="test-container">
-        <h2>4. Streaming Simulation</h2>
+        <h2>4. Answer Content Only (No Thinking Tags)</h2>
+        <p>Test content without thinking tags - should show directly in answer section.</p>
+        <enhanced-thinking-block 
+            content="This is a direct answer without any thinking tags. It should appear in the answer section below.">
+        </enhanced-thinking-block>
+    </div>
+
+    <div class="test-container">
+        <h2>5. Streaming Simulation</h2>
         <p>Test the streaming state with animated indicators.</p>
         <enhanced-thinking-block 
             streaming="true"
@@ -127,7 +135,7 @@ This is the final answer based on the thinking process.">
     </div>
 
     <div class="test-container">
-        <h2>5. Interactive Test</h2>
+        <h2>6. Interactive Test</h2>
         <p>Use the controls below to test different scenarios with the thinking block.</p>
         
         <textarea id="testInput" placeholder="Enter content with thinking tags...">This is a test of the <thinking>enhanced parsing capabilities
@@ -138,6 +146,7 @@ And this is the final response.</textarea>
         <button onclick="testEnhancedBlock()">Test Enhanced Block</button>
         <button onclick="testNestedTags()">Test Nested Tags</button>
         <button onclick="testRegularTags()">Test Regular Tags</button>
+        <button onclick="testAnswerOnly()">Test Answer Only</button>
         
         <div id="testResult" class="status"></div>
         
@@ -236,6 +245,32 @@ Based on my analysis, here is the final response that addresses all the points r
                 container.appendChild(block);
                 
                 resultDiv.textContent = '✅ Regular tags test completed successfully!';
+                resultDiv.className = 'status success';
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+                resultDiv.className = 'status error';
+                resultDiv.style.display = 'block';
+            }
+        }
+        
+        function testAnswerOnly() {
+            const container = document.getElementById('interactiveBlockContainer');
+            const resultDiv = document.getElementById('testResult');
+            
+            const answerOnlyContent = `This is a direct answer without any thinking tags.
+It should appear directly in the answer section of the thinking block.
+The thinking section should remain empty or hidden, while this content is visible.`;
+            
+            try {
+                container.innerHTML = '';
+                
+                const block = document.createElement('enhanced-thinking-block');
+                block.setAttribute('content', answerOnlyContent);
+                
+                container.appendChild(block);
+                
+                resultDiv.textContent = '✅ Answer-only test completed successfully!';
                 resultDiv.className = 'status success';
                 resultDiv.style.display = 'block';
             } catch (error) {

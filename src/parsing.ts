@@ -14,13 +14,14 @@ export function parseThinkingSimple(text: string): ContentSegment[] {
   if (!text) return [];
 
   const segments: ContentSegment[] = [];
-  const parts = text.split(/<thinking>|<\/thinking>/g);
+  // Split on all tag formats - support <thinking>, ◁think▷, and their closing variants
+  const parts = text.split(/(<thinking>|<\/thinking>|◁think▷|◁\/think▷|◁\/thinking▷)/g);
 
   for (let i = 0; i < parts.length; i++) {
     const content = parts[i];
     if (!content) continue;
 
-    // If i is odd, it's inside a <thinking> tag
+    // If i is odd, it's inside a thinking tag (any format)
     if (i % 2 === 1) {
       segments.push({ type: 'thinking', content });
     } else {
@@ -125,9 +126,9 @@ function flattenSegments(segments: ContentSegment[], depth: number = 0): Content
 export function parseThinkingContent(content: string): ContentSegment[] {
   if (!content) return [];
   
-  // First check if we have nested tags by counting opening vs closing tags
-  const openTags = (content.match(/<thinking>/gi) || []).length;
-  const closeTags = (content.match(/<\/thinking>/gi) || []).length;
+  // First check if we have nested tags by counting opening vs closing tags for all formats
+  const openTags = (content.match(/<thinking>|◁think▷/gi) || []).length;
+  const closeTags = (content.match(/<\/thinking>|◁\/think▷|◁\/thinking▷/gi) || []).length;
   
   if (openTags !== closeTags) {
     console.warn('Unbalanced thinking tags detected, using simple parsing');
@@ -156,20 +157,43 @@ export function parseNestedThinking(content: string): ContentSegment[] {
   let i = 0;
 
   while (i < content.length) {
-    // Look for the next tag
-    const thinkingStart = content.indexOf('<thinking>', i);
-    const thinkingEnd = content.indexOf('</thinking>', i);
+    // Look for the next tag - support all formats
+    const thinkingStart1 = content.indexOf('<thinking>', i);
+    const thinkingStart2 = content.indexOf('◁think▷', i);
+    const thinkingEnd1 = content.indexOf('</thinking>', i);
+    const thinkingEnd2 = content.indexOf('◁/think▷', i);
+    const thinkingEnd3 = content.indexOf('◁/thinking▷', i);
     
     // Find the earliest occurring tag
     let nextTagPos = -1;
     let isStartTag = false;
+    let tagLength = 0;
     
-    if (thinkingStart !== -1 && (thinkingEnd === -1 || thinkingStart < thinkingEnd)) {
-      nextTagPos = thinkingStart;
+    // Check start tags
+    const earliestStart = thinkingStart1 !== -1 && thinkingStart2 !== -1 
+      ? Math.min(thinkingStart1, thinkingStart2)
+      : (thinkingStart1 !== -1 ? thinkingStart1 : thinkingStart2);
+    
+    // Check end tags  
+    const earliestEnd = [thinkingEnd1, thinkingEnd2, thinkingEnd3]
+      .filter(pos => pos !== -1)
+      .reduce((min, pos) => pos < min ? pos : min, Infinity);
+    
+    if (earliestStart !== -1 && (earliestEnd === Infinity || earliestStart < earliestEnd)) {
+      nextTagPos = earliestStart;
       isStartTag = true;
-    } else if (thinkingEnd !== -1) {
-      nextTagPos = thinkingEnd;
+      tagLength = (earliestStart === thinkingStart1) ? 10 : 7; // <thinking> = 10, ◁think▷ = 7
+    } else if (earliestEnd !== Infinity) {
+      nextTagPos = earliestEnd;
       isStartTag = false;
+      // Determine tag length based on which end tag we found
+      if (earliestEnd === thinkingEnd1) {
+        tagLength = 11; // </thinking> = 11
+      } else if (earliestEnd === thinkingEnd2) {
+        tagLength = 8; // ◁/think▷ = 8
+      } else {
+        tagLength = 10; // ◁/thinking▷ = 10
+      }
     }
     
     if (nextTagPos === -1) {
@@ -233,11 +257,12 @@ export function parseNestedThinking(content: string): ContentSegment[] {
         }
       } else {
         // Unmatched closing tag, treat as text
-        currentText += '</thinking>';
+        const tagText = content.substring(nextTagPos, nextTagPos + tagLength);
+        currentText += tagText;
       }
     }
     
-    i = nextTagPos + (isStartTag ? 10 : 11); // Skip past the tag
+    i = nextTagPos + tagLength; // Skip past the tag
   }
   
   // Add any remaining text if there's no active thinking block
@@ -266,9 +291,10 @@ export function parseNestedThinking(content: string): ContentSegment[] {
 /**
  * Enhanced parsing function that handles both simple and complex cases
  */
-export function parseThinkingContent(content: string): ContentSegment[] {
-  // First, try to extract content between <thinking> tags
-  const thinkingRegex = /<thinking>([\s\S]*?)<\/thinking>/gi;
+export function parseThinkingEnhanced(content: string): ContentSegment[] {
+  // First, try to extract content between all thinking tag formats
+  // Improved regex pattern with better matching and explicit capture groups
+  const thinkingRegex = /(?:<thinking>([\s\S]*?)<\/thinking>|(◁think▷[\s\S]*?◁\/think▷)|(◁think▷[\s\S]*?◁\/thinking▷))/gi;
   let match;
   const segments: ContentSegment[] = [];
   
@@ -283,9 +309,22 @@ export function parseThinkingContent(content: string): ContentSegment[] {
       }
     }
     
-    // Add the thinking content
-    const thinkingContent = match[1];
-    segments.push({ type: 'thinking', content: thinkingContent });
+    // Add the thinking content - match[1] is for <thinking> tags, match[2] and match[3] are for ◁think▷ tags
+    let thinkingContent = '';
+    if (match[1]) {
+      // <thinking> tags
+      thinkingContent = match[1].trim();
+    } else if (match[2]) {
+      // ◁think▷◁/think▷ tags
+      thinkingContent = match[2].trim();
+    } else if (match[3]) {
+      // ◁think▷◁/thinking▷ tags
+      thinkingContent = match[3].trim();
+    }
+
+    if (thinkingContent) {
+      segments.push({ type: 'thinking', content: thinkingContent });
+    }
     
     lastIndex = match.index + match[0].length;
   }

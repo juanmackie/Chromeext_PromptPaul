@@ -276,7 +276,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             
             // Show loading message immediately (with error handling)
             try {
-                chrome.runtime.sendMessage({
+                await sendMessageWithRetry({
                     action: 'setMediaForAnalysis',
                     mediaData: {
                         type: mediaType,
@@ -302,9 +302,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 });
                 
                 // Send the actual media data (with retry logic for side panel)
-                const sendMediaData = () => {
+                const sendMediaData = async () => {
                     try {
-                        chrome.runtime.sendMessage({
+                        // Check if tab is still active before sending
+                        const isActive = await isTabActive(tab.id);
+                        if (!isActive) {
+                            console.log('Tab is no longer active, skipping media data send');
+                            return;
+                        }
+
+                        await sendMessageWithRetry({
                             action: 'setMediaForAnalysis',
                             mediaData: {
                                 type: mediaType,
@@ -328,7 +335,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             }).catch(async error => {
                 console.error('Error fetching media:', error);
                 try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
-                chrome.runtime.sendMessage({
+                await sendMessageWithRetry({
                     action: 'setMediaForAnalysis',
                     mediaData: {
                         type: mediaType,
@@ -486,6 +493,63 @@ function getMimeTypeFromUrl(url) {
 // console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
+// Service worker keep-alive mechanism
+let keepAliveInterval;
+
+function startKeepAlive() {
+  // Send a message to keep the service worker alive every 25 seconds
+  // Chrome service workers have a 5-minute idle timeout, but we're being conservative
+  keepAliveInterval = setInterval(() => {
+    try {
+      chrome.runtime.sendMessage({ action: 'keepAlive' }).catch(() => {
+        // Ignore errors - this is just for keep-alive
+      });
+    } catch (e) {
+      // Ignore errors
+    }
+  }, 25000);
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+  }
+}
+
+// Start keep-alive when the script loads
+startKeepAlive();
+
+// Enhanced message sending with retry logic and proper error handling
+async function sendMessageWithRetry(message, maxRetries = 3, delay = 100) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await chrome.runtime.sendMessage(message);
+      return { success: true };
+    } catch (error) {
+      console.warn(`Message send attempt ${attempt} failed:`, error.message);
+      
+      if (attempt === maxRetries) {
+        console.error('All message send attempts failed:', message.action, error);
+        return { success: false, error: error.message };
+      }
+      
+      // Wait before retry with exponential backoff
+      await new Promise(resolve => setTimeout(resolve, delay * attempt));
+    }
+  }
+}
+
+// Helper function to check if a specific tab is still active
+async function isTabActive(tabId) {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs.some(tab => tab.id === tabId);
+  } catch (error) {
+    return false;
+  }
+}
+
 
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
@@ -561,10 +625,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  // Common message sending function
-  const sendMessage = (action, extra = {}) => {
+  // Common message sending function with retry logic
+  const sendMessage = async (action, extra = {}) => {
     try {
-      chrome.runtime.sendMessage({
+      // Check if tab is still active before sending
+      const isActive = await isTabActive(tab.id);
+      if (!isActive) {
+        console.log(`Tab ${tab.id} is no longer active, skipping ${action} message`);
+        return;
+      }
+
+      await sendMessageWithRetry({
         action,
         selectedText: promptContent,
         tabId: tab.id,
@@ -963,7 +1034,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
             // This allows chat.js to prepare the UI for incoming chunks
             // Moved out of setTimeout to send immediately
             try {
-                chrome.runtime.sendMessage({
+                await sendMessageWithRetry({
                     action: 'streamApiStart',
                     requestId: requestId,
                     tabId: tabId,
@@ -988,7 +1059,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                     // Send any remaining content in the buffers at the end of the stream
                     if (hasThinkBlock && (thinkBuffer.length > 0 || answerBuffer.length > 0)) {
                         try {
-                            chrome.runtime.sendMessage({
+                            await sendMessageWithRetry({
                                 action: 'streamApiThinkingChunk',
                                 requestId: requestId,
                                 think: thinkBuffer,
@@ -1002,9 +1073,8 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                     } else if (!thinkingStreamStarted && answerBuffer.length > 0) {
                         // If no thinking stream was started, send remaining answer content as regular chunks
                         try {
-                            chrome.runtime.sendMessage({
+                            await sendMessageWithRetry({
                                 action: 'streamApiResponseChunk',
-                                requestId: requestId,
                                 requestId: requestId,
                                 chunk: answerBuffer,
                                 tabId: tabId,
@@ -1016,9 +1086,23 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                     }
                     
                     try {
-                        chrome.runtime.sendMessage({ action: 'streamApiEnd', requestId: requestId, tabId: tabId, prompt: promptContent });
+                        await sendMessageWithRetry({ action: 'streamApiEnd', requestId: requestId, tabId: tabId, prompt: promptContent });
                     } catch (error) {
                         console.warn(`Could not send streamApiEnd to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
+                    }
+
+                    // Notify all tabs that streaming has ended
+                    try {
+                        chrome.tabs.query({}, (tabs) => {
+                            tabs.forEach(tab => {
+                                chrome.tabs.sendMessage(tab.id, {
+                                    type: 'stream_state_update',
+                                    streaming: false
+                                }).catch(err => console.warn('Failed to send stream_end to tab:', tab.id, err));
+                            });
+                        });
+                    } catch (sendError) {
+                        console.warn('Failed to broadcast stream end:', sendError);
                     }
                     break;
                 }
@@ -1093,7 +1177,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                                             // Send updates when we have content
                                             if (hasThinkBlock && (thinkBuffer.length > 0 || answerBuffer.length > 0)) {
                                                 try {
-                                                    chrome.runtime.sendMessage({
+                                                    await sendMessageWithRetry({
                                                         action: 'streamApiThinkingChunk',
                                                         think: thinkBuffer,
                                                         answer: answerBuffer,
@@ -1112,7 +1196,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                                             } else if (!thinkingStreamStarted && (contentChunk || reasoningChunk)) {
                                                 // If we haven't started thinking stream yet, send as regular response chunk
                                                 try {
-                                                    chrome.runtime.sendMessage({
+                                                    await sendMessageWithRetry({
                                                         action: 'streamApiResponseChunk',
                                                         chunk: contentChunk || '',
                                                         reasoningChunk: reasoningChunk,
@@ -1126,7 +1210,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                                         }
                                         if (Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length > 0) {
                                             try {
-                                                chrome.runtime.sendMessage({
+                                                await sendMessageWithRetry({
                                                     action: 'streamApiToolCallChunk',
                                                     toolCallChunk: choice.delta.tool_calls,
                                                     tabId: tabId,
@@ -1148,15 +1232,31 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
     } catch (error) {
         // This is the generic catch block for any other errors that occur in makeLlmApiRequest
         console.error('Error in makeLlmApiRequest (generic catch):', error);
+
+        // Send stream error notification to all tabs
+        try {
+            chrome.tabs.query({}, (tabs) => {
+                tabs.forEach(tab => {
+                    chrome.tabs.sendMessage(tab.id, {
+                        type: 'stream_state_update',
+                        streaming: false,
+                        error: error.message
+                    }).catch(err => console.warn('Failed to send stream_error to tab:', tab.id, err));
+                });
+            });
+        } catch (sendError) {
+            console.warn('Failed to broadcast stream error:', sendError);
+        }
+
         try {
           const cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
           const code = (error?.message || 'error').slice(0, 64);
           await trackErrorEvent(cat, code);
         } catch (_) {}
         const errorDelay = isStartChat ? 300 : 200;
-        setTimeout(() => {
+        setTimeout(async () => {
             try {
-                chrome.runtime.sendMessage({
+                await sendMessageWithRetry({
                     action: 'setApiResponse',
                     requestId: requestId,
                     apiResponse: `Error: ${error.message}`, // Standard error reporting
@@ -1485,7 +1585,7 @@ function fetchTabContent(tabId, callback) {
 // Track active tool executions to prevent duplicates
 const activeToolExecutions = new Set();
 
-// Listener for messages from content scripts or other extension parts (like chat.js)
+// Enhanced message listener with connection validation
 console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Short-circuit any legacy MCP requests (feature removed)
@@ -1493,6 +1593,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         try { sendResponse({ success: false, error: 'MCP disabled' }); } catch (_) {}
         return true;
     }
+    
+    // Validate sender and tab
+    if (!sender || !sender.tab) {
+        console.warn("Background: Received message from invalid sender:", sender);
+        try { sendResponse({ success: false, error: 'Invalid sender' }); } catch (_) {}
+        return false;
+    }
+    
     // Flag to indicate if sendResponse has been called for this message
     let responseSent = false;
     const originalSendResponse = sendResponse;
@@ -1500,10 +1608,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Wrap sendResponse to ensure it's only called once and to clear timeouts
     sendResponse = (response) => {
         if (!responseSent) {
-            originalSendResponse(response);
-            responseSent = true;
-            // Clear any associated timeouts here if they were set for this specific message
-            // (This requires passing timeoutId into the scope of this wrapped sendResponse)
+            try {
+                originalSendResponse(response);
+                responseSent = true;
+            } catch (error) {
+                console.warn("Background: Failed to send response:", error.message);
+            }
         } else {
             console.warn("Background: Attempted to call sendResponse multiple times for the same message.");
         }
@@ -1815,7 +1925,37 @@ chrome.scripting.executeScript({
             await makeLlmApiRequest(prompt, null, { customInstructionToolChoice: tool_choice });
         })();
         return true;
+    } else if (request.action === 'stream_end') {
+        // Notify all tabs that streaming has ended
+        chrome.tabs.query({}, (tabs) => {
+            tabs.forEach(tab => {
+                chrome.tabs.sendMessage(tab.id, {
+                    type: 'stream_state_update',
+                    streaming: false
+                }).catch(err => console.warn('Failed to send stream_end to tab:', tab.id, err));
+            });
+        });
+        return false;
+    } else if (request.action === 'stream_error') {
+        // Handle streaming errors
+        chrome.tabs.query({}, (tabs) => {
+            tabs.forEach(tab => {
+                chrome.tabs.sendMessage(tab.id, {
+                    type: 'stream_state_update',
+                    streaming: false,
+                    error: request.error
+                }).catch(err => console.warn('Failed to send stream_error to tab:', tab.id, err));
+            });
+        });
+        return false;
     }
+    
+    // Handle keep-alive messages
+    if (request.action === 'keepAlive') {
+        sendResponse({ success: true, timestamp: Date.now() });
+        return false; // Synchronous response
+    }
+    
     // Handle other actions if any
 });
 console.log("Background: onMessage listener function HAS BEEN registered.");
@@ -1845,7 +1985,19 @@ function cleanupMcpSessions() {
 
 // Handle extension lifecycle events
 chrome.runtime.onSuspend?.addListener(() => {
-    console.log('Extension suspending, cleaning up MCP resources');
+    console.log('Extension suspending, cleaning up resources');
+    
+    // Stop keep-alive
+    stopKeepAlive();
+    
+    // Clear any active tool executions
+    activeToolExecutions.clear();
+    
+    // Clear any pending callbacks
+    tabContentCallback = null;
+    pinnedActionTabContentCallback = null;
+    
+    // Cleanup MCP resources (if any)
     cleanupMcpSessions();
 });
 

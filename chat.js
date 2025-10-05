@@ -74,10 +74,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentAbortController = null;
     let currentMediaData = null; // Store media data for analysis
     let currentThinkingBlockElement = null; // Holds the thinking-block element during streaming
+    let streamTimeout = null; // For tracking streaming timeouts
+    let pendingUpdate = null; // For tracking pending animation frame updates
 
     function stopApiRequest() {
         if (currentAbortController) {
             currentAbortController.abort();
+            handleStreamAbort();
         }
     }
 
@@ -229,6 +232,120 @@ document.addEventListener('DOMContentLoaded', () => {
         return block;
     }
 
+    // Add proper stream end handling
+    function handleStreamEnd() {
+        console.log("Chat: handleStreamEnd called - ensuring streaming state is cleared");
+
+        // Ensure streaming is set to false on all thinking blocks
+        if (currentThinkingBlockElement) {
+            currentThinkingBlockElement.setAttribute('streaming', 'false');
+            currentThinkingBlockElement.isStreaming = false;
+            console.log("Chat: Set streaming=false on currentThinkingBlockElement");
+        }
+
+        // Clear any pending timeouts
+        if (streamTimeout) {
+            clearTimeout(streamTimeout);
+            streamTimeout = null;
+        }
+
+        // Clear any pending animation frames
+        if (pendingUpdate) {
+            cancelAnimationFrame(pendingUpdate);
+            pendingUpdate = null;
+        }
+
+        // Reset all streaming variables
+        currentStreamingMessageDiv = null;
+        currentStreamingContentElement = null;
+        currentStreamingUniqueId = null;
+        accumulatedStreamedText = "";
+        activeStreamingToolCall = null;
+
+        console.log("Chat: handleStreamEnd completed - all streaming state cleared");
+    }
+
+    // Add error handling
+    function handleStreamError(error) {
+        console.error("Chat: handleStreamError called with:", error);
+
+        // Clear streaming state on all relevant elements
+        if (currentThinkingBlockElement) {
+            currentThinkingBlockElement.setAttribute('streaming', 'false');
+            currentThinkingBlockElement.isStreaming = false;
+            currentThinkingBlockElement.showError('Stream interrupted: ' + error.message);
+            console.log("Chat: Set streaming=false on currentThinkingBlockElement and showed error");
+        }
+
+        // Clear any pending timeouts
+        if (streamTimeout) {
+            clearTimeout(streamTimeout);
+            streamTimeout = null;
+        }
+
+        // Clear any pending animation frames
+        if (pendingUpdate) {
+            cancelAnimationFrame(pendingUpdate);
+            pendingUpdate = null;
+        }
+
+        // Reset all streaming variables
+        currentStreamingMessageDiv = null;
+        currentStreamingContentElement = null;
+        currentStreamingUniqueId = null;
+        accumulatedStreamedText = "";
+        activeStreamingToolCall = null;
+
+        // Re-enable UI elements
+        userInput.disabled = false;
+        sendButton.disabled = false;
+        clearButton.textContent = 'Clear';
+
+        console.log("Chat: handleStreamError completed - all streaming state cleared");
+    }
+
+    // Add abort handling
+    function handleStreamAbort() {
+        console.log("Chat: handleStreamAbort called - cleaning up streaming state");
+
+        // Clean up streaming state on all relevant elements
+        if (currentThinkingBlockElement) {
+            currentThinkingBlockElement.setAttribute('streaming', 'false');
+            currentThinkingBlockElement.isStreaming = false;
+            console.log("Chat: Set streaming=false on currentThinkingBlockElement");
+        }
+
+        // Clear any pending timeouts
+        if (streamTimeout) {
+            clearTimeout(streamTimeout);
+            streamTimeout = null;
+        }
+
+        // Clear any pending operations
+        if (pendingUpdate) {
+            cancelAnimationFrame(pendingUpdate);
+            pendingUpdate = null;
+        }
+
+        // Reset all streaming variables to ensure clean state
+        currentStreamingMessageDiv = null;
+        currentStreamingContentElement = null;
+        currentStreamingUniqueId = null;
+        accumulatedStreamedText = "";
+        activeStreamingToolCall = null;
+        currentAbortController = null;
+
+        // Re-enable UI elements
+        userInput.disabled = false;
+        sendButton.disabled = false;
+        clearButton.textContent = 'Clear';
+
+        // Show user feedback
+        addMessage('System', 'Response stopped');
+
+        console.log("Chat: handleStreamAbort completed - all streaming state cleared");
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // if (request.action === 'explainContentResponse') {
         //     // This logic is now moved directly into the explainBtn's sendMessage callback (around lines 26-45)
@@ -328,6 +445,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 makeApiCallWithMedia(analysisPrompt, currentMediaData);
             }
         } else if (request.action === 'setApiResponse') {
+            // Generate unique requestId if not provided
+            const currentRequestId = request.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9));
+
             if (request.requestId) {
                 const block = document.createElement('enhanced-thinking-block');
                 block.setAttribute('streaming', 'false');
@@ -344,11 +464,18 @@ document.addEventListener('DOMContentLoaded', () => {
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
+
+            // Clean up streaming state using the currentRequestId
             if (currentStreamingMessageDiv) {
                 currentStreamingMessageDiv = null;
                 currentStreamingContentElement = null;
                 currentStreamingUniqueId = null;
                 accumulatedStreamedText = "";
+            }
+
+            // Remove from inflight requests if requestId was provided or generated
+            if (currentRequestId) {
+                inflightRequests.delete(currentRequestId);
             }
             if (request.prompt) { // Add user prompt to history if not already there
                 const lastMessage = conversationHistory[conversationHistory.length - 1];
@@ -408,6 +535,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStreamingMessageDiv = thinkingBlock;
                 currentStreamingContentElement = thinkingBlock;
                 currentStreamingUniqueId = request.requestId;
+                
+                // Initialize the thinking block with empty content to prevent flashing
+                thinkingBlock.setAttribute('content', '');
             }
             // Old path below will be effectively ignored due to requestId handling
             console.log("Chat: streamApiStart received for prompt:", request.prompt);
@@ -456,6 +586,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         content += request.answer;
                     }
                     info.element.setAttribute('content', content);
+                    
+                    // Show the thinking block immediately to prevent flashing
+                    info.element.style.opacity = '1';
                 } else {
                     // Fallback for old thinking-block
                     if (request.think !== undefined) info.element.setAttribute('think', request.think);
@@ -484,7 +617,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     const thinkingMatch = currentContent.match(/<thinking>(.*?)<\/thinking>/s);
                     const thinkingPart = thinkingMatch ? `<thinking>${thinkingMatch[1]}</thinking>\n` : '';
                     const answerPart = currentContent.replace(/<thinking>.*?<\/thinking>\s*/s, '') + request.chunk;
-                    info.element.setAttribute('content', thinkingPart + answerPart);
+                    const newContent = thinkingPart + answerPart;
+                    
+                    info.element.setAttribute('content', newContent);
+                    
+                    // Ensure the element is visible
+                    info.element.style.opacity = '1';
                 } else {
                     // Fallback for old thinking-block
                     info.element.setAttribute('answer', (info.element.getAttribute('answer') || '') + request.chunk);
@@ -502,7 +640,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     currentThinkingBlockElement.reasoningAccumulator += request.reasoningChunk;
                     // Update the thinking block with accumulated reasoning
-                    currentThinkingBlockElement.setAttribute('think', currentThinkingBlockElement.reasoningAccumulator);
+                    if (currentThinkingBlockElement) {
+                        currentThinkingBlockElement.setAttribute('think', currentThinkingBlockElement.reasoningAccumulator);
+                    }
                 }
 
                 // Handle regular content if present
@@ -510,10 +650,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     accumulatedStreamedText += request.chunk;
                     if (currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
                         // Update the answer portion in our thinking block
-                        currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
-                    } else {
+                        if (currentStreamingMessageDiv) {
+                            currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
+                        }
+                    } else if (currentStreamingContentElement) {
                         // Fallback to original behavior if not using thinking block
-                        currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                        if (currentStreamingContentElement) {
+                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                        }
                     }
                 }
 
@@ -654,13 +798,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentStreamingMessageDiv?.tagName === 'THINKING-BLOCK') {
                     // Finalize the thinking block - turn off streaming state
                     if (currentThinkingBlockElement) {
-                        currentThinkingBlockElement.setAttribute('streaming', 'false');
+                        handleStreamEnd();
                         // Keep the accumulated reasoning in the think attribute
-                        if (currentThinkingBlockElement.reasoningAccumulator) {
+                        if (currentThinkingBlockElement.reasoningAccumulator && currentStreamingMessageDiv) {
                             currentStreamingMessageDiv.setAttribute('think', currentThinkingBlockElement.reasoningAccumulator);
                         }
                         // Preserve the final answer content in the answer attribute
-                        currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
+                        if (currentStreamingMessageDiv) {
+                            currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
+                        }
                     }
 
                     // Add to history
@@ -678,7 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (toolCallWasHandledInThisStream) {
                         // The content of currentStreamingContentElement is "⚙️ Using tool: ..."
                         // It was set by streamApiToolCallChunk. We just need to attach copy listeners.
-                        if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
+                        if (currentStreamingContentElement && currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
                             const toolMessageContent = currentStreamingContentElement.innerText;
                             attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
                         }
@@ -688,10 +834,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         const finalContent = accumulatedStreamedText;
                         if (currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
                             // Update the answer portion in our thinking block
-                            currentStreamingMessageDiv.setAttribute('answer', finalContent);
+                            if (currentStreamingMessageDiv) {
+                                currentStreamingMessageDiv.setAttribute('answer', finalContent);
+                            }
                         } else {
-                            if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
-                                currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                            if (finalContent.trim() || (currentStreamingContentElement && currentStreamingContentElement.innerHTML)) { // only update if there is new content or it was previously populated
+                                if (currentStreamingContentElement) {
+                                    currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                                }
                                 if (copyIconElem && copyFormattedIconElem) {
                                     attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
                                 }
@@ -724,12 +874,18 @@ document.addEventListener('DOMContentLoaded', () => {
             accumulatedStreamedText = "";
             // Reset reasoning accumulator and clear thinking block reference
             if (currentThinkingBlockElement) {
-                currentThinkingBlockElement.setAttribute('streaming', 'false');
+                handleStreamEnd();
                 currentThinkingBlockElement.reasoningAccumulator = "";
                 currentThinkingBlockElement = null;
             }
             // activeStreamingToolCall is already null if it was processed earlier in this function.
             // toolCallWasHandledInThisStream is a local var and will be gone.
+
+            // Clear any pending timeouts
+            if (streamTimeout) {
+                clearTimeout(streamTimeout);
+                streamTimeout = null;
+            }
 
         } else if (request.action === 'streamApiToolCallChunk') {
             console.log("Chat: streamApiToolCallChunk handler invoked.", request);
@@ -755,11 +911,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Clear previous accumulated text from display
                 // accumulatedStreamedText = ""; // Preserve accumulated text
-                if (currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                if (currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
                     // Update the thinking block to show tool usage
-                    currentStreamingMessageDiv.setAttribute('answer', `⚙️ Using tool: **${toolCall.function.name}**`);
-                } else {
-                    currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
+                    if (currentStreamingMessageDiv) {
+                        currentStreamingMessageDiv.setAttribute('answer', `⚙️ Using tool: **${toolCall.function.name}**`);
+                    }
+                } else if (currentStreamingContentElement) {
+                    if (currentStreamingContentElement) {
+                        currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
+                    }
                 }
                 
                 // Asynchronously fetch tool definition to update UI for MCP tool
@@ -767,10 +927,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     const allToolsStream = await getTools();
                     const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
                     if (currentStreamingContentElement) { // Check if element still exists
-                        if (currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
-                            currentStreamingMessageDiv.setAttribute('answer', `⚙️ Using tool: **${toolCall.function.name}**`);
-                        } else {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
+                        if (currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
+                            if (currentStreamingMessageDiv) {
+                                currentStreamingMessageDiv.setAttribute('answer', `⚙️ Using tool: **${toolCall.function.name}**`);
+                            }
+                        } else if (currentStreamingContentElement) {
+                            if (currentStreamingContentElement) {
+                                currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
+                            }
                         }
                         // chatArea.scrollTop = chatArea.scrollHeight; // Already present after this block
                     }
@@ -1426,9 +1590,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                             // Update the enhanced thinking block with streaming content
                                             if(currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'ENHANCED-THINKING-BLOCK') {
                                                 // Always use 'content' attribute for enhanced thinking block
-                                                currentStreamingMessageDiv.setAttribute('content', accumulatedStreamedText);
+                                                if (currentStreamingMessageDiv) {
+                                                    currentStreamingMessageDiv.setAttribute('content', accumulatedStreamedText);
+                                                }
                                             } else {
-                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                                if (currentStreamingContentElement) {
+                                                    currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                                }
                                             }
                                         }
                                         chatArea.scrollTop = chatArea.scrollHeight;
@@ -1524,14 +1692,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             loadingManager.hideLoading('#chat-area');
             loadingManager.showConnectionStatus('#chat-area', 'disconnected');
-            
+
             if (error.name === 'AbortError') {
                 addMessage('System', 'Response stopped');
                 loadingManager.showToast('Request stopped by user', 'warning');
             } else {
                 console.error("makeApiCall Error:", error);
+                handleStreamError(error);
                 addMessage('System', 'Error: ' + error.message);
-                
+
                 // Show user-friendly error with retry option
                 loadingManager.showError('#chat-area', error, {
                     title: 'API Request Failed',
@@ -1650,9 +1819,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                         accumulatedStreamedText += parsed.choices[0].delta.content;
                                         if(currentStreamingContentElement) {
                                             if(currentStreamingMessageDiv && currentStreamingMessageDiv.tagName === 'THINKING-BLOCK') {
-                                                currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
-                                            } else {
-                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                                if (currentStreamingMessageDiv) {
+                                                    currentStreamingMessageDiv.setAttribute('answer', accumulatedStreamedText);
+                                                }
+                                            } else if (currentStreamingContentElement) {
+                                                if (currentStreamingContentElement) {
+                                                    currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                                }
                                             }
                                         }
                                         chatArea.scrollTop = chatArea.scrollHeight;

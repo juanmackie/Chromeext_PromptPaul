@@ -27,7 +27,14 @@ class EnhancedThinkingBlock extends HTMLElement {
     
     // Initialize with current attributes if present
     if (this.hasAttribute('content')) {
-      this.parseContentWithTags(this.getAttribute('content') || '');
+      const parseResult = this.parseContentWithTags(this.getAttribute('content') || '');
+      if (parseResult.steps.length > 0) {
+        this.steps = parseResult.steps;
+        this.updateThoughtContent(parseResult.steps.map(s => s.content).join('\n\n'));
+      }
+      if (parseResult.answerContent) {
+        this.setAnswerContent(parseResult.answerContent);
+      }
     } else {
       if (this.hasAttribute('think')) this.updateThoughtContent(this.getAttribute('think') || '');
       if (this.hasAttribute('answer')) this.setAnswerContent(this.getAttribute('answer') || '');
@@ -41,7 +48,14 @@ class EnhancedThinkingBlock extends HTMLElement {
     try {
       switch (name) {
         case 'content':
-          this.parseContentWithTags(newVal || '');
+          const parseResult = this.parseContentWithTags(newVal || '');
+          if (parseResult.steps.length > 0) {
+            this.steps = parseResult.steps;
+            this.updateThoughtContent(parseResult.steps.map(s => s.content).join('\n\n'));
+          }
+          if (parseResult.answerContent) {
+            this.setAnswerContent(parseResult.answerContent);
+          }
           break;
         case 'think':
           this.updateThoughtContent(newVal || '');
@@ -347,49 +361,443 @@ class EnhancedThinkingBlock extends HTMLElement {
     });
   }
 
-  // Enhanced <thinking> tag parsing with support for nested tags
+  // Enhanced <thinking> tag parsing with robust error handling and validation
   parseContentWithTags(content) {
     try {
-      this.parseErrors = [];
-      this.thinkingTags = [];
-      
-      if (!content || !content.trim()) {
-        this.updateThoughtContent('');
-        return;
+      // Input validation with enhanced checks
+      if (!content || typeof content !== 'string') {
+        return {
+          steps: [],
+          answerContent: '',
+          rawContent: content || ''
+        };
       }
-      
-      // Use the improved nested parsing function
-      const segments = this.parseNestedThinking(content);
-      
-      // Process segments to extract thinking and answer content
-      let allThinkingContent = '';
+
+      // Enhanced content sanitization with comprehensive XSS protection
+      const sanitizedContent = this.sanitizeContent(content);
+
+      // Enhanced regex patterns for better tag matching and malformed tag handling
+      const thinkingTagRegex = this.createRobustThinkingTagRegex();
+      const answerTagRegex = this.createRobustAnswerTagRegex();
+
+      // Extract thinking content with comprehensive error handling
+      let thinkingContent = '';
       let answerContent = '';
-      
-      segments.forEach(segment => {
-        if (segment.type === 'thinking') {
-          // For nested thinking blocks, we need to properly format the content
-          allThinkingContent += this.formatNestedThinking(segment) + '\n\n';
-        } else if (segment.type === 'text') {
-          answerContent += segment.content + '\n';
+      let parseErrors = [];
+
+      // Try multiple parsing strategies for maximum robustness
+      try {
+        const thinkingResult = this.extractThinkingContentRobust(sanitizedContent, thinkingTagRegex);
+        thinkingContent = thinkingResult.content;
+        parseErrors.push(...thinkingResult.errors);
+      } catch (e) {
+        console.warn('Failed to parse thinking content:', e);
+        parseErrors.push(`Thinking content parsing failed: ${e.message}`);
+        thinkingContent = this.extractThinkingContentFallback(sanitizedContent);
+      }
+
+      try {
+        const answerResult = this.extractAnswerContentRobust(sanitizedContent, answerTagRegex);
+        answerContent = answerResult.content;
+        parseErrors.push(...answerResult.errors);
+      } catch (e) {
+        console.warn('Failed to parse answer content:', e);
+        parseErrors.push(`Answer content parsing failed: ${e.message}`);
+        answerContent = this.extractAnswerContentFallback(sanitizedContent, thinkingContent);
+      }
+
+      // Enhanced fallback: treat everything after thinking tags as answer
+      if (!answerContent && thinkingContent) {
+        const fallbackResult = this.extractAnswerFromFallback(sanitizedContent, thinkingContent);
+        answerContent = fallbackResult.content;
+        if (fallbackResult.usedFallback) {
+          parseErrors.push('Used fallback method to extract answer content');
         }
-      });
-      
-      if (allThinkingContent.trim()) {
-        this.updateThoughtContent(allThinkingContent.trim());
-      } else {
-        // Fallback to legacy parsing if no thinking tags found
-        this.updateThoughtContent(content);
       }
-      
-      if (answerContent.trim()) {
-        this.setAnswerContent(answerContent.trim());
+
+      // Validate and clean extracted content
+      const validationResult = this.validateAndCleanContent(thinkingContent, answerContent);
+      thinkingContent = validationResult.thinkingContent;
+      answerContent = validationResult.answerContent;
+      parseErrors.push(...validationResult.errors);
+
+      // Log parsing issues for debugging if any occurred
+      if (parseErrors.length > 0) {
+        console.warn('Content parsing completed with warnings:', parseErrors);
       }
-      
+
+      // Enhanced step parsing with better error handling
+      const steps = this.parseThinkingSteps(thinkingContent);
+
+      return {
+        steps,
+        answerContent,
+        rawContent: sanitizedContent,
+        parseErrors: parseErrors.length > 0 ? parseErrors : undefined
+      };
     } catch (error) {
-      this.handleError('Content parsing error', error);
-      // Fallback to legacy parsing
-      this.updateThoughtContent(content);
+      console.error('Content parsing failed:', error);
+      // Enhanced error recovery with detailed error information
+      return this.createErrorFallback(content, error);
     }
+  }
+
+  // Enhanced content sanitization with comprehensive protection
+  sanitizeContent(content) {
+    if (!content) return '';
+
+    try {
+      return content
+        // Remove potentially dangerous HTML tags and content
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '[SCRIPT REMOVED]')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '[IFRAME REMOVED]')
+        .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '[OBJECT REMOVED]')
+        .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, '[EMBED REMOVED]')
+        .replace(/<form\b[^<]*(?:(?!<\/form>)<[^<]*)*<\/form>/gi, '[FORM REMOVED]')
+        .replace(/<input\b[^>]*>/gi, '[INPUT REMOVED]')
+        .replace(/<button\b[^>]*>/gi, '[BUTTON REMOVED]')
+        // Handle malformed tags by fixing common issues
+        .replace(/<([^>]*$)/g, '<$1') // Fix unclosed tags
+        .replace(/<\/([^>]*$)/g, '</$1') // Fix malformed closing tags
+        // Normalize whitespace while preserving intentional formatting
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        // Remove excessive whitespace but preserve paragraph breaks
+        .replace(/[ \t]+/g, ' ')
+        .trim();
+    } catch (error) {
+      console.warn('Content sanitization failed:', error);
+      // Fallback to basic sanitization
+      return content
+        .replace(/<script/gi, '[SCRIPT REMOVED]')
+        .replace(/<iframe/gi, '[IFRAME REMOVED]')
+        .trim();
+    }
+  }
+
+  // Create robust regex for thinking tag matching with malformed tag support
+  createRobustThinkingTagRegex() {
+    try {
+      // Enhanced regex that handles:
+      // - Standard tags: <thinking>...</thinking>
+      // - Alternative tags: ◁think▷...◁/think▷ and ◁think▷...◁/thinking▷
+      // - Malformed tags with missing brackets or typos
+      // - Nested and overlapping tags
+      return /(?:(<thinking[^>]*>)([\s\S]*?)(<\/thinking[^>]*>)|◁think▷([\s\S]*?)◁\/think▷|◁think▷([\s\S]*?)◁\/thinking▷|(?<!\/)thinking(?:\s*>)|(?<!<)\/thinking(?:\s*>))/gi;
+    } catch (error) {
+      console.warn('Failed to create robust thinking regex:', error);
+      // Fallback to simpler regex
+      return /<thinking>([\s\S]*?)<\/thinking>/gi;
+    }
+  }
+
+  // Create robust regex for answer tag matching
+  createRobustAnswerTagRegex() {
+    try {
+      // Enhanced regex that handles:
+      // - Standard tags: <answer>...</answer>
+      // - Malformed tags with missing brackets
+      // - Case variations
+      return /(<answer[^>]*>)([\s\S]*?)(<\/answer[^>]*>)|(?<!\/)answer(?:\s*>)|(?<!<)\/answer(?:\s*>)/gi;
+    } catch (error) {
+      console.warn('Failed to create robust answer regex:', error);
+      // Fallback to simpler regex
+      return /<answer>([\s\S]*?)<\/answer>/gi;
+    }
+  }
+
+  // Robust thinking content extraction with multiple strategies
+  extractThinkingContentRobust(content, regex) {
+    const errors = [];
+
+    try {
+      const matches = [];
+      let match;
+
+      // Reset regex lastIndex to ensure proper matching
+      regex.lastIndex = 0;
+
+      while ((match = regex.exec(content)) !== null) {
+        matches.push(match);
+      }
+
+      if (matches.length === 0) {
+        return { content: '', errors: ['No thinking tags found'] };
+      }
+
+      // Try to extract content from different tag formats
+      for (const currentMatch of matches) {
+        try {
+          // Standard format: <thinking>content</thinking>
+          if (currentMatch[1] && currentMatch[3] && currentMatch[2]) {
+            return {
+              content: currentMatch[2].trim(),
+              errors: []
+            };
+          }
+
+          // Alternative format 1: ◁think▷content◁/think▷
+          if (currentMatch[4]) {
+            return {
+              content: currentMatch[4].trim(),
+              errors: []
+            };
+          }
+
+          // Alternative format 2: ◁think▷content◁/thinking▷
+          if (currentMatch[5]) {
+            return {
+              content: currentMatch[5].trim(),
+              errors: []
+            };
+          }
+
+          // Handle malformed tags by attempting to extract content anyway
+          if (currentMatch[0] && currentMatch.index >= 0) {
+            const tagContent = currentMatch[0]
+              .replace(/^<thinking[^>]*>/i, '')
+              .replace(/<\/thinking[^>]*>$/i, '')
+              .replace(/^◁think▷/, '')
+              .replace(/◁\/think▷$/i, '')
+              .replace(/◁\/thinking▷$/i, '')
+              .trim();
+
+            if (tagContent) {
+              errors.push('Used fallback extraction for malformed thinking tag');
+              return {
+                content: tagContent,
+                errors
+              };
+            }
+          }
+        } catch (e) {
+          errors.push(`Error processing thinking match: ${e.message}`);
+        }
+      }
+
+      return { content: '', errors: ['No valid thinking content found'] };
+    } catch (error) {
+      return {
+        content: '',
+        errors: [`Thinking content extraction failed: ${error.message}`]
+      };
+    }
+  }
+
+  // Fallback thinking content extraction for when regex fails
+  extractThinkingContentFallback(content) {
+    try {
+      // Try to find content between common thinking tag patterns
+      const patterns = [
+        /<thinking[^>]*>([\s\S]*?)(?:<\/thinking>|$)/i,
+        /◁think▷([\s\S]*?)(?:◁\/think▷|◁\/thinking▷|$)/i,
+        /(?:thinking:|think:|💭|🤔)\s*([\s\S]*?)(?=\n\s*(?:answer:|final|conclusion|$))/i
+      ];
+
+      for (const pattern of patterns) {
+        const match = content.match(pattern);
+        if (match && match[1] && match[1].trim()) {
+          return match[1].trim();
+        }
+      }
+
+      // If no patterns match, return empty
+      return '';
+    } catch (error) {
+      console.warn('Fallback thinking extraction failed:', error);
+      return '';
+    }
+  }
+
+  // Robust answer content extraction
+  extractAnswerContentRobust(content, regex) {
+    const errors = [];
+
+    try {
+      const matches = [];
+      let match;
+
+      // Reset regex lastIndex
+      regex.lastIndex = 0;
+
+      while ((match = regex.exec(content)) !== null) {
+        matches.push(match);
+      }
+
+      if (matches.length === 0) {
+        return { content: '', errors: ['No answer tags found'] };
+      }
+
+      // Try to extract content from answer tags
+      for (const currentMatch of matches) {
+        try {
+          // Standard format: <answer>content</answer>
+          if (currentMatch[1] && currentMatch[3] && currentMatch[2]) {
+            return {
+              content: currentMatch[2].trim(),
+              errors: []
+            };
+          }
+
+          // Handle malformed tags
+          if (currentMatch[0] && currentMatch.index >= 0) {
+            const tagContent = currentMatch[0]
+              .replace(/^<answer[^>]*>/i, '')
+              .replace(/<\/answer[^>]*>$/i, '')
+              .trim();
+
+            if (tagContent) {
+              errors.push('Used fallback extraction for malformed answer tag');
+              return {
+                content: tagContent,
+                errors
+              };
+            }
+          }
+        } catch (e) {
+          errors.push(`Error processing answer match: ${e.message}`);
+        }
+      }
+
+      return { content: '', errors: ['No valid answer content found'] };
+    } catch (error) {
+      return {
+        content: '',
+        errors: [`Answer content extraction failed: ${error.message}`]
+      };
+    }
+  }
+
+  // Fallback answer content extraction
+  extractAnswerContentFallback(content, thinkingContent) {
+    try {
+      if (!thinkingContent) {
+        // If no thinking content, the entire content might be the answer
+        return content.trim();
+      }
+
+      // Remove thinking content and find what remains
+      const thinkingPatterns = [
+        /<thinking[^>]*>[\s\S]*?<\/thinking[^>]*>/gi,
+        /◁think▷[\s\S]*?◁\/think▷/gi,
+        /◁think▷[\s\S]*?◁\/thinking▷/gi
+      ];
+
+      let cleanedContent = content;
+      for (const pattern of thinkingPatterns) {
+        cleanedContent = cleanedContent.replace(pattern, '');
+      }
+
+      return cleanedContent.trim();
+    } catch (error) {
+      console.warn('Fallback answer extraction failed:', error);
+      return '';
+    }
+  }
+
+  // Enhanced fallback answer extraction from after thinking tags
+  extractAnswerFromFallback(content, thinkingContent) {
+    try {
+      const result = { content: '', usedFallback: false };
+
+      if (!content || !thinkingContent) {
+        return result;
+      }
+
+      // Find the last closing thinking tag
+      const closeTagPatterns = [
+        { pattern: /<\/thinking>/gi, offset: 11 },
+        { pattern: /◁\/think▷/gi, offset: 8 },
+        { pattern: /◁\/thinking▷/gi, offset: 10 }
+      ];
+
+      let lastClosePos = -1;
+      let usedPattern = null;
+
+      for (const { pattern, offset } of closeTagPatterns) {
+        pattern.lastIndex = 0;
+        let match;
+        let lastMatchPos = -1;
+
+        while ((match = pattern.exec(content)) !== null) {
+          lastMatchPos = match.index;
+        }
+
+        if (lastMatchPos > lastClosePos) {
+          lastClosePos = lastMatchPos;
+          usedPattern = { pattern, offset };
+        }
+      }
+
+      if (lastClosePos !== -1 && usedPattern) {
+        const afterThinking = content.substring(lastClosePos + usedPattern.offset).trim();
+        if (afterThinking) {
+          result.content = afterThinking;
+          result.usedFallback = true;
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.warn('Answer fallback extraction failed:', error);
+      return { content: '', usedFallback: false };
+    }
+  }
+
+  // Validate and clean extracted content
+  validateAndCleanContent(thinkingContent, answerContent) {
+    const errors = [];
+    const result = {
+      thinkingContent: thinkingContent || '',
+      answerContent: answerContent || '',
+      errors
+    };
+
+    try {
+      // Validate thinking content
+      if (thinkingContent) {
+        // Check for reasonable length limits
+        if (thinkingContent.length > 100000) { // 100KB limit
+          errors.push('Thinking content exceeds maximum length');
+          result.thinkingContent = thinkingContent.substring(0, 100000) + '... [truncated]';
+        }
+
+        // Remove excessive repeated characters that might indicate parsing issues
+        result.thinkingContent = result.thinkingContent
+          .replace(/(.)\1{100,}/g, '$1$1$1... [repeated characters removed]')
+          .trim();
+      }
+
+      // Validate answer content
+      if (answerContent) {
+        // Check for reasonable length limits
+        if (answerContent.length > 500000) { // 500KB limit
+          errors.push('Answer content exceeds maximum length');
+          result.answerContent = answerContent.substring(0, 500000) + '... [truncated]';
+        }
+      }
+
+      return result;
+    } catch (error) {
+      errors.push(`Content validation failed: ${error.message}`);
+      return result;
+    }
+  }
+
+  // Enhanced error fallback with detailed error information
+  createErrorFallback(content, error) {
+    const errorMessage = error.message || 'Unknown parsing error';
+
+    return {
+      steps: [{
+        id: 'error-step',
+        content: `Content parsing failed: ${errorMessage}. Raw content displayed below.`,
+        type: 'error'
+      }],
+      answerContent: '',
+      rawContent: content || '',
+      parseErrors: [`Critical parsing error: ${errorMessage}`]
+    };
   }
   
   // Helper function to format nested thinking blocks for display
@@ -416,121 +824,674 @@ class EnhancedThinkingBlock extends HTMLElement {
     return content;
   }
   
-  // Stack-based parser for nested thinking tags that properly handles complex nesting
+  // Enhanced stack-based parser for nested thinking tags with robust error handling
   parseNestedThinking(content) {
     if (!content) return [];
 
     const segments = [];
     const stack = [];
+    const errors = [];
     let currentText = '';
     let i = 0;
+    let lastErrorPos = -1;
 
-    while (i < content.length) {
-      // Look for the next tag
-      const thinkingStart = content.indexOf('<thinking>', i);
-      const thinkingEnd = content.indexOf('</thinking>', i);
-      
-      // Find the earliest occurring tag
-      let nextTagPos = -1;
-      let isStartTag = false;
-      
-      if (thinkingStart !== -1 && (thinkingEnd === -1 || thinkingStart < thinkingEnd)) {
-        nextTagPos = thinkingStart;
-        isStartTag = true;
-      } else if (thinkingEnd !== -1) {
-        nextTagPos = thinkingEnd;
-        isStartTag = false;
-      }
-      
-      if (nextTagPos === -1) {
-        // No more tags, add remaining content as text
-        if (currentText || stack.length === 0) {
-          const textToAdd = currentText + content.substring(i);
-          if (textToAdd.trim()) {
-            if (stack.length > 0) {
-              stack[stack.length - 1].content += textToAdd;
-            } else {
-              segments.push({ type: 'text', content: textToAdd });
-            }
+    try {
+      while (i < content.length) {
+        // Enhanced tag detection with multiple formats and malformed tag handling
+        const tagMatches = this.findNextThinkingTag(content, i);
+
+        if (tagMatches.length === 0) {
+          // No more tags found, add remaining content
+          const remainingContent = content.substring(i);
+          if (remainingContent.trim()) {
+            this.addTextSegment(segments, stack, currentText + remainingContent, errors);
+          }
+          break;
+        }
+
+        // Find the earliest valid tag
+        let nextTag = null;
+        let nextTagPos = content.length;
+
+        for (const match of tagMatches) {
+          if (match.position >= i && match.position < nextTagPos) {
+            nextTag = match;
+            nextTagPos = match.position;
           }
         }
-        break;
-      }
-      
-      // Add content before the tag
-      const contentBeforeTag = content.substring(i, nextTagPos);
-      if (stack.length > 0) {
-        stack[stack.length - 1].content += contentBeforeTag;
-      } else {
-        currentText += contentBeforeTag;
-      }
-      
-      if (isStartTag) {
-        // Process start tag
-        if (currentText) {
-          if (stack.length > 0) {
-            stack[stack.length - 1].content += currentText;
-          } else {
-            segments.push({ type: 'text', content: currentText });
+
+        if (!nextTag || nextTagPos >= content.length) {
+          // No valid tag found, add remaining content
+          const remainingContent = content.substring(i);
+          if (remainingContent.trim()) {
+            this.addTextSegment(segments, stack, currentText + remainingContent, errors);
           }
+          break;
+        }
+
+        // Add content before the tag
+        const contentBeforeTag = content.substring(i, nextTagPos);
+        if (contentBeforeTag.trim()) {
+          this.addTextSegment(segments, stack, currentText + contentBeforeTag, errors);
           currentText = '';
         }
-        
-        // Push a new thinking container to the stack
-        stack.push({
-          type: 'thinking',
-          content: '',
-          children: []
-        });
-      } else {
-        // Process end tag
-        if (stack.length > 0) {
-          const top = stack.pop();
-          if (stack.length > 0) {
-            // Add the popped thinking as a child to the new top
-            stack[stack.length - 1].children.push({
-              type: 'thinking',
-              content: top.content,
-              children: top.children
-            });
+
+        // Process the tag
+        if (nextTag.isStartTag) {
+          const result = this.processStartTag(stack, segments, nextTag, errors);
+          if (result.shouldContinue) {
+            i = nextTagPos + nextTag.length;
+            continue;
           } else {
-            // Stack is empty, add to main segments
-            segments.push({
-              type: 'thinking',
-              content: top.content,
-              children: top.children
-            });
+            // Error occurred, skip this tag
+            i = nextTagPos + nextTag.length;
+            continue;
           }
         } else {
-          // Unmatched closing tag, treat as text
-          currentText += '</thinking>';
+          const result = this.processEndTag(stack, segments, nextTag, errors);
+          if (result.shouldContinue) {
+            i = nextTagPos + nextTag.length;
+            continue;
+          } else {
+            // Error occurred, treat as text
+            currentText += nextTag.fullMatch;
+            i = nextTagPos + nextTag.length;
+            continue;
+          }
         }
       }
-      
-      i = nextTagPos + (isStartTag ? 10 : 11); // Skip past the tag
+
+      // Handle any remaining text
+      if (currentText.trim()) {
+        this.addTextSegment(segments, stack, currentText, errors);
+      }
+
+      // Handle any unclosed tags with enhanced recovery
+      if (stack.length > 0) {
+        const recoveryResult = this.recoverFromUnclosedTags(stack, segments, errors);
+        segments.push(...recoveryResult.segments);
+        errors.push(...recoveryResult.errors);
+      }
+
+      // Log errors if any occurred
+      if (errors.length > 0 && i - lastErrorPos > 100) {
+        console.warn('Nested thinking parsing completed with warnings:', errors);
+        lastErrorPos = i;
+      }
+
+      return segments;
+
+    } catch (error) {
+      errors.push(`Nested thinking parsing failed: ${error.message}`);
+      console.error('Nested thinking parsing error:', error);
+
+      // Return basic fallback parsing
+      return this.parseNestedThinkingFallback(content, errors);
     }
-    
-    // Add any remaining text if there's no active thinking block
-    if (currentText && stack.length === 0) {
-      segments.push({ type: 'text', content: currentText });
-    } else if (currentText && stack.length > 0) {
-      stack[stack.length - 1].content += currentText;
+  }
+
+  // Enhanced tag detection with support for multiple formats and malformed tags
+  findNextThinkingTag(content, startPos) {
+    const tagPatterns = [
+      // Standard tags
+      { pattern: /<thinking>/gi, isStartTag: true, length: 10, type: 'standard-start' },
+      { pattern: /<\/thinking>/gi, isStartTag: false, length: 11, type: 'standard-end' },
+
+      // Alternative tags
+      { pattern: /◁think▷/gi, isStartTag: true, length: 7, type: 'alt-start' },
+      { pattern: /◁\/think▷/gi, isStartTag: false, length: 8, type: 'alt-end' },
+      { pattern: /◁\/thinking▷/gi, isStartTag: false, length: 10, type: 'alt-end-variant' },
+
+      // Malformed tags (missing brackets, typos)
+      { pattern: /thinking(?:\s*>|$)/gi, isStartTag: true, length: 8, type: 'malformed-start' },
+      { pattern: /\/thinking(?:\s*>|$)/gi, isStartTag: false, length: 9, type: 'malformed-end' },
+      { pattern: /<thinking/gi, isStartTag: true, length: 9, type: 'incomplete-start' },
+      { pattern: /<\/thinking/gi, isStartTag: false, length: 10, type: 'incomplete-end' }
+    ];
+
+    const matches = [];
+
+    for (const tagPattern of tagPatterns) {
+      try {
+        tagPattern.pattern.lastIndex = startPos;
+        const match = tagPattern.pattern.exec(content);
+
+        if (match && match.index >= startPos) {
+          matches.push({
+            position: match.index,
+            fullMatch: match[0],
+            isStartTag: tagPattern.isStartTag,
+            length: tagPattern.length,
+            type: tagPattern.type,
+            pattern: tagPattern.pattern
+          });
+        }
+      } catch (error) {
+        // Skip malformed patterns
+        continue;
+      }
     }
-    
-    // Handle any unclosed tags
-    if (stack.length > 0) {
-      console.warn('Unclosed thinking tags detected, treating remaining content as text');
-      let remainingContent = '';
+
+    return matches;
+  }
+
+  // Process start tag with enhanced error handling
+  processStartTag(stack, segments, tag, errors) {
+    try {
+      // Validate stack depth to prevent infinite nesting
+      if (stack.length >= 50) {
+        errors.push('Maximum nesting depth exceeded, treating as text');
+        return { shouldContinue: false };
+      }
+
+      // Create new thinking container
+      const newContainer = {
+        type: 'thinking',
+        content: '',
+        children: [],
+        startPos: tag.position,
+        tagType: tag.type
+      };
+
+      stack.push(newContainer);
+      return { shouldContinue: true };
+    } catch (error) {
+      errors.push(`Error processing start tag: ${error.message}`);
+      return { shouldContinue: false };
+    }
+  }
+
+  // Process end tag with enhanced error handling
+  processEndTag(stack, segments, tag, errors) {
+    try {
+      if (stack.length === 0) {
+        // Unmatched closing tag
+        errors.push('Unmatched closing tag found, treating as text');
+        return { shouldContinue: false };
+      }
+
+      const top = stack.pop();
+
+      if (stack.length > 0) {
+        // Add as child to parent
+        stack[stack.length - 1].children.push({
+          type: 'thinking',
+          content: top.content,
+          children: top.children,
+          tagType: top.tagType
+        });
+      } else {
+        // Add to main segments
+        segments.push({
+          type: 'thinking',
+          content: top.content,
+          children: top.children,
+          tagType: top.tagType
+        });
+      }
+
+      return { shouldContinue: true };
+    } catch (error) {
+      errors.push(`Error processing end tag: ${error.message}`);
+      return { shouldContinue: false };
+    }
+  }
+
+  // Enhanced text segment handling
+  addTextSegment(segments, stack, text, errors) {
+    if (!text.trim()) return;
+
+    try {
+      if (stack.length > 0) {
+        // Add to current thinking container
+        stack[stack.length - 1].content += text;
+      } else {
+        // Add as standalone text segment
+        segments.push({
+          type: 'text',
+          content: text.trim()
+        });
+      }
+    } catch (error) {
+      errors.push(`Error adding text segment: ${error.message}`);
+    }
+  }
+
+  // Enhanced recovery from unclosed tags
+  recoverFromUnclosedTags(stack, segments, errors) {
+    const recoverySegments = [];
+    const recoveryErrors = [];
+
+    try {
+      console.warn(`Recovering from ${stack.length} unclosed thinking tags`);
+
+      // Try to salvage content from unclosed tags
       while (stack.length > 0) {
-        const top = stack.pop();
-        remainingContent = top.content + remainingContent;
+        const unclosedTag = stack.pop();
+
+        if (unclosedTag.content && unclosedTag.content.trim()) {
+          recoverySegments.push({
+            type: 'text',
+            content: `[Unclosed thinking tag content]: ${unclosedTag.content.trim()}`
+          });
+          recoveryErrors.push(`Recovered content from unclosed ${unclosedTag.tagType} tag`);
+        }
       }
-      if (remainingContent) {
-        segments.push({ type: 'text', content: remainingContent });
-      }
+
+      return {
+        segments: recoverySegments,
+        errors: recoveryErrors
+      };
+    } catch (error) {
+      return {
+        segments: [],
+        errors: [`Recovery from unclosed tags failed: ${error.message}`]
+      };
     }
-    
-    return segments;
+  }
+
+  // Fallback parsing for when main parser fails
+  parseNestedThinkingFallback(content, errors) {
+    try {
+      // Simple pattern-based extraction as last resort
+      const patterns = [
+        /<thinking[^>]*>([\s\S]*?)(?:<\/thinking>|$)/gi,
+        /◁think▷([\s\S]*?)(?:◁\/think▷|◁\/thinking▷|$)/gi
+      ];
+
+      const segments = [];
+
+      for (const pattern of patterns) {
+        let match;
+        pattern.lastIndex = 0;
+
+        while ((match = pattern.exec(content)) !== null) {
+          if (match[1] && match[1].trim()) {
+            segments.push({
+              type: 'thinking',
+              content: match[1].trim()
+            });
+          }
+        }
+      }
+
+      if (segments.length === 0) {
+        // If no structured content found, return everything as text
+        if (content.trim()) {
+          segments.push({
+            type: 'text',
+            content: content.trim()
+          });
+        }
+      }
+
+      return segments;
+    } catch (error) {
+      errors.push(`Fallback parsing failed: ${error.message}`);
+      return [{
+        type: 'text',
+        content: content || ''
+      }];
+    }
+  }
+
+  // Enhanced step parsing method with robust error handling and malformed content support
+  parseThinkingSteps(thinkingContent) {
+    if (!thinkingContent || typeof thinkingContent !== 'string') {
+      return [];
+    }
+
+    const errors = [];
+    let steps = [];
+
+    try {
+      // Enhanced step patterns with malformed content support
+      const stepPatterns = [
+        {
+          // Standard numbered steps: "1. Content", "2) Content", etc.
+          pattern: /^\s*\d+[\.\)]\s*(.+)$/gm,
+          extract: (match) => match[1]?.trim(),
+          type: 'numbered'
+        },
+        {
+          // Bullet points: "- Content", "* Content", "• Content"
+          pattern: /^\s*[-*•]\s*(.+)$/gm,
+          extract: (match) => match[1]?.trim(),
+          type: 'bullet'
+        },
+        {
+          // Step labels: "Step 1:", "Step:", "Next:", etc.
+          pattern: /^\s*(?:Step|Next|Then|First|Second|Third|Finally)[\s\d]*:\s*(.+)$/gmi,
+          extract: (match) => match[1]?.trim(),
+          type: 'labeled'
+        },
+        {
+          // Thinking indicators: "I think", "Let me", "I need to", etc.
+          pattern: /^\s*(?:I think|Let me|I need to|I should|I will|Consider|Analyze|Looking at)[:,\s]*(.+)$/gmi,
+          extract: (match) => match[1]?.trim(),
+          type: 'thinking'
+        },
+        {
+          // Tool usage patterns
+          pattern: /^\s*(?:Using tool|Calling|Execute|Tool)[:,\s]*([^\n]+)$/gmi,
+          extract: (match) => match[1]?.trim(),
+          type: 'tool'
+        }
+      ];
+
+      // Try each pattern with error handling
+      for (const stepPattern of stepPatterns) {
+        try {
+          const matches = [...thinkingContent.matchAll(stepPattern.pattern)];
+          if (matches.length > 0) {
+            steps = matches
+              .map((match, index) => {
+                try {
+                  const content = stepPattern.extract(match);
+                  if (content && this.isValidStepContent(content)) {
+                    return {
+                      id: `step-${Date.now()}-${index}`,
+                      content: this.sanitizeStepContent(content),
+                      type: 'thinking',
+                      pattern: stepPattern.type,
+                      rawMatch: match[0]
+                    };
+                  }
+                } catch (error) {
+                  errors.push(`Error processing step match: ${error.message}`);
+                }
+                return null;
+              })
+              .filter(Boolean);
+
+            if (steps.length > 0) {
+              break; // Use first successful pattern
+            }
+          }
+        } catch (error) {
+          errors.push(`Error with pattern ${stepPattern.type}: ${error.message}`);
+          continue;
+        }
+      }
+
+      // Enhanced paragraph-based parsing if no structured steps found
+      if (steps.length === 0) {
+        steps = this.parseStepsFromParagraphs(thinkingContent, errors);
+      }
+
+      // Enhanced post-processing for malformed content recovery
+      if (steps.length === 0) {
+        steps = this.parseStepsWithAdvancedRecovery(thinkingContent, errors);
+      }
+
+      // Validate and clean all steps
+      steps = steps.map((step, index) => ({
+        ...step,
+        id: step.id || `recovered-step-${index}`,
+        content: this.validateAndRepairStepContent(step.content, errors),
+        type: step.type || 'thinking'
+      }));
+
+      // Remove duplicate or very similar steps
+      steps = this.deduplicateSteps(steps, errors);
+
+      // Log parsing results if there were issues
+      if (errors.length > 0) {
+        console.warn(`Step parsing completed with ${errors.length} warnings:`, errors.slice(0, 5));
+      }
+
+      return steps;
+
+    } catch (error) {
+      errors.push(`Critical step parsing error: ${error.message}`);
+      console.error('Step parsing failed:', error);
+
+      // Enhanced fallback with content preservation
+      return this.createStepParsingFallback(thinkingContent, errors);
+    }
+  }
+
+  // Validate if content is suitable for a step
+  isValidStepContent(content) {
+    if (!content || typeof content !== 'string') return false;
+
+    // Must have minimum length but not be too long for a single step
+    const length = content.length;
+    if (length < 3 || length > 10000) return false;
+
+    // Must contain actual content (not just punctuation or whitespace)
+    const trimmed = content.trim();
+    if (!trimmed || /^[^\w]*$/.test(trimmed)) return false;
+
+    // Check for reasonable word count (not just one word, not extremely long)
+    const words = trimmed.split(/\s+/).length;
+    if (words < 2 || words > 500) return false;
+
+    return true;
+  }
+
+  // Parse steps from paragraphs with enhanced logic
+  parseStepsFromParagraphs(content, errors) {
+    try {
+      const steps = [];
+
+      // Split by various paragraph separators
+      const paragraphs = content
+        .split(/\n\s*\n|\r\n\s*\r\n|\r\s*\r/)
+        .map(p => p.trim())
+        .filter(p => p && this.isValidStepContent(p));
+
+      if (paragraphs.length === 0) {
+        return steps;
+      }
+
+      // Group related paragraphs into logical steps
+      let currentStep = '';
+      let stepIndex = 0;
+
+      for (let i = 0; i < paragraphs.length; i++) {
+        const paragraph = paragraphs[i];
+
+        // Check if this paragraph should start a new step
+        const shouldStartNewStep = this.shouldStartNewStep(paragraph, currentStep);
+
+        if (shouldStartNewStep && currentStep.trim()) {
+          // Save current step
+          steps.push({
+            id: `paragraph-step-${stepIndex++}`,
+            content: this.sanitizeStepContent(currentStep.trim()),
+            type: 'thinking',
+            pattern: 'paragraph'
+          });
+          currentStep = '';
+        }
+
+        // Add current paragraph to step
+        if (currentStep) {
+          currentStep += '\n\n' + paragraph;
+        } else {
+          currentStep = paragraph;
+        }
+      }
+
+      // Add final step
+      if (currentStep.trim()) {
+        steps.push({
+          id: `paragraph-step-${stepIndex}`,
+          content: this.sanitizeStepContent(currentStep.trim()),
+          type: 'thinking',
+          pattern: 'paragraph'
+        });
+      }
+
+      return steps;
+    } catch (error) {
+      errors.push(`Paragraph parsing failed: ${error.message}`);
+      return [];
+    }
+  }
+
+  // Determine if a paragraph should start a new step
+  shouldStartNewStep(paragraph, currentStep) {
+    // Don't split if current step is empty
+    if (!currentStep.trim()) return false;
+
+    // Check for step transition indicators
+    const transitionIndicators = [
+      /^\d+[\.\)]\s/i,           // Numbered steps
+      /^[-*•]\s/i,               // Bullet points
+      /^(Step|Next|Then|First|Second|Third|Finally)/i, // Step labels
+      /^(I think|Let me|I need to|I should|I will)/i,  // Thinking indicators
+      /^(Using tool|Calling|Execute)/i // Tool usage
+    ];
+
+    return transitionIndicators.some(indicator => indicator.test(paragraph));
+  }
+
+  // Advanced recovery for severely malformed content
+  parseStepsWithAdvancedRecovery(content, errors) {
+    try {
+      const steps = [];
+      let stepIndex = 0;
+
+      // Try sentence-based parsing for very dense content
+      const sentences = content.split(/[.!?]+/).filter(s => s.trim());
+      const sentenceGroups = [];
+
+      // Group sentences into logical chunks
+      for (let i = 0; i < sentences.length; i += 2) {
+        const chunk = sentences.slice(i, i + 2).join('. ').trim();
+        if (chunk && this.isValidStepContent(chunk)) {
+          sentenceGroups.push(chunk);
+        }
+      }
+
+      // Convert chunks to steps
+      for (const chunk of sentenceGroups) {
+        steps.push({
+          id: `recovered-step-${stepIndex++}`,
+          content: this.sanitizeStepContent(chunk),
+          type: 'thinking',
+          pattern: 'recovered'
+        });
+      }
+
+      return steps;
+    } catch (error) {
+      errors.push(`Advanced recovery parsing failed: ${error.message}`);
+      return [];
+    }
+  }
+
+  // Validate and repair step content
+  validateAndRepairStepContent(content, errors) {
+    if (!content) return '';
+
+    try {
+      let repaired = content;
+
+      // Fix common issues
+      repaired = repaired
+        // Fix excessive whitespace
+        .replace(/\s+/g, ' ')
+        // Fix broken quotes
+        .replace(/(["'])(\s*)\1/g, '$1$2$1')
+        // Fix common typos in step indicators
+        .replace(/\bteh\b/gi, 'the')
+        .replace(/\btaht\b/gi, 'that')
+        .replace(/\badn\b/gi, 'and');
+
+      // Truncate extremely long steps with warning
+      if (repaired.length > 5000) {
+        errors.push('Step content truncated due to excessive length');
+        repaired = repaired.substring(0, 5000) + '... [truncated]';
+      }
+
+      return this.sanitizeStepContent(repaired);
+    } catch (error) {
+      errors.push(`Content repair failed: ${error.message}`);
+      return this.sanitizeStepContent(content);
+    }
+  }
+
+  // Remove duplicate or very similar steps
+  deduplicateSteps(steps, errors) {
+    if (steps.length <= 1) return steps;
+
+    try {
+      const uniqueSteps = [];
+      const seen = new Set();
+
+      for (const step of steps) {
+        if (!step.content) continue;
+
+        // Create a normalized signature for comparison
+        const signature = this.createStepSignature(step.content);
+
+        if (!seen.has(signature)) {
+          seen.add(signature);
+          uniqueSteps.push(step);
+        } else {
+          errors.push('Duplicate step removed');
+        }
+      }
+
+      return uniqueSteps;
+    } catch (error) {
+      errors.push(`Deduplication failed: ${error.message}`);
+      return steps;
+    }
+  }
+
+  // Create a normalized signature for step comparison
+  createStepSignature(content) {
+    return content
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[^\w\s]/g, '')
+      .trim()
+      .substring(0, 100); // First 100 chars for comparison
+  }
+
+  // Enhanced fallback for when all parsing methods fail
+  createStepParsingFallback(content, errors) {
+    try {
+      if (!content || !content.trim()) {
+        return [];
+      }
+
+      // As a last resort, create a single step with the entire content
+      const fallbackStep = {
+        id: `fallback-step-${Date.now()}`,
+        content: this.sanitizeStepContent(content.trim()),
+        type: 'thinking',
+        pattern: 'fallback'
+      };
+
+      errors.push('Used fallback parsing - all structured parsing methods failed');
+      return [fallbackStep];
+
+    } catch (error) {
+      errors.push(`Fallback creation failed: ${error.message}`);
+      return [{
+        id: 'error-fallback',
+        content: 'Content parsing failed completely',
+        type: 'error'
+      }];
+    }
+  }
+
+  // Add content sanitization method
+  sanitizeStepContent(content) {
+    if (!content) return '';
+
+    return content
+      // Remove potentially dangerous HTML
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+      // Limit length to prevent excessive content
+      .substring(0, 5000)
+      .trim();
   }
 
   updateThoughtContent(thought) {
@@ -538,7 +1499,7 @@ class EnhancedThinkingBlock extends HTMLElement {
       const tokenCountElement = this.shadowRoot.getElementById('token-count');
       const stepsList = this.shadowRoot.getElementById('steps-list');
       const rawThinking = this.shadowRoot.getElementById('raw-thinking');
-      
+
       // Update token count with debouncing
       if (tokenCountElement) {
         this.debounce(() => {
@@ -546,36 +1507,35 @@ class EnhancedThinkingBlock extends HTMLElement {
           tokenCountElement.textContent = String(tokenCount);
         }, 200)();
       }
-      
+
       // Parse thinking content into structured steps
       this.parseThinkingContent(thought || '');
-      
+
       // Update steps list with optimized rendering for streaming
       if (stepsList) {
-        // During streaming, use longer debounce to reduce flashing
-        const delay = this.isStreaming ? 500 : 0;
-        
-        if (delay > 0) {
+        if (this.isStreaming) {
+          // For streaming: use RAF directly and throttle updates for very fast streams
+          requestAnimationFrame(() => {
+            this.renderStepsList();
+          });
+        } else {
+          // For non-streaming: use debounce to prevent excessive updates
           this.debounce(() => {
             requestAnimationFrame(() => {
               this.renderStepsList();
             });
-          }, delay)();
-        } else {
-          requestAnimationFrame(() => {
-            this.renderStepsList();
-          });
+          }, 500)();
         }
       }
-      
+
       // Update raw thinking fallback
       if (rawThinking) {
         rawThinking.textContent = thought || '';
       }
-      
+
       // Enable virtual scroll for large content
       this.virtualScrollEnabled = this.steps.length > this.maxVisibleSteps;
-      
+
     } catch (error) {
       this.handleError('Thought content update error', error);
     }
@@ -585,47 +1545,115 @@ class EnhancedThinkingBlock extends HTMLElement {
   renderStepsList() {
     const stepsList = this.shadowRoot.getElementById('steps-list');
     if (!stepsList) return;
-    
-    // During streaming, only append new steps instead of rebuilding everything
-    if (this.isStreaming && stepsList.children.length > 0) {
-      const existingCount = stepsList.children.length;
-      const newSteps = this.steps.slice(existingCount);
-      
-      // Only add new steps to avoid flashing
-      const fragment = document.createDocumentFragment();
-      newSteps.forEach((step, index) => {
-        const li = this.createStepElement(step, existingCount + index, true);
-        fragment.appendChild(li);
-      });
-      
-      if (fragment.children.length > 0) {
+
+    // Use requestAnimationFrame for streaming updates
+    if (this.isStreaming) {
+      requestAnimationFrame(() => {
+        // During streaming, disable animations and only append new steps instead of rebuilding everything
+        if (stepsList.children.length > 0) {
+          const existingCount = stepsList.children.length;
+          const newSteps = this.steps.slice(existingCount);
+
+          // Only add new steps to avoid flashing
+          if (newSteps.length > 0) {
+            this.renderStreamingSteps(stepsList, newSteps, existingCount);
+          }
+          return;
+        }
+
+        // Clear existing content only when not streaming or for initial render
+        stepsList.innerHTML = '';
+
+        // Disable animations during streaming for all steps
+        stepsList.style.setProperty('--animation-duration', '0s');
+
+        // Use DocumentFragment for efficient DOM operations
+        const fragment = document.createDocumentFragment();
+
+        // Render only visible steps if virtual scrolling is enabled
+        const stepsToRender = this.virtualScrollEnabled
+          ? this.steps.slice(0, this.maxVisibleSteps)
+          : this.steps;
+
+        // Batch DOM operations using DocumentFragment
+        stepsToRender.forEach((step, index) => {
+          const li = this.createStepElement(step, index, true);
+          fragment.appendChild(li);
+        });
+
         stepsList.appendChild(fragment);
-      }
-      return;
+
+        // Handle virtual scroll if enabled
+        if (this.virtualScrollEnabled) {
+          this.handleVirtualScroll();
+        }
+      });
+    } else {
+      // Non-streaming: Use standard RAF scheduling
+      requestAnimationFrame(() => {
+        // Clear existing content only when not streaming
+        stepsList.innerHTML = '';
+
+        // Use DocumentFragment for efficient DOM operations
+        const fragment = document.createDocumentFragment();
+
+        // Render only visible steps if virtual scrolling is enabled
+        const stepsToRender = this.virtualScrollEnabled
+          ? this.steps.slice(0, this.maxVisibleSteps)
+          : this.steps;
+
+        // Batch DOM operations using DocumentFragment
+        stepsToRender.forEach((step, index) => {
+          const li = this.createStepElement(step, index, false);
+          fragment.appendChild(li);
+        });
+
+        stepsList.appendChild(fragment);
+
+        // Handle virtual scroll if enabled
+        if (this.virtualScrollEnabled) {
+          this.handleVirtualScroll();
+        }
+      });
     }
-    
-    // Clear existing content only when not streaming
-    stepsList.innerHTML = '';
-    
-    // Use DocumentFragment for efficient DOM operations
-    const fragment = document.createDocumentFragment();
-    
-    // Render only visible steps if virtual scrolling is enabled
-    const stepsToRender = this.virtualScrollEnabled 
-      ? this.steps.slice(0, this.maxVisibleSteps) 
-      : this.steps;
-    
-    // Batch DOM operations using DocumentFragment
-    stepsToRender.forEach((step, index) => {
-      const li = this.createStepElement(step, index, false);
-      fragment.appendChild(li);
-    });
-    
-    stepsList.appendChild(fragment);
-    
-    // Handle virtual scroll if enabled
-    if (this.virtualScrollEnabled) {
-      this.handleVirtualScroll();
+  }
+
+  // Optimized streaming step rendering with RAF batching and scroll preservation
+  renderStreamingSteps(stepsList, newSteps, existingCount) {
+    if (this.isStreaming) {
+      // Use requestAnimationFrame for streaming updates
+      requestAnimationFrame(() => {
+        // First batch: Read all DOM properties to avoid reflows during reads
+        const existingSteps = Array.from(stepsList.children);
+        const stepCount = existingSteps.length;
+        const containerRect = stepsList.getBoundingClientRect();
+        const scrollTop = stepsList.scrollTop;
+        const preserveScroll = stepsList.scrollHeight - scrollTop < containerRect.height + 100;
+
+        // Second batch: Write all DOM changes using optimized DocumentFragment
+        if (newSteps.length > 0) {
+          requestAnimationFrame(() => {
+            // Use DocumentFragment for batch insertion to minimize reflows
+            const fragment = document.createDocumentFragment();
+
+            // Create and add all new elements to fragment before DOM insertion
+            newSteps.forEach((step, index) => {
+              const li = this.createStepElement(step, existingCount + index, true);
+              fragment.appendChild(li);
+            });
+
+            // Single DOM insertion for optimal performance
+            stepsList.appendChild(fragment);
+
+            // Restore scroll position if needed to maintain user context
+            if (preserveScroll) {
+              requestAnimationFrame(() => {
+                stepsList.scrollTop = scrollTop;
+              });
+            }
+          });
+        }
+      });
     }
   }
   
@@ -636,11 +1664,12 @@ class EnhancedThinkingBlock extends HTMLElement {
     li.setAttribute('role', 'listitem');
     li.setAttribute('tabindex', '0');
     li.setAttribute('aria-label', `${step.title}: ${step.description}`);
-    
+
     // During streaming, disable animations to prevent flashing
     if (isStreaming) {
+      li.style.animation = 'none';
       li.style.opacity = '1';
-      li.style.transform = 'translateY(0)';
+      li.style.transform = 'none';
     }
     
     li.innerHTML = `
@@ -958,18 +1987,21 @@ class EnhancedThinkingBlock extends HTMLElement {
   simulateProgress() {
     const progressBar = this.shadowRoot.getElementById('progress-bar');
     if (!progressBar) return;
-    
+
     let progress = 0;
     const interval = setInterval(() => {
       if (!this.isStreaming) {
         clearInterval(interval);
+        // Ensure progress bar shows completion before hiding
         progressBar.style.width = '100%';
         setTimeout(() => {
-          progressBar.style.width = '0%';
+          if (progressBar) { // Check if element still exists
+            progressBar.style.width = '0%';
+          }
         }, 500);
         return;
       }
-      
+
       progress += Math.random() * 10;
       if (progress > 90) progress = 90;
       progressBar.style.width = `${progress}%`;
@@ -1249,6 +2281,20 @@ toggleButton.textContent = allExpanded ? '\u2195\uFE0F Expand All' : '\u2195\uFE
     }
   }
 
+  disconnectedCallback() {
+    // Clean up any running intervals or timers
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+
+    // Ensure streaming state is cleared when element is removed
+    if (this.isStreaming) {
+      this.setStreamingState(false);
+      console.log('EnhancedThinkingBlock: Cleared streaming state on disconnect');
+    }
+  }
+
   debounce(func, wait) {
     return (...args) => {
       clearTimeout(this.debounceTimer);
@@ -1353,8 +2399,9 @@ toggleButton.textContent = allExpanded ? '\u2195\uFE0F Expand All' : '\u2195\uFE
       // store raw answer for copy
       this.rawAnswer = answer || '';
       if (answerContent) {
+        // Clear existing content first
         answerContent.innerHTML = '';
-        
+
         if (answer && answer.trim()) {
           if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
             const parsedContent = marked.parse(answer || '');
@@ -1363,11 +2410,13 @@ toggleButton.textContent = allExpanded ? '\u2195\uFE0F Expand All' : '\u2195\uFE
             answerWrapper.innerHTML = parsedContent;
             answerContent.appendChild(answerWrapper);
           } else {
-            const answerWrapper = document.createElement('div');
-            answerWrapper.className = 'answer-wrapper';
-            answerWrapper.textContent = answer || '';
-            answerContent.appendChild(answerWrapper);
+            // Use textContent for non-markdown content where appropriate
+            answerContent.textContent = answer || '';
           }
+        } else {
+          // FIX: Ensure answer section is visible even when empty
+          // Add a placeholder space to maintain minimum height
+          answerContent.innerHTML = '<div style="min-height: 20px;"></div>';
         }
       }
     } catch (error) {

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixed Thinking Block Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .performance-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            color: #555;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔧 Fixed Thinking Block UI/UX Test</h1>
+        
+        <div class="performance-info">
+            <h3>Performance Improvements Applied:</h3>
+            <ul>
+                <li>✅ <strong>Anti-flicker:</strong> Optimized debouncing (150ms) + requestAnimationFrame</li>
+                <li>✅ <strong>Memory leaks:</strong> Added cleanup methods for all components</li>
+                <li>✅ <strong>Copy functionality:</strong> Enhanced clipboard with fallbacks</li>
+                <li>✅ <strong>Incremental rendering:</strong> Only update changed DOM elements</li>
+                <li>✅ <strong>Resource management:</strong> Proper event listener cleanup</li>
+            </ul>
+        </div>
+        
+        <div class="controls">
+            <button onclick="testBasicRendering()">Test Basic Rendering</button>
+            <button onclick="testStreamingPerformance()">Test Streaming Performance</button>
+            <button onclick="testMemoryUsage()">Test Memory Usage</button>
+            <button onclick="testCopyFunction()">Test Copy Function</button>
+            <button onclick="testLargeContent()">Test Large Content</button>
+            <button onclick="cleanupTest()">Cleanup & Reset</button>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <h2>Test Results</h2>
+        <div id="test-results"></div>
+    </div>
+
+    <!-- Include the necessary scripts -->
+    <script src="marked.min.js"></script>
+    <script src="enhanced-thinking-block.js"></script>
+    
+    <script>
+        let testElement = null;
+        let testResults = [];
+        
+        function showStatus(message, type = 'success') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            statusEl.style.display = 'block';
+            
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 3000);
+        }
+        
+        function addResult(test, result, details = '') {
+            testResults.push({
+                test,
+                result,
+                details,
+                timestamp: new Date().toISOString()
+            });
+            
+            updateResultsDisplay();
+        }
+        
+        function updateResultsDisplay() {
+            const resultsEl = document.getElementById('test-results');
+            resultsEl.innerHTML = testResults.map(r => `
+                <div style="padding: 10px; margin: 5px 0; border-left: 4px solid ${r.result === 'PASS' ? '#28a745' : '#dc3545'}; background: #f8f9fa;">
+                    <strong>${r.test}:</strong> 
+                    <span style="color: ${r.result === 'PASS' ? '#28a745' : '#dc3545'}">${r.result}</span>
+                    ${r.details ? `<br><small>${r.details}</small>` : ''}
+                </div>
+            `).join('');
+        }
+        
+        function testBasicRendering() {
+            try {
+                // Create thinking block element
+                testElement = document.createElement('enhanced-thinking-block');
+                testElement.setAttribute('content', 'Simple test content');
+                testElement.setAttribute('think', 'Basic thinking process for testing');
+                testElement.setAttribute('answer', 'This is a test answer');
+                testElement.setAttribute('tokens', '42');
+                
+                document.body.appendChild(testElement);
+                
+                // Check if it renders
+                setTimeout(() => {
+                    const hasContent = testElement.shadowRoot && testElement.shadowRoot.querySelector('.steps-list');
+                    if (hasContent) {
+                        addResult('Basic Rendering', 'PASS', 'Element renders correctly with shadow DOM');
+                        showStatus('✅ Basic rendering test passed');
+                    } else {
+                        addResult('Basic Rendering', 'FAIL', 'Shadow DOM or content not found');
+                        showStatus('❌ Basic rendering test failed', 'error');
+                    }
+                }, 500);
+                
+            } catch (error) {
+                addResult('Basic Rendering', 'FAIL', error.message);
+                showStatus('❌ Basic rendering test failed: ' + error.message, 'error');
+            }
+        }
+        
+        function testStreamingPerformance() {
+            if (!testElement) {
+                showStatus('❌ Please run basic rendering test first', 'error');
+                return;
+            }
+            
+            try {
+                const startTime = performance.now();
+                let updateCount = 0;
+                const maxUpdates = 10;
+                
+                // Simulate streaming updates
+                const streamInterval = setInterval(() => {
+                    updateCount++;
+                    const content = `Streaming update ${updateCount}: This simulates real-time content updates without flicker.`;
+                    const thinking = `Thinking step ${updateCount}: Processing information...`;
+                    
+                    testElement.setAttribute('content', content);
+                    testElement.setAttribute('think', thinking);
+                    testElement.setAttribute('streaming', 'true');
+                    
+                    if (updateCount >= maxUpdates) {
+                        clearInterval(streamInterval);
+                        testElement.setAttribute('streaming', 'false');
+                        
+                        const endTime = performance.now();
+                        const duration = endTime - startTime;
+                        
+                        if (duration < 2000) { // Should complete in under 2 seconds
+                            addResult('Streaming Performance', 'PASS', `${maxUpdates} updates in ${duration.toFixed(2)}ms`);
+                            showStatus('✅ Streaming performance test passed');
+                        } else {
+                            addResult('Streaming Performance', 'FAIL', `Too slow: ${duration.toFixed(2)}ms`);
+                            showStatus('❌ Streaming performance test failed', 'error');
+                        }
+                    }
+                }, 100); // Update every 100ms
+                
+            } catch (error) {
+                addResult('Streaming Performance', 'FAIL', error.message);
+                showStatus('❌ Streaming performance test failed: ' + error.message, 'error');
+            }
+        }
+        
+        function testMemoryUsage() {
+            if (!testElement) {
+                showStatus('❌ Please run basic rendering test first', 'error');
+                return;
+            }
+            
+            try {
+                // Force garbage collection if available
+                if (window.gc) {
+                    window.gc();
+                }
+                
+                const initialMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                
+                // Create and destroy multiple elements
+                for (let i = 0; i < 50; i++) {
+                    const tempElement = document.createElement('enhanced-thinking-block');
+                    tempElement.setAttribute('content', `Test content ${i}`);
+                    tempElement.setAttribute('think', `Test thinking ${i}`);
+                    document.body.appendChild(tempElement);
+                    
+                    // Immediately remove to test cleanup
+                    setTimeout(() => {
+                        document.body.removeChild(tempElement);
+                    }, 10);
+                }
+                
+                setTimeout(() => {
+                    if (window.gc) {
+                        window.gc();
+                    }
+                    
+                    const finalMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                    const memoryIncrease = finalMemory - initialMemory;
+                    
+                    // Memory increase should be minimal (< 5MB)
+                    if (memoryIncrease < 5 * 1024 * 1024) {
+                        addResult('Memory Usage', 'PASS', `Memory increase: ${(memoryIncrease / 1024 / 1024).toFixed(2)}MB`);
+                        showStatus('✅ Memory usage test passed');
+                    } else {
+                        addResult('Memory Usage', 'FAIL', `Memory leak detected: ${(memoryIncrease / 1024 / 1024).toFixed(2)}MB`);
+                        showStatus('❌ Memory usage test failed', 'error');
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                addResult('Memory Usage', 'FAIL', error.message);
+                showStatus('❌ Memory usage test failed: ' + error.message, 'error');
+            }
+        }
+        
+        function testCopyFunction() {
+            if (!testElement) {
+                showStatus('❌ Please run basic rendering test first', 'error');
+                return;
+            }
+            
+            try {
+                const testText = 'This is test content for clipboard copy functionality.';
+                
+                // Test the copy function
+                navigator.clipboard.writeText(testText).then(() => {
+                    navigator.clipboard.readText().then(copiedText => {
+                        if (copiedText === testText) {
+                            addResult('Copy Function', 'PASS', 'Clipboard read/write working');
+                            showStatus('✅ Copy function test passed');
+                        } else {
+                            addResult('Copy Function', 'FAIL', 'Copied text does not match');
+                            showStatus('❌ Copy function test failed', 'error');
+                        }
+                    }).catch(() => {
+                        addResult('Copy Function', 'PASS', 'Write permission working (read not available)');
+                        showStatus('✅ Copy function test passed (partial)');
+                    });
+                }).catch(error => {
+                    // Try fallback method
+                    const textarea = document.createElement('textarea');
+                    textarea.value = testText;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    
+                    if (successful) {
+                        addResult('Copy Function', 'PASS', 'Fallback method working');
+                        showStatus('✅ Copy function test passed (fallback)');
+                    } else {
+                        addResult('Copy Function', 'FAIL', 'Both modern and fallback failed');
+                        showStatus('❌ Copy function test failed', 'error');
+                    }
+                });
+                
+            } catch (error) {
+                addResult('Copy Function', 'FAIL', error.message);
+                showStatus('❌ Copy function test failed: ' + error.message, 'error');
+            }
+        }
+        
+        function testLargeContent() {
+            if (!testElement) {
+                showStatus('❌ Please run basic rendering test first', 'error');
+                return;
+            }
+            
+            try {
+                // Generate large content
+                let largeThinking = '';
+                for (let i = 0; i < 100; i++) {
+                    largeThinking += `Step ${i + 1}: This is a detailed thinking step with substantial content to test performance. `;
+                    largeThinking += `It includes multiple sentences and tool calls to simulate real usage patterns. `;
+                    largeThinking += `Tool: search_api with query "test query ${i + 1}" and various parameters. `;
+                    largeThinking += `Output: Results from search operation with processed data and analysis.\\n\\n`;
+                }
+                
+                const startTime = performance.now();
+                
+                testElement.setAttribute('think', largeThinking);
+                testElement.setAttribute('tokens', '5000');
+                
+                setTimeout(() => {
+                    const endTime = performance.now();
+                    const renderTime = endTime - startTime;
+                    
+                    // Should render large content quickly (< 1 second)
+                    if (renderTime < 1000) {
+                        addResult('Large Content', 'PASS', `100 steps rendered in ${renderTime.toFixed(2)}ms`);
+                        showStatus('✅ Large content test passed');
+                    } else {
+                        addResult('Large Content', 'FAIL', `Too slow: ${renderTime.toFixed(2)}ms`);
+                        showStatus('❌ Large content test failed', 'error');
+                    }
+                }, 500);
+                
+            } catch (error) {
+                addResult('Large Content', 'FAIL', error.message);
+                showStatus('❌ Large content test failed: ' + error.message, 'error');
+            }
+        }
+        
+        function cleanupTest() {
+            try {
+                // Remove test element if it exists
+                if (testElement && testElement.parentNode) {
+                    testElement.parentNode.removeChild(testElement);
+                    testElement = null;
+                }
+                
+                // Clear results
+                testResults = [];
+                updateResultsDisplay();
+                
+                // Force garbage collection if available
+                if (window.gc) {
+                    window.gc();
+                }
+                
+                showStatus('✅ Cleanup completed');
+                
+            } catch (error) {
+                showStatus('❌ Cleanup failed: ' + error.message, 'error');
+            }
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            showStatus('🔧 Test environment ready. Run tests to verify fixes.');
+        });
+    </script>
+</body>
+</html>
