@@ -1,16 +1,4 @@
-// MCP removed: provide a minimal stub to avoid runtime errors if legacy code paths are reached
-class McpRegistry {
-  constructor() {}
-  async addServer() { throw new Error('MCP disabled'); }
-  async updateServer() { throw new Error('MCP disabled'); }
-  async removeServer() { return; }
-  async listServers() { return []; }
-  async testConnect() { return { ok: false, error: 'MCP disabled' }; }
-  async listTools() { return []; }
-  async callTool() { throw new Error('MCP disabled'); }
-  getState() { return null; }
-}
-
+import './marked.min.js';
 
 // ===== Umami Analytics Module (privacy-first, opt-out) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -187,7 +175,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.contextMenus.create({
         id: "analyzeImage",
         parentId: "imageAnalysis",
-        title: "\uD83D\uDD0D General Analysis",
+        title: "🔍 General Analysis",
         contexts: ["image"]
     });
     
@@ -226,7 +214,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.contextMenus.create({
         id: "analyzeVideo",
         parentId: "videoAnalysis",
-        title: "\uD83C\uDFA5 General Analysis",
+        title: "🎥 General Analysis",
         contexts: ["video"]
     });
     
@@ -240,7 +228,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.contextMenus.create({
         id: "analyzeAudio",
         parentId: "audioAnalysis",
-        title: "\uD83C\uDFB5 General Analysis", 
+        title: "🎵 General Analysis", 
         contexts: ["audio"]
     });
 });
@@ -276,7 +264,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             
             // Show loading message immediately (with error handling)
             try {
-                await sendMessageWithRetry({
+                chrome.runtime.sendMessage({
                     action: 'setMediaForAnalysis',
                     mediaData: {
                         type: mediaType,
@@ -302,16 +290,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 });
                 
                 // Send the actual media data (with retry logic for side panel)
-                const sendMediaData = async () => {
+                const sendMediaData = () => {
                     try {
-                        // Check if tab is still active before sending
-                        const isActive = await isTabActive(tab.id);
-                        if (!isActive) {
-                            console.log('Tab is no longer active, skipping media data send');
-                            return;
-                        }
-
-                        await sendMessageWithRetry({
+                        chrome.runtime.sendMessage({
                             action: 'setMediaForAnalysis',
                             mediaData: {
                                 type: mediaType,
@@ -335,7 +316,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             }).catch(async error => {
                 console.error('Error fetching media:', error);
                 try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
-                await sendMessageWithRetry({
+                chrome.runtime.sendMessage({
                     action: 'setMediaForAnalysis',
                     mediaData: {
                         type: mediaType,
@@ -490,72 +471,469 @@ function getMimeTypeFromUrl(url) {
         return 'image/jpeg'; // Safe default
     }
 }
-// console.log('marked.min.js imported successfully.');
+console.log('marked.min.js imported successfully.');
 console.log('Background service worker script started.');
 
-// Service worker keep-alive mechanism
-let keepAliveInterval;
-
-function startKeepAlive() {
-  // Send a message to keep the service worker alive every 25 seconds
-  // Chrome service workers have a 5-minute idle timeout, but we're being conservative
-  keepAliveInterval = setInterval(() => {
-    try {
-      chrome.runtime.sendMessage({ action: 'keepAlive' }).catch(() => {
-        // Ignore errors - this is just for keep-alive
-      });
-    } catch (e) {
-      // Ignore errors
-    }
-  }, 25000);
-}
-
-function stopKeepAlive() {
-  if (keepAliveInterval) {
-    clearInterval(keepAliveInterval);
-    keepAliveInterval = null;
-  }
-}
-
-// Start keep-alive when the script loads
-startKeepAlive();
-
-// Enhanced message sending with retry logic and proper error handling
-async function sendMessageWithRetry(message, maxRetries = 3, delay = 100) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await chrome.runtime.sendMessage(message);
-      return { success: true };
-    } catch (error) {
-      console.warn(`Message send attempt ${attempt} failed:`, error.message);
-      
-      if (attempt === maxRetries) {
-        console.error('All message send attempts failed:', message.action, error);
-        return { success: false, error: error.message };
-      }
-      
-      // Wait before retry with exponential backoff
-      await new Promise(resolve => setTimeout(resolve, delay * attempt));
-    }
-  }
-}
-
-// Helper function to check if a specific tab is still active
-async function isTabActive(tabId) {
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tabs.some(tab => tab.id === tabId);
-  } catch (error) {
-    return false;
-  }
-}
-
-
-let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
 
-// MCP features removed during refactor
+async function sendMcpNotification(mcpServerUrl, method, params) {
+    console.log(`Sending MCP notification '${method}' to ${mcpServerUrl} with params:`, params);
+    const session = mcpSessions[mcpServerUrl]; // Get session, primarily for mcpSessionId
+
+    const notificationPayload = {
+        jsonrpc: "2.0",
+        method: method,
+        params: params || {}
+    };
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream' // Keep this from previous fix
+    };
+
+    if (session && session.mcpSessionId) {
+        headers['mcp-session-id'] = session.mcpSessionId;
+        console.log(`Including mcp-session-id: ${session.mcpSessionId} in notification '${method}' to ${mcpServerUrl}`);
+    } else if (method === "initialized") {
+        // The 'initialized' notification is part of the session setup.
+        // If mcpSessionId was just obtained in initializeMcpSession and set into mcpSessions,
+        // it *should* be found here. If not, it's a problem or the server didn't provide one.
+        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This might be an issue if the server expects it even for 'initialized'.`);
+    } else {
+        // For other methods, we should have a session ID if the session was properly initialized
+        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This could cause issues if the server requires it.`);
+    }
+
+
+    try {
+        const response = await fetchWithTimeout(mcpServerUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(notificationPayload)
+        });
+
+        if (!response.ok) {
+            // For notifications, we might not always get a body or a meaningful JSON error.
+            // The primary concern is whether the HTTP request itself succeeded.
+            console.warn(`MCP Notification HTTP error! Status: ${response.status} for method ${method}`);
+            // Optionally, try to read body if there's an issue.
+            try {
+                const errorBody = await response.text(); // Using text() as it might not be JSON
+                console.warn(`MCP Notification error body: ${errorBody}`);
+            } catch(e) { /* ignore */ }
+        }
+        // Notifications do not have responses to parse beyond HTTP status.
+    } catch (error) {
+        console.error(`Error sending MCP notification '${method}' to ${mcpServerUrl}:`, error);
+        // Depending on desired robustness, could throw or just log.
+    }
+}
+
+async function initializeMcpSession(mcpServerUrl) {
+    console.log(`Initializing MCP session for: ${mcpServerUrl} (expecting SSE response)`);
+    
+    // Check circuit breaker before attempting initialization
+    const circuitBreaker = getCircuitBreaker(mcpServerUrl);
+    
+    return await circuitBreaker.execute(async () => {
+        const requestId = `mcp-init-${Date.now()}`;
+        const initializeParams = {
+            protocolVersion: "0.1.0",
+            capabilities: mcpClientCapabilities,
+            clientInfo: mcpClientInfo
+        };
+        const requestPayload = {
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "initialize",
+            params: initializeParams
+        };
+
+    try {
+        const response = await retryWithBackoff(async () => {
+            return await fetchWithTimeout(mcpServerUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream' // Correct Accept header
+                },
+                body: JSON.stringify(requestPayload)
+            });
+        });
+
+        if (!response.ok) {
+            let errorMsg = `MCP Initialize HTTP error! Status: ${response.status}`;
+            try {
+                const errorBody = await response.text(); // Use text() for potential non-JSON errors too
+                errorMsg += `, Body: ${errorBody}`;
+            } catch (e) { /* ignore */ }
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: HTTP status ${response.status}. Body: ${errorBody}`);
+        }
+
+        const mcpSessionId = response.headers.get('mcp-session-id');
+        if (!mcpSessionId) {
+            console.error(`MCP Initialize Error: mcp-session-id header not found in response from ${mcpServerUrl}. This is required for subsequent requests.`);
+            // This is now treated as an error since most servers will require the session ID
+            throw new Error(`MCP Initialize failed: mcp-session-id header missing in response from ${mcpServerUrl}`);
+        } else {
+            console.log(`MCP Initialize: Received mcp-session-id: ${mcpSessionId}`);
+        }
+
+        const responseText = await response.text();
+        console.debug(`MCP Initialize: Raw response text from ${mcpServerUrl} for request ID ${requestId}:\n${responseText}`);
+        let serverResponse = null;
+        let foundInitializeResult = false;
+
+        // Process potential SSE stream for the initialize response
+        // An SSE stream might contain multiple messages. We need to find the one that's a JSON-RPC response to our 'initialize' request.
+        const lines = responseText.split('\n');
+        let accumulatedData = ''; // For multi-line data fields in SSE
+
+        for (const line of lines) {
+            if (line.startsWith('data:')) {
+                accumulatedData += line.substring(5).trim(); // Accumulate data lines
+            } else if (line.trim() === '' && accumulatedData) { // Empty line signifies end of an SSE message's data
+                try {
+                    const parsedEventData = JSON.parse(accumulatedData);
+                    console.debug(`MCP Initialize: Parsed SSE data event from ${mcpServerUrl} for request ID ${requestId}:`, parsedEventData);
+                    if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
+                        serverResponse = parsedEventData;
+                        foundInitializeResult = true;
+                        console.log(`MCP Initialize: Found JSON-RPC response for ID ${requestId} in SSE data:`, serverResponse);
+                        break;
+                    }
+                } catch (e) {
+                    console.warn(`MCP Initialize: Could not parse accumulated SSE data as JSON or not the target response. Data: "${accumulatedData}". Error:`, e);
+                }
+                accumulatedData = ''; // Reset for next message
+            } else if (accumulatedData && !line.startsWith('id:') && !line.startsWith('event:') && !line.startsWith('retry:')) {
+                // If a line is not 'data:' but part of a multi-line data field (though less common for JSON-RPC over SSE)
+                // This simplistic accumulation might need refinement based on exact server behavior.
+                // For now, primary focus is on complete JSON objects per 'data:' line or block.
+                // The check `line.trim() === '' && accumulatedData` is more robust for distinct JSON objects.
+            }
+        }
+
+        // If after processing all lines, there's still accumulatedData, try to parse it (e.g., stream ended without a final empty line)
+        if (accumulatedData && !foundInitializeResult) {
+            try {
+                const parsedEventData = JSON.parse(accumulatedData);
+                console.debug(`MCP Initialize: Parsed final accumulated SSE data event from ${mcpServerUrl} for request ID ${requestId}:`, parsedEventData);
+                if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
+                    serverResponse = parsedEventData;
+                    foundInitializeResult = true;
+                    console.log(`MCP Initialize: Found JSON-RPC response for ID ${requestId} in final accumulated SSE data:`, serverResponse);
+                }
+            } catch (e) {
+                console.warn(`MCP Initialize: Could not parse final accumulated SSE data as JSON. Data: "${accumulatedData}". Error:`, e);
+            }
+        }
+
+        if (!foundInitializeResult || !serverResponse) {
+            // Fallback: if SSE parsing didn't yield a result, try parsing the whole responseText as a single JSON object
+            // This handles cases where the server might not use SSE for the initialize response despite Accept header.
+            if (!responseText.includes('data:')) { // Only try this if it doesn't look like SSE at all
+                try {
+                    console.log(`MCP Initialize: Response from ${mcpServerUrl} did not seem to be SSE. Attempting to parse as plain JSON.`);
+                    const parsedResponse = JSON.parse(responseText);
+                    if (parsedResponse.id === requestId && (parsedResponse.result || parsedResponse.error)) {
+                        serverResponse = parsedResponse;
+                        foundInitializeResult = true;
+                        console.log(`MCP Initialize: Successfully parsed non-SSE response for ID ${requestId}:`, serverResponse);
+                    }
+                } catch (e) {
+                    console.warn(`MCP Initialize: Failed to parse response as plain JSON after SSE attempt failed for ${mcpServerUrl}. Error:`, e);
+                }
+            }
+        }
+
+        if (!foundInitializeResult || !serverResponse) {
+            console.error(`MCP Initialize: Critical - JSON-RPC response for request ID ${requestId} not found in response from ${mcpServerUrl}. Full response text was logged previously.`);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: JSON-RPC response for request ID ${requestId} not found.`);
+        }
+
+        if (serverResponse.error) {
+            console.error(`MCP Initialize: Server returned an error for request ID ${requestId}:`, serverResponse.error);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
+        }
+
+        if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
+            console.error(`MCP Initialize: Invalid result structure in response for ID ${requestId} from ${mcpServerUrl}:`, serverResponse.result);
+            throw new Error(`MCP Initialize failed: Invalid result structure from server for request ID ${requestId}.`);
+        }
+
+        console.log(`MCP Server Initialize Result (for ID ${requestId} from ${mcpServerUrl}):`, serverResponse.result);
+        if (serverResponse.result.protocolVersion !== initializeParams.protocolVersion) {
+            console.warn(`MCP Protocol version mismatch: Client sent ${initializeParams.protocolVersion}, Server responded with ${serverResponse.result.protocolVersion}. Proceeding.`);
+        }
+
+        const session = {
+            mcpSessionId: mcpSessionId, // Store the extracted session ID
+            serverUrl: mcpServerUrl,
+            serverCapabilities: serverResponse.result.capabilities,
+            protocolVersion: serverResponse.result.protocolVersion,
+            initialized: true,
+            createdAt: Date.now(),
+            lastUsed: Date.now()
+        };
+        mcpSessions[mcpServerUrl] = session; // Cache the session
+        console.log(`MCP session (with mcpSessionId: ${mcpSessionId}) successfully initialized and cached for ${mcpServerUrl}`);
+        
+        // Start cleanup timer if this is the first session
+        startSessionCleanup();
+
+        // Send "initialized" notification
+        await sendMcpNotification(mcpServerUrl, "initialized", {});
+
+        // Attempt to list tools from the MCP server
+        try {
+            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
+            // This is okay because we've already cached it above.
+            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
+            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
+            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
+            const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
+            if (discoveredTools && discoveredTools.length > 0) {
+                session.tools = discoveredTools;
+                console.log(`MCP Initialize: Discovered ${discoveredTools.length} tools from ${mcpServerUrl}:`, discoveredTools);
+            } else {
+                session.tools = []; // Ensure session.tools is always an array
+                console.log(`MCP Initialize: No tools discovered or returned from ${mcpServerUrl}.`);
+            }
+        } catch (toolError) {
+            console.error(`MCP Initialize: Failed to list tools from ${mcpServerUrl}. Error:`, toolError.message);
+            session.tools = []; // Ensure session.tools is an array even on error
+            // Do not re-throw; session initialization can proceed without tools.
+        }
+
+        return session;
+
+    } catch (error) {
+        console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
+        delete mcpSessions[mcpServerUrl];
+        // Enhanced error message with more details
+        const enhancedError = new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
+        enhancedError.cause = error; // Attach the original error as cause
+        throw enhancedError;
+    }
+    }); // Close circuit breaker execute
+}
+
+async function getMcpSession(mcpServerUrl) {
+    const existingSession = mcpSessions[mcpServerUrl];
+    
+    if (existingSession && isSessionHealthy(existingSession)) {
+        console.log(`Returning existing healthy MCP session for: ${mcpServerUrl}`);
+        existingSession.lastUsed = Date.now(); // Update last used timestamp
+        return existingSession;
+    }
+    
+    if (existingSession && !isSessionHealthy(existingSession)) {
+        console.log(`Existing session for ${mcpServerUrl} is stale, removing and creating new session`);
+        delete mcpSessions[mcpServerUrl];
+    }
+    
+    console.log(`No existing session or not initialized, creating new MCP session for: ${mcpServerUrl}`);
+    return await initializeMcpSession(mcpServerUrl);
+}
+
+// New function to list tools from an MCP server
+async function listMcpTools(mcpServerUrl, sessionId) { // sessionId might not be strictly needed if sendMcpRequest uses global session
+    console.log(`Listing tools from MCP server: ${mcpServerUrl}`);
+    const requestId = `mcp-listtools-${Date.now()}`;
+    const requestPayload = {
+        jsonrpc: "2.0",
+        id: requestId,
+        method: "tools/list", // Standard MCP method for listing tools
+        params: {} // Typically no parameters for a list method
+    };
+
+    try {
+        // sendMcpRequest will use the mcpSessionId from the cached session for mcpServerUrl
+        const mcpResponse = await sendMcpRequest(mcpServerUrl, requestPayload);
+
+        if (mcpResponse && mcpResponse.result && Array.isArray(mcpResponse.result.tools)) {
+            console.log(`MCP tools/list: Received ${mcpResponse.result.tools.length} tools from ${mcpServerUrl}.`);
+            return mcpResponse.result.tools; // Expected structure { tools: [...] }
+        } else {
+            console.error(`MCP tools/list: Unexpected response format from ${mcpServerUrl}. Response:`, mcpResponse);
+            return []; // Return empty array on unexpected format
+        }
+    } catch (error) {
+        console.error(`MCP tools/list: Error listing tools from ${mcpServerUrl}: ${error.message}`);
+        // Depending on desired strictness, could throw error or return empty array.
+        // For robustness of session initialization, returning empty array.
+        return [];
+    }
+}
+
+function createMcpToolCallPayload(toolName, toolArguments, requestId) {
+    // Ensure toolArguments is an object, as expected by MCP for structured params.
+    // The LLM often sends arguments as a JSON string, which should be parsed *before* calling this.
+    // If toolArguments is already an object, this is fine. If it's a string,
+    // it indicates it wasn't parsed at the executePromptPaulTool level.
+    // For safety, though this function expects an object:
+    let paramsArguments = toolArguments;
+    // Ensure toolArguments is an object
+    if (typeof toolArguments === 'string') {
+        try {
+            paramsArguments = JSON.parse(toolArguments);
+        } catch (e) {
+            console.error("Tool arguments for MCP call were a string but not valid JSON:", toolArguments, e);
+            throw new Error("Tool arguments must be a valid JSON object or pre-parsed object.");
+        }
+    } else if (typeof toolArguments !== 'object' || toolArguments === null) {
+        console.error("Tool arguments must be an object:", toolArguments);
+        throw new Error("Tool arguments must be an object.");
+    }
+
+    const toolCallParams = {
+        name: toolName,
+        arguments: paramsArguments
+    };
+
+    const requestPayload = {
+        jsonrpc: "2.0",
+        id: requestId, // Caller should generate a unique ID for each request
+        method: "tools/call",
+        params: toolCallParams
+    };
+
+    console.log(`MCP tools/call Request Payload for ${toolName}:`, JSON.stringify(requestPayload, null, 2));
+    return requestPayload;
+}
+
+async function sendMcpRequest(mcpServerUrl, requestPayload) {
+    console.log(`Sending MCP request to ${mcpServerUrl} with payload:`, JSON.stringify(requestPayload, null, 2));
+    const session = mcpSessions[mcpServerUrl];
+    const headers = {
+        'Content-Type': 'application/json',
+
+        'Accept': 'application/json, text/event-stream'
+    };
+
+    if (session && session.mcpSessionId) {
+        headers['mcp-session-id'] = session.mcpSessionId;
+        console.log(`MCP sendMcpRequest: Including mcp-session-id: ${session.mcpSessionId} in request '${requestPayload.method}' to ${mcpServerUrl}`);
+    } else {
+        // For the 'initialize' method, mcpSessionId is not expected in the request header.
+        // For other methods, its absence is a problem if a session was expected to be established.
+        if (requestPayload.method !== 'initialize') {
+            console.error(`MCP sendMcpRequest: Critical - No mcpSessionId found for ${mcpServerUrl} when sending method '${requestPayload.method}'. This will likely cause the request to fail.`);
+            // Optionally, could throw an error here if a session was strictly required:
+            // throw new Error(`MCP sendMcpRequest: mcpSessionId is missing for server ${mcpServerUrl} during method ${requestPayload.method}.`);
+        } else {
+            console.log(`MCP sendMcpRequest: Sending 'initialize' method to ${mcpServerUrl}; mcpSessionId is not included in the request header as per protocol.`);
+        }
+    }
+
+    try {
+        const response = await retryWithBackoff(async () => {
+            return await fetchWithTimeout(mcpServerUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestPayload)
+            });
+        });
+
+        if (!response.ok) {
+            let errorMsg = `MCP Request HTTP error! Status: ${response.status}`;
+            try {
+                const errorBody = await response.text(); // Use text() for more robust error body reading
+                errorMsg += `, Body: ${errorBody}`;
+            } catch (e) { /* ignore if body isn't text */ }
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: HTTP status ${response.status}. Body: ${errorBody}`);
+        }
+
+        const responseText = await response.text();
+        console.debug(`MCP sendMcpRequest: Raw response text from ${mcpServerUrl} for method '${requestPayload.method}', ID ${requestPayload.id}:\n${responseText}`);
+        let serverResponse = null;
+        let foundResponse = false;
+
+        // Attempt to parse as SSE if response looks like it might be SSE
+        if (responseText.includes('data:')) { // A simple heuristic for SSE
+            console.debug(`MCP sendMcpRequest: Attempting to parse response from ${mcpServerUrl} (method '${requestPayload.method}', ID ${requestPayload.id}) as SSE.`);
+            const lines = responseText.split('\n');
+            let accumulatedData = '';
+
+            for (const line of lines) {
+                if (line.startsWith('data:')) {
+                    accumulatedData += line.substring(5).trim();
+                } else if (line.trim() === '' && accumulatedData) { // End of an SSE message
+                    try {
+                        const parsedEventData = JSON.parse(accumulatedData);
+                        console.debug(`MCP sendMcpRequest: Parsed SSE data event for ID ${requestPayload.id}:`, parsedEventData);
+                        if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
+                            serverResponse = parsedEventData;
+                            foundResponse = true;
+                            console.log(`MCP sendMcpRequest: Found JSON-RPC response for ID ${requestPayload.id} (method '${requestPayload.method}') in SSE data:`, serverResponse);
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`MCP sendMcpRequest: Could not parse accumulated SSE data for ID ${requestPayload.id} as JSON. Data: "${accumulatedData}". Error:`, e);
+                    }
+                    accumulatedData = ''; // Reset for next message
+                }
+            }
+            // Process any remaining accumulated data if the stream didn't end with a blank line
+            if (accumulatedData && !foundResponse) {
+                try {
+                    const parsedEventData = JSON.parse(accumulatedData);
+                    console.debug(`MCP sendMcpRequest: Parsed final accumulated SSE data for ID ${requestPayload.id}:`, parsedEventData);
+                    if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
+                        serverResponse = parsedEventData;
+                        foundResponse = true;
+                        console.log(`MCP sendMcpRequest: Found JSON-RPC response for ID ${requestPayload.id} (method '${requestPayload.method}') in final accumulated SSE data:`, serverResponse);
+                    }
+                } catch (e) {
+                    console.warn(`MCP sendMcpRequest: Could not parse final accumulated SSE data for ID ${requestPayload.id} as JSON. Data: "${accumulatedData}". Error:`, e);
+                }
+            }
+        }
+
+        // If not found via SSE parsing, or if it didn't look like SSE, try parsing as plain JSON
+        if (!foundResponse) {
+            console.debug(`MCP sendMcpRequest: SSE parsing did not yield response for ID ${requestPayload.id} (method '${requestPayload.method}'). Attempting plain JSON parse.`);
+            try {
+                const parsedJson = JSON.parse(responseText);
+                if (parsedJson.id === requestPayload.id && (parsedJson.result !== undefined || parsedJson.error !== undefined)) {
+                    serverResponse = parsedJson;
+                    foundResponse = true;
+                    console.log(`MCP sendMcpRequest: Successfully parsed non-SSE JSON response for ID ${requestPayload.id} (method '${requestPayload.method}'):`, serverResponse);
+                } else {
+                     console.warn(`MCP sendMcpRequest: Parsed plain JSON, but ID mismatch or missing result/error. Expected ID ${requestPayload.id}, got:`, parsedJson.id);
+                }
+            } catch (e) {
+                console.warn(`MCP sendMcpRequest: Failed to parse response as plain JSON for ID ${requestPayload.id} (method '${requestPayload.method}'). Error:`, e);
+            }
+        }
+
+        if (!foundResponse || !serverResponse) {
+            console.error(`MCP sendMcpRequest: Critical - JSON-RPC response for request ID ${requestPayload.id} (method '${requestPayload.method}') not found in response from ${mcpServerUrl}. Full response text was logged previously.`);
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} (ID: ${requestPayload.id}) failed: Pertinent JSON-RPC response not found in server's output.`);
+        }
+
+        if (serverResponse.error) {
+            console.error(`MCP sendMcpRequest: Server returned an error for request ID ${requestPayload.id} (method '${requestPayload.method}'):`, serverResponse.error);
+            const mcpError = new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
+            mcpError.details = serverResponse.error; // Attach full error object
+            throw mcpError;
+        }
+
+        // ID check already implicitly done by finding the response in the stream by requestPayload.id
+        // if (serverResponse.id !== requestPayload.id) {
+        //     console.warn(`MCP Request ID mismatch: Expected ${requestPayload.id}, received ${serverResponse.id}`);
+        // }
+
+        console.log(`MCP Response for id ${requestPayload.id} (from SSE):`, serverResponse);
+        return serverResponse; // This will be the full JSON-RPC response {jsonrpc, id, result}
+
+    } catch (error) {
+        console.error(`Error sending MCP request '${requestPayload.method}' to ${mcpServerUrl}:`, error);
+        throw new Error(`MCP request '${requestPayload.method}' to ${mcpServerUrl} encountered an error: ${error.message}`);
+    }
+}
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -587,21 +965,47 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let promptContent = info.selectionText || '';
 
   if (!originalSelectionText) {
-    console.log("No text selected, attempting to fetch tab content directly...");
+    console.log("No text selected, attempting to fetch tab content via 'getTabContent' message...");
     try {
-        const tabDataResponse = await new Promise((resolve) => {
-            fetchTabContent(tab.id, resolve);
+        // The contextMenus.onClicked listener IS async (line 23).
+        const tabDataResponse = await new Promise((resolve, reject) => {
+            const messageTimeout = setTimeout(() => {
+                reject(new Error("Timeout waiting for getTabContent response"));
+            }, 5000); // 5 second timeout for the message response
+
+            chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
+                clearTimeout(messageTimeout);
+                if (chrome.runtime.lastError) {
+                    console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
+                    return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
+                }
+                if (response) {
+                    resolve(response); // Resolve with the full response object
+                } else {
+                    // This case should ideally be caught by chrome.runtime.lastError if sendResponse is not called
+                    reject(new Error("Failed to get tab content: No response from getTabContent handler."));
+                }
+            });
         });
 
+        // Check for both content and data properties to handle different response formats
         if (tabDataResponse && tabDataResponse.success) {
-            promptContent = tabDataResponse.content;
-            console.log("Background: Tab content fetched directly, length:", promptContent.length);
+            if (tabDataResponse.content) {
+                promptContent = tabDataResponse.content;
+                console.log("Background: Tab content fetched via 'getTabContent' message (content property), length:", promptContent.length);
+            } else if (tabDataResponse.data) {
+                promptContent = tabDataResponse.data;
+                console.log("Background: Tab content fetched via 'getTabContent' message (data property), length:", promptContent.length);
+            } else {
+                console.error("Background: Tab content response successful but missing content/data property. Response:", tabDataResponse);
+                promptContent = originalSelectionText; // Fallback
+            }
         } else {
-            console.error("Background: Failed to get tab content directly. Response:", tabDataResponse);
+            console.error("Background: Failed to get tab content via 'getTabContent' message. Response:", tabDataResponse);
             promptContent = originalSelectionText; // Fallback to empty or original selection
         }
     } catch (error) {
-        console.error("Background: Exception while fetching tab content directly:", error.message);
+        console.error("Background: Exception while fetching tab content via 'getTabContent' message:", error.message);
         promptContent = originalSelectionText; // Fallback
     }
   }
@@ -625,25 +1029,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  // Common message sending function with retry logic
-  const sendMessage = async (action, extra = {}) => {
-    try {
-      // Check if tab is still active before sending
-      const isActive = await isTabActive(tab.id);
-      if (!isActive) {
-        console.log(`Tab ${tab.id} is no longer active, skipping ${action} message`);
-        return;
-      }
-
-      await sendMessageWithRetry({
-        action,
-        selectedText: promptContent,
-        tabId: tab.id,
-        ...extra
-      });
-    } catch (error) {
-      console.warn(`Could not send ${action} to UI (side panel may not be open): ${error.message}, tabId: ${tab.id}`);
-    }
+  // Common message sending function
+  const sendMessage = (action, extra = {}) => {
+    chrome.runtime.sendMessage({
+      action,
+      selectedText: promptContent,
+      tabId: tab.id,
+      ...extra
+    }).catch(error => console.log(`Error sending ${action}: ${error.message}, tabId: ${tab.id}`));
   };
 
   if (info.menuItemId === 'oneoff_instruction') {
@@ -786,74 +1179,55 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
         // (e.g., text, mcp_tool_use, mcp_tool_result).
         console.log("Background: Handling non-streaming response for Anthropic MCP Connector.", responseMessage);
         setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    requestId: requestId,
-                    apiResponse: responseMessage, // Send the whole Anthropic message object
-                    isAnthropicMcp: true, // Flag for chat.js to identify this response type
-                    prompt: prompt,
-                    tabId: tabId,
-                });
-            } catch (error) {
-                console.warn(`Could not send Anthropic MCP response to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-            }
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: responseMessage, // Send the whole Anthropic message object
+                isAnthropicMcp: true, // Flag for chat.js to identify this response type
+                prompt: prompt,
+                tabId: tabId,
+            }).catch(error => console.log(`Error sending Anthropic MCP response to chat: ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
 
     } else if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
         // This is the OpenAI-style tool call
         console.log("Background: Received OpenAI style tool_calls from API, forwarding to chat.js", responseMessage.tool_calls);
         setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'handleToolCallResponse', // chat.js handles this by calling executePromptPaulTool
-                    responseMessage: responseMessage,
-                    prompt: prompt,
-                    tabId: tabId,
-                });
-            } catch (error) {
-                console.warn(`Could not send tool call response to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-            }
+            chrome.runtime.sendMessage({
+                action: 'handleToolCallResponse', // chat.js handles this by calling executePromptPaulTool
+                responseMessage: responseMessage,
+                prompt: prompt,
+                tabId: tabId,
+            }).catch(error => console.log(`Error sending handleToolCallResponse: ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
 
     } else if (responseMessage.content) { // Standard text response
         const latestResponse = typeof responseMessage.content === 'string' ? responseMessage.content : JSON.stringify(responseMessage.content);
         setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    requestId: requestId,
-                    apiResponse: latestResponse,
-                    isAnthropicMcp: false, // Explicitly false
-                    prompt: prompt,
-                    tabId: tabId,
-                });
-            } catch (error) {
-                console.warn(`Could not send standard response to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-            }
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: latestResponse,
+                isAnthropicMcp: false, // Explicitly false
+                prompt: prompt,
+                tabId: tabId,
+            }).catch(error => console.log(`Error sending setApiResponse (content): ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
     } else {
         console.error("Background: API response message has neither standard content nor tool_calls (OpenAI/Anthropic MCP):", responseMessage);
         setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    requestId: requestId,
-                    apiResponse: "Error: Received an empty or invalid response from the AI.",
-                    isAnthropicMcp: false, // Explicitly false
-                    prompt: prompt,
-                    tabId: tabId,
-                });
-            } catch (error) {
-                console.warn(`Could not send error response to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-            }
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: "Error: Received an empty or invalid response from the AI.",
+                isAnthropicMcp: false, // Explicitly false
+                prompt: prompt,
+                tabId: tabId,
+            }).catch(error => console.log(`Error sending setApiResponse (error response): ${error.message}, tabId: ${tabId}`));
         }, sendMessageDelay);
     }
 }
 
 // Refactored function to make LLM API calls
-async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}, requestId = null) {
-    let config, tools, enableStreaming, usingAnthropicMcpConnector = false; // Keep track of connector usage
+async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+    let config, tools, enableStreaming, usingAnthropicMcpConnectorGlobal = false; // Keep track of connector usage
     try {
         // Step 1: Validate configuration and get tool definitions
         try {
@@ -992,8 +1366,55 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
             'Authorization': `Bearer ${config.apiKey}`,
         };
 
-        // Not an Anthropic endpoint, use standard OpenAI-style tool definition
-        Object.assign(apiRequestBody, toolChoicePayload);
+        // --- Anthropic MCP Connector Logic ---
+        // This section implements the "Managed MCP Approach (Anthropic-style)".
+        // If the configured LLM endpoint is identified as an Anthropic API endpoint
+        // and there are tools configured with an "mcpServerUrl", this logic will:
+        // 1. Add the 'anthropic-beta: mcp-client-2025-04-04' header.
+        // 2. Construct an 'mcp_servers' array in the API request body, listing the MCP servers.
+        // 3. Anthropic's backend will then manage the discovery and execution of tools from these servers.
+        // 4. The OpenAI-style 'tools' and 'tool_choice' parameters are omitted in this case.
+        // The response from Anthropic will include specific content blocks like 'mcp_tool_use' and 'mcp_tool_result'.
+
+        // Simple check for Anthropic endpoint, can be made more robust
+        const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
+        let usingAnthropicMcpConnector = false; // This flag will be passed down to response handlers
+
+        if (isAnthropicEndpoint) {
+            console.log("Background: Anthropic endpoint detected. Checking for MCP tools to use with MCP Connector.");
+            const mcpConfiguredTools = allAvailableToolsRaw.filter(tool => tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "");
+
+            if (mcpConfiguredTools.length > 0) {
+                usingAnthropicMcpConnector = true;
+                usingAnthropicMcpConnectorGlobal = true; // Fix: Set global variable for streaming
+                fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header
+
+                apiRequestBody.mcp_servers = mcpConfiguredTools.map(tool => {
+                    const serverEntry = {
+                        type: "url",
+                        url: tool.mcpServerUrl, // This should be the direct URL to the MCP server
+                        name: tool.name, // Tool name used as server identifier for Anthropic
+                        // tool_configuration: { enabled: true } // by default all tools on server are enabled
+                    };
+                    // TODO: Add authorization_token if available in tool definition (e.g., tool.mcpAuthToken)
+                    // if (tool.mcpAuthToken) {
+                    //     serverEntry.authorization_token = tool.mcpAuthToken;
+                    // }
+                    return serverEntry;
+                });
+                console.log("Background: Using Anthropic MCP Connector. mcp_servers payload:", JSON.stringify(apiRequestBody.mcp_servers, null, 2));
+                // When using Anthropic MCP Connector, we don't send OpenAI-style 'tools' or 'tool_choice'
+                // The 'tools' are implicitly discovered by Anthropic from the mcp_servers.
+            } else {
+                console.log("Background: Anthropic endpoint, but no MCP-configured tools found. Proceeding with standard tool definition if any.");
+                // Spread OpenAI-style toolChoicePayload if not using Anthropic MCP connector
+                Object.assign(apiRequestBody, toolChoicePayload);
+            }
+        } else {
+            // Not an Anthropic endpoint, use standard OpenAI-style tool definition
+            Object.assign(apiRequestBody, toolChoicePayload);
+        }
+        // --- End Anthropic MCP Connector Logic ---
         
         if (enableStreaming && !usingAnthropicMcpConnector) { // Anthropic might handle streaming differently with MCP, or this might need adjustment
             apiRequestBody.stream = true;
@@ -1033,77 +1454,18 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
             // Send a message to chat.js to indicate streaming has started
             // This allows chat.js to prepare the UI for incoming chunks
             // Moved out of setTimeout to send immediately
-            try {
-                await sendMessageWithRetry({
-                    action: 'streamApiStart',
-                    requestId: requestId,
-                    tabId: tabId,
-                    prompt: promptContent
-                });
-            } catch (error) {
-                console.warn(`Could not send streamApiStart to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-            }
-
-            // Variables for handling thinking/reasoning blocks
-            let thinkBuffer = '';
-            let answerBuffer = '';
-            let inThink = false; // Start in answer mode initially
-            let hasThinkBlock = false; // Track if we encountered a think block
-            let thinkingStreamStarted = false; // Track if we've started sending thinking stream updates
+            chrome.runtime.sendMessage({
+                action: 'streamApiStart',
+                tabId: tabId,
+                prompt: promptContent
+            }).catch(error => console.log(`Error sending streamApiStart synchronously: ${error.message}, tabId: ${tabId}`));
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
                     console.log("Background: Stream finished.");
-                    
-                    // Send any remaining content in the buffers at the end of the stream
-                    if (hasThinkBlock && (thinkBuffer.length > 0 || answerBuffer.length > 0)) {
-                        try {
-                            await sendMessageWithRetry({
-                                action: 'streamApiThinkingChunk',
-                                requestId: requestId,
-                                think: thinkBuffer,
-                                answer: answerBuffer,
-                                tabId: tabId,
-                                prompt: promptContent
-                            });
-                        } catch (error) {
-                            console.warn(`Could not send streamApiThinkingChunk to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-                        }
-                    } else if (!thinkingStreamStarted && answerBuffer.length > 0) {
-                        // If no thinking stream was started, send remaining answer content as regular chunks
-                        try {
-                            await sendMessageWithRetry({
-                                action: 'streamApiResponseChunk',
-                                requestId: requestId,
-                                chunk: answerBuffer,
-                                tabId: tabId,
-                                prompt: promptContent
-                            });
-                        } catch (error) {
-                            console.warn(`Could not send streamApiResponseChunk to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-                        }
-                    }
-                    
-                    try {
-                        await sendMessageWithRetry({ action: 'streamApiEnd', requestId: requestId, tabId: tabId, prompt: promptContent });
-                    } catch (error) {
-                        console.warn(`Could not send streamApiEnd to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-                    }
-
-                    // Notify all tabs that streaming has ended
-                    try {
-                        chrome.tabs.query({}, (tabs) => {
-                            tabs.forEach(tab => {
-                                chrome.tabs.sendMessage(tab.id, {
-                                    type: 'stream_state_update',
-                                    streaming: false
-                                }).catch(err => console.warn('Failed to send stream_end to tab:', tab.id, err));
-                            });
-                        });
-                    } catch (sendError) {
-                        console.warn('Failed to broadcast stream end:', sendError);
-                    }
+                    chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent })
+                        .catch(error => console.log(`Error sending streamApiEnd: ${error.message}, tabId: ${tabId}`));
                     break;
                 }
 
@@ -1137,135 +1499,115 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                             try {
                                 const parsed = JSON.parse(currentPayload);
 
-                                // OpenAI-compatible SSE events
-                                const choice = parsed.choices && parsed.choices[0];
-                                if (choice && choice.delta) {
-                                        // Handle reasoning field if present
-                                        let reasoningChunk = null;
-                                        if (typeof choice.delta.reasoning === 'string' && choice.delta.reasoning.length > 0) {
-                                            reasoningChunk = choice.delta.reasoning;
-                                        }
+                                // Check if we are using Anthropic MCP Connector for this request (Managed Approach)
+                                if (usingAnthropicMcpConnectorGlobal) {
+                                    // Handle Anthropic's specific streaming events.
+                                    // These events include message_start, content_block_start, content_block_delta,
+                                    // content_block_stop, message_delta, and message_stop.
+                                    // The extension forwards relevant parts to chat.js for rendering.
+                                    // Tool execution is handled by Anthropic's backend.
+                                    console.log("Background: Anthropic MCP Stream Event:", parsed);
 
-                                        if (typeof choice.delta.content === 'string' && choice.delta.content.length > 0) {
-                                            // Process the content chunk for thinking tags
-                                            let contentChunk = choice.delta.content;
-                                            
-                                            // Split content by thinking tags - handle both  and <thinking> tags <think> and <thinking> tags
-                                            const parts = contentChunk.split(/(<thinking[^>]*>|<\/thinking>|<think[^>]*>|<\/think>)/);
-                                            
-                                            for (let j = 0; j < parts.length; j++) {
-                                                const part = parts[j];
-                                                if (part === '') continue;
-                                                
-                                                if ((part.startsWith('<thinking') || part.startsWith('<think')) && part.endsWith('>')) {
-                                                    // We're entering thinking mode
-                                                    inThink = true;
-                                                    hasThinkBlock = true;
-                                                } else if (part === '</thinking>' || part === '</think>') {
-                                                    // We're exiting thinking mode
-                                                    inThink = false;
-                                                } else {
-                                                    // This is content - add to appropriate buffer
-                                                    if (inThink) {
-                                                        thinkBuffer += part;
-                                                    } else {
-                                                        answerBuffer += part;
-                                                    }
-                                                }
-                                            }
-                                            
-                                            // Send updates when we have content
-                                            if (hasThinkBlock && (thinkBuffer.length > 0 || answerBuffer.length > 0)) {
-                                                try {
-                                                    await sendMessageWithRetry({
-                                                        action: 'streamApiThinkingChunk',
-                                                        think: thinkBuffer,
-                                                        answer: answerBuffer,
-                                                        tabId: tabId,
-                                                        prompt: promptContent
-                                                    });
-                                                } catch (error) {
-                                                    console.warn(`Could not send streamApiThinkingChunk to UI (side panel may not be open): ${error.message}, tabId: ${tabId}`);
-                                                }
-                                                
-                                                // Mark that we've started the thinking stream to prevent regular chunks
-                                                thinkingStreamStarted = true;
-                                                
-                                                // Don't clear the buffers here - let them accumulate until the end
-                                                // This way the frontend gets the full content each time
-                                            } else if (!thinkingStreamStarted && (contentChunk || reasoningChunk)) {
-                                                // If we haven't started thinking stream yet, send as regular response chunk
-                                                try {
-                                                    await sendMessageWithRetry({
-                                                        action: 'streamApiResponseChunk',
-                                                        chunk: contentChunk || '',
-                                                        reasoningChunk: reasoningChunk,
-                                                        tabId: tabId,
-                                                        prompt: promptContent
-                                                    });
-                                                } catch (err) {
-                                                    console.warn(`Could not send streamApiResponseChunk to UI (side panel may not be open): ${err.message}, tabId: ${tabId}`);
-                                                }
-                                            }
-                                        }
-                                        if (Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length > 0) {
-                                            try {
-                                                await sendMessageWithRetry({
-                                                    action: 'streamApiToolCallChunk',
-                                                    toolCallChunk: choice.delta.tool_calls,
-                                                    tabId: tabId,
-                                                    prompt: promptContent
-                                                });
-                                            } catch (err) {
-                                                console.warn(`Could not send streamApiToolCallChunk to UI (side panel may not be open): ${err.message}, tabId: ${tabId}`);
-                                            }
+                                    if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.type === 'text_delta') {
+                                        // Stream text chunks as they arrive.
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiResponseChunk',
+                                            chunk: parsed.delta.text,
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        }).catch(error => console.log(`Error sending Anthropic text_delta chunk: ${error.message}`));
+                                    } else if (parsed.type === 'content_block_start' && parsed.content_block) {
+                                        // A new content block has started (e.g., text block or mcp_tool_use).
+                                        // Send the initial content_block to chat.js.
+                                        // chat.js will use this to display "Using tool..." for mcp_tool_use blocks.
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiAnthropicContentBlockStart',
+                                            contentBlock: parsed.content_block, // Contains type ('text' or 'mcp_tool_use'), name, input etc. for tools
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        }).catch(error => console.log(`Error sending Anthropic content_block_start: ${error.message}`));
+                                    } else if (parsed.type === 'message_delta' && parsed.delta && parsed.delta.stop_reason) {
+                                        // Log message_delta, especially if it contains stop_reason or usage data.
+                                        console.log("Background: Anthropic message_delta with stop_reason/usage:", parsed.delta);
+                                    } else if (parsed.type === 'message_stop') {
+                                        // This event signals the end of the message from Anthropic.
+                                        // It often contains the complete final message object including all content blocks.
+                                        console.log("Background: Anthropic MCP Stream message_stop event received.", parsed);
+                                        if (parsed.message) { // The 'message' field holds the final assistant message.
+                                             chrome.runtime.sendMessage({
+                                                action: 'streamApiAnthropicMessageStop',
+                                                anthropicMessage: parsed.message,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            }).catch(error => console.log(`Error sending Anthropic message_stop: ${error.message}`));
                                         }
                                     }
+                                    // Other events like 'message_start', 'content_block_stop' are logged but not specifically actioned to chat.js unless needed.
+                                } else {
+                                    // Standard OpenAI-style streaming (Client-Managed tools if any, or text)
+                                    // This path is taken if not using Anthropic or if Anthropic endpoint but no MCP tools were configured for it.
+                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                        const contentChunk = parsed.choices[0].delta.content;
+                                        const toolCallChunk = parsed.choices[0].delta.tool_calls;
+
+                                        if (contentChunk) {
+                                            chrome.runtime.sendMessage({
+                                                action: 'streamApiResponseChunk',
+                                                chunk: contentChunk,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            }).catch(error => console.log(`Error sending streamApiResponseChunk: ${error.message}, tabId: ${tabId}`));
+                                        }
+
+                                        if (toolCallChunk) {
+                                            console.log("Background: Received OpenAI style tool_call delta (streaming):", toolCallChunk);
+                                            chrome.runtime.sendMessage({
+                                                action: 'streamApiToolCallChunk', // This tells chat.js to expect OpenAI tool_call
+                                                toolCallChunk: toolCallChunk,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            }).catch(error => console.log(`Error sending streamApiToolCallChunk: ${error.message}, tabId: ${tabId}`));
+                                        }
+                                    }
+                                }
                             } catch (e) {
-                                console.warn('Background: Failed to parse currentPayload as JSON:', currentPayload, e);
+                                console.error("Background: Error parsing JSON from stream:", e, "Attempted to parse:", currentPayload, "Original full line:", line);
                             }
+                        } else if (currentPayload) {
+                            console.log("Background: SSE line does not appear to be JSON or [DONE] after stripping prefixes. Payload:", currentPayload, "Original line:", line);
                         }
                     }
                 }
             }
-        } // Close the try block properly
+        } else { // Non-streaming path
+            const responseData = await apiResponse.json();
+            // For Anthropic MCP non-streaming, responseData.content will be an array of blocks.
+            // For OpenAI, responseData.choices[0].message is the object to check.
+            const messageObject = usingAnthropicMcpConnectorGlobal ? responseData : (responseData.choices && responseData.choices[0] ? responseData.choices[0].message : null);
+
+            if (!messageObject) {
+                 throw new Error('Invalid response format from API: Missing message structure.');
+            }
+            // Pass usingAnthropicMcpConnectorGlobal to _handleApiResponseAndSendMessage
+            await _handleApiResponseAndSendMessage(messageObject, promptContent, tabId, isStartChat, usingAnthropicMcpConnectorGlobal);
+        }
+
     } catch (error) {
         // This is the generic catch block for any other errors that occur in makeLlmApiRequest
         console.error('Error in makeLlmApiRequest (generic catch):', error);
-
-        // Send stream error notification to all tabs
-        try {
-            chrome.tabs.query({}, (tabs) => {
-                tabs.forEach(tab => {
-                    chrome.tabs.sendMessage(tab.id, {
-                        type: 'stream_state_update',
-                        streaming: false,
-                        error: error.message
-                    }).catch(err => console.warn('Failed to send stream_error to tab:', tab.id, err));
-                });
-            });
-        } catch (sendError) {
-            console.warn('Failed to broadcast stream error:', sendError);
-        }
-
         try {
           const cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
           const code = (error?.message || 'error').slice(0, 64);
           await trackErrorEvent(cat, code);
         } catch (_) {}
         const errorDelay = isStartChat ? 300 : 200;
-        setTimeout(async () => {
-            try {
-                await sendMessageWithRetry({
-                    action: 'setApiResponse',
-                    requestId: requestId,
-                    apiResponse: `Error: ${error.message}`, // Standard error reporting
-                    prompt: promptContent,
-                    tabId: tabId,
-                });
-            } catch (sendError) {
-                console.warn(`Could not send error response to UI (side panel may not be open): ${sendError.message}, tabId: ${tabId}`);
-            }
+        setTimeout(() => {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: `Error: ${error.message}`, // Standard error reporting
+                prompt: promptContent,
+                tabId: tabId,
+            }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
         }, errorDelay);
     }
 }
@@ -1321,7 +1663,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     
   chrome.contextMenus.create({
     id: 'shorten',
-    title: '\u2702\uFE0F Shorten',
+    title: '✂️ Shorten',
     contexts: ['selection', 'image'],
     parentId: 'prompt_paul'
   });
@@ -1549,79 +1891,91 @@ const toolImplementations = {
    _callUserDefinedEndpoint: callUserDefinedEndpoint
 };
 
-function fetchTabContent(tabId, callback) {
-    console.log('Background: fetchTabContent called. Injecting content script for extraction.');
-    
-    const timeoutId = setTimeout(() => {
-        callback({ success: false, error: 'Background: Content extraction timed out' });
-    }, 30000); // 30 seconds timeout
-
-    chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        files: ['content_script_unified.js']
-    }, (injectionResults) => {
-        clearTimeout(timeoutId); // Ensure timeout is cleared
-        if (chrome.runtime.lastError) {
-            console.error('Background: Error executing content_script_unified.js:', chrome.runtime.lastError);
-            callback({ success: false, error: 'Failed to execute script: ' + chrome.runtime.lastError.message });
-            return;
-        }
-        if (injectionResults && injectionResults[0] && injectionResults[0].result) {
-            const result = injectionResults[0].result;
-            console.log('Background: fetchTabContent - Result from content_script_unified.js:', result);
-            callback({
-                success: result.success,
-                content: result.data,
-                error: result.error
-            });
-        } else {
-            console.error('Background: fetchTabContent - No result from content_script_unified.js');
-            callback({ success: false, error: 'No result from content script', content: '' });
-        }
-    });
-}
-
 
 // Track active tool executions to prevent duplicates
 const activeToolExecutions = new Set();
 
-// Enhanced message listener with connection validation
+// Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // Short-circuit any legacy MCP requests (feature removed)
-    if (request && typeof request.action === 'string' && request.action.startsWith('mcp.')) {
-        try { sendResponse({ success: false, error: 'MCP disabled' }); } catch (_) {}
-        return true;
-    }
-    
-    // Validate sender and tab
-    if (!sender || !sender.tab) {
-        console.warn("Background: Received message from invalid sender:", sender);
-        try { sendResponse({ success: false, error: 'Invalid sender' }); } catch (_) {}
-        return false;
-    }
-    
     // Flag to indicate if sendResponse has been called for this message
     let responseSent = false;
     const originalSendResponse = sendResponse;
 
-    // Wrap sendResponse to ensure it's only called once and to clear timeouts
+    // Wrap sendResponse to ensure it's only called once
     sendResponse = (response) => {
         if (!responseSent) {
-            try {
-                originalSendResponse(response);
-                responseSent = true;
-            } catch (error) {
-                console.warn("Background: Failed to send response:", error.message);
-            }
+            originalSendResponse(response);
+            responseSent = true;
         } else {
             console.warn("Background: Attempted to call sendResponse multiple times for the same message.");
         }
     };
 
-    
+    if (request.action === 'getTabContent') {
+        if (tabContentCallback) {
+            sendResponse({ action: 'tabContentResponse', success: false, error: 'Another content extraction is already in progress' });
+            return true;
+        }
+        
+        tabContentCallback = sendResponse;
+        console.log('Background: getTabContent received. Injecting content script for extraction.');
+        
+        const timeoutId = setTimeout(() => {
+            if (tabContentCallback) {
+                console.error('Background: getTabContent timed out.');
+                tabContentCallback({ action: 'tabContentResponse', success: false, error: 'Background: Content extraction timed out' });
+                tabContentCallback = null;
+            }
+        }, 30000); // 30 seconds timeout
 
-    if (request.action === 'extractedTabContent') {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_unified.js']
+}, (injectionResults) => {
+    clearTimeout(timeoutId); // Ensure timeout is cleared
+    if (chrome.runtime.lastError) {
+        console.error('Background: Error executing content_script_unified.js for getTabContent:', chrome.runtime.lastError);
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'tabContentResponse', success: false, error: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+            tabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        console.log('Background: getTabContent - Result from content_script_unified.js:', result);
+        if (tabContentCallback) {
+            tabContentCallback({
+                action: 'tabContentResponse',
+                success: result.success,
+                content: result.data, // Ensure 'content' field is used as expected by chat.js
+                error: result.error
+            });
+            tabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getTabContent - No result from content_script_unified.js');
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'tabContentResponse', success: false, error: 'No result from content script', content: '' }); // Ensure content is defined
+            tabContentCallback = null;
+        }
+    }
+});
+            } else {
+                console.error('No active tab found for getTabContent.');
+                clearTimeout(timeoutId); // Clear timeout if no tab found
+                if (tabContentCallback) {
+                    tabContentCallback({ action: 'tabContentResponse', success: false, error: 'No active tab found.' });
+                    tabContentCallback = null;
+                }
+            }
+        });
+        return true; // Indicates that sendResponse will be called asynchronously.
+    } else if (request.action === 'extractedTabContent') {
         // Handle content extracted by content_script_unified.js
         // This message is sent by content_script_unified.js
         if (tabContentCallback) {
@@ -1725,66 +2079,6 @@ chrome.scripting.executeScript({
             }
         });
         return true; // Async response
-    } else if (request.action === 'startApiRequest') {
-        const { requestId, prompt, tool_choice } = request;
-        // Start streaming with requestId
-        makeLlmApiRequest(prompt, null, {}, requestId).catch(err => console.error('startApiRequest error', err));
-        return false;
-    } else if (request.action === 'getTabContent') {
-      if (tabContentCallback) {
-          try { sendResponse({ action: 'tabContentResponse', success: false, content: 'Another content extraction is already in progress' }); } catch (_) {}
-          return true;
-      }
-      tabContentCallback = sendResponse;
-      console.log('Background: getTabContent received. Injecting content script for extraction.');
-      const timeoutId = setTimeout(() => {
-          if (tabContentCallback) {
-              console.error('Background: getTabContent timed out.');
-              try { tabContentCallback({ action: 'tabContentResponse', success: false, content: 'Background: Content extraction timed out' }); } catch (_) {}
-              tabContentCallback = null;
-          }
-      }, 30000);
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs && tabs[0] && tabs[0].id) {
-              const activeTabId = tabs[0].id;
-              chrome.scripting.executeScript({
-                  target: { tabId: activeTabId },
-                  files: ['content_script_unified.js']
-              }, (injectionResults) => {
-                  clearTimeout(timeoutId);
-                  if (chrome.runtime.lastError) {
-                      console.error('Background: Error executing content_script_unified.js for getTabContent:', chrome.runtime.lastError);
-                      if (tabContentCallback) {
-                          try { tabContentCallback({ action: 'tabContentResponse', success: false, content: 'Failed to execute script: ' + chrome.runtime.lastError.message }); } catch (_) {}
-                          tabContentCallback = null;
-                      }
-                      return;
-                  }
-                  if (injectionResults && injectionResults[0] && injectionResults[0].result) {
-                      const result = injectionResults[0].result;
-                      console.log('Background: getTabContent - Result from content_script_unified.js:', result);
-                      if (tabContentCallback) {
-                          try { tabContentCallback({ action: 'tabContentResponse', success: result.success, content: result.data, data: result.data, error: result.error }); } catch (_) {}
-                          tabContentCallback = null;
-                      }
-                  } else {
-                      console.error('Background: getTabContent - No result from content_script_unified.js');
-                      if (tabContentCallback) {
-                          try { tabContentCallback({ action: 'tabContentResponse', success: false, content: 'No result from content script' }); } catch (_) {}
-                          tabContentCallback = null;
-                      }
-                  }
-              });
-          } else {
-              console.error('No active tab found for getTabContent.');
-              clearTimeout(timeoutId);
-              if (tabContentCallback) {
-                  try { tabContentCallback({ action: 'tabContentResponse', success: false, content: 'No active tab found.' }); } catch (_) {}
-                  tabContentCallback = null;
-              }
-          }
-      });
-      return true;
     } else if (request.action === 'getExplainContent') {
         // Store the sendResponse function to call it later
         tabContentCallback = sendResponse;
@@ -1865,23 +2159,75 @@ chrome.scripting.executeScript({
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }
 
+                // === NEW MCP LOGIC STARTS HERE ===
                 if (toolDefinition.mcpServerUrl && toolDefinition.mcpServerUrl.trim() !== "") {
-                    console.error(`Background: MCP tool '${name}' configuration found but MCP support has been removed.`);
+                    console.log(`Executing '${name}' as an MCP tool via ${toolDefinition.mcpServerUrl}`);
                     try {
-                        sendResponse({ error: `MCP support has been removed. Tool '${name}' can no longer be executed via MCP server.` });
-                    } catch (error) {
-                        console.warn(`Could not send tool response (sender may be closed): ${error.message}`);
+                        const session = await getMcpSession(toolDefinition.mcpServerUrl);
+                        if (!session || !session.initialized) {
+                            throw new Error("MCP session could not be initialized.");
+                        }
+                        
+                        // Update session last used timestamp
+                        session.lastUsed = Date.now();
+                        
+                        // Add debug logging for MCP tool execution
+                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
+                        
+                        // Validate that the server supports this tool
+                        // Check if tools exists and is an array before using .some()
+                        const serverTools = session.tools;
+                        if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
+                            console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
+                            throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
+                        }
+
+                        const requestId = `mcp-tc-${Date.now()}`;
+                        const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
+
+                        // Execute MCP request with circuit breaker protection
+                        const circuitBreaker = getCircuitBreaker(toolDefinition.mcpServerUrl);
+                        const mcpResponse = await circuitBreaker.execute(async () => {
+                            return await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
+                        });
+
+                        // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
+                        // The actual data might be in mcpResponse.result.content or just mcpResponse.result
+                        // For now, sending mcpResponse.result as per the generic structure.
+                        // The structure of 'result' from 'tools/call' should be: { content: "...", isError: false/true }
+                        // So, mcpResponse.result should be this object.
+                        try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
+                        sendResponse({ result: mcpResponse.result });
+
+                    } catch (mcpError) {
+                        console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
+                        // Enhanced error logging for TypeErrors
+                        // The existing mcpError.details logging seems correct as per the requirement.
+                        // The requirement states: "ensure the console.error in the catch (mcpError) block ... correctly logs mcpError.details if it exists, which it already seems to do."
+                        // The existing line is: console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details);
+                        // This already logs mcpError.details if it exists.
+                        if (mcpError instanceof TypeError) {
+                            // This debug info is helpful for TypeErrors which was the original problem.
+                            console.error('MCP Capabilities Debug Info during TypeError:', {
+                                serverCapabilities: session?.serverCapabilities, // Use optional chaining for session as well
+                                tools: session?.serverCapabilities?.tools
+                            });
+                        }
+                        let userFriendlyMessage;
+                        if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
+                            userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
+                        } else {
+                            userFriendlyMessage = `Failed to execute MCP tool '${name}': ${mcpError.message || 'An unknown error occurred during MCP tool execution.'}`;
+                        }
+                        try { await trackErrorEvent('tool_error', name); } catch (_) {}
+                        sendResponse({ error: userFriendlyMessage });
                     }
                 } else if (toolDefinition.endpointUrl) { // Existing non-MCP tool logic
                     console.log(`Executing '${name}' as a user-defined HTTP tool via ${toolDefinition.endpointUrl}`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
                     console.log(`Background: User-defined tool '${name}' executed successfully via endpoint. Result:`, result);
                     try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
-                    try {
-                        sendResponse({ result: result });
-                    } catch (error) {
-                        console.warn(`Could not send tool response (sender may be closed): ${error.message}`);
-                    }
+                    sendResponse({ result: result });
                 } else { // Existing built-in tool logic (if any)
                     const builtInFunction = toolImplementations[name];
                     if (builtInFunction) {
@@ -1889,15 +2235,12 @@ chrome.scripting.executeScript({
                         const result = await builtInFunction(argsObject);
                         console.log(`Background: Built-in tool '${name}' executed successfully. Result:`, result);
                         try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
-                        try {
-                            sendResponse({ result: result });
-                        } catch (error) {
-                            console.warn(`Could not send tool response (sender may be closed): ${error.message}`);
-                        }
+                        sendResponse({ result: result });
                     } else {
                         throw new Error(`Tool '${name}' is not properly configured: It has no mcpServerUrl, no endpointUrl, and no built-in implementation.`);
                     }
                 }
+                // === MCP LOGIC ENDS HERE ===
 
             } catch (error) { // General error catch for executePromptPaulTool
                 console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
@@ -1906,11 +2249,7 @@ chrome.scripting.executeScript({
                 if (error.details) {
                     errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
                 }
-                try {
-                    sendResponse({ error: errorMessage });
-                } catch (sendError) {
-                    console.warn(`Could not send tool error response (sender may be closed): ${sendError.message}`);
-                }
+                sendResponse({ error: errorMessage });
             } finally {
                 // Always remove from active executions when done
                 activeToolExecutions.delete(executionKey);
@@ -1918,108 +2257,72 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Crucial for async sendResponse
-    
+    } else if (request.action === 'getDiscoveredMcpToolSchema') {
+        (async () => {
+            const { mcpServerUrl, toolName } = request;
+            if (!mcpServerUrl || !toolName) {
+                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request.' });
+                return;
+            }
+
+            const session = mcpSessions[mcpServerUrl];
+            if (session && session.tools && Array.isArray(session.tools)) {
+                const discoveredTool = session.tools.find(t => t.name === toolName);
+                if (discoveredTool) {
+                    // The discoveredTool object should contain name, description, and inputSchema (or similar)
+                    sendResponse({ success: true, toolSchema: discoveredTool });
+                } else {
+                    sendResponse({ success: false, error: `Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}.` });
+                }
+            } else {
+                sendResponse({ success: false, error: `MCP session for ${mcpServerUrl} not active or tools not listed.` });
+            }
+        })();
+        return true; // Indicates asynchronous response
+    } else if (request.action === 'fetchMcpToolDetailsFromServer') {
+        (async () => {
+            const { mcpServerUrl, toolName } = request;
+            if (!mcpServerUrl || !toolName) {
+                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request for fetchMcpToolDetailsFromServer.' });
+                return;
+            }
+            console.log(`Background: fetchMcpToolDetailsFromServer - Request to fetch details for tool '${toolName}' from MCP server '${mcpServerUrl}'`);
+            try {
+                // Ensure session is initialized and tools are listed
+                const session = await getMcpSession(mcpServerUrl); // This initializes and calls listMcpTools internally
+                if (!session || !session.initialized) {
+                    throw new Error(`MCP session could not be initialized for ${mcpServerUrl}.`);
+                }
+
+                if (session.tools && Array.isArray(session.tools)) {
+                    const discoveredTool = session.tools.find(t => t.name === toolName);
+                    if (discoveredTool) {
+                        console.log(`Background: fetchMcpToolDetailsFromServer - Found tool '${toolName}'. Schema:`, discoveredTool);
+                        // Send back the full tool schema as discovered from the server
+                        sendResponse({ success: true, toolSchema: discoveredTool });
+                    } else {
+                        console.warn(`Background: fetchMcpToolDetailsFromServer - Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}. Available tools:`, session.tools.map(t => t.name));
+                        sendResponse({ success: false, error: `Tool '${toolName}' not found among tools listed by ${mcpServerUrl}.` });
+                    }
+                } else {
+                    console.error(`Background: fetchMcpToolDetailsFromServer - MCP session for ${mcpServerUrl} does not have a valid 'tools' array. Session state:`, session);
+                    sendResponse({ success: false, error: `Failed to list or retrieve tools from ${mcpServerUrl}. Session 'tools' array is invalid or missing.` });
+                }
+            } catch (error) {
+                console.error(`Background: fetchMcpToolDetailsFromServer - Error fetching tool details for '${toolName}' from ${mcpServerUrl}:`, error);
+                sendResponse({ success: false, error: `Error initializing session or fetching tool details: ${error.message}` });
+            }
+        })();
+        return true; // Indicates asynchronous response
     } else if (request.action === 'executeLlmApiRequest') {
         const { prompt, tool_choice } = request;
         (async () => {
             await makeLlmApiRequest(prompt, null, { customInstructionToolChoice: tool_choice });
         })();
         return true;
-    } else if (request.action === 'stream_end') {
-        // Notify all tabs that streaming has ended
-        chrome.tabs.query({}, (tabs) => {
-            tabs.forEach(tab => {
-                chrome.tabs.sendMessage(tab.id, {
-                    type: 'stream_state_update',
-                    streaming: false
-                }).catch(err => console.warn('Failed to send stream_end to tab:', tab.id, err));
-            });
-        });
-        return false;
-    } else if (request.action === 'stream_error') {
-        // Handle streaming errors
-        chrome.tabs.query({}, (tabs) => {
-            tabs.forEach(tab => {
-                chrome.tabs.sendMessage(tab.id, {
-                    type: 'stream_state_update',
-                    streaming: false,
-                    error: request.error
-                }).catch(err => console.warn('Failed to send stream_error to tab:', tab.id, err));
-            });
-        });
-        return false;
     }
-    
-    // Handle keep-alive messages
-    if (request.action === 'keepAlive') {
-        sendResponse({ success: true, timestamp: Date.now() });
-        return false; // Synchronous response
-    }
-    
     // Handle other actions if any
 });
 console.log("Background: onMessage listener function HAS BEEN registered.");
 
-// Cleanup function for extension shutdown
-function cleanupMcpSessions() {
-    console.log('MCP Cleanup: Cleaning up all sessions and timers');
-    
-    // Clear session cleanup timer
-    if (sessionCleanupTimer) {
-        clearInterval(sessionCleanupTimer);
-        sessionCleanupTimer = null;
-    }
-    
-    // Clear all sessions
-    const sessionCount = Object.keys(mcpSessions).length;
-    mcpSessions = {};
-    
-    // Clear circuit breakers
-    const breakerCount = Object.keys(mcpCircuitBreakers).length;
-    for (const url in mcpCircuitBreakers) {
-        delete mcpCircuitBreakers[url];
-    }
-    
-    console.log(`MCP Cleanup: Cleared ${sessionCount} sessions and ${breakerCount} circuit breakers`);
-}
-
-// Handle extension lifecycle events
-chrome.runtime.onSuspend?.addListener(() => {
-    console.log('Extension suspending, cleaning up resources');
-    
-    // Stop keep-alive
-    stopKeepAlive();
-    
-    // Clear any active tool executions
-    activeToolExecutions.clear();
-    
-    // Clear any pending callbacks
-    tabContentCallback = null;
-    pinnedActionTabContentCallback = null;
-    
-    // Cleanup MCP resources (if any)
-    cleanupMcpSessions();
-});
-
-// Add periodic health check for sessions
-function performSessionHealthCheck() {
-    const now = Date.now();
-    let healthyCount = 0;
-    let unhealthyCount = 0;
-    
-    for (const [url, session] of Object.entries(mcpSessions)) {
-        if (isSessionHealthy(session)) {
-            healthyCount++;
-        } else {
-            unhealthyCount++;
-            console.log(`MCP Health Check: Session for ${url} is unhealthy, will be cleaned up`);
-        }
-    }
-    
-    if (healthyCount > 0 || unhealthyCount > 0) {
-        console.log(`MCP Health Check: ${healthyCount} healthy, ${unhealthyCount} unhealthy sessions`);
-    }
-}
-
-// Run health check every 2 minutes
-/* MCP removed end */
+// No-op cleanup retained; MCP-specific state and timers removed.

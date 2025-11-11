@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<![CDATA[<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -190,13 +190,9 @@
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <div class="token-input-container">
-            <input type="range" id="maxTokensSlider" class="token-slider" min="1" max="32000" value="16000" step="1">
-            <input type="number" id="maxTokens" class="shadcn-input token-number-input" min="1" max="32000" value="16000" required>
-          </div>
+          <input type="number" id="maxTokens" class="shadcn-input" min="1" value="16000" required>
           <div class="token-info">
             <span id="tokenValue">16000</span> tokens
-            <span id="contextHint" class="context-hint"></span>
           </div>
           <div class="field-error" id="maxTokensError"></div>
         </div>
@@ -291,18 +287,22 @@
         </h2>
         <div class="section-divider"></div>
       </div>
+
+      <!-- Match toggle structure/styles with Theme toggle -->
       <div class="form-field col-span-12">
         <label class="form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
         <div class="setting-toggle">
           <label class="toggle-label">
             <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" checked>
             <span class="toggle-slider"></span>
-            <span class="toggle-text">Allow anonymous usage analytics (instructions/models/tools only)</span>
+            <span class="toggle-text">
+              Allow anonymous usage analytics (instructions/models/tools only)
+            </span>
           </label>
         </div>
-        <div class="field-description">
-          Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs/titles/content or identifiers. A random instance ID rotates monthly. You can disable anytime.
-        </div>
+        <p class="field-description">
+          Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs, titles, page content, or identifiers are collected. A random instance ID rotates monthly. You can disable this at any time.
+        </p>
       </div>
     </section>
 
@@ -388,7 +388,7 @@
             <div class="modality-option">
               <input type="checkbox" id="modalityImage" value="image">
               <label for="modalityImage">
-                <span class="modality-icon">&#x1F5BC;&#xFE0F;</span>
+                <span class="modality-icon">🖼️</span>
                 <span class="modality-label">Images</span>
                 <small>Right-click image analysis</small>
               </label>
@@ -396,7 +396,7 @@
             <div class="modality-option">
               <input type="checkbox" id="modalityVideo" value="video">
               <label for="modalityVideo">
-                <span class="modality-icon">&#x1F3A5;</span>
+                <span class="modality-icon">🎥</span>
                 <span class="modality-label">Video</span>
                 <small>Right-click video analysis</small>
               </label>
@@ -404,7 +404,7 @@
             <div class="modality-option">
               <input type="checkbox" id="modalityAudio" value="audio">
               <label for="modalityAudio">
-                <span class="modality-icon">&#x1F3B5;</span>
+                <span class="modality-icon">🎵</span>
                 <span class="modality-label">Audio</span>
               </label>
             </div>
@@ -452,7 +452,6 @@
               <tr>
                 <th>Name</th>
                 <th>Description</th>
-                
                 <th>Actions</th>
               </tr>
             </thead>
@@ -477,7 +476,6 @@
         <div class="form-group">
           <label for="toolDescription">Tool Description</label>
           <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
-          
         </div>
         <div class="form-group">
           <label for="toolParameters">Parameters (JSON Schema)</label>
@@ -488,10 +486,7 @@
   },
   "required": ["location"]
 }' rows="6"></textarea>
-          
           <small>Define the input parameters for the tool using JSON Schema format.</small>
-        </div>
-        <div class="form-group">
         </div>
         <div class="form-group">
           <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
@@ -531,6 +526,7 @@
         </div>
       </div>
 
+      <!-- MCP Servers management UI removed: MCP support is deprecated in this version. -->
     </section>
 
     <!-- About Section -->
@@ -577,7 +573,8 @@
     Made with &#10084; by <a href="https://juanmackie.com/" target="_blank">Juan</a>
   </footer>
 
-  <div id="status" class="status"></div>
+  <!-- Status div retained for compatibility but hidden; all notifications now use the unified toast system -->
+  <div id="status" class="status" style="display:none;"></div>
 
   <script src="collapsible.js"></script>
   <script src="input-controls.js"></script>

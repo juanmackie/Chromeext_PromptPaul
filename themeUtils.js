@@ -13,14 +13,11 @@ export function applyDarkTheme(isDark) {
   
   if (isDark) {
     root.setAttribute('data-theme', 'dark');
-    // Ensure light theme classes are removed when applying dark theme
-    body.classList.remove('light-theme', 'ext-light');
     body.classList.add('dark-theme', 'ext-dark');
     const icon = document.getElementById('darkThemeIcon');
     if (icon) icon.textContent = 'wb_sunny';
   } else {
     root.setAttribute('data-theme', 'light');
-    // Ensure dark theme classes are removed when applying light theme
     body.classList.remove('dark-theme', 'ext-dark');
     body.classList.add('light-theme', 'ext-light');
     const icon = document.getElementById('darkThemeIcon');

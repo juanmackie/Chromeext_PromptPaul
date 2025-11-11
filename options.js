@@ -2,31 +2,29 @@ import { loadingManager } from './loadingManager.js';
 
 // Function to show status message
 function showStatus(message, isError = false, isToast = false) {
-  const status = document.getElementById('status');
-  status.textContent = message;
-  status.className = `status ${isError ? 'error' : 'success'}`;
-  status.style.display = 'block';
-
-  // Also show toast notification
-  if (isError) {
-    loadingManager.showToast(message, 'error');
-  } else {
-    loadingManager.showToast(message, 'success');
-  }
-
-  let timeoutDuration = 2000; // Default timeout
-  if (isToast) {
-    timeoutDuration = 5000; // Longer timeout for toasts
-  }
-
-  if (!isError) { // Apply timeout for both success and toast messages, but not errors
-    setTimeout(() => {
-      status.style.display = 'none';
-    }, timeoutDuration);
-  }
+  // Use only the unified toast system to avoid duplicate notifications
+  const toastType = isError ? 'error' : 'success';
+  const timeoutDuration = isToast ? 5000 : 3000; // Longer timeout for toast messages
+  loadingManager.showToast(message, toastType, timeoutDuration);
 }
 
+// ================= MCP Options UI wiring (Removed - MCP support deprecated) =================
 
+function redactAuth(value) {
+  if (!value) return '';
+  // Preserve scheme e.g. 'Bearer ' then mask token
+  const parts = value.split(/\s+/, 2);
+  if (parts.length === 2) {
+    const token = parts[1];
+    const masked = token.length > 8 ? token.slice(0, 2) + '•'.repeat(token.length - 4) + token.slice(-2) : '•'.repeat(token.length);
+    return parts[0] + ' ' + masked;
+  }
+  return '•'.repeat(Math.min(12, value.length));
+}
+
+function bindMcpOptionsUI() {
+  // MCP support removed; keep function as a no-op for backward compatibility
+}
 
 
 function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, profile) {
@@ -194,7 +192,6 @@ function loadProfileSettings(profileId) {
       document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
       document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
       document.getElementById('maxTokens').value = selectedProfile.maxTokens || 16000;
-      document.getElementById('maxTokensSlider').value = selectedProfile.maxTokens || 16000;
       document.getElementById('tokenValue').textContent = selectedProfile.maxTokens || 16000;
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
       updateCurrentConfig(
@@ -212,7 +209,7 @@ function loadProfileSettings(profileId) {
           llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
           apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
           modelName: 'mistral-small-latest',
-          maxTokens: 32000,
+          maxTokens: 16000,
           systemPrompt: '',
           lastUpdated: '',
           profileSelect: 'default'
@@ -395,7 +392,6 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
 
       // Optionally, clear maxTokens and systemPrompt or set to their defaults if needed
       document.getElementById('maxTokens').value = '16000'; // Default max tokens
-      document.getElementById('maxTokensSlider').value = '16000';
       document.getElementById('tokenValue').textContent = '16000';
       // document.getElementById('systemPrompt').value = ''; // Default system prompt
 
@@ -527,34 +523,29 @@ function checkAndPromptInstructionMigration() {
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
 
-// --- Sync slider and number input + constraints ---
+// --- Max tokens input handling ---
 (function setupTokenControls(){
-  const slider = document.getElementById('maxTokensSlider');
   const number = document.getElementById('maxTokens');
   const tokenValue = document.getElementById('tokenValue');
-  if (!slider || !number || !tokenValue) return;
+  if (!number || !tokenValue) return;
 
   // Normalize within bounds helper
   const clamp = (v) => {
     const min = Number(number.min) || 1;
-    const max = Number(number.max) || 32000;
     v = Math.round(Number(v) || 0);
     if (v < min) v = min;
-    if (v > max) v = max;
     return v;
   };
 
   const updateFrom = (v) => {
     const val = clamp(v);
-    slider.value = String(val);
     number.value = String(val);
     tokenValue.textContent = String(val);
   };
 
   // Initialize display
-  updateFrom(number.value || slider.value || 16000);
+  updateFrom(number.value || 16000);
 
-  slider.addEventListener('input', e => updateFrom(e.target.value));
   number.addEventListener('input', e => updateFrom(e.target.value));
   number.addEventListener('blur', () => updateFrom(number.value));
 })();
@@ -1008,30 +999,62 @@ function isValidJson(str) {
 function setupToolHandlers() {
   const saveToolBtn = document.getElementById('saveTool');
   const clearToolFormBtn = document.getElementById('clearToolForm');
+  const toolMcpServerUrlEl = document.getElementById('toolMcpServerUrl');
   const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
   const toolHttpMethodEl = document.getElementById('toolHttpMethod');
+  const fetchMcpToolInfoBtn = document.getElementById('fetchMcpToolInfoBtn');
 
   function updateToolFieldStates() {
-    const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
-    const toolHttpMethodEl = document.getElementById('toolHttpMethod');
+    const mcpUrl = toolMcpServerUrlEl.value.trim();
+    const endpointUrl = toolEndpointUrlEl.value.trim();
     const toolDescriptionEl = document.getElementById('toolDescription');
     const toolParametersEl = document.getElementById('toolParameters');
+    const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
+    const toolParametersSourceEl = document.getElementById('toolParametersSource');
 
-    // If no fields exist, nothing to do
-    if (!toolEndpointUrlEl || !toolHttpMethodEl || !toolDescriptionEl || !toolParametersEl) return;
+    if (mcpUrl) {
+      toolEndpointUrlEl.disabled = true;
+      toolHttpMethodEl.disabled = true;
+      // Optionally, clear them or just disable
+      // toolEndpointUrlEl.value = '';
+      // toolHttpMethodEl.value = '';
+      toolDescriptionEl.dataset.source = 'mcp';
+      toolParametersEl.dataset.source = 'mcp';
+      toolDescriptionEl.classList.add('mcp-sourced');
+      toolParametersEl.classList.add('mcp-sourced');
+      toolDescriptionSourceEl.textContent = 'Source: MCP Server (dynamic). Local content is fallback.';
+      toolDescriptionSourceEl.style.display = 'block';
+      toolParametersSourceEl.textContent = 'Source: MCP Server (dynamic). Local content is fallback.';
+      toolParametersSourceEl.style.display = 'block';
+      // IMPORTANT: Do not set readOnly here. Fields remain editable for fallback.
+    } else {
+      toolEndpointUrlEl.disabled = false;
+      toolHttpMethodEl.disabled = false;
+      toolDescriptionEl.removeAttribute('dataset.source');
+      toolParametersEl.removeAttribute('dataset.source');
+      toolDescriptionEl.classList.remove('mcp-sourced');
+      toolParametersEl.classList.remove('mcp-sourced');
+      toolDescriptionSourceEl.style.display = 'none';
+      toolParametersSourceEl.style.display = 'none';
+      // Ensure fields are editable if MCP URL is removed
+      toolDescriptionEl.readOnly = false;
+      toolParametersEl.readOnly = false;
+      toolDescriptionEl.classList.remove('read-only-mcp');
+      toolParametersEl.classList.remove('read-only-mcp');
+    }
 
-    // Always enable standard fields
-    toolEndpointUrlEl.disabled = false;
-    toolHttpMethodEl.disabled = false;
-
-    // Ensure fields are editable and no MCP styling
-    toolDescriptionEl.readOnly = false;
-    toolParametersEl.readOnly = false;
-    toolDescriptionEl.classList.remove('mcp-sourced', 'read-only-mcp');
-    toolParametersEl.classList.remove('mcp-sourced', 'read-only-mcp');
+    if (endpointUrl) {
+      toolMcpServerUrlEl.disabled = true;
+    } else if (!mcpUrl) { // Only enable mcpUrl if endpointUrl is also empty (and mcpUrl itself was empty before this check)
+      toolMcpServerUrlEl.disabled = false;
+    }
+    // If mcpUrl is filled, endpointUrl related fields are disabled.
+    // If endpointUrl is filled, mcpUrl field is disabled.
+    // If both are empty, all are enabled.
   }
 
-  if (toolEndpointUrlEl) { // Ensure elements exist before adding listeners
+  if (toolMcpServerUrlEl && toolEndpointUrlEl) { // Ensure elements exist before adding listeners
+    toolMcpServerUrlEl.addEventListener('input', updateToolFieldStates);
     toolEndpointUrlEl.addEventListener('input', updateToolFieldStates);
   }
 
@@ -1047,7 +1070,7 @@ function setupToolHandlers() {
         row.innerHTML = `
           <td data-label="Name">${tool.name}</td>
           <td data-label="Description">${tool.description}</td>
-          
+          <td data-label="MCP Server URL">${tool.mcpServerUrl || ''}</td>
           <td data-label="Actions">
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
             <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
@@ -1070,7 +1093,7 @@ function setupToolHandlers() {
               document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
               // toolMcpId is removed, so no need to load it into a field.
-              
+              document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
               updateToolFieldStates(); // Update field states when a tool is loaded for editing
             }
@@ -1110,7 +1133,7 @@ function setupToolHandlers() {
       const toolParameters = document.getElementById('toolParameters').value.trim();
       const toolEndpointUrl = document.getElementById('toolEndpointUrl').value.trim();
       const toolHttpMethod = document.getElementById('toolHttpMethod').value;
-      
+      let toolMcpServerUrl = document.getElementById('toolMcpServerUrl').value.trim();
       const toolId = document.getElementById('toolId').value;
 
       if (!toolName || !toolDescription) {
@@ -1139,6 +1162,7 @@ function setupToolHandlers() {
                 parameters: toolParameters,
                 endpointUrl: toolEndpointUrl,
                 httpMethod: toolHttpMethod,
+                mcpServerUrl: toolMcpServerUrl,
                 lastUpdated: now
               };
             }
@@ -1154,6 +1178,7 @@ function setupToolHandlers() {
             parameters: toolParameters,
             endpointUrl: toolEndpointUrl,
             httpMethod: toolHttpMethod,
+            mcpServerUrl: toolMcpServerUrl,
             createdAt: now,
             lastUpdated: now
           };
@@ -1183,7 +1208,7 @@ function setupToolHandlers() {
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
     // toolMcpId is removed, so no need to clear its field.
-    
+    document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
     updateToolFieldStates(); // Reset field states when form is cleared
     showStatus('Tool form cleared.');
@@ -1265,5 +1290,106 @@ function setupToolHandlers() {
   // Initial load of tools
   loadTools();
 
-  
+  if (fetchMcpToolInfoBtn) {
+    fetchMcpToolInfoBtn.addEventListener('click', async () => { // Made async
+      const toolMcpServerUrl = toolMcpServerUrlEl.value.trim();
+      const toolNameValue = document.getElementById('toolName').value.trim();
+
+      if (!toolMcpServerUrl) {
+        showStatus("Please enter an MCP Server URL first.", true);
+        return;
+      }
+      if (!toolNameValue) {
+        showStatus("Please enter a Tool Name to fetch its details.", true);
+        return;
+      }
+
+      console.log(`Fetching tool info for "${toolNameValue}" from: ${toolMcpServerUrl}`);
+
+      // TODO: Implement actual MCP client logic here to fetch tool information.
+      // This would involve:
+      // 1. Constructing the correct MCP API endpoint (e.g., `${toolMcpServerUrl}/tools/${toolNameFromForm}` or query `${toolMcpServerUrl}/tools`).
+      //    The exact endpoint depends on the MCP specification for fetching a single tool's definition.
+      // 2. Making an HTTP GET request using `fetch()` with appropriate MCP headers (e.g., 'MCP-Protocol-Version', 'Accept: application/json').
+      // 3. Handling the response:
+      //    - Check for HTTP errors (response.ok).
+      //    - Parse the JSON response.
+      //    - Validate if the response conforms to the MCP Tool schema.
+      //    - Extract `description` and `inputSchema`.
+      // 4. If successful, populate the form fields as done in the mock below.
+      // 5. If an error occurs (network, HTTP error, invalid response), show an appropriate status message
+      //    and ensure fields are reset to their editable state (as in the 'else' block below).
+      // The current implementation uses a mock fetch for demonstration and UI testing.
+
+      // --- Start of actual fetch logic using chrome.runtime.sendMessage ---
+      showStatus("Fetching tool information from MCP server...", false, true);
+      // Reset fields to editable and remove MCP styling initially
+      const toolDescriptionEl = document.getElementById('toolDescription');
+      const toolParametersEl = document.getElementById('toolParameters');
+      const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
+      const toolParametersSourceEl = document.getElementById('toolParametersSource');
+
+      toolDescriptionEl.readOnly = false;
+      toolParametersEl.readOnly = false;
+      toolDescriptionEl.classList.remove('read-only-mcp');
+      toolParametersEl.classList.remove('read-only-mcp');
+      toolDescriptionSourceEl.style.display = 'none';
+      toolParametersSourceEl.style.display = 'none';
+
+      chrome.runtime.sendMessage(
+        {
+          action: 'fetchMcpToolDetailsFromServer',
+          mcpServerUrl: toolMcpServerUrl,
+          toolName: toolNameValue
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Options: Error sending fetchMcpToolDetailsFromServer message:', chrome.runtime.lastError.message);
+            showStatus(`Error fetching tool details: ${chrome.runtime.lastError.message}`, true);
+            toolDescriptionSourceEl.textContent = 'Source: Local fallback (Error sending message to background).';
+            toolParametersSourceEl.textContent = 'Source: Local fallback (Error sending message to background).';
+            toolDescriptionSourceEl.style.display = 'block';
+            toolParametersSourceEl.style.display = 'block';
+            return;
+          }
+
+          if (response && response.success && response.toolSchema) {
+            const { description, inputSchema, name: mcpToolName } = response.toolSchema;
+
+            // Log the original name from the user and the name from the MCP server
+            console.log(`Options: Fetched MCP tool. User-provided name: "${toolNameValue}", Name from MCP server: "${mcpToolName}".`);
+
+            // It's generally better to trust the schema's name if it exists and differs,
+            // but for this UI, the "Tool Name" field is the local alias and primary identifier.
+            // We will populate description and parameters from the schema.
+            // If `mcpToolName` (from schema) is different from `toolNameValue` (from form),
+            // it's worth noting, but we don't change `toolNameValue` here as it's the key for storage.
+
+            toolDescriptionEl.value = description || '';
+            toolParametersEl.value = inputSchema ? JSON.stringify(inputSchema, null, 2) : '{}';
+
+            // Make fields read-only and style them as MCP-sourced
+            toolDescriptionEl.readOnly = true;
+            toolParametersEl.readOnly = true;
+            toolDescriptionEl.classList.add('read-only-mcp');
+            toolParametersEl.classList.add('read-only-mcp');
+            toolDescriptionSourceEl.textContent = `Source: MCP Server (${mcpToolName}). Overrides local content.`;
+            toolParametersSourceEl.textContent = `Source: MCP Server (${mcpToolName}). Overrides local content.`;
+            toolDescriptionSourceEl.style.display = 'block';
+            toolParametersSourceEl.style.display = 'block';
+            showStatus(`Tool details for '${mcpToolName}' fetched and populated successfully!`, false, true);
+          } else {
+            const errorMsg = response ? response.error : "Unknown error or no response from background script.";
+            console.error('Options: Failed to fetch MCP tool details. Response:', response);
+            showStatus(`Failed to fetch tool details: ${errorMsg}`, true);
+            toolDescriptionSourceEl.textContent = `Source: Local fallback (Fetch failed: ${errorMsg})`;
+            toolParametersSourceEl.textContent = `Source: Local fallback (Fetch failed: ${errorMsg})`;
+            toolDescriptionSourceEl.style.display = 'block';
+            toolParametersSourceEl.style.display = 'block';
+          }
+        }
+      );
+      // --- End of actual fetch logic ---
+    });
+  }
 }

@@ -32,59 +32,20 @@ document.addEventListener('DOMContentLoaded', function() {
     
     
     
-    // Token slider and input synchronization
-    const tokenSlider = document.getElementById('maxTokensSlider');
+    // Token input handling
     const tokenInput = document.getElementById('maxTokens');
     const tokenValue = document.getElementById('tokenValue');
     
     function syncTokenInputs(value) {
-        if (tokenSlider) tokenSlider.value = value;
         if (tokenInput) tokenInput.value = value;
         if (tokenValue) tokenValue.textContent = value;
-        updateContextHint();
-    }
-    
-    if (tokenSlider) {
-        tokenSlider.addEventListener('input', function() {
-            syncTokenInputs(this.value);
-        });
     }
     
     if (tokenInput) {
         tokenInput.addEventListener('input', function() {
-            const value = Math.max(100, Math.min(32000, parseInt(this.value) || 100));
+            const value = Math.max(1, parseInt(this.value) || 16000);
             syncTokenInputs(value);
         });
-    }
-    
-    // Get reference to model selector (typically in options.html)
-    const modelSelector = document.getElementById('modelName');
-    
-    // Context hint based on model
-    function updateContextHint(modelName) {
-        const contextHint = document.getElementById('contextHint');
-        if (!contextHint) return;
-        
-        const currentTokens = parseInt(tokenInput?.value || 2048);
-        const modelContextLimits = {
-            'gpt-4o': 128000,
-            'gpt-4o-mini': 128000,
-            'gpt-3.5-turbo': 16385,
-            'claude-3-5-sonnet-20241022': 200000,
-            'claude-3-haiku-20240307': 200000,
-            'mistral-small-latest': 32000,
-            'mistral-medium-latest': 32000,
-            'mistral-large-latest': 32000
-        };
-        
-        const modelValue = modelName || modelSelector?.value;
-        const limit = modelValue ? modelContextLimits[modelValue] : undefined;
-        if (limit) {
-            const remaining = limit - currentTokens;
-            contextHint.textContent = ` (${remaining.toLocaleString()} remaining of ${limit.toLocaleString()})`;
-        } else {
-            contextHint.textContent = '';
-        }
     }
     
     // System prompt templates
@@ -243,7 +204,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Initialize
-    updateContextHint();
     updateCharacterCount();
     updateAboutSection();
 });
