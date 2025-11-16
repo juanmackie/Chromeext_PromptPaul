@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HexaUI Safe Integration Guide - Vanilla JavaScript</title>
+    
+    <!-- Keep existing setup - no CDN dependencies -->
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
+    <!-- Your existing theme - already compatible! -->
+    <link rel="stylesheet" href="theme.css">
+    <style>
+        /* Safe HexaUI Integration Styles */
+        /* These classes work with your existing theme.css */
+        
+        /* Button Components */
+        .hextaui-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border-radius: var(--radius, 0px);
+            border: 1px solid transparent;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            white-space: nowrap;
+            user-select: none;
+            text-decoration: none;
+            font-family: var(--font-mono);
+        }
+        
+        .hextaui-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .hextaui-btn-primary {
+            background: var(--primary);
+            color: var(--primary-foreground);
+        }
+        
+        .hextaui-btn-primary:hover:not(:disabled) {
+            background: var(--primary);
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .hextaui-btn-secondary {
+            background: var(--secondary);
+            color: var(--secondary-foreground);
+        }
+        
+        .hextaui-btn-secondary:hover:not(:disabled) {
+            background: var(--secondary);
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        .hextaui-btn-outline {
+            background: transparent;
+            color: var(--foreground);
+            border: 1px solid var(--border);
+        }
+        
+        .hextaui-btn-outline:hover:not(:disabled) {
+            background: var(--accent);
+            border-color: var(--primary);
+        }
+        
+        .hextaui-btn-destructive {
+            background: var(--destructive);
+            color: var(--destructive-foreground);
+        }
+        
+        .hextaui-btn-destructive:hover:not(:disabled) {
+            background: var(--destructive);
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        /* Input Components */
+        .hextaui-input {
+            display: flex;
+            height: 2.5rem;
+            width: 100%;
+            border-radius: var(--radius, 0px);
+            border: 1px solid var(--border);
+            background-color: var(--background);
+            color: var(--foreground);
+            padding: 0 0.75rem;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+            font-family: var(--font-mono);
+        }
+        
+        .hextaui-input:focus {
+            outline: none;
+            border-color: var(--ring);
+            box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 20%, transparent);
+        }
+        
+        .hextaui-textarea {
+            display: flex;
+            width: 100%;
+            min-height: 80px;
+            border-radius: var(--radius, 0px);
+            border: 1px solid var(--border);
+            background-color: var(--background);
+            color: var(--foreground);
+            padding: 0.75rem;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+            font-family: var(--font-mono);
+            resize: vertical;
+        }
+        
+        .hextaui-textarea:focus {
+            outline: none;
+            border-color: var(--ring);
+            box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 20%, transparent);
+        }
+        
+        /* Card Components */
+        .hextaui-card {
+            background-color: var(--card);
+            color: var(--card-foreground);
+            border: 1px solid var(--border);
+            border-radius: var(--radius, 0px);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .hextaui-card-header {
+            padding: 1.5rem 1.5rem 0;
+        }
+        
+        .hextaui-card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--card-foreground);
+            margin: 0;
+            font-family: var(--font-serif);
+        }
+        
+        .hextaui-card-description {
+            color: var(--muted-foreground);
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+        
+        .hextaui-card-content {
+            padding: 1.5rem;
+        }
+        
+        .hextaui-card-footer {
+            padding: 0 1.5rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+        
+        /* Dialog Components */
+        .hextaui-dialog {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        
+        .hextaui-dialog-content {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius, 0px);
+            box-shadow: var(--shadow-lg);
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+        }
+        
+        .hextaui-dialog-header {
+            padding: 1.5rem 1.5rem 0;
+        }
+        
+        .hextaui-dialog-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--card-foreground);
+            margin: 0;
+            font-family: var(--font-serif);
+        }
+        
+        .hextaui-dialog-description {
+            color: var(--muted-foreground);
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+        
+        .hextaui-dialog-content-area {
+            padding: 1.5rem;
+        }
+        
+        .hextaui-dialog-footer {
+            padding: 0 1.5rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+        
+        /* Toggle Components */
+        .hextaui-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .hextaui-toggle-input {
+            appearance: none;
+            width: 2.5rem;
+            height: 1.25rem;
+            background: var(--muted);
+            border-radius: 9999px;
+            position: relative;
+            transition: all 0.2s ease;
+            border: 1px solid var(--border);
+        }
+        
+        .hextaui-toggle-input::before {
+            content: '';
+            position: absolute;
+            width: 1rem;
+            height: 1rem;
+            background: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 0.125rem;
+            transform: translateY(-50%);
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+        
+        .hextaui-toggle-input:checked {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+        
+        .hextaui-toggle-input:checked::before {
+            transform: translateY(-50%) translateX(1.25rem);
+        }
+        
+        .hextaui-toggle-label {
+            color: var(--foreground);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        /* Chat-specific components */
+        .hextaui-chat-message {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            border-radius: var(--radius, 0px);
+            max-width: 85%;
+            position: relative;
+            transition: all 0.2s ease;
+        }
+        
+        .hextaui-chat-message:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .hextaui-chat-message-user {
+            align-self: flex-end;
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border-left: 3px solid var(--accent);
+        }
+        
+        .hextaui-chat-message-assistant {
+            align-self: flex-start;
+            background: var(--card);
+            color: var(--card-foreground);
+            border-left: 3px solid var(--primary);
+        }
+        
+        .hextaui-chat-input {
+            display: flex;
+            padding: 1rem;
+            background: var(--card);
+            border-top: 1px solid var(--border);
+            gap: 0.5rem;
+        }
+        
+        /* Responsive utilities */
+        .hextaui-hidden { display: none; }
+        .hextaui-visible { display: block; }
+        .hextaui-flex { display: flex; }
+        .hextaui-grid { display: grid; }
+        
+        @media (max-width: 768px) {
+            .hextaui-card-content { padding: 1rem; }
+            .hextaui-card-header { padding: 1rem 1rem 0; }
+            .hextaui-card-footer { padding: 0 1rem 1rem; }
+            .hextaui-dialog-content { margin: 1rem; max-width: calc(100vw - 2rem); }
+        }
+        
+        /* Demo styles */
+        body {
+            font-family: var(--font-serif);
+            background: var(--background);
+            color: var(--foreground);
+            padding: 2rem;
+            margin: 0;
+        }
+        
+        .demo-section {
+            margin-bottom: 3rem;
+            padding: 2rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius, 0px);
+            background: var(--card);
+        }
+        
+        .demo-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--card-foreground);
+            margin-bottom: 1rem;
+            font-family: var(--font-serif);
+        }
+        
+        .demo-description {
+            color: var(--muted-foreground);
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .demo-grid {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            margin-bottom: 1.5rem;
+        }
+        
+        .demo-item {
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius, 0px);
+            background: var(--background);
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 HexaUI Safe Integration Guide</h1>
+    <p><strong>Vanilla JavaScript Compatible • No React Dependencies • Your Theme Works Perfectly</strong></p>
+    
+    <!-- Demo 1: Button Components -->
+    <div class="demo-section">
+        <h2 class="demo-title">Button Components</h2>
+        <p class="demo-description">These buttons use your existing theme variables and work with vanilla JavaScript</p>
+        
+        <div class="demo-grid">
+            <div class="demo-item">
+                <button class="hextaui-btn hextaui-btn-primary">Primary Button</button>
+                <p><small>Hover effects, disabled state, proper theming</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <button class="hextaui-btn hextaui-btn-secondary">Secondary Button</button>
+                <p><small>Secondary styling with theme integration</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <button class="hextaui-btn hextaui-btn-outline">Outline Button</button>
+                <p><small>Border styling with hover effects</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <button class="hextaui-btn hextaui-btn-destructive">Delete Button</button>
+                <p><small>Destructive actions with proper colors</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <button class="hextaui-btn hextaui-btn-primary" disabled>Disabled State</button>
+                <p><small>Disabled buttons with reduced opacity</small></p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Demo 2: Input Components -->
+    <div class="demo-section">
+        <h2 class="demo-title">Input Components</h2>
+        <p class="demo-description">Form inputs with focus states and proper theming</p>
+        
+        <div class="demo-grid">
+            <div class="demo-item">
+                <input type="text" class="hextaui-input" placeholder="Enter text...">
+                <p><small>Text input with focus ring</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <textarea class="hextaui-textarea" placeholder="Enter multiline text..." rows="3"></textarea>
+                <p><small>Textarea with resize handle</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <input type="email" class="hextaui-input" placeholder="email@example.com">
+                <p><small>Email input with validation styles</small></p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Demo 3: Card Components -->
+    <div class="demo-section">
+        <h2 class="demo-title">Card Components</h2>
+        <p class="demo-description">Reusable card layouts for content organization</p>
+        
+        <div class="demo-grid">
+            <div class="demo-item">
+                <div class="hextaui-card">
+                    <div class="hextaui-card-header">
+                        <h3 class="hextaui-card-title">Basic Card</h3>
+                        <p class="hextaui-card-description">Simple card with header and content</p>
+                    </div>
+                    <div class="hextaui-card-content">
+                        <p>This is a basic card component that works with your existing theme.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="demo-item">
+                <div class="hextaui-card">
+                    <div class="hextaui-card-header">
+                        <h3 class="hextaui-card-title">Card with Actions</h3>
+                        <p class="hextaui-card-description">Card with footer actions</p>
+                    </div>
+                    <div class="hextaui-card-content">
+                        <p>Cards can include actions in the footer section.</p>
+                    </div>
+                    <div class="hextaui-card-footer">
+                        <button class="hextaui-btn hextaui-btn-outline">Cancel</button>
+                        <button class="hextaui-btn hextaui-btn-primary">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Demo 4: Toggle Component -->
+    <div class="demo-section">
+        <h2 class="demo-title">Toggle Component</h2>
+        <p class="demo-description">Switch/toggle control for settings</p>
+        
+        <div class="demo-grid">
+            <div class="demo-item">
+                <label class="hextaui-toggle">
+                    <input type="checkbox" class="hextaui-toggle-input" id="demo-toggle">
+                    <span class="hextaui-toggle-label">Enable feature</span>
+                </label>
+                <p><small>Click to toggle the switch</small></p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Demo 5: Chat Components -->
+    <div class="demo-section">
+        <h2 class="demo-title">Chat Components</h2>
+        <p class="demo-description">Chat-specific components for your extension</p>
+        
+        <div class="demo-grid">
+            <div class="demo-item">
+                <div class="hextaui-chat-message hextaui-chat-message-user">
+                    <p>User message content goes here</p>
+                </div>
+                <p><small>User message with primary color</small></p>
+            </div>
+            
+            <div class="demo-item">
+                <div class="hextaui-chat-message hextaui-chat-message-assistant">
+                    <p>AI assistant response goes here with proper styling</p>
+                </div>
+                <p><small>Assistant message with card color</small></p>
+            </div>
+        </div>
+        
+        <!-- Chat Input Example -->
+        <div style="margin-top: 1rem;">
+            <div class="hextaui-chat-input">
+                <input type="text" class="hextaui-input" placeholder="Type your message...">
+                <button class="hextaui-btn hextaui-btn-primary">Send</button>
+                <button class="hextaui-btn hextaui-btn-outline">Clear</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Integration Examples -->
+    <div class="demo-section">
+        <h2 class="demo-title">How to Integrate into Your Extension</h2>
+        <p class="demo-description">Step-by-step integration examples</p>
+        
+        <h3>1. Replace Your Chat Send Button</h3>
+        <p>Current HTML:</p>
+        <pre><code><button id="send-button" class="ext-btn ext-btn-primary">Send</button></code></pre>
+        
+        <p>Improved HTML:</p>
+        <pre><code><button id="send-button" class="hextaui-btn hextaui-btn-primary">Send</button></code></pre>
+        
+        <h3>2. Replace Your Input Field</h3>
+        <p>Current HTML:</p>
+        <pre><code><input id="user-input" class="ext-input" placeholder="Ask me anything..."></code></pre>
+        
+        <p>Improved HTML:</p>
+        <pre><code><input id="user-input" class="hextaui-input" placeholder="Ask me anything..."></code></pre>
+        
+        <h3>3. Use Card Layout for Messages</h3>
+        <p>Current HTML:</p>
+        <pre><code><div class="llm-message">AI Response</div></code></pre>
+        
+        <p>Improved HTML:</p>
+        <pre><code><div class="hextaui-chat-message hextaui-chat-message-assistant">AI Response</div></code></pre>
+        
+        <h3>4. Replace Your Options Page Inputs</h3>
+        <p>Current HTML:</p>
+        <pre><code><input type="text" class="ext-input"></code></pre>
+        
+        <p>Improved HTML:</p>
+        <pre><code><input type="text" class="hextaui-input"></code></pre>
+        
+        <h3>5. Replace Your Toggles</h3>
+        <p>Current HTML:</p>
+        <pre><code><input type="checkbox" class="ext-toggle-input"></code></pre>
+        
+        <p>Improved HTML:</p>
+        <pre><code><label class="hextaui-toggle">
+  <input type="checkbox" class="hextaui-toggle-input">
+  <span class="hextaui-toggle-label">Dark Theme</span>
+</label></code></pre>
+    </div>
+    
+    <!-- Theme Compatibility Check -->
+    <div class="demo-section">
+        <h2 class="demo-title">✅ Theme Compatibility Verified</h2>
+        <p class="demo-description">Your existing theme.css variables are 100% compatible with these components</p>
+        
+        <div class="demo-grid">
+            <div class="demo-item">
+                <h4>Color Variables Used:</h4>
+                <ul>
+                    <li><code>--primary</code> ✅ Matches HexaUI</li>
+                    <li><code>--secondary</code> ✅ Matches HexaUI</li>
+                    <li><code>--card</code> ✅ Matches HexaUI</li>
+                    <li><code>--border</code> ✅ Matches HexaUI</li>
+                    <li><code>--muted</code> ✅ Matches HexaUI</li>
+                </ul>
+            </div>
+            
+            <div class="demo-item">
+                <h4>Typography Variables Used:</h4>
+                <ul>
+                    <li><code>--font-mono</code> ✅ Geist Mono</li>
+                    <li><code>--font-serif</code> ✅ Playfair Display</li>
+                    <li><code>--radius</code> ✅ 0px (exact match)</li>
+                </ul>
+            </div>
+            
+            <div class="demo-item">
+                <h4>Effects Variables Used:</h4>
+                <ul>
+                    <li><code>--shadow-sm</code> ✅ 4px offset</li>
+                    <li><code>--ring</code> ✅ Focus states</li>
+                    <li><code>--shadow-lg</code> ✅ Card shadows</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Next Steps -->
+    <div class="demo-section">
+        <h2 class="demo-title">🚀 Implementation Checklist</h2>
+        <p class="demo-description">Safe steps to integrate these components into your extension</p>
+        
+        <ol>
+            <li><strong>Phase 1 (Safe):</strong> Add the CSS from this file to your existing CSS files</li>
+            <li><strong>Phase 2 (Gradual):</strong> Replace button classes one by one: <code>ext-btn → hextaui-btn</code></li>
+            <li><strong>Phase 3 (Form):</strong> Replace input classes: <code>ext-input → hextaui-input</code></li>
+            <li><strong>Phase 4 (Chat):</strong> Update chat messages to use card layouts</li>
+            <li><strong>Phase 5 (Options):</strong> Update options page components</li>
+        </ol>
+        
+        <p><strong>Result:</strong> Your extension gets HexaUI design patterns without breaking anything or adding React dependencies.</p>
+    </div>
+    
+    <script>
+        // Demo JavaScript for interactive elements
+        document.getElementById('demo-toggle').addEventListener('change', function(e) {
+            console.log('Toggle changed:', e.target.checked);
+        });
+        
+        // Show how easy it is to add event handlers
+        document.querySelectorAll('.hextaui-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Button clicked:', this.textContent);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,150 +1,338 @@
 // content_script_unified.js - Consolidated content extraction script
-(function() {
+(async function() {
+    // Error handler is not directly imported in content scripts due to scope limitations
+    // We'll use a simplified error handling approach here
     let content = "";
     let success = false;
     let errorMessage = "";
 
-    try {
-        // Enhanced content extraction with comprehensive noise filtering
-        const extractContent = () => {
-            // Comprehensive list of noise selectors to remove
-            const noiseSelectors = [
-                // Scripts and technical elements - HIGHEST PRIORITY
-                'script', 'style', 'noscript', 'link[rel="stylesheet"]',
-                'meta', 'title', 'base', 'template',
-                
-                // Analytics and tracking
-                '[class*="analytics"]', '[id*="analytics"]', '[class*="tracking"]',
-                '[class*="gtm"]', '[class*="google"]', '[id*="google"]',
-                '[class*="facebook"]', '[class*="twitter"]', '[class*="linkedin"]',
-                '[class*="vitally"]', '[id*="vitally"]', '[class*="intercom"]',
-                '[id*="intercom"]', '[class*="hotjar"]', '[class*="mixpanel"]',
-                
-                // Navigation and structure
-                'nav', 'header', 'footer', '.navigation', '.nav', '.navbar',
-                '.sidebar', '.menu', '.breadcrumb', '.breadcrumbs',
-                
-                // Ads and promotional content
-                '.ads', '.advertisement', '.ad-banner', '.promo', '.promotion',
-                '.sponsored', '.affiliate', '[class*="ad-"]', '[id*="ad-"]',
-                
-                // UI elements and overlays
-                '.popup', '.modal', '.overlay', '.tooltip', '.dropdown',
-                '.cookie-banner', '.cookie-notice', '.gdpr-banner',
-                '.notification', '.alert', '.banner', '.notice',
-                '.warning', '.error-message', '.success-message',
-                
-                // Social and sharing
-                '.social', '.share', '.sharing', '.follow', '.subscribe',
-                '.newsletter', '.signup', '.login', '.register',
-                
-                // Comments and metadata
-                '.comments', '.comment-section', '.metadata', '.tags',
-                '.author-info', '.byline', '.published-date',
-                
-                // Related content
-                '.related', '.recommended', '.suggestions', '.more-articles',
-                '.trending', '.popular', '.recent',
-                
-                // Forms and inputs (unless specifically needed)
-                '.search-form', '.contact-form', '.newsletter-form',
-                
-                // Skip links and accessibility
-                '.skip-link', '.screen-reader-only', '.sr-only', '.visually-hidden',
-                
-                // Common warning/notice patterns
-                '[class*="warning"]', '[class*="alert"]', '[class*="notice"]',
-                '[class*="banner"]', '[class*="notification"]',
-                '[id*="warning"]', '[id*="alert"]', '[id*="notice"]',
-                
-                // Specific common elements
-                '.back-to-top', '.scroll-to-top', '.page-nav', '.pagination',
-                
-                // Code and technical content
-                'code', 'pre', '.code', '.highlight', '.syntax',
-                '.code-block', '.code-snippet'
-            ];
+    const handleError = (error, context = {}) => {
+        console.error('Content Script Error:', error, context);
+        errorMessage = error.message || 'Unknown content extraction error';
 
-            // Create a working copy of the document
-            const workingDoc = document.cloneNode(true);
-            
-            // Remove all noise elements from the working copy
-            noiseSelectors.forEach(selector => {
-                try {
-                    const noiseElements = workingDoc.querySelectorAll(selector);
-                    noiseElements.forEach(el => el.remove());
-                } catch (e) {
-                    // Ignore selector errors and continue
+        // Try to send error to background script for tracking
+        try {
+            chrome.runtime.sendMessage({
+                action: 'contentScriptError',
+                error: {
+                    message: errorMessage,
+                    context: context,
+                    stack: error.stack,
+                    url: window.location.href
                 }
             });
+        } catch (msgError) {
+            console.warn('Failed to send error to background script:', msgError);
+        }
+    };
 
-            // Priority order for content extraction from cleaned document
-            const contentSelectors = [
-                'main',
-                'article', 
-                '[role="main"]',
-                '.content',
-                '#content',
-                '.post-content',
-                '.entry-content',
-                '.article-content',
-                '.page-content',
-                '.main-content'
-            ];
+    try {
+// Function to calculate content quality score
+        function calculateContentScore(text, element) {
+            if (!text || text.length < 50) return 0;
+            
+            let score = 0;
+            
+            // Length scoring
+            if (text.length > 1000) score += 30;
+            else if (text.length > 500) score += 20;
+            else if (text.length > 200) score += 10;
+            
+            // Paragraph density (more paragraphs = likely better content)
+            const paragraphs = text.split(/\n\s*\n/).length;
+            if (paragraphs > 5) score += 20;
+            else if (paragraphs > 2) score += 10;
+            
+            // Sentence structure (multiple sentences = better content)
+            const sentences = text.split(/[.!?]+/).length;
+            if (sentences > 10) score += 20;
+            else if (sentences > 5) score += 10;
+            
+            // Element-based scoring
+            if (element) {
+                const tagName = element.tagName.toLowerCase();
+                const className = element.className || '';
+                const id = element.id || '';
+                
+                // Prefer semantic content elements
+                if (['main', 'article', 'section'].includes(tagName)) score += 25;
+                if (['content', 'article', 'post', 'story', 'text'].some(word => className.includes(word))) score += 15;
+                if (['content', 'main', 'article', 'post'].some(word => id.includes(word))) score += 15;
+                
+                // Penalize likely non-content elements
+                if (['nav', 'header', 'footer', 'aside', 'sidebar'].includes(tagName)) score -= 20;
+                if (['nav', 'menu', 'sidebar', 'footer', 'header'].some(word => className.includes(word))) score -= 15;
+                if (['nav', 'menu', 'sidebar', 'footer', 'header'].some(word => id.includes(word))) score -= 15;
+            }
+            
+            // Content quality indicators
+            const hasSubstantialWords = text.split(/\s+/).length > 50;
+            if (hasSubstantialWords) score += 15;
+            
+            // Penalize repetitive or low-quality content
+            const words = text.toLowerCase().split(/\s+/);
+            const uniqueWords = new Set(words);
+            const uniqueRatio = uniqueWords.size / words.length;
+            if (uniqueRatio < 0.3) score -= 10; // Too repetitive
+            
+            // Penalize if content is mostly links or buttons
+            const linkText = Array.from(element?.querySelectorAll('a') || []).map(a => a.textContent).join(' ');
+            if (linkText.length > text.length * 0.5) score -= 15;
+            
+            return Math.max(0, score);
+        }
 
-            // Try semantic selectors first on cleaned document
-            for (const selector of contentSelectors) {
-                try {
-                    const element = workingDoc.querySelector(selector);
-                    if (element && element.innerText && element.innerText.trim()) {
-                        return element.innerText.trim();
+        // Function to wait for dynamic content to load
+        async function waitForContent(timeout = 3000) {
+            return new Promise((resolve) => {
+                const startTime = Date.now();
+                let lastContentLength = 0;
+                let stableCount = 0;
+                
+                const checkContent = () => {
+                    const currentContent = document.body?.textContent || '';
+                    const currentLength = currentContent.length;
+                    
+                    // Check if content has stabilized
+                    if (Math.abs(currentLength - lastContentLength) < 100) {
+                        stableCount++;
+                        if (stableCount >= 3) {
+                            resolve();
+                            return;
+                        }
+                    } else {
+                        stableCount = 0;
                     }
-                } catch (e) {
-                    // Continue to next selector if this one fails
-                }
-            }
+                    
+                    lastContentLength = currentLength;
+                    
+                    // Check timeout
+                    if (Date.now() - startTime > timeout) {
+                        resolve();
+                        return;
+                    }
+                    
+                    // Check again after a delay
+                    setTimeout(checkContent, 500);
+                };
+                
+                checkContent();
+            });
+        }
 
-            // Fallback to body content from cleaned document
-            if (workingDoc.body) {
-                const bodyText = workingDoc.body.innerText || workingDoc.body.textContent || "";
-                if (bodyText.trim()) {
-                    return bodyText.trim();
+        // Enhanced content extraction with comprehensive noise filtering
+        const extractContent = async () => {
+            try {
+                // Check if document is accessible
+                if (!document || !document.documentElement) {
+                    throw new Error('Document not accessible');
                 }
-            }
 
-            // Last resort: try original document with basic filtering
-            if (document.body) {
-                // Create a clone and remove script/style elements
-                const bodyClone = document.body.cloneNode(true);
+                console.log('[Content Script] Starting enhanced content extraction...');
                 
-                // Remove script and style elements that might leak into text
-                const technicalElements = bodyClone.querySelectorAll('script, style, noscript, link, meta');
-                technicalElements.forEach(el => el.remove());
+                // Wait for dynamic content to load
+                await waitForContent(3000);
                 
-                let text = bodyClone.innerText || bodyClone.textContent || "";
-                
-                // Basic text-level filtering for common warning patterns
-                const warningPatterns = [
-                    /^(warning|alert|notice|error|info):\s*/gmi,
-                    /^(please note|important|attention):\s*/gmi,
-                    /^(cookie|privacy) (notice|policy|warning)/gmi,
-                    /^this (site|website) uses cookies/gmi,
-                    /^by continuing to use/gmi,
-                    /^accept (all )?cookies/gmi
+                // Enhanced noise selectors - more targeted and less aggressive
+                const noiseSelectors = [
+                    // Scripts and technical elements
+                    'script', 'style', 'noscript', 'link[rel="stylesheet"]', 'meta', 'title', 'base', 'template',
+                    
+                    // Analytics and tracking (more specific)
+                    '[class*="analytics"]', '[id*="analytics"]', '[class*="tracking"]',
+                    '[class*="gtm"]', '[class*="google-analytics"]', '[id*="google-analytics"]',
+                    '[class*="facebook-pixel"]', '[class*="twitter-widget"]', '[class*="linkedin-insight"]',
+                    '[class*="vitally"]', '[id*="vitally"]', '[class*="intercom"]', '[id*="intercom"]',
+                    
+                    // Navigation and structure (but keep content areas)
+                    'nav:not([role="main"])', 'header:not([role="main"])', 'footer:not([role="main"])', 
+                    '.navigation', '.nav', '.navbar:not(.navbar-content)', '.sidebar:not(.content-sidebar)',
+                    '.menu', '.breadcrumb', '.breadcrumbs', '.top-bar', '.bottom-bar',
+                    
+                    // Ads and promotional content
+                    '.ads', '.advertisement', '.ad-banner', '.promo', '.promotion',
+                    '.sponsored', '.affiliate', '[class*="ad-"]', '[id*="ad-"]',
+                    
+                    // UI elements and overlays
+                    '.popup', '.modal', '.overlay', '.tooltip', '.dropdown',
+                    '.cookie-banner', '.cookie-notice', '.gdpr-banner',
+                    '.notification', '.alert', '.banner', '.notice',
+                    '.warning', '.error-message', '.success-message',
+                    
+                    // Social and sharing
+                    '.social', '.share', '.sharing', '.follow', '.subscribe',
+                    '.newsletter', '.signup', '.login', '.register',
+                    
+                    // Comments and metadata
+                    '.comments', '.comment-section', '.metadata', '.tags',
+                    '.author-info:not(.article-author)', '.byline', '.published-date',
+                    
+                    // Related content (but be careful not to remove main content)
+                    '.related:not(.related-content)', '.recommended', '.suggestions', '.more-articles',
+                    '.trending', '.popular', '.recent',
+                    
+                    // Forms and inputs
+                    '.search-form', '.contact-form', '.newsletter-form',
+                    
+                    // Skip links and accessibility
+                    '.skip-link', '.screen-reader-only', '.sr-only', '.visually-hidden',
+                    
+                    // Common warning/notice patterns
+                    '[class*="warning"]', '[class*="alert"]', '[class*="notice"]',
+                    '[class*="banner"]', '[class*="notification"]',
+                    '[id*="warning"]', '[id*="alert"]', '[id*="notice"]',
+                    
+                    // Specific common elements
+                    '.back-to-top', '.scroll-to-top', '.page-nav', '.pagination',
+                    
+                    // Code and technical content (only if not main content)
+                    'code:not(.content-code)', 'pre:not(.content-pre)', '.code:not(.content-code)', 
+                    '.highlight:not(.content-highlight)', '.syntax:not(.content-syntax)'
                 ];
-                
-                // Remove warning patterns from text
-                warningPatterns.forEach(pattern => {
-                    text = text.replace(pattern, '');
-                });
-                
-                return text.trim();
-            }
 
-            return "";
+                // Enhanced content selectors - more comprehensive and modern
+                const contentSelectors = [
+                    // Semantic HTML5 elements
+                    'main', 'article', 'section[role="main"]',
+                    
+                    // Common content classes and IDs
+                    '[role="main"]', '.content', '.main-content', '.post-content', '.entry-content', 
+                    '.article-content', '.story-body', '.post-body', '.text-content',
+                    
+                    // Modern CMS and framework selectors
+                    '.prose', '.markdown-body', '.rich-text', '.editor-content', '.description',
+                    '.blog-content', '.article-body', '.post-text', '.content-body',
+                    
+                    // Data attributes and test IDs (common in modern apps)
+                    '[data-testid="article-content"]', '[data-testid="post-content"]', 
+                    '[data-testid="blog-post"]', '[data-testid="content"]',
+                    '[data-cy="article"]', '[data-cy="content"]', '[data-qa="content"]',
+                    
+                    // Claude-specific and AI blog patterns
+                    '.prose.prose-lg', '.max-w-4xl', '.article-prose', '.blog-prose',
+                    '[class*="prose"]', '[class*="content"]', '[class*="article"]',
+                    
+                    // Common blog patterns
+                    '.post', '.entry', '.blog-post', '.story', '.writing', '.text',
+                    
+                    // Fallback selectors
+                    'div[class*="content"]', 'div[class*="article"]', 'div[class*="post"]',
+                    'section[class*="content"]', 'section[class*="article"]'
+                ];
+
+                let bestResult = {
+                    text: '',
+                    score: 0,
+                    element: null,
+                    method: 'none'
+                };
+
+                // Method 1: Try each content selector with scoring
+                console.log('[Content Script] Testing content selectors...');
+                for (const selector of contentSelectors) {
+                    try {
+                        const elements = document.querySelectorAll(selector);
+                        for (const element of elements) {
+                            // Create a working copy and remove noise
+                            const workingElement = element.cloneNode(true);
+                            noiseSelectors.forEach(noiseSelector => {
+                                try {
+                                    const noiseElements = workingElement.querySelectorAll(noiseSelector);
+                                    noiseElements.forEach(el => el.remove());
+                                } catch (e) {
+                                    // Continue if selector fails
+                                }
+                            });
+                            
+                            const text = workingElement.textContent || workingElement.innerText || '';
+                            const score = calculateContentScore(text, element);
+                            
+                            if (score > bestResult.score) {
+                                bestResult = {
+                                    text: text.trim(),
+                                    score,
+                                    element,
+                                    method: `selector: ${selector}`
+                                };
+                                console.log(`[Content Script] New best result: ${selector} (score: ${score})`);
+                            }
+                        }
+                    } catch (error) {
+                        console.warn(`[Content Script] Error with selector ${selector}:`, error);
+                    }
+                }
+
+                // Method 2: Try body with noise filtering
+                console.log('[Content Script] Testing body extraction...');
+                try {
+                    const workingBody = document.body.cloneNode(true);
+                    noiseSelectors.forEach(noiseSelector => {
+                        try {
+                            const noiseElements = workingBody.querySelectorAll(noiseSelector);
+                            noiseElements.forEach(el => el.remove());
+                        } catch (e) {
+                            // Continue if selector fails
+                        }
+                    });
+                    
+                    const bodyText = workingBody.textContent || workingBody.innerText || '';
+                    const bodyScore = calculateContentScore(bodyText, document.body);
+                    
+                    if (bodyScore > bestResult.score) {
+                        bestResult = {
+                            text: bodyText.trim(),
+                            score: bodyScore,
+                            element: document.body,
+                            method: 'body-with-filtering'
+                        };
+                        console.log(`[Content Script] Body extraction is better (score: ${bodyScore})`);
+                    }
+                } catch (error) {
+                    console.warn('[Content Script] Error with body extraction:', error);
+                }
+
+                // Method 3: Try without any noise filtering (for pages with unusual structures)
+                console.log('[Content Script] Testing unfiltered extraction...');
+                try {
+                    const rawText = document.body.textContent || document.body.innerText || '';
+                    const rawScore = calculateContentScore(rawText, document.body);
+                    
+                    if (rawScore > bestResult.score) {
+                        bestResult = {
+                            text: rawText.trim(),
+                            score: rawScore,
+                            element: document.body,
+                            method: 'unfiltered'
+                        };
+                        console.log(`[Content Script] Unfiltered extraction is best (score: ${rawScore})`);
+                    }
+                } catch (error) {
+                    console.warn('[Content Script] Error with unfiltered extraction:', error);
+                }
+
+                console.log('[Content Script] Extraction complete:', {
+                    method: bestResult.method,
+                    score: bestResult.score,
+                    textLength: bestResult.text.length,
+                    title: document.title
+                });
+
+                return bestResult.text;
+                
+            } catch (extractionError) {
+                throw new Error(`Content extraction failed: ${extractionError.message}`);
+            }
         };
 
-        content = extractContent();
+try {
+            content = await extractContent();
+        } catch (contentError) {
+            handleError(contentError, {
+                action: 'extract_content_call',
+                url: window.location.href
+            });
+            success = false;
+        }
         
         if (content) {
             success = true;
@@ -212,8 +400,12 @@
         }
 
     } catch (e) {
-        console.error("PromptPaul Extension: content_script_unified.js - Error extracting content:", e);
-        errorMessage = "Error during content extraction: " + e.message;
+        handleError(e, {
+            action: 'content_extraction',
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+            timestamp: Date.now()
+        });
         success = false;
     }
 

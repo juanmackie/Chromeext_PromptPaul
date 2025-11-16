@@ -1,5 +1,35 @@
 // Enhanced input controls and validation
 document.addEventListener('DOMContentLoaded', function() {
+
+    // Simple error handler for non-module context
+    const handleError = (error, context = {}) => {
+        console.error('Input Controls Error:', error, context);
+
+        // Try to show user feedback
+        if (typeof window !== 'undefined' && window.loadingManager) {
+            window.loadingManager.showToast(error.userMessage || error.message || 'An error occurred', 'error');
+        }
+    };
+
+    // Simple wrapper for async functions
+    const wrapAsync = async (asyncFn, options = {}) => {
+        try {
+            return await asyncFn();
+        } catch (error) {
+            handleError(error, options);
+            throw error;
+        }
+    };
+
+    // Simple error creation function
+    const createError = (message, options = {}) => {
+        const error = new Error(message);
+        error.userMessage = options.userMessage || message;
+        error.severity = options.severity || 'medium';
+        error.category = options.category || 'system';
+        error.context = options.context || {};
+        return error;
+    };
     
     // Password toggle functionality
     const apiKeyToggle = document.getElementById('apiKeyToggle');
@@ -18,33 +48,125 @@ document.addEventListener('DOMContentLoaded', function() {
     // Copy button functionality
     if (apiKeyCopy && apiKeyInput) {
         apiKeyCopy.addEventListener('click', async function() {
-            try {
-                await navigator.clipboard.writeText(apiKeyInput.value);
-                this.querySelector('.material-symbols-outlined').textContent = 'check';
-                setTimeout(() => {
-                    this.querySelector('.material-symbols-outlined').textContent = 'content_copy';
-                }, 2000);
-            } catch (err) {
-                console.error('Failed to copy:', err);
-            }
+            await wrapAsync(async () => {
+                const apiKeyValue = apiKeyInput.value;
+                if (!apiKeyValue) {
+                    throw createError('No API key to copy', {
+                        category: 'user_input',
+                        severity: 'low',
+                        userMessage: 'No API key value to copy'
+                    });
+                }
+
+                await navigator.clipboard.writeText(apiKeyValue);
+
+                // Update UI to show success
+                const iconElement = this.querySelector('.material-symbols-outlined');
+                if (iconElement) {
+                    iconElement.textContent = 'check';
+                    setTimeout(() => {
+                        iconElement.textContent = 'content_copy';
+                    }, 2000);
+                }
+            }, {
+                category: 'system',
+                userMessage: 'Failed to copy API key',
+                severity: 'low'
+            }).catch(async error => {
+                handleError(error);
+
+                // Show error state in UI
+                const iconElement = this.querySelector('.material-symbols-outlined');
+                if (iconElement) {
+                    iconElement.textContent = 'error';
+                    setTimeout(() => {
+                        iconElement.textContent = 'content_copy';
+                    }, 2000);
+                }
+            });
         });
     }
     
     
     
-    // Token input handling
+    // Token input handling with validation
     const tokenInput = document.getElementById('maxTokens');
     const tokenValue = document.getElementById('tokenValue');
-    
+
     function syncTokenInputs(value) {
-        if (tokenInput) tokenInput.value = value;
-        if (tokenValue) tokenValue.textContent = value;
+        try {
+            if (tokenInput) tokenInput.value = value;
+            if (tokenValue) tokenValue.textContent = value;
+        } catch (error) {
+            handleError(createError('Failed to sync token inputs', {
+                category: 'SYSTEM',
+                severity: 'LOW',
+                originalError: error,
+                context: { value }
+            }));
+        }
     }
-    
+
+    function validateTokenValue(value) {
+        const numValue = parseInt(value, 10);
+
+        if (isNaN(numValue)) {
+            throw createError('Token value must be a number', {
+                category: 'VALIDATION',
+                severity: 'MEDIUM',
+                context: { value },
+                userMessage: 'Max tokens must be a valid number'
+            });
+        }
+
+        if (numValue < 1) {
+            throw createError('Token value must be at least 1', {
+                category: 'VALIDATION',
+                severity: 'MEDIUM',
+                context: { value },
+                userMessage: 'Max tokens must be at least 1'
+            });
+        }
+
+        if (numValue > 100000) {
+            throw createError('Token value cannot exceed 100,000', {
+                category: 'VALIDATION',
+                severity: 'MEDIUM',
+                context: { value },
+                userMessage: 'Max tokens cannot exceed 100,000'
+            });
+        }
+
+        return numValue;
+    }
+
     if (tokenInput) {
         tokenInput.addEventListener('input', function() {
-            const value = Math.max(1, parseInt(this.value) || 16000);
-            syncTokenInputs(value);
+            try {
+                const rawValue = this.value;
+                if (rawValue === '') {
+                    syncTokenInputs(16000); // Default value
+                    return;
+                }
+
+                const validatedValue = validateTokenValue(rawValue);
+                syncTokenInputs(validatedValue);
+            } catch (error) {
+                handleError(error).then(() => {
+                    // Reset to safe default on validation error
+                    syncTokenInputs(16000);
+                });
+            }
+        });
+
+        // Add error state handling
+        tokenInput.addEventListener('invalid', function() {
+            handleError(createError('Invalid token value', {
+                category: 'VALIDATION',
+                severity: 'MEDIUM',
+                context: { value: this.value },
+                userMessage: 'Please enter a valid number between 1 and 100,000'
+            }));
         });
     }
     
@@ -62,25 +184,75 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (promptTemplate && systemPrompt) {
         promptTemplate.addEventListener('change', function() {
-            if (this.value && templates[this.value]) {
-                systemPrompt.value = templates[this.value];
-                updateCharacterCount();
-            }
+            wrapAsync(() => {
+                if (this.value && templates[this.value]) {
+                    try {
+                        systemPrompt.value = templates[this.value];
+                        updateCharacterCount();
+                    } catch (error) {
+                        throw createError('Failed to apply template', {
+                            category: 'SYSTEM',
+                            severity: 'LOW',
+                            originalError: error,
+                            context: { template: this.value },
+                            userMessage: 'Failed to apply selected template'
+                        });
+                    }
+                }
+            }, {
+                category: 'USER_INPUT',
+                userMessage: 'Failed to change template',
+                severity: 'LOW'
+            }).catch(async error => {
+                handleError(error);
+            });
         });
     }
-    
+
     // Character counter for system prompt
     const charCount = document.getElementById('charCount');
-    
+
     function updateCharacterCount() {
-        if (charCount && systemPrompt) {
-            charCount.textContent = systemPrompt.value.length;
+        try {
+            if (charCount && systemPrompt) {
+                const count = systemPrompt.value.length;
+                charCount.textContent = count;
+
+                // Add visual feedback for length limits
+                if (count > 2000) {
+                    charCount.classList.add('warning');
+                } else {
+                    charCount.classList.remove('warning');
+                }
+            }
+        } catch (error) {
+            handleError(createError('Failed to update character count', {
+                category: 'SYSTEM',
+                severity: 'LOW',
+                originalError: error
+            }));
         }
     }
-    
+
     if (systemPrompt) {
-        systemPrompt.addEventListener('input', updateCharacterCount);
-        updateCharacterCount(); // Initial count
+        systemPrompt.addEventListener('input', function() {
+            wrapAsync(() => updateCharacterCount(), {
+                category: 'SYSTEM',
+                userMessage: 'Failed to update character count',
+                severity: 'LOW'
+            }).catch(async error => {
+                handleError(error);
+            });
+        });
+
+        // Initialize character count on load
+        wrapAsync(() => updateCharacterCount(), {
+            category: 'SYSTEM',
+            userMessage: 'Failed to initialize character count',
+            severity: 'LOW'
+        }).catch(async error => {
+            await handleError(error);
+        });
     }
     
     // Profile management
@@ -90,17 +262,101 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (profileSelect && deleteProfileButton) {
         profileSelect.addEventListener('change', function() {
-            deleteProfileButton.disabled = this.value === 'default';
+            wrapAsync(() => {
+                try {
+                    deleteProfileButton.disabled = this.value === 'default';
+                } catch (error) {
+                    throw createError('Failed to update delete button state', {
+                        category: 'SYSTEM',
+                        severity: 'LOW',
+                        originalError: error,
+                        context: { selectedValue: this.value }
+                    });
+                }
+            }, {
+                category: 'USER_INPUT',
+                userMessage: 'Failed to update profile selection',
+                severity: 'LOW'
+            }).catch(async error => {
+                handleError(error);
+            });
         });
     }
-    
+
     if (addProfileButton) {
         addProfileButton.addEventListener('click', function() {
-            const profileName = prompt('Enter a name for the new profile:');
-            if (profileName && profileName.trim()) {
-                // This would be handled by the main options.js
-                console.log('Creating new profile:', profileName.trim());
-            }
+            wrapAsync(async () => {
+                const profileName = prompt('Enter a name for the new profile:');
+                if (profileName && profileName.trim()) {
+                    const trimmedName = profileName.trim();
+
+                    // Validate profile name
+                    if (trimmedName.length < 2) {
+                        throw createError('Profile name must be at least 2 characters', {
+                            category: 'VALIDATION',
+                            severity: 'MEDIUM',
+                            context: { profileName: trimmedName },
+                            userMessage: 'Profile name must be at least 2 characters long'
+                        });
+                    }
+
+                    if (trimmedName.length > 50) {
+                        throw createError('Profile name cannot exceed 50 characters', {
+                            category: 'VALIDATION',
+                            severity: 'MEDIUM',
+                            context: { profileName: trimmedName },
+                            userMessage: 'Profile name cannot exceed 50 characters'
+                        });
+                    }
+
+                    // Check for invalid characters
+                    if (!/^[a-zA-Z0-9\s\-_]+$/.test(trimmedName)) {
+                        throw createError('Profile name contains invalid characters', {
+                            category: 'VALIDATION',
+                            severity: 'MEDIUM',
+                            context: { profileName: trimmedName },
+                            userMessage: 'Profile name can only contain letters, numbers, spaces, hyphens, and underscores'
+                        });
+                    }
+
+                    return trimmedName;
+                } else {
+                    throw createError('Profile name cannot be empty', {
+                        category: 'USER_INPUT',
+                        severity: 'LOW',
+                        userMessage: 'Profile name cannot be empty'
+                    });
+                }
+            }, {
+                category: 'USER_INPUT',
+                userMessage: 'Failed to create new profile',
+                severity: 'MEDIUM'
+            }).then(async (profileName) => {
+                // Add the new profile to the dropdown
+                try {
+                    const option = document.createElement('option');
+                    option.value = 'profile_' + Date.now();
+                    option.textContent = profileName;
+                    profileSelect.add(option);
+                    profileSelect.value = option.value;
+
+                    // Enable delete button for non-default profiles
+                    if (deleteProfileButton) {
+                        deleteProfileButton.disabled = false;
+                    }
+
+                    console.log('New profile created:', profileName);
+                } catch (error) {
+                    throw createError('Failed to add profile to dropdown', {
+                        category: 'SYSTEM',
+                        severity: 'MEDIUM',
+                        originalError: error,
+                        context: { profileName }
+                    });
+                }
+            }).catch(async error => {
+                handleError(error);
+            });
         });
     }
     
@@ -207,50 +463,3 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCharacterCount();
     updateAboutSection();
 });
-
-// Export validation functions for use in options.js
-window.inputControls = {
-    validateURL: function(url) {
-        try {
-            new URL(url);
-            return url.startsWith('https://');
-        } catch {
-            return false;
-        }
-    },
-    validateJSON: function(jsonString) {
-        try {
-            JSON.parse(jsonString);
-            return true;
-        } catch {
-            return false;
-        }
-    },
-    showError: function(fieldId, message) {
-        const errorElement = document.getElementById(fieldId + 'Error');
-        const inputElement = document.getElementById(fieldId);
-        
-        if (errorElement) {
-            errorElement.textContent = message;
-            errorElement.classList.add('show');
-        }
-        
-        if (inputElement) {
-            inputElement.classList.add('error');
-            inputElement.classList.remove('success');
-        }
-    },
-    clearError: function(fieldId) {
-        const errorElement = document.getElementById(fieldId + 'Error');
-        const inputElement = document.getElementById(fieldId);
-        
-        if (errorElement) {
-            errorElement.classList.remove('show');
-        }
-        
-        if (inputElement) {
-            inputElement.classList.remove('error');
-            inputElement.classList.add('success');
-        }
-    }
-};

@@ -4,12 +4,37 @@
   "description": "Chrome extension for custom instructions",
   "main": "background.js",
   "scripts": {
-    "start": "node background.js"
+    "start": "node background.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
+    "prepare": "husky install"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.3",
-    "extpay": "^3.0.7",
     "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "extpay": "^3.0.7"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "^7.28.5",
+    "@playwright/test": "^1.48.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@types/chrome": "^0.0.276",
+    "cross-env": "^7.0.3",
+    "husky": "^9.1.6",
+    "jest": "^29.7.0",
+    "jest-chrome": "^0.8.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "lint-staged": "^15.2.10"
+  },
+  "lint-staged": {
+    "*.{js,json,css,md}": [
+      "jest --bail --findRelatedTests --passWithNoTests"
+    ],
+    "*.js": [
+      "jest --bail --findRelatedTests --passWithNoTests"
+    ]
   }
 }

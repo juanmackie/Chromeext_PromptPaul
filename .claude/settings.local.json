@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "mcp__desktop-commander__list_directory",
+      "Bash(node:*)",
+      "Bash(dir /A \"C:\\Users\\Juan Mackie\\Desktop\\clean_EXPERIMENTAL_Chrome_PromptPaul_TOOLUSE\")",
+      "Bash(findstr:*)",
+      "mcp__desktop-commander__create_directory",
+      "mcp__desktop-commander__write_file",
+      "Bash(find:*)",
+      "mcp__desktop-commander__get_file_info",
+      "mcp__gemini-bridge__consult_gemini",
+      "Bash(npm test:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

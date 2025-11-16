@@ -3,42 +3,49 @@
  */
 
 /**
- * Applies dark theme to the document
+ * Applies dark theme to document
  * @param {boolean} isDark - Whether to apply dark theme
  */
 export function applyDarkTheme(isDark) {
-  // Apply theme class to document root for better CSS cascade
+  // Apply theme using data-theme attribute for consistency
   const root = document.documentElement;
   const body = document.body;
   
   if (isDark) {
     root.setAttribute('data-theme', 'dark');
+    body.classList.remove('light-theme', 'ext-light');
     body.classList.add('dark-theme', 'ext-dark');
-    const icon = document.getElementById('darkThemeIcon');
-    if (icon) icon.textContent = 'wb_sunny';
   } else {
     root.setAttribute('data-theme', 'light');
     body.classList.remove('dark-theme', 'ext-dark');
     body.classList.add('light-theme', 'ext-light');
-    const icon = document.getElementById('darkThemeIcon');
-    if (icon) icon.textContent = 'brightness_2';
   }
 
-  // Update copy icons based on theme
-  const copyMarkdownIcons = document.querySelectorAll('img[src*="copy markdown.png"]');
-  const copyFormattedIcons = document.querySelectorAll('img[src*="copy formatted.png"]');
+  // Update theme toggle icon to visually indicate mode
+  const themeIcon = document.getElementById('theme-icon');
+  if (themeIcon) {
+    themeIcon.textContent = isDark ? 'dark_mode' : 'light_mode';
+  }
 
-  copyMarkdownIcons.forEach(icon => {
-    icon.src = isDark ? 'icons/light_copy markdown.png' : 'icons/copy markdown.png';
+  // Update copy icons based on theme and their IDs
+  const copyRawIcons = document.querySelectorAll('img[id^="copy-Raw-icon-"]');
+  const copyFormattedIcons = document.querySelectorAll('img[id^="copy-Formatted-icon-"]');
+
+  copyRawIcons.forEach(icon => {
+    // Match MessageRenderer.messageIcons mapping
+    // Dark theme uses the higher-contrast "light" assets
+    icon.src = isDark ? 'icons/light_copy_markdown.png' : 'icons/copy_markdown.png';
   });
 
   copyFormattedIcons.forEach(icon => {
-    icon.src = isDark ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
+    // Match MessageRenderer.messageIcons mapping
+    // Dark theme uses the higher-contrast "light" assets
+    icon.src = isDark ? 'icons/light_copy_formatted.png' : 'icons/copy_formatted.png';
   });
   
   // Dispatch theme change event for other components
-  window.dispatchEvent(new CustomEvent('themeChanged', { 
-    detail: { isDark, theme: isDark ? 'dark' : 'light' } 
+  window.dispatchEvent(new CustomEvent('themeChanged', {
+    detail: { isDark, theme: isDark ? 'dark' : 'light' }
   }));
 }
 
