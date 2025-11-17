@@ -212,10 +212,7 @@
 body {
   padding: 0;
   font-family: var(--font-serif);
-  background:
-    radial-gradient(ellipse at 10% 20%, rgba(176, 66, 255, 0.05) 0%, transparent 25%),
-    radial-gradient(ellipse at 90% 80%, rgba(0, 137, 208, 0.05) 0%, transparent 25%),
-    linear-gradient(135deg, var(--background) 0%, #e2e8f0 100%);
+  background: var(--options-background);
   color: var(--foreground);
   line-height: 1.6;
   transition: background-color 0.3s ease;
@@ -1626,4 +1623,100 @@ body[data-theme="dark"] #toolsTable tbody tr:hover {
 
 [data-theme="dark"] .modality-option small {
   color: #9ca3af;
+}
+
+/* Quick Action Button Styling - Matching sidebar buttons */
+:root {
+    --standard-button-size: 48px;
+}
+
+.quick-action-button {
+  width: var(--standard-button-size);
+  height: var(--standard-button-size);
+  margin: 0 6px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, var(--card) 0%, var(--background) 100%),
+    radial-gradient(circle at 20% 20%, rgba(0, 137, 208, 0.1) 0%, transparent 30%);
+  color: var(--primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5em;
+  font-weight: 700;
+  overflow: hidden;
+  box-sizing: border-box;
+  box-shadow: 0 4px 15px rgba(0, 137, 208, 0.15);
+  transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  position: relative;
+  z-index: 1;
+  vertical-align: middle;
+}
+
+.quick-action-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(45deg, var(--primary), var(--accent), var(--secondary));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  border-radius: 12px;
+}
+
+.quick-action-button:hover {
+  box-shadow:
+    0 8px 25px rgba(0, 137, 208, 0.3),
+    0 0 0 2px var(--primary);
+  transform: translateY(-3px) scale(1.1);
+}
+
+.quick-action-button:hover::before {
+  opacity: 0.1;
+}
+
+.quick-action-button:active {
+    transform: translateY(1px) scale(0.95);
+    box-shadow: 0 2px 10px rgba(0, 137, 208, 0.2);
+}
+
+/* Material Icons styling within quick-action-button */
+.quick-action-button .material-icons {
+    font-size: 20px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.quick-action-button:hover .material-icons {
+    color: var(--primary);
+    transform: scale(1.1);
+}
+
+/* Specific styling for delete buttons */
+.quick-action-button.delete-btn {
+    color: var(--destructive, #dc2626);
+}
+
+.quick-action-button.delete-btn:hover {
+    box-shadow:
+        0 8px 25px rgba(220, 38, 38, 0.3),
+        0 0 0 2px var(--destructive, #dc2626);
+}
+
+.quick-action-button.delete-btn:hover .material-icons {
+    color: var(--destructive, #dc2626);
+}
+
+/* Table action column styling */
+.actions-cell {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    white-space: nowrap;
+    width: auto;
+    min-width: 104px; /* 48px + 48px + 8px gap */
 }

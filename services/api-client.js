@@ -507,11 +507,31 @@ export class ApiClient {
      */
     async makeRequest(config, options = {}) {
         return await wrapAsync(async () => {
+            console.log('🚀 API Client: Starting non-streaming request');
+            console.log('📋 Request config:', {
+                endpoint: config.llmEndpoint ? '✓ Set' : '✗ Missing',
+                apiKey: config.apiKey ? '✓ Set (' + config.apiKey.substring(0, 7) + '...)' : '✗ Missing',
+                model: config.modelName || '✗ Missing',
+                streaming: false,
+                messagesCount: options.messages?.length || 0,
+                toolsCount: options.tools?.length || 0
+            });
+
             const request = this.requestBuilder.buildRequest(config, options);
+
+            console.log('🌐 Request details:', {
+                url: request.url,
+                method: request.method,
+                headers: Object.keys(request.headers),
+                bodyLength: request.body?.length || 0,
+                hasAuth: !!request.headers.Authorization
+            });
 
             // Add timeout
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.defaultConfig.timeout);
+
+            console.log('⏱️ Sending request with timeout:', this.defaultConfig.timeout + 'ms');
 
             try {
                 const response = await fetch(request.url, {
@@ -521,18 +541,41 @@ export class ApiClient {
 
                 clearTimeout(timeoutId);
 
+                console.log('📡 Response received:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: Object.fromEntries(response.headers.entries()),
+                    ok: response.ok
+                });
+
                 if (!response.ok) {
+                    console.error('❌ HTTP Error Response:', response.status, response.statusText);
                     await this.handleHttpError(response);
                 }
 
-                return await response.json();
+                const responseData = await response.json();
+                console.log('✅ Successful response parsed:', {
+                    hasChoices: !!responseData.choices,
+                    choicesCount: responseData.choices?.length || 0,
+                    hasUsage: !!responseData.usage,
+                    responseType: typeof responseData
+                });
+
+                return responseData;
             } catch (error) {
                 clearTimeout(timeoutId);
+
+                console.error('💥 Request failed:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack?.substring(0, 500)
+                });
 
                 if (error.name === 'AbortError') {
                     throw createError('Request timeout', {
                         category: ErrorCategory.NETWORK,
-                        severity: ErrorSeverity.HIGH
+                        severity: ErrorSeverity.HIGH,
+                        userMessage: `Request timed out after ${this.defaultConfig.timeout}ms. Please try again.`
                     });
                 }
 
@@ -550,16 +593,39 @@ export class ApiClient {
      * @param {Object} config - API configuration
      * @param {Object} options - Request options
      * @param {Function} onChunk - Chunk callback
+     * @param {Function} onComplete - Completion callback
      * @returns {Promise<void>}
      */
-    async makeStreamingRequest(config, options = {}, onChunk) {
+    async makeStreamingRequest(config, options = {}, onChunk, onComplete) {
         return await wrapAsync(async () => {
+            console.log('🌊 API Client: Starting streaming request');
+            console.log('📋 Stream config:', {
+                endpoint: config.llmEndpoint ? '✓ Set' : '✗ Missing',
+                apiKey: config.apiKey ? '✓ Set (' + config.apiKey.substring(0, 7) + '...)' : '✗ Missing',
+                model: config.modelName || '✗ Missing',
+                streaming: true,
+                messagesCount: options.messages?.length || 0,
+                toolsCount: options.tools?.length || 0,
+                toolChoice: options.toolChoice || 'none'
+            });
+
             const requestConfig = { ...options, stream: true };
             const request = this.requestBuilder.buildRequest(config, requestConfig);
+
+            console.log('🌐 Stream request details:', {
+                url: request.url,
+                method: request.method,
+                headers: Object.keys(request.headers),
+                bodyLength: request.body?.length || 0,
+                hasAuth: !!request.headers.Authorization,
+                hasStream: request.body?.includes('"stream":true') || false
+            });
 
             // Add timeout
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), this.defaultConfig.timeout);
+
+            console.log('⏱️ Sending streaming request with timeout:', this.defaultConfig.timeout + 'ms');
 
             try {
                 const response = await fetch(request.url, {
@@ -569,23 +635,75 @@ export class ApiClient {
 
                 clearTimeout(timeoutId);
 
+                console.log('📡 Stream response received:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: Object.fromEntries(response.headers.entries()),
+                    ok: response.ok,
+                    contentType: response.headers.get('content-type'),
+                    hasBody: !!response.body
+                });
+
                 if (!response.ok) {
+                    console.error('❌ HTTP Error Response for stream:', response.status, response.statusText);
                     await this.handleHttpError(response);
                 }
 
+                console.log('🔄 Starting stream processing...');
+                let chunkCount = 0;
+                let contentChunks = 0;
+                let toolCallChunks = 0;
+
+                const enhancedOnChunk = (chunk) => {
+                    chunkCount++;
+                    if (chunk.type === 'content') {
+                        contentChunks++;
+                        console.log(`📝 Content chunk ${contentChunks}:`, chunk.content?.substring(0, 50) + (chunk.content?.length > 50 ? '...' : ''));
+                    } else if (chunk.type === 'tool_call') {
+                        toolCallChunks++;
+                        console.log(`🔧 Tool call chunk ${toolCallChunks}:`, chunk.tool_calls);
+                    }
+
+                    // Call original callback
+                    if (onChunk) onChunk(chunk);
+                };
+
                 await this.streamingProcessor.processStream(
                     response,
-                    onChunk,
-                    () => console.log('Streaming completed'),
-                    (error) => console.error('Streaming error:', error)
+                    enhancedOnChunk,
+                    () => {
+                        console.log('✅ Streaming completed successfully');
+                        console.log('📊 Stream summary:', {
+                            totalChunks: chunkCount,
+                            contentChunks,
+                            toolCallChunks
+                        });
+                        // Call completion callback if provided
+                        if (onComplete) onComplete();
+                    },
+                    (error) => {
+                        console.error('💥 Streaming error:', error);
+                        console.log('📊 Stream summary before error:', {
+                            totalChunks: chunkCount,
+                            contentChunks,
+                            toolCallChunks
+                        });
+                    }
                 );
             } catch (error) {
                 clearTimeout(timeoutId);
 
+                console.error('💥 Streaming request failed:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack?.substring(0, 500)
+                });
+
                 if (error.name === 'AbortError') {
                     throw createError('Request timeout', {
                         category: ErrorCategory.NETWORK,
-                        severity: ErrorSeverity.HIGH
+                        severity: ErrorSeverity.HIGH,
+                        userMessage: `Streaming request timed out after ${this.defaultConfig.timeout}ms. Please try again.`
                     });
                 }
 

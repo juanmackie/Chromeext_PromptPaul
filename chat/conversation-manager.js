@@ -122,8 +122,22 @@ export class ConversationManager {
             streaming = true
         } = options;
 
+        // Ensure configuration is loaded and display any configuration errors
         if (!this.apiConfig) {
-            await this.loadApiConfig();
+            try {
+                await this.loadApiConfig();
+            } catch (configError) {
+                console.error('Chat: Configuration error:', configError);
+                // Display configuration error prominently to user
+                const errorMessage = configError.userMessage || configError.message || 'Configuration error occurred';
+                this.messageRenderer.addMessage('System', `⚠️ **Configuration Error**: ${errorMessage}`, { isError: true });
+
+                // Also add helpful guidance
+                this.messageRenderer.addMessage('System', '💡 **To fix this**: Please go to the extension options and ensure your API configuration is complete with a valid endpoint URL, API key, and model name.', { isHelp: true });
+
+                // Don't proceed with API call if configuration is invalid
+                throw configError;
+            }
         }
 
         this.currentRequest = {
@@ -135,6 +149,13 @@ export class ConversationManager {
         };
 
         try {
+            console.log('Chat: Starting API call with config:', {
+                endpoint: this.apiConfig.llmEndpoint ? '✓ Set' : '✗ Missing',
+                apiKey: this.apiConfig.apiKey ? '✓ Set' : '✗ Missing',
+                model: this.apiConfig.modelName || '✗ Missing',
+                streaming
+            });
+
             // Add user message to conversation history
             if (prompt) {
                 this.addToHistory({ role: 'user', content: prompt });
@@ -148,12 +169,37 @@ export class ConversationManager {
 
         } catch (error) {
             console.error('Chat: API call failed:', error);
-            this.messageRenderer.addMessage('System', `API Error: ${error.message}`);
+
+            // Determine error type and provide appropriate user feedback
+            let userErrorMessage = 'API Error occurred';
+            let helpMessage = '';
+
+            if (error.category === ErrorCategory.CONFIGURATION) {
+                userErrorMessage = `Configuration Error: ${error.userMessage || error.message}`;
+                helpMessage = '💡 **To fix this**: Please check your extension options and ensure all required fields are filled in.';
+            } else if (error.category === ErrorCategory.NETWORK) {
+                userErrorMessage = `Network Error: Unable to reach the API endpoint`;
+                helpMessage = '💡 **To fix this**: Please check your internet connection and verify the API endpoint URL is correct.';
+            } else {
+                userErrorMessage = `API Error: ${error.message || 'Unknown error occurred'}`;
+                helpMessage = '💡 **To fix this**: Please check your configuration and try again.';
+            }
+
+            // Display error prominently in the chat
+            this.messageRenderer.addMessage('System', `❌ **${userErrorMessage}**`, { isError: true });
+
+            if (helpMessage) {
+                this.messageRenderer.addMessage('System', helpMessage, { isHelp: true });
+            }
+
+            // Also handle through error handler for logging/monitoring
             await errorHandler.handleError(createError('API call failed', {
                 category: ErrorCategory.NETWORK,
                 severity: ErrorSeverity.HIGH,
-                originalError: error
+                originalError: error,
+                context: { prompt: prompt.substring(0, 100), tool_choice, streaming }
             }));
+
         } finally {
             this.currentRequest = null;
         }
@@ -169,6 +215,17 @@ export class ConversationManager {
         console.log("Chat: Starting streaming API call with centralized client");
 
         try {
+            // Initialize streaming UI components first
+            this.streamingManager.startStream(
+                { prompt },
+                this.conversationHistory,
+                // Note: These elements might be null - the streaming manager will handle nulls gracefully
+                document.getElementById('user-input'),
+                document.getElementById('send-button'),
+                document.getElementById('clear-button'),
+                window.loadingManager
+            );
+
             // Prepare messages and tools for API client
             const messages = this.buildMessages(prompt);
             const { tools } = this.prepareToolChoices(tool_choice);
@@ -191,11 +248,33 @@ export class ConversationManager {
                         // Handle tool call chunks
                         this.streamingManager.handleToolCallChunk(chunk.tool_calls);
                     }
+                },
+                // Stream completed callback
+                () => {
+                    // Finalize the streaming session
+                    this.streamingManager.endStream(
+                        {},
+                        this.conversationHistory,
+                        document.getElementById('user-input'),
+                        document.getElementById('send-button'),
+                        document.getElementById('clear-button'),
+                        window.loadingManager
+                    );
                 }
             );
 
         } catch (error) {
             console.error('Chat: Streaming API call failed:', error);
+
+            // Finalize streaming and reset state on error
+            this.streamingManager.endStream(
+                {},
+                this.conversationHistory,
+                document.getElementById('user-input'),
+                document.getElementById('send-button'),
+                document.getElementById('clear-button'),
+                window.loadingManager
+            );
             throw error;
         }
     }

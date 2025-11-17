@@ -54,6 +54,7 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-size-base: 14px;
   --line-height-base: 1.5;
+  --options-background: #ffffff;
 }
 
 .dark, [data-theme="dark"] {
@@ -109,6 +110,7 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-size-base: 14px;
   --line-height-base: 1.5;
+  --options-background: oklch(0.1171 0.0692 283.41);
 }
 
 @theme inline {

@@ -31,9 +31,13 @@ export class MessageRenderer {
      * Add a message to the chat area
      * @param {string} sender - Message sender ('User', 'System', 'LLM')
      * @param {string} message - Message content
+     * @param {Object} options - Additional options for message styling
+     * @param {boolean} options.isError - Whether this is an error message
+     * @param {boolean} options.isHelp - Whether this is a help message
      * @returns {Object} Message elements and unique ID
      */
-    addMessage(sender, message) {
+    addMessage(sender, message, options = {}) {
+        const { isError = false, isHelp = false } = options;
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message');
         let contentElement = messageDiv;
@@ -44,7 +48,49 @@ export class MessageRenderer {
             messageDiv.textContent = 'You: ' + message;
         } else if (sender === 'System') {
             messageDiv.classList.add('system-message', 'hextaui-chat-message', 'hextaui-chat-message-system');
-            messageDiv.textContent = 'System: ' + message;
+
+            // Add special styling for error and help messages
+            if (isError) {
+                messageDiv.classList.add('system-error');
+                // Set custom styling for error messages
+                messageDiv.style.cssText = `
+                    background-color: #fef2f2;
+                    border-left: 4px solid #dc2626;
+                    color: #991b1b;
+                    padding: 12px;
+                    margin: 8px 0;
+                    border-radius: 4px;
+                    font-weight: 500;
+                `;
+                if (typeof marked !== 'undefined') {
+                    contentElement.innerHTML = marked.parse(message || "");
+                    messageDiv.innerHTML = '';  // Clear textContent
+                    messageDiv.appendChild(contentElement);  // Add processed HTML
+                } else {
+                    messageDiv.textContent = 'System: ' + message;
+                }
+            } else if (isHelp) {
+                messageDiv.classList.add('system-help');
+                // Set custom styling for help messages
+                messageDiv.style.cssText = `
+                    background-color: #f0fdf4;
+                    border-left: 4px solid #16a34a;
+                    color: #15803d;
+                    padding: 12px;
+                    margin: 8px 0;
+                    border-radius: 4px;
+                    font-weight: 500;
+                `;
+                if (typeof marked !== 'undefined') {
+                    contentElement.innerHTML = marked.parse(message || "");
+                    messageDiv.innerHTML = '';  // Clear textContent
+                    messageDiv.appendChild(contentElement);  // Add processed HTML
+                } else {
+                    messageDiv.textContent = 'System: ' + message;
+                }
+            } else {
+                messageDiv.textContent = 'System: ' + message;
+            }
         } else if (sender === 'LLM') {
             const llmResult = this.createLlmMessage(message);
             messageDiv.appendChild(llmResult.contentSpan);

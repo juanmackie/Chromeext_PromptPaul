@@ -187,10 +187,14 @@ export class UIComponents {
                     <span class="material-symbols-outlined">hourglass_empty</span>
                 </button>
             </td>
-            <td data-label="Actions">
-                <button class="ext-btn ext-btn-secondary edit-btn" data-id="${instruction.id}">Edit</button>
+            <td data-label="Actions" class="actions-cell">
+                <button class="quick-action-button pinned-action edit-btn" data-id="${instruction.id}" title="Edit instruction">
+                    <span class="material-icons">edit</span>
+                </button>
                 <button class="ext-btn improve-btn" data-id="${instruction.id}">Improve</button>
-                <button class="ext-btn ext-btn-destructive delete-btn" data-id="${instruction.id}">Delete</button>
+                <button class="quick-action-button pinned-action delete-btn" data-id="${instruction.id}" title="Delete instruction">
+                    <span class="material-icons">delete</span>
+                </button>
             </td>
         `;
 

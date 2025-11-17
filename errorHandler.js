@@ -248,15 +248,97 @@ export class ErrorHandler {
       );
     }
 
-    // Handle network errors
+    // Handle network errors with specific user messages
     if (error instanceof TypeError && error.message.includes('fetch')) {
+      const userMessage = this.getNetworkErrorMessage(error.message);
       return new ExtensionError(
         'Network request failed',
         {
           severity: ErrorSeverity.HIGH,
           category: ErrorCategory.NETWORK,
           code: 'NETWORK_ERROR',
+          userMessage,
           context: { originalMessage: error.message },
+          retryable: true,
+          originalError: error,
+          ...options
+        }
+      );
+    }
+
+    // Handle API response errors
+    if (error.message && error.message.includes('API')) {
+      const userMessage = this.getApiErrorMessage(error.message);
+      return new ExtensionError(
+        error.message,
+        {
+          severity: ErrorSeverity.HIGH,
+          category: ErrorCategory.NETWORK,
+          code: 'API_ERROR',
+          userMessage,
+          originalError: error,
+          ...options
+        }
+      );
+    }
+
+    // Handle configuration errors with helpful guidance
+    if (error.message && (
+      error.message.includes('Configuration') ||
+      error.message.includes('API key') ||
+      error.message.includes('endpoint') ||
+      error.message.includes('model name')
+    )) {
+      const userMessage = this.getConfigurationErrorMessage(error.message);
+      return new ExtensionError(
+        error.message,
+        {
+          severity: ErrorSeverity.CRITICAL,
+          category: ErrorCategory.CONFIGURATION,
+          code: 'CONFIGURATION_ERROR',
+          userMessage,
+          originalError: error,
+          ...options
+        }
+      );
+    }
+
+    // Handle authentication errors
+    if (error.message && (
+      error.message.includes('401') ||
+      error.message.includes('403') ||
+      error.message.includes('Unauthorized') ||
+      error.message.includes('Forbidden') ||
+      error.message.includes('authentication')
+    )) {
+      const userMessage = 'Authentication failed. Please check your API key is valid and has the correct permissions.';
+      return new ExtensionError(
+        error.message,
+        {
+          severity: ErrorSeverity.HIGH,
+          category: ErrorCategory.CONFIGURATION,
+          code: 'AUTHENTICATION_ERROR',
+          userMessage,
+          originalError: error,
+          ...options
+        }
+      );
+    }
+
+    // Handle rate limiting errors
+    if (error.message && (
+      error.message.includes('429') ||
+      error.message.includes('rate limit') ||
+      error.message.includes('too many requests')
+    )) {
+      const userMessage = 'Rate limit exceeded. Please wait a moment before sending another message.';
+      return new ExtensionError(
+        error.message,
+        {
+          severity: ErrorSeverity.MEDIUM,
+          category: ErrorCategory.NETWORK,
+          code: 'RATE_LIMIT_ERROR',
+          userMessage,
           retryable: true,
           originalError: error,
           ...options
@@ -274,6 +356,54 @@ export class ErrorHandler {
         ...options
       }
     );
+  }
+
+  /**
+   * Get user-friendly network error message
+   */
+  getNetworkErrorMessage(originalMessage) {
+    if (originalMessage.includes('Failed to fetch')) {
+      return 'Unable to connect to the API endpoint. Please check your internet connection and verify the endpoint URL is correct.';
+    } else if (originalMessage.includes('CORS')) {
+      return 'Cross-origin request blocked. The API endpoint may not allow requests from this extension.';
+    } else if (originalMessage.includes('ERR_NAME_NOT_RESOLVED') || originalMessage.includes('ERR_INTERNET_DISCONNECTED')) {
+      return 'Network connection issue. Please check your internet connection and try again.';
+    } else if (originalMessage.includes('timeout')) {
+      return 'Request timed out. The API endpoint may be experiencing delays. Please try again.';
+    }
+    return 'Network request failed. Please check your connection and try again.';
+  }
+
+  /**
+   * Get user-friendly API error message
+   */
+  getApiErrorMessage(originalMessage) {
+    if (originalMessage.includes('500')) {
+      return 'The API server encountered an internal error. Please try again in a few moments.';
+    } else if (originalMessage.includes('502') || originalMessage.includes('503') || originalMessage.includes('504')) {
+      return 'The API server is temporarily unavailable. Please try again later.';
+    } else if (originalMessage.includes('400')) {
+      return 'Invalid request format. Please check your API configuration.';
+    } else if (originalMessage.includes('404')) {
+      return 'API endpoint not found. Please verify the endpoint URL in your configuration.';
+    }
+    return 'API request failed. Please check your configuration and try again.';
+  }
+
+  /**
+   * Get user-friendly configuration error message
+   */
+  getConfigurationErrorMessage(originalMessage) {
+    if (originalMessage.includes('API key') || originalMessage.includes('apiKey')) {
+      return 'API key is missing or invalid. Please set a valid API key in the extension options.';
+    } else if (originalMessage.includes('endpoint') || originalMessage.includes('URL')) {
+      return 'API endpoint is missing or invalid. Please set a valid endpoint URL in the extension options.';
+    } else if (originalMessage.includes('model') || originalMessage.includes('modelName')) {
+      return 'Model name is missing or invalid. Please select a valid model in the extension options.';
+    } else if (originalMessage.includes('profile')) {
+      return 'No configuration profile found. Please create a configuration profile in the extension options.';
+    }
+    return 'Configuration error. Please check your extension settings and ensure all required fields are filled in.';
   }
 
   /**

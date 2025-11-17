@@ -101,7 +101,18 @@ export class StreamingManager {
      * @param {string} contentChunk - Text content delta from the LLM
      */
     handleStreamChunk(contentChunk) {
-        if (contentChunk == null) return;
+        if (contentChunk == null) {
+            console.warn('🚫 Streaming Manager: Received null content chunk');
+            return;
+        }
+
+        console.log('📨 Streaming Manager: Processing content chunk:', {
+            contentLength: contentChunk.length,
+            preview: contentChunk.substring(0, 100) + (contentChunk.length > 100 ? '...' : ''),
+            hasActiveStreaming: !!this.currentStreamingContentElement,
+            currentAccumulatedLength: this.accumulatedStreamedText.length
+        });
+
         // Adapt the centralized streaming callback into the legacy shape
         this.processStreamChunk({ chunk: contentChunk });
     }
@@ -112,8 +123,20 @@ export class StreamingManager {
      */
     handleToolCallChunk(toolCallChunks) {
         if (!toolCallChunks || !Array.isArray(toolCallChunks) || toolCallChunks.length === 0) {
+            console.warn('🚫 Streaming Manager: Invalid tool call chunks received');
             return;
         }
+
+        console.log('🔧 Streaming Manager: Processing tool call chunks:', {
+            chunkCount: toolCallChunks.length,
+            chunks: toolCallChunks.map(chunk => ({
+                id: chunk.id,
+                index: chunk.index,
+                hasFunction: !!chunk.function,
+                functionName: chunk.function?.name || 'unnamed'
+            }))
+        });
+
         // For now we only support a single tool call stream; use the first chunk
         const [firstChunk] = toolCallChunks;
         this.processToolCallChunk({ toolCallChunk: firstChunk });
@@ -470,20 +493,49 @@ export class StreamingManager {
      * @param {Object} loadingManager - Loading manager instance
      */
     handleStreamingError(error, userInput, sendButton, loadingManager) {
-        console.error('Chat: Streaming error:', error);
+        console.error('💥 Streaming Manager: Streaming error occurred:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack?.substring(0, 500),
+            streamingState: this.getStreamingState()
+        });
 
-        // Add error message to chat
-        this.messageRenderer.addMessage('System', `Streaming error: ${error.message}`);
+        // Add error message to chat with enhanced styling
+        const errorMessage = `Streaming error: ${error.message}`;
+        this.messageRenderer.addMessage('System', errorMessage, { isError: true });
+
+        // Add helpful guidance for common streaming issues
+        let helpMessage = '💡 **To fix this**: Please try the following:\n';
+        if (error.message.includes('timeout')) {
+            helpMessage += '- Check your internet connection\n';
+            helpMessage += '- Try sending a shorter message\n';
+            helpMessage += '- Wait a moment and try again';
+        } else if (error.message.includes('network')) {
+            helpMessage += '- Check your internet connection\n';
+            helpMessage += '- Verify the API endpoint is accessible\n';
+            helpMessage += '- Try refreshing the page';
+        } else {
+            helpMessage += '- Check your API configuration\n';
+            helpMessage += '- Try sending the message again\n';
+            helpMessage += '- If the issue persists, contact support';
+        }
+
+        this.messageRenderer.addMessage('System', helpMessage, { isHelp: true });
 
         // Reset state
         this.resetUIState(userInput, sendButton, null, loadingManager);
         this.resetStreamingState();
 
-        // Log error for analytics
+        // Log error for analytics with context
         errorHandler.handleError(createError('Streaming failed', {
             category: ErrorCategory.NETWORK,
             severity: ErrorSeverity.MEDIUM,
-            originalError: error
+            originalError: error,
+            context: {
+                accumulatedTextLength: this.accumulatedStreamedText.length,
+                hadActiveToolCall: !!this.activeStreamingToolCall,
+                wasStreaming: this.isStreaming
+            }
         }));
     }
 
