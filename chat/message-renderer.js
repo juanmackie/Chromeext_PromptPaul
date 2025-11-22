@@ -109,6 +109,11 @@ export class MessageRenderer {
         }
 
         this.chatArea.appendChild(messageDiv);
+        
+        // Ensure proper scrolling after message is added
+        if (this.uiManager && this.uiManager.ensureScrollable) {
+            this.uiManager.ensureScrollable();
+        }
         this.scrollToBottom();
 
         return { messageDiv, contentElement, uniqueIdString };
@@ -277,7 +282,11 @@ export class MessageRenderer {
     scrollToBottom(delay = 10) {
         setTimeout(() => {
             if (this.chatArea) {
-                this.chatArea.scrollTop = this.chatArea.scrollHeight;
+                // Ensure smooth scrolling to bottom
+                this.chatArea.scrollTo({
+                    top: this.chatArea.scrollHeight,
+                    behavior: 'smooth'
+                });
             }
         }, delay);
     }

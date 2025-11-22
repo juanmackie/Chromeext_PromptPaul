@@ -26,6 +26,25 @@ export class ApiHandler {
      * @returns {Promise<void>}
      */
     async makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+        // DEBUG: Validate input parameters
+        console.log('[DEBUG API_HANDLER] makeLlmApiRequest called with:', {
+            promptLength: promptContent?.length,
+            tabId: tabId,
+            tabIdType: typeof tabId,
+            isStartChat: isStartChat,
+            customInstructionToolChoice: customInstructionToolChoice
+        });
+        
+        if (!promptContent || typeof promptContent !== 'string') {
+            console.error('[DEBUG API_HANDLER] Invalid prompt content:', promptContent);
+            throw new Error('Invalid prompt content provided to makeLlmApiRequest');
+        }
+        
+        if (tabId !== null && (typeof tabId !== 'number' || tabId < 0)) {
+            console.error('[DEBUG API_HANDLER] Invalid tabId received:', tabId, 'type:', typeof tabId);
+            // Don't throw here, just log and continue - tabId can be null for some operations
+        }
+        
         let config, tools, enableStreaming;
         try {
             // Step 1: Validate configuration and get tool definitions

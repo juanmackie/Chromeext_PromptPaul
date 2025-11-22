@@ -12,23 +12,6 @@
   <link rel="stylesheet" href="hextaui-components.css">
   <link rel="stylesheet" href="options.css">
   <link rel="stylesheet" href="loading-states.css">
-  <!-- Add shadcn/ui CSS -->
-  <style>
-    .material-symbols-outlined {
-      font-family: 'Material Symbols Outlined';
-      font-weight: normal;
-      font-style: normal;
-      font-size: 1.4rem;
-      line-height: 1;
-      letter-spacing: normal;
-      text-transform: none;
-      display: inline-block;
-      white-space: nowrap;
-      direction: ltr;
-      -webkit-font-smoothing: antialiased;
-    }
-    
-  </style>
 </head>
 <body>
   <main class="container">
@@ -156,7 +139,7 @@
           <label class="ext-form-label">Theme</label>
           <label class="hextaui-toggle">
             <span id="darkThemeIcon" class="material-symbols-outlined">brightness_2</span>
-            <input type="checkbox" id="darkThemeToggle" class="hextaui-toggle-input">
+            <input type="checkbox" id="optionsThemeToggle" class="hextaui-toggle-input">
             <span class="hextaui-toggle-label">Dark Theme</span>
           </label>
         </div>
@@ -233,11 +216,11 @@
       </div>
       <div class="collapsible-content">
 
-      <div id="migrationPrompt" class="migration-prompt" style="display: none; margin-bottom: 1em; padding: 1rem; background: var(--ext-accent); border-radius: 0.5rem; border: 1px solid var(--ext-border);">
+      <div id="migrationPrompt" class="migration-prompt">
         <span>
           <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
         </span>
-        <div class="button-group" style="margin-top: 0.5em;">
+        <div class="button-group migration-button-group">
           <button type="button" id="migrateInstructionsBtn" class="ext-btn hextaui-btn hextaui-btn-secondary">&#128190; Migrate</button>
           <button type="button" id="dismissMigrationBtn" class="ext-btn hextaui-btn hextaui-btn-outline">&#10006; Dismiss</button>
         </div>
@@ -267,7 +250,7 @@
         </div>
       </div>
 
-      <div class="ext-card instruction-form" style="margin-top: 2rem;">
+      <div class="ext-card instruction-form mt-8">
         <h3>Add/Edit Instruction</h3>
         <div class="ext-form-field">
           <label for="instructionName" class="ext-form-label">Instruction Name</label>
@@ -334,11 +317,11 @@
         </div>
       </div>
 
-      <div class="ext-card import-export" style="margin-top: 1rem;">
+      <div class="ext-card import-export mt-4">
         <h3>Import/Export Instructions</h3>
         <div class="button-group">
           <button type="button" id="exportInstructions" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
-          <input type="file" id="importFile" accept=".json" style="display: none;">
+          <input type="file" id="importFile" accept=".json" class="hidden">
           <button type="button" id="importInstructions" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Instructions</button>
         </div>
       </div>
@@ -380,7 +363,7 @@
         </div>
       </div>
 
-      <div class="ext-card tool-form" style="margin-top: 2rem;">
+      <div class="ext-card tool-form mt-8">
         <h3>Add/Edit Tool</h3>
         <div class="ext-form-field">
           <label for="toolName" class="ext-form-label">Tool Name</label>
@@ -430,11 +413,11 @@
         </div>
       </div>
 
-      <div class="ext-card import-export" style="margin-top: 1rem;">
+      <div class="ext-card import-export mt-4">
         <h3>Import/Export Tools</h3>
         <div class="button-group">
           <button type="button" id="exportTools" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Tools</button>
-          <input type="file" id="importToolsFile" accept=".json" style="display: none;">
+          <input type="file" id="importToolsFile" accept=".json" class="hidden">
           <button type="button" id="importTools" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Tools</button>
         </div>
       </div>
@@ -487,7 +470,7 @@
   </footer>
 
   <!-- Status div retained for compatibility but hidden; all notifications now use the unified toast system -->
-  <div id="status" class="status" style="display:none;"></div>
+  <div id="status" class="status hidden"></div>
 
   <script src="collapsible.js"></script>
   <script src="input-controls.js"></script>

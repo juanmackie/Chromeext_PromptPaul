@@ -13,6 +13,17 @@
 
 const fs = require("fs");
 const path = require("path");
+const { TextEncoder, TextDecoder } = require("util");
+
+// Polyfill global TextEncoder/TextDecoder for environments (like Jest + jsdom)
+// where they may not be defined yet. This must run before requiring jsdom.
+if (typeof global.TextEncoder === "undefined") {
+  global.TextEncoder = TextEncoder;
+}
+if (typeof global.TextDecoder === "undefined") {
+  global.TextDecoder = TextDecoder;
+}
+
 const { JSDOM } = require("jsdom");
 
 function runContentScriptWith(html) {
@@ -124,5 +135,195 @@ describe("content_script_unified extractContent behavior", () => {
     expect(evaluated.success).toBe(true);
     expect(evaluated.data === "" || evaluated.data.length < 50).toBe(true);
     expect(evaluated.error).toMatch(/no extractable textual content|only navigation or UI elements/i);
+  });
+
+  describe("DynamicContentDetector behavior", () => {
+    test("DynamicContentDetector is defined in IIFE scope and accessible to lifecycle hooks", () => {
+      const html = `
+        <!doctype html>
+        <html>
+          <head><title>Test</title></head>
+          <body><main>Content</main></body>
+        </html>
+      `;
+
+      const { dom } = runContentScriptWith(html);
+      
+      // Verify that DynamicContentDetector exists in the global scope
+      expect(typeof dom.window.DynamicContentDetector).toBe('object');
+      expect(typeof dom.window.DynamicContentDetector.initialize).toBe('function');
+      expect(typeof dom.window.DynamicContentDetector.disconnect).toBe('function');
+    });
+
+    test("DynamicContentDetector gracefully handles missing document.body", () => {
+      const html = `
+        <!doctype html>
+        <html>
+          <head><title>Test</title></head>
+        </html>
+      `;
+
+      const { window } = new JSDOM(html, {
+        url: "https://example.com/no-body",
+        runScripts: "outside-only"
+      });
+
+      window.chrome = {
+        runtime: {
+          sendMessage: jest.fn()
+        }
+      };
+
+      // Mock MutationObserver to test defensive checks
+      window.MutationObserver = jest.fn().mockImplementation(() => ({
+        observe: jest.fn(),
+        disconnect: jest.fn()
+      }));
+
+      const wrapped = `(function(){ ${fs.readFileSync(
+        path.resolve(__dirname, "../../../content_script_unified.js"),
+        "utf8"
+      )} })()`;
+      
+      // Should not throw error when body is missing
+      expect(() => {
+        window.eval(wrapped);
+      }).not.toThrow();
+    });
+
+    test("DynamicContentDetector handles missing MutationObserver gracefully", () => {
+      const html = `
+        <!doctype html>
+        <html>
+          <head><title>Test</title></head>
+          <body><main>Content</main></body>
+        </html>
+      `;
+
+      const { window } = new JSDOM(html, {
+        url: "https://example.com/no-observer",
+        runScripts: "outside-only"
+      });
+
+      window.chrome = {
+        runtime: {
+          sendMessage: jest.fn()
+        }
+      };
+
+      // Remove MutationObserver to test fallback
+      delete window.MutationObserver;
+
+      const wrapped = `(function(){ ${fs.readFileSync(
+        path.resolve(__dirname, "../../../content_script_unified.js"),
+        "utf8"
+      )} )()`;
+      
+      // Should not throw error when MutationObserver is unavailable
+      expect(() => {
+        window.eval(wrapped);
+      }).not.toThrow();
+    });
+
+    test("DynamicContentDetector lifecycle hooks execute without ReferenceError", () => {
+      const html = `
+        <!doctype html>
+        <html>
+          <head><title>Test</title></head>
+          <body><main>Content</main></body>
+        </html>
+      `;
+
+      const { window } = new JSDOM(html, {
+        url: "https://example.com/lifecycle",
+        runScripts: "outside-only"
+      });
+
+      window.chrome = {
+        runtime: {
+          sendMessage: jest.fn()
+        }
+      };
+
+      // Mock MutationObserver
+      window.MutationObserver = jest.fn().mockImplementation(() => ({
+        observe: jest.fn(),
+        disconnect: jest.fn()
+      }));
+
+      const wrapped = `(function(){ ${fs.readFileSync(
+        path.resolve(__dirname, "../../../content_script_unified.js"),
+        "utf8"
+      )} )()`;
+      
+      window.eval(wrapped);
+
+      // Simulate visibility change events
+      expect(() => {
+        window.document.dispatchEvent(new window.Event('visibilitychange'));
+      }).not.toThrow();
+
+      // Simulate beforeunload event
+      expect(() => {
+        window.document.dispatchEvent(new window.Event('beforeunload'));
+      }).not.toThrow();
+    });
+
+    test("ProgressiveDOMProcessor is defined and accessible", () => {
+      const html = `
+        <!doctype html>
+        <html>
+          <head><title>Test</title></head>
+          <body><main>Content</main></body>
+        </html>
+      `;
+
+      const { dom } = runContentScriptWith(html);
+      
+      // Verify that ProgressiveDOMProcessor exists in the global scope
+      expect(typeof dom.window.ProgressiveDOMProcessor).toBe('object');
+      expect(typeof dom.window.ProgressiveDOMProcessor.waitForStableDOM).toBe('function');
+      expect(typeof dom.window.ProgressiveDOMProcessor.processWithTimeout).toBe('function');
+    });
+
+    test("DynamicContentDetector disconnect method handles missing observer safely", () => {
+      const html = `
+        <!doctype html>
+        <html>
+          <head><title>Test</title></head>
+          <body><main>Content</main></body>
+        </html>
+      `;
+
+      const { window } = new JSDOM(html, {
+        url: "https://example.com/disconnect-test",
+        runScripts: "outside-only"
+      });
+
+      window.chrome = {
+        runtime: {
+          sendMessage: jest.fn()
+        }
+      };
+
+      // Mock MutationObserver
+      const mockDisconnect = jest.fn();
+      window.MutationObserver = jest.fn().mockImplementation(() => ({
+        observe: jest.fn(),
+        disconnect: mockDisconnect
+      }));
+
+      const wrapped = `(function(){ ${fs.readFileSync(
+        path.resolve(__dirname, "../../../content_script_unified.js"),
+        "utf8"
+      )} )()`;
+      
+      window.eval(wrapped);
+
+      // Call disconnect directly to test error handling
+      expect(() => {
+        window.DynamicContentDetector.disconnect();
+      }).not.toThrow();
+    });
   });
 });

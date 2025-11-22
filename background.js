@@ -8,202 +8,8 @@ Promise.all([
   errorHandler.initialize().catch(error => console.warn('Failed to initialize error handler:', error))
 ]);
 
-// Create context menus for images and other media
-chrome.runtime.onInstalled.addListener(async (details) => {
-    await wrapAsync(async () => {
-        // Track install/update event once
-        try {
-            await analytics.trackInstalled();
-        } catch (error) {
-            await errorHandler.handleError(createError('Failed to track installation', {
-                category: ErrorCategory.ANALYTICS,
-                severity: ErrorSeverity.LOW,
-                originalError: error
-            }));
-        }
+// Media context menus are now created in the main onInstalled listener below
 
-        // Create context menus with error handling
-        const menuItems = [
-            // Parent menu for images
-            { id: "imageAnalysis", title: "Analyze Image with Prompt Paul", contexts: ["image"] },
-            // Quick actions for images
-            { id: "analyzeImage", parentId: "imageAnalysis", title: "🔍 General Analysis", contexts: ["image"] },
-            { id: "summarizeImage", parentId: "imageAnalysis", title: "📝 Summarize Image", contexts: ["image"] },
-            { id: "explainImage", parentId: "imageAnalysis", title: "💡 Explain Image", contexts: ["image"] },
-            // Separator for images
-            { id: "imageSeparator", parentId: "imageAnalysis", type: "separator", contexts: ["image"] },
-            // Parent menu for videos
-            { id: "videoAnalysis", title: "Analyze Video with Prompt Paul", contexts: ["video"] },
-            { id: "analyzeVideo", parentId: "videoAnalysis", title: "🎥 General Analysis", contexts: ["video"] },
-            // Parent menu for audio
-            { id: "audioAnalysis", title: "Analyze Audio with Prompt Paul", contexts: ["audio"] },
-            { id: "analyzeAudio", parentId: "audioAnalysis", title: "🎵 General Analysis", contexts: ["audio"] }
-        ];
-
-        // Create all menu items with error handling
-        for (const item of menuItems) {
-            try {
-                await handleChromeApiCall((callback) => chrome.contextMenus.create(item, callback));
-            } catch (error) {
-                await errorHandler.handleError(createError(`Failed to create context menu: ${item.title}`, {
-                    category: ErrorCategory.CHROME_API,
-                    severity: ErrorSeverity.MEDIUM,
-                    context: { menuItem: item },
-                    originalError: error
-                }));
-            }
-        }
-
-        // Load and add custom instructions for images
-        try {
-            await updateImageCustomInstructions();
-        } catch (error) {
-            await errorHandler.handleError(createError('Failed to update image custom instructions', {
-                category: ErrorCategory.CONFIGURATION,
-                severity: ErrorSeverity.MEDIUM,
-                originalError: error
-            }));
-        }
-    }, {
-        category: ErrorCategory.SYSTEM,
-        userMessage: 'Failed to initialize extension context menus'
-    });
-});
-
-// Handle context menu clicks
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    await wrapAsync(async () => {
-        if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" ||
-            info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" ||
-            info.menuItemId.startsWith("imageCustom_")) {
-
-            // Open side panel FIRST (must be in direct response to user gesture)
-            try {
-                await handleChromeApiCall((callback) => chrome.sidePanel.open({ tabId: tab.id }, callback));
-            } catch (error) {
-                throw createError('Failed to open side panel', {
-                    category: ErrorCategory.CHROME_API,
-                    severity: ErrorSeverity.HIGH,
-                    retryable: true,
-                    originalError: error
-                });
-            }
-
-            // Get the media URL and determine action type
-            const mediaUrl = info.srcUrl;
-            if (!mediaUrl) {
-                throw createError('No media URL found', {
-                    category: ErrorCategory.USER_INPUT,
-                    severity: ErrorSeverity.MEDIUM,
-                    context: { menuItemId: info.menuItemId }
-                });
-            }
-
-            let mediaType, actionType, instructionId;
-
-            if (info.menuItemId.startsWith("imageCustom_")) {
-                mediaType = "image";
-                actionType = "custom";
-                instructionId = info.menuItemId.replace("imageCustom_", "");
-            } else if (info.menuItemId === "summarizeImage") {
-                mediaType = "image";
-                actionType = "summarize";
-            } else if (info.menuItemId === "explainImage") {
-                mediaType = "image";
-                actionType = "explain";
-            } else {
-                // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
-                mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
-                actionType = "analyze";
-            }
-
-            // Show loading message immediately
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setMediaForAnalysis',
-                    mediaData: {
-                        type: mediaType,
-                        base64: null, // Will be set later
-                        url: mediaUrl,
-                        mimeType: getMimeTypeFromUrl(mediaUrl),
-                        loading: true
-                    },
-                    tabId: tab.id
-                });
-            } catch (error) {
-                console.log('Side panel not ready yet, will send message after image loads');
-            }
-
-            // Convert media to base64 for API (async operation)
-            const base64Data = await fetchMediaAsBase64(mediaUrl);
-            const mimeType = getMimeTypeFromUrl(mediaUrl);
-            console.log('Sending media data:', {
-                type: mediaType,
-                url: mediaUrl,
-                mimeType: mimeType,
-                base64Length: base64Data.length
-            });
-
-            // Send the actual media data (with retry logic for side panel)
-            const sendMediaData = () => {
-                try {
-                    chrome.runtime.sendMessage({
-                        action: 'setMediaForAnalysis',
-                        mediaData: {
-                            type: mediaType,
-                            base64: base64Data,
-                            url: mediaUrl,
-                            mimeType: mimeType,
-                            loading: false,
-                            actionType: actionType,
-                            instructionId: instructionId
-                        },
-                        tabId: tab.id
-                    });
-                } catch (error) {
-                    console.log('Retrying message send in 500ms...');
-                    setTimeout(sendMediaData, 500);
-                }
-            };
-
-            // Give side panel time to load if it was just opened
-            setTimeout(sendMediaData, 1000);
-        }
-    }, {
-        category: ErrorCategory.TOOL_EXECUTION,
-        userMessage: 'Failed to process media for analysis',
-        retryable: true,
-        retryCallback: async () => {
-            // Retry the media processing with exponential backoff
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            return chrome.contextMenus.onClicked.addListener({ ...arguments[0] });
-        }
-    }).catch(async error => {
-        // Handle media fetching errors specifically
-        if (error.message.includes('fetchMediaAsBase64') || error.category === ErrorCategory.NETWORK) {
-            await errorHandler.handleError(error);
-
-            // Send error message to side panel
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setMediaForAnalysis',
-                    mediaData: {
-                        type: mediaType || 'unknown',
-                        base64: null,
-                        url: info.srcUrl,
-                        mimeType: getMimeTypeFromUrl(info.srcUrl),
-                        error: error.userMessage || error.message
-                    },
-                    tabId: tab.id
-                });
-            } catch (messageError) {
-                console.warn('Failed to send error message to side panel:', messageError);
-            }
-        } else {
-            await errorHandler.handleError(error);
-        }
-    });
-});
 
 // Helper function to fetch media and convert to base64
 async function fetchMediaAsBase64(url) {
@@ -280,6 +86,289 @@ async function fetchMediaAsBase64(url) {
 // Track existing image custom instruction menu items
 let existingImageCustomMenuItems = new Set();
 
+// Adaptive memory cleanup utility with intelligent thresholds
+const MemoryManager = {
+    // Track all collections for cleanup
+    collections: new Map(),
+    memoryHistory: [],
+    maxHistorySize: 10,
+
+    // Memory pressure indicators
+    thresholds: {
+        low: 25,      // Start gentle cleanup at 25 items
+        medium: 50,   // Aggressive cleanup at 50 items
+        high: 100,    // Force cleanup at 100 items
+        critical: 200 // Emergency cleanup at 200 items
+    },
+
+    // Register a collection for monitoring
+    register(name, collection) {
+        this.collections.set(name, {
+            collection,
+            type: collection.constructor.name,
+            size: () => collection.size || 0,
+            clear: () => {
+                if (typeof collection.clear === 'function') {
+                    collection.clear();
+                }
+            },
+            // Track individual collection stats
+            stats: {
+                lastCleanup: Date.now(),
+                cleanupCount: 0,
+                maxSize: 0,
+                avgSize: 0
+            }
+        });
+    },
+
+    // Calculate adaptive cleanup threshold based on memory pressure
+    calculateThreshold(collectionName, currentSize, collectionStats) {
+        const timeSinceLastCleanup = Date.now() - collectionStats.lastCleanup;
+        const growthRate = (currentSize - collectionStats.avgSize) / Math.max(1, timeSinceLastCleanup / 60000); // items per minute
+
+        // Adaptive threshold based on growth rate and time since cleanup
+        let baseThreshold = this.thresholds.medium;
+
+        if (growthRate > 10) { // Fast growing
+            baseThreshold = this.thresholds.low;
+        } else if (growthRate < 1 && timeSinceLastCleanup > 300000) { // Slow growing, old
+            baseThreshold = this.thresholds.high;
+        }
+
+        return Math.min(baseThreshold, Math.max(this.thresholds.low, collectionStats.maxSize * 0.8));
+    },
+
+    // Intelligent cleanup with adaptive thresholds
+    cleanup() {
+        const totalSize = this.getTotalSize();
+        const memoryPressure = this.assessMemoryPressure(totalSize);
+
+        console.log(`MemoryManager: Starting cleanup (total: ${totalSize}, pressure: ${memoryPressure})`);
+
+        for (const [name, { collection, size, clear, stats }] of this.collections) {
+            const currentSize = size();
+
+            // Update stats
+            stats.maxSize = Math.max(stats.maxSize, currentSize);
+            stats.avgSize = (stats.avgSize * stats.cleanupCount + currentSize) / (stats.cleanupCount + 1);
+
+            // Calculate adaptive threshold
+            const threshold = this.calculateThreshold(name, currentSize, stats);
+
+            if (currentSize > threshold) {
+                console.log(`MemoryManager: Cleaning up ${name} (${currentSize} items, threshold: ${threshold}, pressure: ${memoryPressure})`);
+
+                // Different cleanup strategies based on pressure
+                if (memoryPressure === 'critical') {
+                    // Emergency: clear everything
+                    clear();
+                } else if (memoryPressure === 'high') {
+                    // Aggressive: clear 75% of items
+                    this.partialClear(collection, 0.75);
+                } else {
+                    // Normal: clear 50% or keep threshold amount
+                    this.adaptiveClear(collection, threshold);
+                }
+
+                stats.lastCleanup = Date.now();
+                stats.cleanupCount++;
+            }
+        }
+
+        this.updateMemoryHistory(totalSize);
+    },
+
+    // Get total size across all collections
+    getTotalSize() {
+        let total = 0;
+        for (const { size } of this.collections.values()) {
+            total += size();
+        }
+        return total;
+    },
+
+    // Assess memory pressure level
+    assessMemoryPressure(totalSize) {
+        if (totalSize > this.thresholds.critical) return 'critical';
+        if (totalSize > this.thresholds.high) return 'high';
+        if (totalSize > this.thresholds.medium) return 'medium';
+        if (totalSize > this.thresholds.low) return 'low';
+        return 'normal';
+    },
+
+    // Update memory usage history for trend analysis
+    updateMemoryHistory(totalSize) {
+        this.memoryHistory.push({
+            size: totalSize,
+            timestamp: Date.now()
+        });
+
+        if (this.memoryHistory.length > this.maxHistorySize) {
+            this.memoryHistory.shift();
+        }
+    },
+
+    // Partial clear for aggressive cleanup
+    partialClear(collection, percentage) {
+        if (collection instanceof Set) {
+            const items = Array.from(collection);
+            const keepCount = Math.floor(items.length * (1 - percentage));
+            collection.clear();
+            items.slice(0, keepCount).forEach(item => collection.add(item));
+        } else if (collection instanceof Map) {
+            const items = Array.from(collection.entries());
+            const keepCount = Math.floor(items.length * (1 - percentage));
+            collection.clear();
+            items.slice(0, keepCount).forEach(([key, value]) => collection.set(key, value));
+        }
+    },
+
+    // Adaptive clear to maintain threshold
+    adaptiveClear(collection, threshold) {
+        const currentSize = collection.size;
+        if (currentSize <= threshold) return;
+
+        if (collection instanceof Set) {
+            const items = Array.from(collection);
+            collection.clear();
+            items.slice(-threshold).forEach(item => collection.add(item)); // Keep most recent items
+        } else if (collection instanceof Map) {
+            const items = Array.from(collection.entries());
+            collection.clear();
+            items.slice(-threshold).forEach(([key, value]) => collection.set(key, value)); // Keep most recent items
+        }
+    },
+
+    // Get comprehensive memory report
+    getReport() {
+        const totalSize = this.getTotalSize();
+        const memoryPressure = this.assessMemoryPressure(totalSize);
+
+        const report = {
+            totalSize,
+            memoryPressure,
+            collections: {},
+            trends: this.getTrends(),
+            thresholds: this.thresholds
+        };
+
+        for (const [name, { type, size, stats }] of this.collections) {
+            report.collections[name] = {
+                type,
+                size: size(),
+                maxHistoricalSize: stats.maxSize,
+                averageSize: Math.round(stats.avgSize),
+                cleanupCount: stats.cleanupCount,
+                lastCleanup: new Date(stats.lastCleanup).toISOString()
+            };
+        }
+
+        return report;
+    },
+
+    // Analyze memory usage trends
+    getTrends() {
+        if (this.memoryHistory.length < 2) return null;
+
+        const recent = this.memoryHistory.slice(-5);
+        const trend = recent[recent.length - 1].size - recent[0].size;
+        const timeSpan = recent[recent.length - 1].timestamp - recent[0].timestamp;
+        const rate = trend / (timeSpan / 60000); // items per minute
+
+        return {
+            direction: trend > 0 ? 'increasing' : trend < 0 ? 'decreasing' : 'stable',
+            rate: Math.round(rate * 100) / 100,
+            timeSpan: Math.round(timeSpan / 1000) // seconds
+        };
+    }
+};
+
+// Register existing collections
+MemoryManager.register('existingImageCustomMenuItems', existingImageCustomMenuItems);
+
+// Initialize chrome.alarms for service worker-compatible memory cleanup
+function initializeMemoryCleanupAlarm() {
+    // Clear any existing alarm first
+    chrome.alarms.clear('memoryCleanup', () => {
+        // Create new periodic alarm for memory cleanup
+        chrome.alarms.create('memoryCleanup', {
+            delayInMinutes: 5,
+            periodInMinutes: 5
+        });
+        console.log('Background: Memory cleanup alarm initialized');
+    });
+}
+
+// Set up alarm listener for memory cleanup
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'memoryCleanup') {
+        try {
+            console.log('Background: Running scheduled memory cleanup');
+            MemoryManager.cleanup();
+        } catch (error) {
+            console.error('MemoryManager: Error during automatic cleanup:', error);
+        }
+    }
+});
+
+// Initialize on service worker startup
+initializeMemoryCleanupAlarm();
+
+// Enhanced cleanup function with memory management
+function enhancedCollectionCleanup(collection, collectionName) {
+    const originalSize = collection.size;
+    collection.clear();
+    console.log(`MemoryManager: Cleaned ${collectionName} (${originalSize} items)`);
+}
+
+// Safe JSON parsing utility with comprehensive error handling
+function safeJsonParse(jsonString, context = 'unknown', defaultValue = null) {
+    if (typeof jsonString !== 'string') {
+        console.warn(`JSON Parse Warning [${context}]: Input is not a string, got ${typeof jsonString}`);
+        return defaultValue;
+    }
+
+    if (!jsonString.trim()) {
+        console.warn(`JSON Parse Warning [${context}]: Empty string provided`);
+        return defaultValue;
+    }
+
+    try {
+        const result = JSON.parse(jsonString);
+
+        // Validate that we got a proper object/array
+        if (result === null || result === undefined) {
+            console.warn(`JSON Parse Warning [${context}]: Parse resulted in null/undefined`);
+            return defaultValue;
+        }
+
+        return result;
+    } catch (error) {
+        console.error(`JSON Parse Error [${context}]:`, {
+            error: error.message,
+            input: jsonString.substring(0, 200) + (jsonString.length > 200 ? '...' : ''),
+            stack: error.stack
+        });
+        return defaultValue;
+    }
+}
+
+// Validate JSON structure for tool parameters
+function validateToolParameters(parameters, toolName) {
+    if (!parameters || typeof parameters !== 'object') {
+        console.warn(`Invalid parameters for tool ${toolName}:`, parameters);
+        return {};
+    }
+
+    if (parameters.type !== 'object') {
+        console.warn(`Tool ${toolName} parameters should be type 'object', got:`, parameters.type);
+        return { type: 'object', properties: {} };
+    }
+
+    return parameters;
+}
+
 // Helper function to update image custom instructions in context menu
 async function updateImageCustomInstructions() {
     return await wrapAsync(async () => {
@@ -292,7 +381,7 @@ async function updateImageCustomInstructions() {
                 console.debug(`Menu item ${menuItemId} not found for removal:`, error.message);
             }
         }
-        existingImageCustomMenuItems.clear();
+        enhancedCollectionCleanup(existingImageCustomMenuItems, 'existingImageCustomMenuItems');
 
         // Get custom instructions from storage
         const { instructions } = await handleChromeApiCall((callback) =>
@@ -395,12 +484,103 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 
 // Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  // Skip media analysis menu items - they're handled by the new multimodal handler above
-  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
-      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
-      info.menuItemId.startsWith("imageCustom_") || 
-      info.menuItemId === "imageAnalysis" || info.menuItemId === "videoAnalysis" || info.menuItemId === "audioAnalysis") {
-    return; // Let the new handler above handle these
+  // Handle media analysis menu items (images, videos, audio)
+  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" ||
+      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" ||
+      info.menuItemId.startsWith("imageCustom_")) {
+
+    // Open side panel FIRST (must be in direct response to user gesture)
+    try {
+      await handleChromeApiCall((callback) => chrome.sidePanel.open({ tabId: tab.id }, callback));
+    } catch (error) {
+      throw createError('Failed to open side panel', {
+        category: ErrorCategory.CHROME_API,
+        severity: ErrorSeverity.HIGH,
+        retryable: true,
+        originalError: error
+      });
+    }
+
+    // Get media URL and determine action type
+    const mediaUrl = info.srcUrl;
+    if (!mediaUrl) {
+      throw createError('No media URL found', {
+        category: ErrorCategory.USER_INPUT,
+        severity: ErrorSeverity.MEDIUM,
+        context: { menuItemId: info.menuItemId }
+      });
+    }
+
+    let mediaType, actionType, instructionId;
+
+    if (info.menuItemId.startsWith("imageCustom_")) {
+      mediaType = "image";
+      actionType = "custom";
+      instructionId = info.menuItemId.replace("imageCustom_", "");
+    } else if (info.menuItemId === "summarizeImage") {
+      mediaType = "image";
+      actionType = "summarize";
+    } else if (info.menuItemId === "explainImage") {
+      mediaType = "image";
+      actionType = "explain";
+    } else {
+      // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
+      mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
+      actionType = "analyze";
+    }
+
+    // Show loading message immediately
+    try {
+      chrome.runtime.sendMessage({
+        action: 'setMediaForAnalysis',
+        mediaData: {
+          type: mediaType,
+          base64: null, // Will be set later
+          url: mediaUrl,
+          mimeType: getMimeTypeFromUrl(mediaUrl),
+          loading: true
+        },
+        tabId: tab.id
+      });
+    } catch (error) {
+      console.log('Side panel not ready yet, will send message after image loads');
+    }
+
+    // Convert media to base64 for API (async operation)
+    const base64Data = await fetchMediaAsBase64(mediaUrl);
+    const mimeType = getMimeTypeFromUrl(mediaUrl);
+    console.log('Sending media data:', {
+      type: mediaType,
+      url: mediaUrl,
+      mimeType: mimeType,
+      base64Length: base64Data.length
+    });
+
+    // Send actual media data (with retry logic for side panel)
+    const sendMediaData = () => {
+      try {
+        chrome.runtime.sendMessage({
+          action: 'setMediaForAnalysis',
+          mediaData: {
+            type: mediaType,
+            base64: base64Data,
+            url: mediaUrl,
+            mimeType: mimeType,
+            loading: false,
+            actionType: actionType,
+            instructionId: instructionId
+          },
+          tabId: tab.id
+        });
+      } catch (error) {
+        console.log('Retrying message send in 500ms...');
+        setTimeout(sendMediaData, 500);
+      }
+    };
+
+    // Give side panel time to load if it was just opened
+    setTimeout(sendMediaData, 1000);
+    return; // Media handling complete
   }
   
   console.log("Context Menu Clicked:", info.menuItemId, "Initial selectionText:", info.selectionText);
@@ -412,53 +592,53 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!originalSelectionText) {
     console.log("No text selected, attempting to fetch tab content via 'getTabContent' message...");
     try {
-        // The contextMenus.onClicked listener IS async (line 23).
-        const tabDataResponse = await new Promise((resolve, reject) => {
-            const messageTimeout = setTimeout(() => {
-                reject(new Error("Timeout waiting for getTabContent response"));
-            }, 5000); // 5 second timeout for the message response
+      // The contextMenus.onClicked listener IS async (line 23).
+      const tabDataResponse = await new Promise((resolve, reject) => {
+        const messageTimeout = setTimeout(() => {
+          reject(new Error("Timeout waiting for getTabContent response"));
+        }, 5000); // 5 second timeout for the message response
 
-            chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
-                clearTimeout(messageTimeout);
-                if (chrome.runtime.lastError) {
-                    console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
-                    return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
-                }
-                if (response) {
-                    resolve(response); // Resolve with the full response object
-                } else {
-                    // This case should ideally be caught by chrome.runtime.lastError if sendResponse is not called
-                    reject(new Error("Failed to get tab content: No response from getTabContent handler."));
-                }
-            });
+        chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
+          clearTimeout(messageTimeout);
+          if (chrome.runtime.lastError) {
+            console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
+            return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
+          }
+          if (response) {
+            resolve(response); // Resolve with the full response object
+          } else {
+            // This case should ideally be caught by chrome.runtime.lastError if sendResponse is not called
+            reject(new Error("Failed to get tab content: No response from getTabContent handler."));
+          }
         });
+      });
 
-        // Check for both content and data properties to handle different response formats
-        if (tabDataResponse && tabDataResponse.success) {
-            if (tabDataResponse.content) {
-                promptContent = tabDataResponse.content;
-                console.log("Background: Tab content fetched via 'getTabContent' message (content property), length:", promptContent.length);
-            } else if (tabDataResponse.data) {
-                promptContent = tabDataResponse.data;
-                console.log("Background: Tab content fetched via 'getTabContent' message (data property), length:", promptContent.length);
-            } else {
-                console.error("Background: Tab content response successful but missing content/data property. Response:", tabDataResponse);
-                promptContent = originalSelectionText; // Fallback
-            }
+      // Check for both content and data properties to handle different response formats
+      if (tabDataResponse && tabDataResponse.success) {
+        if (tabDataResponse.content) {
+          promptContent = tabDataResponse.content;
+          console.log("Background: Tab content fetched via 'getTabContent' message (content property), length:", promptContent.length);
+        } else if (tabDataResponse.data) {
+          promptContent = tabDataResponse.data;
+          console.log("Background: Tab content fetched via 'getTabContent' message (data property), length:", promptContent.length);
         } else {
-            console.error("Background: Failed to get tab content via 'getTabContent' message. Response:", tabDataResponse);
-            promptContent = originalSelectionText; // Fallback to empty or original selection
+          console.error("Background: Tab content response successful but missing content/data property. Response:", tabDataResponse);
+          promptContent = originalSelectionText; // Fallback
         }
+      } else {
+        console.error("Background: Failed to get tab content via 'getTabContent' message. Response:", tabDataResponse);
+        promptContent = originalSelectionText; // Fallback to empty or original selection
+      }
     } catch (error) {
-        console.error("Background: Exception while fetching tab content via 'getTabContent' message:", error.message);
-        promptContent = originalSelectionText; // Fallback
+      console.error("Background: Exception while fetching tab content via 'getTabContent' message:", error.message);
+      promptContent = originalSelectionText; // Fallback
     }
   }
   
   // Handle image context (only for non-multimodal menu items)
   // This should be applied *after* potentially fetching tab content if selection was empty
   // Skip this for our new multimodal menu items since they're handled separately
-  if (info.mediaType === 'image' && info.srcUrl && 
+  if (info.mediaType === 'image' && info.srcUrl &&
       !info.menuItemId.includes("Image") && !info.menuItemId.includes("Video") && !info.menuItemId.includes("Audio")) {
     // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
     promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
@@ -486,7 +666,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   if (info.menuItemId === 'oneoff_instruction') {
     console.log("Handling oneoff_instruction. Sending setSelectedText message.");
-    setTimeout(() => sendMessage('setSelectedText'), 100); // sendMessage already logs errors
+    setTimeout(() => sendMessage('setSelectedText', { fromStartChat: false }), 100); // sendMessage already logs errors
     return;
   }
 
@@ -550,6 +730,33 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   console.log("Calling makeLlmApiRequest for menuItemId:", info.menuItemId);
+  
+  // DEBUG: Add comprehensive tab ID validation
+  console.log('[DEBUG CONTEXT_MENU] Tab details:', {
+    tabId: tab.id,
+    tabUrl: tab.url,
+    tabTitle: tab.title,
+    isValidTabId: typeof tab.id === 'number' && tab.id >= 0,
+    tabIdType: typeof tab.id,
+    tabIdValue: tab.id
+  });
+  
+  // Validate tab ID before proceeding
+  if (typeof tab.id !== 'number' || tab.id < 0) {
+    const errorMsg = `Invalid tab ID detected: ${tab.id} (type: ${typeof tab.id}) for URL: ${tab.url}`;
+    console.error('[DEBUG CONTEXT_MENU]', errorMsg);
+    
+    // Show user-friendly error
+    chrome.action.setBadgeText({ text: 'ERR' });
+    chrome.action.setBadgeBackgroundColor({ color: '#ff0000' });
+    
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 5000);
+    
+    throw new Error(errorMsg);
+  }
+  
   await makeLlmApiRequest(promptContent, tab.id);
 });
 
@@ -727,6 +934,42 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+    // DEBUG: Comprehensive tab ID validation
+    console.log('[DEBUG BACKGROUND_MAKE_LLM] makeLlmApiRequest called with:', {
+        promptLength: promptContent?.length,
+        tabId: tabId,
+        tabIdType: typeof tabId,
+        tabIdValid: tabId === null || (typeof tabId === 'number' && tabId >= 0),
+        isStartChat: isStartChat,
+        customInstructionToolChoice: customInstructionToolChoice
+    });
+    
+    // Defensive tab ID validation
+    if (tabId !== null && (typeof tabId !== 'number' || tabId < 0)) {
+        const errorMsg = `Invalid tabId in makeLlmApiRequest: ${tabId} (type: ${typeof tabId})`;
+        console.error('[DEBUG BACKGROUND_MAKE_LLM]', errorMsg);
+        
+        // Show error badge and return early
+        chrome.action.setBadgeText({ text: 'ERR' });
+        chrome.action.setBadgeBackgroundColor({ color: '#ff0000' });
+        
+        setTimeout(() => {
+            chrome.action.setBadgeText({ text: '' });
+        }, 3000);
+        
+        // Send error response to chat if tabId was provided
+        if (typeof tabId === 'number' && tabId >= 0) {
+            chrome.runtime.sendMessage({
+                action: 'displayErrorInChat',
+                errorMessage: `Invalid tab context: ${errorMsg}`,
+                tabId: tabId,
+                prompt: promptContent
+            }).catch(e => console.error("Background: Error sending tabId error message:", e));
+        }
+        
+        return;
+    }
+    
     let config, tools, enableStreaming;
     try {
         // Step 1: Validate configuration and get tool definitions
@@ -757,12 +1000,15 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
         const formattedTools = tools.map(tool => {
             try {
+                const parsedParameters = safeJsonParse(tool.parameters || '{}', `tool-definition-${tool.name}`, {});
+                const validatedParameters = validateToolParameters(parsedParameters, tool.name);
+
                 return {
                     type: 'function',
                     function: {
                         name: tool.name,
                         description: tool.description,
-                        parameters: JSON.parse(tool.parameters || '{}')
+                        parameters: validatedParameters
                     }
                 };
             } catch (e) {
@@ -783,9 +1029,12 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
 
         const formattedToolsForRequest = allAvailableToolsRaw.map(tool => {
             try {
+                const parsedParameters = safeJsonParse(tool.parameters || '{}', `tool-definition-${tool.name}`, {});
+                const validatedParameters = validateToolParameters(parsedParameters, tool.name);
+
                 return {
                     type: 'function',
-                    function: { name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters || '{}') }
+                    function: { name: tool.name, description: tool.description, parameters: validatedParameters }
                 };
             } catch (e) {
                 console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e); // Context-specific error
@@ -908,31 +1157,52 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                 prompt: promptContent
             }).catch(error => console.log(`Error sending streamApiStart synchronously: ${error.message}, tabId: ${tabId}`));
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    console.log("Background: Stream finished.");
-                    chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent })
-                        .catch(error => console.log(`Error sending streamApiEnd: ${error.message}, tabId: ${tabId}`));
-                    break;
-                }
+            // Add timeout to prevent infinite loops
+            const streamTimeout = setTimeout(() => {
+                console.error("Background: Stream timeout reached, forcing termination");
+                reader.cancel();
+                chrome.runtime.sendMessage({ action: 'streamError', tabId: tabId, error: 'Stream timeout' })
+                    .catch(error => console.log(`Error sending streamError: ${error.message}, tabId: ${tabId}`));
+            }, 120000); // 2 minute timeout
 
-                buffer += decoder.decode(value, { stream: true });
-                console.log("Background: Stream raw chunk received:", buffer);
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        console.log("Background: Stream finished.");
+                        chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent })
+                            .catch(error => console.log(`Error sending streamApiEnd: ${error.message}, tabId: ${tabId}`));
+                        break;
+                    }
 
-                // Process buffer line by line for SSE
-                let lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep the last partial line in the buffer
+                    buffer += decoder.decode(value, { stream: true });
+                    console.log("Background: Stream raw chunk received:", buffer);
 
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
+                    // Process buffer line by line for SSE
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep the last partial line in the buffer
+
+                    for (const line of lines) {
+                        // Only process Server-Sent Events lines
+                        if (!line.startsWith('data:')) {
+                            continue;
+                        }
+
                         let currentPayload = line.substring(5).trim(); // Remove the initial "data:" prefix and trim
 
-                        // Aggressively strip any further "data:" prefixes
-                        while (currentPayload.startsWith('data:')) {
+                        // Add safety limit to prevent infinite loops in nested data: prefix stripping
+                        let stripCount = 0;
+                        const maxStripAttempts = 10;
+                        while (currentPayload.startsWith('data:') && stripCount < maxStripAttempts) {
                             console.warn("Background: Stripping nested 'data:' prefix. Current payload before strip:", currentPayload);
                             currentPayload = currentPayload.substring(5).trim();
                             console.warn("Background: Current payload after strip:", currentPayload);
+                            stripCount++;
+                        }
+
+                        if (stripCount >= maxStripAttempts) {
+                            console.error("Background: Too many nested 'data:' prefixes, skipping payload to prevent infinite loop");
+                            continue;
                         }
 
                         if (currentPayload === '[DONE]') {
@@ -945,40 +1215,52 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                             console.log('Background SSE Processing: Original line (after buffer split):', line);
                             console.log('Background SSE Processing: Final string to be parsed (currentPayload):', currentPayload);
                             try {
-                                const parsed = JSON.parse(currentPayload);
+                                const parsed = safeJsonParse(currentPayload, 'streaming-api-response', null);
+                                if (parsed === null) {
+                                    console.warn('Background SSE Processing: Failed to parse JSON payload safely:', currentPayload);
+                                    continue;
+                                }
 
-                                    // Standard OpenAI-style streaming
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-                                        const contentChunk = parsed.choices[0].delta.content;
-                                        const toolCallChunk = parsed.choices[0].delta.tool_calls;
+                                // Standard OpenAI-style streaming
+                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                    const contentChunk = parsed.choices[0].delta.content;
+                                    const toolCallChunk = parsed.choices[0].delta.tool_calls;
 
-                                        if (contentChunk) {
-                                            chrome.runtime.sendMessage({
-                                                action: 'streamApiResponseChunk',
-                                                chunk: contentChunk,
-                                                tabId: tabId,
-                                                prompt: promptContent
-                                            }).catch(error => console.log(`Error sending streamApiResponseChunk: ${error.message}, tabId: ${tabId}`));
-                                        }
-
-                                        if (toolCallChunk) {
-                                            console.log("Background: Received OpenAI style tool_call delta (streaming):", toolCallChunk);
-                                            chrome.runtime.sendMessage({
-                                                action: 'streamApiToolCallChunk', // This tells chat.js to expect OpenAI tool_call
-                                                toolCallChunk: toolCallChunk,
-                                                tabId: tabId,
-                                                prompt: promptContent
-                                            }).catch(error => console.log(`Error sending streamApiToolCallChunk: ${error.message}, tabId: ${tabId}`));
-                                        }
+                                    if (contentChunk) {
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiResponseChunk',
+                                            chunk: contentChunk,
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        }).catch(error => console.log(`Error sending streamApiResponseChunk: ${error.message}, tabId: ${tabId}`));
                                     }
+
+                                    if (toolCallChunk) {
+                                        console.log("Background: Received OpenAI style tool_call delta (streaming):", toolCallChunk);
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiToolCallChunk', // This tells chat.js to expect OpenAI tool_call
+                                            toolCallChunk: toolCallChunk,
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        }).catch(error => console.log(`Error sending streamApiToolCallChunk: ${error.message}, tabId: ${tabId}`));
+                                    }
+                                }
                             } catch (e) {
                                 console.error("Background: Error parsing JSON from stream:", e, "Attempted to parse:", currentPayload, "Original full line:", line);
                             }
-                        } else if (currentPayload) {
+                        } else {
+                            // currentPayload exists but doesn't look like JSON or [DONE]
                             console.log("Background: SSE line does not appear to be JSON or [DONE] after stripping prefixes. Payload:", currentPayload, "Original line:", line);
                         }
                     }
                 }
+            } catch (streamError) {
+                console.error("Background: Stream processing error:", streamError);
+                chrome.runtime.sendMessage({ action: 'streamError', tabId: tabId, error: streamError.message })
+                    .catch(error => console.log(`Error sending streamError: ${error.message}, tabId: ${tabId}`));
+                throw streamError;
+            } finally {
+                clearTimeout(streamTimeout);
             }
         } else { // Non-streaming path
             const responseData = await apiResponse.json();
@@ -1014,6 +1296,48 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
 
 // Create context menu items
 chrome.runtime.onInstalled.addListener(async () => {
+  // Create media context menus first (images, videos, audio)
+  const mediaMenuItems = [
+    // Parent menu for images
+    { id: "imageAnalysis", title: "Analyze Image with Prompt Paul", contexts: ["image"] },
+    // Quick actions for images
+    { id: "analyzeImage", parentId: "imageAnalysis", title: "🔍 General Analysis", contexts: ["image"] },
+    { id: "summarizeImage", parentId: "imageAnalysis", title: "📝 Summarize Image", contexts: ["image"] },
+    { id: "explainImage", parentId: "imageAnalysis", title: "💡 Explain Image", contexts: ["image"] },
+    // Separator for images
+    { id: "imageSeparator", parentId: "imageAnalysis", type: "separator", contexts: ["image"] },
+    // Parent menu for videos
+    { id: "videoAnalysis", title: "Analyze Video with Prompt Paul", contexts: ["video"] },
+    { id: "analyzeVideo", parentId: "videoAnalysis", title: "🎥 General Analysis", contexts: ["video"] },
+    // Parent menu for audio
+    { id: "audioAnalysis", title: "Analyze Audio with Prompt Paul", contexts: ["audio"] },
+    { id: "analyzeAudio", parentId: "audioAnalysis", title: "🎵 General Analysis", contexts: ["audio"] }
+  ];
+
+  // Create all media menu items with error handling
+  for (const item of mediaMenuItems) {
+    try {
+      await handleChromeApiCall((callback) => chrome.contextMenus.create(item, callback));
+    } catch (error) {
+      await errorHandler.handleError(createError(`Failed to create context menu: ${item.title}`, {
+        category: ErrorCategory.CHROME_API,
+        severity: ErrorSeverity.MEDIUM,
+        context: { menuItem: item },
+        originalError: error
+      }));
+    }
+  }
+
+  // Load and add custom instructions for images
+  try {
+    await updateImageCustomInstructions();
+  } catch (error) {
+    await errorHandler.handleError(createError('Failed to update image custom instructions', {
+      category: ErrorCategory.CONFIGURATION,
+      severity: ErrorSeverity.MEDIUM,
+      originalError: error
+    }));
+  }
 
   // Create one-off instruction menu item (always at top)
   chrome.contextMenus.create({
@@ -1355,21 +1679,313 @@ const toolImplementations = {
 // Track active tool executions to prevent duplicates
 const activeToolExecutions = new Set();
 
+// Register this collection for memory management
+MemoryManager.register('activeToolExecutions', activeToolExecutions);
+
+// Message tracking for race condition protection
+const MessageTracker = {
+    activeMessages: new Map(),
+    messageCounter: 0,
+
+    // Generate unique message ID
+    generateId() {
+        return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    },
+
+    // Register a new message
+    registerMessage(request, sender) {
+        const messageId = this.generateId();
+        const messageInfo = {
+            id: messageId,
+            action: request.action,
+            sender: sender.tab?.id || 'unknown',
+            timestamp: Date.now(),
+            responseSent: false
+        };
+
+        this.activeMessages.set(messageId, messageInfo);
+        return messageId;
+    },
+
+    // Mark message as responded
+    markResponded(messageId) {
+        const messageInfo = this.activeMessages.get(messageId);
+        if (messageInfo) {
+            messageInfo.responseSent = true;
+            messageInfo.responseTimestamp = Date.now();
+        }
+    },
+
+    // Check if message was responded
+    wasResponded(messageId) {
+        const messageInfo = this.activeMessages.get(messageId);
+        return messageInfo?.responseSent || false;
+    },
+
+    // Cleanup old messages (older than 30 seconds)
+    cleanup() {
+        const now = Date.now();
+        const timeout = 30000; // 30 seconds
+
+        for (const [messageId, messageInfo] of this.activeMessages) {
+            if (now - messageInfo.timestamp > timeout) {
+                this.activeMessages.delete(messageId);
+            }
+        }
+    },
+
+    // Get active message count
+    getActiveCount() {
+        return this.activeMessages.size;
+    },
+
+    // Get detailed status
+    getStatus() {
+        const now = Date.now();
+        return {
+            total: this.activeMessages.size,
+            pending: Array.from(this.activeMessages.values()).filter(m => !m.responseSent).length,
+            oldest: Math.min(...Array.from(this.activeMessages.values()).map(m => now - m.timestamp))
+        };
+    }
+};
+
+// Register message tracker for memory management
+MemoryManager.register('activeMessages', MessageTracker.activeMessages);
+
+// Event listener management for proper cleanup
+const EventListenerManager = {
+    listeners: new Map(),
+
+    // Register an event listener with tracking
+    register(eventTarget, eventType, listener, options = {}) {
+        const listenerId = `${eventTarget.constructor.name}-${eventType}-${Date.now()}`;
+
+        const trackedListener = {
+            id: listenerId,
+            original: listener,
+            wrapped: (...args) => {
+                try {
+                    return listener(...args);
+                } catch (error) {
+                    console.error(`EventListenerManager: Error in ${eventType} listener:`, error);
+                }
+            }
+        };
+
+        eventTarget.addListener(trackedListener.wrapped, options);
+
+        this.listeners.set(listenerId, {
+            eventTarget,
+            eventType,
+            listener: trackedListener.original,
+            wrapped: trackedListener.wrapped,
+            options,
+            registered: Date.now()
+        });
+
+        return listenerId;
+    },
+
+    // Remove a specific listener
+    remove(listenerId) {
+        const listenerInfo = this.listeners.get(listenerId);
+        if (listenerInfo) {
+            try {
+                listenerInfo.eventTarget.removeListener(listenerInfo.wrapped);
+                this.listeners.delete(listenerId);
+                return true;
+            } catch (error) {
+                console.error(`EventListenerManager: Error removing listener ${listenerId}:`, error);
+            }
+        }
+        return false;
+    },
+
+    // Clean up old listeners (older than 1 hour)
+    cleanup() {
+        const now = Date.now();
+        const maxAge = 60 * 60 * 1000; // 1 hour
+        let cleanedCount = 0;
+
+        for (const [listenerId, listenerInfo] of this.listeners) {
+            if (now - listenerInfo.registered > maxAge) {
+                if (this.remove(listenerId)) {
+                    cleanedCount++;
+                }
+            }
+        }
+
+        if (cleanedCount > 0) {
+            console.log(`EventListenerManager: Cleaned ${cleanedCount} old listeners`);
+        }
+    },
+
+    // Get status report
+    getStatus() {
+        const listeners = Array.from(this.listeners.entries()).map(([id, info]) => ({
+            id,
+            target: info.eventTarget.constructor.name,
+            event: info.eventType,
+            age: Date.now() - info.registered
+        }));
+
+        return {
+            total: listeners.length,
+            byTarget: listeners.reduce((acc, { target }) => {
+                acc[target] = (acc[target] || 0) + 1;
+                return acc;
+            }, {}),
+            oldestAge: Math.max(...listeners.map(l => l.age)),
+            listeners
+        };
+    },
+
+    // Remove all listeners (for service worker shutdown)
+    removeAll() {
+        let removedCount = 0;
+        for (const [listenerId] of this.listeners) {
+            if (this.remove(listenerId)) {
+                removedCount++;
+            }
+        }
+        return removedCount;
+    }
+};
+
+// Register for memory management
+MemoryManager.register('eventListeners', EventListenerManager.listeners);
+
+// Add event listener cleanup to alarm system
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'eventListenerCleanup') {
+        try {
+            EventListenerManager.cleanup();
+        } catch (error) {
+            console.error('EventListenerManager: Error during cleanup:', error);
+        }
+    }
+});
+
+// Initialize event listener cleanup alarm
+function initializeEventListenerCleanupAlarm() {
+    chrome.alarms.create('eventListenerCleanup', {
+        delayInMinutes: 30,
+        periodInMinutes: 30
+    });
+}
+
+// Initialize on service worker startup
+initializeEventListenerCleanupAlarm();
+
+// Add timeout-based cleanup for tool executions to prevent memory leaks
+const TOOL_EXECUTION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+
+// Function to clean up stale tool executions
+function cleanupStaleToolExecutions() {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const executionInfo of activeToolExecutions) {
+        if (typeof executionInfo === 'object' && executionInfo.timestamp) {
+            if (now - executionInfo.timestamp > TOOL_EXECUTION_TIMEOUT) {
+                activeToolExecutions.delete(executionInfo);
+                console.log(`MemoryManager: Removed stale tool execution: ${executionInfo.key}`);
+                cleanedCount++;
+            }
+        }
+    }
+
+    if (cleanedCount > 0) {
+        console.log(`MemoryManager: Cleaned ${cleanedCount} stale tool executions`);
+    }
+}
+
+// Add tool execution cleanup to the alarm system
+function initializeToolExecutionCleanupAlarm() {
+    chrome.alarms.create('toolExecutionCleanup', {
+        delayInMinutes: 10,
+        periodInMinutes: 10
+    });
+}
+
+// Extend the alarm listener to handle multiple cleanup tasks
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'toolExecutionCleanup') {
+        try {
+            cleanupStaleToolExecutions();
+        } catch (error) {
+            console.error('MemoryManager: Error during tool execution cleanup:', error);
+        }
+    } else if (alarm.name === 'messageCleanup') {
+        try {
+            MessageTracker.cleanup();
+            const status = MessageTracker.getStatus();
+            if (status.total > 10) {
+                console.log('MemoryManager: Message cleanup status:', status);
+            }
+        } catch (error) {
+            console.error('MemoryManager: Error during message cleanup:', error);
+        }
+    }
+});
+
+// Initialize message cleanup alarm
+function initializeMessageCleanupAlarm() {
+    chrome.alarms.create('messageCleanup', {
+        delayInMinutes: 1,
+        periodInMinutes: 1
+    });
+}
+
+// Initialize on service worker startup
+initializeMessageCleanupAlarm();
+
+// Initialize on service worker startup
+initializeToolExecutionCleanupAlarm();
+
 // Listener for messages from content scripts or other extension parts (like chat.js)
 console.log("Background: Attempting to add onMessage listener NOW...");
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // Flag to indicate if sendResponse has been called for this message
-    let responseSent = false;
-    const originalSendResponse = sendResponse;
+    // Register message for race condition protection
+    const messageId = MessageTracker.registerMessage(request, sender);
 
-    // Wrap sendResponse to ensure it's only called once
-    sendResponse = (response) => {
-        if (!responseSent) {
+    // Create enhanced sendResponse with race condition protection
+    const safeSendResponse = (response) => {
+        if (!MessageTracker.wasResponded(messageId)) {
+            MessageTracker.markResponded(messageId);
+
+            // Add debug info for monitoring
+            if (response) {
+                response._messageId = messageId;
+                response._timestamp = Date.now();
+            }
+
             originalSendResponse(response);
-            responseSent = true;
+            return true;
         } else {
-            console.warn("Background: Attempted to call sendResponse multiple times for the same message.");
+            console.warn(`Background: Attempted to call sendResponse multiple times for message ${messageId} (action: ${request.action})`);
+            return false;
         }
+    };
+
+    // Set up timeout to prevent hanging messages
+    const messageTimeout = setTimeout(() => {
+        if (!MessageTracker.wasResponded(messageId)) {
+            console.warn(`Background: Message ${messageId} timed out (action: ${request.action})`);
+            safeSendResponse({
+                error: 'Message processing timeout',
+                action: request.action,
+                timeout: true
+            });
+        }
+    }, 30000); // 30 second timeout
+
+    // Wrap original sendResponse with safety and cleanup
+    const originalSendResponse = sendResponse;
+    sendResponse = (response) => {
+        clearTimeout(messageTimeout);
+        return safeSendResponse(response);
     };
 
     if (request.action === 'getTabContent') {
@@ -1390,14 +2006,64 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }, 30000); // 30 seconds timeout
 
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-if (tabs && tabs[0] && tabs[0].id) {
+            // DEBUG: Comprehensive tab validation and permission checking
+            console.log('[DEBUG GET_TAB_CONTENT] Query result:', {
+                tabsArray: tabs,
+                tabsLength: tabs?.length,
+                firstTab: tabs?.[0],
+                hasValidFirstTab: tabs?.[0]?.id >= 0 && typeof tabs?.[0]?.id === 'number'
+            });
+            
+            if (tabs && tabs[0] && typeof tabs[0].id === 'number' && tabs[0].id >= 0) {
                 const activeTabId = tabs[0].id;
-console.log('[Background] Injecting content script into tab for getTabContent:', tabs[0].url);
+                const tabUrl = tabs[0].url;
+                
+                                console.log('[DEBUG GET_TAB_CONTENT] Attempting injection for:', {
+                    tabId: activeTabId,
+                    tabUrl: tabUrl,
+                    urlType: typeof tabUrl,
+                    isHttpHttps: tabUrl?.startsWith('http'),
+                    isSpecialScheme: tabUrl?.startsWith('chrome:') || tabUrl?.startsWith('file:') || tabUrl?.startsWith('chrome-extension:')
+                });
+                
+                // DEBUG: Check if we have permissions for this URL
+                chrome.permissions.contains({
+                    origins: [tabUrl]
+                }, (hasPermission) => {
+                    console.log('[DEBUG GET_TAB_CONTENT] Permission check for URL:', {
+                        url: tabUrl,
+                        hasPermission: hasPermission,
+                        isSpecialScheme: tabUrl?.startsWith('chrome:') || tabUrl?.startsWith('file:')
+                    });
+                });
+                
+console.log('[Background] Injecting content script into tab for getTabContent:', tabUrl);
+                // DEBUG: Final validation before injection
+                if (typeof activeTabId !== 'number' || activeTabId < 0) {
+                    console.error('[DEBUG GET_TAB_CONTENT] Aborting injection - invalid tab ID:', activeTabId);
+                    clearTimeout(timeoutId);
+                    if (tabContentCallback) {
+                        tabContentCallback({ action: 'tabContentResponse', success: false, error: `Invalid tab ID for injection: ${activeTabId}` });
+                        tabContentCallback = null;
+                    }
+                    return;
+                }
+                
+                console.log('[DEBUG GET_TAB_CONTENT] Final injection attempt for tabId:', activeTabId);
 chrome.scripting.executeScript({
     target: { tabId: activeTabId },
     files: ['content_script_unified.js']
 }, (injectionResults) => {
     clearTimeout(timeoutId); // Ensure timeout is cleared
+    
+    // DEBUG: Log the complete tab and error details
+    console.log('[DEBUG GET_TAB_CONTENT] Injection attempt completed:', {
+        activeTabId: activeTabId,
+        tabUrl: tabUrl,
+        injectionResults: injectionResults,
+        lastError: chrome.runtime.lastError
+    });
+    
     if (chrome.runtime.lastError) {
         console.error('Background: Error executing content_script_unified.js for getTabContent:', chrome.runtime.lastError);
         if (tabContentCallback) {
@@ -1481,6 +2147,18 @@ chrome.scripting.executeScript({
 if (tabs && tabs[0] && tabs[0].id) {
                 const activeTabId = tabs[0].id;
 console.log('[Background] Injecting content script into tab for getPinnedActionTabContent:', tabs[0].url);
+                // DEBUG: Final validation before injection
+                if (typeof activeTabId !== 'number' || activeTabId < 0) {
+                    console.error('[DEBUG GET_TAB_CONTENT] Aborting injection - invalid tab ID:', activeTabId);
+                    clearTimeout(timeoutId);
+                    if (tabContentCallback) {
+                        tabContentCallback({ action: 'tabContentResponse', success: false, error: `Invalid tab ID for injection: ${activeTabId}` });
+                        tabContentCallback = null;
+                    }
+                    return;
+                }
+                
+                console.log('[DEBUG GET_TAB_CONTENT] Final injection attempt for tabId:', activeTabId);
 chrome.scripting.executeScript({
     target: { tabId: activeTabId },
     files: ['content_script_unified.js']
@@ -1543,54 +2221,115 @@ chrome.scripting.executeScript({
         return true; // Async response
     } else if (request.action === 'getExplainContent') {
         // Store the sendResponse function to call it later
+        if (tabContentCallback) {
+            sendResponse({
+                action: 'explainContentResponse',
+                success: false,
+                error: 'Another content extraction is already in progress',
+                content: ''
+            });
+            return true;
+        }
+
         tabContentCallback = sendResponse;
+        console.log('Background: getExplainContent received. Injecting content script for extraction.');
+
+        // Separate timeout for explain-flow to avoid using undefined timeoutId
+        const explainTimeoutId = setTimeout(() => {
+            if (tabContentCallback) {
+                console.error('Background: getExplainContent timed out.');
+                tabContentCallback({
+                    action: 'explainContentResponse',
+                    success: false,
+                    error: 'Background: Content extraction timed out',
+                    content: ''
+                });
+                tabContentCallback = null;
+            }
+        }, 30000); // 30 seconds timeout
 
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-if (tabs && tabs[0] && tabs[0].id) {
+            if (tabs && tabs[0] && typeof tabs[0].id === 'number' && tabs[0].id >= 0) {
                 const activeTabId = tabs[0].id;
-console.log('[Background] Injecting content script into tab for getExplainContent:', tabs[0].url);
-chrome.scripting.executeScript({
-    target: { tabId: activeTabId },
-    files: ['content_script_unified.js']
-}, (injectionResults) => {
-    // If there was a timeout for getExplainContent, clear it here.
-    // clearTimeout(timeoutId_for_getExplainContent);
-    if (chrome.runtime.lastError) {
-        console.error('Failed to inject/execute content_script_unified.js:', chrome.runtime.lastError);
-        if (tabContentCallback) {
-            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error'), content: '' });
-            tabContentCallback = null;
-        }
-        return;
-    }
-    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
-        const result = injectionResults[0].result;
-        console.log('Background: getExplainContent - Result from content_script_unified.js:', result);
-        if (tabContentCallback) {
-            tabContentCallback({
-                action: 'explainContentResponse',
-                success: result.success,
-                content: result.data, // Ensure 'content' field is used
-                error: result.error
-            });
-            tabContentCallback = null;
-        }
-    } else {
-        console.error('Background: getExplainContent - No result from content_script_unified.js');
-        if (tabContentCallback) {
-            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'No result from content script', content: '' });
-            tabContentCallback = null;
-        }
-    }
-});
+                console.log('[Background] Injecting content script into tab for getExplainContent:', tabs[0].url);
+
+                // DEBUG: Final validation before injection
+                if (typeof activeTabId !== 'number' || activeTabId < 0) {
+                    console.error('[DEBUG GET_TAB_CONTENT] Aborting injection - invalid tab ID:', activeTabId);
+                    clearTimeout(explainTimeoutId);
+                    if (tabContentCallback) {
+                        tabContentCallback({
+                            action: 'explainContentResponse',
+                            success: false,
+                            error: `Invalid tab ID for injection: ${activeTabId}`,
+                            content: ''
+                        });
+                        tabContentCallback = null;
+                    }
+                    return;
+                }
+
+                console.log('[DEBUG GET_TAB_CONTENT] Final injection attempt for tabId (getExplainContent):', activeTabId);
+                chrome.scripting.executeScript({
+                    target: { tabId: activeTabId },
+                    files: ['content_script_unified.js']
+                }, (injectionResults) => {
+                    clearTimeout(explainTimeoutId); // Ensure timeout is cleared
+
+                    if (chrome.runtime.lastError) {
+                        console.error('Failed to inject/execute content_script_unified.js for getExplainContent:', chrome.runtime.lastError);
+                        if (tabContentCallback) {
+                            tabContentCallback({
+                                action: 'explainContentResponse',
+                                success: false,
+                                error: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error'),
+                                content: ''
+                            });
+                            tabContentCallback = null;
+                        }
+                        return;
+                    }
+
+                    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+                        const result = injectionResults[0].result;
+                        console.log('Background: getExplainContent - Result from content_script_unified.js:', result);
+                        if (tabContentCallback) {
+                            tabContentCallback({
+                                action: 'explainContentResponse',
+                                success: result.success,
+                                content: result.data, // Ensure 'content' field is used
+                                error: result.error
+                            });
+                            tabContentCallback = null;
+                        }
+                    } else {
+                        console.error('Background: getExplainContent - No result from content_script_unified.js');
+                        if (tabContentCallback) {
+                            tabContentCallback({
+                                action: 'explainContentResponse',
+                                success: false,
+                                error: 'No result from content script',
+                                content: ''
+                            });
+                            tabContentCallback = null;
+                        }
+                    }
+                });
             } else {
                 console.error('No active tab found for getExplainContent.');
+                clearTimeout(explainTimeoutId);
                 if (tabContentCallback) {
-                    tabContentCallback({ action: 'explainContentResponse', success: false, error: 'No active tab found.' });
+                    tabContentCallback({
+                        action: 'explainContentResponse',
+                        success: false,
+                        error: 'No active tab found.',
+                        content: ''
+                    });
                     tabContentCallback = null;
                 }
             }
         });
+
         return true;
     } else if (request.action === 'executePromptPaulTool') {
         const { id, name, arguments: argsString } = request.toolCall;
@@ -1617,7 +2356,10 @@ chrome.scripting.executeScript({
 
                 let argsObject;
                 try {
-                    argsObject = JSON.parse(argsString || '{}');
+                    argsObject = safeJsonParse(argsString || '{}', `tool-args-${name}`, {});
+                    if (argsObject === null) {
+                        throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
+                    }
                 } catch (parseError) {
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }

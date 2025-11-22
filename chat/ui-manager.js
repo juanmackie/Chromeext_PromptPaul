@@ -34,6 +34,7 @@ export class UIManager {
         `;
 
         this.chatArea.appendChild(loadingDiv);
+        this.ensureScrollable();
         this.scrollToBottom();
         this.currentLoadingMessage = loadingDiv;
 
@@ -70,7 +71,7 @@ export class UIManager {
     addMediaPreview(mediaData) {
         const previewDiv = document.createElement('div');
         previewDiv.classList.add('message', 'system-message');
-        previewDiv.style.cssText = 'background: #e3f2fd; border-left: 4px solid #2196f3; margin-bottom: 10px;';
+        previewDiv.style.cssText = 'background: #e3f2fd; border-left: 4px solid #2196f3; margin-bottom: 10px; overflow: visible;';
 
         if (mediaData.type === 'image') {
             previewDiv.innerHTML = `
@@ -113,6 +114,7 @@ export class UIManager {
         }
 
         this.chatArea.appendChild(previewDiv);
+        this.ensureScrollable();
         this.scrollToBottom();
     }
 
@@ -242,7 +244,11 @@ export class UIManager {
     scrollToBottom(delay = 0) {
         setTimeout(() => {
             if (this.chatArea) {
-                this.chatArea.scrollTop = this.chatArea.scrollHeight;
+                // Ensure smooth scrolling to bottom
+                this.chatArea.scrollTo({
+                    top: this.chatArea.scrollHeight,
+                    behavior: 'smooth'
+                });
             }
         }, delay);
     }
@@ -256,6 +262,42 @@ export class UIManager {
 
         const threshold = 50; // pixels from bottom
         return this.chatArea.scrollHeight - this.chatArea.scrollTop <= this.chatArea.clientHeight + threshold;
+    }
+
+    /**
+     * Ensure chat area is scrollable and properly configured
+     */
+    ensureScrollable() {
+        if (!this.chatArea) {
+            console.warn('[UIManager.ensureScrollable] chatArea is not defined');
+            return;
+        }
+
+        // Force reflow to ensure proper dimensions
+        this.chatArea.style.display = 'none';
+        this.chatArea.offsetHeight; // Trigger reflow
+        this.chatArea.style.display = '';
+
+        // Ensure scroll properties are set correctly
+        this.chatArea.style.overflowY = 'auto';
+        this.chatArea.style.overflowX = 'hidden';
+
+        try {
+            const computed = window.getComputedStyle(this.chatArea);
+            console.log('[UIManager.ensureScrollable] metrics', {
+                clientHeight: this.chatArea.clientHeight,
+                scrollHeight: this.chatArea.scrollHeight,
+                overflowYInline: this.chatArea.style.overflowY,
+                overflowYComputed: computed.overflowY
+            });
+        } catch (e) {
+            console.warn('[UIManager.ensureScrollable] failed to read computed style', e);
+        }
+        
+        // Scroll to bottom if needed
+        if (this.isScrolledToBottom()) {
+            this.scrollToBottom(100);
+        }
     }
 
     /**

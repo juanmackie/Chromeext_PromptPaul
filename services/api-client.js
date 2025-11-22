@@ -732,9 +732,12 @@ export class ApiClient {
                 });
             }
 
+            // Build messages array - handle case where options.messages might not exist
+            const existingMessages = Array.isArray(options.messages) ? options.messages : [];
+
             // Add media to messages
             const messages = [
-                ...options.messages,
+                ...existingMessages,
                 {
                     role: 'user',
                     content: [
@@ -752,7 +755,12 @@ export class ApiClient {
                 }
             ];
 
-            const requestConfig = { ...options, messages };
+            const requestConfig = {
+                ...options,
+                messages,
+                tools: options.tools || [],
+                toolChoice: options.toolChoice || 'none'
+            };
             return await this.makeRequest(config, requestConfig);
         }, {
             category: ErrorCategory.NETWORK,

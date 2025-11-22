@@ -9,14 +9,16 @@
     "storage",
     "clipboardWrite",
     "sidePanel",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
-    "*://*/*",
+    "https://*/*",
+    "http://*/*",
     "https://cloud.umami.is/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://cloud.umami.is https://api.mistral.ai"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' http: https:"
   },
   "options_page": "options.html",
   "background": {
@@ -30,14 +32,33 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*/*.pdf", "file://*/*.pdf"],
-      "js": ["pdf_content_script.js"],
+      "matches": [
+        "*://*/*.pdf",
+        "file://*/*.pdf"
+      ],
+      "js": [
+        "pdf_content_script.js"
+      ],
       "all_frames": true
     },
     {
-      "matches": ["<all_urls>"],
-      "js": ["content_script_unified.js"],
-      "all_frames": false
+      "matches": [
+        "https://*/*",
+        "http://*/*"
+      ],
+      "exclude_matches": [
+        "https://chrome.google.com/*",
+        "https://chromewebstore.google.com/*",
+        "https://addons.mozilla.org/*",
+        "https://accounts.google.com/*",
+        "https://login.microsoftonline.com/*",
+        "https://appleid.apple.com/*"
+      ],
+      "js": [
+        "content_script_unified.js"
+      ],
+      "all_frames": false,
+      "run_at": "document_idle"
     }
   ]
 }

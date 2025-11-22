@@ -54,7 +54,7 @@ module.exports = {
     "!**/coverage/**",
     "!**/*.config.*"
   ],
-  coverageDirectory: "tests/coverage",
+  coverageDirectory: "coverage",
   coverageThreshold: {
     global: {
       branches: 90,

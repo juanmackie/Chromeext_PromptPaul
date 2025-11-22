@@ -28,7 +28,7 @@ export class UIComponents {
             'saveInstruction', 'clearForm', 'instructionsTable', 'instructions-cards',
             'toolName', 'toolDescription', 'toolParameters', 'toolEndpointUrl', 'toolHttpMethod',
             'toolId', 'saveTool', 'clearToolForm', 'toolsTable', 'tools-cards',
-            'analyticsConsentToggle', 'enableStreamingToggle', 'darkThemeToggle',
+            'analyticsConsentToggle', 'enableStreamingToggle',
             'migrationPrompt', 'exportInstructions', 'importInstructions', 'importFile',
             'exportTools', 'importTools', 'importToolsFile'
         ];
@@ -473,9 +473,17 @@ export class UIComponents {
      */
     setupThemeToggle(setupThemeToggle) {
         return wrapAsync(() => {
-            const darkThemeToggle = this.elements.darkThemeToggle;
-            if (darkThemeToggle && setupThemeToggle) {
-                setupThemeToggle(darkThemeToggle);
+            if (!setupThemeToggle) {
+                return;
+            }
+
+            // Use the dedicated checkbox on the options page so we can
+            // leverage shared themeUtils (chrome.storage + applyDarkTheme)
+            const toggleElement = document.getElementById('optionsThemeToggle');
+
+            if (toggleElement && toggleElement instanceof HTMLInputElement) {
+                // Delegate all behavior to shared theme toggle wiring
+                setupThemeToggle(toggleElement);
             }
         }, {
             category: ErrorCategory.SYSTEM,

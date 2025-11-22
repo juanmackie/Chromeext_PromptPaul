@@ -102,7 +102,6 @@ export class ChatOrchestrator {
         this.summarizeTabButton = document.getElementById('summarize-tab-button');
         this.pinnedActionsContainer = document.getElementById('pinned-actions-container');
         this.exportConversationBtn = document.getElementById('export-conversation-btn');
-        this.darkThemeToggle = document.getElementById('darkThemeToggle');
 
         // Validate essential elements
         const requiredElements = [this.chatArea, this.userInput, this.sendButton];

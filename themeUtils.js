@@ -21,10 +21,12 @@ export function applyDarkTheme(isDark) {
     body.classList.add('light-theme', 'ext-light');
   }
 
-  // Update theme toggle icon to visually indicate mode
-  const themeIcon = document.getElementById('theme-icon');
-  if (themeIcon) {
-    themeIcon.textContent = isDark ? 'dark_mode' : 'light_mode';
+  // Note: Main theme toggle icon is handled in chat.js to avoid conflicts
+
+  const darkThemeIcon = document.getElementById('darkThemeIcon');
+  if (darkThemeIcon) {
+    // Use moon icon in light mode, sun icon in dark mode for options page toggle
+    darkThemeIcon.textContent = isDark ? 'light_mode' : 'brightness_2';
   }
 
   // Update copy icons based on theme and their IDs
