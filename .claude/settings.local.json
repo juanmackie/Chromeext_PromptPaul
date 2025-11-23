@@ -13,7 +13,8 @@
       "mcp__gemini-bridge__consult_gemini",
       "Bash(npm test:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run)"
+      "Bash(npm run)",
+      "Skill(frontend-design:frontend-design)"
     ],
     "deny": [],
     "ask": []

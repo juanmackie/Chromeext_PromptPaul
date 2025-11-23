@@ -32,15 +32,14 @@ export class InstructionManager {
      * @returns {Promise<Object>} Saved instruction
      */
     async saveInstruction(instructionData) {
-        return wrapAsync(async () => {
-            const {
-                id,
-                name,
-                content,
-                tool_choice,
-                modalities
-            } = instructionData;
+        const {
+            id,
+            name,
+            content,
+            tool_choice
+        } = instructionData;
 
+        return wrapAsync(async () => {
             if (!name || !content) {
                 throw createError('Instruction name and content are required', {
                     category: ErrorCategory.VALIDATION,
@@ -49,11 +48,15 @@ export class InstructionManager {
                 });
             }
 
+            console.log('DEBUG: About to load instructions for saveInstruction');
             const instructions = await this.loadInstructions();
+            console.log('DEBUG: Loaded instructions:', instructions);
             const now = new Date().toISOString();
 
             if (id) {
                 // Update existing instruction
+                console.log('DEBUG: Attempting to update existing instruction with ID:', id);
+                console.log('DEBUG: About to reassign instructions constant - THIS WILL CAUSE ERROR');
                 instructions = instructions.map(inst => {
                     if (inst.id === id) {
                         return {
@@ -61,7 +64,7 @@ export class InstructionManager {
                             name: name.trim(),
                             content: content.trim(),
                             tool_choice: tool_choice || 'none',
-                            modalities: modalities && modalities.length > 0 ? modalities : ['text'],
+                            modalities: ['text', 'image', 'video', 'audio'],
                             lastUpdated: now
                         };
                     }
@@ -75,7 +78,7 @@ export class InstructionManager {
                     name: name.trim(),
                     content: content.trim(),
                     tool_choice: tool_choice || 'none',
-                    modalities: modalities && modalities.length > 0 ? modalities : ['text'],
+                    modalities: ['text', 'image', 'video', 'audio'],
                     createdAt: now,
                     lastUpdated: now
                 };
@@ -84,7 +87,7 @@ export class InstructionManager {
             }
 
             await storageService.setLocal({ instructions });
-            return instructions.find(inst => 
+            return instructions.find(inst =>
                 id ? inst.id === id : inst.id === instructions[instructions.length - 1].id
             );
         }, {
@@ -401,16 +404,9 @@ export class InstructionManager {
             const instructions = await this.loadInstructions();
             const pinnedQuickActions = await this.getPinnedInstructions();
             
-            const modalitiesCount = {};
             const toolChoicesCount = {};
             
             instructions.forEach(inst => {
-                // Count modalities
-                const modalities = inst.modalities || ['text'];
-                modalities.forEach(modality => {
-                    modalitiesCount[modality] = (modalitiesCount[modality] || 0) + 1;
-                });
-                
                 // Count tool choices
                 const toolChoice = this.formatToolChoiceDisplay(inst.tool_choice);
                 toolChoicesCount[toolChoice] = (toolChoicesCount[toolChoice] || 0) + 1;
@@ -419,7 +415,6 @@ export class InstructionManager {
             return {
                 totalInstructions: instructions.length,
                 pinnedInstructions: pinnedQuickActions.length,
-                modalitiesCount,
                 toolChoicesCount,
                 recentlyCreated: instructions.filter(inst => {
                     const createdDate = new Date(inst.createdAt);

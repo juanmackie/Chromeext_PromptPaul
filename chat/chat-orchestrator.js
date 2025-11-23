@@ -358,8 +358,9 @@ export class ChatOrchestrator {
         } else if (mediaData && mediaData.base64) {
             this.uiManager.addMediaPreview(mediaData);
 
-            // Determine analysis prompt
+            // Determine analysis prompt and tool choice
             let analysisPrompt = "Please analyze this media content.";
+            let toolChoiceForMedia = 'none';
             const actionType = mediaData.actionType;
             const instructionId = mediaData.instructionId;
 
@@ -368,8 +369,26 @@ export class ChatOrchestrator {
             } else if (actionType === 'explain') {
                 analysisPrompt = "Please explain what is shown in this media content in detail.";
             } else if (actionType === 'custom' && instructionId) {
-                // This would need to be implemented to fetch custom instruction
-                analysisPrompt = "Please analyze this media content according to the selected custom instruction.";
+                const instruction = await this.getInstructionById(instructionId);
+                
+                if (instruction) {
+                    // Use the saved instruction content as the prompt
+                    analysisPrompt = instruction.content || analysisPrompt;
+                    
+                    // Use the instruction's tool choice
+                    const toolChoiceRaw = instruction.tool_choice || 'none';
+                    toolChoiceForMedia = toolChoiceRaw;
+                    
+                    this.messageRenderer.addMessage(
+                        'System',
+                        `Using custom instruction for image analysis: ${instruction.name}`
+                    );
+                } else {
+                    this.messageRenderer.addMessage(
+                        'System',
+                        'Custom image instruction not found; falling back to a generic image analysis.'
+                    );
+                }
             }
 
             // Add media to conversation and make API call
@@ -379,7 +398,7 @@ export class ChatOrchestrator {
                 media: mediaData
             });
 
-            await this.conversationManager.makeApiCallWithMedia(analysisPrompt, mediaData, 'none');
+            await this.conversationManager.makeApiCallWithMedia(analysisPrompt, mediaData, toolChoiceForMedia);
         }
 
         // Remove loading message if it exists
@@ -710,6 +729,22 @@ export class ChatOrchestrator {
             this.loadingManager.showToast(message, type, duration, options);
         } else {
             console.log(`Toast (${type}): ${message}`);
+        }
+    }
+
+    /**
+     * Get instruction by ID from storage
+     * @param {string} instructionId - The instruction ID to fetch
+     * @returns {Object|null} The instruction object or null if not found
+     */
+    async getInstructionById(instructionId) {
+        try {
+            const result = await chrome.storage.local.get(['instructions']);
+            const instructions = result.instructions || [];
+            return instructions.find(instruction => instruction.id === instructionId) || null;
+        } catch (error) {
+            console.error('Chat: Error fetching instruction by ID:', error);
+            return null;
         }
     }
 

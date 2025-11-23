@@ -126,13 +126,8 @@ export class ValidationHandler {
         // Sanitize tool choice
         sanitized.tool_choice = formData.instructionToolChoice ? formData.instructionToolChoice.trim() : 'none';
 
-        // Sanitize modalities
-        const modalities = [];
-        if (formData.modalityText) modalities.push('text');
-        if (formData.modalityImage) modalities.push('image');
-        if (formData.modalityVideo) modalities.push('video');
-        if (formData.modalityAudio) modalities.push('audio');
-        sanitized.modalities = modalities.length > 0 ? modalities : ['text'];
+        // All instructions are now universal across all modalities
+        sanitized.modalities = ['text', 'image', 'video', 'audio'];
 
         return {
             isValid: errors.length === 0,

@@ -21,10 +21,9 @@ export class UIComponents {
      */
     initializeElementCache() {
         const elementIds = [
-            'profileSelect', 'deleteProfileButton', 'llmEndpoint', 'apiKey', 'modelName', 
+            'profileSelect', 'deleteProfileButton', 'llmEndpoint', 'apiKey', 'modelName',
             'maxTokens', 'tokenValue', 'systemPrompt', 'saveButton', 'revertDefaultsButton',
             'instructionName', 'instructionContent', 'instructionId', 'instructionToolChoice',
-            'modalityText', 'modalityImage', 'modalityVideo', 'modalityAudio',
             'saveInstruction', 'clearForm', 'instructionsTable', 'instructions-cards',
             'toolName', 'toolDescription', 'toolParameters', 'toolEndpointUrl', 'toolHttpMethod',
             'toolId', 'saveTool', 'clearToolForm', 'toolsTable', 'tools-cards',
@@ -261,7 +260,6 @@ export class UIComponents {
         card.setAttribute('data-id', instruction.id);
         
         const toolChoiceDisplay = instructionManager.formatToolChoiceDisplay(instruction.tool_choice);
-        const modalities = (instruction.modalities || ['text']).join(', ');
         
         card.innerHTML = `
             <div style="display: flex; flex-direction: column; height: 100%; padding: 16px; justify-content: space-between;">
@@ -271,7 +269,7 @@ export class UIComponents {
                 </div>
                 <div style="font-size: 0.75rem; color: #555; margin: 10px 0;">
                     <div><strong>Tool:</strong> ${toolChoiceDisplay}</div>
-                    <div><strong>Modalities:</strong> ${modalities}</div>
+                    <div><strong>Modalities:</strong> All (Text, Image, Video, Audio)</div>
                 </div>
                 <div style="display: flex; gap: 6px; margin-top: 10px;">
                     <button class="pin-btn" data-id="${instruction.id}">
