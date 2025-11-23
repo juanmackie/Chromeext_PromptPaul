@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Prompt Paul- AI Insights at the click of a mouse",
+  "version": "5.00",
+  "description": "A Chrome extension for processing selected text using an LLM endpoint",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "clipboardWrite",
+    "sidePanel",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*",
+    "https://cloud.umami.is/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' http: https:"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*/*.pdf",
+        "file://*/*.pdf"
+      ],
+      "js": [
+        "pdf_content_script.js"
+      ],
+      "all_frames": true
+    }
+  ]
+}
