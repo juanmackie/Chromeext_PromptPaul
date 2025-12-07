@@ -32,7 +32,7 @@ describe('ChatOrchestrator', () => {
       showMessageStatus: jest.fn(),
       formatTimestamp: jest.fn(),
       renderToolCall: jest.fn(),
-      renderToolResult: jest.fn()
+      renderToolResult: jest.fn(),
     };
 
     mockUIManager = {
@@ -51,7 +51,7 @@ describe('ChatOrchestrator', () => {
       clearInput: jest.fn(),
       getInputValue: jest.fn(),
       setInputValue: jest.fn(),
-      focusInput: jest.fn()
+      focusInput: jest.fn(),
     };
 
     mockStreamingManager = {
@@ -60,7 +60,7 @@ describe('ChatOrchestrator', () => {
       handleToolCallChunk: jest.fn(),
       stopStream: jest.fn(),
       isActive: jest.fn().mockReturnValue(false),
-      getStreamingState: jest.fn().mockReturnValue({ active: false })
+      getStreamingState: jest.fn().mockReturnValue({ active: false }),
     };
 
     mockConversationManager = {
@@ -76,7 +76,7 @@ describe('ChatOrchestrator', () => {
       getCurrentRequest: jest.fn(),
       isProcessing: jest.fn(),
       getConversationStats: jest.fn(),
-      refresh: jest.fn()
+      refresh: jest.fn(),
     };
 
     mockStorageService = {
@@ -88,14 +88,20 @@ describe('ChatOrchestrator', () => {
       clearAll: jest.fn(),
       exportData: jest.fn(),
       importData: jest.fn(),
-      getStorageUsage: jest.fn()
+      getStorageUsage: jest.fn(),
     };
 
     // Mock module imports
-    require('../../../chat/message-renderer.js').MessageRenderer = jest.fn(() => mockMessageRenderer);
+    require('../../../chat/message-renderer.js').MessageRenderer = jest.fn(
+      () => mockMessageRenderer
+    );
     require('../../../chat/ui-manager.js').UIManager = jest.fn(() => mockUIManager);
-    require('../../../chat/streaming-manager.js').StreamingManager = jest.fn(() => mockStreamingManager);
-    require('../../../chat/conversation-manager.js').ConversationManager = jest.fn(() => mockConversationManager);
+    require('../../../chat/streaming-manager.js').StreamingManager = jest.fn(
+      () => mockStreamingManager
+    );
+    require('../../../chat/conversation-manager.js').ConversationManager = jest.fn(
+      () => mockConversationManager
+    );
     require('../../../services/storage-service.js').storageService = mockStorageService;
 
     // Create ChatOrchestrator instance
@@ -123,10 +129,10 @@ describe('ChatOrchestrator', () => {
         'send-button': { id: 'send-button', disabled: false },
         'clear-button': { id: 'clear-button', disabled: false },
         'chat-main-area': { id: 'chat-main-area', style: {} },
-        'oneoff-instruction-area': { id: 'oneoff-instruction-area', style: {} }
+        'oneoff-instruction-area': { id: 'oneoff-instruction-area', style: {} },
       };
 
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
 
       // Test DOM element initialization
       chatOrchestrator.initializeDOMElements();
@@ -142,7 +148,7 @@ describe('ChatOrchestrator', () => {
 
     test('should handle missing DOM elements gracefully', () => {
       // Mock missing element
-      mockDOM.document.getElementById.mockImplementation((id) => null);
+      mockDOM.document.getElementById.mockImplementation(id => null);
 
       // Should not throw error
       expect(() => chatOrchestrator.initializeDOMElements()).not.toThrow();
@@ -160,13 +166,13 @@ describe('ChatOrchestrator', () => {
         'send-button': { id: 'send-button', disabled: false },
         'clear-button': { id: 'clear-button', disabled: false },
         'chat-main-area': { id: 'chat-main-area', style: {} },
-        'oneoff-instruction-area': { id: 'oneoff-instruction-area', style: {} }
+        'oneoff-instruction-area': { id: 'oneoff-instruction-area', style: {} },
       };
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
 
       // Mock storage data
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: []
+        pinnedQuickActions: [],
       });
 
       await chatOrchestrator.initialize();
@@ -185,7 +191,10 @@ describe('ChatOrchestrator', () => {
       await chatOrchestrator.initialize();
 
       // Should show error message
-      expect(mockMessageRenderer.addMessage).toHaveBeenCalledWith('System', expect.stringContaining('failed'));
+      expect(mockMessageRenderer.addMessage).toHaveBeenCalledWith(
+        'System',
+        expect.stringContaining('failed')
+      );
       expect(mockUIManager.showError).toHaveBeenCalled();
     });
   });
@@ -230,9 +239,9 @@ describe('ChatOrchestrator', () => {
         'chat-area': { id: 'chat-area' },
         'user-input': { id: 'user-input', value: '' },
         'send-button': { id: 'send-button', disabled: false },
-        'clear-button': { id: 'clear-button', disabled: false }
+        'clear-button': { id: 'clear-button', disabled: false },
       };
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
     });
 
     test('should handle send message', async () => {
@@ -241,15 +250,18 @@ describe('ChatOrchestrator', () => {
       // Mock conversation manager
       mockConversationManager.isProcessing.mockReturnValue(false);
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: []
+        pinnedQuickActions: [],
       });
 
       await chatOrchestrator.handleSendMessage(testMessage);
 
       expect(mockConversationManager.makeApiCall).toHaveBeenCalledWith(testMessage, {
-        tool_choice: 'auto'
+        tool_choice: 'auto',
       });
-      expect(mockUIManager.setButtonLoading).toHaveBeenCalledWith(mockDOM.document.getElementById('send-button'), true);
+      expect(mockUIManager.setButtonLoading).toHaveBeenCalledWith(
+        mockDOM.document.getElementById('send-button'),
+        true
+      );
     });
 
     test('should handle empty message', async () => {
@@ -270,7 +282,10 @@ describe('ChatOrchestrator', () => {
       await chatOrchestrator.handleSendMessage(testMessage);
 
       expect(mockConversationManager.makeApiCall).not.toHaveBeenCalled();
-      expect(mockUIManager.showToast).toHaveBeenCalledWith('Please wait for the current response to complete', 'warning');
+      expect(mockUIManager.showToast).toHaveBeenCalledWith(
+        'Please wait for the current response to complete',
+        'warning'
+      );
     });
 
     test('should handle message with attached media', async () => {
@@ -278,19 +293,24 @@ describe('ChatOrchestrator', () => {
       const mockMediaData = {
         type: 'image',
         mimeType: 'image/png',
-        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
+        base64:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
       };
 
       mockConversationManager.isProcessing.mockReturnValue(false);
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: []
+        pinnedQuickActions: [],
       });
 
       await chatOrchestrator.handleSendMessage(testMessage, mockMediaData);
 
-      expect(mockConversationManager.makeApiCallWithMedia).toHaveBeenCalledWith(testMessage, mockMediaData, {
-        tool_choice: 'auto'
-      });
+      expect(mockConversationManager.makeApiCallWithMedia).toHaveBeenCalledWith(
+        testMessage,
+        mockMediaData,
+        {
+          tool_choice: 'auto',
+        }
+      );
     });
   });
 
@@ -299,9 +319,9 @@ describe('ChatOrchestrator', () => {
       // Mock DOM elements for quick actions
       const mockElements = {
         'pinned-actions-container': { id: 'pinned-actions-container', innerHTML: '' },
-        'quick-actions-sidebar': { id: 'quick-actions-sidebar', style: { display: 'none' } }
+        'quick-actions-sidebar': { id: 'quick-actions-sidebar', style: { display: 'none' } },
       };
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
     });
 
     test('should load pinned actions', async () => {
@@ -310,18 +330,18 @@ describe('ChatOrchestrator', () => {
           id: 'action1',
           name: 'Summarize',
           instruction: 'Summarize the current conversation',
-          icon: 'summarize'
+          icon: 'summarize',
         },
         {
           id: 'action2',
           name: 'Translate',
           instruction: 'Translate to English',
-          icon: 'translate'
-        }
+          icon: 'translate',
+        },
       ];
 
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: mockPinnedActions
+        pinnedQuickActions: mockPinnedActions,
       });
 
       await chatOrchestrator.loadPinnedActions();
@@ -332,7 +352,7 @@ describe('ChatOrchestrator', () => {
 
     test('should handle empty pinned actions', async () => {
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: []
+        pinnedQuickActions: [],
       });
 
       await chatOrchestrator.loadPinnedActions();
@@ -344,12 +364,12 @@ describe('ChatOrchestrator', () => {
       const mockAction = {
         id: 'action1',
         name: 'Summarize',
-        instruction: 'Summarize the conversation'
+        instruction: 'Summarize the conversation',
       };
 
       mockConversationManager.isProcessing.mockReturnValue(false);
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: [mockAction]
+        pinnedQuickActions: [mockAction],
       });
 
       await chatOrchestrator.loadPinnedActions();
@@ -369,22 +389,28 @@ describe('ChatOrchestrator', () => {
       // Trigger click
       mockButton.click();
 
-      expect(mockConversationManager.makeApiCall).toHaveBeenCalledWith('Summarize the conversation', {
-        tool_choice: 'none'
-      });
+      expect(mockConversationManager.makeApiCall).toHaveBeenCalledWith(
+        'Summarize the conversation',
+        {
+          tool_choice: 'none',
+        }
+      );
     });
 
     test('should handle summarize tab functionality', async () => {
       // Mock summarize tab button
       const mockElements = {
-        'summarize-tab-button': { id: 'summarize-tab-button', addEventListener: jest.fn() }
+        'summarize-tab-button': { id: 'summarize-tab-button', addEventListener: jest.fn() },
       };
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
 
       chatOrchestrator.setupQuickActions();
 
       // Verify event listener is added
-      expect(mockElements['summarize-tab-button'].addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+      expect(mockElements['summarize-tab-button'].addEventListener).toHaveBeenCalledWith(
+        'click',
+        expect.any(Function)
+      );
     });
   });
 
@@ -393,35 +419,45 @@ describe('ChatOrchestrator', () => {
       // Mock DOM elements
       const mockElements = {
         'oneoff-instruction-area': { id: 'oneoff-instruction-area', style: { display: 'none' } },
-        'customInstructionSelect': { id: 'customInstructionSelect', value: '' },
-        'submitBtn': { id: 'submitBtn', addEventListener: jest.fn() }
+        customInstructionSelect: { id: 'customInstructionSelect', value: '' },
+        submitBtn: { id: 'submitBtn', addEventListener: jest.fn() },
       };
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
     });
 
     test('should show one-off instruction area', () => {
       chatOrchestrator.showOneOffInstructionArea();
 
-      expect(mockUIManager.showElement).toHaveBeenCalledWith(mockDOM.document.getElementById('oneoff-instruction-area'));
-      expect(mockUIManager.showElement).toHaveBeenCalledWith(mockDOM.document.getElementById('chat-main-area'));
-      expect(mockUIManager.hideElement).toHaveBeenCalledWith(mockDOM.document.getElementById('oneoff-instruction-area'));
+      expect(mockUIManager.showElement).toHaveBeenCalledWith(
+        mockDOM.document.getElementById('oneoff-instruction-area')
+      );
+      expect(mockUIManager.showElement).toHaveBeenCalledWith(
+        mockDOM.document.getElementById('chat-main-area')
+      );
+      expect(mockUIManager.hideElement).toHaveBeenCalledWith(
+        mockDOM.document.getElementById('oneoff-instruction-area')
+      );
     });
 
     test('should hide one-off instruction area', () => {
       chatOrchestrator.hideOneOffInstructionArea();
 
-      expect(mockUIManager.hideElement).toHaveBeenCalledWith(mockDOM.document.getElementById('oneoff-instruction-area'));
-      expect(mockUIManager.showElement).toHaveBeenCalledWith(mockDOM.document.getElementById('chat-main-area'));
+      expect(mockUIManager.hideElement).toHaveBeenCalledWith(
+        mockDOM.document.getElementById('oneoff-instruction-area')
+      );
+      expect(mockUIManager.showElement).toHaveBeenCalledWith(
+        mockDOM.document.getElementById('chat-main-area')
+      );
     });
 
     test('should handle custom instruction submission', async () => {
       const mockInstructions = [
         { id: 'inst1', name: 'Translate', instruction: 'Translate to Spanish' },
-        { id: 'inst2', name: 'Summarize', instruction: 'Create a summary' }
+        { id: 'inst2', name: 'Summarize', instruction: 'Create a summary' },
       ];
 
       mockStorageService.getLocal.mockResolvedValue({
-        instructions: mockInstructions
+        instructions: mockInstructions,
       });
 
       chatOrchestrator.setupOneOffInstructions();
@@ -431,7 +467,7 @@ describe('ChatOrchestrator', () => {
       const clickHandler = submitBtn.addEventListener.mock.calls[0][1];
 
       // Mock instruction selection
-      mockDOM.document.getElementById.mockImplementation((id) => {
+      mockDOM.document.getElementById.mockImplementation(id => {
         if (id === 'customInstructionSelect') {
           return { value: 'inst1' };
         }
@@ -445,13 +481,13 @@ describe('ChatOrchestrator', () => {
       clickHandler({ preventDefault: jest.fn() });
 
       expect(mockConversationManager.makeApiCall).toHaveBeenCalledWith('Translate to Spanish', {
-        tool_choice: 'none'
+        tool_choice: 'none',
       });
     });
 
     test('should handle empty instruction selection', async () => {
       mockStorageService.getLocal.mockResolvedValue({
-        instructions: []
+        instructions: [],
       });
 
       chatOrchestrator.setupOneOffInstructions();
@@ -460,7 +496,7 @@ describe('ChatOrchestrator', () => {
       const clickHandler = submitBtn.addEventListener.mock.calls[0][1];
 
       // Mock empty selection
-      mockDOM.document.getElementById.mockImplementation((id) => {
+      mockDOM.document.getElementById.mockImplementation(id => {
         if (id === 'customInstructionSelect') {
           return { value: '' };
         }
@@ -470,7 +506,10 @@ describe('ChatOrchestrator', () => {
       // Simulate click
       clickHandler({ preventDefault: jest.fn() });
 
-      expect(mockUIManager.showToast).toHaveBeenCalledWith('Please select an instruction', 'warning');
+      expect(mockUIManager.showToast).toHaveBeenCalledWith(
+        'Please select an instruction',
+        'warning'
+      );
       expect(mockConversationManager.makeApiCall).not.toHaveBeenCalled();
     });
   });
@@ -478,7 +517,7 @@ describe('ChatOrchestrator', () => {
   describe('Chrome Extension Integration', () => {
     test('should handle extension startup message', async () => {
       const mockMessage = {
-        action: 'extensionStartup'
+        action: 'extensionStartup',
       };
 
       const mockSendResponse = jest.fn();
@@ -495,7 +534,7 @@ describe('ChatOrchestrator', () => {
       const mockMessage = {
         action: 'setApiResponse',
         apiResponse: 'Hello from AI!',
-        prompt: 'Test message'
+        prompt: 'Test message',
       };
 
       const mockSendResponse = jest.fn();
@@ -509,7 +548,7 @@ describe('ChatOrchestrator', () => {
     test('should handle streaming start message', async () => {
       const mockMessage = {
         action: 'streamApiStart',
-        prompt: 'Test message'
+        prompt: 'Test message',
       };
 
       const mockSendResponse = jest.fn();
@@ -524,7 +563,7 @@ describe('ChatOrchestrator', () => {
       const mockMessage = {
         action: 'streamApiResponseChunk',
         chunk: 'Hello',
-        prompt: 'Test message'
+        prompt: 'Test message',
       };
 
       const mockSendResponse = jest.fn();
@@ -537,7 +576,7 @@ describe('ChatOrchestrator', () => {
     test('should handle stream end message', async () => {
       const mockMessage = {
         action: 'streamApiEnd',
-        prompt: 'Test message'
+        prompt: 'Test message',
       };
 
       const mockSendResponse = jest.fn();
@@ -550,7 +589,7 @@ describe('ChatOrchestrator', () => {
 
     test('should handle clear chat message', async () => {
       const mockMessage = {
-        action: 'clearChat'
+        action: 'clearChat',
       };
 
       const mockSendResponse = jest.fn();
@@ -566,7 +605,7 @@ describe('ChatOrchestrator', () => {
       mockConversationManager.exportConversation.mockReturnValue(mockExportedConversation);
 
       const mockMessage = {
-        action: 'exportConversation'
+        action: 'exportConversation',
       };
 
       const mockSendResponse = jest.fn();
@@ -574,20 +613,23 @@ describe('ChatOrchestrator', () => {
       await chatOrchestrator.handleChromeMessage(mockMessage, {}, mockSendResponse);
 
       expect(mockSendResponse).toHaveBeenCalledWith({
-        conversation: mockExportedConversation
+        conversation: mockExportedConversation,
       });
     });
 
     test('should handle unknown message action', async () => {
       const mockMessage = {
-        action: 'unknownAction'
+        action: 'unknownAction',
       };
 
       const mockSendResponse = jest.fn();
 
       await chatOrchestrator.handleChromeMessage(mockMessage, {}, mockSendResponse);
 
-      expect(mockUIManager.showToast).toHaveBeenCalledWith('Unknown action: unknownAction', 'error');
+      expect(mockUIManager.showToast).toHaveBeenCalledWith(
+        'Unknown action: unknownAction',
+        'error'
+      );
     });
   });
 
@@ -596,14 +638,17 @@ describe('ChatOrchestrator', () => {
       const mockMessage = {
         action: 'setApiResponse',
         error: 'API Error: Request failed',
-        prompt: 'Test message'
+        prompt: 'Test message',
       };
 
       const mockSendResponse = jest.fn();
 
       await chatOrchestrator.handleChromeMessage(mockMessage, {}, mockSendResponse);
 
-      expect(mockMessageRenderer.addMessage).toHaveBeenCalledWith('System', 'API Error: Request failed');
+      expect(mockMessageRenderer.addMessage).toHaveBeenCalledWith(
+        'System',
+        'API Error: Request failed'
+      );
       expect(mockUIManager.setButtonLoading).toHaveBeenCalled();
     });
 
@@ -614,18 +659,21 @@ describe('ChatOrchestrator', () => {
       // Mock DOM elements
       const mockElements = {
         'user-input': { id: 'user-input', value: 'Test message' },
-        'send-button': { id: 'send-button', disabled: false }
+        'send-button': { id: 'send-button', disabled: false },
       };
-      mockDOM.document.getElementById.mockImplementation((id) => mockElements[id] || null);
+      mockDOM.document.getElementById.mockImplementation(id => mockElements[id] || null);
 
       mockConversationManager.isProcessing.mockReturnValue(false);
       mockStorageService.getLocal.mockResolvedValue({
-        pinnedQuickActions: []
+        pinnedQuickActions: [],
       });
 
       await chatOrchestrator.handleSendMessage('Test message');
 
-      expect(mockUIManager.setButtonLoading).toHaveBeenCalledWith(mockElements['send-button'], false);
+      expect(mockUIManager.setButtonLoading).toHaveBeenCalledWith(
+        mockElements['send-button'],
+        false
+      );
     });
   });
 

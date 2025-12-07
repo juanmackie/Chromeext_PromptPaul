@@ -4,10 +4,10 @@
  */
 
 export function resetChrome() {
-  if (chrome && typeof chrome.flush === "function") {
+  if (chrome && typeof chrome.flush === 'function') {
     chrome.flush();
   }
-  if (typeof jest !== "undefined") {
+  if (typeof jest !== 'undefined') {
     jest.clearAllMocks();
     jest.resetModules();
   }
@@ -19,7 +19,7 @@ export function resetChrome() {
  */
 export function mockRuntimeMessage(handler) {
   if (!chrome || !chrome.runtime || !chrome.runtime.onMessage) {
-    throw new Error("chrome.runtime.onMessage is not available (jest-chrome not initialized?)");
+    throw new Error('chrome.runtime.onMessage is not available (jest-chrome not initialized?)');
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -38,15 +38,13 @@ export function mockRuntimeMessage(handler) {
  */
 export function emitRuntimeMessage(message, sender = {}, sendResponse = () => {}) {
   if (!chrome || !chrome.runtime || !chrome.runtime.onMessage) {
-    throw new Error("chrome.runtime.onMessage is not available (jest-chrome not initialized?)");
+    throw new Error('chrome.runtime.onMessage is not available (jest-chrome not initialized?)');
   }
 
   let async = false;
-  const listeners = chrome.runtime.onMessage.listeners
-    ? chrome.runtime.onMessage.listeners()
-    : [];
+  const listeners = chrome.runtime.onMessage.listeners ? chrome.runtime.onMessage.listeners() : [];
 
-  listeners.forEach((listener) => {
+  listeners.forEach(listener => {
     const result = listener(message, sender, sendResponse);
     if (result === true) {
       async = true;

@@ -9,15 +9,40 @@ const analytics = require('../../mocks/analytics.mock.js');
 // Mock the ContextMenuManager class directly since it's an ES6 module
 const createMockContextMenuManager = () => {
   const menuItems = [
-    { id: "imageAnalysis", title: "Analyze Image with Prompt Paul", contexts: ["image"] },
-    { id: "analyzeImage", parentId: "imageAnalysis", title: "🔍 General Analysis", contexts: ["image"] },
-    { id: "summarizeImage", parentId: "imageAnalysis", title: "📝 Summarize Image", contexts: ["image"] },
-    { id: "explainImage", parentId: "imageAnalysis", title: "💡 Explain Image", contexts: ["image"] },
-    { id: "imageSeparator", parentId: "imageAnalysis", type: "separator", contexts: ["image"] },
-    { id: "videoAnalysis", title: "Analyze Video with Prompt Paul", contexts: ["video"] },
-    { id: "analyzeVideo", parentId: "videoAnalysis", title: "🎥 General Analysis", contexts: ["video"] },
-    { id: "audioAnalysis", title: "Analyze Audio with Prompt Paul", contexts: ["audio"] },
-    { id: "analyzeAudio", parentId: "audioAnalysis", title: "🎵 General Analysis", contexts: ["audio"] }
+    { id: 'imageAnalysis', title: 'Analyze Image with Prompt Paul', contexts: ['image'] },
+    {
+      id: 'analyzeImage',
+      parentId: 'imageAnalysis',
+      title: '🔍 General Analysis',
+      contexts: ['image'],
+    },
+    {
+      id: 'summarizeImage',
+      parentId: 'imageAnalysis',
+      title: '📝 Summarize Image',
+      contexts: ['image'],
+    },
+    {
+      id: 'explainImage',
+      parentId: 'imageAnalysis',
+      title: '💡 Explain Image',
+      contexts: ['image'],
+    },
+    { id: 'imageSeparator', parentId: 'imageAnalysis', type: 'separator', contexts: ['image'] },
+    { id: 'videoAnalysis', title: 'Analyze Video with Prompt Paul', contexts: ['video'] },
+    {
+      id: 'analyzeVideo',
+      parentId: 'videoAnalysis',
+      title: '🎥 General Analysis',
+      contexts: ['video'],
+    },
+    { id: 'audioAnalysis', title: 'Analyze Audio with Prompt Paul', contexts: ['audio'] },
+    {
+      id: 'analyzeAudio',
+      parentId: 'audioAnalysis',
+      title: '🎵 General Analysis',
+      contexts: ['audio'],
+    },
   ];
 
   return {
@@ -35,7 +60,6 @@ const createMockContextMenuManager = () => {
 
         // Update custom instructions
         await this.updateImageCustomInstructions();
-
       } catch (error) {
         errorHandler.handle(error, { category: ErrorCategory.SYSTEM });
         throw error;
@@ -70,14 +94,14 @@ const createMockContextMenuManager = () => {
         url: mediaUrl,
         mimeType,
         action,
-        mediaData
+        mediaData,
       });
 
       // Track analytics
       analytics.trackContextMenuClick(info.menuItemId, {
         mediaType: mimeType,
         action,
-        url: mediaUrl
+        url: mediaUrl,
       });
     },
 
@@ -95,13 +119,29 @@ const createMockContextMenuManager = () => {
     getMimeTypeFromUrl(url) {
       if (!url) return 'unknown';
 
-      if (url.includes('.jpg') || url.includes('.jpeg') || url.includes('.png') || url.includes('.gif') || url.includes('.webp')) {
+      if (
+        url.includes('.jpg') ||
+        url.includes('.jpeg') ||
+        url.includes('.png') ||
+        url.includes('.gif') ||
+        url.includes('.webp')
+      ) {
         return 'image';
       }
-      if (url.includes('.mp4') || url.includes('.webm') || url.includes('.avi') || url.includes('.mov')) {
+      if (
+        url.includes('.mp4') ||
+        url.includes('.webm') ||
+        url.includes('.avi') ||
+        url.includes('.mov')
+      ) {
         return 'video';
       }
-      if (url.includes('.mp3') || url.includes('.wav') || url.includes('.ogg') || url.includes('.m4a')) {
+      if (
+        url.includes('.mp3') ||
+        url.includes('.wav') ||
+        url.includes('.ogg') ||
+        url.includes('.m4a')
+      ) {
         return 'audio';
       }
 
@@ -110,12 +150,12 @@ const createMockContextMenuManager = () => {
 
     async updateImageCustomInstructions() {
       return new Promise((resolve, reject) => {
-        chrome.storage.local.get(['imageCustomInstructions'], (result) => {
+        chrome.storage.local.get(['imageCustomInstructions'], result => {
           const customInstructions = result.imageCustomInstructions || [];
 
           // Remove existing custom instruction menus
-          chrome.contextMenus.getAll((menuItems) => {
-            menuItems.forEach((item) => {
+          chrome.contextMenus.getAll(menuItems => {
+            menuItems.forEach(item => {
               if (item.id && item.id.startsWith('customInstruction-')) {
                 chrome.contextMenus.remove(item.id);
               }
@@ -126,9 +166,9 @@ const createMockContextMenuManager = () => {
               if (instruction.enabled && instruction.text) {
                 chrome.contextMenus.create({
                   id: `customInstruction-${index}`,
-                  parentId: "imageAnalysis",
+                  parentId: 'imageAnalysis',
                   title: `✏️ ${instruction.text}`,
-                  contexts: ["image"]
+                  contexts: ['image'],
                 });
               }
             });
@@ -137,7 +177,7 @@ const createMockContextMenuManager = () => {
           resolve();
         });
       });
-    }
+    },
   };
 };
 
@@ -149,7 +189,7 @@ describe('ContextMenuManager', () => {
     jest.clearAllMocks();
     contextMenuManager = createMockContextMenuManager();
     mockMediaProcessor = {
-      fetchMediaAsBase64: jest.fn().mockResolvedValue('base64-data')
+      fetchMediaAsBase64: jest.fn().mockResolvedValue('base64-data'),
     };
   });
 
@@ -168,7 +208,9 @@ describe('ContextMenuManager', () => {
     });
 
     test('should have proper parent-child relationships', () => {
-      const imageMenuItems = contextMenuManager.menuItems.filter(item => item.parentId === 'imageAnalysis');
+      const imageMenuItems = contextMenuManager.menuItems.filter(
+        item => item.parentId === 'imageAnalysis'
+      );
       expect(imageMenuItems).toHaveLength(4); // 3 actions + 1 separator
     });
   });
@@ -245,8 +287,12 @@ describe('ContextMenuManager', () => {
       expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/image.jpg')).toBe('image');
       expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/photo.jpeg')).toBe('image');
       expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/icon.png')).toBe('image');
-      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/animation.gif')).toBe('image');
-      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/picture.webp')).toBe('image');
+      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/animation.gif')).toBe(
+        'image'
+      );
+      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/picture.webp')).toBe(
+        'image'
+      );
     });
 
     test('should detect video types correctly', () => {
@@ -264,8 +310,12 @@ describe('ContextMenuManager', () => {
     });
 
     test('should return unknown for unrecognized types', () => {
-      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/page.html')).toBe('unknown');
-      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/document.pdf')).toBe('unknown');
+      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/page.html')).toBe(
+        'unknown'
+      );
+      expect(contextMenuManager.getMimeTypeFromUrl('https://example.com/document.pdf')).toBe(
+        'unknown'
+      );
     });
 
     test('should handle null/undefined URLs', () => {
@@ -280,8 +330,8 @@ describe('ContextMenuManager', () => {
         callback({
           imageCustomInstructions: [
             { text: 'Custom instruction 1', enabled: true },
-            { text: 'Custom instruction 2', enabled: true }
-          ]
+            { text: 'Custom instruction 2', enabled: true },
+          ],
         });
       });
 
@@ -291,14 +341,14 @@ describe('ContextMenuManager', () => {
         id: 'customInstruction-0',
         parentId: 'imageAnalysis',
         title: '✏️ Custom instruction 1',
-        contexts: ['image']
+        contexts: ['image'],
       });
 
       expect(chrome.contextMenus.create).toHaveBeenCalledWith({
         id: 'customInstruction-1',
         parentId: 'imageAnalysis',
         title: '✏️ Custom instruction 2',
-        contexts: ['image']
+        contexts: ['image'],
       });
     });
 
@@ -307,8 +357,8 @@ describe('ContextMenuManager', () => {
         callback({
           imageCustomInstructions: [
             { text: 'Enabled instruction', enabled: true },
-            { text: 'Disabled instruction', enabled: false }
-          ]
+            { text: 'Disabled instruction', enabled: false },
+          ],
         });
       });
 
@@ -319,7 +369,7 @@ describe('ContextMenuManager', () => {
         id: 'customInstruction-0',
         parentId: 'imageAnalysis',
         title: '✏️ Enabled instruction',
-        contexts: ['image']
+        contexts: ['image'],
       });
     });
 
@@ -328,10 +378,10 @@ describe('ContextMenuManager', () => {
         callback({ imageCustomInstructions: [] });
       });
 
-      chrome.contextMenus.getAll.mockImplementation((callback) => {
+      chrome.contextMenus.getAll.mockImplementation(callback => {
         callback([
           { id: 'customInstruction-0', title: 'Old instruction' },
-          { id: 'customInstruction-1', title: 'Another instruction' }
+          { id: 'customInstruction-1', title: 'Another instruction' },
         ]);
       });
 
@@ -356,25 +406,27 @@ describe('ContextMenuManager', () => {
     test('should handle successful menu click', async () => {
       const info = {
         menuItemId: 'analyzeImage',
-        srcUrl: 'https://example.com/image.jpg'
+        srcUrl: 'https://example.com/image.jpg',
       };
       const tab = { id: 123 };
 
       await contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor);
 
       expect(chrome.sidePanel.open).toHaveBeenCalledWith({ tabId: 123 });
-      expect(mockMediaProcessor.fetchMediaAsBase64).toHaveBeenCalledWith('https://example.com/image.jpg');
+      expect(mockMediaProcessor.fetchMediaAsBase64).toHaveBeenCalledWith(
+        'https://example.com/image.jpg'
+      );
       expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
         action: 'processMedia',
         url: 'https://example.com/image.jpg',
         mimeType: 'image',
         action: 'analyze',
-        mediaData: 'base64-data'
+        mediaData: 'base64-data',
       });
       expect(analytics.trackContextMenuClick).toHaveBeenCalledWith('analyzeImage', {
         mediaType: 'image',
         action: 'analyze',
-        url: 'https://example.com/image.jpg'
+        url: 'https://example.com/image.jpg',
       });
     });
 
@@ -392,8 +444,9 @@ describe('ContextMenuManager', () => {
       const info = { menuItemId: 'analyzeImage' }; // Missing srcUrl
       const tab = { id: 123 };
 
-      await expect(contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor))
-        .rejects.toThrow('No media URL found');
+      await expect(
+        contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor)
+      ).rejects.toThrow('No media URL found');
 
       expect(chrome.sidePanel.open).toHaveBeenCalled(); // Side panel still opens before error
     });
@@ -404,8 +457,9 @@ describe('ContextMenuManager', () => {
       const info = { menuItemId: 'analyzeImage', srcUrl: 'https://example.com/image.jpg' };
       const tab = { id: 123 };
 
-      await expect(contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor))
-        .rejects.toThrow('Failed to open side panel');
+      await expect(
+        contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor)
+      ).rejects.toThrow('Failed to open side panel');
 
       expect(errorHandler.handle).toHaveBeenCalled();
     });
@@ -414,7 +468,7 @@ describe('ContextMenuManager', () => {
       const testCases = [
         { menuItemId: 'analyzeImage', expectedAction: 'analyze' },
         { menuItemId: 'summarizeImage', expectedAction: 'summarize' },
-        { menuItemId: 'explainImage', expectedAction: 'explain' }
+        { menuItemId: 'explainImage', expectedAction: 'explain' },
       ];
 
       for (const testCase of testCases) {
@@ -434,7 +488,7 @@ describe('ContextMenuManager', () => {
       const testCases = [
         { srcUrl: 'https://example.com/image.jpg', expectedMimeType: 'image' },
         { srcUrl: 'https://example.com/video.mp4', expectedMimeType: 'video' },
-        { srcUrl: 'https://example.com/audio.mp3', expectedMimeType: 'audio' }
+        { srcUrl: 'https://example.com/audio.mp3', expectedMimeType: 'audio' },
       ];
 
       for (const testCase of testCases) {
@@ -477,8 +531,9 @@ describe('ContextMenuManager', () => {
       const info = { menuItemId: 'analyzeImage', srcUrl: 'https://example.com/image.jpg' };
       const tab = { id: 123 };
 
-      await expect(contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor))
-        .rejects.toThrow('Critical side panel error');
+      await expect(
+        contextMenuManager.handleMenuClick(info, tab, mockMediaProcessor)
+      ).rejects.toThrow('Critical side panel error');
     });
   });
 });

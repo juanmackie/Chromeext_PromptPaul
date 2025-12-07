@@ -142,6 +142,21 @@
           </label>
         </div>
 
+        <div class="ext-form-field col-span-12">
+          <label for="logLevelSelect" class="ext-form-label">
+            Debug Log Level
+            <button type="button" class="help-tooltip" data-tooltip="Control the verbosity of console logs. ERROR shows only critical errors, DEBUG shows all logs including detailed debugging information.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <select id="logLevelSelect" class="ext-select hextaui-select">
+            <option value="ERROR">ERROR - Critical errors only</option>
+            <option value="WARN">WARN - Warnings and errors</option>
+            <option value="INFO">INFO - General information</option>
+            <option value="DEBUG">DEBUG - All debugging information</option>
+          </select>
+        </div>
+
         <!-- Profile Management -->
         <div class="ext-form-field col-span-12">
           <label for="profileSelect" class="ext-form-label">

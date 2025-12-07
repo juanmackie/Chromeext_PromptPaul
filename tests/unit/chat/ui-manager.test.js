@@ -21,7 +21,7 @@ const mockElement = {
     add: jest.fn(),
     remove: jest.fn(),
     contains: jest.fn(() => false),
-    toggle: jest.fn()
+    toggle: jest.fn(),
   },
   appendChild: jest.fn(),
   removeChild: jest.fn(),
@@ -34,11 +34,11 @@ const mockElement = {
   removeEventListener: jest.fn(),
   click: jest.fn(),
   focus: jest.fn(),
-  blur: jest.fn()
+  blur: jest.fn(),
 };
 
 const mockDocument = {
-  getElementById: jest.fn((id) => {
+  getElementById: jest.fn(id => {
     const element = { ...mockElement, id };
     return element;
   }),
@@ -46,10 +46,10 @@ const mockDocument = {
   querySelector: jest.fn(() => null),
   querySelectorAll: jest.fn(() => []),
   body: {
-    appendChild: jest.fn()
+    appendChild: jest.fn(),
   },
   activeElement: null,
-  readyState: 'complete'
+  readyState: 'complete',
 };
 
 const mockWindow = {
@@ -58,10 +58,10 @@ const mockWindow = {
     type,
     detail: options?.detail || {},
     bubbles: options?.bubbles || false,
-    cancelable: options?.cancelable || false
+    cancelable: options?.cancelable || false,
   })),
   dispatchEvent: jest.fn(),
-  history: { pushState: jest.fn() }
+  history: { pushState: jest.fn() },
 };
 
 describe('UIManager', () => {
@@ -79,7 +79,7 @@ describe('UIManager', () => {
       error: jest.fn(),
       warn: jest.fn(),
       info: jest.fn(),
-      debug: jest.fn()
+      debug: jest.fn(),
     };
 
     // Create UI manager instance
@@ -105,7 +105,7 @@ describe('UIManager', () => {
     test('should update configuration when provided', () => {
       const customConfig = {
         enableAnimations: false,
-        debounceDelay: 500
+        debounceDelay: 500,
       };
 
       uiManager.updateConfig(customConfig);
@@ -135,9 +135,7 @@ describe('UIManager', () => {
 
       const elements = uiManager.discoverElements();
 
-      expect(console.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Element not found')
-      );
+      expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Element not found'));
     });
 
     test('should cache discovered elements', () => {
@@ -182,7 +180,7 @@ describe('UIManager', () => {
       const inputElement = {
         ...mockElement,
         selectionStart: 5,
-        selectionEnd: 10
+        selectionEnd: 10,
       };
       mockDocument.getElementById.mockReturnValue(inputElement);
 
@@ -195,7 +193,7 @@ describe('UIManager', () => {
     test('should set input selection range', () => {
       const inputElement = {
         ...mockElement,
-        setSelectionRange: jest.fn()
+        setSelectionRange: jest.fn(),
       };
       mockDocument.getElementById.mockReturnValue(inputElement);
 
@@ -270,7 +268,7 @@ describe('UIManager', () => {
 
     test('should show typing indicator', () => {
       const typingIndicator = { ...mockElement, hidden: true };
-      mockDocument.getElementById.mockImplementation((id) => {
+      mockDocument.getElementById.mockImplementation(id => {
         if (id === 'typing-indicator') return typingIndicator;
         return mockElement;
       });
@@ -282,7 +280,7 @@ describe('UIManager', () => {
 
     test('should hide typing indicator', () => {
       const typingIndicator = { ...mockElement, hidden: false };
-      mockDocument.getElementById.mockImplementation((id) => {
+      mockDocument.getElementById.mockImplementation(id => {
         if (id === 'typing-indicator') return typingIndicator;
         return mockElement;
       });
@@ -338,7 +336,7 @@ describe('UIManager', () => {
     test('should add event listeners for input events', () => {
       const inputElement = { ...mockElement };
       const sendButton = { ...mockElement };
-      mockDocument.getElementById.mockImplementation((id) => {
+      mockDocument.getElementById.mockImplementation(id => {
         if (id === 'user-input') return inputElement;
         if (id === 'send-button') return sendButton;
         return mockElement;
@@ -367,7 +365,7 @@ describe('UIManager', () => {
         key: 'Enter',
         shiftKey: false,
         preventDefault: jest.fn(),
-        stopPropagation: jest.fn()
+        stopPropagation: jest.fn(),
       };
 
       callback(enterEvent);
@@ -392,7 +390,7 @@ describe('UIManager', () => {
         key: 'Enter',
         shiftKey: true,
         preventDefault: jest.fn(),
-        stopPropagation: jest.fn()
+        stopPropagation: jest.fn(),
       };
 
       callback(shiftEnterEvent);
@@ -426,7 +424,7 @@ describe('UIManager', () => {
       const ctrlKEvent = {
         ctrlKey: true,
         key: 'k',
-        preventDefault: jest.fn()
+        preventDefault: jest.fn(),
       };
 
       callback(ctrlKEvent);
@@ -439,7 +437,10 @@ describe('UIManager', () => {
 
       uiManager.setupKeyboardShortcuts();
 
-      expect(mockDocument.addEventListener).not.toHaveBeenCalledWith('keydown', expect.any(Function));
+      expect(mockDocument.addEventListener).not.toHaveBeenCalledWith(
+        'keydown',
+        expect.any(Function)
+      );
     });
   });
 
@@ -562,7 +563,7 @@ describe('UIManager', () => {
       const toast = { ...mockElement };
       const container = {
         ...mockElement,
-        removeChild: jest.fn()
+        removeChild: jest.fn(),
       };
       mockDocument.getElementById.mockReturnValue(container);
 
@@ -612,7 +613,7 @@ describe('UIManager', () => {
   describe('Accessibility', () => {
     test('should announce screen reader messages', () => {
       const ariaLiveRegion = { ...mockElement, textContent: '' };
-      mockDocument.getElementById.mockImplementation((id) => {
+      mockDocument.getElementById.mockImplementation(id => {
         if (id === 'aria-live-region') return ariaLiveRegion;
         return mockElement;
       });
@@ -628,7 +629,7 @@ describe('UIManager', () => {
       uiManager.setAriaAttributes(element, {
         role: 'button',
         'aria-label': 'Send message',
-        'aria-expanded': 'false'
+        'aria-expanded': 'false',
       });
 
       expect(element.setAttribute).toHaveBeenCalledWith('role', 'button');
@@ -641,7 +642,8 @@ describe('UIManager', () => {
       const firstFocusable = { ...mockElement };
       const lastFocusable = { ...mockElement };
 
-      modal.querySelectorAll = jest.fn()
+      modal.querySelectorAll = jest
+        .fn()
         .mockReturnValueOnce([firstFocusable])
         .mockReturnValueOnce([lastFocusable]);
 
@@ -667,7 +669,7 @@ describe('UIManager', () => {
     test('should validate configuration', () => {
       const invalidConfig = {
         debounceDelay: -100,
-        enableAnimations: 'not-a-boolean'
+        enableAnimations: 'not-a-boolean',
       };
 
       expect(() => {

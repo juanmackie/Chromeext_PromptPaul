@@ -14,7 +14,7 @@ module.exports = {
     "^.+\\.(js|jsx|mjs|cjs)$": "babel-jest"
   },
 
-  moduleFileExtensions: ["js", "json", "cjs"],
+  moduleFileExtensions: ["js", "json", "mjs", "cjs"],
 
   // Ignore node_modules transformation but allow specific packages
   transformIgnorePatterns: [

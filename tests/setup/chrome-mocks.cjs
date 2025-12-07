@@ -10,7 +10,7 @@ const createMockChrome = () => ({
     // Message passing
     sendMessage: jest.fn().mockResolvedValue({}),
     onMessage: {
-      addListener: jest.fn((callback) => {
+      addListener: jest.fn(callback => {
         // Store callback for testing
         mockChrome.runtime._messageListeners.push(callback);
         return () => {
@@ -22,7 +22,7 @@ const createMockChrome = () => ({
       }),
       removeListener: jest.fn(),
       hasListener: jest.fn(),
-      _messageListeners: []
+      _messageListeners: [],
     },
 
     // Extension information
@@ -30,31 +30,31 @@ const createMockChrome = () => ({
     getManifest: jest.fn(() => ({
       name: 'Test Extension',
       version: '1.0.0',
-      manifest_version: 3
+      manifest_version: 3,
     })),
 
     // URL utilities
-    getURL: jest.fn((path) => `chrome-extension://test-extension-id/${path}`),
+    getURL: jest.fn(path => `chrome-extension://test-extension-id/${path}`),
 
     // Extension lifecycle
     onInstalled: {
       addListener: jest.fn(),
-      removeListener: jest.fn()
+      removeListener: jest.fn(),
     },
     onStartup: {
       addListener: jest.fn(),
-      removeListener: jest.fn()
+      removeListener: jest.fn(),
     },
     onSuspend: {
       addListener: jest.fn(),
-      removeListener: jest.fn()
+      removeListener: jest.fn(),
     },
 
     // Platform and environment
     getPlatformInfo: jest.fn().mockResolvedValue({
       os: 'win',
       arch: 'x86-64',
-      nacl_arch: 'x86-64'
+      nacl_arch: 'x86-64',
     }),
 
     // Error handling
@@ -63,12 +63,12 @@ const createMockChrome = () => ({
     // Background context
     getBackgroundPage: jest.fn().mockImplementation(() => {
       return Promise.resolve({
-        chrome: mockChrome
+        chrome: mockChrome,
       });
     }),
 
     // Open extension URL
-    openOptionsPage: jest.fn()
+    openOptionsPage: jest.fn(),
   },
 
   // Storage API - Data persistence
@@ -87,7 +87,10 @@ const createMockChrome = () => ({
         if (callback) callback();
         // Trigger storage change event
         mockChrome.storage.onChanged._listeners.forEach(listener => {
-          listener({ [Object.keys(items)[0]]: { newValue: items[Object.keys(items)[0]] } }, 'local');
+          listener(
+            { [Object.keys(items)[0]]: { newValue: items[Object.keys(items)[0]] } },
+            'local'
+          );
         });
         return Promise.resolve();
       }),
@@ -100,12 +103,12 @@ const createMockChrome = () => ({
         if (callback) callback();
         return Promise.resolve();
       }),
-      clear: jest.fn((callback) => {
+      clear: jest.fn(callback => {
         mockChrome.storage._localData = {};
         if (callback) callback();
         return Promise.resolve();
       }),
-      _localData: {}
+      _localData: {},
     },
 
     // Sync storage (cross-device)
@@ -135,17 +138,17 @@ const createMockChrome = () => ({
         if (callback) callback();
         return Promise.resolve();
       }),
-      clear: jest.fn((callback) => {
+      clear: jest.fn(callback => {
         mockChrome.storage._syncData = {};
         if (callback) callback();
         return Promise.resolve();
       }),
-      _syncData: {}
+      _syncData: {},
     },
 
     // Storage change events
     onChanged: {
-      addListener: jest.fn((callback) => {
+      addListener: jest.fn(callback => {
         mockChrome.storage.onChanged._listeners.push(callback);
         return () => {
           const index = mockChrome.storage.onChanged._listeners.indexOf(callback);
@@ -155,12 +158,12 @@ const createMockChrome = () => ({
         };
       }),
       removeListener: jest.fn(),
-      _listeners: []
+      _listeners: [],
     },
 
     // Storage quota and usage
     getBytesInUse: jest.fn().mockResolvedValue(1024),
-    getQuotaBytes: jest.fn().mockResolvedValue(1048576) // 1MB
+    getQuotaBytes: jest.fn().mockResolvedValue(1048576), // 1MB
   },
 
   // Context Menus API - Right-click menu integration
@@ -183,7 +186,7 @@ const createMockChrome = () => ({
       if (callback) callback();
       return Promise.resolve();
     }),
-    removeAll: jest.fn((callback) => {
+    removeAll: jest.fn(callback => {
       mockChrome.contextMenus._menus.clear();
       if (callback) callback();
       return Promise.resolve();
@@ -191,7 +194,7 @@ const createMockChrome = () => ({
 
     // Event handling
     onClicked: {
-      addListener: jest.fn((callback) => {
+      addListener: jest.fn(callback => {
         mockChrome.contextMenus._clickListeners.push(callback);
         return () => {
           const index = mockChrome.contextMenus._clickListeners.indexOf(callback);
@@ -201,11 +204,11 @@ const createMockChrome = () => ({
         };
       }),
       removeListener: jest.fn(),
-      _clickListeners: []
+      _clickListeners: [],
     },
 
     // Internal state
-    _menus: new Map()
+    _menus: new Map(),
   },
 
   // Tabs API - Browser tab management
@@ -231,7 +234,7 @@ const createMockChrome = () => ({
         active: createProperties.active !== false,
         currentWindow: true,
         windowId: 1,
-        title: 'New Tab'
+        title: 'New Tab',
       };
       mockChrome.tabs._tabs.push(tab);
       if (callback) callback(tab);
@@ -259,10 +262,10 @@ const createMockChrome = () => ({
         active: true,
         currentWindow: true,
         windowId: 1,
-        title: 'Test Tab'
-      }
+        title: 'Test Tab',
+      },
     ],
-    _nextTabId: 2
+    _nextTabId: 2,
   },
 
   // Scripting API - Content script injection
@@ -279,12 +282,12 @@ const createMockChrome = () => ({
     removeCSS: jest.fn((injection, callback) => {
       if (callback) callback();
       return Promise.resolve();
-    })
+    }),
   },
 
   // Windows API - Browser window management
   windows: {
-    getCurrent: jest.fn((callback) => {
+    getCurrent: jest.fn(callback => {
       const window = {
         id: 1,
         focused: true,
@@ -292,7 +295,7 @@ const createMockChrome = () => ({
         left: 0,
         width: 1920,
         height: 1080,
-        tabs: mockChrome.tabs._tabs
+        tabs: mockChrome.tabs._tabs,
       };
       if (callback) callback(window);
       return Promise.resolve(window);
@@ -305,14 +308,14 @@ const createMockChrome = () => ({
         left: 0,
         width: createData.width || 1920,
         height: createData.height || 1080,
-        tabs: []
+        tabs: [],
       };
       if (callback) callback(window);
       return Promise.resolve(window);
     }),
 
     // Internal state
-    _nextWindowId: 2
+    _nextWindowId: 2,
   },
 
   // Notifications API - Browser notifications
@@ -336,16 +339,17 @@ const createMockChrome = () => ({
       if (callback) callback(wasCleared);
       return Promise.resolve(wasCleared);
     }),
-    getAll: jest.fn((callback) => {
-      const notifications = Array.from(mockChrome.notifications._notifications.entries())
-        .map(([id, options]) => ({ id, ...options }));
+    getAll: jest.fn(callback => {
+      const notifications = Array.from(mockChrome.notifications._notifications.entries()).map(
+        ([id, options]) => ({ id, ...options })
+      );
       if (callback) callback(notifications);
       return Promise.resolve(notifications);
     }),
 
     // Internal state
-    _notifications: new Map()
-  }
+    _notifications: new Map(),
+  },
 });
 
 // Global mock Chrome instance
@@ -378,8 +382,8 @@ const mockChromeHelpers = {
         active: true,
         currentWindow: true,
         windowId: 1,
-        title: 'Test Tab'
-      }
+        title: 'Test Tab',
+      },
     ];
     mockChrome.tabs._nextTabId = 2;
     mockChrome.windows._nextWindowId = 2;
@@ -425,12 +429,12 @@ const mockChromeHelpers = {
   // Get storage data for testing
   getStorageData: (storageArea = 'local') => {
     return { ...mockChrome.storage[`${storageArea}Data`] };
-  }
+  },
 };
 
 // Export for CommonJS
 module.exports = {
   createMockChrome,
   mockChrome,
-  mockChromeHelpers
+  mockChromeHelpers,
 };

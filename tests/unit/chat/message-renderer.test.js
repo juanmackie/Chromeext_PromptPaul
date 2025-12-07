@@ -21,7 +21,7 @@ const mockElement = {
     add: jest.fn(),
     remove: jest.fn(),
     contains: jest.fn(() => false),
-    toggle: jest.fn()
+    toggle: jest.fn(),
   },
   appendChild: jest.fn(),
   removeChild: jest.fn(),
@@ -34,11 +34,11 @@ const mockElement = {
   removeEventListener: jest.fn(),
   click: jest.fn(),
   focus: jest.fn(),
-  blur: jest.fn()
+  blur: jest.fn(),
 };
 
 const mockDocument = {
-  getElementById: jest.fn((id) => {
+  getElementById: jest.fn(id => {
     const element = { ...mockElement, id };
     return element;
   }),
@@ -46,28 +46,28 @@ const mockDocument = {
   querySelector: jest.fn(() => null),
   querySelectorAll: jest.fn(() => []),
   body: {
-    appendChild: jest.fn()
+    appendChild: jest.fn(),
   },
   createRange: jest.fn(() => ({
     selectNodeContents: jest.fn(),
     deleteContents: jest.fn(),
-    insertNode: jest.fn()
+    insertNode: jest.fn(),
   })),
   createDocumentFragment: jest.fn(() => ({
     appendChild: jest.fn(),
     querySelector: jest.fn(() => null),
-    querySelectorAll: jest.fn(() => [])
-  }))
+    querySelectorAll: jest.fn(() => []),
+  })),
 };
 
 const mockWindow = {
   marked: {
-    parse: jest.fn((text) => `<p>${text}</p>`)
+    parse: jest.fn(text => `<p>${text}</p>`),
   },
   Prism: {
     highlight: jest.fn((code, lang) => `<code class="language-${lang}">${code}</code>`),
-    highlightAll: jest.fn()
-  }
+    highlightAll: jest.fn(),
+  },
 };
 
 describe('MessageRenderer', () => {
@@ -102,7 +102,7 @@ describe('MessageRenderer', () => {
     test('should update configuration when provided', () => {
       const customConfig = {
         enableMarkdown: false,
-        animationDuration: 500
+        animationDuration: 500,
       };
 
       messageRenderer.updateConfig(customConfig);
@@ -123,7 +123,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'user',
-        content: 'Hello world'
+        content: 'Hello world',
       };
 
       const messageElement = messageRenderer.createMessageElement(message);
@@ -139,7 +139,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-2',
         role: 'assistant',
-        content: 'Hi there!'
+        content: 'Hi there!',
       };
 
       const messageElement = messageRenderer.createMessageElement(message);
@@ -155,7 +155,7 @@ describe('MessageRenderer', () => {
         role: 'user',
         content: 'Test message',
         timestamp: new Date('2024-01-01T12:00:00Z').toISOString(),
-        model: 'claude-3-sonnet'
+        model: 'claude-3-sonnet',
       };
 
       const headerElement = messageRenderer.createMessageHeader(message);
@@ -218,7 +218,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'user',
-        content: 'Hello world'
+        content: 'Hello world',
       };
 
       const chatArea = mockElement;
@@ -234,13 +234,13 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'user',
-        content: 'Hello world'
+        content: 'Hello world',
       };
 
       const chatArea = {
         ...mockElement,
         scrollHeight: 1000,
-        clientHeight: 500
+        clientHeight: 500,
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 
@@ -255,7 +255,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'user',
-        content: 'Hello world'
+        content: 'Hello world',
       };
 
       const chatArea = mockElement;
@@ -273,7 +273,7 @@ describe('MessageRenderer', () => {
       const chatArea = {
         ...mockElement,
         querySelector: jest.fn(() => messageElement),
-        removeChild: jest.fn()
+        removeChild: jest.fn(),
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 
@@ -289,12 +289,12 @@ describe('MessageRenderer', () => {
       const messageElement = {
         ...mockElement,
         id: messageId,
-        querySelector: jest.fn(() => ({ ...mockElement, innerHTML: '' }))
+        querySelector: jest.fn(() => ({ ...mockElement, innerHTML: '' })),
       };
 
       const chatArea = {
         ...mockElement,
-        querySelector: jest.fn(() => messageElement)
+        querySelector: jest.fn(() => messageElement),
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 
@@ -310,7 +310,7 @@ describe('MessageRenderer', () => {
         id: 'streaming-message',
         role: 'assistant',
         content: '',
-        streaming: true
+        streaming: true,
       };
 
       const messageElement = messageRenderer.createMessageElement(message);
@@ -327,12 +327,12 @@ describe('MessageRenderer', () => {
       const messageElement = {
         ...mockElement,
         id: messageId,
-        querySelector: jest.fn(() => contentElement)
+        querySelector: jest.fn(() => contentElement),
       };
 
       const chatArea = {
         ...mockElement,
-        querySelector: jest.fn(() => messageElement)
+        querySelector: jest.fn(() => messageElement),
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 
@@ -348,14 +348,14 @@ describe('MessageRenderer', () => {
         id: messageId,
         classList: {
           ...mockElement.classList,
-          remove: jest.fn()
+          remove: jest.fn(),
         },
-        dataset: { streaming: 'true' }
+        dataset: { streaming: 'true' },
       };
 
       const chatArea = {
         ...mockElement,
-        querySelector: jest.fn(() => messageElement)
+        querySelector: jest.fn(() => messageElement),
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 
@@ -371,7 +371,7 @@ describe('MessageRenderer', () => {
       const error = {
         message: 'Something went wrong',
         category: 'API_ERROR',
-        severity: 'error'
+        severity: 'error',
       };
 
       const errorElement = messageRenderer.createErrorMessage(error);
@@ -384,7 +384,7 @@ describe('MessageRenderer', () => {
     test('should add error message to chat', () => {
       const error = {
         message: 'Network error',
-        category: 'NETWORK_ERROR'
+        category: 'NETWORK_ERROR',
       };
 
       const chatArea = mockElement;
@@ -402,7 +402,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'assistant',
-        content: 'Here is some information'
+        content: 'Here is some information',
       };
 
       const actionsElement = messageRenderer.createMessageActions(message);
@@ -416,7 +416,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'user',
-        content: 'My question'
+        content: 'My question',
       };
 
       const actionsElement = messageRenderer.createMessageActions(message);
@@ -428,7 +428,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'assistant',
-        content: 'Copyable content'
+        content: 'Copyable content',
       };
 
       const messageElement = messageRenderer.createMessageElement(message);
@@ -503,13 +503,16 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'assistant',
-        content: 'Response message'
+        content: 'Response message',
       };
 
       const messageElement = messageRenderer.createMessageElement(message);
 
       expect(messageElement.setAttribute).toHaveBeenCalledWith('role', 'article');
-      expect(messageElement.setAttribute).toHaveBeenCalledWith('aria-label', expect.stringContaining('assistant'));
+      expect(messageElement.setAttribute).toHaveBeenCalledWith(
+        'aria-label',
+        expect.stringContaining('assistant')
+      );
     });
 
     test('should add ARIA live region for streaming messages', () => {
@@ -517,7 +520,7 @@ describe('MessageRenderer', () => {
         id: 'streaming-message',
         role: 'assistant',
         content: '',
-        streaming: true
+        streaming: true,
       };
 
       const messageElement = messageRenderer.createMessageElement(message);
@@ -531,7 +534,7 @@ describe('MessageRenderer', () => {
       const message = {
         id: 'test-message-1',
         role: 'assistant',
-        content: 'Message content'
+        content: 'Message content',
       };
 
       // Mock dark theme
@@ -550,13 +553,13 @@ describe('MessageRenderer', () => {
         ...mockElement,
         id: messageId,
         querySelector: jest.fn(() => mockElement),
-        removeEventListener: jest.fn()
+        removeEventListener: jest.fn(),
       };
 
       const chatArea = {
         ...mockElement,
         querySelector: jest.fn(() => messageElement),
-        removeChild: jest.fn()
+        removeChild: jest.fn(),
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 
@@ -571,8 +574,8 @@ describe('MessageRenderer', () => {
         innerHTML: '<div class="message">Old message</div>',
         querySelectorAll: jest.fn(() => [
           { ...mockElement, id: 'message-1' },
-          { ...mockElement, id: 'message-2' }
-        ])
+          { ...mockElement, id: 'message-2' },
+        ]),
       };
       mockDocument.getElementById.mockReturnValue(chatArea);
 

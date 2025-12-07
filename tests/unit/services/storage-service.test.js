@@ -3,7 +3,13 @@
  * Tests Chrome storage operations with error handling, profile management, options
  */
 
-const { errorHandler, ErrorSeverity, ErrorCategory, createError, wrapAsync } = require('../../mocks/error-handler.mock.js');
+const {
+  errorHandler,
+  ErrorSeverity,
+  ErrorCategory,
+  createError,
+  wrapAsync,
+} = require('../../mocks/error-handler.mock.js');
 
 describe('StorageService', () => {
   let storageService;
@@ -18,24 +24,24 @@ describe('StorageService', () => {
       get: jest.fn(),
       set: jest.fn(),
       remove: jest.fn(),
-      clear: jest.fn()
+      clear: jest.fn(),
     };
 
     mockChromeStorageSync = {
       get: jest.fn(),
       set: jest.fn(),
       remove: jest.fn(),
-      clear: jest.fn()
+      clear: jest.fn(),
     };
 
     global.chrome = {
       storage: {
         local: mockChromeStorageLocal,
-        sync: mockChromeStorageSync
+        sync: mockChromeStorageSync,
       },
       runtime: {
-        lastError: null
-      }
+        lastError: null,
+      },
     };
   });
 
@@ -58,7 +64,10 @@ describe('StorageService', () => {
 
       await storageService.setLocal({ newKey: 'newValue' });
 
-      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({ newKey: 'newValue' }, expect.any(Function));
+      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith(
+        { newKey: 'newValue' },
+        expect.any(Function)
+      );
     });
 
     test('should remove data from local storage', async () => {
@@ -107,7 +116,10 @@ describe('StorageService', () => {
 
       await storageService.saveProfiles([{ id: 'new', name: 'New' }]);
 
-      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({ profiles: [{ id: 'new', name: 'New' }] }, expect.any(Function));
+      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith(
+        { profiles: [{ id: 'new', name: 'New' }] },
+        expect.any(Function)
+      );
     });
 
     test('should get/set last selected profile ID', async () => {
@@ -120,7 +132,9 @@ describe('StorageService', () => {
 
       mockChromeStorageLocal.set.mockImplementation((items, callback) => callback());
       await storageService.setLastSelectedProfileId('new-selected');
-      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({ lastSelectedProfileId: 'new-selected' });
+      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({
+        lastSelectedProfileId: 'new-selected',
+      });
     });
   });
 
@@ -138,7 +152,9 @@ describe('StorageService', () => {
       mockChromeStorageLocal.set.mockImplementation((items, callback) => callback());
 
       await storageService.saveToolDefinitions([{ name: 'new-tool' }]);
-      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({ promptPaulTools: [{ name: 'new-tool' }] });
+      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({
+        promptPaulTools: [{ name: 'new-tool' }],
+      });
     });
   });
 
@@ -153,7 +169,9 @@ describe('StorageService', () => {
 
       mockChromeStorageLocal.set.mockImplementation((items, callback) => callback());
       await storageService.saveImageCustomInstructions([{ text: 'New' }]);
-      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({ imageCustomInstructions: [{ text: 'New' }] });
+      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({
+        imageCustomInstructions: [{ text: 'New' }],
+      });
     });
 
     test('should get/save general custom instructions', async () => {
@@ -181,11 +199,16 @@ describe('StorageService', () => {
       mockChromeStorageSync.set.mockImplementation((items, callback) => callback());
 
       await storageService.saveOptions({ enableStreaming: true, theme: 'dark' });
-      expect(mockChromeStorageSync.set).toHaveBeenCalledWith({ enableStreaming: true, theme: 'dark' });
+      expect(mockChromeStorageSync.set).toHaveBeenCalledWith({
+        enableStreaming: true,
+        theme: 'dark',
+      });
     });
 
     test('should get/set streaming enabled', async () => {
-      mockChromeStorageSync.get.mockImplementation((keys, callback) => callback({ enableStreaming: false }));
+      mockChromeStorageSync.get.mockImplementation((keys, callback) =>
+        callback({ enableStreaming: false })
+      );
       const enabled = await storageService.getStreamingEnabled();
       expect(enabled).toBe(false);
 
@@ -197,13 +220,17 @@ describe('StorageService', () => {
 
   describe('Default LLM Endpoint', () => {
     test('should get/set default LLM endpoint', async () => {
-      mockChromeStorageLocal.get.mockImplementation((keys, callback) => callback({ defaultLlmEndpoint: 'https://default.com' }));
+      mockChromeStorageLocal.get.mockImplementation((keys, callback) =>
+        callback({ defaultLlmEndpoint: 'https://default.com' })
+      );
       const endpoint = await storageService.getDefaultLlmEndpoint();
       expect(endpoint).toBe('https://default.com');
 
       mockChromeStorageLocal.set.mockImplementation((items, callback) => callback());
       await storageService.setDefaultLlmEndpoint('https://new.com');
-      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({ defaultLlmEndpoint: 'https://new.com' });
+      expect(mockChromeStorageLocal.set).toHaveBeenCalledWith({
+        defaultLlmEndpoint: 'https://new.com',
+      });
     });
   });
 
@@ -228,12 +255,14 @@ describe('StorageService', () => {
       const mockSettings = {
         profiles: [{ id: 'imported' }],
         promptPaulTools: [{ name: 'imported-tool' }],
-        options: { theme: 'light' }
+        options: { theme: 'light' },
       };
 
       // Mock all save methods
       const saveProfilesSpy = jest.spyOn(storageService, 'saveProfiles').mockResolvedValue();
-      const saveToolDefinitionsSpy = jest.spyOn(storageService, 'saveToolDefinitions').mockResolvedValue();
+      const saveToolDefinitionsSpy = jest
+        .spyOn(storageService, 'saveToolDefinitions')
+        .mockResolvedValue();
       const saveOptionsSpy = jest.spyOn(storageService, 'saveOptions').mockResolvedValue();
 
       await storageService.importSettings(mockSettings);
@@ -246,8 +275,12 @@ describe('StorageService', () => {
 
   describe('Storage Usage', () => {
     test('should get storage usage information', async () => {
-      mockChromeStorageLocal.get.mockImplementation((keys, callback) => callback({ key1: 'value1' }));
-      mockChromeStorageSync.get.mockImplementation((keys, callback) => callback({ key2: 'value2' }));
+      mockChromeStorageLocal.get.mockImplementation((keys, callback) =>
+        callback({ key1: 'value1' })
+      );
+      mockChromeStorageSync.get.mockImplementation((keys, callback) =>
+        callback({ key2: 'value2' })
+      );
 
       const usage = await storageService.getStorageUsage();
 

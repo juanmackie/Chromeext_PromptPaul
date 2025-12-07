@@ -10,7 +10,7 @@ export function applyDarkTheme(isDark) {
   // Apply theme using data-theme attribute for consistency
   const root = document.documentElement;
   const body = document.body;
-  
+
   if (isDark) {
     root.setAttribute('data-theme', 'dark');
     body.classList.remove('light-theme', 'ext-light');
@@ -44,11 +44,13 @@ export function applyDarkTheme(isDark) {
     // Dark theme uses the higher-contrast "light" assets
     icon.src = isDark ? 'icons/light_copy_formatted.png' : 'icons/copy_formatted.png';
   });
-  
+
   // Dispatch theme change event for other components
-  window.dispatchEvent(new CustomEvent('themeChanged', {
-    detail: { isDark, theme: isDark ? 'dark' : 'light' }
-  }));
+  window.dispatchEvent(
+    new CustomEvent('themeChanged', {
+      detail: { isDark, theme: isDark ? 'dark' : 'light' },
+    })
+  );
 }
 
 /**
@@ -57,7 +59,7 @@ export function applyDarkTheme(isDark) {
  */
 export function setupThemeToggle(toggleElement) {
   // Load initial state
-  chrome.storage.sync.get({ darkTheme: false }, (result) => {
+  chrome.storage.sync.get({ darkTheme: false }, result => {
     toggleElement.checked = !!result.darkTheme;
     applyDarkTheme(!!result.darkTheme);
   });

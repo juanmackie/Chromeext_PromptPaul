@@ -81,7 +81,7 @@ describe('Basic Test Infrastructure', () => {
   test('should support object mocking', () => {
     const mockObject = {
       method1: jest.fn().mockReturnValue('result1'),
-      method2: jest.fn().mockReturnValue('result2')
+      method2: jest.fn().mockReturnValue('result2'),
     };
 
     expect(mockObject.method1()).toBe('result1');
@@ -103,7 +103,10 @@ describe('Chrome Extension Specific Tests', () => {
 
     // Test storage API
     chrome.storage.local.set({ testKey: 'testValue' }, jest.fn());
-    expect(chrome.storage.local.set).toHaveBeenCalledWith({ testKey: 'testValue' }, expect.any(Function));
+    expect(chrome.storage.local.set).toHaveBeenCalledWith(
+      { testKey: 'testValue' },
+      expect.any(Function)
+    );
   });
 
   test('should handle Chrome extension message passing', () => {

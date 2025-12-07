@@ -5,7 +5,11 @@
 
 describe('ES6 Module Integration Test', () => {
   // Mock modules at the top level
-  const { errorHandler, ErrorSeverity, ErrorCategory } = require('../../mocks/error-handler.mock.js');
+  const {
+    errorHandler,
+    ErrorSeverity,
+    ErrorCategory,
+  } = require('../../mocks/error-handler.mock.js');
   const analytics = require('../../mocks/analytics.mock.js');
 
   test('should import error handler mock correctly', () => {

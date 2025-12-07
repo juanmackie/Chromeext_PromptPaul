@@ -7,7 +7,7 @@ const ErrorSeverity = {
   INFO: 'info',
   WARNING: 'warning',
   ERROR: 'error',
-  CRITICAL: 'critical'
+  CRITICAL: 'critical',
 };
 
 const ErrorCategory = {
@@ -16,17 +16,19 @@ const ErrorCategory = {
   STORAGE: 'storage',
   CHROME_API: 'chrome_api',
   MEDIA_PROCESSING: 'media_processing',
-  API_CLIENT: 'api_client'
+  API_CLIENT: 'api_client',
 };
 
-const createError = jest.fn((message, category = ErrorCategory.GENERAL, severity = ErrorSeverity.ERROR, context = {}) => ({
-  message,
-  category,
-  severity,
-  context,
-  timestamp: new Date().toISOString(),
-  id: `error-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-}));
+const createError = jest.fn(
+  (message, category = ErrorCategory.GENERAL, severity = ErrorSeverity.ERROR, context = {}) => ({
+    message,
+    category,
+    severity,
+    context,
+    timestamp: new Date().toISOString(),
+    id: `error-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  })
+);
 
 const errorHandler = {
   log: jest.fn((error, context) => {
@@ -38,7 +40,7 @@ const errorHandler = {
     const enhancedError = {
       ...errorObj,
       context,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
     console.error('[Error Handler]', enhancedError);
@@ -78,23 +80,23 @@ const errorHandler = {
     error: {
       message: error.message || String(error),
       stack: error.stack,
-      name: error.name
+      name: error.name,
     },
     context,
     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'test-environment',
-    url: typeof window !== 'undefined' ? window.location.href : 'test-url'
+    url: typeof window !== 'undefined' ? window.location.href : 'test-url',
   })),
 
   getErrorStats: jest.fn(() => ({
     total: 0,
     byCategory: {},
     bySeverity: {},
-    recent: []
+    recent: [],
   })),
 
   clearErrorStats: jest.fn(() => {
     // Mock implementation
-  })
+  }),
 };
 
 const handleChromeApiCall = jest.fn(async (apiCall, options = {}) => {
@@ -104,12 +106,12 @@ const handleChromeApiCall = jest.fn(async (apiCall, options = {}) => {
   } catch (error) {
     errorHandler.handle(error, {
       category: ErrorCategory.CHROME_API,
-      operation: options.operation || 'unknown'
+      operation: options.operation || 'unknown',
     });
     return {
       success: false,
       error: error.message || String(error),
-      chromeError: chrome.runtime.lastError
+      chromeError: chrome.runtime.lastError,
     };
   }
 });
@@ -135,5 +137,5 @@ module.exports = {
   createError,
   errorHandler,
   handleChromeApiCall,
-  wrapAsync
+  wrapAsync,
 };

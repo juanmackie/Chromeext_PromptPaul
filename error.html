@@ -1,94 +1,98 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <title>Error</title>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="theme.css">
-  <style>
-    body {
-      font-family: var(--ext-font-family);
-      line-height: 1.6;
-      margin: 0;
-      padding: 20px;
-      background: var(--ext-background);
-      color: var(--ext-foreground);
-      min-height: 100vh;
-    }
-    .error-container {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
-    }
-    h1 {
-      color: var(--ext-destructive);
-      font-size: var(--ext-font-size-2xl);
-      margin-bottom: 1.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    h1::before {
-      content: '⚠️';
-      font-size: 1.5rem;
-    }
-    pre {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      background: var(--ext-card);
-      border: 1px solid var(--ext-border);
-      border-radius: var(--ext-radius-lg);
-      padding: 1.5rem;
-      font-size: var(--ext-font-size-sm);
-      font-family: var(--ext-font-mono);
-      box-shadow: var(--ext-shadow-md);
-      color: var(--ext-card-foreground);
-      overflow-x: auto;
-    }
-    .back-button {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 1.5rem;
-      padding: 0.75rem 1.5rem;
-      background: var(--ext-primary);
-      color: var(--ext-primary-foreground);
-      border: none;
-      border-radius: var(--ext-radius-md);
-      font-family: var(--ext-font-family);
-      font-size: var(--ext-font-size-sm);
-      font-weight: 500;
-      cursor: pointer;
-      transition: var(--ext-transition);
-      text-decoration: none;
-    }
-    .back-button:hover {
-      background: var(--ext-primary-hover);
-      transform: translateY(-1px);
-      box-shadow: var(--ext-shadow-md);
-    }
-  </style>
-</head>
-<body>
-  <div class="error-container">
-    <h1>Error</h1>
-    <pre id="error-message"></pre>
-    <a href="javascript:history.back()" class="back-button">
-      ← Go Back
-    </a>
-  </div>
+  <head>
+    <title>Error</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="theme.css" />
+    <style>
+      body {
+        font-family: var(--ext-font-family);
+        line-height: 1.6;
+        margin: 0;
+        padding: 20px;
+        background: var(--ext-background);
+        color: var(--ext-foreground);
+        min-height: 100vh;
+      }
+      .error-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+      h1 {
+        color: var(--ext-destructive);
+        font-size: var(--ext-font-size-2xl);
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      h1::before {
+        content: '⚠️';
+        font-size: 1.5rem;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background: var(--ext-card);
+        border: 1px solid var(--ext-border);
+        border-radius: var(--ext-radius-lg);
+        padding: 1.5rem;
+        font-size: var(--ext-font-size-sm);
+        font-family: var(--ext-font-mono);
+        box-shadow: var(--ext-shadow-md);
+        color: var(--ext-card-foreground);
+        overflow-x: auto;
+      }
+      .back-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+        padding: 0.75rem 1.5rem;
+        background: var(--ext-primary);
+        color: var(--ext-primary-foreground);
+        border: none;
+        border-radius: var(--ext-radius-md);
+        font-family: var(--ext-font-family);
+        font-size: var(--ext-font-size-sm);
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--ext-transition);
+        text-decoration: none;
+      }
+      .back-button:hover {
+        background: var(--ext-primary-hover);
+        transform: translateY(-1px);
+        box-shadow: var(--ext-shadow-md);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="error-container">
+      <h1>Error</h1>
+      <pre id="error-message"></pre>
+      <a href="javascript:history.back()" class="back-button"> ← Go Back </a>
+    </div>
 
-  <script>
-    // Get error message from URL parameters and display it
-    const urlParams = new URLSearchParams(window.location.search);
-    const errorMessage = urlParams.get('message');
-    if (errorMessage) {
-      // Decode the error message and display it
-      const decodedErrorMessage = decodeURIComponent(errorMessage);
-      document.getElementById('error-message').textContent = decodedErrorMessage;
-    } else {
-      document.getElementById('error-message').textContent = 'No error message available.';
-    }
-  </script>
-</body>
+    <script>
+      // Get error message from URL parameters and display it
+      const urlParams = new URLSearchParams(window.location.search);
+      const errorMessage = urlParams.get('message');
+      if (errorMessage) {
+        // Decode the error message and display it
+        const decodedErrorMessage = decodeURIComponent(errorMessage);
+        document.getElementById('error-message').textContent = decodedErrorMessage;
+      } else {
+        document.getElementById('error-message').textContent = 'No error message available.';
+      }
+    </script>
+  </body>
 </html>

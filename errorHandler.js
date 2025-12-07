@@ -2,16 +2,17 @@
 // Integrates with analytics.js and loadingManager.js for comprehensive error management
 
 import analytics from './analytics.js';
+import logger from './utils/logger.js';
 
 /**
  * Error severity levels
  */
 export const ErrorSeverity = {
-  CRITICAL: 'critical',   // System-breaking errors
-  HIGH: 'high',          // Major functionality issues
-  MEDIUM: 'medium',      // Moderate issues
-  LOW: 'low',           // Minor issues
-  INFO: 'info'          // Informational messages
+  CRITICAL: 'critical', // System-breaking errors
+  HIGH: 'high', // Major functionality issues
+  MEDIUM: 'medium', // Moderate issues
+  LOW: 'low', // Minor issues
+  INFO: 'info', // Informational messages
 };
 
 /**
@@ -27,7 +28,7 @@ export const ErrorCategory = {
   STORAGE: 'storage',
   PERMISSION: 'permission',
   VALIDATION: 'validation',
-  UNKNOWN: 'unknown'
+  UNKNOWN: 'unknown',
 };
 
 /**
@@ -66,11 +67,13 @@ export class ExtensionError extends Error {
       critical: this.critical,
       component: this.component,
       stack: this.stack,
-      originalError: this.originalError ? {
-        message: this.originalError.message,
-        name: this.originalError.name,
-        stack: this.originalError.stack
-      } : null
+      originalError: this.originalError
+        ? {
+            message: this.originalError.message,
+            name: this.originalError.name,
+            stack: this.originalError.stack,
+          }
+        : null,
     };
   }
 }
@@ -100,7 +103,7 @@ export class ErrorHandler {
     this.setupChromeErrorHandlers();
 
     this.initialized = true;
-    console.log('Error handler initialized');
+    logger.info('ErrorHandler', 'Error handler initialized');
   }
 
   /**
@@ -109,16 +112,16 @@ export class ErrorHandler {
   setupGlobalErrorHandlers() {
     // Handle unhandled promise rejections
     if (typeof window !== 'undefined') {
-      window.addEventListener('unhandledrejection', (event) => {
+      window.addEventListener('unhandledrejection', event => {
         this.handleGlobalError(event.reason, 'unhandledrejection');
       });
 
       // Handle uncaught errors
-      window.addEventListener('error', (event) => {
+      window.addEventListener('error', event => {
         this.handleGlobalError(event.error || new Error(event.message), 'uncaught', {
           filename: event.filename,
           lineno: event.lineno,
-          colno: event.colno
+          colno: event.colno,
         });
       });
     }
@@ -131,7 +134,7 @@ export class ErrorHandler {
     if (typeof chrome !== 'undefined' && chrome.runtime) {
       // Handle runtime errors
       if (chrome.runtime.onError) {
-        chrome.runtime.onError.addListener((error) => {
+        chrome.runtime.onError.addListener(error => {
           this.handleChromeError(error, 'runtime');
         });
       }
@@ -142,10 +145,12 @@ export class ErrorHandler {
           // Monitor for storage-related issues
           Object.keys(changes).forEach(key => {
             if (changes[key].error) {
-              this.handleError(new ExtensionError('Storage operation failed', {
-                category: ErrorCategory.STORAGE,
-                context: { key, areaName, error: changes[key].error }
-              }));
+              this.handleError(
+                new ExtensionError('Storage operation failed', {
+                  category: ErrorCategory.STORAGE,
+                  context: { key, areaName, error: changes[key].error },
+                })
+              );
             }
           });
         });
@@ -164,7 +169,7 @@ export class ErrorHandler {
         category: ErrorCategory.SYSTEM,
         code: `GLOBAL_${type.toUpperCase()}_ERROR`,
         context: { type, ...context },
-        originalError: error
+        originalError: error,
       }
     );
 
@@ -182,7 +187,7 @@ export class ErrorHandler {
         category: ErrorCategory.CHROME_API,
         code: `CHROME_${source.toUpperCase()}_ERROR`,
         context: { source, chromeError: error },
-        originalError: error
+        originalError: error,
       }
     );
 
@@ -218,11 +223,10 @@ export class ErrorHandler {
       if (extensionError.retryable && options.retryCallback) {
         await this.handleRetry(extensionError, options.retryCallback);
       }
-
     } catch (handlingError) {
-      console.error('Error in error handler:', handlingError);
+      logger.error('ErrorHandler', 'Error in error handler:', handlingError);
       // Fallback to basic console logging
-      console.error('Original error:', error);
+      logger.error('ErrorHandler', 'Original error:', error);
     }
   }
 
@@ -236,126 +240,110 @@ export class ErrorHandler {
 
     // Handle Chrome runtime lastError pattern
     if (chrome?.runtime?.lastError) {
-      return new ExtensionError(
-        chrome.runtime.lastError.message || 'Chrome runtime error',
-        {
-          severity: ErrorSeverity.MEDIUM,
-          category: ErrorCategory.CHROME_API,
-          code: 'CHROME_RUNTIME_ERROR',
-          context: { lastError: chrome.runtime.lastError },
-          ...options
-        }
-      );
+      return new ExtensionError(chrome.runtime.lastError.message || 'Chrome runtime error', {
+        severity: ErrorSeverity.MEDIUM,
+        category: ErrorCategory.CHROME_API,
+        code: 'CHROME_RUNTIME_ERROR',
+        context: { lastError: chrome.runtime.lastError },
+        ...options,
+      });
     }
 
     // Handle network errors with specific user messages
     if (error instanceof TypeError && error.message.includes('fetch')) {
       const userMessage = this.getNetworkErrorMessage(error.message);
-      return new ExtensionError(
-        'Network request failed',
-        {
-          severity: ErrorSeverity.HIGH,
-          category: ErrorCategory.NETWORK,
-          code: 'NETWORK_ERROR',
-          userMessage,
-          context: { originalMessage: error.message },
-          retryable: true,
-          originalError: error,
-          ...options
-        }
-      );
+      return new ExtensionError('Network request failed', {
+        severity: ErrorSeverity.HIGH,
+        category: ErrorCategory.NETWORK,
+        code: 'NETWORK_ERROR',
+        userMessage,
+        context: { originalMessage: error.message },
+        retryable: true,
+        originalError: error,
+        ...options,
+      });
     }
 
     // Handle API response errors
     if (error.message && error.message.includes('API')) {
       const userMessage = this.getApiErrorMessage(error.message);
-      return new ExtensionError(
-        error.message,
-        {
-          severity: ErrorSeverity.HIGH,
-          category: ErrorCategory.NETWORK,
-          code: 'API_ERROR',
-          userMessage,
-          originalError: error,
-          ...options
-        }
-      );
+      return new ExtensionError(error.message, {
+        severity: ErrorSeverity.HIGH,
+        category: ErrorCategory.NETWORK,
+        code: 'API_ERROR',
+        userMessage,
+        originalError: error,
+        ...options,
+      });
     }
 
     // Handle configuration errors with helpful guidance
-    if (error.message && (
-      error.message.includes('Configuration') ||
-      error.message.includes('API key') ||
-      error.message.includes('endpoint') ||
-      error.message.includes('model name')
-    )) {
+    if (
+      error.message &&
+      (error.message.includes('Configuration') ||
+        error.message.includes('API key') ||
+        error.message.includes('endpoint') ||
+        error.message.includes('model name'))
+    ) {
       const userMessage = this.getConfigurationErrorMessage(error.message);
-      return new ExtensionError(
-        error.message,
-        {
-          severity: ErrorSeverity.CRITICAL,
-          category: ErrorCategory.CONFIGURATION,
-          code: 'CONFIGURATION_ERROR',
-          userMessage,
-          originalError: error,
-          ...options
-        }
-      );
+      return new ExtensionError(error.message, {
+        severity: ErrorSeverity.CRITICAL,
+        category: ErrorCategory.CONFIGURATION,
+        code: 'CONFIGURATION_ERROR',
+        userMessage,
+        originalError: error,
+        ...options,
+      });
     }
 
     // Handle authentication errors
-    if (error.message && (
-      error.message.includes('401') ||
-      error.message.includes('403') ||
-      error.message.includes('Unauthorized') ||
-      error.message.includes('Forbidden') ||
-      error.message.includes('authentication')
-    )) {
-      const userMessage = 'Authentication failed. Please check your API key is valid and has the correct permissions.';
-      return new ExtensionError(
-        error.message,
-        {
-          severity: ErrorSeverity.HIGH,
-          category: ErrorCategory.CONFIGURATION,
-          code: 'AUTHENTICATION_ERROR',
-          userMessage,
-          originalError: error,
-          ...options
-        }
-      );
+    if (
+      error.message &&
+      (error.message.includes('401') ||
+        error.message.includes('403') ||
+        error.message.includes('Unauthorized') ||
+        error.message.includes('Forbidden') ||
+        error.message.includes('authentication'))
+    ) {
+      const userMessage =
+        'Authentication failed. Please check your API key is valid and has the correct permissions.';
+      return new ExtensionError(error.message, {
+        severity: ErrorSeverity.HIGH,
+        category: ErrorCategory.CONFIGURATION,
+        code: 'AUTHENTICATION_ERROR',
+        userMessage,
+        originalError: error,
+        ...options,
+      });
     }
 
     // Handle rate limiting errors
-    if (error.message && (
-      error.message.includes('429') ||
-      error.message.includes('rate limit') ||
-      error.message.includes('too many requests')
-    )) {
-      const userMessage = 'Rate limit exceeded. Please wait a moment before sending another message.';
-      return new ExtensionError(
-        error.message,
-        {
-          severity: ErrorSeverity.MEDIUM,
-          category: ErrorCategory.NETWORK,
-          code: 'RATE_LIMIT_ERROR',
-          userMessage,
-          retryable: true,
-          originalError: error,
-          ...options
-        }
-      );
+    if (
+      error.message &&
+      (error.message.includes('429') ||
+        error.message.includes('rate limit') ||
+        error.message.includes('too many requests'))
+    ) {
+      const userMessage =
+        'Rate limit exceeded. Please wait a moment before sending another message.';
+      return new ExtensionError(error.message, {
+        severity: ErrorSeverity.MEDIUM,
+        category: ErrorCategory.NETWORK,
+        code: 'RATE_LIMIT_ERROR',
+        userMessage,
+        retryable: true,
+        originalError: error,
+        ...options,
+      });
     }
 
     // Handle general errors
-    return new ExtensionError(
-      error?.message || 'Unknown error',
-      {
-        severity: ErrorSeverity.MEDIUM,
-        code: 'GENERAL_ERROR',
-        originalError: error,
-        ...options
-      }
-    );
+    return new ExtensionError(error?.message || 'Unknown error', {
+      severity: ErrorSeverity.MEDIUM,
+      code: 'GENERAL_ERROR',
+      originalError: error,
+      ...options,
+    });
   }
 
   /**
@@ -366,7 +354,10 @@ export class ErrorHandler {
       return 'Unable to connect to the API endpoint. Please check your internet connection and verify the endpoint URL is correct.';
     } else if (originalMessage.includes('CORS')) {
       return 'Cross-origin request blocked. The API endpoint may not allow requests from this extension.';
-    } else if (originalMessage.includes('ERR_NAME_NOT_RESOLVED') || originalMessage.includes('ERR_INTERNET_DISCONNECTED')) {
+    } else if (
+      originalMessage.includes('ERR_NAME_NOT_RESOLVED') ||
+      originalMessage.includes('ERR_INTERNET_DISCONNECTED')
+    ) {
       return 'Network connection issue. Please check your internet connection and try again.';
     } else if (originalMessage.includes('timeout')) {
       return 'Request timed out. The API endpoint may be experiencing delays. Please try again.';
@@ -380,7 +371,11 @@ export class ErrorHandler {
   getApiErrorMessage(originalMessage) {
     if (originalMessage.includes('500')) {
       return 'The API server encountered an internal error. Please try again in a few moments.';
-    } else if (originalMessage.includes('502') || originalMessage.includes('503') || originalMessage.includes('504')) {
+    } else if (
+      originalMessage.includes('502') ||
+      originalMessage.includes('503') ||
+      originalMessage.includes('504')
+    ) {
       return 'The API server is temporarily unavailable. Please try again later.';
     } else if (originalMessage.includes('400')) {
       return 'Invalid request format. Please check your API configuration.';
@@ -433,7 +428,7 @@ export class ErrorHandler {
       context: error.context,
       timestamp: new Date(error.timestamp).toISOString(),
       retryable: error.retryable,
-      stack: error.stack
+      stack: error.stack,
     });
   }
 
@@ -443,17 +438,17 @@ export class ErrorHandler {
   getLogMethod(severity) {
     switch (severity) {
       case ErrorSeverity.CRITICAL:
-        return console.error;
+        return logger.error;
       case ErrorSeverity.HIGH:
-        return console.error;
+        return logger.error;
       case ErrorSeverity.MEDIUM:
-        return console.warn;
+        return logger.warn;
       case ErrorSeverity.LOW:
-        return console.info;
+        return logger.info;
       case ErrorSeverity.INFO:
-        return console.log;
+        return logger.info;
       default:
-        return console.warn;
+        return logger.warn;
     }
   }
 
@@ -466,7 +461,7 @@ export class ErrorHandler {
         await analytics.trackErrorEvent(error.category, error.code);
       }
     } catch (analyticsError) {
-      console.warn('Failed to track error in analytics:', analyticsError);
+      logger.warn('ErrorHandler', 'Failed to track error in analytics:', analyticsError);
     }
   }
 
@@ -481,13 +476,17 @@ export class ErrorHandler {
 
     // Try to use loadingManager if available
     if (typeof window !== 'undefined' && window.loadingManager) {
-      const toastType = error.severity === ErrorSeverity.CRITICAL ? 'error' :
-                       error.severity === ErrorSeverity.HIGH ? 'error' : 'warning';
+      const toastType =
+        error.severity === ErrorSeverity.CRITICAL
+          ? 'error'
+          : error.severity === ErrorSeverity.HIGH
+            ? 'error'
+            : 'warning';
 
       window.loadingManager.showToast(error.userMessage, toastType);
     } else {
       // Fallback to console for background scripts
-      console.warn('User feedback:', error.userMessage);
+      logger.warn('ErrorHandler', 'User feedback:', error.userMessage);
     }
   }
 
@@ -499,7 +498,7 @@ export class ErrorHandler {
       try {
         listener(error);
       } catch (listenerError) {
-        console.warn('Error listener failed:', listenerError);
+        logger.warn('ErrorHandler', 'Error listener failed:', listenerError);
       }
     });
   }
@@ -512,14 +511,17 @@ export class ErrorHandler {
     const attempts = this.retryAttempts.get(errorId) || 0;
 
     if (attempts >= this.maxRetryAttempts) {
-      console.warn(`Max retry attempts reached for ${errorId}`);
+      logger.warn('ErrorHandler', `Max retry attempts reached for ${errorId}`);
       return false;
     }
 
     const delay = this.retryDelay * Math.pow(2, attempts); // Exponential backoff
     this.retryAttempts.set(errorId, attempts + 1);
 
-    console.log(`Retrying ${errorId} in ${delay}ms (attempt ${attempts + 1}/${this.maxRetryAttempts})`);
+    logger.info(
+      'ErrorHandler',
+      `Retrying ${errorId} in ${delay}ms (attempt ${attempts + 1}/${this.maxRetryAttempts})`
+    );
 
     await new Promise(resolve => setTimeout(resolve, delay));
 
@@ -529,7 +531,7 @@ export class ErrorHandler {
       return result;
     } catch (retryError) {
       // Don't retry again if the retry failed
-      console.warn(`Retry failed for ${errorId}:`, retryError);
+      logger.warn('ErrorHandler', `Retry failed for ${errorId}:`, retryError);
       return false;
     }
   }
@@ -590,16 +592,13 @@ export class ErrorHandler {
       try {
         const result = apiCall((error, result) => {
           if (chrome.runtime.lastError) {
-            const error = new ExtensionError(
-              chrome.runtime.lastError.message,
-              {
-                severity: ErrorSeverity.MEDIUM,
-                category: ErrorCategory.CHROME_API,
-                code: 'CHROME_API_ERROR',
-                context: { apiCall: apiCall.toString() },
-                ...errorOptions
-              }
-            );
+            const error = new ExtensionError(chrome.runtime.lastError.message, {
+              severity: ErrorSeverity.MEDIUM,
+              category: ErrorCategory.CHROME_API,
+              code: 'CHROME_API_ERROR',
+              context: { apiCall: apiCall.toString() },
+              ...errorOptions,
+            });
             this.handleError(error);
             reject(error);
           } else {
@@ -615,15 +614,12 @@ export class ErrorHandler {
         // Handle synchronous Chrome API calls
         if (result !== undefined) {
           if (chrome.runtime.lastError) {
-            const error = new ExtensionError(
-              chrome.runtime.lastError.message,
-              {
-                severity: ErrorSeverity.MEDIUM,
-                category: ErrorCategory.CHROME_API,
-                code: 'CHROME_API_ERROR',
-                ...errorOptions
-              }
-            );
+            const error = new ExtensionError(chrome.runtime.lastError.message, {
+              severity: ErrorSeverity.MEDIUM,
+              category: ErrorCategory.CHROME_API,
+              code: 'CHROME_API_ERROR',
+              ...errorOptions,
+            });
             this.handleError(error);
             reject(error);
           } else {
@@ -655,7 +651,8 @@ export const handleError = (error, options) => errorHandler.handleError(error, o
 export const createError = (message, options) => errorHandler.createError(message, options);
 export const wrapAsync = (asyncFn, errorOptions) => errorHandler.wrapAsync(asyncFn, errorOptions);
 export const wrapSync = (syncFn, errorOptions) => errorHandler.wrapSync(syncFn, errorOptions);
-export const handleChromeApiCall = (apiCall, errorOptions) => errorHandler.handleChromeApiCall(apiCall, errorOptions);
+export const handleChromeApiCall = (apiCall, errorOptions) =>
+  errorHandler.handleChromeApiCall(apiCall, errorOptions);
 
 // Initialize error handler
 if (typeof document !== 'undefined') {

@@ -1,5 +1,14 @@
 // ===== Umami Analytics Module (privacy-first, opt-out) =====
 
+// Simple logger wrapper since this module doesn't import utils/logger.js
+const log = {
+  log: (...args) => console.log('[Analytics]', ...args),
+  warn: (...args) => log.warn('[Analytics]', ...args),
+  error: (...args) => console.error('[Analytics]', ...args),
+  info: (...args) => console.info('[Analytics]', ...args),
+  debug: (...args) => console.debug('[Analytics]', ...args),
+};
+
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
 const UMAMI_WEBSITE_ID = 'd1b4d7cb-2e57-44ec-a91f-6692fb365a02';
 const ANALYTICS_CONSENT_KEY = 'analyticsConsent';
@@ -7,7 +16,17 @@ const ANALYTICS_INSTANCE_KEY = 'analyticsInstance';
 const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
 const ANALYTICS_ROTATE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
-const DENYLIST = ['email', 'token', 'key', 'password', 'secret', 'auth', 'cookie', 'session', 'ssid'];
+const DENYLIST = [
+  'email',
+  'token',
+  'key',
+  'password',
+  'secret',
+  'auth',
+  'cookie',
+  'session',
+  'ssid',
+];
 
 /**
  * Analytics Module - Handles privacy-first analytics tracking using Umami
@@ -39,9 +58,9 @@ class Analytics {
       this.setupStorageListener();
 
       this.initialized = true;
-      console.log('Analytics module initialized');
+      log.log('Analytics module initialized');
     } catch (error) {
-      console.warn('Failed to initialize analytics module:', error);
+      log.warn('Failed to initialize analytics module:', error);
     }
   }
 
@@ -55,7 +74,7 @@ class Analytics {
         await chrome.storage.local.set({ [ANALYTICS_CONSENT_KEY]: true });
       }
     } catch (error) {
-      console.warn('Failed to set default analytics consent:', error);
+      log.warn('Failed to set default analytics consent:', error);
     }
   }
 
@@ -65,7 +84,7 @@ class Analytics {
   setupStorageListener() {
     this.consentChangeListener = (changes, area) => {
       if (area === 'local' && changes[ANALYTICS_CONSENT_KEY]) {
-        console.log('Analytics consent changed:', changes[ANALYTICS_CONSENT_KEY].newValue);
+        log.log('Analytics consent changed:', changes[ANALYTICS_CONSENT_KEY].newValue);
       }
     };
 
@@ -76,10 +95,9 @@ class Analytics {
    * Generate UUID v4
    */
   uuidv4() {
-    return ([1e7]+-1e3+-4e3+-8e3+-1e11)
-      .replace(/[018]/g, c =>
-        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-      );
+    return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c =>
+      (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
+    );
   }
 
   /**
@@ -116,7 +134,7 @@ class Analytics {
       } catch (_) {}
       return { extVersion, platform: platformInfo?.os || 'unknown', chromeMajor };
     } catch (error) {
-      console.warn('Failed to get environment info:', error);
+      log.warn('Failed to get environment info:', error);
       return { extVersion: '0.0.0', platform: 'unknown', chromeMajor: '0' };
     }
   }
@@ -126,11 +144,12 @@ class Analytics {
    */
   async getConsent() {
     try {
-      const { [ANALYTICS_CONSENT_KEY]: consent } = await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
+      const { [ANALYTICS_CONSENT_KEY]: consent } =
+        await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
       // Default ON (opt-out)
       return consent !== false;
     } catch (error) {
-      console.warn('Failed to get analytics consent:', error);
+      log.warn('Failed to get analytics consent:', error);
       return false;
     }
   }
@@ -147,11 +166,14 @@ class Analytics {
       if (!instance || !rotateAt || now >= rotateAt) {
         instance = this.uuidv4();
         rotateAt = now + ANALYTICS_ROTATE_MS;
-        await chrome.storage.local.set({ [ANALYTICS_INSTANCE_KEY]: instance, [ANALYTICS_ROTATE_AT_KEY]: rotateAt });
+        await chrome.storage.local.set({
+          [ANALYTICS_INSTANCE_KEY]: instance,
+          [ANALYTICS_ROTATE_AT_KEY]: rotateAt,
+        });
       }
       return instance;
     } catch (error) {
-      console.warn('Failed to get instance ID:', error);
+      log.warn('Failed to get instance ID:', error);
       return this.uuidv4(); // Fallback to generated ID
     }
   }
@@ -182,9 +204,9 @@ class Analytics {
             // Duplicate key fields at top-level-friendly keys for Umami dashboards
             instruction: data?.instruction || 'unknown',
             model: data?.model || 'unknown',
-            tools: Array.isArray(data?.tools) ? data.tools : []
-          }
-        }
+            tools: Array.isArray(data?.tools) ? data.tools : [],
+          },
+        },
       };
       const body = JSON.stringify(payload);
 
@@ -196,12 +218,12 @@ class Analytics {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body,
-          keepalive: true
+          keepalive: true,
         });
       }
     } catch (e) {
       // never throw
-      console.warn('Analytics send failed:', e);
+      log.warn('Analytics send failed:', e);
     }
   }
 
@@ -214,7 +236,7 @@ class Analytics {
       const instance = await this.getInstanceId();
       await this.sendUmamiEvent('installed', { ...env, instance });
     } catch (error) {
-      console.warn('Failed to track installation:', error);
+      log.warn('Failed to track installation:', error);
     }
   }
 
@@ -229,7 +251,7 @@ class Analytics {
       const c = this.sanitizeLabel(code) || 'unknown';
       await this.sendUmamiEvent('error_event', { ...env, instance, category: cat, code: c });
     } catch (error) {
-      console.warn('Failed to track error event:', error);
+      log.warn('Failed to track error event:', error);
     }
   }
 
@@ -243,7 +265,10 @@ class Analytics {
       const instr = this.sanitizeLabel(instruction) || 'unknown';
       const mdl = this.sanitizeLabel(model) || 'unknown';
       const toolsSafe = Array.isArray(tools)
-        ? tools.map(t => this.sanitizeLabel(String(t))).filter(Boolean).slice(0, 8)
+        ? tools
+            .map(t => this.sanitizeLabel(String(t)))
+            .filter(Boolean)
+            .slice(0, 8)
         : [];
       // Put the instruction and model into the event "name" context via sendUmamiEvent enhancements above
       await this.sendUmamiEvent('instruction_used', {
@@ -252,10 +277,10 @@ class Analytics {
         instruction: instr,
         model: mdl,
         tools: toolsSafe,
-        count: 1
+        count: 1,
       });
     } catch (error) {
-      console.warn('Failed to track instruction usage:', error);
+      log.warn('Failed to track instruction usage:', error);
     }
   }
 
@@ -276,14 +301,15 @@ const analytics = new Analytics();
 
 // Export analytics methods for backward compatibility
 export const uuidv4 = () => analytics.uuidv4();
-export const sanitizeLabel = (v) => analytics.sanitizeLabel(v);
+export const sanitizeLabel = v => analytics.sanitizeLabel(v);
 export const getEnvInfo = () => analytics.getEnvInfo();
 export const getConsent = () => analytics.getConsent();
 export const getInstanceId = () => analytics.getInstanceId();
 export const sendUmamiEvent = (name, data) => analytics.sendUmamiEvent(name, data);
 export const trackInstalled = () => analytics.trackInstalled();
 export const trackErrorEvent = (category, code) => analytics.trackErrorEvent(category, code);
-export const trackInstructionUsed = ({ instruction, model, tools }) => analytics.trackInstructionUsed({ instruction, model, tools });
+export const trackInstructionUsed = ({ instruction, model, tools }) =>
+  analytics.trackInstructionUsed({ instruction, model, tools });
 
 // Export the analytics instance for advanced usage
 export default analytics;

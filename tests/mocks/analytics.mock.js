@@ -42,7 +42,7 @@ const mockAnalytics = {
     return mockAnalytics.track('error', {
       error: error.message || String(error),
       category: properties.category || 'unknown',
-      ...properties
+      ...properties,
     });
   }),
 
@@ -69,13 +69,13 @@ const mockAnalytics = {
     return Promise.resolve({ success: true, config });
   }),
 
-  setUserId: jest.fn((userId) => {
+  setUserId: jest.fn(userId => {
     console.log(`[Analytics] Set User ID: ${userId}`);
     mockAnalytics.userId = userId;
     return Promise.resolve({ success: true, userId });
   }),
 
-  setUserProperties: jest.fn((properties) => {
+  setUserProperties: jest.fn(properties => {
     console.log('[Analytics] Set User Properties', properties);
     Object.assign(mockAnalytics.userProperties, properties);
     return Promise.resolve({ success: true, properties });
@@ -104,13 +104,13 @@ const mockAnalytics = {
   getTrackCalls: jest.fn(() => {
     return mockAnalytics.track.mock.calls.map(call => ({
       event: call[0],
-      properties: call[1] || {}
+      properties: call[1] || {},
     }));
   }),
 
   getTotalEvents: jest.fn(() => {
     return mockAnalytics.track.mock.calls.length;
-  })
+  }),
 };
 
 // Default export for compatibility

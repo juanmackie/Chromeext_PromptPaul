@@ -21,7 +21,7 @@ const mockElement = {
     add: jest.fn(),
     remove: jest.fn(),
     contains: jest.fn(() => false),
-    toggle: jest.fn()
+    toggle: jest.fn(),
   },
   appendChild: jest.fn(),
   removeChild: jest.fn(),
@@ -31,18 +31,18 @@ const mockElement = {
   setAttribute: jest.fn(),
   removeAttribute: jest.fn(),
   addEventListener: jest.fn(),
-  removeEventListener: jest.fn()
+  removeEventListener: jest.fn(),
 };
 
 const mockDocument = {
-  getElementById: jest.fn((id) => {
+  getElementById: jest.fn(id => {
     const element = { ...mockElement, id };
     return element;
   }),
   createElement: jest.fn(() => mockElement),
   querySelector: jest.fn(() => null),
   querySelectorAll: jest.fn(() => []),
-  body: { appendChild: jest.fn() }
+  body: { appendChild: jest.fn() },
 };
 
 const mockWindow = {
@@ -62,13 +62,13 @@ const mockWindow = {
     constructor() {
       this.reader = {
         read: jest.fn().mockResolvedValue({ done: true }),
-        releaseLock: jest.fn()
+        releaseLock: jest.fn(),
       };
     }
     getReader() {
       return this.reader;
     }
-  }
+  },
 };
 
 // Mock fetch response
@@ -82,10 +82,10 @@ const createMockResponse = (chunks, options = {}) => {
       }
       return {
         done: false,
-        value: new TextEncoder().encode(chunks[chunkIndex++])
+        value: new TextEncoder().encode(chunks[chunkIndex++]),
       };
     }),
-    releaseLock: jest.fn()
+    releaseLock: jest.fn(),
   };
 
   const response = {
@@ -93,12 +93,12 @@ const createMockResponse = (chunks, options = {}) => {
     status: 200,
     headers: new Map([
       ['content-type', 'text/event-stream'],
-      ['cache-control', 'no-cache']
+      ['cache-control', 'no-cache'],
     ]),
     body: {
-      getReader: () => reader
+      getReader: () => reader,
     },
-    reader
+    reader,
   };
 
   return response;
@@ -128,13 +128,13 @@ describe('StreamingManager', () => {
       addMessage: jest.fn(() => mockElement),
       updateStreamingMessage: jest.fn(),
       finalizeStreamingMessage: jest.fn(),
-      processContent: jest.fn((content) => content)
+      processContent: jest.fn(content => content),
     };
 
     mockConversationManager = {
       addMessage: jest.fn(),
       updateMessage: jest.fn(),
-      getCurrentConversation: jest.fn(() => ({ id: 'test-conversation' }))
+      getCurrentConversation: jest.fn(() => ({ id: 'test-conversation' })),
     };
 
     // Create streaming manager instance
@@ -160,7 +160,7 @@ describe('StreamingManager', () => {
       const customConfig = {
         chunkTimeout: 10000,
         maxRetries: 5,
-        enableMarkdown: false
+        enableMarkdown: false,
       };
 
       streamingManager.updateConfig(customConfig);
@@ -182,7 +182,7 @@ describe('StreamingManager', () => {
         id: messageId,
         role: 'assistant',
         content: '',
-        streaming: true
+        streaming: true,
       });
       expect(mockMessageRenderer.addMessage).toHaveBeenCalled();
       expect(result).toBeDefined();
@@ -203,11 +203,7 @@ describe('StreamingManager', () => {
     });
 
     test('should handle SSE formatted chunks', async () => {
-      const sseChunks = [
-        'data: Hello\n\n',
-        'data: world\n\n',
-        'data: [DONE]\n\n'
-      ];
+      const sseChunks = ['data: Hello\n\n', 'data: world\n\n', 'data: [DONE]\n\n'];
       const response = createMockResponse(sseChunks);
 
       await streamingManager.startStreaming('test-message-1', response);
@@ -219,10 +215,7 @@ describe('StreamingManager', () => {
     });
 
     test('should process JSON formatted chunks', async () => {
-      const jsonChunks = [
-        '{"content": "Hello"}',
-        '{"content": " world"}'
-      ];
+      const jsonChunks = ['{"content": "Hello"}', '{"content": " world"}'];
       const response = createMockResponse(jsonChunks);
 
       streamingManager.updateConfig({ format: 'json' });
@@ -247,12 +240,7 @@ describe('StreamingManager', () => {
     });
 
     test('should stop on [DONE] marker', async () => {
-      const chunks = [
-        'Hello',
-        'world',
-        '[DONE]',
-        'This should not appear'
-      ];
+      const chunks = ['Hello', 'world', '[DONE]', 'This should not appear'];
       const response = createMockResponse(chunks);
 
       await streamingManager.startStreaming('test-message-1', response);
@@ -270,12 +258,10 @@ describe('StreamingManager', () => {
       const response = {
         ok: false,
         status: 500,
-        body: null
+        body: null,
       };
 
-      await expect(
-        streamingManager.startStreaming('test-message-1', response)
-      ).rejects.toThrow();
+      await expect(streamingManager.startStreaming('test-message-1', response)).rejects.toThrow();
 
       expect(mockMessageRenderer.finalizeStreamingMessage).toHaveBeenCalledWith('test-message-1');
     });
@@ -289,17 +275,17 @@ describe('StreamingManager', () => {
           await new Promise(resolve => setTimeout(resolve, 200));
           return { done: false, value: new Uint8Array([72]) }; // 'H'
         }),
-        releaseLock: jest.fn()
+        releaseLock: jest.fn(),
       };
 
       const response = {
         ok: true,
-        body: { getReader: () => reader }
+        body: { getReader: () => reader },
       };
 
-      await expect(
-        streamingManager.startStreaming('test-message-1', response)
-      ).rejects.toThrow('Stream timeout');
+      await expect(streamingManager.startStreaming('test-message-1', response)).rejects.toThrow(
+        'Stream timeout'
+      );
     });
 
     test('should handle malformed JSON chunks', async () => {
@@ -318,15 +304,16 @@ describe('StreamingManager', () => {
       streamingManager.updateConfig({ maxRetries: 2 });
 
       const reader = {
-        read: jest.fn()
+        read: jest
+          .fn()
           .mockRejectedValueOnce(new Error('Stream error'))
           .mockResolvedValueOnce({ done: true }),
-        releaseLock: jest.fn()
+        releaseLock: jest.fn(),
       };
 
       const response = {
         ok: true,
-        body: { getReader: () => reader }
+        body: { getReader: () => reader },
       };
 
       await expect(
@@ -394,14 +381,8 @@ describe('StreamingManager', () => {
 
       await streamingManager.startStreaming(messageId, response);
 
-      expect(mockMessageRenderer.updateStreamingMessage).toHaveBeenCalledWith(
-        messageId,
-        'Hello'
-      );
-      expect(mockMessageRenderer.updateStreamingMessage).toHaveBeenCalledWith(
-        messageId,
-        'Hello '
-      );
+      expect(mockMessageRenderer.updateStreamingMessage).toHaveBeenCalledWith(messageId, 'Hello');
+      expect(mockMessageRenderer.updateStreamingMessage).toHaveBeenCalledWith(messageId, 'Hello ');
       expect(mockMessageRenderer.updateStreamingMessage).toHaveBeenCalledWith(
         messageId,
         'Hello world'
@@ -438,12 +419,7 @@ describe('StreamingManager', () => {
     });
 
     test('should handle code block boundaries', async () => {
-      const codeChunks = [
-        'Here is some code:',
-        '```javascript',
-        'console.log("Hello");',
-        '```'
-      ];
+      const codeChunks = ['Here is some code:', '```javascript', 'console.log("Hello");', '```'];
       const response = createMockResponse(codeChunks);
 
       await streamingManager.startStreaming('test-message-1', response);
@@ -505,7 +481,7 @@ describe('StreamingManager', () => {
       expect(mockConversationManager.addMessage).toHaveBeenCalledWith({
         id: messageId,
         role: 'assistant',
-        content: 'Hello world'
+        content: 'Hello world',
       });
     });
 
@@ -516,9 +492,7 @@ describe('StreamingManager', () => {
       const response = createMockResponse(['Hello']);
 
       // Should not throw, but handle gracefully
-      await expect(
-        streamingManager.startStreaming(messageId, response)
-      ).resolves.toBeDefined();
+      await expect(streamingManager.startStreaming(messageId, response)).resolves.toBeDefined();
     });
   });
 
@@ -547,7 +521,7 @@ describe('StreamingManager', () => {
 
       expect(onStreamProgress).toHaveBeenCalledWith({
         messageId,
-        content: expect.stringContaining('Hello')
+        content: expect.stringContaining('Hello'),
       });
     });
 
@@ -562,7 +536,7 @@ describe('StreamingManager', () => {
 
       expect(onStreamComplete).toHaveBeenCalledWith({
         messageId,
-        content: 'Hello'
+        content: 'Hello',
       });
     });
 
@@ -572,13 +546,11 @@ describe('StreamingManager', () => {
 
       const response = { ok: false, status: 500 };
 
-      await expect(
-        streamingManager.startStreaming('test-message-1', response)
-      ).rejects.toThrow();
+      await expect(streamingManager.startStreaming('test-message-1', response)).rejects.toThrow();
 
       expect(onStreamError).toHaveBeenCalledWith({
         messageId: 'test-message-1',
-        error: expect.any(Error)
+        error: expect.any(Error),
       });
     });
   });
@@ -615,7 +587,7 @@ describe('StreamingManager', () => {
     test('should detect stream format from headers', () => {
       const headers = new Map([
         ['content-type', 'application/json'],
-        ['x-stream-format', 'json-stream']
+        ['x-stream-format', 'json-stream'],
       ]);
 
       const format = streamingManager.detectStreamFormat(headers);

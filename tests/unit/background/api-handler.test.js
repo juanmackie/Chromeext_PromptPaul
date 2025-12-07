@@ -3,28 +3,34 @@
  * Tests API request handling, streaming, tool choices, error handling
  */
 
-const { errorHandler, ErrorSeverity, ErrorCategory, createError, wrapAsync } = require('../../../mocks/error-handler.mock.js');
+const {
+  errorHandler,
+  ErrorSeverity,
+  ErrorCategory,
+  createError,
+  wrapAsync,
+} = require('../../../mocks/error-handler.mock.js');
 const analytics = require('../../../mocks/analytics.mock.js');
 
 // Mock apiClient
 jest.mock('../../../../services/api-client.js', () => ({
   apiClient: {
     makeStreamingRequest: jest.fn(),
-    makeRequest: jest.fn()
-  }
+    makeRequest: jest.fn(),
+  },
 }));
 
 // Mock chrome APIs
 const mockChrome = {
   runtime: {
     sendMessage: jest.fn().mockResolvedValue(true),
-    lastError: null
+    lastError: null,
   },
   storage: {
     sync: {
-      get: jest.fn()
-    }
-  }
+      get: jest.fn(),
+    },
+  },
 };
 global.chrome = mockChrome;
 
@@ -45,15 +51,15 @@ describe('ApiHandler', () => {
       apiKey: 'test-key',
       llmEndpoint: 'https://api.example.com/v1/chat',
       maxTokens: '2048',
-      systemPrompt: 'Test system prompt'
+      systemPrompt: 'Test system prompt',
     };
 
     mockTools = [
       {
         name: 'test-tool',
         description: 'Test tool',
-        parameters: JSON.stringify({ type: 'object', properties: {} })
-      }
+        parameters: JSON.stringify({ type: 'object', properties: {} }),
+      },
     ];
 
     // Mock internal methods
@@ -72,23 +78,27 @@ describe('ApiHandler', () => {
       expect(apiHandler.getAllToolDefinitions).toHaveBeenCalled();
       expect(apiHandler.getStreamingSettings).toHaveBeenCalled();
       expect(apiClient.makeStreamingRequest).toHaveBeenCalled();
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'streamApiEnd'
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'streamApiEnd',
+        })
+      );
     });
 
     test('should handle non-streaming request successfully', async () => {
       apiHandler.getStreamingSettings.mockResolvedValueOnce(false);
       apiClient.makeRequest.mockResolvedValue({
-        choices: [{ message: { content: 'response' } }]
+        choices: [{ message: { content: 'response' } }],
       });
 
       await apiHandler.makeLlmApiRequest('test prompt', '123');
 
       expect(apiClient.makeRequest).toHaveBeenCalled();
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'setApiResponse'
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'setApiResponse',
+        })
+      );
     });
 
     test('should send configuration error on validateConfig failure', async () => {
@@ -97,10 +107,12 @@ describe('ApiHandler', () => {
 
       await apiHandler.makeLlmApiRequest('test prompt', '123');
 
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'displayErrorInChat',
-        errorMessage: expect.stringContaining('LLM API endpoint')
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'displayErrorInChat',
+          errorMessage: expect.stringContaining('LLM API endpoint'),
+        })
+      );
     });
 
     test('should handle general API errors', async () => {
@@ -108,10 +120,12 @@ describe('ApiHandler', () => {
 
       await apiHandler.makeLlmApiRequest('test prompt', '123');
 
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'setApiResponse',
-        apiResponse: expect.stringContaining('Error: API Error')
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'setApiResponse',
+          apiResponse: expect.stringContaining('Error: API Error'),
+        })
+      );
     });
   });
 
@@ -127,7 +141,7 @@ describe('ApiHandler', () => {
       expect(result.formattedTools).toHaveLength(1);
       expect(result.toolChoicePayload).toEqual({
         tools: expect.any(Array),
-        tool_choice: 'auto'
+        tool_choice: 'auto',
       });
     });
 
@@ -171,13 +185,17 @@ describe('ApiHandler', () => {
       const mockPrompt = 'test';
       chrome.runtime.sendMessage.mockClear();
 
-      apiHandler.processStreamingLine('data: {"choices":[{"delta":{"content":"chunk"}}]}', mockPrompt, mockTabId);
+      apiHandler.processStreamingLine(
+        'data: {"choices":[{"delta":{"content":"chunk"}}]}',
+        mockPrompt,
+        mockTabId
+      );
 
       expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
         action: 'streamApiResponseChunk',
         chunk: 'chunk',
         tabId: mockTabId,
-        prompt: mockPrompt
+        prompt: mockPrompt,
       });
     });
 
@@ -185,11 +203,17 @@ describe('ApiHandler', () => {
       const mockTabId = '123';
       const mockPrompt = 'test';
 
-      apiHandler.processStreamingLine('data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"test"}}]}}]}', mockPrompt, mockTabId);
+      apiHandler.processStreamingLine(
+        'data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"test"}}]}}]}',
+        mockPrompt,
+        mockTabId
+      );
 
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'streamApiToolCallChunk'
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'streamApiToolCallChunk',
+        })
+      );
     });
 
     test('should ignore [DONE] and invalid lines', () => {
@@ -211,10 +235,12 @@ describe('ApiHandler', () => {
 
       expect(analytics.trackErrorEvent).toHaveBeenCalled();
       jest.advanceTimersByTime(200);
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'setApiResponse',
-        apiResponse: 'Error: Test error'
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'setApiResponse',
+          apiResponse: 'Error: Test error',
+        })
+      );
       jest.useRealTimers();
     });
 
@@ -234,7 +260,10 @@ describe('ApiHandler', () => {
 
       const result = await apiHandler.getStreamingSettings();
       expect(result).toBe(true);
-      expect(mockChrome.storage.sync.get).toHaveBeenCalledWith({ enableStreaming: false }, expect.any(Function));
+      expect(mockChrome.storage.sync.get).toHaveBeenCalledWith(
+        { enableStreaming: false },
+        expect.any(Function)
+      );
     });
   });
 
@@ -243,7 +272,9 @@ describe('ApiHandler', () => {
       apiHandler.getStreamingSettings.mockResolvedValueOnce(false);
       apiClient.makeRequest.mockResolvedValue({ choices: [] });
 
-      await expect(apiHandler.makeLlmApiRequest('prompt', '123')).rejects.toThrow('Invalid response format');
+      await expect(apiHandler.makeLlmApiRequest('prompt', '123')).rejects.toThrow(
+        'Invalid response format'
+      );
     });
   });
 });

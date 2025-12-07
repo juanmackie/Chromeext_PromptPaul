@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layout Test - Desktop Fix</title>
+    <link rel="stylesheet" href="chat.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 770px;
+            height: 600px;
+            border: 2px solid red;
+            resize: both;
+            overflow: auto;
+        }
+        
+        .test-container {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 80px 1fr;
+            grid-template-rows: 1fr auto;
+        }
+        
+        .sidebar {
+            grid-column: 1;
+            grid-row: 1;
+            background: #2c3e50;
+            color: white;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .chat-area {
+            grid-column: 2;
+            grid-row: 1;
+            background: #ecf0f1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .input-area {
+            grid-column: 1 / span 2;
+            grid-row: 2;
+            background: #34495e;
+            color: white;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .message {
+            background: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .test-controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        
+        button {
+            padding: 5px 10px;
+            margin: 2px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-controls">
+        <h3>Test Layout</h3>
+        <p>Current width: <span id="width">770</span>px</p>
+        <button onclick="resize(770)">770px</button>
+        <button onclick="resize(771)">771px</button>
+        <button onclick="resize(800)">800px</button>
+        <button onclick="resize(1024)">1024px</button>
+        <button onclick="resize(1200)">1200px</button>
+    </div>
+    
+    <div class="test-container">
+        <div class="sidebar">
+            <div>Sidebar</div>
+            <div>80px width</div>
+        </div>
+        
+        <div class="chat-area">
+            <h3>Chat Area</h3>
+            <div class="message">User message 1</div>
+            <div class="message">LLM response 1</div>
+            <div class="message">User message 2</div>
+            <div class="message">LLM response 2</div>
+            <div class="message">User message 3</div>
+            <div class="message">LLM response 3</div>
+            <div class="message">User message 4</div>
+            <div class="message">LLM response 4</div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" placeholder="Type a message..." style="flex: 1; padding: 8px;">
+            <button>Send</button>
+            <button>Clear</button>
+        </div>
+    </div>
+    
+    <script>
+        function resize(width) {
+            document.body.style.width = width + 'px';
+            document.getElementById('width').textContent = width;
+        }
+        
+        // Update width display on resize
+        let resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                if (entry.target === document.body) {
+                    document.getElementById('width').textContent = Math.floor(entry.contentRect.width);
+                }
+            }
+        });
+        
+        resizeObserver.observe(document.body);
+    </script>
+</body>
+</html>

@@ -3,7 +3,14 @@
  * Comprehensive coverage of configuration validation, profile management, and tool definitions
  */
 
-const { errorHandler, ErrorSeverity, ErrorCategory, createError, wrapAsync, handleChromeApiCall } = require('../../../mocks/error-handler.mock.js');
+const {
+  errorHandler,
+  ErrorSeverity,
+  ErrorCategory,
+  createError,
+  wrapAsync,
+  handleChromeApiCall,
+} = require('../../../mocks/error-handler.mock.js');
 
 describe('ConfigValidator', () => {
   let configValidator;
@@ -20,12 +27,12 @@ describe('ConfigValidator', () => {
       storage: {
         local: {
           get: mockStorageGet,
-          set: mockStorageSet
-        }
+          set: mockStorageSet,
+        },
       },
       runtime: {
-        lastError: null
-      }
+        lastError: null,
+      },
     };
   });
 
@@ -39,7 +46,7 @@ describe('ConfigValidator', () => {
         modelName: 'mistral-small-latest',
         maxTokens: 16000,
         systemPrompt: expect.any(String),
-        lastUpdated: expect.any(String)
+        lastUpdated: expect.any(String),
       });
     });
   });
@@ -48,16 +55,18 @@ describe('ConfigValidator', () => {
     test('should return valid profile from storage', async () => {
       mockStorageGet.mockImplementation((keys, callback) => {
         callback({
-          profiles: [{
-            id: 'test',
-            name: 'Test',
-            llmEndpoint: 'https://api.example.com/v1/chat',
-            apiKey: 'test-key',
-            modelName: 'test-model',
-            maxTokens: 4096
-          }],
+          profiles: [
+            {
+              id: 'test',
+              name: 'Test',
+              llmEndpoint: 'https://api.example.com/v1/chat',
+              apiKey: 'test-key',
+              modelName: 'test-model',
+              maxTokens: 4096,
+            },
+          ],
           lastSelectedProfileId: 'test',
-          defaultLlmEndpoint: 'https://api.example.com/v1/chat'
+          defaultLlmEndpoint: 'https://api.example.com/v1/chat',
         });
       });
 
@@ -69,9 +78,12 @@ describe('ConfigValidator', () => {
         llmEndpoint: 'https://api.example.com/v1/chat',
         apiKey: 'test-key',
         modelName: 'test-model',
-        maxTokens: 4096
+        maxTokens: 4096,
       });
-      expect(mockStorageGet).toHaveBeenCalledWith(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], expect.any(Function));
+      expect(mockStorageGet).toHaveBeenCalledWith(
+        ['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'],
+        expect.any(Function)
+      );
     });
 
     test('should create and save default profile when none exists', async () => {
@@ -88,7 +100,7 @@ describe('ConfigValidator', () => {
       expect(profile.id).toBe('default');
       expect(mockStorageSet).toHaveBeenCalledWith({
         profiles: expect.arrayContaining([expect.objectContaining({ id: 'default' })]),
-        lastSelectedProfileId: 'default'
+        lastSelectedProfileId: 'default',
       });
     });
 
@@ -97,25 +109,29 @@ describe('ConfigValidator', () => {
         callback({
           profiles: [],
           lastSelectedProfileId: null,
-          defaultLlmEndpoint: 'invalid-url'
+          defaultLlmEndpoint: 'invalid-url',
         });
       });
 
-      await expect(configValidator.validateConfig()).rejects.toThrow('LLM API endpoint is missing or invalid');
+      await expect(configValidator.validateConfig()).rejects.toThrow(
+        'LLM API endpoint is missing or invalid'
+      );
       expect(errorHandler.handle).toHaveBeenCalled();
     });
 
     test('should use defaultLlmEndpoint override for selected profile', async () => {
       mockStorageGet.mockImplementation((keys, callback) => {
         callback({
-          profiles: [{
-            id: 'test',
-            llmEndpoint: 'invalid',
-            apiKey: 'test-key',
-            modelName: 'test-model'
-          }],
+          profiles: [
+            {
+              id: 'test',
+              llmEndpoint: 'invalid',
+              apiKey: 'test-key',
+              modelName: 'test-model',
+            },
+          ],
           lastSelectedProfileId: 'test',
-          defaultLlmEndpoint: 'https://api.example.com/v1/chat'
+          defaultLlmEndpoint: 'https://api.example.com/v1/chat',
         });
       });
 
@@ -127,13 +143,15 @@ describe('ConfigValidator', () => {
     test('should fallback to default profile', async () => {
       mockStorageGet.mockImplementation((keys, callback) => {
         callback({
-          profiles: [{
-            id: 'default',
-            llmEndpoint: 'https://api.example.com/v1/chat',
-            apiKey: 'test-key',
-            modelName: 'test-model'
-          }],
-          lastSelectedProfileId: 'invalid'
+          profiles: [
+            {
+              id: 'default',
+              llmEndpoint: 'https://api.example.com/v1/chat',
+              apiKey: 'test-key',
+              modelName: 'test-model',
+            },
+          ],
+          lastSelectedProfileId: 'invalid',
         });
       });
 
@@ -160,7 +178,7 @@ describe('ConfigValidator', () => {
       expect(result[0].id).toBe('default');
       expect(mockStorageSet).toHaveBeenCalledWith({
         profiles: expect.any(Array),
-        lastSelectedProfileId: 'default'
+        lastSelectedProfileId: 'default',
       });
     });
 
@@ -180,7 +198,7 @@ describe('ConfigValidator', () => {
     test('should select last selected valid profile', () => {
       const profiles = [
         { id: 'selected', llmEndpoint: 'https://valid.com', apiKey: 'key', modelName: 'model' },
-        { id: 'default', llmEndpoint: 'invalid', apiKey: 'key', modelName: 'model' }
+        { id: 'default', llmEndpoint: 'invalid', apiKey: 'key', modelName: 'model' },
       ];
       const result = configValidator.findValidProfile(profiles, 'selected', '');
       expect(result.id).toBe('selected');
@@ -188,7 +206,7 @@ describe('ConfigValidator', () => {
 
     test('should use default endpoint override', () => {
       const profiles = [
-        { id: 'selected', llmEndpoint: 'invalid', apiKey: 'key', modelName: 'model' }
+        { id: 'selected', llmEndpoint: 'invalid', apiKey: 'key', modelName: 'model' },
       ];
       const result = configValidator.findValidProfile(profiles, 'selected', 'https://override.com');
       expect(result.llmEndpoint).toBe('https://override.com');
@@ -196,7 +214,7 @@ describe('ConfigValidator', () => {
 
     test('should fallback to default profile', () => {
       const profiles = [
-        { id: 'default', llmEndpoint: 'https://valid.com', apiKey: 'key', modelName: 'model' }
+        { id: 'default', llmEndpoint: 'https://valid.com', apiKey: 'key', modelName: 'model' },
       ];
       const result = configValidator.findValidProfile(profiles, 'invalid', '');
       expect(result.id).toBe('default');
@@ -211,15 +229,21 @@ describe('ConfigValidator', () => {
 
   describe('handleConfigurationError', () => {
     test('should throw MISSING_ENDPOINT error', () => {
-      expect(() => configValidator.handleConfigurationError('invalid', [])).toThrow('LLM API endpoint is missing or invalid');
+      expect(() => configValidator.handleConfigurationError('invalid', [])).toThrow(
+        'LLM API endpoint is missing or invalid'
+      );
     });
 
     test('should throw NO_VALID_PROFILES error', () => {
-      expect(() => configValidator.handleConfigurationError('https://valid.com', [])).toThrow('No valid profiles found');
+      expect(() => configValidator.handleConfigurationError('https://valid.com', [])).toThrow(
+        'No valid profiles found'
+      );
     });
 
     test('should throw INCOMPLETE_CONFIG error', () => {
-      expect(() => configValidator.handleConfigurationError('https://valid.com', [{}])).toThrow('Configuration is incomplete');
+      expect(() => configValidator.handleConfigurationError('https://valid.com', [{}])).toThrow(
+        'Configuration is incomplete'
+      );
     });
   });
 
@@ -260,8 +284,8 @@ describe('ConfigValidator', () => {
         callback({
           promptPaulTools: [
             { name: 'test-tool', description: 'Test' },
-            { name: 'other-tool', description: 'Other' }
-          ]
+            { name: 'other-tool', description: 'Other' },
+          ],
         });
       });
 
@@ -302,7 +326,7 @@ describe('ConfigValidator', () => {
         llmEndpoint: 'https://api.example.com',
         apiKey: 'test-key',
         modelName: 'test-model',
-        maxTokens: 4096
+        maxTokens: 4096,
       };
 
       const profile = await configValidator.createProfile(profileData);
@@ -314,7 +338,9 @@ describe('ConfigValidator', () => {
 
     test('createProfile should throw on invalid data', async () => {
       const invalidData = { name: '', llmEndpoint: 'invalid' };
-      await expect(configValidator.createProfile(invalidData)).rejects.toThrow('Profile name is required');
+      await expect(configValidator.createProfile(invalidData)).rejects.toThrow(
+        'Profile name is required'
+      );
     });
 
     test('saveProfile should update existing or add new', async () => {
@@ -326,14 +352,19 @@ describe('ConfigValidator', () => {
       const profile = { id: 'existing', name: 'updated' };
       await configValidator.saveProfile(profile);
 
-      expect(mockStorageSet).toHaveBeenCalledWith({ profiles: expect.arrayContaining([expect.objectContaining({ name: 'updated' })] ) });
+      expect(mockStorageSet).toHaveBeenCalledWith({
+        profiles: expect.arrayContaining([expect.objectContaining({ name: 'updated' })]),
+      });
     });
 
     test('deleteProfile should remove non-default profile', async () => {
       mockStorageGet.mockImplementation((keys, callback) => {
         callback({
-          profiles: [{ id: 'to-delete', name: 'DeleteMe' }, { id: 'default', name: 'Default' }],
-          lastSelectedProfileId: 'other'
+          profiles: [
+            { id: 'to-delete', name: 'DeleteMe' },
+            { id: 'default', name: 'Default' },
+          ],
+          lastSelectedProfileId: 'other',
         });
       });
       mockStorageSet.mockImplementation((data, callback) => callback());
@@ -342,19 +373,21 @@ describe('ConfigValidator', () => {
 
       expect(mockStorageSet).toHaveBeenCalledWith({
         profiles: expect.arrayContaining([expect.objectContaining({ id: 'default' })]),
-        lastSelectedProfileId: 'other'
+        lastSelectedProfileId: 'other',
       });
     });
 
     test('deleteProfile should prevent default deletion', async () => {
-      await expect(configValidator.deleteProfile('default')).rejects.toThrow('Cannot delete default profile');
+      await expect(configValidator.deleteProfile('default')).rejects.toThrow(
+        'Cannot delete default profile'
+      );
     });
 
     test('deleteProfile should switch to default if selected was deleted', async () => {
       mockStorageGet.mockImplementation((keys, callback) => {
         callback({
           profiles: [{ id: 'to-delete', name: 'Selected' }],
-          lastSelectedProfileId: 'to-delete'
+          lastSelectedProfileId: 'to-delete',
         });
       });
       mockStorageSet.mockImplementation((data, callback) => callback());

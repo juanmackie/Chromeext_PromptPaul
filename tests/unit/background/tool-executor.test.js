@@ -3,7 +3,13 @@
  * Tests tool execution, HTTP endpoints, duplicate prevention, error handling
  */
 
-const { errorHandler, ErrorSeverity, ErrorCategory, createError, wrapAsync } = require('../../../mocks/error-handler.mock.js');
+const {
+  errorHandler,
+  ErrorSeverity,
+  ErrorCategory,
+  createError,
+  wrapAsync,
+} = require('../../../mocks/error-handler.mock.js');
 const analytics = require('../../../mocks/analytics.mock.js');
 
 // Mock global fetch
@@ -23,7 +29,7 @@ describe('ToolExecutor', () => {
       name: 'test-tool',
       description: 'Test tool',
       endpointUrl: 'https://api.example.com/tool',
-      httpMethod: 'POST'
+      httpMethod: 'POST',
     };
 
     // Mock internal methods
@@ -36,23 +42,26 @@ describe('ToolExecutor', () => {
       fetch.mockResolvedValueOnce({
         ok: true,
         headers: { get: () => 'application/json' },
-        json: jest.fn().mockResolvedValue({ result: 'success' })
+        json: jest.fn().mockResolvedValue({ result: 'success' }),
       });
 
       const toolCall = {
         id: 'test-1',
         name: 'test-tool',
-        arguments: JSON.stringify({ param: 'value' })
+        arguments: JSON.stringify({ param: 'value' }),
       };
 
       await toolExecutor.executeTool(toolCall, mockSendResponse);
 
       expect(toolExecutor.getAllToolDefinitions).toHaveBeenCalled();
-      expect(fetch).toHaveBeenCalledWith('https://api.example.com/tool', expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ param: 'value' })
-      }));
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.example.com/tool',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ param: 'value' }),
+        })
+      );
       expect(mockSendResponse).toHaveBeenCalledWith({ result: { result: 'success' } });
       expect(analytics.trackInstructionUsed).toHaveBeenCalled();
     });
@@ -79,9 +88,11 @@ describe('ToolExecutor', () => {
 
       await toolExecutor.executeTool(toolCall, mockSendResponse);
 
-      expect(mockSendResponse).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining("Tool definition for 'missing-tool' not found")
-      }));
+      expect(mockSendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining("Tool definition for 'missing-tool' not found"),
+        })
+      );
     });
 
     test('should handle invalid arguments JSON', async () => {
@@ -89,44 +100,52 @@ describe('ToolExecutor', () => {
 
       await toolExecutor.executeTool(toolCall, mockSendResponse);
 
-      expect(mockSendResponse).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining('Invalid arguments format')
-      }));
+      expect(mockSendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('Invalid arguments format'),
+        })
+      );
     });
 
     test('should handle built-in tool execution', async () => {
       const builtInToolName = 'getCurrentTime';
-      toolExecutor.getBuiltInTool = jest.fn().mockReturnValue(async (args) => ({
-        currentTime: new Date().toISOString()
+      toolExecutor.getBuiltInTool = jest.fn().mockReturnValue(async args => ({
+        currentTime: new Date().toISOString(),
       }));
       toolExecutor.getAllToolDefinitions.mockResolvedValueOnce([]); // No HTTP tool
 
       const toolCall = {
         id: 'builtin-1',
         name: builtInToolName,
-        arguments: '{}'
+        arguments: '{}',
       };
 
       await toolExecutor.executeTool(toolCall, mockSendResponse);
 
-      expect(mockSendResponse).toHaveBeenCalledWith(expect.objectContaining({
-        result: expect.objectContaining({ currentTime: expect.any(String) })
-      }));
+      expect(mockSendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          result: expect.objectContaining({ currentTime: expect.any(String) }),
+        })
+      );
     });
 
     test('should handle tool without endpoint or built-in', async () => {
-      toolExecutor.getAllToolDefinitions.mockResolvedValueOnce([{
-        name: 'bad-tool',
-        description: 'No endpoint'
-      }]);
+      toolExecutor.getAllToolDefinitions.mockResolvedValueOnce([
+        {
+          name: 'bad-tool',
+          description: 'No endpoint',
+        },
+      ]);
 
       const toolCall = { id: 'bad-1', name: 'bad-tool', arguments: '{}' };
 
       await toolExecutor.executeTool(toolCall, mockSendResponse);
 
-      expect(mockSendResponse).toHaveBeenCalledWith(expect.objectContaining({
-        error: expect.stringContaining("not properly configured")
-      }));
+      expect(mockSendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining('not properly configured'),
+        })
+      );
     });
   });
 
@@ -151,7 +170,7 @@ describe('ToolExecutor', () => {
       fetch.mockResolvedValueOnce({
         ok: true,
         headers: { get: () => 'application/json' },
-        json: jest.fn().mockResolvedValue({ success: true })
+        json: jest.fn().mockResolvedValue({ success: true }),
       });
 
       const result = await toolExecutor.callUserDefinedEndpoint(
@@ -160,21 +179,24 @@ describe('ToolExecutor', () => {
         'POST'
       );
 
-      expect(fetch).toHaveBeenCalledWith('https://api.example.com/post', expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }),
-        body: JSON.stringify({ data: 'value' })
-      }));
+      expect(fetch).toHaveBeenCalledWith(
+        'https://api.example.com/post',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          }),
+          body: JSON.stringify({ data: 'value' }),
+        })
+      );
       expect(result).toEqual({ success: true });
     });
 
     test('should make GET request with query params', async () => {
       fetch.mockResolvedValueOnce({
         ok: true,
-        json: () => ({})
+        json: () => ({}),
       });
 
       await toolExecutor.callUserDefinedEndpoint(
@@ -194,11 +216,12 @@ describe('ToolExecutor', () => {
         ok: false,
         status: 400,
         statusText: 'Bad Request',
-        text: () => 'Error details'
+        text: () => 'Error details',
       });
 
-      await expect(toolExecutor.callUserDefinedEndpoint('https://fail.com', {}, 'POST'))
-        .rejects.toThrow('HTTP request failed');
+      await expect(
+        toolExecutor.callUserDefinedEndpoint('https://fail.com', {}, 'POST')
+      ).rejects.toThrow('HTTP request failed');
 
       expect(errorHandler.handle).toHaveBeenCalled();
     });
@@ -209,7 +232,7 @@ describe('ToolExecutor', () => {
         setTimeout(() => controller.abort(), 10);
         return Promise.resolve({
           ok: true,
-          signal: controller.signal
+          signal: controller.signal,
         });
       });
 
@@ -220,14 +243,17 @@ describe('ToolExecutor', () => {
       );
 
       // Should not timeout in test, but verify AbortController usage
-      expect(fetch).toHaveBeenCalledWith(expect.objectContaining({
-        signal: expect.any(AbortSignal)
-      }));
+      expect(fetch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        })
+      );
     });
 
     test('should validate URL', async () => {
-      await expect(toolExecutor.callUserDefinedEndpoint('invalid-url', {}, 'POST'))
-        .rejects.toThrow('Invalid endpoint URL');
+      await expect(toolExecutor.callUserDefinedEndpoint('invalid-url', {}, 'POST')).rejects.toThrow(
+        'Invalid endpoint URL'
+      );
 
       expect(errorHandler.handle).not.toHaveBeenCalled(); // wrapAsync handles it
     });
@@ -236,7 +262,7 @@ describe('ToolExecutor', () => {
       fetch.mockResolvedValueOnce({
         ok: true,
         headers: { get: () => 'text/plain' },
-        text: () => 'plain text response'
+        text: () => 'plain text response',
       });
 
       const result = await toolExecutor.callUserDefinedEndpoint('https://text.com', {}, 'GET');

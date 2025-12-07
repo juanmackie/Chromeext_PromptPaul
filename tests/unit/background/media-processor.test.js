@@ -3,12 +3,18 @@
  * Tests media fetching, base64 conversion, MIME detection, and validation
  */
 
-const { errorHandler, ErrorSeverity, ErrorCategory, createError, wrapAsync } = require('../../../mocks/error-handler.mock.js');
+const {
+  errorHandler,
+  ErrorSeverity,
+  ErrorCategory,
+  createError,
+  wrapAsync,
+} = require('../../../mocks/error-handler.mock.js');
 
 // Mock global fetch and FileReader
 const mockFetchResponse = {
   ok: true,
-  blob: jest.fn()
+  blob: jest.fn(),
 };
 
 const mockBlob = new Blob(['test data'], { type: 'image/jpeg' });
@@ -20,7 +26,7 @@ global.fetch = jest.fn();
 global.FileReader = jest.fn(() => ({
   onload: null,
   onerror: null,
-  readAsDataURL: jest.fn()
+  readAsDataURL: jest.fn(),
 }));
 
 const mockFileReader = new FileReader();
@@ -67,13 +73,17 @@ describe('MediaProcessor', () => {
     });
 
     test('should throw error for no URL provided', async () => {
-      await expect(mediaProcessor.fetchMediaAsBase64('')).rejects.toThrow('No URL provided for media fetching');
+      await expect(mediaProcessor.fetchMediaAsBase64('')).rejects.toThrow(
+        'No URL provided for media fetching'
+      );
       expect(errorHandler.handle).toHaveBeenCalled();
     });
 
     test('should throw error for network failure', async () => {
       global.fetch.mockRejectedValue(new Error('Network error'));
-      await expect(mediaProcessor.fetchMediaAsBase64('https://example.com/image.jpg')).rejects.toThrow('Failed to fetch media');
+      await expect(
+        mediaProcessor.fetchMediaAsBase64('https://example.com/image.jpg')
+      ).rejects.toThrow('Failed to fetch media');
       expect(errorHandler.handle).toHaveBeenCalled();
     });
 
@@ -82,7 +92,9 @@ describe('MediaProcessor', () => {
       largeBlob.size = 60 * 1024 * 1024; // 60MB
       mockFetchResponse.blob.mockResolvedValue(largeBlob);
 
-      await expect(mediaProcessor.fetchMediaAsBase64('https://example.com/large.jpg')).rejects.toThrow('Media file too large');
+      await expect(
+        mediaProcessor.fetchMediaAsBase64('https://example.com/large.jpg')
+      ).rejects.toThrow('Media file too large');
       expect(errorHandler.handle).toHaveBeenCalled();
     });
 
@@ -90,7 +102,9 @@ describe('MediaProcessor', () => {
       const errorResponse = { ok: false, status: 404, statusText: 'Not Found' };
       global.fetch.mockResolvedValue(errorResponse);
 
-      await expect(mediaProcessor.fetchMediaAsBase64('https://example.com/missing.jpg')).rejects.toThrow('Failed to fetch media: 404 Not Found');
+      await expect(
+        mediaProcessor.fetchMediaAsBase64('https://example.com/missing.jpg')
+      ).rejects.toThrow('Failed to fetch media: 404 Not Found');
       expect(errorHandler.handle).toHaveBeenCalled();
     });
   });
@@ -113,7 +127,9 @@ describe('MediaProcessor', () => {
         mockFileReader.onerror(new Error('FileReader failed'));
       });
 
-      await expect(mediaProcessor.convertBlobToBase64(mockBlob)).rejects.toThrow('FileReader error while processing media');
+      await expect(mediaProcessor.convertBlobToBase64(mockBlob)).rejects.toThrow(
+        'FileReader error while processing media'
+      );
       expect(errorHandler.handle).toHaveBeenCalled();
     });
 
@@ -123,7 +139,9 @@ describe('MediaProcessor', () => {
         mockFileReader.onload();
       });
 
-      await expect(mediaProcessor.convertBlobToBase64(mockBlob)).rejects.toThrow('Failed to process media data URL');
+      await expect(mediaProcessor.convertBlobToBase64(mockBlob)).rejects.toThrow(
+        'Failed to process media data URL'
+      );
       expect(errorHandler.handle).toHaveBeenCalled();
     });
   });
@@ -133,13 +151,17 @@ describe('MediaProcessor', () => {
       expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/photo.jpg')).toBe('image/jpeg');
       expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/image.PNG')).toBe('image/png');
       expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/anim.gif')).toBe('image/gif');
-      expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/modern.webp')).toBe('image/webp');
+      expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/modern.webp')).toBe(
+        'image/webp'
+      );
     });
 
     test('should detect video MIME types correctly', () => {
       expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/video.mp4')).toBe('video/mp4');
       expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/clip.webm')).toBe('video/webm');
-      expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/movie.mov')).toBe('video/quicktime');
+      expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/movie.mov')).toBe(
+        'video/quicktime'
+      );
     });
 
     test('should detect audio MIME types correctly', () => {
@@ -149,7 +171,9 @@ describe('MediaProcessor', () => {
     });
 
     test('should return octet-stream for unknown extensions', () => {
-      expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/doc.txt')).toBe('application/octet-stream');
+      expect(mediaProcessor.getMimeTypeFromUrl('https://example.com/doc.txt')).toBe(
+        'application/octet-stream'
+      );
     });
 
     test('should handle null/empty URL', () => {
@@ -218,14 +242,16 @@ describe('MediaProcessor', () => {
         mimeType: 'image/jpeg',
         type: 'image',
         url: 'https://example.com/image.jpg',
-        isValid: true
+        isValid: true,
       });
     });
 
     test('should handle errors in full processing flow', async () => {
       global.fetch.mockRejectedValue(new Error('Fetch failed'));
 
-      await expect(mediaProcessor.processMediaForApi('https://example.com/fail.jpg')).rejects.toThrow();
+      await expect(
+        mediaProcessor.processMediaForApi('https://example.com/fail.jpg')
+      ).rejects.toThrow();
       expect(errorHandler.handle).toHaveBeenCalled();
     });
   });

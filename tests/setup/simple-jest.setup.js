@@ -10,12 +10,12 @@ const mockChrome = {
     onMessage: {
       addListener: jest.fn(),
       removeListener: jest.fn(),
-      _listeners: []
+      _listeners: [],
     },
     id: 'test-extension-id',
     getManifest: jest.fn(() => ({ name: 'Test Extension', version: '1.0.0' })),
-    getURL: jest.fn((path) => `chrome-extension://test-extension-id/${path}`),
-    lastError: null
+    getURL: jest.fn(path => `chrome-extension://test-extension-id/${path}`),
+    lastError: null,
   },
   storage: {
     local: {
@@ -23,20 +23,20 @@ const mockChrome = {
       set: jest.fn(),
       remove: jest.fn(),
       clear: jest.fn(),
-      _localData: {}
+      _localData: {},
     },
     sync: {
       get: jest.fn(),
       set: jest.fn(),
       remove: jest.fn(),
       clear: jest.fn(),
-      _syncData: {}
+      _syncData: {},
     },
     onChanged: {
       addListener: jest.fn(),
       removeListener: jest.fn(),
-      _listeners: []
-    }
+      _listeners: [],
+    },
   },
   contextMenus: {
     create: jest.fn(),
@@ -46,9 +46,9 @@ const mockChrome = {
     onClicked: {
       addListener: jest.fn(),
       removeListener: jest.fn(),
-      _clickListeners: []
+      _clickListeners: [],
     },
-    _menus: new Map()
+    _menus: new Map(),
   },
   tabs: {
     query: jest.fn(),
@@ -56,24 +56,24 @@ const mockChrome = {
     update: jest.fn(),
     sendMessage: jest.fn(),
     _tabs: [{ id: 1, url: 'http://localhost:3000', active: true }],
-    _nextTabId: 2
+    _nextTabId: 2,
   },
   scripting: {
     executeScript: jest.fn(),
     insertCSS: jest.fn(),
-    removeCSS: jest.fn()
+    removeCSS: jest.fn(),
   },
   windows: {
     getCurrent: jest.fn(),
     create: jest.fn(),
-    _nextWindowId: 2
+    _nextWindowId: 2,
   },
   notifications: {
     create: jest.fn(),
     update: jest.fn(),
     clear: jest.fn(),
-    _notifications: new Map()
-  }
+    _notifications: new Map(),
+  },
 };
 
 // Helper functions
@@ -121,7 +121,7 @@ const mockChromeHelpers = {
         console.error('Mock context menu click error:', error);
       }
     });
-  }
+  },
 };
 
 // Global setup
@@ -164,9 +164,9 @@ global.testUtils = {
         add: jest.fn(),
         remove: jest.fn(),
         contains: jest.fn(() => false),
-        toggle: jest.fn()
+        toggle: jest.fn(),
       },
-      ...attributes
+      ...attributes,
     };
 
     Object.entries(attributes).forEach(([key, value]) => {
@@ -188,9 +188,9 @@ global.testUtils = {
       defaultPrevented: false,
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
-      ...properties
+      ...properties,
     };
-  }
+  },
 };
 
 // Mock console methods to reduce noise
@@ -203,7 +203,7 @@ global.console = {
   warn: jest.fn(),
   error: originalConsole.error, // Keep errors for debugging
   group: jest.fn(),
-  groupEnd: jest.fn()
+  groupEnd: jest.fn(),
 };
 
 // Mock timers

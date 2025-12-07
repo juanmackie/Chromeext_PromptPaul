@@ -15,21 +15,21 @@ const mockChrome = {
   contextMenus: {
     create: jest.fn(),
     remove: jest.fn(),
-    getAll: jest.fn()
+    getAll: jest.fn(),
   },
   sidePanel: {
-    open: jest.fn()
+    open: jest.fn(),
   },
   runtime: {
     sendMessage: jest.fn().mockResolvedValue(true),
-    lastError: null
+    lastError: null,
   },
   storage: {
     local: {
       get: jest.fn(),
-      set: jest.fn()
-    }
-  }
+      set: jest.fn(),
+    },
+  },
 };
 global.chrome = mockChrome;
 
@@ -55,7 +55,7 @@ describe('Background Module Integration', () => {
     test('should handle menu click -> media processing -> message dispatch flow', async () => {
       const mockInfo = {
         menuItemId: 'analyzeImage',
-        srcUrl: 'https://example.com/test.jpg'
+        srcUrl: 'https://example.com/test.jpg',
       };
       const mockTab = { id: 123 };
 
@@ -63,16 +63,20 @@ describe('Background Module Integration', () => {
 
       // Verify flow: open side panel -> fetch media -> send message
       expect(chrome.sidePanel.open).toHaveBeenCalledWith({ tabId: 123 });
-      expect(mediaProcessor.fetchMediaAsBase64).toHaveBeenCalledWith('https://example.com/test.jpg');
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'setMediaForAnalysis',
-        mediaData: expect.objectContaining({
-          base64: 'mock-base64-data',
-          url: 'https://example.com/test.jpg',
-          mimeType: expect.any(String),
-          loading: false
+      expect(mediaProcessor.fetchMediaAsBase64).toHaveBeenCalledWith(
+        'https://example.com/test.jpg'
+      );
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'setMediaForAnalysis',
+          mediaData: expect.objectContaining({
+            base64: 'mock-base64-data',
+            url: 'https://example.com/test.jpg',
+            mimeType: expect.any(String),
+            loading: false,
+          }),
         })
-      }));
+      );
       expect(analytics.trackContextMenuClick).toHaveBeenCalled();
     });
 
@@ -80,7 +84,7 @@ describe('Background Module Integration', () => {
       const testCases = [
         { url: 'https://example.com/image.jpg', expectedMime: 'image/jpeg' },
         { url: 'https://example.com/video.mp4', expectedMime: 'video/mp4' },
-        { url: 'https://example.com/audio.mp3', expectedMime: 'audio/mpeg' }
+        { url: 'https://example.com/audio.mp3', expectedMime: 'audio/mpeg' },
       ];
 
       for (const testCase of testCases) {
@@ -90,11 +94,13 @@ describe('Background Module Integration', () => {
 
         await contextMenuManager.handleMenuClick(mockInfo, mockTab, mediaProcessor);
 
-        expect(chrome.runtime.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({
-          mediaData: expect.objectContaining({
-            mimeType: testCase.expectedMime
+        expect(chrome.runtime.sendMessage).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            mediaData: expect.objectContaining({
+              mimeType: testCase.expectedMime,
+            }),
           })
-        }));
+        );
       }
     });
 
@@ -104,15 +110,18 @@ describe('Background Module Integration', () => {
       const mockInfo = { menuItemId: 'analyzeImage', srcUrl: 'https://fail.com/image.jpg' };
       const mockTab = { id: 123 };
 
-      await expect(contextMenuManager.handleMenuClick(mockInfo, mockTab, mediaProcessor))
-        .rejects.toThrow('Fetch failed');
+      await expect(
+        contextMenuManager.handleMenuClick(mockInfo, mockTab, mediaProcessor)
+      ).rejects.toThrow('Fetch failed');
 
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'setMediaForAnalysis',
-        mediaData: expect.objectContaining({
-          error: expect.stringContaining('Fetch failed')
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'setMediaForAnalysis',
+          mediaData: expect.objectContaining({
+            error: expect.stringContaining('Fetch failed'),
+          }),
         })
-      }));
+      );
       expect(errorHandler.handle).toHaveBeenCalled();
     });
   });
@@ -129,21 +138,28 @@ describe('Background Module Integration', () => {
       expect(apiHandler.getAllToolDefinitions).toHaveBeenCalled();
       expect(apiHandler.getStreamingSettings).toHaveBeenCalled();
       expect(mockApiClient.makeStreamingRequest).toHaveBeenCalled();
-      expect(chrome.runtime.sendMessage).toHaveBeenNthCalledWith(2, expect.objectContaining({
-        action: 'streamApiEnd'
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          action: 'streamApiEnd',
+        })
+      );
     });
 
     test('should handle configuration error during integration', async () => {
-      const configError = new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
+      const configError = new Error(
+        'LLM API endpoint is missing or invalid. Please configure it in the options page.'
+      );
       apiHandler.validateConfig.mockRejectedValueOnce(configError);
 
       await apiHandler.makeLlmApiRequest('test prompt', '123');
 
-      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'displayErrorInChat',
-        errorMessage: expect.stringContaining('LLM API endpoint')
-      }));
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'displayErrorInChat',
+          errorMessage: expect.stringContaining('LLM API endpoint'),
+        })
+      );
     });
   });
 
@@ -172,8 +188,9 @@ describe('Background Module Integration', () => {
       const mockInfo = { menuItemId: 'analyzeImage', srcUrl: 'https://error.com/image.jpg' };
       const mockTab = { id: 123 };
 
-      await expect(contextMenuManager.handleMenuClick(mockInfo, mockTab, mediaProcessor))
-        .rejects.toThrow('Side panel unavailable');
+      await expect(
+        contextMenuManager.handleMenuClick(mockInfo, mockTab, mediaProcessor)
+      ).rejects.toThrow('Side panel unavailable');
 
       expect(errorHandler.handle).toHaveBeenCalled();
       expect(mediaProcessor.fetchMediaAsBase64).toHaveBeenCalled(); // Still attempts media fetch

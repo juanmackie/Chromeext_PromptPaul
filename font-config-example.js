@@ -27,17 +27,17 @@ className={`... geistMono.variable playfairDisplay.variable geistMono.variable`}
 */
 
 // ✅ Corrected version:
-import Geist_Mono from "next/font/google";
-import Playfair_Display from "next/font/google";
+import Geist_Mono from 'next/font/google';
+import Playfair_Display from 'next/font/google';
 
 const geistMono = Geist_Mono({
-  variable: "--font-geistMono",
-  subsets: ["latin"],
+  variable: '--font-geistMono',
+  subsets: ['latin'],
 });
 
 const playfairDisplay = Playfair_Display({
-  variable: "--font-playfairDisplay", 
-  subsets: ["latin"],
+  variable: '--font-playfairDisplay',
+  subsets: ['latin'],
 });
 
 // className={`... ${geistMono.variable} ${playfairDisplay.variable}`}

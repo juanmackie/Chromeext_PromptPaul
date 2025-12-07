@@ -12,13 +12,9 @@
     "scripting",
     "alarms"
   ],
-  "host_permissions": [
-    "https://*/*",
-    "http://*/*",
-    "https://cloud.umami.is/*"
-  ],
+  "host_permissions": ["https://*/*", "http://*/*", "https://cloud.umami.is/*"],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' http: https:"
+    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' http: https:; base-uri 'self';"
   },
   "options_page": "options.html",
   "background": {
@@ -32,13 +28,8 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "*://*/*.pdf",
-        "file://*/*.pdf"
-      ],
-      "js": [
-        "pdf_content_script.js"
-      ],
+      "matches": ["*://*/*.pdf", "file://*/*.pdf"],
+      "js": ["pdf_content_script.js"],
       "all_frames": true
     }
   ]

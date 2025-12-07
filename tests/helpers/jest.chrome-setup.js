@@ -1,20 +1,20 @@
-const jestChrome = require("jest-chrome");
+const jestChrome = require('jest-chrome');
 
 // Expose chrome globally for all tests using jest-chrome.
-if (typeof global !== "undefined") {
+if (typeof global !== 'undefined') {
   global.chrome = global.chrome || jestChrome;
 }
 
 // Polyfill chrome.flush if not provided by the installed jest-chrome version.
-if (typeof chrome.flush !== "function") {
+if (typeof chrome.flush !== 'function') {
   chrome.flush = () => {
     // Minimal safe reset: clear common mocks if present.
-    Object.keys(chrome).forEach((key) => {
+    Object.keys(chrome).forEach(key => {
       const api = chrome[key];
-      if (api && typeof api === "object") {
-        Object.keys(api).forEach((prop) => {
+      if (api && typeof api === 'object') {
+        Object.keys(api).forEach(prop => {
           const val = api[prop];
-          if (val && typeof val.mockClear === "function") {
+          if (val && typeof val.mockClear === 'function') {
             val.mockClear();
           }
         });

@@ -1,9 +1,11 @@
 # Comprehensive Test Suite Documentation
 
 ## Overview
+
 This test suite provides **95%+ code coverage** across unit, integration, E2E, performance, security, and accessibility tests for the Prompt Paul Chrome extension.
 
 **Coverage Goals Achieved:**
+
 - Unit Tests: 95%+ branch/line coverage
 - Integration Tests: Key module interactions verified
 - E2E Tests: Full user workflows validated
@@ -14,6 +16,7 @@ This test suite provides **95%+ code coverage** across unit, integration, E2E, p
 ## Setup Instructions
 
 1. **Install Dependencies**
+
    ```bash
    npm install
    ```
@@ -25,6 +28,7 @@ This test suite provides **95%+ code coverage** across unit, integration, E2E, p
 ## Running Tests
 
 ### Unit & Integration Tests (Jest)
+
 ```bash
 # Run all tests
 npm test
@@ -40,6 +44,7 @@ npm test -- --watch
 ```
 
 ### E2E Tests (Playwright)
+
 ```bash
 # Install browsers
 npx playwright install
@@ -55,32 +60,39 @@ npx playwright test tests/integration/end-to-end
 ```
 
 ### Performance Tests
+
 ```bash
 npm test tests/performance/
 ```
 
 ### Security Tests
+
 ```bash
 npm test tests/security/
 ```
 
 ### Accessibility Tests
+
 ```bash
 npm test tests/accessibility/
 ```
 
 ## Coverage Reports
+
 - HTML Report: `tests/coverage/lcov-report/index.html`
 - JSON: `tests/coverage/coverage-final.json`
 - **Target: 90%+ across branches/functions/lines/statements**
 
 ## CI/CD Workflow
+
 Tests run automatically on push/PR via GitHub Actions:
+
 - Unit/Integration: Jest with coverage
 - E2E: Playwright Chromium
 - Fail build if coverage <90%
 
 ## Test Structure
+
 ```
 tests/
 ├── unit/              # Isolated unit tests (95%+ coverage)
@@ -93,6 +105,7 @@ tests/
 ```
 
 ## Key Test Coverage Areas
+
 - ✅ Context Menu Manager (menu creation/handling)
 - ✅ Media Processor (fetch/convert/validate)
 - ✅ Config Validator (profiles/tools)
@@ -101,6 +114,7 @@ tests/
 - ✅ Storage Service (local/sync operations)
 
 ## Running Full QA Suite
+
 ```bash
 # Full test run with coverage
 npm run test:full
@@ -110,8 +124,10 @@ npm test -- --update-snapshot
 ```
 
 **Coverage Thresholds Enforced:**
+
 ```
 branches: 90%
 functions: 90%
 lines: 90%
 statements: 90%
+```

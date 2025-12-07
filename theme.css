@@ -2,68 +2,69 @@
 /* Import JetBrains Mono for Terminal Brutalism */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
-:root, [data-theme="light"] {
+:root,
+[data-theme='light'] {
   /* Terminal Brutalism - Light Mode "Blueprint" */
-  --background: #FFFFFF;
-  --background-weathered: #F8FAFC;
+  --background: #ffffff;
+  --background-weathered: #f8fafc;
 
   /* High Contrast Blueprint Colors */
-  --foreground: #1E293B;  /* Slate 900 */
-  --foreground-secondary: #475569;  /* Slate 600 */
-  --foreground-muted: #64748B;  /* Slate 500 */
+  --foreground: #1e293b; /* Slate 900 */
+  --foreground-secondary: #475569; /* Slate 600 */
+  --foreground-muted: #64748b; /* Slate 500 */
 
   /* Surface Colors with Analog Warmth */
-  --surface: #FFFFFF;
-  --surface-variant: #F1F5F9;
-  --card: #FFFFFF;
-  --card-foreground: #1E293B;
+  --surface: #ffffff;
+  --surface-variant: #f1f5f9;
+  --card: #ffffff;
+  --card-foreground: #1e293b;
 
   /* Primary Blueprint Blue */
-  --primary: #2563EB;  /* Vibrant Blue */
-  --primary-foreground: #FFFFFF;
-  --primary-hover: #1D4ED8;
+  --primary: #2563eb; /* Vibrant Blue */
+  --primary-foreground: #ffffff;
+  --primary-hover: #1d4ed8;
 
   /* Secondary with Warm Analog Undertones */
-  --secondary: #F8FAFC;
-  --secondary-foreground: #1E293B;
-  --secondary-hover: #F1F5F9;
+  --secondary: #f8fafc;
+  --secondary-foreground: #1e293b;
+  --secondary-hover: #f1f5f9;
 
   /* Cassette Futurism Accents */
-  --accent: #F59E0B;  /* Warm Amber */
-  --accent-foreground: #FFFFFF;
-  --accent-vintage: #0891B2;  /* Vintage Teal */
-  --accent-warm: #DC2626;  /* Warm Red */
+  --accent: #f59e0b; /* Warm Amber */
+  --accent-foreground: #ffffff;
+  --accent-vintage: #0891b2; /* Vintage Teal */
+  --accent-warm: #dc2626; /* Warm Red */
 
   /* Muted Colors */
-  --muted: #F1F5F9;
-  --muted-foreground: #64748B;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
 
   /* State Colors */
   --success: #059669;
-  --warning: #D97706;
-  --error: #DC2626;
-  --error-foreground: #FFFFFF;
+  --warning: #d97706;
+  --error: #dc2626;
+  --error-foreground: #ffffff;
 
   /* Terminal Brutalism Borders */
-  --border: #2563EB;  /* Blueprint Blue Borders */
-  --border-focus: #1D4ED8;
-  --input: #FFFFFF;
-  --input-border: #2563EB;
-  --input-focus: #1D4ED8;
+  --border: #2563eb; /* Blueprint Blue Borders */
+  --border-focus: #1d4ed8;
+  --input: #ffffff;
+  --input-border: #2563eb;
+  --input-focus: #1d4ed8;
 
   /* Hard Shadow System */
-  --shadow-color: rgba(37, 99, 235, 1);  /* Solid Blue Shadow */
+  --shadow-color: rgba(37, 99, 235, 1); /* Solid Blue Shadow */
   --shadow-hard: 4px 4px 0px 0px var(--shadow-color);
   --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
   --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
 
   /* Focus and Ring */
-  --ring: #2563EB;
+  --ring: #2563eb;
   --ring-focus: rgba(37, 99, 235, 0.5);
 
   /* Terminal Typography */
   --font-terminal: 'JetBrains Mono', 'Fira Code', 'Space Mono', monospace;
-  --font-sans: var(--font-terminal);  /* Force monospace everywhere */
+  --font-sans: var(--font-terminal); /* Force monospace everywhere */
   --font-serif: var(--font-terminal);
   --font-mono: var(--font-terminal);
 
@@ -79,98 +80,103 @@
   /* Micro-Rounded Corners */
   --radius-xs: 2px;
   --radius-sm: 3px;
-  --radius: 4px;  /* Sweet spot for brutalism */
+  --radius: 4px; /* Sweet spot for brutalism */
   --radius-md: 5px;
   --radius-lg: 6px;
 
   /* Transitions */
-  --transition-brutal: 0ms;  /* Instant for terminal feel */
-  --transition-press: 100ms ease;  /* For physical press animations */
+  --transition-brutal: 0ms; /* Instant for terminal feel */
+  --transition-press: 100ms ease; /* For physical press animations */
 
   /* Analog Grit Overlays */
   --grain-light: rgba(255, 255, 255, 0.1);
   --grain-dark: rgba(0, 0, 0, 0.05);
-  --vintage-wash: linear-gradient(135deg,
+  --vintage-wash: linear-gradient(
+    135deg,
     rgba(245, 158, 11, 0.02) 0%,
     rgba(8, 145, 178, 0.02) 50%,
-    rgba(37, 99, 235, 0.02) 100%);
+    rgba(37, 99, 235, 0.02) 100%
+  );
 
   /* Popover/Tooltip Colors - High Contrast for Readability */
-  --popover: #1E293B;  /* Dark slate background for tooltips */
-  --popover-foreground: #FFFFFF;  /* White text for high contrast */
+  --popover: #1e293b; /* Dark slate background for tooltips */
+  --popover-foreground: #ffffff; /* White text for high contrast */
 }
 
 /* Terminal Brutalism + Cassette Futurism - Dark Mode "Deep Space Terminal" */
-.dark, [data-theme="dark"] {
+.dark,
+[data-theme='dark'] {
   /* Deep Space Terminal Background */
-  --background: #02020B;  /* Deepest Navy/Black */
-  --background-weathered: #0A0A16;  /* Slightly lighter Navy */
+  --background: #02020b; /* Deepest Navy/Black */
+  --background-weathered: #0a0a16; /* Slightly lighter Navy */
 
   /* High Contrast Terminal Colors */
-  --foreground: #FFFFFF;  /* White Text */
-  --foreground-secondary: #94A3B8;  /* Slate 400 */
-  --foreground-muted: #64748B;  /* Slate 500 */
+  --foreground: #ffffff; /* White Text */
+  --foreground-secondary: #94a3b8; /* Slate 400 */
+  --foreground-muted: #64748b; /* Slate 500 */
 
   /* Surface Colors with Analog Depth */
-  --surface: #0A0A16;
-  --surface-variant: #1E293B;
-  --card: #0A0A16;
-  --card-foreground: #FFFFFF;
+  --surface: #0a0a16;
+  --surface-variant: #1e293b;
+  --card: #0a0a16;
+  --card-foreground: #ffffff;
 
   /* Primary Terminal Colors - Cream/Ivory */
-  --primary: #FFFFF0;  /* Ivory/Cream for high contrast */
-  --primary-foreground: #02020B;  /* Black text on cream button */
-  --primary-hover: #F0F4E8;
+  --primary: #fffff0; /* Ivory/Cream for high contrast */
+  --primary-foreground: #02020b; /* Black text on cream button */
+  --primary-hover: #f0f4e8;
 
   /* Secondary with Terminal Depth */
-  --secondary: #1E293B;
-  --secondary-foreground: #FFFFFF;
+  --secondary: #1e293b;
+  --secondary-foreground: #ffffff;
   --secondary-hover: #334155;
 
   /* Cassette Futurism Accents - Warmer in Dark Mode */
-  --accent: #F59E0B;  /* Warm Amber */
-  --accent-foreground: #02020B;
-  --accent-vintage: #06B6D4;  /* Brighter Teal for dark mode */
-  --accent-warm: #F87171;  /* Warmer Red for dark mode */
+  --accent: #f59e0b; /* Warm Amber */
+  --accent-foreground: #02020b;
+  --accent-vintage: #06b6d4; /* Brighter Teal for dark mode */
+  --accent-warm: #f87171; /* Warmer Red for dark mode */
 
   /* Muted Colors */
-  --muted: #1E293B;
-  --muted-foreground: #94A3B8;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
 
   /* State Colors - Adjusted for Dark Mode */
-  --success: #10B981;
-  --warning: #F59E0B;
-  --error: #F87171;
-  --error-foreground: #02020B;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #f87171;
+  --error-foreground: #02020b;
 
   /* Terminal Brutalism Borders */
-  --border: #4F46E5;  /* Indigo Borders */
-  --border-focus: #6366F1;
-  --input: #0A0A16;
-  --input-border: #4F46E5;
-  --input-focus: #6366F1;
+  --border: #4f46e5; /* Indigo Borders */
+  --border-focus: #6366f1;
+  --input: #0a0a16;
+  --input-border: #4f46e5;
+  --input-focus: #6366f1;
 
   /* Hard Shadow System - Dark Mode */
-  --shadow-color: rgba(79, 70, 229, 0.6);  /* Muted Indigo Shadow */
+  --shadow-color: rgba(79, 70, 229, 0.6); /* Muted Indigo Shadow */
   --shadow-hard: 4px 4px 0px 0px var(--shadow-color);
   --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
   --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
 
   /* Focus and Ring - Dark Mode */
-  --ring: #6366F1;
+  --ring: #6366f1;
   --ring-focus: rgba(99, 102, 241, 0.5);
 
   /* Analog Grit Overlays - Dark Mode */
   --grain-light: rgba(255, 255, 255, 0.03);
   --grain-dark: rgba(0, 0, 0, 0.1);
-  --vintage-wash: linear-gradient(135deg,
+  --vintage-wash: linear-gradient(
+    135deg,
     rgba(245, 158, 11, 0.03) 0%,
     rgba(6, 182, 212, 0.03) 50%,
-    rgba(79, 70, 229, 0.03) 100%);
+    rgba(79, 70, 229, 0.03) 100%
+  );
 
   /* Popover/Tooltip Colors - High Contrast for Readability */
-  --popover: #FFFFFF;  /* White background for tooltips */
-  --popover-foreground: #02020B;  /* Dark text for high contrast */
+  --popover: #ffffff; /* White background for tooltips */
+  --popover-foreground: #02020b; /* Dark text for high contrast */
 }
 
 /* Terminal Brutalism + Analog Grit Base Styles */
@@ -180,7 +186,7 @@
 
 html {
   font-family: var(--font-terminal);
-  line-height: 1.4;  /* Tighter for terminal feel */
+  line-height: 1.4; /* Tighter for terminal feel */
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -195,27 +201,31 @@ body {
   font-family: var(--font-terminal);
   font-weight: 400;
   line-height: 1.4;
-  transition: background var(--transition-brutal), color var(--transition-brutal);
+  transition:
+    background var(--transition-brutal),
+    color var(--transition-brutal);
   position: relative;
   overflow-x: hidden;
   min-height: 100vh;
 }
 
 /* Ensure theme switching works properly */
-body[data-theme="dark"],
+body[data-theme='dark'],
 .dark body {
   background: var(--background);
   color: var(--foreground);
 }
 
-body[data-theme="light"],
+body[data-theme='light'],
 .light body {
   background: var(--background);
   color: var(--foreground);
 }
 
 /* Force background override for theme switching */
-html, html[data-theme="dark"], html[data-theme="light"] {
+html,
+html[data-theme='dark'],
+html[data-theme='light'] {
   background: var(--background);
   transition: background var(--transition-brutal);
 }
@@ -245,16 +255,37 @@ body::before {
 
 /* Noise texture for analog feel */
 @keyframes grain {
-  0%, 100% { transform: translate(0, 0); }
-  10% { transform: translate(-1px, -1px); }
-  20% { transform: translate(1px, 1px); }
-  30% { transform: translate(-2px, 1px); }
-  40% { transform: translate(2px, -1px); }
-  50% { transform: translate(-1px, 2px); }
-  60% { transform: translate(1px, -2px); }
-  70% { transform: translate(-2px, -1px); }
-  80% { transform: translate(2px, 1px); }
-  90% { transform: translate(-1px, -2px); }
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  10% {
+    transform: translate(-1px, -1px);
+  }
+  20% {
+    transform: translate(1px, 1px);
+  }
+  30% {
+    transform: translate(-2px, 1px);
+  }
+  40% {
+    transform: translate(2px, -1px);
+  }
+  50% {
+    transform: translate(-1px, 2px);
+  }
+  60% {
+    transform: translate(1px, -2px);
+  }
+  70% {
+    transform: translate(-2px, -1px);
+  }
+  80% {
+    transform: translate(2px, 1px);
+  }
+  90% {
+    transform: translate(-1px, -2px);
+  }
 }
 
 body::after {
@@ -264,14 +295,13 @@ body::after {
   left: 0;
   right: 0;
   bottom: 0;
-  background-image:
-    repeating-linear-gradient(
-      0deg,
-      var(--grain-dark) 0px,
-      transparent 1px,
-      transparent 2px,
-      var(--grain-dark) 3px
-    );
+  background-image: repeating-linear-gradient(
+    0deg,
+    var(--grain-dark) 0px,
+    transparent 1px,
+    transparent 2px,
+    var(--grain-dark) 3px
+  );
   pointer-events: none;
   z-index: 2;
   opacity: 0.4;
@@ -286,7 +316,8 @@ body::after {
 }
 
 /* Content layers */
-main, .container {
+main,
+.container {
   position: relative;
   z-index: 10;
 }
@@ -305,6 +336,12 @@ main, .container {
 }
 
 @keyframes terminal-cursor {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0.3; }
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0.3;
+  }
 }

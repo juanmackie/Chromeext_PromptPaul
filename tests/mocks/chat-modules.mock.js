@@ -14,7 +14,7 @@ export const MessageRenderer = jest.fn().mockImplementation(() => ({
     className: 'message',
     innerHTML: '',
     querySelector: jest.fn(),
-    classList: { add: jest.fn(), remove: jest.fn() }
+    classList: { add: jest.fn(), remove: jest.fn() },
   }),
 
   addMessage: jest.fn().mockResolvedValue({ id: 'mock-message' }),
@@ -22,11 +22,11 @@ export const MessageRenderer = jest.fn().mockImplementation(() => ({
   updateMessage: jest.fn(),
   updateStreamingMessage: jest.fn(),
   finalizeStreamingMessage: jest.fn(),
-  processContent: jest.fn((content) => content),
+  processContent: jest.fn(content => content),
 
   createErrorMessage: jest.fn().mockReturnValue({
     className: 'error-message',
-    textContent: 'Mock error'
+    textContent: 'Mock error',
   }),
 
   addErrorMessage: jest.fn(),
@@ -36,10 +36,10 @@ export const MessageRenderer = jest.fn().mockImplementation(() => ({
   detectCodeLanguage: jest.fn(),
 
   updateConfig: jest.fn(),
-  debounce: jest.fn((fn) => fn),
-  throttle: jest.fn((fn) => fn),
+  debounce: jest.fn(fn => fn),
+  throttle: jest.fn(fn => fn),
 
-  cleanup: jest.fn()
+  cleanup: jest.fn(),
 }));
 
 // Mock UIManager
@@ -50,14 +50,14 @@ export const UIManager = jest.fn().mockImplementation(() => ({
     enableAnimations: true,
     enableKeyboardShortcuts: true,
     enableAutoFocus: true,
-    debounceDelay: 300
+    debounceDelay: 300,
   },
 
   discoverElements: jest.fn().mockReturnValue({
     chatArea: { id: 'chat-area' },
     userInput: { id: 'user-input' },
     sendButton: { id: 'send-button' },
-    loadingIndicator: { id: 'loading-indicator' }
+    loadingIndicator: { id: 'loading-indicator' },
   }),
 
   getUserInput: jest.fn().mockReturnValue(''),
@@ -106,36 +106,38 @@ export const UIManager = jest.fn().mockImplementation(() => ({
   setAriaAttributes: jest.fn(),
   trapFocus: jest.fn(),
 
-  cleanup: jest.fn()
+  cleanup: jest.fn(),
 }));
 
 // Mock StreamingManager
-export const StreamingManager = jest.fn().mockImplementation((messageRenderer, conversationManager) => ({
-  messageRenderer,
-  conversationManager,
-  activeStreams: new Map(),
-  config: {
-    chunkTimeout: 5000,
-    maxRetries: 3,
-    retryDelay: 1000,
-    enableMarkdown: true,
-    autoScroll: true
-  },
+export const StreamingManager = jest
+  .fn()
+  .mockImplementation((messageRenderer, conversationManager) => ({
+    messageRenderer,
+    conversationManager,
+    activeStreams: new Map(),
+    config: {
+      chunkTimeout: 5000,
+      maxRetries: 3,
+      retryDelay: 1000,
+      enableMarkdown: true,
+      autoScroll: true,
+    },
 
-  startStreaming: jest.fn().mockResolvedValue({ messageId: 'test-message' }),
-  stopStreaming: jest.fn(),
-  stopAllStreams: jest.fn(),
+    startStreaming: jest.fn().mockResolvedValue({ messageId: 'test-message' }),
+    stopStreaming: jest.fn(),
+    stopAllStreams: jest.fn(),
 
-  updateConfig: jest.fn(),
-  on: jest.fn(),
-  off: jest.fn(),
+    updateConfig: jest.fn(),
+    on: jest.fn(),
+    off: jest.fn(),
 
-  parseSSEData: jest.fn().mockReturnValue(['Hello', 'World']),
-  parseJSONChunk: jest.fn(),
-  detectStreamFormat: jest.fn().mockReturnValue('text'),
+    parseSSEData: jest.fn().mockReturnValue(['Hello', 'World']),
+    parseJSONChunk: jest.fn(),
+    detectStreamFormat: jest.fn().mockReturnValue('text'),
 
-  destroy: jest.fn()
-}));
+    destroy: jest.fn(),
+  }));
 
 // Mock ConversationManager
 export const ConversationManager = jest.fn().mockImplementation(() => ({
@@ -166,7 +168,7 @@ export const ConversationManager = jest.fn().mockImplementation(() => ({
   on: jest.fn(),
   off: jest.fn(),
 
-  cleanup: jest.fn()
+  cleanup: jest.fn(),
 }));
 
 // Mock ChatOrchestrator
@@ -196,5 +198,5 @@ export const ChatOrchestrator = jest.fn().mockImplementation(() => ({
   on: jest.fn(),
   off: jest.fn(),
 
-  cleanup: jest.fn()
+  cleanup: jest.fn(),
 }));

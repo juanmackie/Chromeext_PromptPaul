@@ -38,21 +38,21 @@ beforeEach(() => {
         add: jest.fn(),
         remove: jest.fn(),
         contains: jest.fn(() => false),
-        toggle: jest.fn()
-      }
+        toggle: jest.fn(),
+      },
     })),
     querySelector: jest.fn(() => null),
     body: { appendChild: jest.fn() },
     addEventListener: jest.fn(),
-    location: { reload: jest.fn() }
+    location: { reload: jest.fn() },
   };
 
   global.window = {
     loadingManager: {
       showToast: jest.fn(),
-      setButtonLoading: jest.fn()
+      setButtonLoading: jest.fn(),
     },
-    location: global.document.location
+    location: global.document.location,
   };
 
   // Mock fetch API for API calls
@@ -65,7 +65,7 @@ beforeEach(() => {
     removeItem: jest.fn(),
     clear: jest.fn(),
     length: 0,
-    key: jest.fn()
+    key: jest.fn(),
   };
 
   global.sessionStorage = {
@@ -74,7 +74,7 @@ beforeEach(() => {
     removeItem: jest.fn(),
     clear: jest.fn(),
     length: 0,
-    key: jest.fn()
+    key: jest.fn(),
   };
 
   // Mock console methods to reduce noise in tests (but keep errors)
@@ -101,7 +101,7 @@ beforeEach(() => {
     profile: jest.fn(),
     profileEnd: jest.fn(),
     dir: jest.fn(),
-    dirxml: jest.fn()
+    dirxml: jest.fn(),
   };
 
   // Mock URL and URLSearchParams
@@ -203,8 +203,8 @@ beforeEach(() => {
       return {
         getReader: jest.fn(() => ({
           read: jest.fn().mockResolvedValue({ done: true }),
-          releaseLock: jest.fn()
-        }))
+          releaseLock: jest.fn(),
+        })),
       };
     }
   };
@@ -252,7 +252,7 @@ beforeEach(() => {
         aborted: false,
         addEventListener: jest.fn(),
         removeEventListener: jest.fn(),
-        dispatchEvent: jest.fn()
+        dispatchEvent: jest.fn(),
       };
     }
 
@@ -285,7 +285,7 @@ beforeEach(() => {
     getReader() {
       return {
         read: jest.fn().mockResolvedValue({ done: true }),
-        releaseLock: jest.fn()
+        releaseLock: jest.fn(),
       };
     }
 
@@ -318,7 +318,7 @@ beforeEach(() => {
     static json(data) {
       return new MockResponse(JSON.stringify(data), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
@@ -351,7 +351,7 @@ beforeEach(() => {
     clone() {
       return new MockResponse(this.body, {
         status: this.status,
-        headers: Object.fromEntries(this.headers)
+        headers: Object.fromEntries(this.headers),
       });
     }
   };
@@ -498,12 +498,12 @@ beforeEach(() => {
     mark: jest.fn(),
     measure: jest.fn(),
     getEntriesByType: jest.fn(() => []),
-    getEntriesByName: jest.fn(() => [])
+    getEntriesByName: jest.fn(() => []),
   };
 
   // Mock crypto API
   global.crypto = {
-    getRandomValues: jest.fn((array) => {
+    getRandomValues: jest.fn(array => {
       for (let i = 0; i < array.length; i++) {
         array[i] = Math.floor(Math.random() * 256);
       }
@@ -511,13 +511,13 @@ beforeEach(() => {
     }),
     randomUUID: jest.fn(() => 'mock-uuid-' + Math.random().toString(36).substr(2, 9)),
     subtle: {
-      digest: jest.fn(() => Promise.resolve(new ArrayBuffer(32)))
-    }
+      digest: jest.fn(() => Promise.resolve(new ArrayBuffer(32))),
+    },
   };
 
   // Mock atob and btoa
-  global.atob = jest.fn((str) => Buffer.from(str, 'base64').toString('binary'));
-  global.btoa = jest.fn((str) => Buffer.from(str, 'binary').toString('base64'));
+  global.atob = jest.fn(str => Buffer.from(str, 'base64').toString('binary'));
+  global.btoa = jest.fn(str => Buffer.from(str, 'binary').toString('base64'));
 });
 
 // Global test utilities
@@ -537,7 +537,7 @@ global.testUtils = {
       json: () => Promise.resolve(data),
       text: () => Promise.resolve(JSON.stringify(data)),
       headers: new Map(),
-      ...options
+      ...options,
     };
     global.fetch.mockResolvedValue(response);
     return response;
@@ -583,9 +583,9 @@ global.testUtils = {
         add: jest.fn(),
         remove: jest.fn(),
         contains: jest.fn(() => false),
-        toggle: jest.fn()
+        toggle: jest.fn(),
       },
-      ...attributes
+      ...attributes,
     };
 
     // Set attributes
@@ -609,9 +609,9 @@ global.testUtils = {
       defaultPrevented: false,
       preventDefault: jest.fn(),
       stopPropagation: jest.fn(),
-      ...properties
+      ...properties,
     };
-  }
+  },
 };
 
 // Mock timers for consistent testing
@@ -621,6 +621,6 @@ jest.useFakeTimers();
 jest.setTimeout(10000);
 
 // Setup global error handlers for tests
-process.on('unhandledRejection', (error) => {
+process.on('unhandledRejection', error => {
   console.error('Unhandled Rejection in tests:', error);
 });
