@@ -172,6 +172,36 @@ chrome.runtime.onInstalled.addListener(async () => {
   setupContextMenu();
 });
 
+// Helper to send message with retry logic
+async function sendMessageWithRetry(message, maxRetries = 5, baseDelay = 200) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await chrome.runtime.sendMessage(message);
+      logger.info('Background', `Message sent successfully: ${message.action}`);
+      return;
+    } catch (error) {
+      const isLastAttempt = i === maxRetries - 1;
+
+      // Check if it's the specific error we're looking for
+      if (error.message && error.message.includes('Receiving end does not exist')) {
+        if (isLastAttempt) {
+          logger.error('Background', `Failed to send message after ${maxRetries} attempts:`, error);
+          throw error;
+        }
+
+        // Exponential backoff
+        const delay = baseDelay * Math.pow(1.5, i);
+        logger.debug('Background', `Retry ${i + 1}/${maxRetries} for message ${message.action} in ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // For other errors, log and rethrow immediately
+        logger.error('Background', 'Error sending message:', error);
+        throw error;
+      }
+    }
+  }
+}
+
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const menuItemId = info.menuItemId;
@@ -249,7 +279,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Handle different menu actions
     if (menuItemId === 'oneoff_instruction') {
       // One-off instruction - just show the selected text/image URL in chat
-      chrome.runtime.sendMessage({
+      // Use retry logic to ensure side panel is ready to receive
+      sendMessageWithRetry({
         action: 'setSelectedText',
         selectedText: promptContent,
         tabId: tab.id,
@@ -258,14 +289,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     } else if (menuItemId === 'start_chat') {
       // Start chat - send selected text and make API request
-      setTimeout(() => {
-        chrome.runtime.sendMessage({
-          action: 'setSelectedText',
-          selectedText: promptContent,
-          tabId: tab.id,
-          fromStartChat: true,
-        }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
-      }, 100);
+      // Use retry logic instead of fixed timeout
+      sendMessageWithRetry({
+        action: 'setSelectedText',
+        selectedText: promptContent,
+        tabId: tab.id,
+        fromStartChat: true,
+      }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
 
       const requestOptions = { isStartChat: true };
       // TODO: Pass isImage flag or handle image processing in apiClient if needed
