@@ -12,7 +12,8 @@
       "Bash(ls:*)",
       "Bash(npm run build:*)",
       "Bash(findstr:*)",
-      "Bash(dir /b *.css)"
+      "Bash(dir /b *.css)",
+      "Bash(git log --oneline -n 20 --grep=\"context\\|image\\|menu\" -i)"
     ],
     "deny": [],
     "ask": []

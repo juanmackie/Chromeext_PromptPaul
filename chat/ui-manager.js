@@ -1,3 +1,5 @@
+import logger from '../utils/logger.js';
+
 /**
  * UI Manager
  * Handles DOM manipulation, UI state management, and user interactions

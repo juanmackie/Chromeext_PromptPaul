@@ -516,8 +516,7 @@ export class ChatOrchestrator {
       this.showToast('Requesting tab content for explanation...');
 
       const response = await this.sendRuntimeMessage({
-        action: 'getExplainContent',
-        instruction: 'Explain this content clearly and concisely',
+        action: 'getTabContent',
       });
 
       if (!response || !response.success) {
@@ -725,15 +724,42 @@ export class ChatOrchestrator {
           button.className = 'quick-action-button pinned-action';
           button.title = instruction.content;
           button.textContent = instruction.name.charAt(0).toUpperCase();
-          button.addEventListener('click', () => {
+          button.addEventListener('click', async () => {
             // Ensure chat area is visible
             this.uiManager.toggleAreas({
               chatMainArea: { element: this.chatMainArea, visible: true },
               oneoffInstructionArea: { element: this.oneoffInstructionArea, visible: false },
             });
 
-            // Send instruction as message
-            this.conversationManager.makeApiCall(instruction.content, { isStartChat: true });
+            // If instruction has tool_choice, we might treat it differently,
+            // but for now we follow the "grab content and prompt" pattern.
+
+            try {
+              this.showToast('Requesting tab content...');
+              const response = await this.sendRuntimeMessage({ action: 'getTabContent' });
+
+              if (!response || !response.success) {
+                // Fallback: just send the instruction if content fetch fails?
+                // Or warn the user. Let's warn.
+                this.showToast('Failed to get tab content to apply instruction to', 'error');
+                return;
+              }
+
+              const content = response.content || '';
+              if (!content) {
+                this.showToast('No content found on tab', 'warning');
+                return;
+              }
+
+              const prompt = `${instruction.content}\n\n${content}`;
+
+              // Send instruction as message
+              this.conversationManager.makeApiCall(prompt, { isStartChat: true });
+
+            } catch (e) {
+              logger.error('ChatOrchestrator', 'Chat: Error executing pinned action:', e);
+              this.showToast('Error executing action', 'error');
+            }
           });
 
           this.pinnedActionsContainer.appendChild(button);
