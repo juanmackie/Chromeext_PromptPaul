@@ -1,9 +1,11 @@
 import { ErrorSeverity, ErrorCategory, createError } from '../errorHandler.js';
+import { sendMessageWithRetry } from '../utils/message-utils.js';
 import logger from '../utils/logger.js';
 
 /**
  * @typedef {Object} ApiRequestOptions
  * @property {string} [customInstructionToolChoice='none'] - Tool choice for custom instructions
+ * @property {boolean} [isStartChat] - Whether this request is starting a new chat
  */
 
 /**
@@ -178,7 +180,7 @@ export class ApiClient {
     let isFirstChunk = true;
 
     // Send stream start message
-    chrome.runtime.sendMessage({
+    sendMessageWithRetry({
       action: 'streamApiStart',
       tabId: tabId,
     }).catch(e => logger.error('Error sending stream start:', e));
@@ -204,7 +206,7 @@ export class ApiClient {
 
               if (content) {
                 // Send streaming chunk to chat
-                chrome.runtime.sendMessage({
+                sendMessageWithRetry({
                   action: 'streamApiResponseChunk',
                   chunk: content,
                   tabId: tabId,
@@ -218,7 +220,7 @@ export class ApiClient {
       }
 
       // Send stream end message
-      chrome.runtime.sendMessage({
+      sendMessageWithRetry({
         action: 'streamApiEnd',
         tabId: tabId,
       }).catch(e => logger.error('Error sending stream end:', e));
@@ -226,7 +228,7 @@ export class ApiClient {
     } catch (error) {
       logger.error('BackgroundApiClient', 'Streaming error:', error);
       // Send stream end even on error
-      chrome.runtime.sendMessage({
+      sendMessageWithRetry({
         action: 'streamApiEnd',
         tabId: tabId,
         error: error.message,

@@ -13,6 +13,10 @@ import logger from './utils/logger.js';
 // Set cross-module references
 apiClient.setToolManager(toolManager);
 
+
+// Import utilities
+import { sendMessageWithRetry } from './utils/message-utils.js';
+
 // Register collections with memory manager
 memoryManager.register('activeToolExecutions', toolManager.activeToolExecutions);
 memoryManager.register('activeMessages', eventManager.activeMessages);
@@ -172,35 +176,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   setupContextMenu();
 });
 
-// Helper to send message with retry logic
-async function sendMessageWithRetry(message, maxRetries = 5, baseDelay = 200) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      await chrome.runtime.sendMessage(message);
-      logger.info('Background', `Message sent successfully: ${message.action}`);
-      return;
-    } catch (error) {
-      const isLastAttempt = i === maxRetries - 1;
-
-      // Check if it's the specific error we're looking for
-      if (error.message && error.message.includes('Receiving end does not exist')) {
-        if (isLastAttempt) {
-          logger.error('Background', `Failed to send message after ${maxRetries} attempts:`, error);
-          throw error;
-        }
-
-        // Exponential backoff
-        const delay = baseDelay * Math.pow(1.5, i);
-        logger.debug('Background', `Retry ${i + 1}/${maxRetries} for message ${message.action} in ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      } else {
-        // For other errors, log and rethrow immediately
-        logger.error('Background', 'Error sending message:', error);
-        throw error;
-      }
-    }
-  }
-}
+// Local sendMessageWithRetry removed in favor of imported utility
 
 // Helper function to process images for analysis
 async function processImageForAnalysis(imageUrl, tab, actionType, instructionId = null) {
@@ -277,10 +253,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     // Open side panel first (must be in direct response to user action)
+    let sidePanelOpened = false;
+
     // We attempt to open it immediately to capture the user gesture
     try {
       await chrome.sidePanel.open({ tabId: tab.id });
       logger.info('Background', 'Side panel opened for tab:', tab.id);
+      sidePanelOpened = true;
     } catch (error) {
       // If tab-specific open fails, try opening for the window as fallback
       logger.error('Background', 'Failed to open side panel for tab:', error);
@@ -288,10 +267,25 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         if (tab.windowId) {
           await chrome.sidePanel.open({ windowId: tab.windowId });
           logger.info('Background', 'Side panel opened for window via fallback:', tab.windowId);
+          sidePanelOpened = true;
         }
       } catch (fallbackError) {
         logger.error('Background', 'Critical: Failed to open side panel via fallback:', fallbackError);
       }
+    }
+
+    if (!sidePanelOpened) {
+      logger.error('Background', 'Could not open side panel. Aborting action to prevent connection errors.');
+      // Attempt to notify user via notification API since we can't open the side panel
+      if (chrome.notifications) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon128.png',
+          title: 'Prompt Paul Error',
+          message: 'Failed to open side panel. Please try creating a new tab or restarting the browser.'
+        });
+      }
+      return;
     }
 
     // Determines content to process
