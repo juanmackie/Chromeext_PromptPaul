@@ -180,15 +180,10 @@ export class ChatOrchestrator {
   setupChromeMessageListeners() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       this.handleChromeMessage(request, sender, sendResponse);
-      // We do not use sendResponse asynchronously for any actions here,
-      // so we must NOT return true. Returning true without eventually
-      // calling sendResponse causes Chrome to log:
-      // "A listener indicated an asynchronous response by returning true,
-      //  but the message channel closed before a response was received."
-      //
-      // By not returning true (or explicitly returning false), the message
-      // channel is closed immediately and background.js sendMessage calls
-      // will no longer see those streamApiResponseChunk errors.
+      // Immediately acknowledge receipt to prevent "message port closed" errors.
+      // The background script waits for this response when using sendMessageWithRetry.
+      // We don't need to return data for these events, just an ack.
+      sendResponse({ received: true });
       return false;
     });
   }

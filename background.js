@@ -173,6 +173,19 @@ chrome.runtime.onInstalled.addListener(async () => {
     logger.error('Background', 'Error setting sidePanel options:', error);
   });
 
+  // Configure side panel for each activated tab to prevent "No active side panel for windowId" errors
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    chrome.sidePanel
+      .setOptions({
+        tabId,
+        path: 'chat.html',
+        enabled: true,
+      })
+      .catch(error => {
+        logger.error('Background', `Error setting side panel options for tab ${tabId}:`, error);
+      });
+  });
+
   setupContextMenu();
 });
 
@@ -255,23 +268,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Open side panel first (must be in direct response to user action)
     let sidePanelOpened = false;
 
-    // We attempt to open it immediately to capture the user gesture
+    // Use windowId to open the global side panel for this window.
+    // This is more reliable than tabId-specific opening which requires specific per-tab configuration.
     try {
-      await chrome.sidePanel.open({ tabId: tab.id });
-      logger.info('Background', 'Side panel opened for tab:', tab.id);
-      sidePanelOpened = true;
-    } catch (error) {
-      // If tab-specific open fails, try opening for the window as fallback
-      logger.error('Background', 'Failed to open side panel for tab:', error);
-      try {
-        if (tab.windowId) {
-          await chrome.sidePanel.open({ windowId: tab.windowId });
-          logger.info('Background', 'Side panel opened for window via fallback:', tab.windowId);
-          sidePanelOpened = true;
-        }
-      } catch (fallbackError) {
-        logger.error('Background', 'Critical: Failed to open side panel via fallback:', fallbackError);
+      if (typeof tab.windowId === 'number') {
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+        logger.info('Background', 'Side panel opened for window:', tab.windowId);
+        sidePanelOpened = true;
+      } else {
+        // Fallback to tabId if windowId is somehow missing
+        await chrome.sidePanel.open({ tabId: tab.id });
+        logger.info('Background', 'Side panel opened for tab:', tab.id);
+        sidePanelOpened = true;
       }
+    } catch (error) {
+      logger.error('Background', 'Failed to open side panel:', error);
+      // We will attempt to proceed even if open fails, as it might already be open
+      // or the error might be spurious in some contexts.
+      // However, usually if open fails, we prefer to abort or notify.
+      // But let's verify if we can check if it's open?
+      // No easy synchronous check. We'll set flag to false.
     }
 
     if (!sidePanelOpened) {
