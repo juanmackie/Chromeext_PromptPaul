@@ -19,7 +19,7 @@
     </div>
 
     <!-- Connection Section -->
-    <section class="ext-card section-card">
+    <section class="hextaui-card section-card">
       <div class="section-header">
         <h2 class="section-title">
           <span class="material-symbols-outlined section-icon">link</span>
@@ -30,38 +30,38 @@
       
         <div class="button-container">
           <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
-            <button class="ext-btn hextaui-btn hextaui-btn-accent">
+            <button class="hextaui-btn hextaui-btn-accent">
               &#9749; Buy me a coffee
             </button>
           </a>
-          <button id="revertDefaultsButton" class="ext-btn hextaui-btn hextaui-btn-destructive">Revert to default API</button>
+          <button id="revertDefaultsButton" class="hextaui-btn hextaui-btn-destructive">Revert to default API</button>
           <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
-            <button id="feedbackButton" class="ext-btn hextaui-btn hextaui-btn-primary">Feedback</button>
+            <button id="feedbackButton" class="hextaui-btn hextaui-btn-primary">Feedback</button>
           </a>
         </div>
       <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
 
       <form id="optionsForm" class="grid-form">
-        <div class="ext-form-field col-span-12">
-          <label for="llmEndpoint" class="ext-form-label">
+        <div class="hextaui-form-field col-span-12">
+          <label for="llmEndpoint" class="hextaui-form-label">
             LLM API Endpoint
             <button type="button" class="help-tooltip" data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <input type="url" id="llmEndpoint" class="ext-input hextaui-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
-          <div class="ext-form-error" id="llmEndpointError"></div>
+          <input type="url" id="llmEndpoint" class="hextaui-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+          <div class="hextaui-form-error" id="llmEndpointError"></div>
         </div>
 
-        <div class="ext-form-field col-span-12">
-          <label for="apiKey" class="ext-form-label">
+        <div class="hextaui-form-field col-span-12">
+          <label for="apiKey" class="hextaui-form-label">
             API Key
             <button type="button" class="help-tooltip" data-tooltip="Your API key for authentication. Keep this secure and never share it publicly. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
           <div class="password-input-container">
-            <input type="password" id="apiKey" class="ext-input hextaui-input password-input" placeholder="sk-..." required>
+            <input type="password" id="apiKey" class="hextaui-input password-input" placeholder="sk-..." required>
             <button type="button" class="password-toggle" id="apiKeyToggle">
               <span class="material-symbols-outlined">visibility</span>
             </button>
@@ -69,46 +69,46 @@
               <span class="material-symbols-outlined">content_copy</span>
             </button>
           </div>
-          <div class="ext-form-error" id="apiKeyError"></div>
+          <div class="hextaui-form-error" id="apiKeyError"></div>
         </div>
 
         <!-- Model Configuration Fields -->
-        <div class="ext-form-field col-span-4">
-          <label for="modelName" class="ext-form-label">
+        <div class="hextaui-form-field col-span-4">
+          <label for="modelName" class="hextaui-form-label">
             Model Name
             <button type="button" class="help-tooltip" data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
           <div class="model-selector-container">
-            <input type="text" id="modelName" class="ext-input hextaui-input" placeholder="Enter model name" required>
+            <input type="text" id="modelName" class="hextaui-input" placeholder="Enter model name" required>
           </div>
-          <div class="ext-form-error" id="modelNameError"></div>
+          <div class="hextaui-form-error" id="modelNameError"></div>
         </div>
 
-        <div class="ext-form-field col-span-8">
-          <label for="maxTokens" class="ext-form-label">
+        <div class="hextaui-form-field col-span-8">
+          <label for="maxTokens" class="hextaui-form-label">
             Max Tokens
             <button type="button" class="help-tooltip" data-tooltip="Maximum number of tokens the model can generate. Higher values allow longer responses but cost more. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <input type="number" id="maxTokens" class="ext-input hextaui-input" min="1" value="16000" required>
+          <input type="number" id="maxTokens" class="hextaui-input" min="1" value="16000" required>
           <div class="token-info">
             <span id="tokenValue">16000</span> tokens
           </div>
-          <div class="ext-form-error" id="maxTokensError"></div>
+          <div class="hextaui-form-error" id="maxTokensError"></div>
         </div>
 
-        <div class="ext-form-field col-span-12">
-          <label for="systemPrompt" class="ext-form-label">
+        <div class="hextaui-form-field col-span-12">
+          <label for="systemPrompt" class="hextaui-form-label">
             System Prompt (Optional)
             <button type="button" class="help-tooltip" data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
           <div class="system-prompt-controls">
-            <select id="promptTemplate" class="ext-select hextaui-select template-selector">
+            <select id="promptTemplate" class="hextaui-select template-selector">
               <option value="">Insert template...</option>
               <option value="general">General Helper</option>
               <option value="code">Code Reviewer</option>
@@ -117,24 +117,24 @@
               <option value="writer">Creative Writer</option>
             </select>
           </div>
-          <textarea id="systemPrompt" class="ext-textarea hextaui-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
+          <textarea id="systemPrompt" class="hextaui-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
           <div class="character-counter">
             <span id="charCount">0</span> characters
           </div>
-          <div class="ext-form-error" id="systemPromptError"></div>
+          <div class="hextaui-form-error" id="systemPromptError"></div>
         </div>
 
         <!-- Behavior Settings -->
-        <div class="ext-form-field col-span-6">
-          <label class="ext-form-label">Streaming Responses</label>
+        <div class="hextaui-form-field col-span-6">
+          <label class="hextaui-form-label">Streaming Responses</label>
           <label class="hextaui-toggle">
             <input type="checkbox" id="enableStreamingToggle" class="hextaui-toggle-input">
             <span class="hextaui-toggle-label">Enable Streaming</span>
           </label>
         </div>
 
-        <div class="ext-form-field col-span-6">
-          <label class="ext-form-label">Theme</label>
+        <div class="hextaui-form-field col-span-6">
+          <label class="hextaui-form-label">Theme</label>
           <label class="hextaui-toggle">
             <span id="darkThemeIcon" class="material-symbols-outlined">brightness_2</span>
             <input type="checkbox" id="optionsThemeToggle" class="hextaui-toggle-input">
@@ -142,14 +142,14 @@
           </label>
         </div>
 
-        <div class="ext-form-field col-span-12">
-          <label for="logLevelSelect" class="ext-form-label">
+        <div class="hextaui-form-field col-span-12">
+          <label for="logLevelSelect" class="hextaui-form-label">
             Debug Log Level
             <button type="button" class="help-tooltip" data-tooltip="Control the verbosity of console logs. ERROR shows only critical errors, DEBUG shows all logs including detailed debugging information.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <select id="logLevelSelect" class="ext-select hextaui-select">
+          <select id="logLevelSelect" class="hextaui-select">
             <option value="ERROR">ERROR - Critical errors only</option>
             <option value="WARN">WARN - Warnings and errors</option>
             <option value="INFO">INFO - General information</option>
@@ -158,32 +158,32 @@
         </div>
 
         <!-- Profile Management -->
-        <div class="ext-form-field col-span-12">
-          <label for="profileSelect" class="ext-form-label">
+        <div class="hextaui-form-field col-span-12">
+          <label for="profileSelect" class="hextaui-form-label">
             Current Profile
             <button type="button" class="help-tooltip" data-tooltip="Profiles save different API configurations. Switch between them for different use cases. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <select id="profileSelect" class="ext-select hextaui-select">
+          <select id="profileSelect" class="hextaui-select">
             <!-- Options will be populated by JavaScript -->
           </select>
         </div>
-        <div class="ext-form-field col-span-6 profile-button-field">
-          <label class="ext-form-label">&nbsp;</label>
-          <button type="button" id="addProfileButton" class="ext-btn hextaui-btn hextaui-btn-secondary w-full">
+        <div class="hextaui-form-field col-span-6 profile-button-field">
+          <label class="hextaui-form-label">&nbsp;</label>
+          <button type="button" id="addProfileButton" class="hextaui-btn hextaui-btn-secondary w-full">
             <span class="material-symbols-outlined">add</span> New Profile
           </button>
         </div>
-        <div class="ext-form-field col-span-6 profile-button-field">
-          <label class="ext-form-label">&nbsp;</label>
-          <button type="button" id="deleteProfileButton" class="ext-btn hextaui-btn hextaui-btn-destructive w-full" disabled>
+        <div class="hextaui-form-field col-span-6 profile-button-field">
+          <label class="hextaui-form-label">&nbsp;</label>
+          <button type="button" id="deleteProfileButton" class="hextaui-btn hextaui-btn-destructive w-full" disabled>
             <span class="material-symbols-outlined">delete</span> Delete
           </button>
         </div>
         
         <div class="form-field col-span-12">
-          <button type="submit" id="save" class="ext-btn hextaui-btn hextaui-btn-primary">
+          <button type="submit" id="save" class="hextaui-btn hextaui-btn-primary">
             <span class="material-symbols-outlined mr-2">save</span> Save Settings
           </button>
         </div>
@@ -191,7 +191,7 @@
     </section>
 
     <!-- Privacy Section -->
-    <section class="ext-card section-card">
+    <section class="hextaui-card section-card">
       <div class="section-header">
         <h2 class="section-title">
           <span class="material-symbols-outlined section-icon">shield_person</span>
@@ -201,15 +201,15 @@
       </div>
 
       <!-- Match toggle structure/styles with Theme toggle -->
-      <div class="ext-form-field col-span-12">
-        <label class="ext-form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
+      <div class="hextaui-form-field col-span-12">
+        <label class="hextaui-form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
         <label class="hextaui-toggle">
           <input type="checkbox" id="analyticsConsentToggle" class="hextaui-toggle-input" checked>
           <span class="hextaui-toggle-label">
             Allow anonymous usage analytics (instructions/models/tools only)
           </span>
         </label>
-        <p class="ext-form-description">
+        <p class="hextaui-form-description">
           Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs, titles, page content, or identifiers are collected. A random instance ID rotates monthly. You can disable this at any time.
         </p>
       </div>
@@ -218,7 +218,7 @@
     <!-- Configuration Complete -->
 
     <!-- Instructions Section -->
-    <section class="ext-card section-card">
+    <section class="hextaui-card section-card">
       <div class="section-header">
         <h2 class="section-title collapsible-header">
           <span class="material-symbols-outlined section-icon">description</span>
@@ -234,8 +234,8 @@
           <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
         </span>
         <div class="button-group migration-button-group">
-          <button type="button" id="migrateInstructionsBtn" class="ext-btn hextaui-btn hextaui-btn-secondary">&#128190; Migrate</button>
-          <button type="button" id="dismissMigrationBtn" class="ext-btn hextaui-btn hextaui-btn-outline">&#10006; Dismiss</button>
+          <button type="button" id="migrateInstructionsBtn" class="hextaui-btn hextaui-btn-secondary">&#128190; Migrate</button>
+          <button type="button" id="dismissMigrationBtn" class="hextaui-btn hextaui-btn-outline">&#10006; Dismiss</button>
         </div>
       </div>
 
@@ -263,49 +263,49 @@
         </div>
       </div>
 
-      <div class="ext-card instruction-form mt-8">
+      <div class="hextaui-card instruction-form mt-8">
         <h3>Add/Edit Instruction</h3>
-        <div class="ext-form-field">
-          <label for="instructionName" class="ext-form-label">Instruction Name</label>
-          <input type="text" id="instructionName" class="ext-input hextaui-input" placeholder="Enter instruction name">
+        <div class="hextaui-form-field">
+          <label for="instructionName" class="hextaui-form-label">Instruction Name</label>
+          <input type="text" id="instructionName" class="hextaui-input" placeholder="Enter instruction name">
         </div>
-        <div class="ext-form-field">
-          <label for="instructionContent" class="ext-form-label">Instruction Content</label>
-          <textarea id="instructionContent" class="ext-textarea hextaui-textarea" placeholder="Enter instruction content" rows="4"></textarea>
+        <div class="hextaui-form-field">
+          <label for="instructionContent" class="hextaui-form-label">Instruction Content</label>
+          <textarea id="instructionContent" class="hextaui-textarea" placeholder="Enter instruction content" rows="4"></textarea>
         </div>
-        <div class="ext-form-field">
-          <label for="instructionToolChoice" class="ext-form-label">Tool Choice</label>
-          <select id="instructionToolChoice" class="ext-select hextaui-select">
+        <div class="hextaui-form-field">
+          <label for="instructionToolChoice" class="hextaui-form-label">Tool Choice</label>
+          <select id="instructionToolChoice" class="hextaui-select">
             <option value="none">None</option>
             <option value="auto">Auto</option>
             <!-- Tools will be populated here by options.js -->
           </select>
-          <p class="ext-form-description">Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</p>
+          <p class="hextaui-form-description">Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</p>
         </div>
         
         <input type="hidden" id="instructionId">
         <div class="button-group">
-          <button type="button" id="saveInstruction" class="ext-btn hextaui-btn hextaui-btn-secondary"><span class="material-symbols-outlined">save</span> Save Instruction</button>
-          <button type="button" id="clearForm" class="ext-btn hextaui-btn hextaui-btn-outline">
+          <button type="button" id="saveInstruction" class="hextaui-btn hextaui-btn-secondary"><span class="material-symbols-outlined">save</span> Save Instruction</button>
+          <button type="button" id="clearForm" class="hextaui-btn hextaui-btn-outline">
             <span class="material-symbols-outlined">clear_all</span>
             Clear Form
           </button>
         </div>
       </div>
 
-      <div class="ext-card import-export mt-4">
+      <div class="hextaui-card import-export mt-4">
         <h3>Import/Export Instructions</h3>
         <div class="button-group">
-          <button type="button" id="exportInstructions" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
+          <button type="button" id="exportInstructions" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
           <input type="file" id="importFile" accept=".json" class="hidden">
-          <button type="button" id="importInstructions" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Instructions</button>
+          <button type="button" id="importInstructions" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Instructions</button>
         </div>
       </div>
     </div>
   </section>
 
     <!-- Tools Section -->
-    <section class="ext-card section-card">
+    <section class="hextaui-card section-card">
       <div class="section-header">
         <h2 class="section-title collapsible-header">
           <span class="material-symbols-outlined section-icon">build</span>
@@ -339,35 +339,35 @@
         </div>
       </div>
 
-      <div class="ext-card tool-form mt-8">
+      <div class="hextaui-card tool-form mt-8">
         <h3>Add/Edit Tool</h3>
-        <div class="ext-form-field">
-          <label for="toolName" class="ext-form-label">Tool Name</label>
-          <input type="text" id="toolName" class="ext-input hextaui-input" placeholder="e.g., getWeather">
+        <div class="hextaui-form-field">
+          <label for="toolName" class="hextaui-form-label">Tool Name</label>
+          <input type="text" id="toolName" class="hextaui-input" placeholder="e.g., getWeather">
         </div>
-        <div class="ext-form-field">
-          <label for="toolDescription" class="ext-form-label">Tool Description</label>
-          <textarea id="toolDescription" class="ext-textarea hextaui-textarea" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
+        <div class="hextaui-form-field">
+          <label for="toolDescription" class="hextaui-form-label">Tool Description</label>
+          <textarea id="toolDescription" class="hextaui-textarea" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
         </div>
-        <div class="ext-form-field">
-          <label for="toolParameters" class="ext-form-label">Parameters (JSON Schema)</label>
-          <textarea id="toolParameters" class="ext-textarea hextaui-textarea" placeholder='e.g., {
+        <div class="hextaui-form-field">
+          <label for="toolParameters" class="hextaui-form-label">Parameters (JSON Schema)</label>
+          <textarea id="toolParameters" class="hextaui-textarea" placeholder='e.g., {
   "type": "object",
   "properties": {
     "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
   },
   "required": ["location"]
 }' rows="6"></textarea>
-          <p class="ext-form-description">Define the input parameters for the tool using JSON Schema format.</p>
+          <p class="hextaui-form-description">Define the input parameters for the tool using JSON Schema format.</p>
         </div>
-        <div class="ext-form-field">
-          <label for="toolEndpointUrl" class="ext-form-label">Endpoint URL (Optional)</label>
-          <input type="url" id="toolEndpointUrl" class="ext-input hextaui-input" placeholder="e.g., https://api.example.com/webhook">
-          <p class="ext-form-description">If this tool calls an external API or webhook, enter the URL here.</p>
+        <div class="hextaui-form-field">
+          <label for="toolEndpointUrl" class="hextaui-form-label">Endpoint URL (Optional)</label>
+          <input type="url" id="toolEndpointUrl" class="hextaui-input" placeholder="e.g., https://api.example.com/webhook">
+          <p class="hextaui-form-description">If this tool calls an external API or webhook, enter the URL here.</p>
         </div>
-        <div class="ext-form-field">
-          <label for="toolHttpMethod" class="ext-form-label">HTTP Method (Optional)</label>
-          <select id="toolHttpMethod" class="ext-select hextaui-select">
+        <div class="hextaui-form-field">
+          <label for="toolHttpMethod" class="hextaui-form-label">HTTP Method (Optional)</label>
+          <select id="toolHttpMethod" class="hextaui-select">
             <option value="">Auto (GET if no params, POST if params)</option>
             <option value="GET">GET</option>
             <option value="POST">POST</option>
@@ -375,26 +375,26 @@
             <option value="DELETE">DELETE</option>
             <option value="PATCH">PATCH</option>
           </select>
-          <p class="ext-form-description">Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</p>
+          <p class="hextaui-form-description">Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</p>
         </div>
         <input type="hidden" id="toolId">
         <div class="button-group">
-          <button type="button" id="saveTool" class="ext-btn hextaui-btn hextaui-btn-secondary">
+          <button type="button" id="saveTool" class="hextaui-btn hextaui-btn-secondary">
             <span class="material-symbols-outlined">save</span> Save Tool
           </button>
-          <button type="button" id="clearToolForm" class="ext-btn hextaui-btn hextaui-btn-outline">
+          <button type="button" id="clearToolForm" class="hextaui-btn hextaui-btn-outline">
             <span class="material-symbols-outlined">clear_all</span>
             Clear Form
           </button>
         </div>
       </div>
 
-      <div class="ext-card import-export mt-4">
+      <div class="hextaui-card import-export mt-4">
         <h3>Import/Export Tools</h3>
         <div class="button-group">
-          <button type="button" id="exportTools" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Tools</button>
+          <button type="button" id="exportTools" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Tools</button>
           <input type="file" id="importToolsFile" accept=".json" class="hidden">
-          <button type="button" id="importTools" class="ext-btn hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Tools</button>
+          <button type="button" id="importTools" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Tools</button>
         </div>
       </div>
 
@@ -402,7 +402,7 @@
     </section>
 
     <!-- About Section -->
-    <section class="ext-card section-card">
+    <section class="hextaui-card section-card">
       <div class="section-header">
         <h2 class="section-title">
           <span class="material-symbols-outlined section-icon">info</span>
@@ -410,32 +410,32 @@
         </h2>
         <div class="section-divider"></div>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">API Endpoint</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">API Endpoint</label>
         <p id="currentEndpoint">Not set</p>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">API Key</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">API Key</label>
         <p id="currentApiKey" class="masked-value">Not set</p>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">Model Name</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">Model Name</label>
         <p id="currentModelName">Not set</p>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">Max Tokens</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">Max Tokens</label>
         <p id="currentMaxTokens">2048</p>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">System Prompt</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">System Prompt</label>
         <p id="currentSystemPrompt">Not set</p>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">Selected Profile</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">Selected Profile</label>
         <p id="currentProfile">Default</p>
       </div>
-      <div class="ext-form-field">
-        <label class="ext-form-label">Last Updated</label>
+      <div class="hextaui-form-field">
+        <label class="hextaui-form-label">Last Updated</label>
         <p id="lastUpdated">Never</p>
       </div>
     </section>

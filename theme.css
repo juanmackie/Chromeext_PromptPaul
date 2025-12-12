@@ -58,6 +58,28 @@
   --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
   --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
 
+  /* Soft Shadow System - for hover effects and subtle depth */
+  --shadow-xs: 0 -2px 5px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 2px 8px rgba(37, 99, 235, 0.1);
+  --shadow-md: 0 6px 20px rgba(37, 99, 235, 0.15);
+  --shadow-lg: 0 8px 25px rgba(37, 99, 235, 0.2);
+  
+  /* Blue accent shadow for hover effects - matches the blue theme color */
+  --shadow-blue-sm: 0 6px 20px rgba(0, 137, 208, 0.2);
+  --shadow-blue-md: 0 8px 25px rgba(0, 137, 208, 0.3);
+  --shadow-blue-lg: 0 4px 15px rgba(0, 137, 208, 0.15);
+  
+  /* General shadow */
+  --shadow: var(--shadow-sm);
+  
+  /* Destructive color */
+  --destructive: var(--error);
+  
+  /* Gradient overlay for hover effects */
+  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(0, 137, 208, 0.1), transparent);
+  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(0, 137, 208, 0.05) 0%, transparent 30%);
+  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(0, 137, 208, 0.1) 0%, transparent 30%);
+
   /* Focus and Ring */
   --ring: #2563eb;
   --ring-focus: rgba(37, 99, 235, 0.5);
@@ -83,6 +105,7 @@
   --radius: 4px; /* Sweet spot for brutalism */
   --radius-md: 5px;
   --radius-lg: 6px;
+  --radius-xl: 8px;
 
   /* Transitions */
   --transition-brutal: 0ms; /* Instant for terminal feel */
@@ -101,6 +124,10 @@
   /* Popover/Tooltip Colors - High Contrast for Readability */
   --popover: #1e293b; /* Dark slate background for tooltips */
   --popover-foreground: #ffffff; /* White text for high contrast */
+
+  /* Sidebar Colors */
+  --sidebar: var(--surface-variant); /* Sidebar background */
+  --sidebar-border: var(--border); /* Sidebar border color */
 }
 
 /* Terminal Brutalism + Cassette Futurism - Dark Mode "Deep Space Terminal" */
@@ -160,6 +187,36 @@
   --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
   --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
 
+  /* Soft Shadow System - Dark Mode - for hover effects and subtle depth */
+  --shadow-xs: 0 -2px 5px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 2px 8px rgba(79, 70, 229, 0.2);
+  --shadow-md: 0 6px 20px rgba(79, 70, 229, 0.25);
+  --shadow-lg: 0 8px 25px rgba(79, 70, 229, 0.3);
+  
+  /* Blue accent shadow for hover effects - dark mode version */
+  --shadow-blue-sm: 0 6px 20px rgba(6, 182, 212, 0.25);
+  --shadow-blue-md: 0 8px 25px rgba(6, 182, 212, 0.35);
+  --shadow-blue-lg: 0 4px 15px rgba(6, 182, 212, 0.2);
+  
+  /* General shadow */
+  --shadow: var(--shadow-sm);
+  
+  /* Destructive color */
+  --destructive: var(--error);
+  
+  /* Gradient overlay for hover effects - dark mode */
+  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.15), transparent);
+  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.07) 0%, transparent 30%);
+  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.15) 0%, transparent 30%);
+
+  /* Micro-Rounded Corners - Dark Mode */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius: 4px; /* Sweet spot for brutalism */
+  --radius-md: 5px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+
   /* Focus and Ring - Dark Mode */
   --ring: #6366f1;
   --ring-focus: rgba(99, 102, 241, 0.5);
@@ -177,6 +234,10 @@
   /* Popover/Tooltip Colors - High Contrast for Readability */
   --popover: #ffffff; /* White background for tooltips */
   --popover-foreground: #02020b; /* Dark text for high contrast */
+
+  /* Sidebar Colors */
+  --sidebar: var(--surface-variant); /* Sidebar background */
+  --sidebar-border: var(--border); /* Sidebar border color */
 }
 
 /* Terminal Brutalism + Analog Grit Base Styles */
