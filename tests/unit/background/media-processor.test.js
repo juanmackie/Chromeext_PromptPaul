@@ -69,7 +69,11 @@ describe('MediaProcessor', () => {
       expect(global.fetch).toHaveBeenCalledWith('https://example.com/image.jpg');
       expect(mockFetchResponse.blob).toHaveBeenCalled();
       expect(mockFileReader.readAsDataURL).toHaveBeenCalledWith(mockBlob);
-      expect(result).toBe(mockBase64.split(',')[1]); // Base64 without prefix
+      expect(mockFileReader.readAsDataURL).toHaveBeenCalledWith(mockBlob);
+      expect(result).toEqual({
+        base64: mockBase64.split(',')[1],
+        mimeType: 'image/jpeg'
+      });
     });
 
     test('should throw error for no URL provided', async () => {

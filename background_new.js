@@ -102,7 +102,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       prompt = `Please explain: ${selection}`;
     } else if (menuItemId === 'analyzeImage' && info.srcUrl) {
       // Handle image analysis
-      const base64Image = await mediaHandler.fetchMediaAsBase64(info.srcUrl);
+      const { base64: base64Image } = await mediaHandler.fetchMediaAsBase64(info.srcUrl);
       prompt = `Please analyze this image: ${base64Image}`;
     } else if (menuItemId === 'explainPage') {
       prompt = `Please explain this page:\n\nTitle: ${title}\nURL: ${url}\n\nContent: ${pageContent}`;

@@ -211,8 +211,8 @@ async function processImageForAnalysis(imageUrl, tab, actionType, instructionId 
 
     // Fetch and convert image to base64
     logger.info('Background', 'Fetching image for analysis:', imageUrl);
-    const base64Data = await mediaHandler.fetchMediaAsBase64(imageUrl);
-    const mimeType = mediaHandler.getMimeTypeFromUrl(imageUrl);
+    const { base64: base64Data, mimeType: detectedMimeType } = await mediaHandler.fetchMediaAsBase64(imageUrl);
+    const mimeType = detectedMimeType || mediaHandler.getMimeTypeFromUrl(imageUrl);
 
     logger.info('Background', 'Image converted to base64, length:', base64Data.length);
 

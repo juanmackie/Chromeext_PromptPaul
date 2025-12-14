@@ -16,7 +16,11 @@ export class MediaHandler {
     this.maxFileSize = 50 * 1024 * 1024; // 50MB limit
   }
 
-  // Fetch media and convert to base64
+  /**
+   * Fetch media and return details including validation
+   * @param {string} url - Media URL
+   * @returns {Promise<Object>} Object with base64 and mimeType
+   */
   async fetchMediaAsBase64(url) {
     return await wrapAsync(
       async () => {
@@ -63,8 +67,11 @@ export class MediaHandler {
               logger.info('BackgroundMediaHandler', 'DataURL prefix:', dataUrl.substring(0, 50));
               const base64 = dataUrl.split(',')[1]; // Remove data:image/jpeg;base64, prefix
               logger.info('BackgroundMediaHandler', 'Base64 length:', base64.length);
-              logger.info('BackgroundMediaHandler', 'Base64 sample:', base64.substring(0, 100));
-              resolve(base64);
+
+              resolve({
+                base64,
+                mimeType: blob.type
+              });
             } catch (error) {
               reject(
                 createError('Failed to process media data URL', {
@@ -94,6 +101,7 @@ export class MediaHandler {
       }
     );
   }
+
 
   // Get MIME type from URL
   getMimeTypeFromUrl(url) {
