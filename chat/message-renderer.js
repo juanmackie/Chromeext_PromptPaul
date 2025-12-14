@@ -41,6 +41,8 @@ export class MessageRenderer {
     const { isError = false, isHelp = false } = options;
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
+    // Default content target is the message div itself, but can be switched
+    // to a child element for complex system messages to avoid HierarchyRequestError
     let contentElement = messageDiv;
     let uniqueIdString = '';
 

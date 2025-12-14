@@ -819,7 +819,7 @@ export class ApiClient {
         statusText: response.statusText,
         errorData,
       },
-      userMessage: this.getUserMessageForError(errorType, response.status),
+      userMessage: this.getUserMessageForErrorWithContext(errorType, response.status, errorMessage),
     });
   }
 
@@ -882,9 +882,28 @@ export class ApiClient {
         return 'Invalid request. Please check your input and try again.';
       case ApiErrorType.NETWORK:
         return 'Network error. Please check your connection and try again.';
+      case ApiErrorType.CONFIGURATION:
+        return 'Configuration error. Please check your settings.';
       default:
         return 'An unexpected error occurred. Please try again.';
     }
+  }
+
+  /**
+   * Get user-friendly message for error, potentially using the specific error message
+   * @param {string} errorType - Error type
+   * @param {number} status - HTTP status
+   * @param {string} errorMessage - Original error message
+   * @returns {string} User message
+   */
+  getUserMessageForErrorWithContext(errorType, status, errorMessage) {
+    // Special handling for OpenRouter free model policy
+    if ((status === 404 || status === 403) &&
+      (errorMessage?.includes('data policy') || errorMessage?.includes('Free model publication'))) {
+      return 'OpenRouter Policy Error: Free models require "Allow model training" to be enabled in your OpenRouter settings (https://openrouter.ai/settings/privacy).';
+    }
+
+    return this.getUserMessageForError(errorType, status);
   }
 
   /**
