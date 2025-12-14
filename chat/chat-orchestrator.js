@@ -515,6 +515,7 @@ export class ChatOrchestrator {
       });
 
       if (!response || !response.success) {
+        logger.error('ChatOrchestrator', 'Chat: getTabContent failed. Response:', response);
         this.showToast(response?.error || 'Failed to get tab content', 'error');
         return;
       }
@@ -671,7 +672,7 @@ export class ChatOrchestrator {
 
       if (!response || !response.success) {
         const errorMessage = response?.error || 'Failed to get tab content';
-        logger.error('ChatOrchestrator', 'Chat: getTabContent failed:', errorMessage);
+        logger.error('ChatOrchestrator', 'Chat: getTabContent failed. Response:', response, 'Error:', errorMessage);
         this.showToast(errorMessage, 'error');
         return;
       }

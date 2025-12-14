@@ -453,9 +453,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
 
           if (!targetTabId) {
+            logger.warn('Background', 'getTabContent failed: No tab context available');
             safeSendResponse({ success: false, error: 'No tab context available' });
             break;
           }
+
+          logger.info('Background', `getTabContent executing for tab: ${targetTabId}`);
 
           try {
             const [result] = await chrome.scripting.executeScript({
@@ -471,10 +474,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (result && result.result !== undefined) {
               safeSendResponse({ success: true, content: result.result });
             } else {
+              logger.warn('Background', 'getTabContent failed: Extraction returned no result');
               safeSendResponse({ success: false, error: 'Failed to extract content' });
             }
           } catch (error) {
-            safeSendResponse({ success: false, error: error.message });
+            logger.error('Background', 'getTabContent error:', error);
+            safeSendResponse({ 
+              success: false, 
+              error: error.message || String(error) || 'Unknown error occurred during content extraction'
+            });
           }
           break;
 

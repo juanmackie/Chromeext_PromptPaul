@@ -48,8 +48,9 @@ export class MediaHandler {
           });
         }
 
-        const blob = await response.blob();
-        logger.info('BackgroundMediaHandler', 'Blob size:', blob.size, 'Type:', blob.type);
+        const arrayBuffer = await response.arrayBuffer();
+        const blob = new Blob([arrayBuffer]);
+        logger.info('BackgroundMediaHandler', 'Blob size:', blob.size, 'Initial Type:', blob.type);
 
         if (blob.size > this.maxFileSize) {
           throw createError('Media file too large (max 50MB)', {
@@ -59,18 +60,31 @@ export class MediaHandler {
           });
         }
 
+        // Detect true MIME type from magic numbers
+        const detectedMimeType = this.detectMimeTypeFromBuffer(arrayBuffer);
+        const finalMimeType = detectedMimeType || blob.type || this.getMimeTypeFromUrl(url);
+
+        logger.info('BackgroundMediaHandler', 'MIME detection:', {
+          initial: blob.type,
+          magic: detectedMimeType,
+          final: finalMimeType
+        });
+
         return await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
             try {
-              const dataUrl = reader.result;
-              logger.info('BackgroundMediaHandler', 'DataURL prefix:', dataUrl.substring(0, 50));
-              const base64 = dataUrl.split(',')[1]; // Remove data:image/jpeg;base64, prefix
-              logger.info('BackgroundMediaHandler', 'Base64 length:', base64.length);
+              const result = reader.result;
+              if (typeof result !== 'string') {
+                throw new Error('FileReader result is not a string');
+              }
+              const dataUrl = result;
+              // If the data URL MIME type differs from our detected one, fix it
+              let base64 = dataUrl.split(',')[1];
 
               resolve({
                 base64,
-                mimeType: blob.type
+                mimeType: finalMimeType
               });
             } catch (error) {
               reject(
@@ -103,7 +117,54 @@ export class MediaHandler {
   }
 
 
-  // Get MIME type from URL
+  /**
+   * Detects MIME type by reading specific magic numbers from the buffer
+   * @param {ArrayBuffer} buffer 
+   * @returns {string|null} Detected MIME type or null
+   */
+  detectMimeTypeFromBuffer(buffer) {
+    if (!buffer || buffer.byteLength < 4) return null;
+
+    const arr = new Uint8Array(buffer).subarray(0, 4);
+    let header = '';
+    for (let i = 0; i < arr.length; i++) {
+      header += arr[i].toString(16).toUpperCase();
+    }
+
+    // Magic Numbers
+    // JPG: FF D8 FF
+    if (header.startsWith('FFD8FF')) {
+      return 'image/jpeg';
+    }
+    // PNG: 89 50 4E 47
+    if (header === '89504E47') {
+      return 'image/png';
+    }
+    // GIF: 47 49 46 38
+    if (header === '47494638') {
+      return 'image/gif';
+    }
+    // WEBP: RIFF....WEBP (Detected via "RIFF" at start and "WEBP" at offest 8)
+    // We need a slightly deeper check for WebP
+    if (header.startsWith('52494646')) { // "RIFF"
+      // Check bytes 8-11 for "WEBP"
+      if (buffer.byteLength >= 12) {
+        const sub = new Uint8Array(buffer).subarray(8, 12);
+        let webpHeader = '';
+        for (let i = 0; i < sub.length; i++) {
+          webpHeader += sub[i].toString(16).toUpperCase();
+        }
+        // "WEBP" in hex is 57 45 42 50
+        if (webpHeader === '57454250') {
+          return 'image/webp';
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Get MIME type from URL (Fallback)
   getMimeTypeFromUrl(url) {
     try {
       const urlObj = new URL(url);
