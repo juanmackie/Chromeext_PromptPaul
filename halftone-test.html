@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Halftone Pattern Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+        
+        .test-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .pattern-box {
+            width: 100%;
+            height: 300px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .pattern-box h3 {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 4px;
+            margin: 0;
+            z-index: 10;
+        }
+        
+        /* Basic halftone pattern using radial gradients */
+        .basic-halftone {
+            background:
+                radial-gradient(circle at 10% 10%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 30% 20%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 50% 30%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 70% 40%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 90% 50%, #2563eb 1px, transparent 1px),
+                white;
+            background-size: 20px 20px;
+        }
+        
+        /* Diagonal gradient halftone - dense to sparse */
+        .diagonal-halftone {
+            background:
+                /* Dense dots on left */
+                radial-gradient(circle at 5% 5%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 15% 15%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 25% 25%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 35% 35%, #2563eb 1px, transparent 1px),
+                
+                /* Medium density in center */
+                radial-gradient(circle at 45% 45%, #2563eb 1px, transparent 2px),
+                radial-gradient(circle at 55% 55%, #2563eb 1px, transparent 2px),
+                
+                /* Sparse dots on right */
+                radial-gradient(circle at 65% 65%, #2563eb 1px, transparent 3px),
+                radial-gradient(circle at 75% 75%, #2563eb 1px, transparent 3px),
+                radial-gradient(circle at 85% 85%, #2563eb 1px, transparent 4px),
+                radial-gradient(circle at 95% 95%, #2563eb 1px, transparent 4px),
+                
+                white;
+            background-size: 50px 50px;
+        }
+        
+        /* Advanced halftone with varying dot sizes */
+        .advanced-halftone {
+            background:
+                /* Large dots - left side */
+                radial-gradient(circle at 10% 10%, #2563eb 2px, transparent 2px),
+                radial-gradient(circle at 20% 20%, #2563eb 2px, transparent 2px),
+                radial-gradient(circle at 30% 30%, #2563eb 2px, transparent 2px),
+                
+                /* Medium dots - center */
+                radial-gradient(circle at 40% 40%, #2563eb 1.5px, transparent 3px),
+                radial-gradient(circle at 50% 50%, #2563eb 1.5px, transparent 3px),
+                radial-gradient(circle at 60% 60%, #2563eb 1.5px, transparent 3px),
+                
+                /* Small dots - right side */
+                radial-gradient(circle at 70% 70%, #2563eb 1px, transparent 4px),
+                radial-gradient(circle at 80% 80%, #2563eb 1px, transparent 4px),
+                radial-gradient(circle at 90% 90%, #2563eb 1px, transparent 4px),
+                
+                white;
+            background-size: 30px 30px;
+        }
+        
+        /* High-resolution halftone pattern */
+        .highres-halftone {
+            background:
+                /* Create a repeating pattern with varying density */
+                repeating-linear-gradient(
+                    45deg,
+                    rgba(37, 99, 235, 0.8),
+                    rgba(37, 99, 235, 0.8) 2px,
+                    transparent 2px,
+                    transparent 10px
+                ),
+                repeating-linear-gradient(
+                    -45deg,
+                    rgba(37, 99, 235, 0.6),
+                    rgba(37, 99, 235, 0.6) 1px,
+                    transparent 1px,
+                    transparent 8px
+                ),
+                /* Add some noise for texture */
+                url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><defs><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter></defs><rect width="100" height="100" filter="url(%23noise)" opacity="0.05"/></svg>'),
+                white;
+            background-size: 20px 20px, 15px 15px, 100px 100px;
+        }
+        
+        /* Final pattern - diagonal gradient with halftone dots */
+        .final-halftone {
+            background:
+                /* Diagonal gradient base */
+                linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(37, 99, 235, 0.3) 100%),
+                
+                /* Halftone dots with varying density */
+                radial-gradient(circle at 5% 5%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 15% 15%, #2563eb 1px, transparent 1px),
+                radial-gradient(circle at 25% 25%, #2563eb 1px, transparent 2px),
+                radial-gradient(circle at 35% 35%, #2563eb 1px, transparent 2px),
+                radial-gradient(circle at 45% 45%, #2563eb 1px, transparent 3px),
+                radial-gradient(circle at 55% 55%, #2563eb 1px, transparent 3px),
+                radial-gradient(circle at 65% 65%, #2563eb 1px, transparent 4px),
+                radial-gradient(circle at 75% 75%, #2563eb 1px, transparent 4px),
+                radial-gradient(circle at 85% 85%, #2563eb 1px, transparent 5px),
+                radial-gradient(circle at 95% 95%, #2563eb 1px, transparent 5px),
+                
+                white;
+            background-size: 
+                auto, /* for gradient */
+                40px 40px; /* for halftone pattern */
+        }
+        
+        /* Control panel */
+        .controls {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .controls h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            background: #1d4ed8;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            resize: vertical;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="controls">
+            <h2>Halftone Pattern Test</h2>
+            <p>Testing different halftone patterns for the options page background.</p>
+            <button onclick="copyCSS('basic-halftone')">Copy Basic CSS</button>
+            <button onclick="copyCSS('diagonal-halftone')">Copy Diagonal CSS</button>
+            <button onclick="copyCSS('advanced-halftone')">Copy Advanced CSS</button>
+            <button onclick="copyCSS('highres-halftone')">Copy High-Res CSS</button>
+            <button onclick="copyCSS('final-halftone')">Copy Final CSS</button>
+        </div>
+        
+        <div class="pattern-box basic-halftone">
+            <h3>Basic Halftone</h3>
+        </div>
+        
+        <div class="pattern-box diagonal-halftone">
+            <h3>Diagonal Gradient Halftone</h3>
+        </div>
+        
+        <div class="pattern-box advanced-halftone">
+            <h3>Advanced Halftone (Varying Sizes)</h3>
+        </div>
+        
+        <div class="pattern-box highres-halftone">
+            <h3>High-Resolution Halftone</h3>
+        </div>
+        
+        <div class="pattern-box final-halftone">
+            <h3>Final Pattern (Diagonal + Halftone)</h3>
+        </div>
+        
+        <div class="controls">
+            <h3>CSS Output:</h3>
+            <textarea id="cssOutput" readonly></textarea>
+        </div>
+    </div>
+    
+    <script>
+        function copyCSS(className) {
+            const styleSheets = document.styleSheets;
+            let cssRules = '';
+            
+            for (let i = 0; i < styleSheets.length; i++) {
+                const rules = styleSheets[i].cssRules || styleSheets[i].rules;
+                for (let j = 0; j < rules.length; j++) {
+                    if (rules[j].selectorText && rules[j].selectorText.includes(className)) {
+                        cssRules = rules[j].cssText;
+                        break;
+                    }
+                }
+                if (cssRules) break;
+            }
+            
+            const output = document.getElementById('cssOutput');
+            output.value = cssRules;
+            output.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                const msg = successful ? 'successful' : 'unsuccessful';
+                alert('CSS copied to clipboard!');
+            } catch (err) {
+                alert('Unable to copy. Here is the CSS:\n\n' + cssRules);
+            }
+        }
+    </script>
+</body>
+</html>

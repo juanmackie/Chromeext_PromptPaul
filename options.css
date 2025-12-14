@@ -537,87 +537,19 @@ body {
   padding: 0;
   font-family: var(--font-serif);
   background: var(--options-background);
+  background-size: var(--options-background-size);
   color: var(--foreground);
   line-height: 1.6;
-  transition: background-color 0.3s ease;
+  transition: background var(--transition-brutal);
   position: relative;
   overflow-x: hidden;
+  opacity: var(--options-background-opacity);
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background:
-    radial-gradient(
-      circle,
-      transparent 20%,
-      #ffffff 20%,
-      #ffffff 80%,
-      transparent 80%,
-      transparent
-    ),
-    radial-gradient(circle, transparent 20%, #ffffff 20%, #ffffff 80%, transparent 80%, transparent)
-      10px 10px,
-    linear-gradient(#424ab8 0.8px, transparent 0.8px) 0 -0.4px,
-    linear-gradient(90deg, #424ab8 0.8px, #ffffff 0.8px) -0.4px 0;
-  background-color: #ffffff;
-  background-size:
-    20px 20px,
-    20px 20px,
-    10px 10px,
-    10px 10px;
-  opacity: 0.2;
-  z-index: -2;
-  pointer-events: none;
-}
-
-/* Only apply the light theme background pattern to light theme */
-body:not([data-theme='dark'])::before {
-  background:
-    radial-gradient(
-      circle,
-      transparent 20%,
-      #ffffff 20%,
-      #ffffff 80%,
-      transparent 80%,
-      transparent
-    ),
-    radial-gradient(circle, transparent 20%, #ffffff 20%, #ffffff 80%, transparent 80%, transparent)
-      10px 10px,
-    linear-gradient(#424ab8 0.8px, transparent 0.8px) 0 -0.4px,
-    linear-gradient(90deg, #424ab8 0.8px, #ffffff 0.8px) -0.4px 0;
-  background-size:
-    20px 20px,
-    20px 20px,
-    10px 10px,
-    10px 10px;
-  opacity: 0.2;
-}
-
-/* Remove background pattern for dark theme */
-body[data-theme='dark']::before {
-  background: none;
-  opacity: 1;
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background:
-    linear-gradient(90deg, transparent 49.5%, rgba(203, 213, 225, 0.1) 50.5%),
-    linear-gradient(0deg, transparent 49.5%, rgba(203, 213, 225, 0.1) 50.5%);
-  background-size: 40px 40px;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.3;
+/* Remove the complex pseudo-element backgrounds since we're using the main background */
+body::before,
+body::after {
+  content: none;
 }
 
 .container {

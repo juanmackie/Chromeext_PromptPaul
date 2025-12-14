@@ -9,9 +9,12 @@
   --background-weathered: #f8fafc;
 
   /* High Contrast Blueprint Colors */
-  --foreground: #1e293b; /* Slate 900 */
-  --foreground-secondary: #475569; /* Slate 600 */
-  --foreground-muted: #64748b; /* Slate 500 */
+  --foreground: #1e293b;
+  /* Slate 900 */
+  --foreground-secondary: #475569;
+  /* Slate 600 */
+  --foreground-muted: #64748b;
+  /* Slate 500 */
 
   /* Surface Colors with Analog Warmth */
   --surface: #ffffff;
@@ -20,7 +23,8 @@
   --card-foreground: #1e293b;
 
   /* Primary Blueprint Blue */
-  --primary: #2563eb; /* Vibrant Blue */
+  --primary: #2563eb;
+  /* Vibrant Blue */
   --primary-foreground: #ffffff;
   --primary-hover: #1d4ed8;
 
@@ -29,11 +33,14 @@
   --secondary-foreground: #1e293b;
   --secondary-hover: #f1f5f9;
 
-  /* Cassette Futurism Accents */
-  --accent: #f59e0b; /* Warm Amber */
+  /* Monochromatic Blue Accents */
+  --accent: #5b93ff;
+  /* Lighter Blue */
   --accent-foreground: #ffffff;
-  --accent-vintage: #0891b2; /* Vintage Teal */
-  --accent-warm: #dc2626; /* Warm Red */
+  --accent-vintage: #2563eb;
+  /* Primary Blue */
+  --accent-warm: #1d4ed8;
+  /* Darker Blue */
 
   /* Muted Colors */
   --muted: #f1f5f9;
@@ -46,14 +53,16 @@
   --error-foreground: #ffffff;
 
   /* Terminal Brutalism Borders */
-  --border: #2563eb; /* Blueprint Blue Borders */
+  --border: #2563eb;
+  /* Blueprint Blue Borders */
   --border-focus: #1d4ed8;
   --input: #ffffff;
   --input-border: #2563eb;
   --input-focus: #1d4ed8;
 
   /* Hard Shadow System */
-  --shadow-color: rgba(37, 99, 235, 1); /* Solid Blue Shadow */
+  --shadow-color: rgba(37, 99, 235, 1);
+  /* Solid Blue Shadow */
   --shadow-hard: 4px 4px 0px 0px var(--shadow-color);
   --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
   --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
@@ -63,22 +72,22 @@
   --shadow-sm: 0 2px 8px rgba(37, 99, 235, 0.1);
   --shadow-md: 0 6px 20px rgba(37, 99, 235, 0.15);
   --shadow-lg: 0 8px 25px rgba(37, 99, 235, 0.2);
-  
-  /* Blue accent shadow for hover effects - matches the blue theme color */
-  --shadow-blue-sm: 0 6px 20px rgba(0, 137, 208, 0.2);
-  --shadow-blue-md: 0 8px 25px rgba(0, 137, 208, 0.3);
-  --shadow-blue-lg: 0 4px 15px rgba(0, 137, 208, 0.15);
-  
+
+  /* Blue accent shadow for hover effects - enhanced for monochromatic theme */
+  --shadow-blue-sm: 0 6px 20px rgba(37, 99, 235, 0.2);
+  --shadow-blue-md: 0 8px 25px rgba(37, 99, 235, 0.3);
+  --shadow-blue-lg: 0 4px 15px rgba(37, 99, 235, 0.15);
+
   /* General shadow */
   --shadow: var(--shadow-sm);
-  
+
   /* Destructive color */
   --destructive: var(--error);
-  
-  /* Gradient overlay for hover effects */
-  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(0, 137, 208, 0.1), transparent);
-  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(0, 137, 208, 0.05) 0%, transparent 30%);
-  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(0, 137, 208, 0.1) 0%, transparent 30%);
+
+  /* Gradient overlay for hover effects - monochromatic blue */
+  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.1), transparent);
+  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.05) 0%, transparent 30%);
+  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.1) 0%, transparent 30%);
 
   /* Focus and Ring */
   --ring: #2563eb;
@@ -86,7 +95,8 @@
 
   /* Terminal Typography */
   --font-terminal: 'JetBrains Mono', 'Fira Code', 'Space Mono', monospace;
-  --font-sans: var(--font-terminal); /* Force monospace everywhere */
+  --font-sans: var(--font-terminal);
+  /* Force monospace everywhere */
   --font-serif: var(--font-terminal);
   --font-mono: var(--font-terminal);
 
@@ -102,45 +112,83 @@
   /* Micro-Rounded Corners */
   --radius-xs: 2px;
   --radius-sm: 3px;
-  --radius: 4px; /* Sweet spot for brutalism */
+  --radius: 4px;
+  /* Sweet spot for brutalism */
   --radius-md: 5px;
   --radius-lg: 6px;
   --radius-xl: 8px;
 
   /* Transitions */
-  --transition-brutal: 0ms; /* Instant for terminal feel */
-  --transition-press: 100ms ease; /* For physical press animations */
+  --transition-brutal: 0ms;
+  /* Instant for terminal feel */
+  --transition-press: 100ms ease;
+  /* For physical press animations */
 
-  /* Analog Grit Overlays */
+  /* Analog Grit Overlays - Monochromatic Blue */
   --grain-light: rgba(255, 255, 255, 0.1);
   --grain-dark: rgba(0, 0, 0, 0.05);
-  --vintage-wash: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.02) 0%,
-    rgba(8, 145, 178, 0.02) 50%,
-    rgba(37, 99, 235, 0.02) 100%
-  );
+  --vintage-wash: linear-gradient(135deg,
+      rgba(37, 99, 235, 0.01) 0%,
+      rgba(79, 70, 229, 0.01) 50%,
+      rgba(120, 119, 198, 0.01) 100%);
+
+  /* Halftone Pattern Opacity Controls */
+  --halftone-opacity-dense: 0.9;
+  --halftone-opacity-medium: 0.7;
+  --halftone-opacity-sparse: 0.5;
 
   /* Popover/Tooltip Colors - High Contrast for Readability */
-  --popover: #1e293b; /* Dark slate background for tooltips */
-  --popover-foreground: #ffffff; /* White text for high contrast */
+  --popover: #1e293b;
+  /* Dark slate background for tooltips */
+  --popover-foreground: #ffffff;
+  /* White text for high contrast */
 
   /* Sidebar Colors */
-  --sidebar: var(--surface-variant); /* Sidebar background */
-  --sidebar-border: var(--border); /* Sidebar border color */
+  --sidebar: var(--surface-variant);
+  /* Sidebar background */
+  --sidebar-border: var(--border);
+  /* Sidebar border color */
+
+  /* Options Page Background - Monochromatic Blue Halftone Pattern */
+  /* Options Page Background - CSS Halftone Ripple */
+  --options-background:
+    /* Halftone Dot Pattern */
+    radial-gradient(circle, var(--primary) 1px, transparent 1.2px),
+    /* Ripple Effect */
+    repeating-radial-gradient(circle at 80% 80%,
+      rgba(37, 99, 235, 0.15) 0%,
+      rgba(37, 99, 235, 0.15) 20px,
+      transparent 20px,
+      transparent 40px),
+    /* Base */
+    var(--background);
+  --options-background-size:
+    6px 6px,
+    /* Dot pattern size */
+    cover,
+    /* Ripple size */
+    cover;
+  /* Base size */
+  --options-background-opacity: 1.0;
+  background-blend-mode: overlay, normal, normal;
 }
 
 /* Terminal Brutalism + Cassette Futurism - Dark Mode "Deep Space Terminal" */
 .dark,
 [data-theme='dark'] {
   /* Deep Space Terminal Background */
-  --background: #02020b; /* Deepest Navy/Black */
-  --background-weathered: #0a0a16; /* Slightly lighter Navy */
+  --background: #02020b;
+  /* Deepest Navy/Black */
+  --background-weathered: #0a0a16;
+  /* Slightly lighter Navy */
 
   /* High Contrast Terminal Colors */
-  --foreground: #ffffff; /* White Text */
-  --foreground-secondary: #94a3b8; /* Slate 400 */
-  --foreground-muted: #64748b; /* Slate 500 */
+  --foreground: #ffffff;
+  /* White Text */
+  --foreground-secondary: #94a3b8;
+  /* Slate 400 */
+  --foreground-muted: #64748b;
+  /* Slate 500 */
 
   /* Surface Colors with Analog Depth */
   --surface: #0a0a16;
@@ -149,8 +197,10 @@
   --card-foreground: #ffffff;
 
   /* Primary Terminal Colors - Cream/Ivory */
-  --primary: #fffff0; /* Ivory/Cream for high contrast */
-  --primary-foreground: #02020b; /* Black text on cream button */
+  --primary: #fffff0;
+  /* Ivory/Cream for high contrast */
+  --primary-foreground: #02020b;
+  /* Black text on cream button */
   --primary-hover: #f0f4e8;
 
   /* Secondary with Terminal Depth */
@@ -158,11 +208,14 @@
   --secondary-foreground: #ffffff;
   --secondary-hover: #334155;
 
-  /* Cassette Futurism Accents - Warmer in Dark Mode */
-  --accent: #f59e0b; /* Warm Amber */
+  /* Monochromatic Blue Accents - Dark Mode */
+  --accent: #81a8ff;
+  /* Lighter Blue for dark mode */
   --accent-foreground: #02020b;
-  --accent-vintage: #06b6d4; /* Brighter Teal for dark mode */
-  --accent-warm: #f87171; /* Warmer Red for dark mode */
+  --accent-vintage: #4f46e5;
+  /* Primary Indigo */
+  --accent-warm: #3730a3;
+  /* Darker Indigo */
 
   /* Muted Colors */
   --muted: #1e293b;
@@ -175,14 +228,16 @@
   --error-foreground: #02020b;
 
   /* Terminal Brutalism Borders */
-  --border: #4f46e5; /* Indigo Borders */
+  --border: #4f46e5;
+  /* Indigo Borders */
   --border-focus: #6366f1;
   --input: #0a0a16;
   --input-border: #4f46e5;
   --input-focus: #6366f1;
 
   /* Hard Shadow System - Dark Mode */
-  --shadow-color: rgba(79, 70, 229, 0.6); /* Muted Indigo Shadow */
+  --shadow-color: rgba(79, 70, 229, 0.6);
+  /* Muted Indigo Shadow */
   --shadow-hard: 4px 4px 0px 0px var(--shadow-color);
   --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
   --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
@@ -192,27 +247,28 @@
   --shadow-sm: 0 2px 8px rgba(79, 70, 229, 0.2);
   --shadow-md: 0 6px 20px rgba(79, 70, 229, 0.25);
   --shadow-lg: 0 8px 25px rgba(79, 70, 229, 0.3);
-  
+
   /* Blue accent shadow for hover effects - dark mode version */
-  --shadow-blue-sm: 0 6px 20px rgba(6, 182, 212, 0.25);
-  --shadow-blue-md: 0 8px 25px rgba(6, 182, 212, 0.35);
-  --shadow-blue-lg: 0 4px 15px rgba(6, 182, 212, 0.2);
-  
+  --shadow-blue-sm: 0 6px 20px rgba(79, 70, 229, 0.25);
+  --shadow-blue-md: 0 8px 25px rgba(79, 70, 229, 0.35);
+  --shadow-blue-lg: 0 4px 15px rgba(79, 70, 229, 0.2);
+
   /* General shadow */
   --shadow: var(--shadow-sm);
-  
+
   /* Destructive color */
   --destructive: var(--error);
-  
+
   /* Gradient overlay for hover effects - dark mode */
-  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(6, 182, 212, 0.15), transparent);
-  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.07) 0%, transparent 30%);
-  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(6, 182, 212, 0.15) 0%, transparent 30%);
+  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.15), transparent);
+  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.07) 0%, transparent 30%);
+  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.15) 0%, transparent 30%);
 
   /* Micro-Rounded Corners - Dark Mode */
   --radius-xs: 2px;
   --radius-sm: 3px;
-  --radius: 4px; /* Sweet spot for brutalism */
+  --radius: 4px;
+  /* Sweet spot for brutalism */
   --radius-md: 5px;
   --radius-lg: 6px;
   --radius-xl: 8px;
@@ -224,20 +280,47 @@
   /* Analog Grit Overlays - Dark Mode */
   --grain-light: rgba(255, 255, 255, 0.03);
   --grain-dark: rgba(0, 0, 0, 0.1);
-  --vintage-wash: linear-gradient(
-    135deg,
-    rgba(245, 158, 11, 0.03) 0%,
-    rgba(6, 182, 212, 0.03) 50%,
-    rgba(79, 70, 229, 0.03) 100%
-  );
+  --vintage-wash: linear-gradient(135deg,
+      rgba(79, 70, 229, 0.02) 0%,
+      rgba(120, 119, 198, 0.02) 50%,
+      rgba(160, 159, 230, 0.02) 100%);
+
+  /* Halftone Pattern Opacity Controls - Dark Mode */
+  --halftone-opacity-dense: 0.8;
+  --halftone-opacity-medium: 0.6;
+  --halftone-opacity-sparse: 0.4;
 
   /* Popover/Tooltip Colors - High Contrast for Readability */
-  --popover: #ffffff; /* White background for tooltips */
-  --popover-foreground: #02020b; /* Dark text for high contrast */
+  --popover: #ffffff;
+  /* White background for tooltips */
+  --popover-foreground: #02020b;
+  /* Dark text for high contrast */
 
   /* Sidebar Colors */
-  --sidebar: var(--surface-variant); /* Sidebar background */
-  --sidebar-border: var(--border); /* Sidebar border color */
+  --sidebar: var(--surface-variant);
+  /* Sidebar background */
+  --sidebar-border: var(--border);
+  /* Sidebar border color */
+
+  /* Options Page Background - Monochromatic Blue Halftone Pattern (Dark Mode) */
+  /* Options Page Background - CSS Halftone Ripple (Dark Mode) */
+  --options-background:
+    /* Halftone Dot Pattern - Lighter for visibility on dark */
+    radial-gradient(circle, rgba(79, 70, 229, 0.3) 1px, transparent 1.2px),
+    /* Ripple Effect */
+    repeating-radial-gradient(circle at 80% 80%,
+      rgba(79, 70, 229, 0.1) 0%,
+      rgba(79, 70, 229, 0.1) 20px,
+      transparent 20px,
+      transparent 40px),
+    /* Base */
+    var(--background);
+  --options-background-size:
+    6px 6px,
+    cover,
+    cover;
+  --options-background-opacity: 1.0;
+  background-blend-mode: overlay, normal, normal;
 }
 
 /* Terminal Brutalism + Analog Grit Base Styles */
@@ -247,7 +330,8 @@
 
 html {
   font-family: var(--font-terminal);
-  line-height: 1.4; /* Tighter for terminal feel */
+  line-height: 1.4;
+  /* Tighter for terminal feel */
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -301,13 +385,11 @@ body::before {
   bottom: 0;
   background:
     var(--vintage-wash),
-    repeating-linear-gradient(
-      45deg,
+    repeating-linear-gradient(45deg,
       transparent,
       transparent 1px,
       var(--grain-light) 1px,
-      var(--grain-light) 2px
-    );
+      var(--grain-light) 2px);
   pointer-events: none;
   z-index: 1;
   opacity: 0.6;
@@ -316,34 +398,44 @@ body::before {
 
 /* Noise texture for analog feel */
 @keyframes grain {
+
   0%,
   100% {
     transform: translate(0, 0);
   }
+
   10% {
     transform: translate(-1px, -1px);
   }
+
   20% {
     transform: translate(1px, 1px);
   }
+
   30% {
     transform: translate(-2px, 1px);
   }
+
   40% {
     transform: translate(2px, -1px);
   }
+
   50% {
     transform: translate(-1px, 2px);
   }
+
   60% {
     transform: translate(1px, -2px);
   }
+
   70% {
     transform: translate(-2px, -1px);
   }
+
   80% {
     transform: translate(2px, 1px);
   }
+
   90% {
     transform: translate(-1px, -2px);
   }
@@ -356,13 +448,11 @@ body::after {
   left: 0;
   right: 0;
   bottom: 0;
-  background-image: repeating-linear-gradient(
-    0deg,
-    var(--grain-dark) 0px,
-    transparent 1px,
-    transparent 2px,
-    var(--grain-dark) 3px
-  );
+  background-image: repeating-linear-gradient(0deg,
+      var(--grain-dark) 0px,
+      transparent 1px,
+      transparent 2px,
+      var(--grain-dark) 3px);
   pointer-events: none;
   z-index: 2;
   opacity: 0.4;
@@ -397,10 +487,12 @@ main,
 }
 
 @keyframes terminal-cursor {
+
   0%,
   50% {
     opacity: 1;
   }
+
   51%,
   100% {
     opacity: 0.3;

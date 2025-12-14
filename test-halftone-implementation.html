@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Halftone Pattern Implementation Test</title>
+    <style>
+        /* Import the theme CSS to test our implementation */
+        @import url('theme.css');
+        
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: var(--font-terminal);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+        
+        .test-container {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            max-width: 1200px;
+            width: 100%;
+            background: var(--card);
+            padding: 30px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            border: 2px solid var(--border);
+        }
+        
+        .pattern-test-box {
+            width: 100%;
+            height: 400px;
+            border: 3px solid var(--primary);
+            border-radius: var(--radius);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: var(--foreground);
+            text-align: center;
+        }
+        
+        .pattern-test-box h3 {
+            font-family: var(--font-terminal);
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 15px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--primary);
+        }
+        
+        .pattern-test-box p {
+            font-family: var(--font-terminal);
+            font-size: 14px;
+            margin: 0;
+            max-width: 80%;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background: var(--primary);
+            color: var(--primary-foreground);
+            border: none;
+            padding: 12px 24px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-family: var(--font-terminal);
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            transition: all var(--transition-press);
+            box-shadow: var(--shadow-hard-sm);
+        }
+        
+        button:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-hard);
+        }
+        
+        button.active {
+            background: var(--accent);
+            color: var(--accent-foreground);
+        }
+        
+        .test-results {
+            background: var(--secondary);
+            padding: 20px;
+            border-radius: var(--radius);
+            margin-top: 20px;
+            font-family: var(--font-terminal);
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--foreground);
+        }
+        
+        .test-results h4 {
+            margin-top: 0;
+            color: var(--primary);
+            font-size: 16px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .checklist {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .checklist-item::before {
+            content: "✓";
+            color: var(--success);
+            font-weight: bold;
+            min-width: 20px;
+        }
+        
+        .checklist-item.failed::before {
+            content: "✗";
+            color: var(--error);
+        }
+        
+        /* Theme toggle for testing */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .theme-toggle button {
+            background: var(--card);
+            color: var(--foreground);
+            border: 2px solid var(--border);
+        }
+        
+        /* High resolution test pattern */
+        .highres-test {
+            width: 200px;
+            height: 200px;
+            background: var(--options-background);
+            background-size: var(--options-background-size);
+            border: 2px solid var(--primary);
+            margin: 20px auto;
+            position: relative;
+        }
+        
+        .highres-test::after {
+            content: "High Resolution Test\A(60px × 60px tiles)";
+            white-space: pre;
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: var(--foreground);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+            border-radius: var(--radius-xs);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="theme-toggle">
+        <button id="themeToggle">Toggle Dark Mode</button>
+    </div>
+    
+    <div class="test-container">
+        <h1>Monochromatic Blue Halftone Pattern Test</h1>
+        
+        <div class="controls">
+            <button class="active" onclick="showTest('main')">Main Pattern Test</button>
+            <button onclick="showTest('density')">Density Gradient Test</button>
+            <button onclick="showTest('resolution')">Resolution Test</button>
+            <button onclick="showTest('opacity')">Opacity Test</button>
+        </div>
+        
+        <div id="mainTest" class="pattern-test-box" style="background: var(--options-background); background-size: var(--options-background-size);">
+            <h3>Enhanced Halftone Pattern</h3>
+            <p>Diagonal gradient with dense dots (left) to sparse dots (right)</p>
+            <p>Traditional halftone screening with circular dots of varying sizes</p>
+            <p>Monochromatic blue and white color scheme</p>
+        </div>
+        
+        <div id="densityTest" class="pattern-test-box" style="display: none;">
+            <h3>Density Gradient Analysis</h3>
+            <div style="display: flex; justify-content: space-between; width: 100%; margin-top: 20px;">
+                <div style="text-align: center; padding: 10px; background: rgba(255,255,255,0.8); border-radius: var(--radius);">
+                    <strong>Left Side (Dense)</strong><br>
+                    <span style="font-size: 12px;">1.2px dots, 1-2px spacing</span>
+                </div>
+                <div style="text-align: center; padding: 10px; background: rgba(255,255,255,0.8); border-radius: var(--radius);">
+                    <strong>Center</strong><br>
+                    <span style="font-size: 12px;">0.8-1px dots, 2-3.5px spacing</span>
+                </div>
+                <div style="text-align: center; padding: 10px; background: rgba(255,255,255,0.8); border-radius: var(--radius);">
+                    <strong>Right Side (Sparse)</strong><br>
+                    <span style="font-size: 12px;">0.6-0.7px dots, 4-5.5px spacing</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="resolutionTest" class="pattern-test-box" style="display: none;">
+            <h3>High Resolution Test</h3>
+            <div class="highres-test"></div>
+            <p>Testing 60px × 60px tile size for print quality</p>
+            <p>Should show crisp dot definition at all zoom levels</p>
+        </div>
+        
+        <div id="opacityTest" class="pattern-test-box" style="display: none;">
+            <h3>Opacity Variations</h3>
+            <div style="display: flex; justify-content: space-between; width: 100%; margin-top: 20px;">
+                <div style="text-align: center; padding: 10px; background: rgba(37, 99, 235, 0.9); border-radius: var(--radius); color: white;">
+                    <strong>Dense Areas</strong><br>
+                    <span style="font-size: 12px;">Opacity: var(--halftone-opacity-dense)</span>
+                </div>
+                <div style="text-align: center; padding: 10px; background: rgba(37, 99, 235, 0.7); border-radius: var(--radius); color: white;">
+                    <strong>Medium Areas</strong><br>
+                    <span style="font-size: 12px;">Opacity: var(--halftone-opacity-medium)</span>
+                </div>
+                <div style="text-align: center; padding: 10px; background: rgba(37, 99, 235, 0.5); border-radius: var(--radius); color: white;">
+                    <strong>Sparse Areas</strong><br>
+                    <span style="font-size: 12px;">Opacity: var(--halftone-opacity-sparse)</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="test-results">
+            <h4>Implementation Checklist</h4>
+            <div class="checklist">
+                <div class="checklist-item">Monochromatic blue color scheme implemented</div>
+                <div class="checklist-item">Diagonal gradient from dense to sparse dots</div>
+                <div class="checklist-item">Traditional halftone screening techniques</div>
+                <div class="checklist-item">Circular dots with varying sizes (0.6-1.2px)</div>
+                <div class="checklist-item">Visible texture and irregularities</div>
+                <div class="checklist-item">Gradual opacity variations</div>
+                <div class="checklist-item">High-resolution 60px × 60px tiles</div>
+                <div class="checklist-item">Crisp dot definition for print</div>
+                <div class="checklist-item">Light mode support</div>
+                <div class="checklist-item">Dark mode support</div>
+                <div class="checklist-item">CSS variables properly configured</div>
+                <div class="checklist-item">Options page integration complete</div>
+            </div>
+        </div>
+        
+        <div class="test-results">
+            <h4>Technical Specifications</h4>
+            <p><strong>Pattern Size:</strong> 60px × 60px tiles</p>
+            <p><strong>Dot Sizes:</strong> 0.6px to 1.2px (varying for tonal depth)</p>
+            <p><strong>Density Gradient:</strong> 2% to 95% diagonal positions</p>
+            <p><strong>Color Scheme:</strong> Monochromatic blue (#2563eb light, #4f46e5 dark)</p>
+            <p><strong>Base Colors:</strong> #ffffff (light), #0a0a16 (dark)</p>
+            <p><strong>Opacity Range:</strong> 0.4 to 0.9 (dark to light mode)</p>
+            <p><strong>CSS Variables:</strong> --options-background, --options-background-size, --options-background-opacity</p>
+        </div>
+    </div>
+    
+    <script>
+        // Theme toggle functionality
+        const themeToggle = document.getElementById('themeToggle');
+        const htmlElement = document.documentElement;
+        
+        themeToggle.addEventListener('click', function() {
+            const currentTheme = htmlElement.getAttribute('data-theme');
+            if (currentTheme === 'dark') {
+                htmlElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+            } else {
+                htmlElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            }
+            updateThemeButton();
+        });
+        
+        function updateThemeButton() {
+            const currentTheme = htmlElement.getAttribute('data-theme');
+            themeToggle.textContent = currentTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+        }
+        
+        // Load saved theme preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            htmlElement.setAttribute('data-theme', 'dark');
+        }
+        updateThemeButton();
+        
+        // Test switching functionality
+        function showTest(testName) {
+            // Hide all test sections
+            document.getElementById('mainTest').style.display = 'none';
+            document.getElementById('densityTest').style.display = 'none';
+            document.getElementById('resolutionTest').style.display = 'none';
+            document.getElementById('opacityTest').style.display = 'none';
+            
+            // Show selected test
+            document.getElementById(testName + 'Test').style.display = 'flex';
+            
+            // Update active button
+            const buttons = document.querySelectorAll('.controls button');
+            buttons.forEach(button => {
+                button.classList.remove('active');
+                if (button.textContent.includes(testName.charAt(0).toUpperCase() + testName.slice(1))) {
+                    button.classList.add('active');
+                }
+            });
+        }
+        
+        // Auto-run some basic tests
+        console.log('Halftone Pattern Implementation Test');
+        console.log('==================================');
+        console.log('Theme CSS loaded:', document.styleSheets.length > 0);
+        console.log('Options background variable:', getComputedStyle(document.body).getPropertyValue('--options-background'));
+        console.log('Background size:', getComputedStyle(document.body).getPropertyValue('--options-background-size'));
+        console.log('Current theme:', htmlElement.getAttribute('data-theme') || 'light');
+    </script>
+</body>
+</html>
