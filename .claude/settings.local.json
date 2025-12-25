@@ -13,7 +13,8 @@
       "Bash(npm run build:*)",
       "Bash(findstr:*)",
       "Bash(dir /b *.css)",
-      "Bash(git log --oneline -n 20 --grep=\"context\\|image\\|menu\" -i)"
+      "Bash(git log --oneline -n 20 --grep=\"context\\|image\\|menu\" -i)",
+      "Bash(curl -X POST \"https://api.mistral.ai/v1/chat/completions\" )"
     ],
     "deny": [],
     "ask": []

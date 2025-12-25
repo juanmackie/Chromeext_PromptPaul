@@ -125,39 +125,44 @@ class OptionsOrchestrator {
     }
   }
 
-  /**
-   * Setup instruction event listeners
-   */
-  setupInstructionEventListeners() {
-    const saveInstructionBtn = this.uiComponents.getElement('saveInstruction');
-    const clearFormBtn = this.uiComponents.getElement('clearForm');
-    const exportInstructions = this.uiComponents.getElement('exportInstructions');
-    const importInstructions = this.uiComponents.getElement('importInstructions');
-    const importFile = this.uiComponents.getElement('importFile');
+   /**
+    * Setup instruction event listeners
+    */
+   setupInstructionEventListeners() {
+     const saveInstructionBtn = this.uiComponents.getElement('saveInstruction');
+     const clearFormBtn = this.uiComponents.getElement('clearForm');
+     const generateInstructionBtn = this.uiComponents.getElement('generateInstruction');
+     const exportInstructions = this.uiComponents.getElement('exportInstructions');
+     const importInstructions = this.uiComponents.getElement('importInstructions');
+     const importFile = this.uiComponents.getElement('importFile');
 
-    if (saveInstructionBtn) {
-      saveInstructionBtn.addEventListener('click', () => this.handleSaveInstruction());
-    }
+     if (saveInstructionBtn) {
+       saveInstructionBtn.addEventListener('click', () => this.handleSaveInstruction());
+     }
 
-    if (clearFormBtn) {
-      clearFormBtn.addEventListener('click', () => this.handleClearInstructionForm());
-    }
+     if (generateInstructionBtn) {
+       generateInstructionBtn.addEventListener('click', () => this.handleGenerateInstruction());
+     }
 
-    if (exportInstructions) {
-      exportInstructions.addEventListener('click', () => this.handleExportInstructions());
-    }
+     if (clearFormBtn) {
+       clearFormBtn.addEventListener('click', () => this.handleClearInstructionForm());
+     }
 
-    if (importInstructions) {
-      importInstructions.addEventListener('click', () => this.handleImportInstructions());
-    }
+     if (exportInstructions) {
+       exportInstructions.addEventListener('click', () => this.handleExportInstructions());
+     }
 
-    if (importFile) {
-      importFile.addEventListener('change', event => this.handleInstructionImportFile(event));
-    }
+     if (importInstructions) {
+       importInstructions.addEventListener('click', () => this.handleImportInstructions());
+     }
 
-    // Setup dynamic event listeners for instruction table
-    this.setupInstructionTableListeners();
-  }
+     if (importFile) {
+       importFile.addEventListener('change', event => this.handleInstructionImportFile(event));
+     }
+
+     // Setup dynamic event listeners for instruction table
+     this.setupInstructionTableListeners();
+   }
 
   /**
    * Setup tool event listeners
@@ -668,33 +673,72 @@ class OptionsOrchestrator {
     }
   }
 
-  /**
-   * Get instruction form data
-   * @returns {Object} Form data
-   */
-  getInstructionFormData() {
-    return {
-      instructionName: this.uiComponents.getElement('instructionName')?.value?.trim() || '',
-      instructionContent: this.uiComponents.getElement('instructionContent')?.value?.trim() || '',
-      instructionToolChoice:
-        this.uiComponents.getElement('instructionToolChoice')?.value?.trim() || '',
-    };
-  }
+   /**
+    * Handle generate instruction from goal
+    */
+   async handleGenerateInstruction() {
+     try {
+       const goalDescription = this.uiComponents.getElement('instructionGoal')?.value?.trim();
+       
+       if (!goalDescription || goalDescription === '') {
+         this.showStatus('Please enter a goal description to generate an instruction.', true);
+         return;
+       }
 
-  /**
-   * Handle clear instruction form
-   */
-  async handleClearInstructionForm() {
-    const fieldIds = [
-      'instructionName',
-      'instructionContent',
-      'instructionId',
-      'instructionToolChoice',
-    ];
-    await this.uiComponents.clearFormFields(fieldIds);
+       // Get current API configuration
+       const lastSelectedProfileId = await this.profileManager.getLastSelectedProfileId();
+       const apiConfig = await this.profileManager.getProfile(lastSelectedProfileId);
 
-    this.showStatus('Form cleared.');
-  }
+       const generatedInstruction = await this.instructionManager.generateInstructionFromGoal(
+         goalDescription,
+         apiConfig
+       );
+
+       // Update form with generated instruction
+       await this.uiComponents.populateFormFields(
+         {
+           instructionName: generatedInstruction.name,
+           instructionContent: generatedInstruction.content,
+         },
+         {
+           instructionName: 'instructionName',
+           instructionContent: 'instructionContent',
+         }
+       );
+     } catch (error) {
+       logger.error('Options', 'Options: Failed to generate instruction:', error);
+       await errorHandler.handleError(error);
+     }
+   }
+
+   /**
+    * Get instruction form data
+    * @returns {Object} Form data
+    */
+   getInstructionFormData() {
+     return {
+       instructionName: this.uiComponents.getElement('instructionName')?.value?.trim() || '',
+       instructionContent: this.uiComponents.getElement('instructionContent')?.value?.trim() || '',
+       instructionToolChoice:
+         this.uiComponents.getElement('instructionToolChoice')?.value?.trim() || '',
+     };
+   }
+
+   /**
+    * Handle clear instruction form
+    */
+   async handleClearInstructionForm() {
+     const fieldIds = [
+       'instructionName',
+       'instructionContent',
+       'instructionGoal',
+       'instructionId',
+       'instructionToolChoice',
+     ];
+     await this.uiComponents.clearFormFields(fieldIds);
+
+     this.showStatus('Form cleared.');
+   }
 
   /**
    * Handle edit instruction

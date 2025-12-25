@@ -19,16 +19,169 @@ export class ApiClient {
     this.defaultHeaders = {
       'Content-Type': 'application/json',
     };
+
+    /** @type {Array<Function>} Queue for rate-limited requests */
+    this.requestQueue = [];
+    /** @type {boolean} Whether a request is currently being processed */
+    this.isProcessingQueue = false;
+    /** @type {number} Timestamp when next request can be made */
+    this.nextRequestTime = 0;
   }
 
   /**
-   * Main API request handler
+   * Queue a request for execution
+   * @param {string} promptContent - The prompt content to send
+   * @param {number|null} tabId - The tab ID associated with the request
+   * @param {ApiRequestOptions} options - Additional request options
+   */
+  queueRequest(promptContent, tabId, options = {}) {
+    this.requestQueue.push(() => this.executeRequest(promptContent, tabId, options));
+    this.processQueue();
+  }
+
+  /**
+   * Process the request queue
+   */
+  async processQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    // Wait if we're rate limited
+    const now = Date.now();
+    if (this.nextRequestTime > now) {
+      const waitTime = this.nextRequestTime - now;
+      logger.info('BackgroundApiClient', `Rate limited, waiting ${waitTime}ms before next request`);
+      await this.sleep(waitTime);
+    }
+
+    while (this.requestQueue.length > 0) {
+      const request = this.requestQueue.shift();
+      try {
+        await request();
+      } catch (error) {
+        logger.error('BackgroundApiClient', 'Error executing queued request:', error);
+      }
+    }
+
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Sleep for specified milliseconds
+   * @param {number} ms - Milliseconds to sleep
+   * @returns {Promise<void>}
+   */
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Make API request with retry logic
+   * @param {string} url - API endpoint URL
+   * @param {Object} options - Fetch options
+   * @param {number} retryCount - Current retry attempt
+   * @param {number} maxRetries - Maximum number of retries
+   * @returns {Promise<Response>}
+   */
+  async fetchWithRetry(url, options, retryCount = 0, maxRetries = 5) {
+    const response = await fetch(url, options);
+
+    if (!response.ok) {
+      // Handle rate limiting (429)
+      if (response.status === 429) {
+        // Check for quota issues which shouldn't be retried
+        let isQuotaError = false;
+        try {
+          const responseClone = response.clone();
+          const errorBody = await responseClone.text();
+          if (errorBody && (
+            errorBody.includes('insufficient_quota') || 
+            errorBody.includes('billing') ||
+            errorBody.includes('quota_exceeded')
+          )) {
+            isQuotaError = true;
+            logger.error('BackgroundApiClient', 'Quota exceeded, not retrying:', errorBody);
+          }
+        } catch (e) {
+          // Ignore body read errors
+        }
+
+        if (isQuotaError) {
+           throw new Error(`API request failed: ${response.status} ${response.statusText} (Quota Exceeded)`);
+        }
+
+        if (retryCount >= maxRetries) {
+          throw new Error(`API request failed: ${response.status} ${response.statusText} (max retries exceeded)`);
+        }
+
+        // Get retry delay from Retry-After header or use exponential backoff
+        const retryAfter = response.headers.get('Retry-After');
+        let delayMs;
+
+        if (retryAfter) {
+          // Retry-After can be seconds or a date
+          const seconds = parseInt(retryAfter, 10);
+          if (!isNaN(seconds)) {
+            delayMs = seconds * 1000;
+          } else {
+            const date = new Date(retryAfter);
+            delayMs = date.getTime() - Date.now();
+          }
+          logger.warn('BackgroundApiClient', `Server requested wait time: ${delayMs}ms`);
+        } else {
+          // Exponential backoff with jitter - increased base
+          // 2^0 * 2000 = 2000ms
+          // 2^1 * 2000 = 4000ms
+          // 2^2 * 2000 = 8000ms
+          const baseDelay = Math.pow(2, retryCount) * 2000; 
+          const jitter = Math.random() * 1000; // Add up to 1s of randomness
+          delayMs = baseDelay + jitter;
+        }
+
+        // Ensure minimum delay of 2 seconds
+        delayMs = Math.max(delayMs, 2000);
+
+        logger.warn('BackgroundApiClient', `Rate limited (429), retrying after ${Math.round(delayMs)}ms (attempt ${retryCount + 1}/${maxRetries})`);
+
+        // Update next request time
+        this.nextRequestTime = Date.now() + delayMs;
+
+        await this.sleep(delayMs);
+
+        // Retry the request
+        return this.fetchWithRetry(url, options, retryCount + 1, maxRetries);
+      }
+
+      // For other errors, throw immediately
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    return response;
+  }
+
+  /**
+   * Main API request handler - queues request for execution with rate limit handling
    * @param {string} promptContent - The prompt content to send
    * @param {number|null} tabId - The tab ID associated with the request
    * @param {ApiRequestOptions} [options={}] - Additional request options
    * @returns {Promise<void>}
    */
   async makeApiRequest(promptContent, tabId, options = {}) {
+    // Queue the request to handle rate limiting
+    this.queueRequest(promptContent, tabId, options);
+  }
+
+  /**
+   * Execute the actual API request
+   * @param {string} promptContent - The prompt content to send
+   * @param {number|null} tabId - The tab ID associated with the request
+   * @param {ApiRequestOptions} [options={}] - Additional request options
+   * @returns {Promise<void>}
+   */
+  async executeRequest(promptContent, tabId, options = {}) {
     const { customInstructionToolChoice = 'none' } = options;
 
     // Defensive tab ID validation
@@ -60,6 +213,8 @@ export class ApiClient {
     }
 
     try {
+      logger.info('BackgroundApiClient', `Starting API request for tab ${tabId}`);
+
       // Get configuration and tools
       const [config, tools, { enableStreaming }] = await Promise.all([
         this.validateConfig(),
@@ -132,8 +287,9 @@ export class ApiClient {
         }
       }
 
-      // Make API request
-      const response = await fetch(config.apiEndpoint, {
+      // Make API request with retry logic for rate limiting
+      logger.info('BackgroundApiClient', `Making API request to ${config.apiEndpoint}`);
+      const response = await this.fetchWithRetry(config.apiEndpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${config.apiKey}`,
@@ -141,10 +297,6 @@ export class ApiClient {
         },
         body: JSON.stringify(requestBody),
       });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-      }
 
       // Handle streaming response
       if (enableStreaming) {
@@ -254,10 +406,21 @@ export class ApiClient {
 
   // Handle errors
   handleError(error, tabId, promptContent) {
+    let errorMessage = error.message || 'An error occurred while processing your request';
+
+    // Special handling for rate limit errors
+    if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('rate limit')) {
+      if (errorMessage.includes('max retries exceeded')) {
+        errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
+      } else {
+        errorMessage = 'Too many requests. The request has been queued and will be retried automatically.';
+      }
+    }
+
     chrome.runtime
       .sendMessage({
         action: 'displayErrorInChat',
-        errorMessage: error.message || 'An error occurred while processing your request',
+        errorMessage: errorMessage,
         tabId: tabId,
         prompt: promptContent,
       })

@@ -254,168 +254,187 @@ async function processImageForAnalysis(imageUrl, tab, actionType, instructionId 
 }
 
 // Handle context menu clicks
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener((info, tab) => {
   const menuItemId = info.menuItemId;
   logger.info('Background', 'Context menu clicked:', menuItemId, 'Media Type:', info.mediaType);
 
-  try {
-    // Handle manage instructions (doesn't need side panel)
-    if (menuItemId === 'manageInstructions') {
-      chrome.runtime.openOptionsPage();
-      return;
-    }
+  // Handle manage instructions (doesn't need side panel)
+  if (menuItemId === 'manageInstructions') {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
 
-    // Open side panel first (must be in direct response to user action)
+  // Open side panel first (must be in direct response to user action)
+  // Open side panel first (must be in direct response to user action)
+  // This function must be synchronous to maintain user gesture context, but we can fire-and-forget the async part
+  const openSidePanelWithFallback = async () => {
     let sidePanelOpened = false;
 
-    // Use windowId to open the global side panel for this window.
-    // This is more reliable than tabId-specific opening which requires specific per-tab configuration.
     try {
+      // Try opening for the specific window first (most robust)
       if (typeof tab.windowId === 'number') {
-        await chrome.sidePanel.open({ windowId: tab.windowId });
-        logger.info('Background', 'Side panel opened for window:', tab.windowId);
-        sidePanelOpened = true;
+        try {
+          await chrome.sidePanel.open({ windowId: tab.windowId });
+          sidePanelOpened = true;
+        } catch (windowError) {
+          logger.warn('Background', 'Failed to open side panel for window, attempting fallback to tab:', windowError);
+          // Fallback to tabId
+          await chrome.sidePanel.open({ tabId: tab.id });
+          sidePanelOpened = true;
+        }
       } else {
-        // Fallback to tabId if windowId is somehow missing
+        // Direct fallback to tabId if no windowId
         await chrome.sidePanel.open({ tabId: tab.id });
-        logger.info('Background', 'Side panel opened for tab:', tab.id);
         sidePanelOpened = true;
       }
     } catch (error) {
-      logger.error('Background', 'Failed to open side panel:', error);
-      // We will attempt to proceed even if open fails, as it might already be open
-      // or the error might be spurious in some contexts.
-      // However, usually if open fails, we prefer to abort or notify.
-      // But let's verify if we can check if it's open?
-      // No easy synchronous check. We'll set flag to false.
+      logger.error('Background', 'All side panel opening attempts failed:', error);
+      sidePanelOpened = false;
     }
 
-    if (!sidePanelOpened) {
-      logger.error('Background', 'Could not open side panel. Aborting action to prevent connection errors.');
-      // Attempt to notify user via notification API since we can't open the side panel
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icons/icon128.png',
-          title: 'Prompt Paul Error',
-          message: 'Failed to open side panel. Please try creating a new tab or restarting the browser.'
-        });
-      }
-      return;
-    }
+    // Continue after attempting to open
+    handleContextMenuActionAfterSidePanelOpen(info, tab, menuItemId, sidePanelOpened);
+  };
 
-    // Determines content to process
-    let promptContent = '';
-    let isImage = false;
+  // Execute immediately
+  openSidePanelWithFallback();
+});
 
-    if (info.selectionText) {
-      promptContent = info.selectionText;
-      logger.info('Background', 'Processing selected text');
-    } else if (info.mediaType === 'image' && info.srcUrl) {
-      // Image detected - will be processed by the specific action handler
-      isImage = true;
-      logger.info('Background', 'Detected image URL:', info.srcUrl, '- will process via action handler');
-    } else {
-      // Fallback to page content
-      const [result] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          return {
-            title: document.title,
-            url: window.location.href,
-            pageContent: document.body.innerText,
-          };
-        },
+// This function handles the rest of the context menu logic after side panel opening
+// It runs asynchronously after the user gesture context is complete
+function handleContextMenuActionAfterSidePanelOpen(info, tab, menuItemId, sidePanelOpened) {
+  // If side panel couldn't be opened, show error and abort
+  if (!sidePanelOpened) {
+    logger.error('Background', 'Could not open side panel. Aborting action to prevent connection errors.');
+    // Attempt to notify user via notification API since we can't open the side panel
+    if (chrome.notifications) {
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'Prompt Paul Error',
+        message: 'Failed to open side panel. Please try creating a new tab or restarting the browser.'
       });
-      promptContent = result.result?.pageContent || '';
-      logger.info('Background', 'Processing full page content');
     }
+    return;
+  }
 
-    // Handle different menu actions
-    if (menuItemId === 'oneoff_instruction') {
-      // One-off instruction - just show the selected text/image in chat
-      if (info.mediaType === 'image' && info.srcUrl) {
-        // Use setMediaForAnalysis for images
-        await processImageForAnalysis(info.srcUrl, tab, 'analyze');
+  // Continue with the original context menu processing logic
+  (async () => {
+    try {
+      // Determines content to process
+      let promptContent = '';
+      let isImage = false;
+
+      if (info.selectionText) {
+        promptContent = info.selectionText;
+        logger.info('Background', 'Processing selected text');
+      } else if (info.mediaType === 'image' && info.srcUrl) {
+        // Image detected - will be processed by the specific action handler
+        isImage = true;
+        logger.info('Background', 'Detected image URL:', info.srcUrl, '- will process via action handler');
       } else {
-        // Use retry logic to ensure side panel is ready to receive
-        sendMessageWithRetry({
-          action: 'setSelectedText',
-          selectedText: promptContent,
-          tabId: tab.id,
-          fromStartChat: false,
-        }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
+        // Fallback to page content
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            return {
+              title: document.title,
+              url: window.location.href,
+              pageContent: document.body.innerText,
+            };
+          },
+        });
+        promptContent = result.result?.pageContent || '';
+        logger.info('Background', 'Processing full page content');
       }
-      return;
-    } else if (menuItemId === 'start_chat') {
-      // Start chat - send selected text/image and make API request
-      if (info.mediaType === 'image' && info.srcUrl) {
-        // Use setMediaForAnalysis for images
-        await processImageForAnalysis(info.srcUrl, tab, 'analyze');
-      } else {
-        // Use retry logic instead of fixed timeout
-        sendMessageWithRetry({
-          action: 'setSelectedText',
-          selectedText: promptContent,
-          tabId: tab.id,
-          fromStartChat: true,
-        }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
 
-        const requestOptions = { isStartChat: true };
-        await apiClient.makeApiRequest(promptContent, tab.id, requestOptions);
-      }
-      return;
-    } else if (menuItemId.toString().startsWith('custom_')) {
-      // Handle custom instruction
-      const instructionId = menuItemId.toString().replace('custom_', '');
-      const { instructions } = await chrome.storage.local.get(['instructions']);
-      const instruction = instructions?.find(i => i.id === instructionId);
-
-      if (instruction) {
+      // Handle different menu actions
+      if (menuItemId === 'oneoff_instruction') {
+        // One-off instruction - just show the selected text/image in chat
         if (info.mediaType === 'image' && info.srcUrl) {
-          // Use setMediaForAnalysis for images with custom instruction
-          await processImageForAnalysis(info.srcUrl, tab, 'custom', instructionId);
+          // Use setMediaForAnalysis for images
+          await processImageForAnalysis(info.srcUrl, tab, 'analyze');
+        } else {
+          // Use retry logic to ensure side panel is ready to receive
+          sendMessageWithRetry({
+            action: 'setSelectedText',
+            selectedText: promptContent,
+            tabId: tab.id,
+            fromStartChat: false,
+          }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
+        }
+        return;
+      } else if (menuItemId === 'start_chat') {
+        // Start chat - send selected text/image and make API request
+        if (info.mediaType === 'image' && info.srcUrl) {
+          // Use setMediaForAnalysis for images
+          await processImageForAnalysis(info.srcUrl, tab, 'analyze');
+        } else {
+          // Use retry logic instead of fixed timeout
+          sendMessageWithRetry({
+            action: 'setSelectedText',
+            selectedText: promptContent,
+            tabId: tab.id,
+            fromStartChat: true,
+          }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
+
+          const requestOptions = { isStartChat: true };
+          await apiClient.makeApiRequest(promptContent, tab.id, requestOptions);
+        }
+        return;
+      } else if (menuItemId.toString().startsWith('custom_')) {
+        // Handle custom instruction
+        const instructionId = menuItemId.toString().replace('custom_', '');
+        const { instructions } = await chrome.storage.local.get(['instructions']);
+        const instruction = instructions?.find(i => i.id === instructionId);
+
+        if (instruction) {
+          if (info.mediaType === 'image' && info.srcUrl) {
+            // Use setMediaForAnalysis for images with custom instruction
+            await processImageForAnalysis(info.srcUrl, tab, 'custom', instructionId);
+          } else {
+            // Existing text handling logic
+            const fullPrompt = `${instruction.content}\n\n${promptContent}`;
+            const toolChoice = instruction.tool_choice || 'none';
+            await apiClient.makeApiRequest(fullPrompt, tab.id, { customInstructionToolChoice: toolChoice });
+          }
+        }
+        return;
+      }
+
+      // Handle predefined instructions under "Query Prompt Paul"
+      const commandMap = {
+        summarize: 'Please summarize the following text into a bullet list of points',
+        explain: 'Explain this to me in a short concise MECE approach',
+        polish: 'Polish this text with clarity and purpose',
+        shorten: 'Shorten this text without losing its meaning and context',
+        formal: 'Make this text more formal and eloquent',
+        casual: 'Make this text more casual and fun',
+        analyze: 'Please analyze the following',
+      };
+
+      if (commandMap[menuItemId]) {
+        if (info.mediaType === 'image' && info.srcUrl) {
+          // Use setMediaForAnalysis for images
+          await processImageForAnalysis(info.srcUrl, tab, menuItemId);
         } else {
           // Existing text handling logic
-          const fullPrompt = `${instruction.content}\n\n${promptContent}`;
-          const toolChoice = instruction.tool_choice || 'none';
-          await apiClient.makeApiRequest(fullPrompt, tab.id, { customInstructionToolChoice: toolChoice });
+          let fullPrompt = `${commandMap[menuItemId]}:\n${promptContent}`;
+          await apiClient.makeApiRequest(fullPrompt, tab.id);
         }
+        return;
       }
-      return;
-    }
 
-    // Handle predefined instructions under "Query Prompt Paul"
-    const commandMap = {
-      summarize: 'Please summarize the following text into a bullet list of points',
-      explain: 'Explain this to me in a short concise MECE approach',
-      polish: 'Polish this text with clarity and purpose',
-      shorten: 'Shorten this text without losing its meaning and context',
-      formal: 'Make this text more formal and eloquent',
-      casual: 'Make this text more casual and fun',
-      analyze: 'Please analyze the following',
-    };
-
-    if (commandMap[menuItemId]) {
-      if (info.mediaType === 'image' && info.srcUrl) {
-        // Use setMediaForAnalysis for images
-        await processImageForAnalysis(info.srcUrl, tab, menuItemId);
-      } else {
-        // Existing text handling logic
-        let fullPrompt = `${commandMap[menuItemId]}:\n${promptContent}`;
-        await apiClient.makeApiRequest(fullPrompt, tab.id);
+      // Send prompt to API if we have content
+      if (promptContent) {
+        await apiClient.makeApiRequest(promptContent, tab.id);
       }
-      return;
+    } catch (error) {
+      logger.error('Background', 'Error handling context menu click:', error);
     }
+  })();
 
-    // Send prompt to API if we have content
-    if (promptContent) {
-      await apiClient.makeApiRequest(promptContent, tab.id);
-    }
-  } catch (error) {
-    logger.error('Background', 'Error handling context menu click:', error);
-  }
-});
+}
 
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -479,8 +498,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
           } catch (error) {
             logger.error('Background', 'getTabContent error:', error);
-            safeSendResponse({ 
-              success: false, 
+            safeSendResponse({
+              success: false,
               error: error.message || String(error) || 'Unknown error occurred during content extraction'
             });
           }

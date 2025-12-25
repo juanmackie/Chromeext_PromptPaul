@@ -263,16 +263,26 @@
         </div>
       </div>
 
-      <div class="hextaui-card instruction-form mt-8">
-        <h3>Add/Edit Instruction</h3>
-        <div class="hextaui-form-field">
-          <label for="instructionName" class="hextaui-form-label">Instruction Name</label>
-          <input type="text" id="instructionName" class="hextaui-input" placeholder="Enter instruction name">
-        </div>
-        <div class="hextaui-form-field">
-          <label for="instructionContent" class="hextaui-form-label">Instruction Content</label>
-          <textarea id="instructionContent" class="hextaui-textarea" placeholder="Enter instruction content" rows="4"></textarea>
-        </div>
+       <div class="hextaui-card instruction-form mt-8">
+         <h3>Add/Edit Instruction</h3>
+         <div class="hextaui-form-field">
+           <label for="instructionGoal" class="hextaui-form-label">
+             Goal Description (Optional)
+             <button type="button" class="help-tooltip" data-tooltip="Describe what you want the AI to achieve (e.g., 'write a prompt to summarize research papers'). Click 'Generate Instruction' to create a complete, optimized prompt automatically.">
+               <span class="material-symbols-outlined">help</span>
+             </button>
+           </label>
+           <textarea id="instructionGoal" class="hextaui-textarea" placeholder="Describe what you want to achieve (e.g., 'write a prompt to summarize research papers')" rows="2"></textarea>
+           <p class="hextaui-form-description">Describe your goal and click "Generate Instruction" to create a complete prompt automatically.</p>
+         </div>
+         <div class="hextaui-form-field">
+           <label for="instructionName" class="hextaui-form-label">Instruction Name</label>
+           <input type="text" id="instructionName" class="hextaui-input" placeholder="Enter instruction name">
+         </div>
+         <div class="hextaui-form-field">
+           <label for="instructionContent" class="hextaui-form-label">Instruction Content</label>
+           <textarea id="instructionContent" class="hextaui-textarea" placeholder="Enter instruction content" rows="4"></textarea>
+         </div>
         <div class="hextaui-form-field">
           <label for="instructionToolChoice" class="hextaui-form-label">Tool Choice</label>
           <select id="instructionToolChoice" class="hextaui-select">
@@ -283,14 +293,17 @@
           <p class="hextaui-form-description">Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</p>
         </div>
         
-        <input type="hidden" id="instructionId">
-        <div class="button-group">
-          <button type="button" id="saveInstruction" class="hextaui-btn hextaui-btn-secondary"><span class="material-symbols-outlined">save</span> Save Instruction</button>
-          <button type="button" id="clearForm" class="hextaui-btn hextaui-btn-outline">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
-          </button>
-        </div>
+         <input type="hidden" id="instructionId">
+         <div class="button-group">
+           <button type="button" id="generateInstruction" class="hextaui-btn hextaui-btn-primary">
+             <span class="material-symbols-outlined">auto_awesome</span> Generate Instruction
+           </button>
+           <button type="button" id="saveInstruction" class="hextaui-btn hextaui-btn-secondary"><span class="material-symbols-outlined">save</span> Save Instruction</button>
+           <button type="button" id="clearForm" class="hextaui-btn hextaui-btn-outline">
+             <span class="material-symbols-outlined">clear_all</span>
+             Clear Form
+           </button>
+         </div>
       </div>
 
       <div class="hextaui-card import-export mt-4">

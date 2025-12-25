@@ -11,7 +11,7 @@ import logger from './logger.js';
  * @returns {Promise<any>} - Resolves with the response if successful.
  * @throws {Error} - Throws if all retries fail.
  */
-export async function sendMessageWithRetry(message, maxRetries = 10, baseDelay = 500) {
+export async function sendMessageWithRetry(message, maxRetries = 3, baseDelay = 500) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             // Wrap chrome.runtime.sendMessage in a Promise to handle both sync and async errors

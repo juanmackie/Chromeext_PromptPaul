@@ -199,13 +199,228 @@ export class InstructionManager {
     );
   }
 
-  /**
-   * Improve instruction using API
-   * @param {string} instructionId - Instruction ID to improve
-   * @param {Object} apiConfig - API configuration
-   * @returns {Promise<string>} Improved content
-   */
-  async improveInstruction(instructionId, apiConfig) {
+   /**
+    * Generate instruction from goal using API
+    * @param {string} goalDescription - User's goal description
+    * @param {Object} apiConfig - API configuration
+    * @returns {Promise<Object>} Generated instruction with name and content
+    */
+   async generateInstructionFromGoal(goalDescription, apiConfig) {
+     return wrapAsync(
+       async () => {
+         if (!goalDescription || goalDescription.trim() === '') {
+           throw createError('Goal description is required', {
+             category: ErrorCategory.VALIDATION,
+             severity: ErrorSeverity.MEDIUM,
+             userMessage: 'Please provide a goal description',
+           });
+         }
+
+         if (!apiConfig || !apiConfig.llmEndpoint || !apiConfig.apiKey || !apiConfig.modelName) {
+           throw createError('API configuration is incomplete', {
+             category: ErrorCategory.CONFIGURATION,
+             severity: ErrorSeverity.MEDIUM,
+             userMessage: 'API configuration is incomplete. Please set it up in settings.',
+           });
+         }
+
+         this.showStatus('Generating instruction from goal...', false, true);
+
+         const generatedInstruction = await this.callInstructionGenerationAPI(
+           apiConfig.llmEndpoint,
+           apiConfig.apiKey,
+           apiConfig.modelName,
+           goalDescription
+         );
+
+         this.showStatus('Instruction generated! Review and Save.', false, true);
+         return generatedInstruction;
+       },
+       {
+         category: ErrorCategory.API,
+         userMessage: 'Failed to generate instruction from goal',
+         severity: ErrorSeverity.MEDIUM,
+         context: { goalDescription },
+       }
+     );
+   }
+
+   /**
+    * Call API to generate instruction from goal
+    * @param {string} endpoint - API endpoint
+    * @param {string} apiKey - API key
+    * @param {string} modelName - Model name
+    * @param {string} goalDescription - User's goal description
+    * @returns {Promise<Object>} Generated instruction with name and content
+    */
+   async callInstructionGenerationAPI(endpoint, apiKey, modelName, goalDescription) {
+     return wrapAsync(
+       async () => {
+          const messages = [
+            {
+              role: 'system',
+              content:
+                'You are a world-class prompt engineering expert, mastering techniques from the dair-ai Prompt Engineering Guide, Anthropic\'s best practices (clarity, XML tags, roles, chain-of-thought, prefill), OpenAI cookbooks, and 2025 advancements in meta-prompting (e.g., Automatic Prompt Engineering, structured self-refinement).\n\nYour task: For the user\'s goal/task description, create ONE optimal, complete prompt/system instruction for a large language model.\n\nFollow this exact step-by-step process (reason internally):\n\n1. Analyze the goal: Identify objectives, output format, tone, length, audience, edge cases, and success criteria.\n2. Apply best techniques: Prioritize clarity/specificity; add role-playing; include few-shot examples if useful; enable chain-of-thought for reasoning; use XML/Markdown for structure; prefill if complex; handle long context.\n3. Ensure robustness: Avoid ambiguity/hallucinations; make token-efficient; tailor to strong reasoning models (e.g., Grok/Claude/GPT/o1).\n4. Refine: Mentally simulate outputs and improve for maximum performance.\n\nOutput STRICTLY as a valid JSON object with exactly these fields:\n{\n  "name": "Concise title (3-5 words describing the prompt\'s purpose)",\n  "content": "The full, optimized prompt/instruction (ready-to-use, well-structured, no placeholders unless necessary)"\n}\n\n- Output ONLY the JSON. No explanations, no markdown, no additional text before/after.\n- Ensure the JSON is perfectly valid and parsable.',
+            },
+            { role: 'user', content: goalDescription },
+          ];
+
+         const apiResponse = await fetch(endpoint, {
+           method: 'POST',
+           headers: {
+             'Content-Type': 'application/json',
+             Authorization: `Bearer ${apiKey}`,
+           },
+           body: JSON.stringify({
+             model: modelName,
+             messages: messages,
+             max_tokens: 1000,
+             temperature: 0.7,
+           }),
+         });
+
+         if (!apiResponse.ok) {
+           const errorData = await apiResponse.json().catch(() => null);
+           throw createError(
+             `API request failed with status ${apiResponse.status}: $
+             {
+               errorData ? JSON.stringify(errorData) : apiResponse.statusText
+             }`,
+             {
+               category: ErrorCategory.API,
+               severity: ErrorSeverity.MEDIUM,
+               context: { status: apiResponse.status, endpoint },
+             }
+           );
+         }
+
+         const responseData = await apiResponse.json();
+         if (
+           !responseData ||
+           !responseData.choices ||
+           !responseData.choices[0] ||
+           !responseData.choices[0].message ||
+           !responseData.choices[0].message.content
+         ) {
+           throw createError('Invalid response format from API: Missing message content.', {
+             category: ErrorCategory.API,
+             severity: ErrorSeverity.MEDIUM,
+           });
+         }
+
+          // Parse the JSON response with enhanced error handling
+          let generatedInstruction;
+          try {
+            const responseContent = responseData.choices[0].message.content.trim();
+            
+            // Debug logging for raw response (sanitized)
+            const responsePreview = responseContent.length > 500 
+              ? responseContent.substring(0, 500) + '...' 
+              : responseContent;
+            console.debug('Raw API response for instruction generation:', responsePreview);
+            
+            // Clean up any markdown code blocks if present
+            let cleanedContent = responseContent.replace(/```json\n?|```/g, '').trim();
+            
+            // Additional cleanup for common formatting issues
+            cleanedContent = this.cleanJsonResponse(cleanedContent);
+            
+            // Validate JSON structure before parsing
+            if (!this.isValidJsonStructure(cleanedContent)) {
+              throw createError('Invalid JSON structure in API response', {
+                category: ErrorCategory.API,
+                severity: ErrorSeverity.MEDIUM,
+                context: { 
+                  responsePreview: cleanedContent.substring(0, 200) + '...',
+                  responseLength: cleanedContent.length 
+                },
+              });
+            }
+            
+            generatedInstruction = JSON.parse(cleanedContent);
+            
+          } catch (parseError) {
+            // Enhanced error handling with more context
+            const errorContext = {
+              errorType: parseError.constructor.name,
+              errorMessage: parseError.message,
+              responseLength: responseData.choices[0].message.content?.length || 0,
+              responsePreview: responseData.choices[0].message.content?.substring(0, 200) || 'No content'
+            };
+            
+            console.error('JSON parsing failed with detailed context:', errorContext);
+            
+            // Special handling for unterminated string errors
+            if (parseError.message.includes('Unterminated string') || parseError.message.includes('Unexpected end')) {
+              console.warn('Detected unterminated string or incomplete JSON - attempting automatic repair');
+              
+              // Try to repair the unterminated string
+              const repairedContent = this.repairUnterminatedString(responseData.choices[0].message.content);
+              
+              try {
+                const repairedInstruction = JSON.parse(repairedContent);
+                if (repairedInstruction.name && repairedInstruction.content) {
+                  console.warn('Successfully repaired unterminated string in JSON response');
+                  generatedInstruction = repairedInstruction;
+                }
+              } catch (repairError) {
+                console.error('Automatic repair failed, trying fallback extraction:', repairError.message);
+                
+                // If repair fails, try fallback extraction
+                const fallbackInstruction = this.extractInstructionFromMalformedResponse(responseData.choices[0].message.content);
+                
+                if (fallbackInstruction && fallbackInstruction.name && fallbackInstruction.content) {
+                  console.warn('Using fallback extraction method for malformed JSON response');
+                  generatedInstruction = fallbackInstruction;
+                }
+              }
+            } else {
+              // For other types of JSON errors, try fallback extraction
+              const fallbackInstruction = this.extractInstructionFromMalformedResponse(responseData.choices[0].message.content);
+              
+              if (fallbackInstruction && fallbackInstruction.name && fallbackInstruction.content) {
+                console.warn('Using fallback extraction method for malformed JSON response');
+                generatedInstruction = fallbackInstruction;
+              }
+            }
+            
+            // If we still don't have a valid instruction, throw the error
+            if (!generatedInstruction || !generatedInstruction.name || !generatedInstruction.content) {
+              throw createError('Failed to parse generated instruction: ' + parseError.message, {
+                category: ErrorCategory.API,
+                severity: ErrorSeverity.MEDIUM,
+                context: errorContext,
+                userMessage: 'The API returned an invalid response format. Please try again or check your API configuration.',
+              });
+            }
+          }
+
+         // Validate the generated instruction structure
+         if (!generatedInstruction.name || !generatedInstruction.content) {
+           throw createError('Generated instruction is missing required fields', {
+             category: ErrorCategory.API,
+             severity: ErrorSeverity.MEDIUM,
+             context: { generatedInstruction },
+           });
+         }
+
+         return generatedInstruction;
+       },
+       {
+         category: ErrorCategory.API,
+         userMessage: 'Failed to call instruction generation API',
+         severity: ErrorSeverity.MEDIUM,
+       }
+     );
+   }
+
+   /**
+    * Improve instruction using API
+    * @param {string} instructionId - Instruction ID to improve
+    * @param {Object} apiConfig - API configuration
+    * @returns {Promise<string>} Improved content
+    */
+   async improveInstruction(instructionId, apiConfig) {
     return wrapAsync(
       async () => {
         const instructions = await this.loadInstructions();
@@ -429,48 +644,196 @@ export class InstructionManager {
       } else {
         return toolChoice.join(', ');
       }
-    } else {
-      // Handle older string format
-      return toolChoice.charAt(0).toUpperCase() + toolChoice.slice(1);
+      } else {
+        // Handle older string format
+        return toolChoice.charAt(0).toUpperCase() + toolChoice.slice(1);
+      }
     }
+
+  /**
+   * Clean JSON response by fixing common formatting issues
+   * @param {string} jsonString - Raw JSON string
+   * @returns {string} Cleaned JSON string
+   */
+  cleanJsonResponse(jsonString) {
+    let cleaned = jsonString;
+    
+    // Fix common issues that can cause JSON parsing to fail
+    try {
+      // Remove any trailing commas in objects/arrays
+      cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+      
+      // Fix unescaped quotes within strings
+      cleaned = cleaned.replace(/(\w)"(\w)/g, '$1\\"$2');
+      
+      // Ensure proper string termination by balancing quotes
+      let openQuotes = (cleaned.match(/"/g) || []).length;
+      if (openQuotes % 2 !== 0) {
+        // If odd number of quotes, try to find and fix the unterminated string
+        const lastQuoteIndex = cleaned.lastIndexOf('"');
+        if (lastQuoteIndex !== -1 && lastQuoteIndex < cleaned.length - 1) {
+          // Add closing quote at the end if it seems like a string was cut off
+          cleaned += '"';
+        }
+      }
+      
+      // Balance braces and brackets
+      const openBraces = (cleaned.match(/\{/g) || []).length;
+      const closeBraces = (cleaned.match(/\}/g) || []).length;
+      const openBrackets = (cleaned.match(/\[/g) || []).length;
+      const closeBrackets = (cleaned.match(/\]/g) || []).length;
+      
+      // Add missing closing braces/brackets
+      for (let i = 0; i < openBraces - closeBraces; i++) {
+        cleaned += '}';
+      }
+      for (let i = 0; i < openBrackets - closeBrackets; i++) {
+        cleaned += ']';
+      }
+      
+    } catch (error) {
+      console.warn('JSON cleaning encountered an issue:', error.message);
+      // Return original if cleaning fails
+    }
+    
+    return cleaned;
   }
 
   /**
-   * Get instruction statistics
-   * @returns {Promise<Object>} Instruction statistics
+   * Validate JSON structure before parsing
+   * @param {string} jsonString - JSON string to validate
+   * @returns {boolean} True if structure appears valid
    */
-  async getInstructionStats() {
-    return wrapAsync(
-      async () => {
-        const instructions = await this.loadInstructions();
-        const pinnedQuickActions = await this.getPinnedInstructions();
-
-        const toolChoicesCount = {};
-
-        instructions.forEach(inst => {
-          // Count tool choices
-          const toolChoice = this.formatToolChoiceDisplay(inst.tool_choice);
-          toolChoicesCount[toolChoice] = (toolChoicesCount[toolChoice] || 0) + 1;
-        });
-
-        return {
-          totalInstructions: instructions.length,
-          pinnedInstructions: pinnedQuickActions.length,
-          toolChoicesCount,
-          recentlyCreated: instructions.filter(inst => {
-            const createdDate = new Date(inst.createdAt);
-            const weekAgo = new Date();
-            weekAgo.setDate(weekAgo.getDate() - 7);
-            return createdDate > weekAgo;
-          }).length,
-        };
-      },
-      {
-        category: ErrorCategory.STORAGE,
-        userMessage: 'Failed to get instruction statistics',
-        severity: ErrorSeverity.LOW,
+  isValidJsonStructure(jsonString) {
+    if (!jsonString || typeof jsonString !== 'string') {
+      return false;
+    }
+    
+    // Basic structure checks
+    const trimmed = jsonString.trim();
+    
+    // Must start with object or array
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return false;
+    }
+    
+    // Must end with matching closing character
+    if (!trimmed.endsWith('}') && !trimmed.endsWith(']')) {
+      return false;
+    }
+    
+    // Check for balanced braces (simple check)
+    const stack = [];
+    const pairs = { '{': '}', '[': ']' };
+    const closers = { '}': '{', ']': '[' };
+    
+    for (let i = 0; i < trimmed.length; i++) {
+      const char = trimmed[i];
+      
+      if (pairs[char]) {
+        stack.push(char);
+      } else if (closers[char]) {
+        if (stack.length === 0 || pairs[stack.pop()] !== char) {
+          return false;
+        }
       }
-    );
+    }
+    
+    return stack.length === 0;
+  }
+
+  /**
+   * Attempt to repair unterminated string in JSON response
+   * @param {string} responseContent - Raw response content
+   * @returns {string} Repaired JSON string
+   */
+  repairUnterminatedString(responseContent) {
+    let repaired = responseContent;
+    
+    try {
+      // First check if it's already valid JSON to avoid unnecessary modifications
+      try {
+        JSON.parse(repaired);
+        return repaired; // Return as-is if already valid
+      } catch (e) {
+        // Continue with repair if parsing fails
+      }
+      
+      // Find the position where the string might be unterminated
+      const unterminatedMatch = repaired.match(/"[^"]*$/);
+      
+      if (unterminatedMatch) {
+        const unterminatedString = unterminatedMatch[0];
+        const lastQuotePosition = repaired.lastIndexOf(unterminatedString);
+        
+        // Try to find where the string should logically end
+        if (lastQuotePosition !== -1) {
+          // Look for common patterns that might indicate the end of the content
+          const remainingContent = repaired.substring(lastQuotePosition + unterminatedString.length);
+          
+          // If there's content after the unterminated string, it might be part of the JSON structure
+          if (remainingContent.trim()) {
+            // Try to find where the actual content ends and JSON structure begins
+            const structureMatch = remainingContent.match(/\s*[,\}\]]\s*/);
+            if (structureMatch) {
+              // Add the missing quote before the JSON structure
+              repaired = repaired.substring(0, lastQuotePosition + unterminatedString.length) + 
+                         '"' + remainingContent;
+            } else {
+              // If no clear structure, just add the missing quote at the end
+              repaired += '"';
+            }
+          } else {
+            // Just add the missing quote at the end
+            repaired += '"';
+          }
+        }
+      }
+      
+      // Also try to fix any other obvious JSON structure issues
+      repaired = this.cleanJsonResponse(repaired);
+      
+    } catch (error) {
+      console.warn('String repair encountered an issue:', error.message);
+    }
+    
+    return repaired;
+  }
+
+  /**
+   * Fallback method to extract instruction from malformed JSON
+   * @param {string} responseContent - Raw response content
+   * @returns {Object|null} Extracted instruction or null
+   */
+  extractInstructionFromMalformedResponse(responseContent) {
+    try {
+      // Try to extract name and content using regex patterns
+      const nameMatch = responseContent.match(/"name"\s*:\s*"([^"]+)"/);
+      const contentMatch = responseContent.match(/"content"\s*:\s*"([^"]+)"/);
+
+      if (nameMatch && contentMatch) {
+        return {
+          name: nameMatch[1],
+          content: contentMatch[1]
+        };
+      }
+
+      // Try alternative patterns if standard JSON extraction fails
+      const altNameMatch = responseContent.match(/name\s*:\s*"([^"]+)"/);
+      const altContentMatch = responseContent.match(/content\s*:\s*"([^"]+)"/);
+
+      if (altNameMatch && altContentMatch) {
+        return {
+          name: altNameMatch[1],
+          content: altContentMatch[1]
+        };
+      }
+
+    } catch (error) {
+      console.warn('Fallback extraction failed:', error.message);
+    }
+
+    return null;
   }
 
   /**
