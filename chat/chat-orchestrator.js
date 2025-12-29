@@ -9,6 +9,7 @@ import { MessageRenderer } from './message-renderer.js';
 import { UIManager } from './ui-manager.js';
 import { StreamingManager } from './streaming-manager.js';
 import { ConversationManager } from './conversation-manager.js';
+import { SpeechManager } from './speech-manager.js';
 
 import logger from '../utils/logger.js'; /**
  * Chat Orchestrator
@@ -22,6 +23,7 @@ export class ChatOrchestrator {
     this.uiManager = null;
     this.streamingManager = null;
     this.conversationManager = null;
+    this.speechManager = null;
 
     // DOM elements
     this.chatArea = null;
@@ -69,6 +71,12 @@ export class ChatOrchestrator {
         this.uiManager,
         this.streamingManager
       );
+      this.speechManager = new SpeechManager(
+        this.userInput,
+        this.micDictationButton,
+        this.micIcon,
+        this.uiManager
+      );
 
       // Initialize conversation manager
       await this.conversationManager.initialize();
@@ -113,6 +121,8 @@ export class ChatOrchestrator {
     this.loadContextBtn = document.getElementById('load-context-button');
     this.pinnedActionsContainer = document.getElementById('pinned-actions-container');
     this.exportConversationBtn = document.getElementById('export-conversation-btn');
+    this.micDictationButton = document.getElementById('mic-dictation-button');
+    this.micIcon = document.getElementById('mic-icon');
 
     // Validate essential elements
     const requiredElements = [this.chatArea, this.userInput, this.sendButton];

@@ -61,6 +61,12 @@ class OptionsOrchestrator {
       // Check for instruction migration
       await this.checkInstructionMigration();
 
+      // Check for microphone permission request from sidebar
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('requestMic') === 'true') {
+        this.requestMicrophonePermission();
+      }
+
       this.isInitialized = true;
       logger.info('Options', 'Options: Orchestrator initialization complete');
     } catch (error) {
@@ -125,44 +131,44 @@ class OptionsOrchestrator {
     }
   }
 
-   /**
-    * Setup instruction event listeners
-    */
-   setupInstructionEventListeners() {
-     const saveInstructionBtn = this.uiComponents.getElement('saveInstruction');
-     const clearFormBtn = this.uiComponents.getElement('clearForm');
-     const generateInstructionBtn = this.uiComponents.getElement('generateInstruction');
-     const exportInstructions = this.uiComponents.getElement('exportInstructions');
-     const importInstructions = this.uiComponents.getElement('importInstructions');
-     const importFile = this.uiComponents.getElement('importFile');
+  /**
+   * Setup instruction event listeners
+   */
+  setupInstructionEventListeners() {
+    const saveInstructionBtn = this.uiComponents.getElement('saveInstruction');
+    const clearFormBtn = this.uiComponents.getElement('clearForm');
+    const generateInstructionBtn = this.uiComponents.getElement('generateInstruction');
+    const exportInstructions = this.uiComponents.getElement('exportInstructions');
+    const importInstructions = this.uiComponents.getElement('importInstructions');
+    const importFile = this.uiComponents.getElement('importFile');
 
-     if (saveInstructionBtn) {
-       saveInstructionBtn.addEventListener('click', () => this.handleSaveInstruction());
-     }
+    if (saveInstructionBtn) {
+      saveInstructionBtn.addEventListener('click', () => this.handleSaveInstruction());
+    }
 
-     if (generateInstructionBtn) {
-       generateInstructionBtn.addEventListener('click', () => this.handleGenerateInstruction());
-     }
+    if (generateInstructionBtn) {
+      generateInstructionBtn.addEventListener('click', () => this.handleGenerateInstruction());
+    }
 
-     if (clearFormBtn) {
-       clearFormBtn.addEventListener('click', () => this.handleClearInstructionForm());
-     }
+    if (clearFormBtn) {
+      clearFormBtn.addEventListener('click', () => this.handleClearInstructionForm());
+    }
 
-     if (exportInstructions) {
-       exportInstructions.addEventListener('click', () => this.handleExportInstructions());
-     }
+    if (exportInstructions) {
+      exportInstructions.addEventListener('click', () => this.handleExportInstructions());
+    }
 
-     if (importInstructions) {
-       importInstructions.addEventListener('click', () => this.handleImportInstructions());
-     }
+    if (importInstructions) {
+      importInstructions.addEventListener('click', () => this.handleImportInstructions());
+    }
 
-     if (importFile) {
-       importFile.addEventListener('change', event => this.handleInstructionImportFile(event));
-     }
+    if (importFile) {
+      importFile.addEventListener('change', event => this.handleInstructionImportFile(event));
+    }
 
-     // Setup dynamic event listeners for instruction table
-     this.setupInstructionTableListeners();
-   }
+    // Setup dynamic event listeners for instruction table
+    this.setupInstructionTableListeners();
+  }
 
   /**
    * Setup tool event listeners
@@ -673,72 +679,72 @@ class OptionsOrchestrator {
     }
   }
 
-   /**
-    * Handle generate instruction from goal
-    */
-   async handleGenerateInstruction() {
-     try {
-       const goalDescription = this.uiComponents.getElement('instructionGoal')?.value?.trim();
-       
-       if (!goalDescription || goalDescription === '') {
-         this.showStatus('Please enter a goal description to generate an instruction.', true);
-         return;
-       }
+  /**
+   * Handle generate instruction from goal
+   */
+  async handleGenerateInstruction() {
+    try {
+      const goalDescription = this.uiComponents.getElement('instructionGoal')?.value?.trim();
 
-       // Get current API configuration
-       const lastSelectedProfileId = await this.profileManager.getLastSelectedProfileId();
-       const apiConfig = await this.profileManager.getProfile(lastSelectedProfileId);
+      if (!goalDescription || goalDescription === '') {
+        this.showStatus('Please enter a goal description to generate an instruction.', true);
+        return;
+      }
 
-       const generatedInstruction = await this.instructionManager.generateInstructionFromGoal(
-         goalDescription,
-         apiConfig
-       );
+      // Get current API configuration
+      const lastSelectedProfileId = await this.profileManager.getLastSelectedProfileId();
+      const apiConfig = await this.profileManager.getProfile(lastSelectedProfileId);
 
-       // Update form with generated instruction
-       await this.uiComponents.populateFormFields(
-         {
-           instructionName: generatedInstruction.name,
-           instructionContent: generatedInstruction.content,
-         },
-         {
-           instructionName: 'instructionName',
-           instructionContent: 'instructionContent',
-         }
-       );
-     } catch (error) {
-       logger.error('Options', 'Options: Failed to generate instruction:', error);
-       await errorHandler.handleError(error);
-     }
-   }
+      const generatedInstruction = await this.instructionManager.generateInstructionFromGoal(
+        goalDescription,
+        apiConfig
+      );
 
-   /**
-    * Get instruction form data
-    * @returns {Object} Form data
-    */
-   getInstructionFormData() {
-     return {
-       instructionName: this.uiComponents.getElement('instructionName')?.value?.trim() || '',
-       instructionContent: this.uiComponents.getElement('instructionContent')?.value?.trim() || '',
-       instructionToolChoice:
-         this.uiComponents.getElement('instructionToolChoice')?.value?.trim() || '',
-     };
-   }
+      // Update form with generated instruction
+      await this.uiComponents.populateFormFields(
+        {
+          instructionName: generatedInstruction.name,
+          instructionContent: generatedInstruction.content,
+        },
+        {
+          instructionName: 'instructionName',
+          instructionContent: 'instructionContent',
+        }
+      );
+    } catch (error) {
+      logger.error('Options', 'Options: Failed to generate instruction:', error);
+      await errorHandler.handleError(error);
+    }
+  }
 
-   /**
-    * Handle clear instruction form
-    */
-   async handleClearInstructionForm() {
-     const fieldIds = [
-       'instructionName',
-       'instructionContent',
-       'instructionGoal',
-       'instructionId',
-       'instructionToolChoice',
-     ];
-     await this.uiComponents.clearFormFields(fieldIds);
+  /**
+   * Get instruction form data
+   * @returns {Object} Form data
+   */
+  getInstructionFormData() {
+    return {
+      instructionName: this.uiComponents.getElement('instructionName')?.value?.trim() || '',
+      instructionContent: this.uiComponents.getElement('instructionContent')?.value?.trim() || '',
+      instructionToolChoice:
+        this.uiComponents.getElement('instructionToolChoice')?.value?.trim() || '',
+    };
+  }
 
-     this.showStatus('Form cleared.');
-   }
+  /**
+   * Handle clear instruction form
+   */
+  async handleClearInstructionForm() {
+    const fieldIds = [
+      'instructionName',
+      'instructionContent',
+      'instructionGoal',
+      'instructionId',
+      'instructionToolChoice',
+    ];
+    await this.uiComponents.clearFormFields(fieldIds);
+
+    this.showStatus('Form cleared.');
+  }
 
   /**
    * Handle edit instruction
@@ -1348,6 +1354,26 @@ class OptionsOrchestrator {
         })
       );
     });
+  }
+
+  /**
+   * Request microphone permission by triggering getUserMedia
+   */
+  async requestMicrophonePermission() {
+    try {
+      logger.info('Options', 'Requesting microphone permission...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // If we get here, permission was granted
+      stream.getTracks().forEach(track => track.stop()); // Stop the stream immediately
+      this.showStatus('Microphone permission granted! You can now use dictation in the side panel.', false, true);
+    } catch (error) {
+      logger.error('Options', 'Failed to get microphone permission:', error);
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        this.showStatus('Microphone permission was denied. Please check your browser settings.', true, true);
+      } else {
+        this.showStatus('Error accessing microphone: ' + error.message, true, true);
+      }
+    }
   }
 }
 

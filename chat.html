@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>LLM Chat</title>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <!-- Styles migrated to external stylesheets (theme.css, hextaui-components.css, chat.css, loading-states.css) to comply with CSP -->
 </head>
@@ -11,36 +14,42 @@
 <link rel="stylesheet" href="hextaui-components.css">
 <link rel="stylesheet" href="chat.css?v=2">
 <link rel="stylesheet" href="loading-states.css">
+
 <body>
     <div class="main-layout">
         <div id="quick-actions-sidebar" class="sidebar hextaui-sidebar">
-        <!-- Preset "Summarize this tab" button -->
-        <button id="summarize-tab-button" class="hextaui-sidebar-action quick-action-button" title="Summarize this tab">S</button>
-        <button id="explain-button" class="hextaui-sidebar-action quick-action-button" title="Explain this tab">E</button>
-        <button id="load-context-button" class="hextaui-sidebar-action quick-action-button" title="Load Tab Context">
-            <span class="material-icons">web</span>
-        </button>
-        
+            <!-- Preset "Summarize this tab" button -->
+            <button id="summarize-tab-button" class="hextaui-sidebar-action quick-action-button"
+                title="Summarize this tab">S</button>
+            <button id="explain-button" class="hextaui-sidebar-action quick-action-button"
+                title="Explain this tab">E</button>
+            <button id="load-context-button" class="hextaui-sidebar-action quick-action-button"
+                title="Load Tab Context">
+                <span class="material-icons">web</span>
+            </button>
 
-        
 
-        
-        <!-- Actions section divider -->
-        <div class="sidebar-divider"></div>
 
-        <!-- Export button moved to main sidebar for alignment -->
-        <button class="hextaui-sidebar-action quick-action-button" id="export-conversation-btn" title="Export conversation">
-            <span class="material-icons">download</span>
-        </button>
 
-        <!-- Theme Toggle converted to icon-only button -->
-        <button class="hextaui-sidebar-action quick-action-button" id="theme-toggle-btn" title="Toggle Theme">
-            <span class="material-icons" id="theme-icon">light_mode</span>
-        </button>
-        
-        <!-- Pinned instructions will be added here by chat.js -->
-        <div id="pinned-actions-container"></div>
-        <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
+
+
+            <!-- Actions section divider -->
+            <div class="sidebar-divider"></div>
+
+            <!-- Export button moved to main sidebar for alignment -->
+            <button class="hextaui-sidebar-action quick-action-button" id="export-conversation-btn"
+                title="Export conversation">
+                <span class="material-icons">download</span>
+            </button>
+
+            <!-- Theme Toggle converted to icon-only button -->
+            <button class="hextaui-sidebar-action quick-action-button" id="theme-toggle-btn" title="Toggle Theme">
+                <span class="material-icons" id="theme-icon">light_mode</span>
+            </button>
+
+            <!-- Pinned instructions will be added here by chat.js -->
+            <div id="pinned-actions-container"></div>
+            <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
         </div>
         <!-- Theme Toggle moved to sidebar for better UX hierarchy -->
         <div class="chat-container">
@@ -51,8 +60,8 @@
             <div id="oneoff-instruction-area">
                 <h3>One-off Instruction context</h3>
                 <div class="context-container">
-                  <p class="context-label">Selected text:</p>
-                  <div id="selectedText" class="selected-text"></div>
+                    <p class="context-label">Selected text:</p>
+                    <div id="selectedText" class="selected-text"></div>
                 </div>
                 <p class="instruction-guide">Type your instruction in the input box below.</p>
             </div>
@@ -60,16 +69,24 @@
         <!-- Input area moved outside chat-container -->
         <div id="input-area">
             <div class="input-wrapper">
-                <textarea id="user-input" class="ext-input hextaui-input" placeholder="Ask me anything..." rows="1"></textarea>
-                <div class="input-help" id="input-help" data-tooltip="Right-click on images, text, or media to analyze them">
-                    <span class="material-icons">help_outline</span>
+                <textarea id="user-input" class="ext-input hextaui-input" placeholder="Ask me anything..."
+                    rows="1"></textarea>
+                <div class="input-actions-overlay">
+                    <button id="mic-dictation-button" class="input-action-btn" title="Voice Dictation">
+                        <span class="material-icons" id="mic-icon">mic</span>
+                    </button>
+                    <div class="input-help" id="input-help"
+                        data-tooltip="Right-click on images, text, or media to analyze them">
+                        <span class="material-icons">help_outline</span>
+                    </div>
                 </div>
             </div>
             <button id="send-button" class="ext-btn hextaui-btn hextaui-btn-primary">Send</button>
             <button id="clear-button" class="ext-btn hextaui-btn hextaui-btn-outline">Clear</button>
         </div>
-        </div>
+    </div>
     </div>
     <script type="module" src="chat.js"></script>
 </body>
+
 </html>
