@@ -17,6 +17,9 @@
         <!-- Preset "Summarize this tab" button -->
         <button id="summarize-tab-button" class="hextaui-sidebar-action quick-action-button" title="Summarize this tab">S</button>
         <button id="explain-button" class="hextaui-sidebar-action quick-action-button" title="Explain this tab">E</button>
+        <button id="load-context-button" class="hextaui-sidebar-action quick-action-button" title="Load Tab Context">
+            <span class="material-icons">web</span>
+        </button>
         
 
         
@@ -46,16 +49,12 @@
                 </div>
             </div>
             <div id="oneoff-instruction-area">
-                <h3>One-off Instruction</h3>
-                <div>
-                  <p>Selected text:</p>
+                <h3>One-off Instruction context</h3>
+                <div class="context-container">
+                  <p class="context-label">Selected text:</p>
                   <div id="selectedText" class="selected-text"></div>
                 </div>
-                <div>
-                  <p>Enter your instruction:</p>
-                  <textarea id="instructionInput" class="ext-textarea hextaui-textarea" placeholder="Enter your instruction here..."></textarea>
-                </div>
-                <button id="submitBtn" class="ext-btn hextaui-btn hextaui-btn-primary">Process</button>
+                <p class="instruction-guide">Type your instruction in the input box below.</p>
             </div>
         </div>
         <!-- Input area moved outside chat-container -->

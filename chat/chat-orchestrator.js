@@ -38,6 +38,7 @@ export class ChatOrchestrator {
     // State
     this.isInitialized = false;
     this.currentLoadingMessage = null;
+    this.oneoffContext = null; // Track one-off instruction context
   }
 
   /**
@@ -60,8 +61,8 @@ export class ChatOrchestrator {
       }
 
       // Initialize modules
-      this.messageRenderer = new MessageRenderer(this.chatArea, this.showToast.bind(this));
       this.uiManager = new UIManager(this.chatArea, this.showToast.bind(this), this.loadingManager);
+      this.messageRenderer = new MessageRenderer(this.chatArea, this.showToast.bind(this), this.uiManager);
       this.streamingManager = new StreamingManager(this.messageRenderer, this.uiManager);
       this.conversationManager = new ConversationManager(
         this.messageRenderer,
@@ -108,9 +109,8 @@ export class ChatOrchestrator {
     this.selectedTextDiv = document.getElementById('selectedText');
     this.explainBtn = document.getElementById('explain-button');
     this.customInstructionSelect = document.getElementById('customInstructionSelect');
-    this.instructionInput = document.getElementById('instructionInput');
-    this.submitBtn = document.getElementById('submitBtn');
     this.summarizeTabButton = document.getElementById('summarize-tab-button');
+    this.loadContextBtn = document.getElementById('load-context-button');
     this.pinnedActionsContainer = document.getElementById('pinned-actions-container');
     this.exportConversationBtn = document.getElementById('export-conversation-btn');
 
@@ -155,9 +155,9 @@ export class ChatOrchestrator {
       this.explainBtn.addEventListener('click', () => this.handleExplainContent());
     }
 
-    // Submit button click (one-off instructions)
-    if (this.submitBtn) {
-      this.submitBtn.addEventListener('click', () => this.handleSubmitInstruction());
+    // Load Context button click
+    if (this.loadContextBtn) {
+      this.loadContextBtn.addEventListener('click', () => this.handleLoadTabContext());
     }
 
     // Custom instruction change
@@ -301,19 +301,36 @@ export class ChatOrchestrator {
    * Handle send message
    */
   async handleSendMessage() {
-    const message = this.userInput.value.trim();
+    let message = this.userInput.value.trim();
     if (!message) return;
+
+    // Prepend one-off context if active
+    if (this.oneoffContext) {
+      message = `${message}\n\nContext:\n${this.oneoffContext}`;
+      // Log for debugging
+      logger.info('ChatOrchestrator', 'Chat: Sending message with one-off context');
+    }
 
     // Clear input
     this.userInput.value = '';
     this.uiManager.autoExpandTextarea(this.userInput);
 
-    // Add user message
-    this.messageRenderer.addMessage('User', message);
+    // If one-off mode was active, switch back to chat area
+    if (this.oneoffContext) {
+      this.uiManager.toggleAreas({
+        chatMainArea: { element: this.chatMainArea, visible: true },
+        oneoffInstructionArea: { element: this.oneoffInstructionArea, visible: false },
+      });
+      this.oneoffContext = null; // Reset context
+    }
+
+    // Add user message to UI
+    this.messageRenderer.addMessage('User', message.split('\n\nContext:')[0]);
 
     // Make API call
     await this.conversationManager.makeApiCall(message, {
       streaming: true,
+      isStartChat: true, // Treat consolidated one-off/start as a fresh chat context for clarity
       tool_choice: 'auto',
     });
   }
@@ -326,6 +343,7 @@ export class ChatOrchestrator {
     this.conversationManager.clearHistory();
     this.chatMainArea.style.display = 'block';
     this.oneoffInstructionArea.style.display = 'none';
+    this.oneoffContext = null; // Reset context
     this.userInput.focus();
   }
 
@@ -338,11 +356,13 @@ export class ChatOrchestrator {
     if (request.fromStartChat) {
       this.chatMainArea.style.display = 'block';
       this.oneoffInstructionArea.style.display = 'none';
+      this.oneoffContext = null;
       this.conversationManager.clearHistory();
     } else {
       this.uiManager.updateSelectedTextDisplay(this.selectedTextDiv);
       this.chatMainArea.style.display = 'none';
       this.oneoffInstructionArea.style.display = 'block';
+      this.oneoffContext = request.selectedText;
     }
   }
 
@@ -503,6 +523,55 @@ export class ChatOrchestrator {
   }
 
   /**
+   * Handle load tab context (quick action in sidebar)
+   * Loads current tab content into conversation history as context.
+   */
+  async handleLoadTabContext() {
+    try {
+      this.showToast('Loading tab context...');
+
+      const response = await this.sendRuntimeMessage({
+        action: 'getTabContent',
+      });
+
+      if (!response || !response.success) {
+        logger.error('ChatOrchestrator', 'Chat: getTabContent failed. Response:', response);
+        this.showToast(response?.error || 'Failed to get tab content', 'error');
+        return;
+      }
+
+      if (!response.content) {
+        this.showToast('No content received from tab.', 'warning');
+        return;
+      }
+
+      // Add context to conversation history
+      this.conversationManager.addToHistory({
+        role: 'system',
+        content: `The following is the content of the current tab for context:\n\n${response.content}`,
+      });
+
+      // Show a persistent notification box in the chat area
+      const tabTitle = response.title || 'the current tab';
+      this.messageRenderer.addMessage(
+        'System',
+        `Ready to chat about ${tabTitle}. Content length: ${response.content.length} characters.`,
+        {
+          isContext: true,
+          fullContent: response.content,
+          isError: false,
+          isHelp: false
+        }
+      );
+
+      this.showToast('Tab context loaded');
+    } catch (error) {
+      logger.error('ChatOrchestrator', 'Chat: Error loading tab context:', error);
+      this.showToast('Failed to load tab context', 'error');
+    }
+  }
+
+  /**
    * Handle explain content (quick action in sidebar)
    * Explains the current tab content, without requiring pre-selected text.
    */
@@ -605,35 +674,6 @@ export class ChatOrchestrator {
     logger.info('ChatOrchestrator', 'Chat: Pinned action response:', request);
   }
 
-  /**
-   * Handle submit instruction (one-off instruction)
-   */
-  async handleSubmitInstruction() {
-    try {
-      const instruction = this.instructionInput.value;
-      if (!instruction.trim()) {
-        this.showToast('Please enter an instruction', 'warning');
-        return;
-      }
-
-      // Get selected text for context
-      const selectedText = this.uiManager.getSelectedText();
-      const prompt = instruction + '\n\n' + selectedText;
-
-      // Show chat area and hide instruction area
-      this.uiManager.toggleAreas({
-        chatMainArea: { element: this.chatMainArea, visible: true },
-        oneoffInstructionArea: { element: this.oneoffInstructionArea, visible: false },
-      });
-
-      // Make API call with the instruction
-      await this.conversationManager.makeApiCall(prompt, { isStartChat: true });
-      this.showToast('Processing instruction...', false, true);
-    } catch (error) {
-      logger.error('ChatOrchestrator', 'Chat: Error submitting instruction:', error);
-      this.showToast('Failed to process instruction', 'error');
-    }
-  }
 
   /**
    * Handle explain content response
@@ -779,8 +819,9 @@ export class ChatOrchestrator {
 
   /**
    * Get instruction by ID from storage
+   * Get instruction by ID from storage
    * @param {string} instructionId - The instruction ID to fetch
-   * @returns {Object|null} The instruction object or null if not found
+   * @returns {Promise<Object|null>} The instruction object or null if not found
    */
   async getInstructionById(instructionId) {
     try {

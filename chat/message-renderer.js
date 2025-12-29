@@ -7,9 +7,10 @@ import { renderMarkdown } from '../utils/markdown.js';
  * Manages markdown processing, theme-aware styling, and user interactions
  */
 export class MessageRenderer {
-  constructor(chatArea, showToast) {
+  constructor(chatArea, showToast, uiManager = null) {
     this.chatArea = chatArea;
     this.showToast = showToast;
+    this.uiManager = uiManager;
     this.messageIcons = {
       copyRaw: {
         // Raw/markdown copy icon paths
@@ -32,13 +33,15 @@ export class MessageRenderer {
    * Add a message to the chat area
    * @param {string} sender - Message sender ('User', 'System', 'LLM')
    * @param {string} message - Message content
-   * @param {Object} options - Additional options for message styling
-   * @param {boolean} options.isError - Whether this is an error message
-   * @param {boolean} options.isHelp - Whether this is a help message
+   * @param {Object} [options={}] - Additional options for message styling
+   * @param {boolean} [options.isError=false] - Whether this is an error message
+   * @param {boolean} [options.isHelp=false] - Whether this is a help message
+   * @param {boolean} [options.isContext=false] - Whether this is a context-loaded notification
+   * @param {string} [options.fullContent=''] - The actual content for context-loaded messages
    * @returns {Object} Message elements and unique ID
    */
   addMessage(sender, message, options = {}) {
-    const { isError = false, isHelp = false } = options;
+    const { isError = false, isHelp = false, isContext = false, fullContent = '' } = options;
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
     // Default content target is the message div itself, but can be switched
@@ -87,6 +90,89 @@ export class MessageRenderer {
         contentElement.innerHTML = renderMarkdown(message || '');
         messageDiv.innerHTML = ''; // Clear textContent
         messageDiv.appendChild(contentElement); // Add processed HTML
+      } else if (isContext) {
+        messageDiv.classList.add('system-context');
+        // Set custom styling for context-loaded messages
+        messageDiv.style.cssText = `
+                  background-color: var(--card);
+                  border: 1px solid var(--primary);
+                  border-radius: var(--radius-lg);
+                  color: var(--foreground);
+                  padding: 1rem;
+                  margin: 1rem 0;
+                  display: flex;
+                  flex-direction: column;
+                  gap: 0.5rem;
+                  box-shadow: var(--shadow-md);
+                  animation: slideIn 0.3s ease-out;
+              `;
+
+        const header = document.createElement('div');
+        header.style.cssText = `
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                  color: var(--primary);
+                  font-weight: 600;
+                  font-size: 0.9rem;
+              `;
+        header.innerHTML = '<span class="material-icons" style="font-size: 1.2rem;">article</span> Tab Context Loaded';
+
+        const body = document.createElement('div');
+        body.style.cssText = `
+                  font-size: 0.85rem;
+                  color: var(--muted-foreground);
+                  line-height: 1.4;
+              `;
+        body.textContent = message;
+
+        messageDiv.innerHTML = ''; // Clear textContent
+        messageDiv.appendChild(header);
+        messageDiv.appendChild(body);
+
+        // Add clickable content view if fullContent is provided
+        if (fullContent) {
+          messageDiv.style.cursor = 'pointer';
+          messageDiv.title = 'Click to view loaded content';
+
+          const contentOverlay = document.createElement('div');
+          contentOverlay.style.cssText = `
+                    display: none;
+                    margin-top: 1rem;
+                    padding-top: 1rem;
+                    border-top: 1px dashed var(--border);
+                    font-family: var(--font-mono);
+                    font-size: 0.8rem;
+                    max-height: 200px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    color: var(--muted-foreground);
+                    background: rgba(0, 0, 0, 0.02);
+                `;
+          contentOverlay.textContent = fullContent;
+          messageDiv.appendChild(contentOverlay);
+
+          const footer = document.createElement('div');
+          footer.style.cssText = `
+                    margin-top: 0.5rem;
+                    font-size: 0.75rem;
+                    color: var(--primary);
+                    display: flex;
+                    align-items: center;
+                    gap: 0.25rem;
+                `;
+          footer.innerHTML =
+            '<span class="material-icons" style="font-size: 0.9rem;">expand_more</span> Click to show content';
+          messageDiv.appendChild(footer);
+
+          messageDiv.addEventListener('click', () => {
+            const isVisible = contentOverlay.style.display === 'block';
+            contentOverlay.style.display = isVisible ? 'none' : 'block';
+            footer.innerHTML = isVisible
+              ? '<span class="material-icons" style="font-size: 0.9rem;">expand_more</span> Click to show content'
+              : '<span class="material-icons" style="font-size: 0.9rem;">expand_less</span> Click to hide content';
+          });
+        }
       } else {
         messageDiv.textContent = 'System: ' + message;
       }
