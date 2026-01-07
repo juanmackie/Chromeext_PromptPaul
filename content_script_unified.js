@@ -1,10 +1,19 @@
 // content_script_unified.js - Consolidated content extraction script
 (async function () {
+  // Singleton guard to prevent multiple instances of listeners, but allow re-extraction
+  const isReload = window.__promptPaulContentScriptLoaded;
+  window.__promptPaulContentScriptLoaded = true;
+
+  if (isReload) {
+    console.debug('[Content Script] Reloaded in this context, skipping listener initialization but running extraction.');
+  }
+
   // Error handler is not directly imported in content scripts due to scope limitations
   // We'll use a simplified error handling approach here
   let content = '';
   let success = false;
   let errorMessage = '';
+  let images = [];
 
   const handleError = (error, context = {}) => {
     console.error('[ContentScript] Content Script Error:', error, context);
@@ -143,6 +152,11 @@
       }
 
       try {
+        // Disconnect if already initialized to clean up existing observers
+        if (this.observer) {
+          this.disconnect();
+        }
+
         this.observer = new MutationObserver(mutations => {
           this.handleMutations(mutations);
         });
@@ -155,7 +169,7 @@
           characterData: false,
         });
 
-        console.log('[Content Script] Dynamic content detector initialized');
+        console.debug('[Content Script] Dynamic content detector initialized');
       } catch (error) {
         console.warn('[Content Script] Failed to initialize MutationObserver:', error);
       }
@@ -179,9 +193,6 @@
       try {
         // Early exit if document/body is missing
         if (!document || !document.body) {
-          console.log(
-            '[Content Script] Dynamic content detector: document/body missing during mutation processing'
-          );
           return;
         }
 
@@ -190,13 +201,16 @@
         const changePercentage =
           this.lastContentLength > 0 ? (contentChange / this.lastContentLength) * 100 : 0;
 
+        // Update lastContentLength immediately to block subsequent mutations in the same burst
+        const oldLength = this.lastContentLength;
+        this.lastContentLength = currentContentLength;
+
         // Only trigger content extraction if significant change occurred
         if (changePercentage > 5 || contentChange > 1000) {
           // 5% change or 1000+ characters
           console.log(
             `[Content Script] Significant content change detected (${changePercentage.toFixed(1)}%, ${contentChange} chars)`
           );
-          this.lastContentLength = currentContentLength;
 
           // Use requestIdleCallback to avoid blocking
           if (window.requestIdleCallback) {
@@ -210,11 +224,11 @@
             // Fallback
             setTimeout(() => this.handleContentChange(), 100);
           }
-        } else if (contentChange > 100) {
-          console.log(
+        } else if (contentChange > 500) {
+          // Minor change, log only if substantial but below the trigger threshold
+          console.debug(
             `[Content Script] Minor content change detected (${contentChange} chars, below threshold)`
           );
-          this.lastContentLength = currentContentLength;
         }
       } catch (error) {
         console.warn('[Content Script] Error processing mutations:', error);
@@ -239,18 +253,11 @@
           }
         }
 
-        console.log('[Content Script] Processing dynamic content change...');
+        console.debug('[Content Script] Processing dynamic content change...');
 
         // Here you could trigger content re-extraction if needed
-        // For now, just log event to monitor performance
-        const memoryInfo = window.performance && window.performance.memory;
-        if (memoryInfo) {
-          console.log('[Content Script] Memory usage:', {
-            used: Math.round(memoryInfo.usedJSHeapSize / 1024 / 1024) + 'MB',
-            total: Math.round(memoryInfo.totalJSHeapSize / 1024 / 1024) + 'MB',
-            limit: Math.round(memoryInfo.jsHeapSizeLimit / 1024 / 1024) + 'MB',
-          });
-        }
+        // For now, just log event to monitor performance if we are in high-debug mode
+        // Removed memory usage log as it's too spammy
       } catch (error) {
         console.warn('[Content Script] Error handling content change:', error);
       }
@@ -273,7 +280,7 @@
       }
 
       this.isInitialized = false;
-      console.log('[Content Script] Dynamic content detector disconnected');
+      console.debug('[Content Script] Dynamic content detector disconnected');
     },
 
     // Get observer status
@@ -288,6 +295,51 @@
   };
 
   try {
+    // Function to extract prominent images from the page
+    function extractProminentImages() {
+      try {
+        const images = Array.from(document.querySelectorAll('img'));
+        return images
+          .filter(img => {
+            const rect = img.getBoundingClientRect();
+            // Filter by size (either natural or rendered)
+            const isLargeEnough =
+              (img.naturalWidth > 150 && img.naturalHeight > 150) ||
+              (rect.width > 150 && rect.height > 150);
+
+            // Basic visibility check
+            const style = window.getComputedStyle(img);
+            const isVisible =
+              rect.width > 0 &&
+              rect.height > 0 &&
+              style.display !== 'none' &&
+              style.visibility !== 'hidden' &&
+              style.opacity !== '0';
+
+            // Filter out common UI elements/icons
+            const src = img.src.toLowerCase();
+            const isNotIcon =
+              !src.includes('icon') &&
+              !src.includes('logo') &&
+              !src.includes('avatar') &&
+              !src.endsWith('.svg') &&
+              !src.startsWith('data:image/svg+xml');
+
+            return isLargeEnough && isVisible && isNotIcon;
+          })
+          .sort((a, b) => {
+            const areaA = (a.naturalWidth || a.width) * (a.naturalHeight || a.height);
+            const areaB = (b.naturalWidth || b.width) * (b.naturalHeight || b.height);
+            return areaB - areaA;
+          })
+          .slice(0, 3)
+          .map(img => img.src);
+      } catch (e) {
+        console.warn('[Content Script] Failed to extract prominent images:', e);
+        return [];
+      }
+    }
+
     // Function to calculate content quality score
     function calculateContentScore(text, element) {
       if (!text || text.length < 50) return 0;
@@ -788,71 +840,74 @@
       }
     }
 
-    if (content) {
+    images = extractProminentImages();
+    if (content || images.length > 0) {
       success = true;
-      // Enhanced cleanup and filtering
-      content = content
-        // Remove JavaScript and technical content patterns
-        .replace(/JavaScript Function \([^)]*\).*$/gim, '')
-        .replace(/Additional Code:.*$/gim, '')
-        .replace(/function\s+\w+\s*\([^)]*\)\s*\{[^}]*\}/gim, '')
-        .replace(/var\s+\w+\s*=.*$/gim, '')
-        .replace(/const\s+\w+\s*=.*$/gim, '')
-        .replace(/let\s+\w+\s*=.*$/gim, '')
-        .replace(/\w+\s*:\s*function\s*\([^)]*\)/gim, '')
-        .replace(/\w+\(\s*[^)]*\s*\)\s*;?/gim, '')
+      if (content) {
+        // Enhanced cleanup and filtering
+        content = content
+          // Remove JavaScript and technical content patterns
+          .replace(/JavaScript Function \([^)]*\).*$/gim, '')
+          .replace(/Additional Code:.*$/gim, '')
+          .replace(/function\s+\w+\s*\([^)]*\)\s*\{[^}]*\}/gim, '')
+          .replace(/var\s+\w+\s*=.*$/gim, '')
+          .replace(/const\s+\w+\s*=.*$/gim, '')
+          .replace(/let\s+\w+\s*=.*$/gim, '')
+          .replace(/\w+\s*:\s*function\s*\([^)]*\)/gim, '')
+          .replace(/\w+\(\s*[^)]*\s*\)\s*;?/gim, '')
 
-        // Remove analytics and tracking mentions
-        .replace(/There's a \w+ script for.*$/gim, '')
-        .replace(/.*tracking and analytics.*$/gim, '')
-        .replace(/.*initialized with.*encoded key.*$/gim, '')
-        .replace(/.*Vitally.*script.*$/gim, '')
-        .replace(/.*Intercom.*messenger.*$/gim, '')
-        .replace(/.*CSS styles.*included.*$/gim, '')
-        .replace(/.*modal states.*$/gim, '')
+          // Remove analytics and tracking mentions
+          .replace(/There's a \w+ script for.*$/gim, '')
+          .replace(/.*tracking and analytics.*$/gim, '')
+          .replace(/.*initialized with.*encoded key.*$/gim, '')
+          .replace(/.*Vitally.*script.*$/gim, '')
+          .replace(/.*Intercom.*messenger.*$/gim, '')
+          .replace(/.*CSS styles.*included.*$/gim, '')
+          .replace(/.*modal states.*$/gim, '')
 
-        // Remove common warning/notice text patterns
-        .replace(/^(warning|alert|notice|error|info):\s*/gim, '')
-        .replace(/^(please note|important|attention):\s*/gim, '')
-        .replace(/^(cookie|privacy) (notice|policy|warning).*$/gim, '')
-        .replace(/^this (site|website) uses cookies.*$/gim, '')
-        .replace(/^by continuing to use.*$/gim, '')
-        .replace(/^accept (all )?cookies.*$/gim, '')
-        .replace(/^we use cookies.*$/gim, '')
-        .replace(/^this website uses.*cookies.*$/gim, '')
+          // Remove common warning/notice text patterns
+          .replace(/^(warning|alert|notice|error|info):\s*/gim, '')
+          .replace(/^(please note|important|attention):\s*/gim, '')
+          .replace(/^(cookie|privacy) (notice|policy|warning).*$/gim, '')
+          .replace(/^this (site|website) uses cookies.*$/gim, '')
+          .replace(/^by continuing to use.*$/gim, '')
+          .replace(/^accept (all )?cookies.*$/gim, '')
+          .replace(/^we use cookies.*$/gim, '')
+          .replace(/^this website uses.*cookies.*$/gim, '')
 
-        // Remove common UI text
-        .replace(/^(skip to|jump to) (main )?content$/gim, '')
-        .replace(/^(back to top|scroll to top)$/gim, '')
-        .replace(/^(share|follow|subscribe|newsletter)$/gim, '')
-        .replace(/^(related articles?|more articles?|trending|popular)$/gim, '')
+          // Remove common UI text
+          .replace(/^(skip to|jump to) (main )?content$/gim, '')
+          .replace(/^(back to top|scroll to top)$/gim, '')
+          .replace(/^(share|follow|subscribe|newsletter)$/gim, '')
+          .replace(/^(related articles?|more articles?|trending|popular)$/gim, '')
 
-        // Remove code-like patterns
-        .replace(/\{[^}]*\}/gim, '') // Remove CSS/JS object notation
-        .replace(/\[[^\]]*\]/gim, '') // Remove array notation
-        .replace(/\w+\.\w+\([^)]*\)/gim, '') // Remove method calls
-        .replace(/\/\*.*?\*\//gim, '') // Remove CSS/JS comments
-        .replace(/\/\/.*$/gim, '') // Remove single-line comments
+          // Remove code-like patterns
+          .replace(/\{[^}]*\}/gim, '') // Remove CSS/JS object notation
+          .replace(/\[[^\]]*\]/gim, '') // Remove array notation
+          .replace(/\w+\.\w+\([^)]*\)/gim, '') // Remove method calls
+          .replace(/\/\*.*?\*\//gim, '') // Remove CSS/JS comments
+          .replace(/\/\/.*$/gim, '') // Remove single-line comments
 
-        // Clean up whitespace
-        .replace(/\n{3,}/g, '\n\n') // Replace 3+ newlines with 2
-        .replace(/\t+/g, ' ') // Replace tabs with spaces
-        .replace(/[ ]{2,}/g, ' ') // Replace multiple spaces with single space
-        .replace(/^\s*[\r\n]/gm, '') // Remove empty lines
-        .trim();
+          // Clean up whitespace
+          .replace(/\n{3,}/g, '\n\n') // Replace 3+ newlines with 2
+          .replace(/\t+/g, ' ') // Replace tabs with spaces
+          .replace(/[ ]{2,}/g, ' ') // Replace multiple spaces with single space
+          .replace(/^\s*[\r\n]/gm, '') // Remove empty lines
+          .trim();
 
-      // Final check - if content is too short or seems like just UI text, mark as empty
-      if (
-        content.length < 50 ||
-        /^(home|menu|search|login|register|contact|about|privacy|terms)$/i.test(content) ||
-        /^(loading|please wait|error|not found|404)$/i.test(content)
-      ) {
-        content = '';
-        errorMessage = 'Page appears to contain only navigation or UI elements.';
+        // Final check - if content is too short or seems like just UI text, mark as empty
+        if (
+          content.length < 50 ||
+          /^(home|menu|search|login|register|contact|about|privacy|terms)$/i.test(content) ||
+          /^(loading|please wait|error|not found|404)$/i.test(content)
+        ) {
+          content = '';
+          errorMessage = 'Page appears to contain only navigation or UI elements.';
+        }
+      } else {
+        errorMessage = 'Page appears to have no extractable textual content.';
+        success = true; // Still successful extraction, just empty content
       }
-    } else {
-      errorMessage = 'Page appears to have no extractable textual content.';
-      success = true; // Still successful extraction, just empty content
     }
   } catch (e) {
     handleError(e, {
@@ -866,9 +921,9 @@
 
   // Initialize dynamic content detection after helpers are defined
   try {
-    if (typeof DynamicContentDetector !== 'undefined') {
+    if (!isReload && typeof DynamicContentDetector !== 'undefined') {
       DynamicContentDetector.initialize();
-    } else {
+    } else if (!isReload) {
       console.warn(
         '[Content Script] DynamicContentDetector is not defined, skipping initialization'
       );
@@ -877,40 +932,51 @@
     console.warn('[Content Script] Failed to initialize dynamic content detector:', error);
   }
 
-  // Set up cleanup on page unload to prevent memory leaks
-  try {
-    window.addEventListener('beforeunload', () => {
-      console.log('[Content Script] Cleaning up before page unload...');
-      if (typeof DynamicContentDetector !== 'undefined') {
-        DynamicContentDetector.disconnect();
-      }
-    });
-
-    // Also handle visibility change (user switching tabs)
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        console.log('[Content Script] Page hidden, pausing content detection...');
+  // Set up cleanup on page unload to prevent memory leaks (only once)
+  if (!isReload) {
+    try {
+      window.addEventListener('beforeunload', () => {
+        console.log('[Content Script] Cleaning up before page unload...');
         if (typeof DynamicContentDetector !== 'undefined') {
           DynamicContentDetector.disconnect();
         }
-      } else {
-        console.log('[Content Script] Page visible, restarting content detection...');
-        if (typeof DynamicContentDetector !== 'undefined') {
-          DynamicContentDetector.initialize();
+      });
+
+      // Also handle visibility change (user switching tabs)
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          console.debug('[Content Script] Page hidden, pausing content detection...');
+          if (typeof DynamicContentDetector !== 'undefined') {
+            DynamicContentDetector.disconnect();
+          }
+        } else {
+          console.debug('[Content Script] Page visible, restarting content detection...');
+          if (typeof DynamicContentDetector !== 'undefined') {
+            DynamicContentDetector.initialize();
+          }
         }
-      }
-    });
-  } catch (error) {
-    console.warn('[Content Script] Failed to set up cleanup listeners:', error);
+      });
+    } catch (error) {
+      console.warn('[Content Script] Failed to set up cleanup listeners:', error);
+    }
   }
 
   // Return the extraction result
-  return {
+  const result = {
     success: success,
     data: content,
+    images: images || [],
     error: errorMessage,
     url: window.location.href,
     title: document.title || '',
     timestamp: Date.now(),
   };
+
+  // Expose internal objects for unit tests if re-initialization flag is set
+  if (window.__promptPaulAllowReinitialization) {
+    window.DynamicContentDetector = DynamicContentDetector;
+    window.ProgressiveDOMProcessor = ProgressiveDOMProcessor;
+  }
+
+  return result;
 })();

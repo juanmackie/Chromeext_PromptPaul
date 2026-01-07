@@ -792,9 +792,6 @@ body.sidebar-open #input-area {
   /* Input area spans both columns */
 }
 
-body.sidebar-open #chat-area {
-  /* Chat area remains in column 2 */
-}
 
 .dark {
   --md-sys-color-primary: rgb(132 210 229);
@@ -1330,4 +1327,163 @@ td {
   opacity: 0.9;
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
+}
+
+/* Guide Mode Styles */
+.guide-panel {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  z-index: 1001;
+  /* Above almost everything inner */
+  background: var(--card);
+  border: 1px solid var(--primary);
+  box-shadow: var(--shadow-xl);
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(8px);
+  animation: slideDown 0.3s ease-out;
+  transition: all 0.3s ease;
+}
+
+.guide-panel.collapsed {
+  padding-bottom: 0.5rem;
+}
+
+.guide-panel.collapsed #guide-panel-content {
+  display: none;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.guide-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.guide-panel .panel-header h4 {
+  margin: 0;
+  color: var(--primary);
+  font-family: var(--font-serif);
+}
+
+.guide-panel .panel-desc {
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+  margin-bottom: 1rem;
+}
+
+.guide-panel .input-group {
+  margin-bottom: 1rem;
+}
+
+.guide-panel .input-group label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+  color: var(--foreground);
+}
+
+.guide-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.guide-panel .panel-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.guide-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.guide-countdown {
+  margin-left: auto;
+  font-weight: normal;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+}
+
+.status-text {
+  flex-grow: 1;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--primary);
+  border-radius: 50%;
+  animation: pulse-guide 2s infinite;
+}
+
+@keyframes pulse-guide {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0.7);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(var(--primary-rgb), 0);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0);
+  }
+}
+
+/* Distinctive Guide Insight Message Styling */
+.guide-insight-message {
+  background: linear-gradient(to bottom right, var(--accent), var(--card)) !important;
+  border-left: 4px solid var(--primary) !important;
+  border-bottom: 2px solid var(--primary) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.guide-insight-message::after {
+  content: '🧭 GUIDE';
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  opacity: 0.3;
 }

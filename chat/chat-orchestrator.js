@@ -10,6 +10,7 @@ import { UIManager } from './ui-manager.js';
 import { StreamingManager } from './streaming-manager.js';
 import { ConversationManager } from './conversation-manager.js';
 import { SpeechManager } from './speech-manager.js';
+import { GuideModeManager } from './guide-mode-manager.js';
 
 import logger from '../utils/logger.js'; /**
  * Chat Orchestrator
@@ -24,6 +25,7 @@ export class ChatOrchestrator {
     this.streamingManager = null;
     this.conversationManager = null;
     this.speechManager = null;
+    this.guideModeManager = null;
 
     // DOM elements
     this.chatArea = null;
@@ -75,6 +77,12 @@ export class ChatOrchestrator {
         this.userInput,
         this.micDictationButton,
         this.micIcon,
+        this.uiManager
+      );
+      this.guideModeManager = new GuideModeManager(
+        this,
+        this.conversationManager,
+        this.messageRenderer,
         this.uiManager
       );
 
@@ -189,11 +197,29 @@ export class ChatOrchestrator {
    */
   setupChromeMessageListeners() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      this.handleChromeMessage(request, sender, sendResponse);
-      // Immediately acknowledge receipt to prevent "message port closed" errors.
-      // The background script waits for this response when using sendMessageWithRetry.
-      // We don't need to return data for these events, just an ack.
-      sendResponse({ received: true });
+      const handledActions = [
+        'setSelectedText',
+        'setMediaForAnalysis',
+        'streamApiStart',
+        'streamApiResponseChunk',
+        'streamApiToolCallChunk',
+        'streamApiAnthropicContentBlockStart',
+        'streamApiAnthropicMessageStop',
+        'streamApiEnd',
+        'setApiResponse',
+        'handleToolCallResponse',
+        'displayErrorInChat',
+        'tabContentResponse',
+        'pinnedActionTabContentResponse',
+        'explainContentResponse'
+      ];
+
+      if (handledActions.includes(request.action)) {
+        this.handleChromeMessage(request, sender, sendResponse);
+        return true; // Keep channel open for async response
+      }
+
+      // Not a handled action, don't return true and don't sendResponse
       return false;
     });
   }
@@ -205,6 +231,7 @@ export class ChatOrchestrator {
     try {
       logger.info('ChatOrchestrator', 'Chat: Received message:', request.action);
 
+      // No check needed here as it's filtered by the listener
       switch (request.action) {
         case 'setSelectedText':
           this.handleSetSelectedText(request);
@@ -291,11 +318,13 @@ export class ChatOrchestrator {
           // No-op in chat context
           break;
 
-        default:
-          logger.warn('ChatOrchestrator', 'Chat: Unknown message action:', request.action);
       }
+
+      // Successfully processed a handled message, send acknowledgment
+      sendResponse({ received: true });
     } catch (error) {
       logger.error('ChatOrchestrator', 'Chat: Error handling message:', error);
+      sendResponse({ received: false, error: error.message });
       await errorHandler.handleError(
         createError('Message handling failed', {
           category: ErrorCategory.SYSTEM,

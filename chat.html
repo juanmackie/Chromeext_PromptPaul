@@ -2,6 +2,7 @@
 <html>
 
 <head>
+    <meta charset="UTF-8">
     <title>LLM Chat</title>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap"
         rel="stylesheet">
@@ -28,10 +29,11 @@
                 <span class="material-icons">web</span>
             </button>
 
-
-
-
-
+            <!-- Guide Mode Toggle -->
+            <button id="guide-mode-toggle-btn" class="hextaui-sidebar-action quick-action-button"
+                title="Toggle Guide Mode">
+                <span class="material-icons">explore</span>
+            </button>
 
             <!-- Actions section divider -->
             <div class="sidebar-divider"></div>
@@ -53,6 +55,41 @@
         </div>
         <!-- Theme Toggle moved to sidebar for better UX hierarchy -->
         <div class="chat-container">
+            <!-- Guide Mode Configuration Panel -->
+            <div id="guide-mode-panel" class="hextaui-card guide-panel" style="display: none;">
+                <div class="panel-header">
+                    <div class="header-left">
+                        <h4><span class="material-icons"
+                                style="vertical-align: middle; font-size: 1.2rem; margin-right: 4px;">explore</span>
+                            Guide
+                            Mode</h4>
+                        <div id="guide-status-indicator" class="guide-status" style="display: none;">
+                            <span class="pulse-dot"></span>
+                            <span id="guide-countdown" class="guide-countdown"></span>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <button id="toggle-collapse-guide" class="icon-btn" title="Collapse/Expand"><span
+                                class="material-icons">expand_less</span></button>
+                        <button id="close-guide-panel" class="icon-btn" title="Close Panel"><span
+                                class="material-icons">close</span></button>
+                    </div>
+                </div>
+                <div id="guide-panel-content">
+                    <p class="panel-desc">Set your goal and I'll provide periodic insights based on your context.</p>
+                    <div class="input-group">
+                        <label for="guide-goal">Your Goal</label>
+                        <textarea id="guide-goal" class="hextaui-input" placeholder="e.g., I'm researching AI safety..."
+                            rows="2"></textarea>
+                    </div>
+                    <div class="panel-actions">
+                        <button id="start-guide-btn" class="hextaui-btn hextaui-btn-primary">Start Guide</button>
+                        <button id="stop-guide-btn" class="hextaui-btn hextaui-btn-outline" style="display: none;">Stop
+                            Guide</button>
+                    </div>
+                </div>
+            </div>
+
             <div id="chat-main-area">
                 <div id="chat-area">
                 </div>

@@ -43,6 +43,9 @@ function runContentScriptWith(html) {
     },
   };
 
+  // Allow re-initialization in tests
+  window.__promptPaulAllowReinitialization = true;
+
   // Execute the content script in the JSDOM context.
   dom.runVMScript(new window.vm.Script(scriptSource));
 

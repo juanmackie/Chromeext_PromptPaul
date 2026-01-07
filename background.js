@@ -253,6 +253,16 @@ async function processImageForAnalysis(imageUrl, tab, actionType, instructionId 
   }
 }
 
+// Helper to check if a URL is restricted for script injection
+function isRestrictedUrl(url) {
+  if (!url) return true;
+  return url.startsWith('chrome://') ||
+    url.startsWith('chrome-extension://') ||
+    url.startsWith('about:') ||
+    url.startsWith('edge://') ||
+    url.includes('chrome.google.com/webstore');
+}
+
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   const menuItemId = info.menuItemId;
@@ -477,21 +487,55 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             break;
           }
 
-          logger.info('Background', `getTabContent executing for tab: ${targetTabId}`);
-
           try {
+            // Get tab details to check URL
+            const tab = await chrome.tabs.get(targetTabId);
+            if (isRestrictedUrl(tab.url)) {
+              logger.info('Background', `getTabContent skipped: Restricted URL ${tab.url}`);
+              safeSendResponse({
+                success: false,
+                error: 'restricted_page',
+                url: tab.url
+              });
+              break;
+            }
+
+            logger.info('Background', `getTabContent executing for tab: ${targetTabId}`);
+
             const [result] = await chrome.scripting.executeScript({
               target: { tabId: targetTabId },
-              func: () => {
-                // Extract page content - prioritize selected text, then full page content
-                const selection = window.getSelection().toString();
-                const pageContent = document.body.innerText;
-                return selection || pageContent || '';
-              },
+              files: ['content_script_unified.js'],
             });
 
-            if (result && result.result !== undefined) {
-              safeSendResponse({ success: true, content: result.result });
+            if (result && result.result) {
+              const extResult = result.result;
+
+              // Handle optional image fetching if requested (e.g. for Guide Mode)
+              let primaryImageData = null;
+              if (request.includeImages && extResult.images && extResult.images.length > 0) {
+                const imageUrl = extResult.images[0];
+                try {
+                  const mediaData = await mediaHandler.fetchMediaAsBase64(imageUrl);
+                  primaryImageData = {
+                    base64: mediaData.base64,
+                    mimeType: mediaData.mimeType || mediaHandler.getMimeTypeFromUrl(imageUrl),
+                    url: imageUrl,
+                    type: 'image'
+                  };
+                } catch (imgError) {
+                  logger.warn('Background', 'Failed to fetch prominent image for tab content:', imgError);
+                }
+              }
+
+              safeSendResponse({
+                success: true,
+                content: extResult.data || '',
+                text: extResult.data || '', // Duplicate for compatibility
+                images: extResult.images || [],
+                primaryImage: primaryImageData,
+                title: extResult.title || '',
+                url: extResult.url || ''
+              });
             } else {
               logger.warn('Background', 'getTabContent failed: Extraction returned no result');
               safeSendResponse({ success: false, error: 'Failed to extract content' });
@@ -500,7 +544,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             logger.error('Background', 'getTabContent error:', error);
             safeSendResponse({
               success: false,
-              error: error.message || String(error) || 'Unknown error occurred during content extraction'
+              error: 'Failed to inject/execute content script: ' + (error.message || String(error))
             });
           }
           break;
@@ -558,6 +602,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
           break;
 
+
         case 'makeLlmApiRequest':
           // Use tabId from request if available, otherwise from sender
           const tabId = request.tabId || sender.tab?.id;
@@ -572,6 +617,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         case 'executeTool':
           const toolResult = await toolManager.executeTool(request.toolCall, request.config);
           safeSendResponse(toolResult);
+          break;
+
+        case 'captureTab':
+          try {
+            const captureWindowId = request.windowId || sender.tab?.windowId;
+            if (typeof captureWindowId !== 'number') {
+              safeSendResponse({ success: false, error: 'No window context for capture' });
+              break;
+            }
+
+            logger.info('Background', `Capturing visible tab for window: ${captureWindowId}`);
+            chrome.tabs.captureVisibleTab(captureWindowId, { format: 'png' }, (dataUrl) => {
+              if (chrome.runtime.lastError) {
+                logger.error('Background', 'captureVisibleTab error:', chrome.runtime.lastError.message);
+                safeSendResponse({ success: false, error: chrome.runtime.lastError.message });
+              } else {
+                safeSendResponse({ success: true, dataUrl });
+              }
+            });
+            // We return true at the end of the listener to keep channel open
+          } catch (error) {
+            logger.error('Background', 'captureTab exception:', error);
+            safeSendResponse({ success: false, error: error.message });
+          }
           break;
 
         case 'getMemoryReport':

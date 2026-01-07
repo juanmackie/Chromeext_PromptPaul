@@ -311,8 +311,8 @@ class RequestBuilder {
           function: { name: toolChoice },
         };
       }
-    } else if (Array.isArray(toolChoice) && toolChoice.length > 0) {
-      const selectedTools = formattedTools.filter(tool => toolChoice.includes(tool.function.name));
+    } else if (Array.isArray(toolChoice) && /** @type {string[]} */(toolChoice).length > 0) {
+      const selectedTools = formattedTools.filter(tool => /** @type {string[]} */(toolChoice).includes(tool.function.name));
       payload.tools = selectedTools;
       payload.tool_choice =
         selectedTools.length === 1
@@ -544,17 +544,17 @@ export class ApiClient {
         logger.info('⏱️ Sending request with timeout:', this.defaultConfig.timeout + 'ms');
 
         try {
-          const response = await fetch(request.url, {
+          const response = await this.fetchWithRetry(request.url, {
             ...request,
             signal: controller.signal,
-          });
+          }, 0, this.defaultConfig.maxRetries);
 
           clearTimeout(timeoutId);
 
           logger.info('📡 Response received:', {
             status: response.status,
             statusText: response.statusText,
-            headers: Object.fromEntries(response.headers.entries()),
+            // headers: Object.fromEntries(response.headers.entries()),
             ok: response.ok,
           });
 
@@ -601,6 +601,70 @@ export class ApiClient {
   }
 
   /**
+   * Make API request with retry logic
+   * @param {string} url - API endpoint URL
+   * @param {Object} options - Fetch options
+   * @param {number} retryCount - Current retry attempt
+   * @param {number} maxRetries - Maximum number of retries
+   * @returns {Promise<Response>}
+   */
+  async fetchWithRetry(url, options, retryCount = 0, maxRetries = 3) {
+    let response;
+    try {
+      response = await fetch(url, options);
+    } catch (networkError) {
+      // Network errors (like offline) should be retried
+      if (retryCount >= maxRetries) throw networkError;
+
+      const delayMs = Math.pow(2, retryCount) * 1000;
+      logger.warn('APIClient', `Network error, retrying in ${delayMs}ms...`, networkError);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return this.fetchWithRetry(url, options, retryCount + 1, maxRetries);
+    }
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        // Handle rate limiting
+        if (retryCount >= maxRetries) {
+          throw createError(`API request failed: 429 Too Many Requests (max retries exceeded)`, {
+            category: ErrorCategory.RATE_LIMIT,
+            severity: ErrorSeverity.HIGH
+          });
+        }
+
+        // Get retry delay from header or use exponential backoff
+        const retryAfter = response.headers.get('Retry-After');
+        let delayMs;
+        if (retryAfter) {
+          const seconds = parseInt(retryAfter, 10);
+          delayMs = !isNaN(seconds) ? seconds * 1000 : 2000;
+        } else {
+          // Exponential backoff: 2s, 4s, 8s...
+          delayMs = Math.pow(2, retryCount) * 2000;
+        }
+
+        // Add jitter
+        delayMs += Math.random() * 1000;
+
+        logger.warn('APIClient', `Rate limited (429), retrying in ${Math.round(delayMs)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        return this.fetchWithRetry(url, options, retryCount + 1, maxRetries);
+      }
+
+      // For 5xx errors, we can also retry
+      if (response.status >= 500 && retryCount < maxRetries) {
+        const delayMs = Math.pow(2, retryCount) * 1000;
+        logger.warn('APIClient', `Server error ${response.status}, retrying in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        return this.fetchWithRetry(url, options, retryCount + 1, maxRetries);
+      }
+    }
+
+    return response;
+  }
+
+
+  /**
    * Make streaming API request
    * @param {Object} config - API configuration
    * @param {Object} options - Request options
@@ -644,17 +708,17 @@ export class ApiClient {
         );
 
         try {
-          const response = await fetch(request.url, {
+          const response = await this.fetchWithRetry(request.url, {
             ...request,
             signal: controller.signal,
-          });
+          }, 0, this.defaultConfig.maxRetries);
 
           clearTimeout(timeoutId);
 
           logger.info('📡 Stream response received:', {
             status: response.status,
             statusText: response.statusText,
-            headers: Object.fromEntries(response.headers.entries()),
+            // headers: Object.fromEntries(response.headers.entries()),
             ok: response.ok,
             contentType: response.headers.get('content-type'),
             hasBody: !!response.body,

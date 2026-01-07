@@ -33,6 +33,24 @@ export class MediaHandler {
           });
         }
 
+        // Handle data URLs directly to avoid CSP violations
+        if (url.startsWith('data:')) {
+          logger.info('BackgroundMediaHandler', 'Processing data URL directly');
+          // Extract base64 and mime type from data URL
+          // Format: data:[<mediatype>][;base64],<data>
+          const matches = url.match(/^data:([^;]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            return {
+              mimeType: matches[1],
+              base64: matches[2]
+            };
+          }
+          // Fallback if not standard base64 data URI (unlikely for this use case but safe to fallback or error)
+          // If we can't parse it easily, we might let the fetch try or just error out. 
+          // Given the context of CSP blocking fetch, we should probably treat it as a blob if possible or specific error.
+          // But for simplicity, let's assume standard base64 from captureVisibleTab.
+        }
+
         const response = await fetch(url);
 
         if (!response.ok) {
