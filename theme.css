@@ -60,23 +60,12 @@
   --input-border: #2563eb;
   --input-focus: #1d4ed8;
 
-  /* Hard Shadow System */
-  --shadow-color: rgba(37, 99, 235, 1);
-  /* Solid Blue Shadow */
-  --shadow-hard: 4px 4px 0px 0px var(--shadow-color);
-  --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
-  --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
-
-  /* Soft Shadow System - for hover effects and subtle depth */
-  --shadow-xs: 0 -2px 5px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 2px 8px rgba(37, 99, 235, 0.1);
-  --shadow-md: 0 6px 20px rgba(37, 99, 235, 0.15);
-  --shadow-lg: 0 8px 25px rgba(37, 99, 235, 0.2);
-
-  /* Blue accent shadow for hover effects - enhanced for monochromatic theme */
-  --shadow-blue-sm: 0 6px 20px rgba(37, 99, 235, 0.2);
-  --shadow-blue-md: 0 8px 25px rgba(37, 99, 235, 0.3);
-  --shadow-blue-lg: 0 4px 15px rgba(37, 99, 235, 0.15);
+  /* Soft Shadow System - Clean HextaUI aesthetic */
+  --shadow-color: rgba(37, 99, 235, 0.1);
+  --shadow-sm: 0 1px 2px var(--shadow-color);
+  --shadow-md: 0 4px 6px var(--shadow-color);
+  --shadow-lg: 0 10px 15px var(--shadow-color);
+  --shadow-xl: 0 20px 25px var(--shadow-color);
 
   /* General shadow */
   --shadow: var(--shadow-sm);
@@ -84,21 +73,18 @@
   /* Destructive color */
   --destructive: var(--error);
 
-  /* Gradient overlay for hover effects - monochromatic blue */
-  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.1), transparent);
-  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.05) 0%, transparent 30%);
-  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.1) 0%, transparent 30%);
-
   /* Focus and Ring */
   --ring: #2563eb;
-  --ring-focus: rgba(37, 99, 235, 0.5);
+  --ring-focus: rgba(37, 99, 235, 0.2);
 
-  /* Terminal Typography */
-  --font-terminal: 'JetBrains Mono', 'Fira Code', 'Space Mono', monospace;
-  --font-sans: var(--font-terminal);
-  /* Force monospace everywhere */
-  --font-serif: var(--font-terminal);
-  --font-mono: var(--font-terminal);
+  /* Font Families - Geist Mono and Playfair Display */
+  --font-geistMono: 'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  --font-playfairDisplay: 'Playfair Display', serif;
+  --font-sans: var(--font-geistMono);
+  --font-mono: var(--font-geistMono);
+  --font-serif: var(--font-playfairDisplay);
+  --font-brutalist: var(--font-geistMono);
+  --font-terminal: var(--font-geistMono);
 
   /* Brutalist Spacing */
   --spacing: 0.25rem;
@@ -109,33 +95,18 @@
   --spacing-xl: calc(var(--spacing) * 6);
   --spacing-2xl: calc(var(--spacing) * 8);
 
-  /* Micro-Rounded Corners */
-  --radius-xs: 2px;
-  --radius-sm: 3px;
-  --radius: 4px;
-  /* Sweet spot for brutalism */
-  --radius-md: 5px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
+  /* Sharp Corners - Standardized to 2px for HextaUI aesthetic */
+  --radius-xs: 1px;
+  --radius-sm: 2px;
+  --radius: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 4px;
 
-  /* Transitions */
-  --transition-brutal: 0ms;
-  /* Instant for terminal feel */
-  --transition-press: 100ms ease;
-  /* For physical press animations */
-
-  /* Analog Grit Overlays - Monochromatic Blue */
-  --grain-light: rgba(255, 255, 255, 0.1);
-  --grain-dark: rgba(0, 0, 0, 0.05);
-  --vintage-wash: linear-gradient(135deg,
-      rgba(37, 99, 235, 0.01) 0%,
-      rgba(79, 70, 229, 0.01) 50%,
-      rgba(120, 119, 198, 0.01) 100%);
-
-  /* Halftone Pattern Opacity Controls */
-  --halftone-opacity-dense: 0.9;
-  --halftone-opacity-medium: 0.7;
-  --halftone-opacity-sparse: 0.5;
+  /* Smooth Transitions */
+  --transition-brutal: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-press: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-hover: 200ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Popover/Tooltip Colors - High Contrast for Readability */
   --popover: #1e293b;
@@ -149,28 +120,28 @@
   --sidebar-border: var(--border);
   /* Sidebar border color */
 
-  /* Options Page Background - Monochromatic Blue Halftone Pattern */
-  /* Options Page Background - CSS Halftone Ripple */
+  /* Clean Interface - Muted Color Variants */
+  --foreground-muted-clean: #475569;
+  --border-muted: rgba(37, 99, 235, 0.5);
+  --background-muted-clean: rgba(255, 255, 255, 0.95);
+  --primary-muted: rgba(37, 99, 235, 0.8);
+  --accent-muted: rgba(91, 147, 255, 0.7);
+  --border-industrial: #2563eb;
+  --border-industrial-muted: #64748b;
+
+  /* Options Page Background - Gradient based on theme colors */
+  /* Light mode: Subtle gradient using accent and muted tones */
   --options-background:
-    /* Halftone Dot Pattern */
-    radial-gradient(circle, var(--primary) 1px, transparent 1.2px),
-    /* Ripple Effect */
-    repeating-radial-gradient(circle at 80% 80%,
-      rgba(37, 99, 235, 0.15) 0%,
-      rgba(37, 99, 235, 0.15) 20px,
-      transparent 20px,
-      transparent 40px),
-    /* Base */
-    var(--background);
-  --options-background-size:
-    6px 6px,
-    /* Dot pattern size */
-    cover,
-    /* Ripple size */
-    cover;
-  /* Base size */
+    linear-gradient(
+      135deg,
+      oklch(0.94 0 0) 0%,
+      oklch(0.98 0 0) 40%,
+      oklch(0.9189 0.0147 106.6853) 100%
+    );
+  
+  --options-background-size: 100% 100%;
   --options-background-opacity: 1.0;
-  background-blend-mode: overlay, normal, normal;
+  background-blend-mode: normal;
 }
 
 /* Terminal Brutalism + Cassette Futurism - Dark Mode "Deep Space Terminal" */
@@ -235,23 +206,12 @@
   --input-border: #4f46e5;
   --input-focus: #6366f1;
 
-  /* Hard Shadow System - Dark Mode */
-  --shadow-color: rgba(79, 70, 229, 0.6);
-  /* Muted Indigo Shadow */
-  --shadow-hard: 4px 4px 0px 0px var(--shadow-color);
-  --shadow-hard-sm: 2px 2px 0px 0px var(--shadow-color);
-  --shadow-hard-lg: 6px 6px 0px 0px var(--shadow-color);
-
-  /* Soft Shadow System - Dark Mode - for hover effects and subtle depth */
-  --shadow-xs: 0 -2px 5px rgba(0, 0, 0, 0.1);
-  --shadow-sm: 0 2px 8px rgba(79, 70, 229, 0.2);
-  --shadow-md: 0 6px 20px rgba(79, 70, 229, 0.25);
-  --shadow-lg: 0 8px 25px rgba(79, 70, 229, 0.3);
-
-  /* Blue accent shadow for hover effects - dark mode version */
-  --shadow-blue-sm: 0 6px 20px rgba(79, 70, 229, 0.25);
-  --shadow-blue-md: 0 8px 25px rgba(79, 70, 229, 0.35);
-  --shadow-blue-lg: 0 4px 15px rgba(79, 70, 229, 0.2);
+  /* Soft Shadow System - Dark Mode */
+  --shadow-color: rgba(79, 70, 229, 0.15);
+  --shadow-sm: 0 1px 2px var(--shadow-color);
+  --shadow-md: 0 4px 6px var(--shadow-color);
+  --shadow-lg: 0 10px 15px var(--shadow-color);
+  --shadow-xl: 0 20px 25px var(--shadow-color);
 
   /* General shadow */
   --shadow: var(--shadow-sm);
@@ -259,38 +219,10 @@
   /* Destructive color */
   --destructive: var(--error);
 
-  /* Gradient overlay for hover effects - dark mode */
-  --gradient-overlay-blue: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.15), transparent);
-  --gradient-radial-blue-subtle: radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.07) 0%, transparent 30%);
-  --gradient-radial-blue: radial-gradient(circle at 20% 20%, rgba(79, 70, 229, 0.15) 0%, transparent 30%);
+  /* Destructive color */
+  --destructive: var(--error);
 
-  /* Micro-Rounded Corners - Dark Mode */
-  --radius-xs: 2px;
-  --radius-sm: 3px;
-  --radius: 4px;
-  /* Sweet spot for brutalism */
-  --radius-md: 5px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
-
-  /* Focus and Ring - Dark Mode */
-  --ring: #6366f1;
-  --ring-focus: rgba(99, 102, 241, 0.5);
-
-  /* Analog Grit Overlays - Dark Mode */
-  --grain-light: rgba(255, 255, 255, 0.03);
-  --grain-dark: rgba(0, 0, 0, 0.1);
-  --vintage-wash: linear-gradient(135deg,
-      rgba(79, 70, 229, 0.02) 0%,
-      rgba(120, 119, 198, 0.02) 50%,
-      rgba(160, 159, 230, 0.02) 100%);
-
-  /* Halftone Pattern Opacity Controls - Dark Mode */
-  --halftone-opacity-dense: 0.8;
-  --halftone-opacity-medium: 0.6;
-  --halftone-opacity-sparse: 0.4;
-
-  /* Popover/Tooltip Colors - High Contrast for Readability */
+  /* Popover/Tooltip Colors - Dark Mode */
   --popover: #ffffff;
   /* White background for tooltips */
   --popover-foreground: #02020b;
@@ -302,36 +234,39 @@
   --sidebar-border: var(--border);
   /* Sidebar border color */
 
-  /* Options Page Background - Monochromatic Blue Halftone Pattern (Dark Mode) */
-  /* Options Page Background - CSS Halftone Ripple (Dark Mode) */
+  /* Clean Interface - Muted Color Variants (Dark Mode) */
+  --foreground-muted-clean: #94a3b8;
+  --border-muted: rgba(79, 70, 229, 0.4);
+  --background-muted-clean: rgba(10, 10, 22, 0.98);
+  --primary-muted: rgba(255, 255, 240, 0.8);
+  --accent-muted: rgba(129, 168, 255, 0.6);
+  --border-industrial: #4f46e5;
+  --border-industrial-muted: #64748b;
+
+  /* Options Page Background - Gradient based on theme colors (Dark Mode) */
+  /* Dark mode: Rich gradient using muted and border tones */
   --options-background:
-    /* Halftone Dot Pattern - Lighter for visibility on dark */
-    radial-gradient(circle, rgba(79, 70, 229, 0.3) 1px, transparent 1.2px),
-    /* Ripple Effect */
-    repeating-radial-gradient(circle at 80% 80%,
-      rgba(79, 70, 229, 0.1) 0%,
-      rgba(79, 70, 229, 0.1) 20px,
-      transparent 20px,
-      transparent 40px),
-    /* Base */
-    var(--background);
-  --options-background-size:
-    6px 6px,
-    cover,
-    cover;
+    linear-gradient(
+      135deg,
+      oklch(0.228 0.127 269.556) 0%,
+      oklch(0 0.151 268.343) 40%,
+      oklch(0.427 0.149 277.089) 100%
+    );
+  
+  --options-background-size: 100% 100%;
   --options-background-opacity: 1.0;
-  background-blend-mode: overlay, normal, normal;
+  background-blend-mode: normal;
 }
 
-/* Terminal Brutalism + Analog Grit Base Styles */
+/* ===== BASE STYLES ===== */
 * {
   box-sizing: border-box;
 }
 
-html {
-  font-family: var(--font-terminal);
+ html {
+  font-family: var(--font-geistMono);
   line-height: 1.4;
-  /* Tighter for terminal feel */
+  /* Tighter for brutalist feel */
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -343,7 +278,7 @@ body {
   padding: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-weight: 400;
   line-height: 1.4;
   transition:
@@ -373,97 +308,6 @@ html[data-theme='dark'],
 html[data-theme='light'] {
   background: var(--background);
   transition: background var(--transition-brutal);
-}
-
-/* Analog Grit Overlay - Theme Responsive */
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background:
-    var(--vintage-wash),
-    repeating-linear-gradient(45deg,
-      transparent,
-      transparent 1px,
-      var(--grain-light) 1px,
-      var(--grain-light) 2px);
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0.6;
-  transition: opacity var(--transition-brutal);
-}
-
-/* Noise texture for analog feel */
-@keyframes grain {
-
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-
-  10% {
-    transform: translate(-1px, -1px);
-  }
-
-  20% {
-    transform: translate(1px, 1px);
-  }
-
-  30% {
-    transform: translate(-2px, 1px);
-  }
-
-  40% {
-    transform: translate(2px, -1px);
-  }
-
-  50% {
-    transform: translate(-1px, 2px);
-  }
-
-  60% {
-    transform: translate(1px, -2px);
-  }
-
-  70% {
-    transform: translate(-2px, -1px);
-  }
-
-  80% {
-    transform: translate(2px, 1px);
-  }
-
-  90% {
-    transform: translate(-1px, -2px);
-  }
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: repeating-linear-gradient(0deg,
-      var(--grain-dark) 0px,
-      transparent 1px,
-      transparent 2px,
-      var(--grain-dark) 3px);
-  pointer-events: none;
-  z-index: 2;
-  opacity: 0.4;
-  animation: grain 0.2s steps(1) infinite;
-  transition: opacity var(--transition-brutal);
-}
-
-/* Theme-specific overlay adjustments */
-.dark body::before,
-.dark body::after {
-  opacity: 0.3;
 }
 
 /* Content layers */
@@ -497,4 +341,587 @@ main,
   100% {
     opacity: 0.3;
   }
+}
+
+/* ===== HEXTAUI SIDEBAR COMPONENTS ===== */
+.hextaui-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacing-md) var(--spacing-sm) var(--spacing-xl);
+  background: var(--background-muted-clean);
+  border-right: 1px solid var(--border);
+  position: relative;
+  overflow: visible;
+}
+
+.hextaui-sidebar-section {
+  width: 100%;
+  margin-bottom: var(--spacing-lg);
+  position: relative;
+}
+
+.hextaui-sidebar-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--foreground-muted-clean);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin-bottom: var(--spacing-sm);
+  padding: 0 var(--spacing-xs);
+  position: relative;
+}
+
+.hextaui-sidebar-divider {
+  width: 40px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: var(--spacing-sm) 0;
+  opacity: 0.5;
+}
+
+/* ===== HEXTAUI INPUT WRAPPER ===== */
+.hextaui-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+}
+
+.hextaui-input-actions {
+  position: absolute;
+  right: var(--spacing-sm);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  pointer-events: none;
+}
+
+.hextaui-input-action {
+  pointer-events: auto;
+  color: var(--foreground-muted-clean);
+  cursor: pointer;
+  opacity: 0.8;
+  transition: all var(--transition-hover);
+  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-muted-clean);
+  border: 1px solid var(--border-industrial-muted);
+  padding: 0;
+}
+
+.hextaui-input-action:hover {
+  opacity: 1;
+  background: var(--accent-muted);
+  color: var(--accent-foreground);
+  border-color: var(--border);
+  transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ===== HEXTAUI CHAT MESSAGES ===== */
+.hextaui-chat-message {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius);
+  width: auto;
+  max-width: 85%;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: visible;
+  transition: all var(--transition-hover);
+  font-family: var(--font-geistMono);
+  font-size: 14px;
+  font-weight: 400;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.hextaui-chat-message:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.hextaui-chat-message-user {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 85%;
+  margin-right: var(--spacing-xl);
+  position: relative;
+}
+
+.hextaui-chat-message-llm {
+  background: var(--card);
+  color: var(--card-foreground);
+  align-self: flex-start;
+  border-left: 3px solid var(--primary);
+  margin-left: var(--spacing-xl);
+  position: relative;
+}
+
+.hextaui-chat-message-system {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  align-self: center;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 400;
+  width: fit-content;
+  max-width: 95%;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  font-family: var(--font-geistMono);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+/* ===== HEXTAUI GUIDE PANEL ===== */
+.hextaui-guide-panel {
+  position: absolute;
+  top: var(--spacing-md);
+  left: var(--spacing-md);
+  right: var(--spacing-md);
+  z-index: 1001;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-lg);
+  border-radius: var(--radius);
+  animation: hextaui-slide-down 0.3s ease-out;
+  transition: all var(--transition-hover);
+}
+
+.hextaui-guide-panel.collapsed {
+  padding-bottom: var(--spacing-sm);
+}
+
+.hextaui-guide-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+.hextaui-guide-panel-header h4 {
+  margin: 0;
+  color: var(--primary);
+  font-family: var(--font-geistMono);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.hextaui-guide-panel-desc {
+  font-size: 13px;
+  color: var(--foreground-muted-clean);
+  margin-bottom: var(--spacing-md);
+}
+
+@keyframes hextaui-slide-down {
+  from {
+    transform: translateY(calc(var(--spacing-md) * -1));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ===== HEXTAUI STATUS INDICATORS ===== */
+.hextaui-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(var(--primary-rgb), 0.1);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius);
+}
+
+.hextaui-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--primary);
+  border-radius: 50%;
+  animation: hextaui-pulse 2s infinite;
+}
+
+@keyframes hextaui-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(var(--primary-rgb), 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0);
+  }
+}
+
+/* ===== HEXTAUI TOAST NOTIFICATIONS ===== */
+.hextaui-toast {
+  position: fixed;
+  bottom: var(--spacing-xl);
+  right: var(--spacing-xl);
+  max-width: 400px;
+  padding: var(--spacing-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(8px);
+  animation: hextaui-slide-in 0.3s ease-out;
+  z-index: 1000;
+}
+
+.hextaui-toast::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, var(--accent) 0%, var(--accent-foreground) 100%);
+  opacity: 0.1;
+  pointer-events: none;
+  border-radius: var(--radius);
+}
+
+.hextaui-toast-success {
+  background-color: var(--success);
+  color: var(--success-foreground);
+  border-color: var(--success);
+}
+
+.hextaui-toast-error {
+  background-color: var(--destructive);
+  color: var(--destructive-foreground);
+  border-color: var(--destructive);
+}
+
+@keyframes hextaui-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.hextaui-toast.fade-out {
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+}
+
+/* ===== HEXTAUI CODE BLOCKS ===== */
+.hextaui-code-block {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  padding: var(--spacing-md);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: var(--font-geistMono);
+  border: 1px solid var(--border-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-code-inline {
+  font-family: var(--font-geistMono);
+  font-size: 0.9em;
+  background-color: var(--muted);
+  padding: 0.2em 0.4em;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-industrial-muted);
+}
+
+/* ===== HEXTAUI TABLES ===== */
+.hextaui-table-container {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-industrial-muted);
+  margin-bottom: var(--spacing-md);
+}
+
+.hextaui-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  min-width: 600px;
+}
+
+.hextaui-table thead {
+  background: var(--background-muted-clean);
+}
+
+.hextaui-table th {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 2px solid var(--border-industrial);
+  color: var(--foreground-muted-clean);
+  position: relative;
+}
+
+.hextaui-table th::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--ruler-marks);
+  background-size: 20px 100%;
+  opacity: 0.2;
+}
+
+.hextaui-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-bottom: 1px solid var(--border-industrial-muted);
+  font-size: 13px;
+  vertical-align: top;
+}
+
+.hextaui-table tbody tr:hover td {
+  background: var(--accent-muted);
+  color: var(--foreground);
+}
+
+.hextaui-table tbody tr:hover {
+  box-shadow: inset 0 0 0 1px var(--border-industrial);
+}
+
+.hextaui-table-sticky-header th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* ===== HEXTAUI MOBILE CARDS ===== */
+.hextaui-mobile-cards {
+  display: none;
+}
+
+.hextaui-mobile-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-mobile-card-header {
+  font-weight: 600;
+  margin-bottom: var(--spacing-sm);
+  color: var(--foreground);
+  font-family: var(--font-geistMono);
+}
+
+.hextaui-mobile-card-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-xs) 0;
+}
+
+.hextaui-mobile-card-label {
+  font-size: 13px;
+  color: var(--foreground-muted-clean);
+  font-weight: 500;
+}
+
+.hextaui-mobile-card-value {
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+.hextaui-mobile-card-actions {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .hextaui-table-container {
+    display: none;
+  }
+
+  .hextaui-mobile-cards {
+    display: block;
+  }
+}
+
+/* ===== HEXTAUI HELP TOOLTIPS ===== */
+.hextaui-help-tooltip {
+  background: none;
+  border: none;
+  color: var(--foreground-muted-clean);
+  cursor: pointer;
+  padding: 2px;
+  margin-left: var(--spacing-xs);
+  border-radius: 50%;
+  transition: all var(--transition-hover);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hextaui-help-tooltip:hover {
+  color: var(--primary);
+  background: var(--accent-muted);
+  transform: scale(1.1);
+}
+
+.hextaui-help-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+  z-index: 1000;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  max-width: 250px;
+  white-space: normal;
+  backdrop-filter: blur(2px);
+  margin-bottom: var(--spacing-sm);
+}
+
+.hextaui-help-tooltip:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ===== HEXTAUI PASSWORD INPUT ===== */
+.hextaui-password-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.hextaui-password-input {
+  padding-right: var(--spacing-2xl);
+}
+
+.hextaui-password-toggle,
+.hextaui-copy-btn {
+  position: absolute;
+  right: var(--spacing-sm);
+  background: none;
+  border: none;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  border-radius: var(--radius-xs);
+  transition: color var(--transition-brutal);
+}
+
+.hextaui-password-toggle:hover,
+.hextaui-copy-btn:hover {
+  color: var(--accent);
+}
+
+.hextaui-copy-btn {
+  right: var(--spacing-lg);
+}
+
+/* ===== HEXTAUI TOKEN INFO ===== */
+.hextaui-token-info {
+  font-family: var(--font-geistMono);
+  font-size: 12px;
+  color: var(--foreground-muted);
+  margin-top: var(--spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hextaui-character-counter {
+  font-family: var(--font-geistMono);
+  font-size: 12px;
+  color: var(--foreground-muted);
+  text-align: right;
+  margin-top: var(--spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ===== HEXTAUI IMPORT/EXPORT ===== */
+.hextaui-import-export {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-lg);
+  margin-top: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-import-export h3 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+  font-family: var(--font-geistMono);
+  font-size: var(--font-small-size);
+  font-weight: 600;
+  color: var(--foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hextaui-file-input {
+  display: none;
+}
+
+/* ===== HEXTAUI MIGRATION PROMPT ===== */
+.hextaui-migration-prompt {
+  background: var(--secondary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  font-family: var(--font-geistMono);
+  font-size: 14px;
+  color: var(--foreground);
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-migration-prompt strong {
+  color: var(--primary);
 }

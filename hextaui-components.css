@@ -12,13 +12,13 @@
   border-radius: var(--radius);
   border: 2px solid;
   padding: var(--spacing-md) var(--spacing-lg);
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
   transition:
-    transform var(--transition-press),
-    box-shadow var(--transition-press);
+    transform var(--transition-hover),
+    box-shadow var(--transition-hover);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -30,18 +30,161 @@
   box-shadow: var(--shadow-hard);
 }
 
-/* Physical Press Animation */
-.hextaui-btn:active {
+/* Primary Button - Clean aesthetic */
+.hextaui-btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.hextaui-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.hextaui-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--halftone-medium);
+  background-size: var(--halftone-medium-size);
+  opacity: 0;
+  transition: opacity var(--transition-hover);
+  pointer-events: none;
+}
+
+.hextaui-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: var(--risograph-bleed-hover);
+  filter: var(--risograph-offset-hover);
+  transform: translate(-2px, -2px);
+}
+
+.hextaui-btn-primary:hover:not(:disabled)::before {
+  opacity: var(--halftone-opacity-medium);
+}
+
+.hextaui-btn-primary:active {
   transform: translate(2px, 2px);
   box-shadow: var(--shadow-hard-sm);
 }
 
+/* Secondary Button - Clean interface */
+.hextaui-btn-secondary {
+  background: var(--background-muted-clean);
+  color: var(--foreground-muted-clean);
+  border-color: var(--border-muted);
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: var(--shadow-sm);
+  filter: none;
+}
+
+.hextaui-btn-secondary:hover:not(:disabled) {
+  background: var(--secondary-hover);
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.hextaui-btn-secondary:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Outline Button - Clean with border */
+.hextaui-btn-outline {
+  background: transparent;
+  color: var(--foreground-muted-clean);
+  border: 1px solid var(--border-muted);
+  font-weight: 400;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.hextaui-btn-outline:hover:not(:disabled) {
+  background: var(--accent-muted);
+  color: var(--accent-foreground);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.hextaui-btn-outline:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Accent Button - Clean accent style */
+.hextaui-btn-accent {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-btn-accent:hover:not(:disabled) {
+  background: var(--accent-vintage);
+  border-color: var(--accent-vintage);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.hextaui-btn-accent:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Destructive Button - Clean destructive style */
+.hextaui-btn-destructive {
+  background: var(--error);
+  color: var(--error-foreground);
+  border-color: var(--error);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.hextaui-btn-destructive:hover:not(:disabled) {
+  background: var(--error);
+  filter: brightness(1.1);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.hextaui-btn-destructive:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Disabled state for all buttons */
 .hextaui-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
   transform: none !important;
   box-shadow: var(--shadow-hard-sm) !important;
+  filter: none !important;
 }
 
 .hextaui-btn:focus-visible {
@@ -49,181 +192,141 @@
   outline-offset: 2px;
 }
 
-/* Terminal-style hover */
-.hextaui-btn:hover:not(:disabled) {
+/* Terminal-style hover for non-modernized buttons */
+.hextaui-btn:hover:not(:disabled):not(.hextaui-btn-primary):not(.hextaui-btn-secondary):not(.hextaui-btn-outline):not(.hextaui-btn-accent):not(.hextaui-btn-destructive) {
   filter: brightness(1.1);
   transform: translate(-1px, -1px);
   box-shadow: 6px 6px 0px 0px var(--shadow-color);
 }
 
-/* Primary Button - Blueprint/Ivory */
-.hextaui-btn-primary {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  border-color: var(--primary);
-  font-weight: 700;
+/* Fallback button styles for non-modernized buttons */
+.hextaui-btn:hover:not(:disabled):not(.hextaui-btn-primary):not(.hextaui-btn-secondary):not(.hextaui-btn-outline):not(.hextaui-btn-accent):not(.hextaui-btn-destructive) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
-.hextaui-btn-primary:hover:not(:disabled) {
-  background: var(--primary-hover);
+.hextaui-btn:active:not(:disabled):not(.hextaui-btn-primary):not(.hextaui-btn-secondary):not(.hextaui-btn-outline):not(.hextaui-btn-accent):not(.hextaui-btn-destructive) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
 }
 
-/* Secondary Button - Weathered Surface */
-.hextaui-btn-secondary {
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  border-color: var(--border);
-}
-
-.hextaui-btn-secondary:hover:not(:disabled) {
-  background: var(--secondary-hover);
-  border-color: var(--border-focus);
-}
-
-/* Outline Button - Terminal Style */
-.hextaui-btn-outline {
-  background: transparent;
-  color: var(--foreground);
-  border-color: var(--border);
-}
-
-.hextaui-btn-outline:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--accent-foreground);
-  border-color: var(--accent);
-}
-
-/* Accent Button - Amber/Teal */
-.hextaui-btn-accent {
-  background: var(--accent);
-  color: var(--accent-foreground);
-  border-color: var(--accent);
-}
-
-.hextaui-btn-accent:hover:not(:disabled) {
-  background: var(--accent-vintage);
-  border-color: var(--accent-vintage);
-}
-
-/* Destructive Button */
-.hextaui-btn-destructive {
-  background: var(--error);
-  color: var(--error-foreground);
-  border-color: var(--error);
-}
-
-.hextaui-btn-destructive:hover:not(:disabled) {
-  filter: brightness(1.2);
-}
-
-/* Button Sizes - Terminal Consistent */
+/* Button Sizes - Standardized */
 .hextaui-btn-sm {
   padding: var(--spacing-sm) var(--spacing-md);
   font-size: 12px;
-  box-shadow: var(--shadow-hard-sm);
+  box-shadow: var(--shadow-sm);
 }
 
 .hextaui-btn-sm:active {
-  transform: translate(1px, 1px);
+  transform: translateY(0);
 }
 
 .hextaui-btn-lg {
   padding: var(--spacing-lg) var(--spacing-xl);
   font-size: 16px;
-  box-shadow: var(--shadow-hard-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .hextaui-btn-lg:active {
-  transform: translate(3px, 3px);
+  transform: translateY(0);
 }
 
-/* ===== TERMINAL INPUT COMPONENTS ===== */
+/* ===== INPUT COMPONENTS ===== */
 .hextaui-input,
 .hextaui-textarea,
 .hextaui-select {
   width: 100%;
-  border: 2px solid;
-  border-radius: var(--radius);
-  background: var(--input);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--background-muted-clean);
   color: var(--foreground);
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 14px;
   font-weight: 400;
-  line-height: 1.4;
-  padding: var(--spacing-md) var(--spacing-sm);
+  line-height: 1.5;
+  padding: var(--spacing-sm) var(--spacing-md);
   transition:
-    border-color var(--transition-brutal),
-    box-shadow var(--transition-brutal);
-  box-shadow: var(--shadow-hard-sm);
+    border-color var(--transition-hover),
+    box-shadow var(--transition-hover);
+  box-shadow: var(--shadow-sm);
   outline: none;
+  position: relative;
 }
 
-/* Terminal Focus States */
 .hextaui-input:focus,
 .hextaui-textarea:focus,
 .hextaui-select:focus {
-  border-color: var(--input-focus);
-  box-shadow: var(--shadow-hard);
-  animation: terminal-cursor 1s infinite;
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
 }
 
-/* Placeholder Text */
 .hextaui-input::placeholder,
 .hextaui-textarea::placeholder {
-  color: var(--foreground-muted);
+  color: var(--foreground-muted-clean);
   font-style: normal;
-  opacity: 0.7;
+  opacity: 1;
 }
 
-/* Textarea Specific */
 .hextaui-textarea {
   resize: vertical;
   min-height: 100px;
 }
 
-/* Select Specific */
 .hextaui-select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%232563eb' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
   background-position: right var(--spacing-sm) center;
   background-repeat: no-repeat;
   background-size: 16px;
   padding-right: var(--spacing-xl);
+  cursor: pointer;
 }
 
-/* ===== TERMINAL FORM FIELD COMPONENTS ===== */
+.hextaui-select:hover {
+  border-color: var(--border);
+}
+
+.hextaui-select:active {
+  transform: none;
+}
+
+/* ===== BRUTALIST FORM FIELD COMPONENTS ===== */
 .hextaui-form-field {
   margin-bottom: var(--spacing-lg);
 }
 
 .hextaui-form-label {
   display: block;
-  font-family: var(--font-terminal);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--foreground);
+  font-family: var(--font-geistMono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground-muted-clean);
   margin-bottom: var(--spacing-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
+  position: relative;
 }
 
 .hextaui-form-description {
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 12px;
-  color: var(--foreground-muted);
+  color: var(--foreground-muted-clean);
   margin-top: var(--spacing-sm);
   line-height: 1.4;
 }
 
 .hextaui-form-error {
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 12px;
   color: var(--error);
-  margin-top: var(--spacing-sm);
-  font-weight: 700;
+  margin-top: var(--spacing-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-/* ===== TERMINAL TOGGLE COMPONENTS ===== */
+/* ===== BRUTALIST TOGGLE COMPONENTS ===== */
 .hextaui-toggle {
   display: inline-flex;
   align-items: center;
@@ -236,12 +339,12 @@
   appearance: none;
   width: 48px;
   height: 24px;
-  border: 2px solid var(--border);
+  border: 2px solid var(--border-industrial-muted);
   border-radius: 12px;
-  background: var(--secondary);
+  background: var(--background-muted-clean);
   position: relative;
   cursor: pointer;
-  transition: background-color var(--transition-brutal);
+  transition: background-color var(--transition-hover), border-color var(--transition-hover);
   box-shadow: var(--shadow-hard-sm);
 }
 
@@ -252,9 +355,9 @@
   left: 2px;
   width: 16px;
   height: 16px;
-  background: var(--foreground-muted);
+  background: var(--foreground-muted-clean);
   border-radius: 50%;
-  transition: transform var(--transition-press);
+  transition: transform var(--transition-hover);
   box-shadow: 1px 1px 0px 0px rgba(0, 0, 0, 0.2);
 }
 
@@ -268,94 +371,106 @@
   background: var(--primary-foreground);
 }
 
+.hextaui-toggle-input:hover {
+  border-color: var(--border-industrial);
+  filter: var(--risograph-offset);
+}
+
 .hextaui-toggle-input:focus-visible {
   outline: 2px solid var(--ring-focus);
   outline-offset: 2px;
 }
 
 .hextaui-toggle-label {
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 14px;
-  font-weight: 500;
-  color: var(--foreground);
+  font-weight: 400;
+  color: var(--foreground-muted-clean);
 }
 
-/* ===== TERMINAL CARD COMPONENTS ===== */
+/* ===== CARD COMPONENTS ===== */
 .hextaui-card {
   background: var(--card);
-  border: 2px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--spacing-xl);
-  box-shadow: var(--shadow-hard);
+  box-shadow: var(--shadow-sm);
   position: relative;
   overflow: hidden;
 }
 
-.hextaui-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--vintage-wash);
-  pointer-events: none;
-  opacity: 0.8;
-}
-
 .hextaui-card:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 6px 6px 0px 0px var(--shadow-color);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .hextaui-card-header {
   margin-bottom: var(--spacing-lg);
   border-bottom: 1px solid var(--border);
   padding-bottom: var(--spacing-md);
+  position: relative;
+  z-index: 2;
 }
 
 .hextaui-card-title {
-  font-family: var(--font-terminal);
-  font-size: 18px;
-  font-weight: 700;
+  font-family: var(--font-geistMono);
+  font-size: var(--font-title-size);
+  font-weight: 600;
   color: var(--foreground);
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  position: relative;
+  z-index: 2;
 }
 
 .hextaui-card-content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
-/* ===== TERMINAL TABLE COMPONENTS ===== */
+/* ===== TABLE COMPONENTS ===== */
 .hextaui-table {
   width: 100%;
-  border-collapse: separate;
+  border-collapse: collapse;
   border-spacing: 0;
-  font-family: var(--font-terminal);
-  font-size: 14px;
+  font-family: var(--font-geistMono);
+  font-size: 13px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.hextaui-table thead {
+  background: var(--background-muted-clean);
+  border-bottom: 1px solid var(--border);
 }
 
 .hextaui-table th,
 .hextaui-table td {
   padding: var(--spacing-sm) var(--spacing-md);
   text-align: left;
-  border: 1px solid var(--border);
-  background: var(--card);
+  border-bottom: 1px solid var(--border-muted);
+  background: transparent;
+  color: var(--foreground);
 }
 
 .hextaui-table th {
-  background: var(--surface);
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 2px solid var(--border);
+  color: var(--foreground-muted-clean);
+  font-size: 12px;
+  position: relative;
 }
 
-.hextaui-table tr:hover td {
-  background: var(--secondary);
+.hextaui-table tbody tr:hover td {
+  background: var(--accent-muted);
+  color: var(--foreground);
+}
+
+.hextaui-table tbody tr:hover {
+  box-shadow: none;
 }
 
 /* Utility Classes */

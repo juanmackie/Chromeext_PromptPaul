@@ -27,47 +27,37 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   margin: var(--spacing-xl) 0;
   padding: var(--spacing-xl) 0;
   position: relative;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .page-header h1 {
-  font-family: var(--font-terminal);
-  font-size: 28px;
-  font-weight: 700;
+  font-family: var(--font-geistMono);
+  font-size: var(--font-hero-size);
+  font-weight: var(--font-hero-weight);
   margin: 0;
   color: var(--primary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  line-height: 1.2;
+  text-transform: var(--font-hero-transform);
+  letter-spacing: var(--font-hero-spacing);
+  line-height: 1.1;
   position: relative;
-  display: inline-block;
-}
-
-/* Terminal cursor effect on main title */
-.page-header h1::after {
-  content: '';
-  position: absolute;
-  right: -8px;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--accent);
-  animation: terminal-cursor 1s infinite;
+  z-index: 2;
 }
 
 .subtitle {
-  color: var(--foreground-secondary);
+  color: var(--foreground-muted-clean);
   margin: 0;
-  font-size: 14px;
+  font-family: var(--font-geistMono);
+  font-size: var(--font-small-size);
   font-weight: 400;
-  font-family: var(--font-terminal);
   margin-top: var(--spacing-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
+  position: relative;
+  z-index: 2;
 }
 
 /* Terminal Brutalism Section Cards */
@@ -76,32 +66,18 @@
   position: relative;
   width: 100%;
   background: var(--card);
-  border: 2px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-hard);
+  box-shadow: var(--shadow-sm);
   transition:
-    transform var(--transition-press),
-    box-shadow var(--transition-press);
+    transform var(--transition-hover),
+    box-shadow var(--transition-hover);
   overflow: hidden;
 }
 
-/* Analog Grit Overlay for Cards */
-.section-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--vintage-wash);
-  pointer-events: none;
-  opacity: 0.6;
-  z-index: 1;
-}
-
 .section-card:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 6px 6px 0px 0px var(--shadow-color);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 /* Terminal Section Content */
@@ -116,28 +92,29 @@
 .section-header {
   margin-bottom: var(--spacing-lg);
   padding: var(--spacing-xl) var(--spacing-xl) 0;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
   position: relative;
+  z-index: 2;
 }
 
 .section-title {
   display: flex;
   align-items: center;
-  font-family: var(--font-terminal);
-  font-size: 20px;
-  font-weight: 700;
+  font-family: var(--font-geistMono);
+  font-size: var(--font-title-size);
+  font-weight: 600;
   color: var(--foreground);
   margin: 0 0 var(--spacing-md) 0;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   line-height: 1.2;
 }
 
 .section-icon {
   margin-right: var(--spacing-sm);
   color: var(--accent);
-  font-size: 18px;
-  transition: color var(--transition-brutal);
+  font-size: 1.5rem;
+  transition: color var(--transition-hover);
 }
 
 .section-card:hover .section-icon {
@@ -146,11 +123,10 @@
 
 /* Terminal Section Divider */
 .section-divider {
-  height: 2px;
+  height: 1px;
   background: var(--border);
   margin: var(--spacing-md) 0;
   position: relative;
-  border-radius: 1px;
 }
 
 /* Collapsible Headers */
@@ -187,42 +163,53 @@
 }
 
 /* Grid column classes */
-.col-span-1 {
-  grid-column: span 1;
-}
-.col-span-2 {
-  grid-column: span 2;
-}
-.col-span-3 {
-  grid-column: span 3;
-}
-.col-span-4 {
-  grid-column: span 4;
-}
-.col-span-5 {
-  grid-column: span 5;
-}
-.col-span-6 {
-  grid-column: span 6;
-}
-.col-span-7 {
-  grid-column: span 7;
-}
-.col-span-8 {
-  grid-column: span 8;
-}
-.col-span-9 {
-  grid-column: span 9;
-}
-.col-span-10 {
-  grid-column: span 10;
-}
-.col-span-11 {
-  grid-column: span 11;
-}
-.col-span-12 {
-  grid-column: span 12;
-}
+.grid-form .col-span-1 { grid-column: span 1; }
+.grid-form .col-span-2 { grid-column: span 2; }
+.grid-form .col-span-3 { grid-column: span 3; }
+.grid-form .col-span-4 { grid-column: span 4; }
+.grid-form .col-span-5 { grid-column: span 5; }
+.grid-form .col-span-6 { grid-column: span 6; }
+.grid-form .col-span-7 { grid-column: span 7; }
+.grid-form .col-span-8 { grid-column: span 8; }
+.grid-form .col-span-9 { grid-column: span 9; }
+.grid-form .col-span-10 { grid-column: span 10; }
+.grid-form .col-span-11 { grid-column: span 11; }
+.grid-form .col-span-12 { grid-column: span 12; }
+
+/* Offset classes for asymmetry - Enhanced brutalist grid */
+.offset-1 { grid-column-start: 2; }
+.offset-2 { grid-column-start: 3; }
+.offset-3 { grid-column-start: 4; }
+.offset-4 { grid-column-start: 5; }
+.offset-5 { grid-column-start: 6; }
+.offset-6 { grid-column-start: 7; }
+.offset-7 { grid-column-start: 8; }
+
+/* Asymmetric column spans for brutalist layout */
+.asym-span-3 { grid-column: span 3; }
+.asym-span-5 { grid-column: span 5; }
+.asym-span-7 { grid-column: span 7; }
+.asym-span-9 { grid-column: span 9; }
+
+/* Swiss style gap variations */
+.gap-sm { gap: var(--spacing-sm); }
+.gap-md { gap: var(--spacing-md); }
+.gap-lg { gap: var(--spacing-lg); }
+.gap-xl { gap: var(--spacing-xl); }
+
+/* Grid column classes for backward compatibility */
+.col-span-1 { grid-column: span 1; }
+.col-span-2 { grid-column: span 2; }
+.col-span-3 { grid-column: span 3; }
+.col-span-4 { grid-column: span 4; }
+.col-span-5 { grid-column: span 5; }
+.col-span-6 { grid-column: span 6; }
+.col-span-7 { grid-column: span 7; }
+.col-span-8 { grid-column: span 8; }
+.col-span-9 { grid-column: span 9; }
+.col-span-10 { grid-column: span 10; }
+.col-span-11 { grid-column: span 11; }
+.col-span-12 { grid-column: span 12; }
 
 /* Terminal Form Fields */
 .ext-form-field {
@@ -232,48 +219,70 @@
 
 .ext-form-label {
   display: block;
-  font-family: var(--font-terminal);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--foreground);
+  font-family: var(--font-geistMono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground-muted-clean);
   margin-bottom: var(--spacing-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .ext-input,
 .ext-textarea,
 .ext-select {
   width: 100%;
-  border: 2px solid var(--input-border);
-  border-radius: var(--radius);
-  background: var(--input);
+  border: 1px solid var(--border-industrial-muted);
+  border-radius: var(--radius-sm);
+  background: var(--background-muted-clean);
   color: var(--foreground);
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 14px;
   font-weight: 400;
-  line-height: 1.4;
-  padding: var(--spacing-md) var(--spacing-sm);
+  line-height: 1.5;
+  padding: var(--spacing-sm) var(--spacing-md);
   transition:
-    border-color var(--transition-brutal),
-    box-shadow var(--transition-brutal);
+    border-color var(--transition-hover),
+    box-shadow var(--transition-hover);
   box-shadow: var(--shadow-hard-sm);
   outline: none;
+  position: relative;
+}
+
+.ext-input::before,
+.ext-textarea::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--ruler-marks);
+  background-size: 20px 100%;
+  opacity: 0;
+  transition: opacity var(--transition-hover);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .ext-input:focus,
 .ext-textarea:focus,
 .ext-select:focus {
-  border-color: var(--input-focus);
-  box-shadow: var(--shadow-hard);
+  border-color: var(--border-industrial);
+  box-shadow: var(--shadow-hard), var(--risograph-offset);
+}
+
+.ext-input:focus::before,
+.ext-textarea:focus::before {
+  opacity: 0.1;
 }
 
 .ext-form-error {
-  font-family: var(--font-terminal);
+  font-family: var(--font-geistMono);
   font-size: 12px;
   color: var(--error);
-  margin-top: var(--spacing-sm);
-  font-weight: 700;
+  margin-top: var(--spacing-xs);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -283,7 +292,7 @@ footer {
   margin-top: var(--spacing-2xl);
   padding: var(--spacing-xl);
   border-top: 2px solid var(--border);
-  font-family: var(--font-terminal);
+   font-family: var(--font-geistMono);
   font-size: 12px;
   color: var(--foreground-muted);
   text-align: center;
@@ -338,7 +347,7 @@ footer a:hover {
 
 /* Token Info Display */
 .token-info {
-  font-family: var(--font-terminal);
+   font-family: var(--font-geistMono);
   font-size: 12px;
   color: var(--foreground-muted);
   margin-top: var(--spacing-xs);
@@ -348,7 +357,7 @@ footer a:hover {
 
 /* Character Counter */
 .character-counter {
-  font-family: var(--font-terminal);
+   font-family: var(--font-geistMono);
   font-size: 12px;
   color: var(--foreground-muted);
   text-align: right;
@@ -388,7 +397,7 @@ footer a:hover {
   border-radius: var(--radius);
   padding: var(--spacing-md);
   margin-bottom: var(--spacing-lg);
-  font-family: var(--font-terminal);
+   font-family: var(--font-geistMono);
   font-size: 14px;
   color: var(--foreground);
   box-shadow: var(--shadow-hard-sm);
@@ -535,7 +544,7 @@ footer a:hover {
 
 body {
   padding: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-geistMono);
   background: var(--options-background);
   background-size: var(--options-background-size);
   color: var(--foreground);
@@ -583,7 +592,7 @@ body::after {
   margin: 0;
   color: var(--primary);
   position: relative;
-  font-family: var(--font-serif);
+  font-family: var(--font-geistMono);
 }
 .page-header h1::after {
   content: '';
@@ -676,46 +685,66 @@ h3 {
 
 #instructionsTable {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   margin-bottom: 1.5rem;
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   table-layout: fixed;
+  border: 1px solid var(--border-muted);
 }
 
 #instructionsTable thead {
-  background-color: var(--secondary); /* Adjusted */
-  color: var(--secondary-foreground); /* Adjusted */
-  font-weight: 500;
+  background: var(--background-muted-clean);
+  color: var(--foreground-muted-clean);
+  border-bottom: 1px solid var(--border);
 }
 
-#instructionsTable th,
-#instructionsTable td {
-  padding: 0.9rem 1rem; /* Slightly increased padding */
+#instructionsTable th {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  padding: 0.9rem 1rem;
   text-align: left;
-  word-wrap: break-word; /* Allow long words to wrap */
-  overflow-wrap: break-word; /* Modern browsers */
-  vertical-align: top; /* Align content to top for better readability */
+  position: relative;
+  vertical-align: top;
+}
+
+#instructionsTable th::after {
+  content: none;
+}
+
+#instructionsTable td {
+  padding: 0.9rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 400;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  vertical-align: top;
 }
 
 /* Column width distribution for instructions table */
 #instructionsTable th:nth-child(1) {
   width: 18%;
-} /* Name */
+}
 #instructionsTable th:nth-child(2) {
   width: 29%;
-} /* Content - give more space */
+}
 #instructionsTable th:nth-child(3) {
   width: 15%;
-} /* Tool Choice */
+}
 #instructionsTable th:nth-child(4) {
   width: 11%;
-} /* Pin */
+}
 #instructionsTable th:nth-child(5) {
   width: 27%;
   text-align: right;
-} /* Actions */
+}
 
 /* Right-align the Actions column content */
 #instructionsTable td:nth-child(5) {
@@ -724,7 +753,7 @@ h3 {
 
 /* Specific styling for content column to handle long text */
 #instructionsTable td:nth-child(2) {
-  max-width: 0; /* Forces the cell to respect the width setting */
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -736,31 +765,41 @@ h3 {
   overflow: visible;
   position: relative;
   z-index: 10;
-  background-color: var(--card);
+  background: var(--card);
   box-shadow: var(--shadow-md);
   border-radius: 0.25rem;
   padding: 1rem;
 }
 
 #instructionsTable tbody tr:nth-child(even) {
-  background-color: #ecf3f8b3; /* Example: Lighter card color */
+  background: var(--background-muted-clean);
 }
+
 body[data-theme='dark'] #instructionsTable tbody tr:nth-child(even) {
-  background: var(--card) !important; /* Adjusted */
+  background: var(--background-muted-clean) !important;
 }
 
 body[data-theme='dark'] #toolsTable {
-  color: var(--foreground) !important; /* Use the dark theme text color variable */
+  color: var(--foreground) !important;
 }
 
 #instructionsTable tbody tr:hover {
-  background-color: var(--accent);
-  opacity: 0.8;
+  background: var(--accent-muted);
+}
+
+#instructionsTable tbody tr:hover td {
+  color: var(--foreground);
 }
 
 body[data-theme='dark'] #instructionsTable tbody tr:hover {
-  background-color: var(--accent);
-  opacity: 0.6;
+  background: var(--accent-muted);
+  opacity: 1;
+}
+
+/* Actions column buttons - clean styling */
+td[data-label='Actions'] .hextaui-btn-outline {
+  font-size: 12px;
+  padding: var(--spacing-xs) var(--spacing-sm);
 }
 
 /* Collapsible section styles */
@@ -790,19 +829,19 @@ body[data-theme='dark'] #instructionsTable tbody tr:hover {
   display: block;
 }
 
-.instruction-form.card {
-  background-color: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-}
+ .instruction-form.card {
+   background-color: var(--card);
+   border: 1px solid var(--border);
+   border-radius: var(--radius);
+   font-family: var(--font-geistMono);
+ }
 
-.import-export.card {
-  background-color: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
-}
+ .import-export.card {
+   background-color: var(--card);
+   border: 1px solid var(--border);
+   border-radius: var(--radius);
+   font-family: var(--font-geistMono);
+ }
 
 .button-group {
   display: flex;
@@ -1021,7 +1060,7 @@ footer a:hover {
   border-radius: var(--radius);
   font-weight: 600;
   font-size: 0.875rem;
-  font-family: var(--font-mono);
+  font-family: var(--font-geistMono);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   border: none;
@@ -1125,16 +1164,92 @@ div[style*='display: flex'] button {
   /* Or use a specific fill/font variation for Material Symbols if applicable */
 }
 
-/* Extension-specific base styles */
+/* Extension-specific base styles - HextaUI aligned */
 .extension-container {
-  background-color: var(--background);
+  background-color: var(--card);
   color: var(--foreground);
   font-size: 14px;
   line-height: 1.5;
-  border-radius: var(--radius); /* Corrected */
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-hard);
   min-width: 320px;
   max-width: 480px;
+  border: 1px solid var(--border-industrial);
+}
+
+.extension-header {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  padding: 1rem;
+  border-bottom: 2px solid var(--border-industrial);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.extension-content {
+  padding: 1rem;
+  background-color: var(--background);
+}
+
+.extension-button {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  border: 2px solid var(--primary);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-hover);
+  box-shadow: var(--shadow-hard-sm);
+  font-family: var(--font-geistMono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.extension-button:hover {
+  background-color: var(--primary-hover);
+  box-shadow: var(--shadow-hard);
+  transform: translate(-1px, -1px);
+}
+
+.extension-button.secondary {
+  background-color: var(--secondary);
+  color: var(--secondary-foreground);
+  border-color: var(--border-industrial-muted);
+}
+
+.extension-input {
+  background-color: var(--input);
+  color: var(--foreground);
+  border: 1px solid var(--border-industrial-muted);
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-geistMono);
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.extension-input:focus {
+  outline: none;
+  border-color: var(--border-industrial);
+  box-shadow: var(--shadow-hard), var(--risograph-offset);
+}
+
+.extension-card {
+  background-color: var(--card);
+  color: var(--card-foreground);
+  border: 2px solid var(--border-industrial);
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--risograph-bleed);
+}
+
+.extension-muted {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-family: var(--font-geistMono);
 }
 
 .extension-header {
@@ -1234,26 +1349,26 @@ div[style*='display: flex'] button {
   box-shadow: var(--shadow);
 }
 
-/* Shadcn component styles */
+/* Shadcn component styles - HextaUI aligned */
 .shadcn-input {
   display: flex;
   height: 2.5rem;
   width: 100%;
   padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  border: 1px solid var(--border);
-  background-color: var(--background);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-industrial-muted);
+  background-color: var(--background-muted-clean);
   color: var(--foreground);
-  font-size: 0.875rem;
-  transition:
-    border-color 0.3s ease,
-    box-shadow 0.3s ease;
+  font-size: 14px;
+  font-family: var(--font-geistMono);
+  transition: border-color var(--transition-hover), box-shadow var(--transition-hover);
+  box-shadow: var(--shadow-hard-sm);
 }
 
 .shadcn-input:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 20%, transparent);
+  border-color: var(--border-industrial);
+  box-shadow: var(--shadow-hard), var(--risograph-offset);
 }
 
 .shadcn-textarea {
@@ -1261,27 +1376,27 @@ div[style*='display: flex'] button {
   width: 100%;
   min-height: 80px;
   padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  border: 1px solid var(--border);
-  background-color: var(--background);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-industrial-muted);
+  background-color: var(--background-muted-clean);
   color: var(--foreground);
-  font-size: 0.875rem;
-  transition:
-    border-color 0.3s ease,
-    box-shadow 0.3s ease;
+  font-size: 14px;
+  font-family: var(--font-geistMono);
+  transition: border-color var(--transition-hover), box-shadow var(--transition-hover);
+  box-shadow: var(--shadow-hard-sm);
 }
 
 .shadcn-textarea:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 20%, transparent);
+  border-color: var(--border-industrial);
+  box-shadow: var(--shadow-hard), var(--risograph-offset);
 }
 
 .shadcn-checkbox {
   height: 1rem;
   width: 1rem;
-  border-radius: 0.25rem;
-  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-industrial-muted);
   background-color: var(--background);
 }
 
@@ -1290,44 +1405,63 @@ div[style*='display: flex'] button {
   border-color: var(--primary);
 }
 
-/* Section Cards and Headers */
+/* Section Cards and Headers - HextaUI aligned */
 .section-card {
   background: var(--card);
   border-radius: var(--radius);
-  padding: 2rem;
+  padding: var(--spacing-xl);
   margin-bottom: var(--section-spacing);
-  border: 1px solid var(--border);
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 2px solid var(--border-industrial);
+  box-shadow: var(--risograph-bleed);
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
 }
 
+.section-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--risograph-bleed-hover);
+}
+
 .section-header {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--spacing-lg);
+  border-bottom: 2px solid var(--border-industrial);
+  padding-bottom: var(--spacing-md);
+  position: relative;
 }
 
 .section-title {
   display: flex;
   align-items: center;
-  font-size: 1.5rem;
+  font-family: var(--font-geistMono);
+  font-size: var(--font-title-size);
   font-weight: 600;
   color: var(--foreground);
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 var(--spacing-md) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
 }
 
 .section-icon {
-  margin-right: 0.75rem;
+  margin-right: var(--spacing-sm);
+  color: var(--accent);
+  font-size: 1.5rem;
+  transition: color var(--transition-hover);
+  filter: var(--risograph-offset);
+}
+
+.section-card:hover .section-icon {
   color: var(--primary);
 }
 
 .section-divider {
   height: 2px;
-  background: linear-gradient(90deg, var(--primary) 0%, var(--border) 100%);
+  background: var(--border-industrial);
+  margin: var(--spacing-md) 0;
+  position: relative;
   border-radius: 1px;
 }
 
@@ -1416,46 +1550,69 @@ div[style*='display: flex'] button {
 
 /* Toggle styles are now handled by standardized toggle classes in theme.css */
 
-/* Button Styles */
+/* Button Styles - HextaUI aligned */
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary) 0%, #004d5a 100%);
+  background: var(--primary);
   color: var(--primary-foreground);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
-  font-weight: 500;
+  border: 2px solid var(--primary);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius);
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-hover);
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
+  gap: var(--spacing-sm);
+  font-size: 14px;
+  font-family: var(--font-geistMono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: var(--risograph-bleed);
+  filter: var(--risograph-offset);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #004d5a 0%, #003d47 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 104, 121, 0.3);
+  background: var(--primary-hover);
+  box-shadow: var(--risograph-bleed-hover);
+  filter: var(--risograph-offset-hover);
+  transform: translate(-2px, -2px);
+}
+
+.btn-primary:active {
+  transform: translate(1px, 1px);
+  box-shadow: var(--shadow-hard-sm);
 }
 
 .btn-destructive {
   background: var(--destructive);
   color: var(--destructive-foreground);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
-  font-weight: 500;
+  border: 2px solid var(--destructive);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius);
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-hover);
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
+  gap: var(--spacing-sm);
+  font-size: 14px;
+  font-family: var(--font-geistMono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: var(--risograph-bleed);
+  filter: var(--risograph-offset);
 }
 
 .btn-destructive:hover {
-  background: #dc2626;
-  transform: translateY(-1px);
+  background: var(--destructive);
+  filter: brightness(1.1);
+  box-shadow: var(--risograph-bleed-hover);
+  transform: translate(-2px, -2px);
+}
+
+.btn-destructive:active {
+  transform: translate(1px, 1px);
+  box-shadow: var(--shadow-hard-sm);
 }
 
 /* Responsive Table Container */
@@ -1494,7 +1651,8 @@ div[style*='display: flex'] button {
 }
 
 .responsive-table tr:hover {
-  background: var(--accent);
+  background: var(--accent-muted);
+  box-shadow: inset 0 0 0 1px var(--border-industrial);
 }
 
 .responsive-table tbody tr:last-child td {
@@ -1508,10 +1666,11 @@ div[style*='display: flex'] button {
 
 .mobile-card {
   background: var(--card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-industrial);
   border-radius: var(--radius);
-  padding: 1rem;
-  margin-bottom: 1rem;
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  box-shadow: var(--shadow-hard-sm);
 }
 
 .mobile-card-header {
@@ -1748,26 +1907,30 @@ div[style*='display: flex'] button {
   display: block;
 }
 
-/* Button Variants */
+/* Button Variants - HextaUI aligned */
 .btn-secondary {
-  background: var(--secondary);
-  color: var(--secondary-foreground);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
+  background: var(--background-muted-clean);
+  color: var(--foreground-muted-clean);
+  border: 1px solid var(--border-industrial-muted);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition-hover);
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
+  gap: var(--spacing-sm);
+  font-size: 14px;
+  font-family: var(--font-geistMono);
+  box-shadow: var(--shadow-hard-sm);
 }
 
 .btn-secondary:hover {
-  background: var(--secondary);
-  opacity: 0.9;
-  transform: translateY(-1px);
+  background: var(--secondary-hover);
+  border-color: var(--border-industrial);
+  box-shadow: var(--shadow-hard);
+  transform: translate(-1px, -1px);
+  filter: var(--risograph-offset);
 }
 
 .btn-secondary:disabled,
@@ -1775,19 +1938,20 @@ div[style*='display: flex'] button {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 /* Validation States */
 .shadcn-input.error,
 .shadcn-textarea.error {
   border-color: var(--destructive);
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+  box-shadow: var(--shadow-hard), 0 0 0 1px var(--destructive);
 }
 
 .shadcn-input.success,
 .shadcn-textarea.success {
-  border-color: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  border-color: var(--success);
+  box-shadow: var(--shadow-hard), 0 0 0 1px var(--success);
 }
 
 /* Masked values in About section */

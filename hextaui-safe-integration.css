@@ -17,7 +17,7 @@
   white-space: nowrap;
   user-select: none;
   text-decoration: none;
-  font-family: var(--font-mono);
+   font-family: var(--font-geistMono);
 }
 
 .hextaui-btn:disabled {
@@ -82,7 +82,7 @@
   padding: 0 0.75rem;
   font-size: 0.875rem;
   transition: all 0.2s ease;
-  font-family: var(--font-mono);
+   font-family: var(--font-geistMono);
 }
 
 .hextaui-input:focus {
@@ -102,7 +102,7 @@
   padding: 0.75rem;
   font-size: 0.875rem;
   transition: all 0.2s ease;
-  font-family: var(--font-mono);
+   font-family: var(--font-geistMono);
   resize: vertical;
 }
 
@@ -125,13 +125,13 @@
   padding: 1.5rem 1.5rem 0;
 }
 
-.hextaui-card-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--card-foreground);
-  margin: 0;
-  font-family: var(--font-serif);
-}
+ .hextaui-card-title {
+   font-size: 1.25rem;
+   font-weight: 600;
+   color: var(--card-foreground);
+   margin: 0;
+   font-family: var(--font-geistMono);
+ }
 
 .hextaui-card-description {
   color: var(--muted-foreground);
@@ -177,13 +177,13 @@
   padding: 1.5rem 1.5rem 0;
 }
 
-.hextaui-dialog-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--card-foreground);
-  margin: 0;
-  font-family: var(--font-serif);
-}
+ .hextaui-dialog-title {
+   font-size: 1.125rem;
+   font-weight: 600;
+   color: var(--card-foreground);
+   margin: 0;
+   font-family: var(--font-geistMono);
+ }
 
 .hextaui-dialog-description {
   color: var(--muted-foreground);
@@ -321,14 +321,14 @@
   }
 }
 
-/* Demo styles */
-body {
-  font-family: var(--font-serif);
-  background: var(--background);
-  color: var(--foreground);
-  padding: 2rem;
-  margin: 0;
-}
+ /* Demo styles */
+ body {
+   font-family: var(--font-geistMono);
+   background: var(--background);
+   color: var(--foreground);
+   padding: 2rem;
+   margin: 0;
+ }
 
 .demo-section {
   margin-bottom: 3rem;
@@ -338,13 +338,13 @@ body {
   background: var(--card);
 }
 
-.demo-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--card-foreground);
-  margin-bottom: 1rem;
-  font-family: var(--font-serif);
-}
+ .demo-title {
+   font-size: 1.5rem;
+   font-weight: 600;
+   color: var(--card-foreground);
+   margin-bottom: 1rem;
+   font-family: var(--font-geistMono);
+ }
 
 .demo-description {
   color: var(--muted-foreground);
