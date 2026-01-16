@@ -6,12 +6,12 @@ import logger from './logger.js';
  * might not be ready immediately.
  *
  * @param {Object} message - The message to send.
- * @param {number} [maxRetries=10] - Maximum number of retry attempts.
- * @param {number} [baseDelay=500] - Base delay in milliseconds for exponential backoff.
+ * @param {number} [maxRetries=5] - Maximum number of retry attempts.
+ * @param {number} [baseDelay=750] - Base delay in milliseconds for exponential backoff.
  * @returns {Promise<any>} - Resolves with the response if successful.
  * @throws {Error} - Throws if all retries fail.
  */
-export async function sendMessageWithRetry(message, maxRetries = 3, baseDelay = 500) {
+export async function sendMessageWithRetry(message, maxRetries = 5, baseDelay = 750) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             // Wrap chrome.runtime.sendMessage in a Promise to handle both sync and async errors

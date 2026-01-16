@@ -30,10 +30,11 @@ export class SpeechManager {
     initRecognition() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-        if (!SpeechRecognition) {
+if (!SpeechRecognition) {
             logger.warn('SpeechManager', 'Speech Recognition is not supported in this browser.');
             if (this.micButton) {
-                this.micButton.style.display = 'none';
+                this.micButton.classList.add('ui-hidden');
+                this.micButton.classList.remove('ui-visible');
             }
             return;
         }

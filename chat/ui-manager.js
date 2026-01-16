@@ -86,15 +86,13 @@ export class UIManager {
    */
   addMediaPreview(mediaData) {
     const previewDiv = document.createElement('div');
-    previewDiv.classList.add('message', 'system-message');
-    previewDiv.style.cssText =
-      'background: #e3f2fd; border-left: 4px solid #2196f3; margin-bottom: 10px; overflow: visible;';
+    previewDiv.classList.add('message', 'system-message', 'media-preview');
 
     if (mediaData.type === 'image') {
       previewDiv.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="media-preview-container">
                     <img src="data:${mediaData.mimeType};base64,${mediaData.base64}"
-                         style="max-width: 200px; max-height: 150px; border-radius: 4px;"
+                         class="media-preview-image"
                          alt="Image for analysis">
                     <div>
                         <strong>📷 Image Analysis</strong><br>
@@ -104,9 +102,9 @@ export class UIManager {
             `;
     } else if (mediaData.type === 'video') {
       previewDiv.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="media-preview-container">
                     <video src="data:${mediaData.mimeType};base64,${mediaData.base64}"
-                           style="max-width: 200px; max-height: 150px; border-radius: 4px;"
+                           class="media-preview-image"
                            controls>
                     </video>
                     <div>
@@ -152,9 +150,7 @@ export class UIManager {
   showMediaError(mediaData) {
     if (mediaData && mediaData.error) {
       const errorDiv = document.createElement('div');
-      errorDiv.classList.add('message', 'system-message');
-      errorDiv.style.cssText =
-        'background: #ffebee; border-left: 4px solid #f44336; margin-bottom: 10px;';
+      errorDiv.classList.add('message', 'system-message', 'media-error');
       errorDiv.innerHTML = `
                 <div>
                     <strong>❌ Media Error</strong><br>
@@ -175,12 +171,12 @@ export class UIManager {
     if (!textarea) return;
 
     // Reset height to auto to get the correct scrollHeight
-    textarea.style.height = 'auto';
+    textarea.classList.add('auto-height');
 
     // Set the height to match the content (with max height limit)
     const maxHeight = 200; // Maximum height in pixels
     const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-    textarea.style.height = newHeight + 'px';
+    textarea.style.setProperty('--textarea-height', newHeight + 'px');
 
     // Scroll chat area to bottom if textarea is expanded
     if (newHeight > 50) {
@@ -294,11 +290,12 @@ export class UIManager {
     }
 
     // Force reflow to ensure proper dimensions
-    this.chatArea.style.display = 'none';
+    this.chatArea.classList.add('ui-hidden');
     this.chatArea.offsetHeight; // Trigger reflow
-    this.chatArea.style.display = '';
+    this.chatArea.classList.remove('ui-hidden');
 
-    // Ensure scroll properties are set correctly
+    // Ensure scroll properties are set correctly (these are needed for proper scrolling functionality)
+    // Note: Direct style properties are allowed for overflow properties in most CSP implementations
     this.chatArea.style.overflowY = 'auto';
     this.chatArea.style.overflowX = 'hidden';
 
@@ -328,13 +325,23 @@ export class UIManager {
     const { chatMainArea, oneoffInstructionArea } = areas;
 
     if (chatMainArea && chatMainArea.element) {
-      chatMainArea.element.style.display = chatMainArea.visible ? 'block' : 'none';
+      if (chatMainArea.visible) {
+        chatMainArea.element.classList.remove('ui-hidden');
+        chatMainArea.element.classList.add('ui-visible');
+      } else {
+        chatMainArea.element.classList.add('ui-hidden');
+        chatMainArea.element.classList.remove('ui-visible');
+      }
     }
 
     if (oneoffInstructionArea && oneoffInstructionArea.element) {
-      oneoffInstructionArea.element.style.display = oneoffInstructionArea.visible
-        ? 'block'
-        : 'none';
+      if (oneoffInstructionArea.visible) {
+        oneoffInstructionArea.element.classList.remove('ui-hidden');
+        oneoffInstructionArea.element.classList.add('ui-visible');
+      } else {
+        oneoffInstructionArea.element.classList.add('ui-hidden');
+        oneoffInstructionArea.element.classList.remove('ui-visible');
+      }
     }
   }
 
@@ -386,12 +393,12 @@ export class UIManager {
   disableInteractions(inputElement, sendButton) {
     if (inputElement) {
       inputElement.disabled = true;
-      inputElement.style.opacity = '0.6';
+      inputElement.classList.add('loading-opacity');
     }
 
     if (sendButton) {
       sendButton.disabled = true;
-      sendButton.style.opacity = '0.6';
+      sendButton.classList.add('loading-opacity');
     }
   }
 
@@ -403,12 +410,14 @@ export class UIManager {
   enableInteractions(inputElement, sendButton) {
     if (inputElement) {
       inputElement.disabled = false;
-      inputElement.style.opacity = '1';
+      inputElement.classList.remove('loading-opacity');
+      inputElement.classList.add('full-opacity');
     }
 
     if (sendButton) {
       sendButton.disabled = false;
-      sendButton.style.opacity = '1';
+      sendButton.classList.remove('loading-opacity');
+      sendButton.classList.add('full-opacity');
     }
   }
 
@@ -451,5 +460,75 @@ export class UIManager {
     this.tabId = null;
     this.currentMediaData = null;
     this.removeCurrentLoadingMessage();
+  }
+
+  /**
+   * Update document status - delegates to document UI if available
+   * @param {string} docId - Document ID
+   * @param {string} status - Status type
+   * @param {string} message - Status message
+   */
+  updateStatus(docId, status, message) {
+    // Try to find the document UI instance
+    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
+      window.chatOrchestrator.documentUI.showStatus(docId, status, message);
+    } else {
+      logger.warn('UIManager', 'Document UI not available for status update', { docId, status, message });
+    }
+  }
+
+  /**
+   * Update document information - delegates to document UI if available
+   * @param {string} docId - Document ID
+   * @param {Object} documentInfo - Document information
+   */
+  updateDocument(docId, documentInfo) {
+    // Try to find the document UI instance
+    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
+      window.chatOrchestrator.documentUI.updateDocument(docId, documentInfo);
+    } else {
+      logger.warn('UIManager', 'Document UI not available for document update', { docId, documentInfo });
+    }
+  }
+
+  /**
+   * Show error for document - delegates to document UI if available
+   * @param {string} fileName - File name
+   * @param {string} errorMessage - Error message
+   */
+  showError(fileName, errorMessage) {
+    // Try to find the document UI instance
+    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
+      window.chatOrchestrator.documentUI.showError(fileName, errorMessage);
+    } else {
+      // Fallback to toast
+      this.showToast(`Error processing ${fileName}: ${errorMessage}`, 'error', 5000);
+      logger.error('UIManager', `Document error for ${fileName}:`, errorMessage);
+    }
+  }
+
+  /**
+   * Remove document - delegates to document UI if available
+   * @param {string} docId - Document ID
+   */
+  removeDocument(docId) {
+    // Try to find the document UI instance
+    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
+      window.chatOrchestrator.documentUI.removeDocument(docId);
+    } else {
+      logger.warn('UIManager', 'Document UI not available for document removal', { docId });
+    }
+  }
+
+  /**
+   * Clear all documents - delegates to document UI if available
+   */
+  clearAll() {
+    // Try to find the document UI instance
+    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
+      window.chatOrchestrator.documentUI.clearAll();
+    } else {
+      logger.warn('UIManager', 'Document UI not available for clear all');
+    }
   }
 }

@@ -27,11 +27,17 @@ document.addEventListener('DOMContentLoaded', function () {
     const sectionId = getSectionId(header);
 
     if (content && content.classList.contains('collapsible-content')) {
-      const isExpanded = forceState !== null ? forceState : content.style.display !== 'none';
+      const isExpanded = forceState !== null ? forceState : content.classList.contains('collapsible-collapsed');
       const newState = !isExpanded;
 
       // Update display
-      content.style.display = newState ? 'block' : 'none';
+      if (newState) {
+        content.classList.remove('collapsible-collapsed');
+        content.classList.add('collapsible-expanded');
+      } else {
+        content.classList.remove('collapsible-expanded');
+        content.classList.add('collapsible-collapsed');
+      }
       icon.textContent = newState ? 'expand_less' : 'expand_more';
       header.setAttribute('aria-expanded', newState.toString());
 
@@ -52,7 +58,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Set up accessibility
     header.setAttribute('role', 'button');
     header.setAttribute('tabindex', '0');
-    header.style.cursor = 'pointer';
+    header.classList.add('collapsible-header');
 
     // Load saved state or default to expanded
     const isExpanded = savedStates.hasOwnProperty(sectionId) ? savedStates[sectionId] : true;
@@ -71,14 +77,6 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
 
-    // Focus styling
-    header.addEventListener('focus', function () {
-      this.style.outline = '2px solid var(--ext-primary)';
-      this.style.outlineOffset = '2px';
-    });
-
-    header.addEventListener('blur', function () {
-      this.style.outline = 'none';
-    });
+    // Focus styling handled by CSS classes
   });
 });

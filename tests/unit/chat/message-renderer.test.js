@@ -302,6 +302,98 @@ describe('MessageRenderer', () => {
 
       expect(chatArea.querySelector).toHaveBeenCalledWith(`#test-message-1`);
     });
+
+    describe('addMessage with sender and options', () => {
+      test('should add system message with isContext option', () => {
+        const chatArea = { ...mockElement, appendChild: jest.fn() };
+        mockDocument.getElementById.mockReturnValue(chatArea);
+        mockDocument.createElement.mockReturnValue({ 
+          ...mockElement, 
+          classList: { add: jest.fn() },
+          innerHTML: '',
+          textContent: '',
+          appendChild: jest.fn(),
+          addEventListener: jest.fn(),
+        });
+
+        const result = messageRenderer.addMessage(
+          'System',
+          'Ready to chat about test tab. Content length: 100 characters.',
+          { isContext: true, fullContent: 'Full tab content here' }
+        );
+
+        expect(chatArea.appendChild).toHaveBeenCalled();
+        expect(result.messageDiv.className).toContain('message');
+      });
+
+      test('should add system message with isError option', () => {
+        const chatArea = { ...mockElement, appendChild: jest.fn() };
+        mockDocument.getElementById.mockReturnValue(chatArea);
+        mockDocument.createElement.mockReturnValue({ 
+          ...mockElement, 
+          classList: { add: jest.fn() },
+          innerHTML: '',
+          textContent: '',
+          appendChild: jest.fn(),
+        });
+
+        const result = messageRenderer.addMessage(
+          'System',
+          'Something went wrong',
+          { isError: true }
+        );
+
+        expect(chatArea.appendChild).toHaveBeenCalled();
+        expect(result.messageDiv.className).toContain('system-error');
+      });
+
+      test('should add system message with isHelp option', () => {
+        const chatArea = { ...mockElement, appendChild: jest.fn() };
+        mockDocument.getElementById.mockReturnValue(chatArea);
+        mockDocument.createElement.mockReturnValue({ 
+          ...mockElement, 
+          classList: { add: jest.fn() },
+          innerHTML: '',
+          textContent: '',
+          appendChild: jest.fn(),
+        });
+
+        const result = messageRenderer.addMessage(
+          'System',
+          'Here is some help information',
+          { isHelp: true }
+        );
+
+        expect(chatArea.appendChild).toHaveBeenCalled();
+        expect(result.messageDiv.className).toContain('system-help');
+      });
+
+      test('should add user message correctly', () => {
+        const chatArea = { ...mockElement, appendChild: jest.fn() };
+        mockDocument.getElementById.mockReturnValue(chatArea);
+
+        const result = messageRenderer.addMessage('User', 'Hello world');
+
+        expect(chatArea.appendChild).toHaveBeenCalled();
+        expect(result.messageDiv.textContent).toContain('You: Hello world');
+      });
+
+      test('should add LLM message correctly', () => {
+        const chatArea = { ...mockElement, appendChild: jest.fn() };
+        mockDocument.getElementById.mockReturnValue(chatArea);
+        mockDocument.createElement.mockReturnValue({ 
+          ...mockElement, 
+          classList: { add: jest.fn() },
+          innerHTML: '',
+          appendChild: jest.fn(),
+        });
+
+        const result = messageRenderer.addMessage('LLM', 'Here is your response');
+
+        expect(chatArea.appendChild).toHaveBeenCalled();
+        expect(result.messageDiv.className).toContain('llm-message');
+      });
+    });
   });
 
   describe('Streaming Support', () => {

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(grep:*)",
+      "Bash(curl:*)",
+      "Bash(printf:*)",
+      "Bash(openssl sha256:*)",
+      "Bash(openssl base64:*)"
+    ]
+  }
+}

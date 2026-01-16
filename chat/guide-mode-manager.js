@@ -131,8 +131,8 @@ export class GuideModeManager {
         }
     }
 
-    togglePanel() {
-        if (this.panel.style.display === 'none') {
+togglePanel() {
+        if (this.panel.classList.contains('ui-hidden')) {
             this.showPanel();
         } else {
             this.hidePanel();
@@ -156,11 +156,14 @@ export class GuideModeManager {
         }
     }
 
-    async resumeGuide(save = true) {
+async resumeGuide(save = true) {
         // Update UI
-        this.startBtn.style.display = 'none';
-        this.stopBtn.style.display = 'inline-block';
-        this.statusIndicator.style.display = 'flex';
+        this.startBtn.classList.add('ui-hidden');
+        this.startBtn.classList.remove('ui-visible');
+        this.stopBtn.classList.remove('ui-hidden');
+        this.stopBtn.classList.add('ui-visible');
+        this.statusIndicator.classList.remove('ui-hidden');
+        this.statusIndicator.classList.add('ui-visible');
         if (this.goalInput instanceof HTMLTextAreaElement || this.goalInput instanceof HTMLInputElement) {
             this.goalInput.disabled = true;
             this.goalInput.value = this.goal;
@@ -183,13 +186,15 @@ export class GuideModeManager {
         this.startCountdown();
     }
 
-    showPanel() {
-        this.panel.style.display = 'block';
+showPanel() {
+        this.panel.classList.remove('ui-hidden');
+        this.panel.classList.add('ui-visible');
         this.goalInput.focus();
     }
 
     hidePanel() {
-        this.panel.style.display = 'none';
+        this.panel.classList.add('ui-hidden');
+        this.panel.classList.remove('ui-visible');
     }
 
     async startGuide() {
@@ -247,10 +252,13 @@ export class GuideModeManager {
             this.countdownIntervalId = null;
         }
 
-        // Update UI
-        this.startBtn.style.display = 'inline-block';
-        this.stopBtn.style.display = 'none';
-        this.statusIndicator.style.display = 'none';
+// Update UI
+        this.startBtn.classList.remove('ui-hidden');
+        this.startBtn.classList.add('ui-visible');
+        this.stopBtn.classList.add('ui-hidden');
+        this.stopBtn.classList.remove('ui-visible');
+        this.statusIndicator.classList.add('ui-hidden');
+        this.statusIndicator.classList.remove('ui-visible');
         if (this.goalInput instanceof HTMLTextAreaElement || this.goalInput instanceof HTMLInputElement) {
             this.goalInput.disabled = false;
         }
@@ -326,9 +334,9 @@ export class GuideModeManager {
                             };
                         } else {
                             console.warn('[GuideMode] Screenshot capture failed:', captureResponse?.error);
-                            if (this.countdownDisplay) {
+if (this.countdownDisplay) {
                                 this.countdownDisplay.textContent = 'Capture failed';
-                                this.countdownDisplay.style.color = 'var(--muted-foreground)';
+                                this.countdownDisplay.classList.add('countdown-normal');
                             }
                             return;
                         }
@@ -351,9 +359,9 @@ export class GuideModeManager {
                 }
             }
 
-            // Normal successful response processing (including screenshot fallback)
+// Normal successful response processing (including screenshot fallback)
             if (this.countdownDisplay) {
-                this.countdownDisplay.style.color = ''; // Reset color
+                this.countdownDisplay.classList.remove('countdown-normal', 'countdown-urgent', 'countdown-critical');
             }
 
             // Basic content hashing to avoid repeating insights for exact same content

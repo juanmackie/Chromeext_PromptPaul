@@ -48,6 +48,11 @@
                 <span class="material-icons" id="theme-icon">light_mode</span>
             </button>
 
+            <!-- Document Panel Toggle -->
+            <button class="hextaui-sidebar-action quick-action-button" id="document-panel-toggle-btn" title="Documents">
+                <span class="material-icons" id="document-panel-icon">folder</span>
+            </button>
+
             <!-- Pinned instructions will be added here by chat.js -->
             <div id="pinned-actions-container"></div>
             <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
@@ -55,14 +60,13 @@
         <!-- Theme Toggle moved to sidebar for better UX hierarchy -->
         <div class="chat-container">
             <!-- Guide Mode Configuration Panel -->
-            <div id="guide-mode-panel" class="hextaui-card guide-panel" style="display: none;">
+            <div id="guide-mode-panel" class="hextaui-card guide-panel hidden">
                 <div class="panel-header">
                     <div class="header-left">
-                        <h4><span class="material-icons"
-                                style="vertical-align: middle; font-size: 1.2rem; margin-right: 4px;">explore</span>
+                        <h4><span class="material-icons icon-inline">explore</span>
                             Guide
                             Mode</h4>
-                        <div id="guide-status-indicator" class="guide-status" style="display: none;">
+                        <div id="guide-status-indicator" class="guide-status hidden">
                             <span class="pulse-dot"></span>
                             <span id="guide-countdown" class="guide-countdown"></span>
                         </div>
@@ -83,7 +87,7 @@
                     </div>
                     <div class="panel-actions">
                         <button id="start-guide-btn" class="hextaui-btn hextaui-btn-primary">Start Guide</button>
-                        <button id="stop-guide-btn" class="hextaui-btn hextaui-btn-outline" style="display: none;">Stop
+                        <button id="stop-guide-btn" class="hextaui-btn hextaui-btn-outline hidden">Stop
                             Guide</button>
                     </div>
                 </div>
@@ -119,6 +123,21 @@
             </div>
             <button id="send-button" class="ext-btn hextaui-btn hextaui-btn-primary">Send</button>
             <button id="clear-button" class="ext-btn hextaui-btn hextaui-btn-outline">Clear</button>
+        <!-- Document Panel -->
+        <div id="document-sidebar" class="document-sidebar hextaui-sidebar hidden">
+            <div class="document-panel-header">
+                <h4><span class="material-icons icon-inline">description</span>Documents</h4>
+                <button id="close-document-panel" class="icon-btn" title="Close Panel">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+            <div id="document-drop-zone" class="drop-zone">
+                <span class="material-icons upload-icon">cloud_upload</span>
+                <p class="upload-title">Drop documents here</p>
+                <span class="upload-hint">PDF, DOCX, CSV, MD, TXT</span>
+            </div>
+            <div id="document-list" class="document-list"></div>
+            <button id="clear-all-docs" class="hextaui-btn hextaui-btn-outline hidden">Clear All</button>
         </div>
     </div>
     </div>

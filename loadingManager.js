@@ -48,7 +48,7 @@ export class LoadingManager {
     // Position overlay
     const rect = element.getBoundingClientRect();
     if (getComputedStyle(element).position === 'static') {
-      element.style.position = 'relative';
+      element.classList.add('loading-relative');
     }
 
     element.appendChild(overlay);
@@ -271,11 +271,10 @@ export class LoadingManager {
     if (progress === null) {
       // Indeterminate progress
       fill.className = 'progress-fill progress-indeterminate';
-      fill.style.width = '100%';
     } else {
       // Determinate progress
       fill.className = 'progress-fill';
-      fill.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+      fill.style.setProperty('--progress-width', `${Math.max(0, Math.min(100, progress))}%`);
     }
 
     return progressBar;

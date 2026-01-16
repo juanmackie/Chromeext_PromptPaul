@@ -11,6 +11,10 @@ import { StreamingManager } from './streaming-manager.js';
 import { ConversationManager } from './conversation-manager.js';
 import { SpeechManager } from './speech-manager.js';
 import { GuideModeManager } from './guide-mode-manager.js';
+import { RAGManager } from './rag-manager.js';
+import { DocumentManager } from './document-manager.js';
+import { DocumentUI } from './document-ui.js';
+import { RAGContextInjector } from './rag-context-injector.js';
 
 import logger from '../utils/logger.js'; /**
  * Chat Orchestrator
@@ -26,6 +30,12 @@ export class ChatOrchestrator {
     this.conversationManager = null;
     this.speechManager = null;
     this.guideModeManager = null;
+
+    // RAG and Document modules
+    this.ragManager = null;
+    this.documentManager = null;
+    this.documentUI = null;
+    this.ragContextInjector = null;
 
     // DOM elements
     this.chatArea = null;
@@ -43,6 +53,7 @@ export class ChatOrchestrator {
     this.isInitialized = false;
     this.currentLoadingMessage = null;
     this.oneoffContext = null; // Track one-off instruction context
+    this.documentPanelOpen = false;
   }
 
   /**
@@ -89,6 +100,9 @@ export class ChatOrchestrator {
       // Initialize conversation manager
       await this.conversationManager.initialize();
 
+      // Initialize RAG and Document modules
+      await this.initializeRAGModules();
+
       // Setup event listeners
       this.setupEventListeners();
 
@@ -109,6 +123,94 @@ export class ChatOrchestrator {
           originalError: error,
         })
       );
+    }
+  }
+
+  /**
+   * Initialize RAG and Document modules
+   */
+  async initializeRAGModules() {
+    try {
+      logger.info('ChatOrchestrator', 'Chat: Initializing RAG modules...');
+
+      // Initialize RAG Manager
+      this.ragManager = new RAGManager();
+      await this.ragManager.initialize();
+
+      // Initialize RAG Context Injector
+      this.ragContextInjector = new RAGContextInjector(this.ragManager);
+      this.ragContextInjector.setEnabled(true);
+
+      // Initialize Document Manager
+      this.documentManager = new DocumentManager(this.ragManager, null);
+
+      // Initialize Document UI
+      const documentSidebar = document.getElementById('document-sidebar');
+      this.documentUI = new DocumentUI(documentSidebar, this.documentManager);
+      this.documentUI.initialize();
+
+      // Pass UI manager to document manager
+      this.documentManager.uiManager = this.uiManager;
+
+      // Setup document panel toggle
+      this.setupDocumentPanelToggle();
+
+      logger.info('ChatOrchestrator', 'Chat: RAG modules initialized successfully');
+    } catch (error) {
+      logger.error('ChatOrchestrator', 'Chat: Failed to initialize RAG modules:', error);
+      // Don't fail initialization, just log the error
+      this.showToast('Document features unavailable', 'warning');
+    }
+  }
+
+  /**
+   * Setup document panel toggle button
+   */
+  setupDocumentPanelToggle() {
+    const toggleBtn = document.getElementById('document-panel-toggle-btn');
+    const closeBtn = document.getElementById('close-document-panel');
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => this.toggleDocumentPanel());
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.closeDocumentPanel());
+    }
+  }
+
+  /**
+   * Toggle document panel visibility
+   */
+  toggleDocumentPanel() {
+    if (!this.documentUI) return;
+
+    this.documentPanelOpen = !this.documentPanelOpen;
+
+    if (this.documentPanelOpen) {
+      this.documentUI.show();
+      const toggleBtn = document.getElementById('document-panel-toggle-btn');
+      if (toggleBtn) {
+        toggleBtn.classList.add('active');
+      }
+    } else {
+      this.documentUI.hide();
+      const toggleBtn = document.getElementById('document-panel-toggle-btn');
+      if (toggleBtn) {
+        toggleBtn.classList.remove('active');
+      }
+    }
+  }
+
+  /**
+   * Close document panel
+   */
+  closeDocumentPanel() {
+    this.documentPanelOpen = false;
+    this.documentUI?.hide();
+    const toggleBtn = document.getElementById('document-panel-toggle-btn');
+    if (toggleBtn) {
+      toggleBtn.classList.remove('active');
     }
   }
 
@@ -380,8 +482,10 @@ export class ChatOrchestrator {
   handleClearChat() {
     this.uiManager.clearChat();
     this.conversationManager.clearHistory();
-    this.chatMainArea.style.display = 'block';
-    this.oneoffInstructionArea.style.display = 'none';
+    this.chatMainArea.classList.remove('ui-hidden');
+    this.chatMainArea.classList.add('ui-visible');
+    this.oneoffInstructionArea.classList.add('ui-hidden');
+    this.oneoffInstructionArea.classList.remove('ui-visible');
     this.oneoffContext = null; // Reset context
     this.userInput.focus();
   }
@@ -393,14 +497,18 @@ export class ChatOrchestrator {
     this.uiManager.setSelectedText(request.selectedText, request.tabId);
 
     if (request.fromStartChat) {
-      this.chatMainArea.style.display = 'block';
-      this.oneoffInstructionArea.style.display = 'none';
+      this.chatMainArea.classList.remove('ui-hidden');
+      this.chatMainArea.classList.add('ui-visible');
+      this.oneoffInstructionArea.classList.add('ui-hidden');
+      this.oneoffInstructionArea.classList.remove('ui-visible');
       this.oneoffContext = null;
       this.conversationManager.clearHistory();
     } else {
       this.uiManager.updateSelectedTextDisplay(this.selectedTextDiv);
-      this.chatMainArea.style.display = 'none';
-      this.oneoffInstructionArea.style.display = 'block';
+      this.chatMainArea.classList.add('ui-hidden');
+      this.chatMainArea.classList.remove('ui-visible');
+      this.oneoffInstructionArea.classList.remove('ui-hidden');
+      this.oneoffInstructionArea.classList.add('ui-visible');
       this.oneoffContext = request.selectedText;
     }
   }
@@ -414,8 +522,10 @@ export class ChatOrchestrator {
     this.tabId = request.tabId;
 
     // Show chat area
-    this.chatMainArea.style.display = 'block';
-    this.oneoffInstructionArea.style.display = 'none';
+    this.chatMainArea.classList.remove('ui-hidden');
+    this.chatMainArea.classList.add('ui-visible');
+    this.oneoffInstructionArea.classList.add('ui-hidden');
+    this.oneoffInstructionArea.classList.remove('ui-visible');
 
     // Handle loading state
     if (mediaData && mediaData.loading) {

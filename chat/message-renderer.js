@@ -59,71 +59,31 @@ export class MessageRenderer {
         'hextaui-chat-message-system'
       );
 
-      // Add special styling for error and help messages
+// Add special styling for error and help messages
       if (isError) {
-        messageDiv.classList.add('system-error');
-        // Set custom styling for error messages
-        messageDiv.style.cssText = `
-                    background-color: #fef2f2;
-                    border-left: 4px solid #dc2626;
-                    color: #991b1b;
-                    padding: 12px;
-                    margin: 8px 0;
-                    border-radius: 4px;
-                    font-weight: 500;
-                `;
-        contentElement.innerHTML = renderMarkdown(message || '');
+        messageDiv.classList.add('system-error', 'message-error');
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = renderMarkdown(message || '');
         messageDiv.innerHTML = ''; // Clear textContent
-        messageDiv.appendChild(contentElement); // Add processed HTML
+        messageDiv.appendChild(contentDiv); // Add processed HTML
       } else if (isHelp) {
-        messageDiv.classList.add('system-help');
-        // Set custom styling for help messages
-        messageDiv.style.cssText = `
-                    background-color: #f0fdf4;
-                    border-left: 4px solid #16a34a;
-                    color: #15803d;
-                    padding: 12px;
-                    margin: 8px 0;
-                    border-radius: 4px;
-                    font-weight: 500;
-                `;
-        contentElement.innerHTML = renderMarkdown(message || '');
+        messageDiv.classList.add('system-help', 'message-help');
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = renderMarkdown(message || '');
         messageDiv.innerHTML = ''; // Clear textContent
-        messageDiv.appendChild(contentElement); // Add processed HTML
+        messageDiv.appendChild(contentDiv); // Add processed HTML
       } else if (isContext) {
-        messageDiv.classList.add('system-context');
-        // Set custom styling for context-loaded messages
-        messageDiv.style.cssText = `
-                  background-color: var(--card);
-                  border: 1px solid var(--primary);
-                  border-radius: var(--radius-lg);
-                  color: var(--foreground);
-                  padding: 1rem;
-                  margin: 1rem 0;
-                  display: flex;
-                  flex-direction: column;
-                  gap: 0.5rem;
-                  box-shadow: var(--shadow-md);
-                  animation: slideIn 0.3s ease-out;
-              `;
+        messageDiv.classList.add('system-context', 'message-context');
+        // Use CSS class for context messages
 
         const header = document.createElement('div');
-        header.style.cssText = `
-                  display: flex;
-                  align-items: center;
-                  gap: 0.5rem;
-                  color: var(--primary);
-                  font-weight: 600;
-                  font-size: 0.9rem;
-              `;
-        header.innerHTML = '<span class="material-icons" style="font-size: 1.2rem;">article</span> Tab Context Loaded';
+        header.className = 'message-header';
+        header.innerHTML = '<span class="material-icons article-icon">article</span> Tab Context Loaded';
 
         const body = document.createElement('div');
-        body.style.cssText = `
-                  font-size: 0.85rem;
-                  color: var(--muted-foreground);
-                  line-height: 1.4;
-              `;
+        body.className = 'message-body';
         body.textContent = message;
 
         messageDiv.innerHTML = ''; // Clear textContent
@@ -132,49 +92,42 @@ export class MessageRenderer {
 
         // Add clickable content view if fullContent is provided
         if (fullContent) {
-          messageDiv.style.cursor = 'pointer';
+          messageDiv.classList.add('pointer-cursor');
           messageDiv.title = 'Click to view loaded content';
 
           const contentOverlay = document.createElement('div');
-          contentOverlay.style.cssText = `
-                    display: none;
-                    margin-top: 1rem;
-                    padding-top: 1rem;
-                    border-top: 1px dashed var(--border);
-                    font-family: var(--font-mono);
-                    font-size: 0.8rem;
-                    max-height: 200px;
-                    overflow-y: auto;
-                    white-space: pre-wrap;
-                    color: var(--muted-foreground);
-                    background: rgba(0, 0, 0, 0.02);
-                `;
+          contentOverlay.className = 'content-overlay';
+          contentOverlay.classList.add('ui-hidden');
           contentOverlay.textContent = fullContent;
           messageDiv.appendChild(contentOverlay);
 
           const footer = document.createElement('div');
-          footer.style.cssText = `
-                    margin-top: 0.5rem;
-                    font-size: 0.75rem;
-                    color: var(--primary);
-                    display: flex;
-                    align-items: center;
-                    gap: 0.25rem;
-                `;
+          footer.className = 'message-footer';
           footer.innerHTML =
-            '<span class="material-icons" style="font-size: 0.9rem;">expand_more</span> Click to show content';
+            '<span class="material-icons expand-icon">expand_more</span> Click to show content';
           messageDiv.appendChild(footer);
 
           messageDiv.addEventListener('click', () => {
-            const isVisible = contentOverlay.style.display === 'block';
-            contentOverlay.style.display = isVisible ? 'none' : 'block';
+            const isVisible = contentOverlay.classList.contains('ui-visible');
+            if (isVisible) {
+              contentOverlay.classList.remove('ui-visible');
+              contentOverlay.classList.add('ui-hidden');
+            } else {
+              contentOverlay.classList.remove('ui-hidden');
+              contentOverlay.classList.add('ui-visible');
+            }
             footer.innerHTML = isVisible
-              ? '<span class="material-icons" style="font-size: 0.9rem;">expand_more</span> Click to show content'
-              : '<span class="material-icons" style="font-size: 0.9rem;">expand_less</span> Click to hide content';
+              ? '<span class="material-icons expand-icon">expand_more</span> Click to show content'
+              : '<span class="material-icons expand-icon">expand_less</span> Click to hide content';
           });
         }
-      } else {
+      } else if (sender === 'System' && message) {
+        // Default system message styling
+        messageDiv.classList.add('system-default');
         messageDiv.textContent = 'System: ' + message;
+      } else {
+        // Fallback for unknown sender types
+        messageDiv.textContent = message;
       }
     } else if (sender === 'LLM') {
       const llmResult = this.createLlmMessage(message);
@@ -253,8 +206,7 @@ export class MessageRenderer {
     copyIcon.id = `${type.replace('copy', 'copy-')}-icon-${uniqueId}`;
     copyIcon.src = isDarkTheme ? iconConfig.dark : iconConfig.light;
     copyIcon.alt = type === 'copyRaw' ? 'Copy Raw' : 'Copy Formatted';
-    copyIcon.style.cssText =
-      'cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;';
+    copyIcon.classList.add('copy-icon');
     return copyIcon;
   }
 

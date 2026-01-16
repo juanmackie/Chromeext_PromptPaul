@@ -25,6 +25,9 @@ export class ConversationManager {
     this.apiConfig = null;
     this.tools = [];
     this.currentRequest = null;
+
+    // RAG Context Injector (set by orchestrator)
+    this.ragContextInjector = null;
   }
 
   /**
@@ -251,7 +254,7 @@ export class ConversationManager {
       );
 
       // Prepare messages and tools for API client
-      const messages = this.buildMessages(prompt);
+      const messages = await this.buildMessages(prompt);
       const { tools } = this.prepareToolChoices(tool_choice);
 
       // Use centralized API client for streaming
@@ -316,7 +319,7 @@ export class ConversationManager {
 
     try {
       // Prepare messages and tools for API client
-      const messages = this.buildMessages(prompt);
+      const messages = await this.buildMessages(prompt);
       const { tools } = this.prepareToolChoices(tool_choice);
 
       // Use centralized API client
@@ -409,21 +412,45 @@ export class ConversationManager {
   }
 
   /**
-   * Build messages array for API call
+   * Build messages for API call
    * @param {string} prompt - User prompt
    * @returns {Array} Messages array
    */
-  buildMessages(prompt) {
+  async buildMessages(prompt) {
     const messages = [];
+
+    // Add RAG context if available and enabled
+    let ragContext = null;
+    if (this.ragContextInjector && this.ragContextInjector.isEnabled()) {
+      try {
+        ragContext = await this.ragContextInjector.getContextForQuery(prompt);
+      } catch (error) {
+        logger.warn('ConversationManager', 'Failed to get RAG context:', error.message);
+      }
+    }
 
     // Add system prompt
     if (this.apiConfig.systemPrompt && this.apiConfig.systemPrompt.trim()) {
       const now = new Date();
       const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
 
+      let systemContent = `${dateTimeString}\n\n${this.apiConfig.systemPrompt}`;
+
+      // Prepend RAG context to system prompt if available
+      if (ragContext) {
+        systemContent = `${ragContext}\n\n${systemContent}`;
+        logger.info('ConversationManager', 'RAG context injected into system prompt');
+      }
+
       messages.push({
         role: 'system',
-        content: `${dateTimeString}\n\n${this.apiConfig.systemPrompt}`,
+        content: systemContent,
+      });
+    } else if (ragContext) {
+      // If no system prompt, add RAG context as a system message
+      messages.push({
+        role: 'system',
+        content: ragContext,
       });
     }
 
@@ -447,10 +474,10 @@ export class ConversationManager {
    * Build messages with media content
    * @param {string} prompt - User prompt
    * @param {Object} mediaData - Media data
-   * @returns {Array} Messages array with media
+   * @returns {Promise<Array>} Messages array with media
    */
-  buildMessagesWithMedia(prompt, mediaData) {
-    const messages = this.buildMessages(prompt);
+  async buildMessagesWithMedia(prompt, mediaData) {
+    const messages = await this.buildMessages(prompt);
 
     // Modify the last user message to include media
     if (mediaData && messages.length > 0) {

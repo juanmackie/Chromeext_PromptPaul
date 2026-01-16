@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@orama/orama": "./lib/orama.js",
+    "@orama/plugin-embeddings": "./lib/plugin-embeddings.js",
+    "@orama/plugin-data-persistence": "./lib/plugin-data-persistence.js"
+  }
+}
