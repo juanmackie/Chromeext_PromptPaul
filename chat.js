@@ -3,7 +3,7 @@ import { applyDarkTheme } from './themeUtils.js';
 import { errorHandler, ErrorSeverity, ErrorCategory, createError } from './errorHandler.js';
 import { loadingManager } from './loadingManager.js';
 
-import logger from '../utils/logger.js';
+import logger from './utils/logger.js';
 document.addEventListener('DOMContentLoaded', async () => {
   logger.info('Chat', 'DOMContentLoaded event fired in chat.js');
 

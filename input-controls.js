@@ -1,5 +1,5 @@
 // Enhanced input controls and validation
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', () => {
   // Simple error handler for non-module context
   const handleError = (error, context = {}) => {
     logger.error('InputControls', 'Input Controls Error:', error, context);
@@ -252,7 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (systemPrompt) {
-    systemPrompt.addEventListener('input', function () {
+    systemPrompt.addEventListener('input', () => {
       wrapAsync(() => updateCharacterCount(), {
         category: 'SYSTEM',
         userMessage: 'Failed to update character count',
@@ -304,7 +304,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (addProfileButton) {
-    addProfileButton.addEventListener('click', function () {
+    addProfileButton.addEventListener('click', () => {
       wrapAsync(
         async () => {
           const profileName = prompt('Enter a name for the new profile:');
@@ -360,7 +360,7 @@ document.addEventListener('DOMContentLoaded', function () {
           // Add the new profile to the dropdown
           try {
             const option = document.createElement('option');
-            option.value = 'profile_' + Date.now();
+            option.value = `profile_${  Date.now()}`;
             option.textContent = profileName;
             profileSelect.add(option);
             profileSelect.value = option.value;
@@ -387,7 +387,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (deleteProfileButton) {
-    deleteProfileButton.addEventListener('click', function () {
+    deleteProfileButton.addEventListener('click', () => {
       const currentProfile = profileSelect?.value;
       if (currentProfile && currentProfile !== 'default') {
         if (
@@ -422,7 +422,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function showError(fieldId, message) {
-    const errorElement = document.getElementById(fieldId + 'Error');
+    const errorElement = document.getElementById(`${fieldId  }Error`);
     const inputElement = document.getElementById(fieldId);
 
     if (errorElement) {
@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function clearError(fieldId) {
-    const errorElement = document.getElementById(fieldId + 'Error');
+    const errorElement = document.getElementById(`${fieldId  }Error`);
     const inputElement = document.getElementById(fieldId);
 
     if (errorElement) {

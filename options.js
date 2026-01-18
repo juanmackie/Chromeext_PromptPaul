@@ -317,8 +317,7 @@ class OptionsOrchestrator {
     // Setup streaming toggle
     await this.uiComponents.setupStreamingToggle();
 
-    // Setup collapsible headers
-    this.uiComponents.setupCollapsibleHeaders();
+
   }
 
   /**
@@ -549,6 +548,7 @@ class OptionsOrchestrator {
    */
   getFormData() {
     const profileSelect = this.uiComponents.getElement('profileSelect');
+
     return {
       selectedProfileId: profileSelect ? profileSelect.value : 'default',
       llmEndpoint: this.uiComponents.getElement('llmEndpoint')?.value?.trim() || '',
@@ -1060,7 +1060,7 @@ class OptionsOrchestrator {
     } else {
       // Add new tool
       const newTool = {
-        id: 'tool_' + Date.now(),
+        id: `tool_${  Date.now()}`,
         name,
         description,
         parameters,
@@ -1244,7 +1244,7 @@ class OptionsOrchestrator {
    */
   async importToolsFromData(importData) {
     const result = await storageService.getLocal(['promptPaulTools']);
-    let existingTools = result.promptPaulTools || [];
+    const existingTools = result.promptPaulTools || [];
     const importedTools = importData.tools;
     let addedCount = 0;
     let updatedCount = 0;
@@ -1263,7 +1263,7 @@ class OptionsOrchestrator {
         // Add new tool
         existingTools.push({
           ...importedTool,
-          id: importedTool.id || 'tool_' + Date.now(),
+          id: importedTool.id || `tool_${  Date.now()}`,
           createdAt: importedTool.createdAt || new Date().toISOString(),
           lastUpdated: new Date().toISOString(),
         });
@@ -1317,7 +1317,7 @@ class OptionsOrchestrator {
    */
   downloadJSON(data, filename) {
     const dataStr =
-      'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2));
+      `data:text/json;charset=utf-8,${  encodeURIComponent(JSON.stringify(data, null, 2))}`;
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute('href', dataStr);
     downloadAnchorNode.setAttribute('download', filename);
@@ -1371,7 +1371,7 @@ class OptionsOrchestrator {
       if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
         this.showStatus('Microphone permission was denied. Please check your browser settings.', true, true);
       } else {
-        this.showStatus('Error accessing microphone: ' + error.message, true, true);
+        this.showStatus(`Error accessing microphone: ${  error.message}`, true, true);
       }
     }
   }

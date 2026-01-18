@@ -105,7 +105,7 @@ class Analytics {
    */
   sanitizeLabel(v) {
     if (typeof v !== 'string') return undefined;
-    let s = v.trim().toLowerCase();
+    const s = v.trim().toLowerCase();
     if (!s) return undefined;
     // quick deny if looks like an email or has spaces
     if (s.includes('@') || s.includes(' ')) return undefined;

@@ -51,7 +51,7 @@ export class MessageRenderer {
 
     if (sender === 'User') {
       messageDiv.classList.add('user-message', 'hextaui-chat-message', 'hextaui-chat-message-user');
-      messageDiv.textContent = 'You: ' + message;
+      messageDiv.textContent = `You: ${  message}`;
     } else if (sender === 'System') {
       messageDiv.classList.add(
         'system-message',
@@ -124,7 +124,7 @@ export class MessageRenderer {
       } else if (sender === 'System' && message) {
         // Default system message styling
         messageDiv.classList.add('system-default');
-        messageDiv.textContent = 'System: ' + message;
+        messageDiv.textContent = `System: ${  message}`;
       } else {
         // Fallback for unknown sender types
         messageDiv.textContent = message;
@@ -178,7 +178,7 @@ export class MessageRenderer {
     // Process markdown
     llmContentSpan.innerHTML = renderMarkdown(message || '');
 
-    const uniqueId = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+    const uniqueId = `${Date.now()  }_${  Math.random().toString(36).substring(2, 9)}`;
     const isDarkTheme = document.body.classList.contains('dark-theme');
 
     // Create copy icons

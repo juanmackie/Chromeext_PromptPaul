@@ -122,12 +122,12 @@ export class ToolManager {
         }
 
         let finalEndpointUrl = endpointUrl;
-        let finalFetchOptions = {
+        const finalFetchOptions = {
           headers: {
             Accept: 'application/json',
           },
         };
-        let finalArgs = args || {};
+        const finalArgs = args || {};
 
         // Determine HTTP method
         const isEmptyArgs = !Object.keys(finalArgs).length === 0;

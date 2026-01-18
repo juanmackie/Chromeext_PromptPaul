@@ -4,13 +4,13 @@
   } else if (typeof exports !== "undefined") {
     factory(module);
   } else {
-    var mod = {
+    const mod = {
       exports: {}
     };
     factory(mod);
     global.browser = mod.exports;
   }
-})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this, function (module) {
+})(typeof globalThis !== "undefined" ? globalThis : typeof self !== "undefined" ? self : this, (module) => {
   /* webextension-polyfill - v0.12.0 - Tue May 14 2024 18:01:29 */
   /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
   /* vim: set sts=2 sw=2 et tw=80: */
@@ -881,7 +881,7 @@
           }
         });
       };
-      let hasOwnProperty = Function.call.bind(Object.prototype.hasOwnProperty);
+      const hasOwnProperty = Function.call.bind(Object.prototype.hasOwnProperty);
 
       /**
        * Wraps an object in a Proxy which intercepts and wraps certain methods
@@ -907,8 +907,8 @@
        * @returns {Proxy<object>}
        */
       const wrapObject = (target, wrappers = {}, metadata = {}) => {
-        let cache = Object.create(null);
-        let handlers = {
+        const cache = Object.create(null);
+        const handlers = {
           has(proxyTarget, prop) {
             return prop in target || prop in cache;
           },
@@ -930,7 +930,7 @@
               } else if (hasOwnProperty(metadata, prop)) {
                 // This is an async method that we have metadata for. Create a
                 // Promise wrapper for it.
-                let wrapper = wrapAsyncFunction(prop, metadata[prop]);
+                const wrapper = wrapAsyncFunction(prop, metadata[prop]);
                 value = wrapMethod(target, target[prop], wrapper);
               } else {
                 // This is a method that we don't know or care about. Return the
@@ -989,7 +989,7 @@
         // The proxy handlers themselves will still use the original `target`
         // instead of the `proxyTarget`, so that the methods and properties are
         // dereferenced via the original targets.
-        let proxyTarget = Object.create(target);
+        const proxyTarget = Object.create(target);
         return new Proxy(proxyTarget, handlers);
       };
 
@@ -1068,7 +1068,7 @@
         return function onMessage(message, sender, sendResponse) {
           let didCallSendResponse = false;
           let wrappedSendResponse;
-          let sendResponsePromise = new Promise(resolve => {
+          const sendResponsePromise = new Promise(resolve => {
             wrappedSendResponse = function (response) {
               didCallSendResponse = true;
               resolve(response);

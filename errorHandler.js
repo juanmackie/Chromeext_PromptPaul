@@ -317,7 +317,7 @@ export class ErrorHandler {
       });
     }
 
-    // Handle rate limiting errors
+     // Handle rate limiting errors
     if (
       error.message &&
       (error.message.includes('429') ||
@@ -336,6 +336,48 @@ export class ErrorHandler {
         ...options,
       });
     }
+
+
+    // Handle quota exceeded errors
+    if (error.name === 'QuotaExceededError' || error.message?.includes('quota')) {
+      const userMessage = 'Request quota exceeded. Please try a shorter prompt or wait before trying again.';
+      return new ExtensionError(error.message || 'Quota exceeded', {
+        severity: ErrorSeverity.HIGH,
+        category: ErrorCategory.NETWORK,
+        code: 'QUOTA_EXCEEDED',
+        userMessage,
+        originalError: error,
+        ...options,
+      });
+    }
+
+    // Handle security errors (CORS, etc.)
+    if (error.name === 'SecurityError' || error.message?.includes('security') || error.message?.includes('CORS')) {
+      const userMessage = 'Security restriction prevented this operation. This may be a browser security policy.';
+      return new ExtensionError(error.message || 'Security error', {
+        severity: ErrorSeverity.HIGH,
+        category: ErrorCategory.SYSTEM,
+        code: 'SECURITY_ERROR',
+        userMessage,
+        originalError: error,
+        ...options,
+      });
+    }
+
+    // Handle abort errors (user cancellation)
+    if (error.name === 'AbortError' || error.message?.includes('abort') || error.message?.includes('cancel')) {
+      const userMessage = 'Request was cancelled by user.';
+      return new ExtensionError(error.message || 'Request aborted', {
+        severity: ErrorSeverity.LOW,
+        category: ErrorCategory.USER_INPUT,
+        code: 'ABORT_ERROR',
+        userMessage,
+        originalError: error,
+        ...options,
+      });
+    }
+
+
 
     // Handle general errors
     return new ExtensionError(error?.message || 'Unknown error', {

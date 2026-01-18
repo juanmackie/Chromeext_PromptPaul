@@ -7,7 +7,7 @@ import {
   handleChromeApiCall,
 } from '../errorHandler.js';
 import { storageService } from '../services/storage-service.js';
-import { apiClient } from '../services/api-client.js';
+import { apiClient, ApiProvider } from '../services/api-client.js';
 
 import logger from '../utils/logger.js'; /**
  * Conversation Manager
@@ -25,9 +25,6 @@ export class ConversationManager {
     this.apiConfig = null;
     this.tools = [];
     this.currentRequest = null;
-
-    // RAG Context Injector (set by orchestrator)
-    this.ragContextInjector = null;
   }
 
   /**
@@ -83,7 +80,7 @@ export class ConversationManager {
 
         logger.info(
           'ConversationManager',
-          `Chat: Using configuration from profile: ${selectedProfile.name || selectedProfile.id}`
+          `Chat: Using configuration from profile: ${selectedProfile.name || selectedProfile.id} (provider: ${selectedProfile.provider || 'custom'})`
         );
         this.apiConfig = selectedProfile;
         return selectedProfile;
@@ -239,56 +236,24 @@ export class ConversationManager {
    * @returns {Promise<void>}
    */
   async makeStreamingApiCall(prompt, tool_choice) {
-    logger.info('ConversationManager', 'Chat: Starting streaming API call with centralized client');
+    logger.info('ConversationManager', 'Chat: Starting streaming API call (provider: external API)');
 
     try {
       // Initialize streaming UI components first
       this.streamingManager.startStream(
         { prompt },
         this.conversationHistory,
-        // Note: These elements might be null - the streaming manager will handle nulls gracefully
         document.getElementById('user-input'),
         document.getElementById('send-button'),
         document.getElementById('clear-button'),
         window.loadingManager
       );
 
-      // Prepare messages and tools for API client
-      const messages = await this.buildMessages(prompt);
-      const { tools } = this.prepareToolChoices(tool_choice);
+      // Create AbortController for cancellation support
+      const abortController = this.streamingManager.createAbortController();
 
-      // Use centralized API client for streaming
-      await apiClient.makeStreamingRequest(
-        this.apiConfig,
-        {
-          messages,
-          tools,
-          toolChoice: tool_choice,
-          stream: true,
-        },
-        // Chunk callback for streaming responses
-        chunk => {
-          if (chunk.type === 'content') {
-            // Forward content chunk to streaming manager
-            this.streamingManager.handleStreamChunk(chunk.content);
-          } else if (chunk.type === 'tool_call') {
-            // Handle tool call chunks
-            this.streamingManager.handleToolCallChunk(chunk.tool_calls);
-          }
-        },
-        // Stream completed callback
-        () => {
-          // Finalize the streaming session
-          this.streamingManager.endStream(
-            {},
-            this.conversationHistory,
-            document.getElementById('user-input'),
-            document.getElementById('send-button'),
-            document.getElementById('clear-button'),
-            window.loadingManager
-          );
-        }
-      );
+      // Use external API client for streaming
+      await this.makeExternalApiStreamingCall(prompt, tool_choice, abortController.signal);
     } catch (error) {
       logger.error('ConversationManager', 'Chat: Streaming API call failed:', error);
 
@@ -303,6 +268,55 @@ export class ConversationManager {
       );
       throw error;
     }
+  }
+
+  /**
+   * Make external API streaming call
+   * @param {string} prompt - User prompt
+   * @param {string} tool_choice - Tool choice setting
+   * @param {AbortSignal} signal - Abort signal for cancellation
+   * @returns {Promise<void>}
+   */
+  async makeExternalApiStreamingCall(prompt, tool_choice, signal) {
+    logger.info('ConversationManager', 'Chat: Using external API for streaming');
+
+    // Prepare messages and tools for API client
+    const messages = await this.buildMessages(prompt);
+    const { tools } = this.prepareToolChoices(tool_choice);
+
+    // Use centralized API client for streaming
+    await apiClient.makeStreamingRequest(
+      this.apiConfig,
+      {
+        messages,
+        tools,
+        toolChoice: tool_choice,
+        stream: true,
+      },
+      // Chunk callback for streaming responses
+      chunk => {
+        if (chunk.type === 'content') {
+          // Forward content chunk to streaming manager
+          this.streamingManager.handleStreamChunk(chunk.content);
+        } else if (chunk.type === 'tool_call') {
+          // Handle tool call chunks
+          this.streamingManager.handleToolCallChunk(chunk.tool_calls);
+        }
+      },
+      // Stream completed callback
+      () => {
+        // Finalize the streaming session
+        this.streamingManager.endStream(
+          {},
+          this.conversationHistory,
+          document.getElementById('user-input'),
+          document.getElementById('send-button'),
+          document.getElementById('clear-button'),
+          window.loadingManager
+        );
+      },
+      signal // Pass abort signal for cancellation support
+    );
   }
 
   /**
@@ -419,38 +433,16 @@ export class ConversationManager {
   async buildMessages(prompt) {
     const messages = [];
 
-    // Add RAG context if available and enabled
-    let ragContext = null;
-    if (this.ragContextInjector && this.ragContextInjector.isEnabled()) {
-      try {
-        ragContext = await this.ragContextInjector.getContextForQuery(prompt);
-      } catch (error) {
-        logger.warn('ConversationManager', 'Failed to get RAG context:', error.message);
-      }
-    }
-
     // Add system prompt
     if (this.apiConfig.systemPrompt && this.apiConfig.systemPrompt.trim()) {
       const now = new Date();
       const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
 
-      let systemContent = `${dateTimeString}\n\n${this.apiConfig.systemPrompt}`;
-
-      // Prepend RAG context to system prompt if available
-      if (ragContext) {
-        systemContent = `${ragContext}\n\n${systemContent}`;
-        logger.info('ConversationManager', 'RAG context injected into system prompt');
-      }
+      const systemContent = `${dateTimeString}\n\n${this.apiConfig.systemPrompt}`;
 
       messages.push({
         role: 'system',
         content: systemContent,
-      });
-    } else if (ragContext) {
-      // If no system prompt, add RAG context as a system message
-      messages.push({
-        role: 'system',
-        content: ragContext,
       });
     }
 

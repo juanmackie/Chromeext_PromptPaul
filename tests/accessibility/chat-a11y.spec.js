@@ -8,7 +8,7 @@ const { test, expect } = require('@playwright/test');
 test.describe('Chat UI Accessibility', () => {
   test('chat interface should have no accessibility violations', async ({ page }) => {
     // Load chat.html or simulate chat UI
-    await page.goto('file://' + __dirname + '/../../../../chat.html');
+    await page.goto(`file://${  __dirname  }/../../../../chat.html`);
 
     // Wait for UI to load
     await page.waitForLoadState('networkidle');
@@ -32,7 +32,7 @@ test.describe('Chat UI Accessibility', () => {
   });
 
   test('options page should meet a11y standards', async ({ page }) => {
-    await page.goto('file://' + __dirname + '/../../../../options.html');
+    await page.goto(`file://${  __dirname  }/../../../../options.html`);
     await page.waitForLoadState('networkidle');
 
     const a11yResults = await page.evaluate(async () => {
@@ -54,7 +54,7 @@ test.describe('Chat UI Accessibility', () => {
   });
 
   test('keyboard navigation should work in chat UI', async ({ page }) => {
-    await page.goto('file://' + __dirname + '/../../../../chat.html');
+    await page.goto(`file://${  __dirname  }/../../../../chat.html`);
 
     // Focus chat input
     await page.focus('input[placeholder*="prompt"], textarea');

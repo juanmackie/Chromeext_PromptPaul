@@ -6,7 +6,13 @@
       "Bash(curl:*)",
       "Bash(printf:*)",
       "Bash(openssl sha256:*)",
-      "Bash(openssl base64:*)"
+      "Bash(openssl base64:*)",
+      "WebFetch(domain:dev.to)",
+      "WebSearch",
+      "WebFetch(domain:developer.chrome.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:thoughtbot.com)",
+      "Bash(ls:*)"
     ]
   }
 }

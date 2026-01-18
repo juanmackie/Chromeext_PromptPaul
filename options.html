@@ -44,6 +44,7 @@
       <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
 
       <form id="optionsForm" class="grid-form">
+        <div id="externalApiFields" class="visibility-transition field-visible col-span-12 grid-form">
         <div class="hextaui-form-field col-span-12">
           <label for="llmEndpoint" class="hextaui-form-label">
             LLM API Endpoint
@@ -51,7 +52,7 @@
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <input type="url" id="llmEndpoint" class="hextaui-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+          <input type="url" id="llmEndpoint" class="hextaui-input" placeholder="https://api.mistral.ai/v1/chat/completions">
           <div class="hextaui-form-error" id="llmEndpointError"></div>
         </div>
 
@@ -73,7 +74,9 @@
           </div>
           <div class="hextaui-form-error" id="apiKeyError"></div>
         </div>
+        </div><!-- End externalApiFields -->
 
+        <div id="modelNameField" class="visibility-transition field-visible col-span-12 grid-form">
         <!-- Model Configuration Fields -->
         <div class="hextaui-form-field col-span-4">
           <label for="modelName" class="hextaui-form-label">
@@ -87,6 +90,7 @@
           </div>
           <div class="hextaui-form-error" id="modelNameError"></div>
         </div>
+        </div><!-- End modelNameField -->
 
         <div class="hextaui-form-field col-span-8">
           <label for="maxTokens" class="hextaui-form-label">

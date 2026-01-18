@@ -509,7 +509,7 @@ beforeEach(() => {
       }
       return array;
     }),
-    randomUUID: jest.fn(() => 'mock-uuid-' + Math.random().toString(36).substr(2, 9)),
+    randomUUID: jest.fn(() => `mock-uuid-${  Math.random().toString(36).substr(2, 9)}`),
     subtle: {
       digest: jest.fn(() => Promise.resolve(new ArrayBuffer(32))),
     },
