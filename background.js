@@ -138,6 +138,8 @@ async function setupContextMenu() {
 // Initialize on extension startup
 chrome.runtime.onInstalled.addListener(async () => {
   logger.info('Background', 'PromptPaul extension installed');
+  
+  analytics.trackInstalled();
 
   // Initialize default configuration in sync storage
   // This ensures the API client has access to configuration immediately
@@ -696,10 +698,6 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 // Analytics tracking for extension usage
 chrome.runtime.onStartup.addListener(() => {
   analytics.sendUmamiEvent('extension_startup', { action: 'startup' });
-});
-
-chrome.runtime.onInstalled.addListener(() => {
-  analytics.trackInstalled();
 });
 
 logger.info('Background', 'PromptPaul background script initialized');

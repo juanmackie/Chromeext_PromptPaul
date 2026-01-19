@@ -85,6 +85,14 @@ export class UIManager {
    * @param {Object} mediaData - Media data object
    */
   addMediaPreview(mediaData) {
+    const ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+    if (mediaData.type === 'image' && !ALLOWED_IMAGE_MIME_TYPES.includes(mediaData.mimeType)) {
+      logger.warn('UIManager', 'Invalid image MIME type:', mediaData.mimeType);
+      this.showMediaError({ error: 'Invalid image format. Supported: PNG, JPEG, GIF, WebP' });
+      return;
+    }
+
     const previewDiv = document.createElement('div');
     previewDiv.classList.add('message', 'system-message', 'media-preview');
 

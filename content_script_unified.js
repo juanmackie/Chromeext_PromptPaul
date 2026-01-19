@@ -487,316 +487,238 @@
       });
     }
 
-    // Enhanced content extraction with comprehensive noise filtering and timeout protection
-    const extractContent = async () => {
-      const extractionTimeout = 10000; // 10 second timeout for extraction
-      const startTime = Date.now();
-      // Track when we've already consumed most of our budget so we can fall back to a fast-path
-      let nearTimeout = false;
+    /**
+     * Check if extraction has exceeded timeout with threshold
+     * @param {number} startTime - Start timestamp
+     * @param {number} extractionTimeout - Total timeout in ms
+     * @param {number} threshold - Threshold in ms before timeout
+     * @returns {boolean} True if timeout exceeded
+     */
+    function isExtractionTimeout(startTime, extractionTimeout, threshold = 0) {
+      return Date.now() - startTime > extractionTimeout - threshold;
+    }
 
+    /**
+     * Perform fast-path extraction using body text
+     * @returns {string} Trimmed text content
+     */
+    function performFastPathExtraction() {
+      try {
+        const fastText = document.body?.innerText || document.body?.textContent || '';
+        console.log('[Content Script] Using fast-path extraction', {
+          textLength: fastText.length,
+        });
+        return fastText.trim();
+      } catch (error) {
+        console.warn('[Content Script] Fast-path extraction failed:', error);
+        return '';
+      }
+    }
+
+    /**
+     * Extract content using CSS selectors
+     * @param {Array<string>} contentSelectors - List of selectors to try
+     * @param {Array<string>} noiseSelectors - Noise selectors to remove
+     * @param {number} startTime - Extraction start time
+     * @param {number} extractionTimeout - Total timeout
+     * @returns {Object} Best result {text, score, element, method}
+     */
+    async function extractWithSelectors(contentSelectors, noiseSelectors, startTime, extractionTimeout) {
+      let bestResult = { text: '', score: 0, element: null, method: 'none' };
+      console.log('[Content Script] Testing content selectors...');
+      for (const selector of contentSelectors) {
+        if (isExtractionTimeout(startTime, extractionTimeout, 2000)) {
+          console.warn('[Content Script] Timeout approaching during selector testing, breaking');
+          break;
+        }
+        try {
+          const elements = document.querySelectorAll(selector);
+          const elementsToProcess = Array.from(elements).slice(0, 5);
+          for (const element of elementsToProcess) {
+            if (isExtractionTimeout(startTime, extractionTimeout, 1000)) {
+              console.warn('[Content Script] Timeout approaching during element processing, breaking');
+              break;
+            }
+            try {
+              ProgressiveDOMProcessor.resetTimer();
+              const workingElement = element.cloneNode(true);
+              const removedCount = await ProgressiveDOMProcessor.processNoiseSelectors(
+                workingElement,
+                noiseSelectors
+              );
+              const text = workingElement.textContent || workingElement.innerText || '';
+              const score = calculateContentScore(text, element);
+              if (score > bestResult.score) {
+                bestResult = {
+                  text: text.trim(),
+                  score,
+                  element,
+                  method: `selector: ${selector} (removed ${removedCount} elements)`,
+                };
+                console.log(`[Content Script] New best result: ${selector} (score: ${score})`);
+              }
+            } catch (elementError) {
+              console.warn(`[Content Script] Error processing element for ${selector}:`, elementError);
+            }
+          }
+        } catch (error) {
+          console.warn(`[Content Script] Error with selector ${selector}:`, error);
+        }
+      }
+      return bestResult;
+    }
+
+    /**
+     * Extract content from document body with noise filtering
+     * @param {Array<string>} noiseSelectors - Noise selectors to remove
+     * @returns {Object} Result {text, score, element, method}
+     */
+    async function extractFromBody(noiseSelectors) {
+      console.log('[Content Script] Testing body extraction...');
+      try {
+        ProgressiveDOMProcessor.resetTimer();
+        const workingBody = document.body.cloneNode(true);
+        const removedCount = await ProgressiveDOMProcessor.processNoiseSelectors(
+          workingBody,
+          noiseSelectors
+        );
+        const bodyText = workingBody.textContent || workingBody.innerText || '';
+        const bodyScore = calculateContentScore(bodyText, document.body);
+        return {
+          text: bodyText.trim(),
+          score: bodyScore,
+          element: document.body,
+          method: `body-with-filtering (removed ${removedCount} elements)`,
+        };
+      } catch (error) {
+        console.warn('[Content Script] Error with body extraction:', error);
+        return { text: '', score: 0, element: null, method: 'body-failed' };
+      }
+    }
+
+    /**
+     * Extract unfiltered content from document body
+     * @returns {Object} Result {text, score, element, method}
+     */
+    function extractUnfilteredText() {
+      console.log('[Content Script] Testing unfiltered extraction...');
+      try {
+        const rawText = document.body.textContent || document.body.innerText || '';
+        const rawScore = calculateContentScore(rawText, document.body);
+        return {
+          text: rawText.trim(),
+          score: rawScore,
+          element: document.body,
+          method: 'unfiltered',
+        };
+      } catch (error) {
+        console.warn('[Content Script] Error with unfiltered extraction:', error);
+        return { text: '', score: 0, element: null, method: 'unfiltered-failed' };
+      }
+    }
+
+    /**
+     * Handle extraction timeout scenario
+     * @param {Object} bestResult - Best result so far
+     * @param {number} startTime - Start timestamp
+     * @param {number} extractionTimeout - Total timeout
+     * @returns {string} Fallback text
+     */
+    function handleExtractionTimeout(bestResult, startTime, extractionTimeout) {
+      const finalElapsed = Date.now() - startTime;
+      console.warn(
+        '[Content Script] Extraction exceeded timeout, returning best-effort content',
+        {
+          extractionTime: finalElapsed,
+          method: bestResult.method,
+          score: bestResult.score,
+          textLength: bestResult.text ? bestResult.text.length : 0,
+        }
+      );
+      let fallbackText = bestResult.text;
+      if (!fallbackText || fallbackText.length === 0) {
+        try {
+          fallbackText = (document.body?.innerText || document.body?.textContent) || '';
+        } catch (fallbackError) {
+          console.warn('[Content Script] Failed to obtain fallback text:', fallbackError);
+          fallbackText = '';
+        }
+      }
+      return (fallbackText || '').trim();
+    }
+
+    /**
+     * Determine best extraction result from multiple methods
+     * @param {...Object} results - Variable number of result objects
+     * @returns {Object} Best result
+     */
+    function determineBestResult(...results) {
+      return results.reduce((best, current) => {
+        if (current.score > best.score) {
+          return current;
+        }
+        return best;
+      }, { text: '', score: 0, element: null, method: 'none' });
+    }
+
+    const extractContent = async () => {
+      const extractionTimeout = 10000;
+      const startTime = Date.now();
       return new Promise(async (resolve, reject) => {
         try {
-          // Check if document is accessible
           if (!document || !document.documentElement) {
             reject(new Error('Document not accessible'));
             return;
           }
-
           console.log('[Content Script] Starting enhanced content extraction...');
-
-          // Wait for dynamic content to load (use default 10s timeout)
           await waitForContent();
-
-          // Check if we've already spent most of our extraction budget during waitForContent.
-          // Instead of failing hard, mark that we're near timeout so we can use a cheaper fallback.
-          const elapsedAfterWait = Date.now() - startTime;
-          if (elapsedAfterWait > extractionTimeout - 1000) {
-            console.warn(
-              '[Content Script] Near extraction timeout after waitForContent, switching to fast-path extraction'
-            );
-            nearTimeout = true;
-          }
-
-          // Optimized noise selectors - reduced to essential high-impact filters only
-          const noiseSelectors = [
-            // Technical elements (highest priority removal)
-            'script',
-            'style',
-            'noscript',
-            'meta',
-            'template',
-
-            // Navigation and structure
-            'nav',
-            'header',
-            'footer',
-            '.navigation',
-            '.nav',
-            '.menu',
-
-            // UI overlays and popups
-            '.popup',
-            '.modal',
-            '.overlay',
-            '.tooltip',
-            '.cookie-banner',
-            '.notification',
-            '.alert',
-            '.banner',
-
-            // Ads and promotional
-            '.ads',
-            '.advertisement',
-            '.ad-banner',
-            '.sponsored',
-
-            // Social and sharing
-            '.social',
-            '.share',
-            '.sharing',
-            '.newsletter',
-            '.signup',
-
-            // Comments and metadata
-            '.comments',
-            '.comment-section',
-            '.metadata',
-            '.tags',
-            '.breadcrumb',
-            '.pagination',
-
-            // Forms
-            '.search-form',
-            '.contact-form',
-
-            // Accessibility elements
-            '.skip-link',
-            '.screen-reader-only',
-            '.sr-only',
-
-            // Common patterns (wildcards for catch-all)
-            '[class*="analytics"]',
-            '[class*="tracking"]',
-            '[class*="ad-"]',
-            '[class*="popup"]',
-            '[class*="modal"]',
-            '[class*="banner"]',
-            '[id*="analytics"]',
-            '[id*="tracking"]',
-            '[id*="ad-"]',
-          ];
-
-          // Optimized content selectors - focus on high-impact, common patterns
-          const contentSelectors = [
-            // Semantic HTML5 elements (highest priority)
-            'main',
-            'article',
-            '[role="main"]',
-
-            // Common content classes (most effective)
-            '.content',
-            '.main-content',
-            '.post-content',
-            '.entry-content',
-            '.article-content',
-            '.text-content',
-
-            // Modern CMS patterns
-            '.prose',
-            '.markdown-body',
-            '.rich-text',
-            '.editor-content',
-            '.blog-content',
-            '.article-body',
-            '.post-text',
-
-            // Data attributes (modern apps)
-            '[data-testid*="content"]',
-            '[data-testid*="article"]',
-            '[data-cy*="content"]',
-            '[data-qa*="content"]',
-
-            // Common blog patterns
-            '.post',
-            '.entry',
-            '.blog-post',
-            '.story',
-            '.text',
-
-            // Essential fallback patterns
-            '[class*="content"]',
-            '[class*="article"]',
-            '[class*="post"]',
-          ];
-
-          let bestResult = {
-            text: '',
-            score: 0,
-            element: null,
-            method: 'none',
-          };
-
-          // If we're already close to our timeout budget, use a fast-path fallback that
-          // avoids heavy DOM cloning and selector-based noise removal.
-          if (nearTimeout) {
-            try {
-              const fastText = document.body?.innerText || document.body?.textContent || '';
-              console.log('[Content Script] Using fast-path extraction due to timeout pressure', {
-                textLength: fastText.length,
-              });
-              resolve(fastText.trim());
-              return;
-            } catch (fastError) {
-              console.warn(
-                '[Content Script] Fast-path extraction failed, falling back to full extraction:',
-                fastError
-              );
-              // Intentionally fall through to the normal extraction logic as a secondary fallback
-            }
-          }
-
-          // Method 1: Try each content selector with scoring and timeout protection
-          console.log('[Content Script] Testing content selectors...');
-          for (const selector of contentSelectors) {
-            // Check timeout before each selector
-            if (Date.now() - startTime > extractionTimeout - 2000) {
-              console.warn(
-                '[Content Script] Timeout approaching during selector testing, breaking'
-              );
-              break;
-            }
-
-            try {
-              const elements = document.querySelectorAll(selector);
-
-              // Limit number of elements to process per selector to prevent performance issues
-              const maxElementsPerSelector = 5;
-              const elementsToProcess = Array.from(elements).slice(0, maxElementsPerSelector);
-
-              for (const element of elementsToProcess) {
-                // Check timeout before each element processing
-                if (Date.now() - startTime > extractionTimeout - 1000) {
-                  console.warn(
-                    '[Content Script] Timeout approaching during element processing, breaking'
-                  );
-                  break;
-                }
-
-                try {
-                  // Use progressive DOM processing for better performance
-                  ProgressiveDOMProcessor.resetTimer();
-                  const workingElement = element.cloneNode(true);
-
-                  // Process noise selectors progressively
-                  const removedElementsCount = await ProgressiveDOMProcessor.processNoiseSelectors(
-                    workingElement,
-                    noiseSelectors
-                  );
-
-                  const text = workingElement.textContent || workingElement.innerText || '';
-                  const score = calculateContentScore(text, element);
-
-                  if (score > bestResult.score) {
-                    bestResult = {
-                      text: text.trim(),
-                      score,
-                      element,
-                      method: `selector: ${selector} (removed ${removedElementsCount} elements)`,
-                    };
-                    console.log(`[Content Script] New best result: ${selector} (score: ${score})`);
-                  }
-                } catch (elementError) {
-                  console.warn(
-                    `[Content Script] Error processing element for selector ${selector}:`,
-                    elementError
-                  );
-                  continue;
-                }
-              }
-            } catch (error) {
-              console.warn(`[Content Script] Error with selector ${selector}:`, error);
-            }
-          }
-
-          // Method 2: Try body with noise filtering
-          console.log('[Content Script] Testing body extraction...');
-          try {
-            ProgressiveDOMProcessor.resetTimer();
-            const workingBody = document.body.cloneNode(true);
-
-            // Use progressive processing for body extraction
-            const removedElementsCount = await ProgressiveDOMProcessor.processNoiseSelectors(
-              workingBody,
-              noiseSelectors
-            );
-
-            const bodyText = workingBody.textContent || workingBody.innerText || '';
-            const bodyScore = calculateContentScore(bodyText, document.body);
-
-            if (bodyScore > bestResult.score) {
-              bestResult = {
-                text: bodyText.trim(),
-                score: bodyScore,
-                element: document.body,
-                method: `body-with-filtering (removed ${removedElementsCount} elements)`,
-              };
-              console.log(`[Content Script] Body extraction is better (score: ${bodyScore})`);
-            }
-          } catch (error) {
-            console.warn('[Content Script] Error with body extraction:', error);
-          }
-
-          // Method 3: Try without any noise filtering (for pages with unusual structures)
-          console.log('[Content Script] Testing unfiltered extraction...');
-          try {
-            const rawText = document.body.textContent || document.body.innerText || '';
-            const rawScore = calculateContentScore(rawText, document.body);
-
-            if (rawScore > bestResult.score) {
-              bestResult = {
-                text: rawText.trim(),
-                score: rawScore,
-                element: document.body,
-                method: 'unfiltered',
-              };
-              console.log(`[Content Script] Unfiltered extraction is best (score: ${rawScore})`);
-            }
-          } catch (error) {
-            console.warn('[Content Script] Error with unfiltered extraction:', error);
-          }
-
-          // Check timeout before returning - if we've exceeded the budget, return the best effort
-          const finalElapsed = Date.now() - startTime;
-          if (finalElapsed > extractionTimeout) {
-            console.warn(
-              '[Content Script] Extraction exceeded timeout, returning best-effort content',
-              {
-                extractionTime: finalElapsed,
-                method: bestResult.method,
-                score: bestResult.score,
-                textLength: bestResult.text ? bestResult.text.length : 0,
-              }
-            );
-
-            // Fallback to bestResult, or as a last resort, raw body text
-            let fallbackText = bestResult.text;
-            if (!fallbackText || fallbackText.length === 0) {
-              try {
-                fallbackText =
-                  (document.body && (document.body.innerText || document.body.textContent)) || '';
-              } catch (fallbackError) {
-                console.warn(
-                  '[Content Script] Failed to obtain fallback body text after timeout:',
-                  fallbackError
-                );
-                fallbackText = '';
-              }
-            }
-
-            resolve((fallbackText || '').trim());
+          if (isExtractionTimeout(startTime, extractionTimeout, 1000)) {
+            console.warn('[Content Script] Near timeout, using fast-path extraction');
+            resolve(performFastPathExtraction());
             return;
           }
-
+          const noiseSelectors = [
+            'script', 'style', 'noscript', 'meta', 'template',
+            'nav', 'header', 'footer', '.navigation', '.nav', '.menu',
+            '.popup', '.modal', '.overlay', '.tooltip', '.cookie-banner',
+            '.notification', '.alert', '.banner', '.ads', '.advertisement',
+            '.ad-banner', '.sponsored', '.social', '.share', '.sharing',
+            '.newsletter', '.signup', '.comments', '.comment-section',
+            '.metadata', '.tags', '.breadcrumb', '.pagination',
+            '.search-form', '.contact-form', '.skip-link', '.screen-reader-only',
+            '.sr-only', '[class*="analytics"]', '[class*="tracking"]',
+            '[class*="ad-"]', '[class*="popup"]', '[class*="modal"]',
+            '[class*="banner"]', '[id*="analytics"]', '[id*="tracking"]',
+            '[id*="ad-"]',
+          ];
+          const contentSelectors = [
+            'main', 'article', '[role="main"]',
+            '.content', '.main-content', '.post-content', '.entry-content',
+            '.article-content', '.text-content', '.prose', '.markdown-body',
+            '.rich-text', '.editor-content', '.blog-content', '.article-body',
+            '.post-text', '[data-testid*="content"]', '[data-testid*="article"]',
+            '[data-cy*="content"]', '[data-qa*="content"]', '.post',
+            '.entry', '.blog-post', '.story', '.text',
+            '[class*="content"]', '[class*="article"]', '[class*="post"]',
+          ];
+          const selectorResult = await extractWithSelectors(
+            contentSelectors,
+            noiseSelectors,
+            startTime,
+            extractionTimeout
+          );
+          const bodyResult = await extractFromBody(noiseSelectors);
+          const unfilteredResult = extractUnfilteredText();
+          const bestResult = determineBestResult(
+            selectorResult,
+            bodyResult,
+            unfilteredResult
+          );
+          if (isExtractionTimeout(startTime, extractionTimeout, 0)) {
+            resolve(handleExtractionTimeout(bestResult, startTime, extractionTimeout));
+            return;
+          }
+          const finalElapsed = Date.now() - startTime;
           console.log('[Content Script] Extraction complete:', {
             method: bestResult.method,
             score: bestResult.score,
@@ -804,7 +726,6 @@
             title: document.title,
             extractionTime: finalElapsed,
           });
-
           resolve(bestResult.text);
         } catch (extractionError) {
           reject(new Error(`Content extraction failed: ${extractionError.message}`));

@@ -376,7 +376,6 @@ export class ApiClient {
         action: 'streamApiEnd',
         tabId: tabId,
       }, 5, 750).catch(e => logger.error('Error sending stream end:', e));
-
     } catch (error) {
       logger.error('BackgroundApiClient', 'Streaming error:', error);
       // Send stream end even on error
@@ -385,6 +384,15 @@ export class ApiClient {
         tabId: tabId,
         error: error.message,
       }, 5, 750).catch(e => logger.error('Error sending stream end:', e));
+    } finally {
+      // Cleanup: Cancel reader to prevent resource leak
+      try {
+        if (reader) {
+          reader.cancel();
+        }
+      } catch (cancelError) {
+        logger.warn('BackgroundApiClient', 'Failed to cancel reader:', cancelError);
+      }
     }
   }
 
