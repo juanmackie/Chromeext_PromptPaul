@@ -16,7 +16,7 @@ module.exports = {
 
   moduleFileExtensions: ["js", "json", "mjs", "cjs"],
 
-  // Ignore node_modules transformation but allow specific packages
+// Ignore node_modules transformation but allow specific packages
   transformIgnorePatterns: [
     "/node_modules/(?!(marked)/)"
   ],

@@ -79,7 +79,7 @@ async function verifyUnifiedImplementation() {
       !hasImageCustomSet &&
       hasUniversalTest;
 
-    console.log('\n' + '='.repeat(60));
+    console.log(`\n${  '='.repeat(60)}`);
     if (allTestsPassed) {
       console.log('🎉 All verification tests passed!');
       console.log('\n✅ Unified custom instructions implementation is complete:');

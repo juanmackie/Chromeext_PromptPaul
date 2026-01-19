@@ -5,11 +5,14 @@
     <meta charset="UTF-8">
     <title>LLM Chat</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <!-- Styles migrated to external stylesheets (theme.css, hextaui-components.css, chat.css, loading-states.css) to comply with CSP -->
 
 </head>
+
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="hextaui-components.css">
 <link rel="stylesheet" href="chat.css?v=2">
@@ -46,11 +49,6 @@
             <!-- Theme Toggle converted to icon-only button -->
             <button class="hextaui-sidebar-action quick-action-button" id="theme-toggle-btn" title="Toggle Theme">
                 <span class="material-icons" id="theme-icon">light_mode</span>
-            </button>
-
-            <!-- Document Panel Toggle -->
-            <button class="hextaui-sidebar-action quick-action-button" id="document-panel-toggle-btn" title="Documents">
-                <span class="material-icons" id="document-panel-icon">folder</span>
             </button>
 
             <!-- Pinned instructions will be added here by chat.js -->
@@ -93,11 +91,11 @@
                 </div>
             </div>
 
-            <div id="chat-main-area">
+            <div id="chat-main-area" class="ui-visible">
                 <div id="chat-area">
                 </div>
             </div>
-            <div id="oneoff-instruction-area">
+            <div id="oneoff-instruction-area" class="ui-hidden">
                 <h3>One-off Instruction context</h3>
                 <div class="context-container">
                     <p class="context-label">Selected text:</p>
@@ -123,23 +121,7 @@
             </div>
             <button id="send-button" class="ext-btn hextaui-btn hextaui-btn-primary">Send</button>
             <button id="clear-button" class="ext-btn hextaui-btn hextaui-btn-outline">Clear</button>
-        <!-- Document Panel -->
-        <div id="document-sidebar" class="document-sidebar hextaui-sidebar hidden">
-            <div class="document-panel-header">
-                <h4><span class="material-icons icon-inline">description</span>Documents</h4>
-                <button id="close-document-panel" class="icon-btn" title="Close Panel">
-                    <span class="material-icons">close</span>
-                </button>
-            </div>
-            <div id="document-drop-zone" class="drop-zone">
-                <span class="material-icons upload-icon">cloud_upload</span>
-                <p class="upload-title">Drop documents here</p>
-                <span class="upload-hint">PDF, DOCX, CSV, MD, TXT</span>
-            </div>
-            <div id="document-list" class="document-list"></div>
-            <button id="clear-all-docs" class="hextaui-btn hextaui-btn-outline hidden">Clear All</button>
         </div>
-    </div>
     </div>
     <script type="module" src="chat.js"></script>
 </body>

@@ -89,7 +89,7 @@ export class UIComponents {
           this.updateElementText('currentEndpoint', llmEndpoint || 'Not set');
           this.updateElementText(
             'currentApiKey',
-            apiKey ? '********' + apiKey.slice(-4) : 'Not set'
+            apiKey ? `********${  apiKey.slice(-4)}` : 'Not set'
           );
           this.updateElementText('currentModelName', modelName || 'Not set');
           this.updateElementText('lastUpdated', timestamp || 'Not set');
@@ -310,16 +310,16 @@ export class UIComponents {
     const toolChoiceDisplay = instructionManager.formatToolChoiceDisplay(instruction.tool_choice);
 
     card.innerHTML = `
-            <div style="display: flex; flex-direction: column; height: 100%; padding: 16px; justify-content: space-between;">
+            <div class="card-inner">
                 <div>
-                    <h3 style="font-size: 1.1rem; margin: 0 0 8px 0; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${instruction.name}</h3>
-                    <p style="font-size: 0.8rem; color: #666; margin: 0; height: 60px; overflow: hidden; text-overflow: ellipsis; line-height: 1.3;">${instruction.content}</p>
+                    <h3 class="card-title">${instruction.name}</h3>
+                    <p class="card-description">${instruction.content}</p>
                 </div>
-                <div style="font-size: 0.75rem; color: #555; margin: 10px 0;">
+                <div class="card-metadata">
                     <div><strong>Tool:</strong> ${toolChoiceDisplay}</div>
                     <div><strong>Modalities:</strong> All (Text, Image, Video, Audio)</div>
                 </div>
-                <div style="display: flex; gap: 6px; margin-top: 10px;">
+                <div class="card-actions">
                     <button class="pin-btn" data-id="${instruction.id}">
                         <span class="material-symbols-outlined">push_pin</span>
                     </button>
@@ -463,16 +463,16 @@ export class UIComponents {
     card.setAttribute('data-id', tool.id);
 
     card.innerHTML = `
-            <div style="display: flex; flex-direction: column; height: 100%; padding: 16px; justify-content: space-between;">
+            <div class="card-inner">
                 <div>
-                    <h3 style="font-size: 1.1rem; margin: 0 0 8px 0; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${tool.name}</h3>
-                    <p style="font-size: 0.8rem; color: #666; margin: 0; height: 80px; overflow: hidden; text-overflow: ellipsis; line-height: 1.3;">${tool.description}</p>
+                    <h3 class="card-title">${tool.name}</h3>
+                    <p class="card-description tall">${tool.description}</p>
                 </div>
-                <div style="font-size: 0.75rem; color: #555; margin: 10px 0;">
+                <div class="card-metadata">
                     <div><strong>Endpoint:</strong> ${tool.endpointUrl || 'N/A'}</div>
                     <div><strong>Method:</strong> ${tool.httpMethod || 'Auto'}</div>
                 </div>
-                <div style="display: flex; gap: 6px; margin-top: 10px;">
+                <div class="card-actions">
                     <button class="ext-btn ext-btn-secondary edit-tool-btn" data-id="${tool.id}">
                         Edit
                     </button>
@@ -626,29 +626,7 @@ export class UIComponents {
     );
   }
 
-  /**
-   * Setup collapsible headers
-   */
-  setupCollapsibleHeaders() {
-    return wrapAsync(
-      () => {
-        document.querySelectorAll('.collapsible-header').forEach(header => {
-          header.addEventListener('click', () => {
-            const content = header.nextElementSibling;
-            if (content) {
-              content.classList.toggle('expanded');
-              header.classList.toggle('expanded');
-            }
-          });
-        });
-      },
-      {
-        category: ErrorCategory.SYSTEM,
-        userMessage: 'Failed to setup collapsible headers',
-        severity: ErrorSeverity.LOW,
-      }
-    );
-  }
+
 
   /**
    * Set button loading state

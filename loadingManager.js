@@ -327,7 +327,7 @@ export class LoadingManager {
 
   // Utility Methods
   generateId() {
-    return 'loader_' + Math.random().toString(36).substr(2, 9);
+    return `loader_${  Math.random().toString(36).substr(2, 9)}`;
   }
 
   clearAll() {

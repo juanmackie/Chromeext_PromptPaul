@@ -49,12 +49,13 @@ class AuthenticationManager {
    */
   buildAuthHeaders(config) {
     const headers = {};
+    const provider = this.detectProvider(config);
 
     if (!config.apiKey) {
       throw createError('API key is required', {
         category: ErrorCategory.AUTHENTICATION,
         severity: ErrorSeverity.CRITICAL,
-        userMessage: 'API key is missing. Please configure it in the options page.',
+        userMessage: 'API key is missing. Please configure it in options page.',
       });
     }
 
@@ -62,7 +63,7 @@ class AuthenticationManager {
     headers['Authorization'] = `Bearer ${config.apiKey}`;
 
     // Provider-specific headers
-    switch (this.detectProvider(config)) {
+    switch (provider) {
       case ApiProvider.ANTHROPIC:
         headers['anthropic-version'] = config.anthropicVersion || '2023-06-01';
         break;
@@ -195,6 +196,7 @@ class RequestBuilder {
    */
   validateConfiguration(config) {
     const errors = [];
+    const provider = this.authManager.detectProvider(config);
 
     if (!config.llmEndpoint) {
       errors.push('API endpoint is required');
@@ -221,7 +223,6 @@ class RequestBuilder {
     }
 
     // Validate API key format
-    const provider = this.authManager.detectProvider(config);
     if (!this.authManager.validateApiKeyFormat(config.apiKey, provider)) {
       throw createError(`Invalid API key format for ${provider}`, {
         category: ErrorCategory.CONFIGURATION,
@@ -520,7 +521,7 @@ export class ApiClient {
         logger.info('APIClient', '🚀 API Client: Starting non-streaming request');
         logger.info('APIClient', '📋 Request config:', {
           endpoint: config.llmEndpoint ? '✓ Set' : '✗ Missing',
-          apiKey: config.apiKey ? '✓ Set (' + config.apiKey.substring(0, 7) + '...)' : '✗ Missing',
+          apiKey: config.apiKey ? `✓ Set (${  config.apiKey.substring(0, 7)  }...)` : '✗ Missing',
           model: config.modelName || '✗ Missing',
           streaming: false,
           messagesCount: options.messages?.length || 0,
@@ -541,7 +542,7 @@ export class ApiClient {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.defaultConfig.timeout);
 
-        logger.info('⏱️ Sending request with timeout:', this.defaultConfig.timeout + 'ms');
+        logger.info('⏱️ Sending request with timeout:', `${this.defaultConfig.timeout  }ms`);
 
         try {
           const response = await this.fetchWithRetry(request.url, {
@@ -670,15 +671,16 @@ export class ApiClient {
    * @param {Object} options - Request options
    * @param {Function} onChunk - Chunk callback
    * @param {Function} onComplete - Completion callback
+   * @param {AbortSignal} signal - Optional AbortSignal for cancellation
    * @returns {Promise<void>}
    */
-  async makeStreamingRequest(config, options = {}, onChunk, onComplete) {
+  async makeStreamingRequest(config, options = {}, onChunk, onComplete, signal = null) {
     return await wrapAsync(
       async () => {
         logger.info('🌊 API Client: Starting streaming request');
         logger.info('📋 Stream config:', {
           endpoint: config.llmEndpoint ? '✓ Set' : '✗ Missing',
-          apiKey: config.apiKey ? '✓ Set (' + config.apiKey.substring(0, 7) + '...)' : '✗ Missing',
+          apiKey: config.apiKey ? `✓ Set (${  config.apiKey.substring(0, 7)  }...)` : '✗ Missing',
           model: config.modelName || '✗ Missing',
           streaming: true,
           messagesCount: options.messages?.length || 0,
@@ -698,16 +700,29 @@ export class ApiClient {
           hasStream: request.body?.includes('"stream":true') || false,
         });
 
-        // Add timeout
+        // Add timeout and abort support
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.defaultConfig.timeout);
 
+        // Listen for external abort signal
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            clearTimeout(timeoutId);
+            controller.abort();
+          });
+        }
+
         logger.info(
           '⏱️ Sending streaming request with timeout:',
-          this.defaultConfig.timeout + 'ms'
+          `${this.defaultConfig.timeout}ms`
         );
 
         try {
+          // Check if already aborted
+          if (signal?.aborted) {
+            throw new DOMException('Request was aborted', 'AbortError');
+          }
+
           const response = await this.fetchWithRetry(request.url, {
             ...request,
             signal: controller.signal,
@@ -975,6 +990,58 @@ export class ApiClient {
    */
   cancelAllStreams() {
     this.streamingProcessor.cancelAllStreams();
+  }
+
+  /**
+   * Check feature availability for various browser APIs
+   * @param {string} feature - Feature to check ('speech', 'media')
+   * @returns {Promise<Object>} Feature availability status
+   */
+  async checkFeatureAvailability(feature) {
+    switch (feature) {
+      case 'speech':
+        return this.checkSpeechAvailability();
+      case 'media':
+        return this.checkMediaAvailability();
+      default:
+        return { available: false, reason: `Unknown feature: ${feature}` };
+    }
+  }
+
+  /**
+   * Check Web Speech API availability
+   * @returns {Object} Speech API availability status
+   */
+  checkSpeechAvailability() {
+    const hasSpeechRecognition = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+    const hasSpeechSynthesis = 'speechSynthesis' in window;
+
+    return {
+      available: hasSpeechRecognition,
+      recognition: hasSpeechRecognition,
+      synthesis: hasSpeechSynthesis,
+      reason: hasSpeechRecognition
+        ? 'Speech recognition is available'
+        : 'Speech recognition not supported in this browser',
+    };
+  }
+
+  /**
+   * Check media capture availability
+   * @returns {Object} Media capture availability status
+   */
+  checkMediaAvailability() {
+    const hasMediaDevices = 'mediaDevices' in navigator;
+    const hasGetUserMedia = hasMediaDevices && 'getUserMedia' in navigator.mediaDevices;
+
+    return {
+      available: hasGetUserMedia,
+      mediaDevices: hasMediaDevices,
+      getUserMedia: hasGetUserMedia,
+      reason: hasGetUserMedia
+        ? 'Media capture is available'
+        : 'Media capture not supported in this browser',
+    };
   }
 }
 

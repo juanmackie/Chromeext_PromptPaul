@@ -85,6 +85,14 @@ export class UIManager {
    * @param {Object} mediaData - Media data object
    */
   addMediaPreview(mediaData) {
+    const ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+    if (mediaData.type === 'image' && !ALLOWED_IMAGE_MIME_TYPES.includes(mediaData.mimeType)) {
+      logger.warn('UIManager', 'Invalid image MIME type:', mediaData.mimeType);
+      this.showMediaError({ error: 'Invalid image format. Supported: PNG, JPEG, GIF, WebP' });
+      return;
+    }
+
     const previewDiv = document.createElement('div');
     previewDiv.classList.add('message', 'system-message', 'media-preview');
 
@@ -115,9 +123,9 @@ export class UIManager {
             `;
     } else if (mediaData.type === 'audio') {
       previewDiv.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="audio-preview-container">
                     <audio src="data:${mediaData.mimeType};base64,${mediaData.base64}"
-                           style="width: 200px;"
+                           class="audio-preview-element"
                            controls>
                     </audio>
                     <div>
@@ -176,7 +184,7 @@ export class UIManager {
     // Set the height to match the content (with max height limit)
     const maxHeight = 200; // Maximum height in pixels
     const newHeight = Math.min(textarea.scrollHeight, maxHeight);
-    textarea.style.setProperty('--textarea-height', newHeight + 'px');
+    textarea.style.setProperty('--textarea-height', `${newHeight  }px`);
 
     // Scroll chat area to bottom if textarea is expanded
     if (newHeight > 50) {
@@ -350,8 +358,19 @@ export class UIManager {
    * @param {HTMLElement} selectedTextDiv - Element to display selected text
    */
   updateSelectedTextDisplay(selectedTextDiv) {
+    logger.info('UIManager', 'updateSelectedTextDisplay called', {
+      hasDivElement: !!selectedTextDiv,
+      hasSelectedText: !!this.selectedText,
+      textLength: this.selectedText?.length || 0
+    });
+
     if (selectedTextDiv && this.selectedText) {
       selectedTextDiv.textContent = this.selectedText;
+      logger.info('UIManager', 'Selected text updated successfully');
+    } else {
+      logger.warn('UIManager', 'Cannot update selected text display', {
+        reason: !selectedTextDiv ? 'selectedTextDiv is null' : 'selectedText is empty'
+      });
     }
   }
 
@@ -462,73 +481,4 @@ export class UIManager {
     this.removeCurrentLoadingMessage();
   }
 
-  /**
-   * Update document status - delegates to document UI if available
-   * @param {string} docId - Document ID
-   * @param {string} status - Status type
-   * @param {string} message - Status message
-   */
-  updateStatus(docId, status, message) {
-    // Try to find the document UI instance
-    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
-      window.chatOrchestrator.documentUI.showStatus(docId, status, message);
-    } else {
-      logger.warn('UIManager', 'Document UI not available for status update', { docId, status, message });
-    }
-  }
-
-  /**
-   * Update document information - delegates to document UI if available
-   * @param {string} docId - Document ID
-   * @param {Object} documentInfo - Document information
-   */
-  updateDocument(docId, documentInfo) {
-    // Try to find the document UI instance
-    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
-      window.chatOrchestrator.documentUI.updateDocument(docId, documentInfo);
-    } else {
-      logger.warn('UIManager', 'Document UI not available for document update', { docId, documentInfo });
-    }
-  }
-
-  /**
-   * Show error for document - delegates to document UI if available
-   * @param {string} fileName - File name
-   * @param {string} errorMessage - Error message
-   */
-  showError(fileName, errorMessage) {
-    // Try to find the document UI instance
-    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
-      window.chatOrchestrator.documentUI.showError(fileName, errorMessage);
-    } else {
-      // Fallback to toast
-      this.showToast(`Error processing ${fileName}: ${errorMessage}`, 'error', 5000);
-      logger.error('UIManager', `Document error for ${fileName}:`, errorMessage);
-    }
-  }
-
-  /**
-   * Remove document - delegates to document UI if available
-   * @param {string} docId - Document ID
-   */
-  removeDocument(docId) {
-    // Try to find the document UI instance
-    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
-      window.chatOrchestrator.documentUI.removeDocument(docId);
-    } else {
-      logger.warn('UIManager', 'Document UI not available for document removal', { docId });
-    }
-  }
-
-  /**
-   * Clear all documents - delegates to document UI if available
-   */
-  clearAll() {
-    // Try to find the document UI instance
-    if (window.chatOrchestrator && window.chatOrchestrator.documentUI) {
-      window.chatOrchestrator.documentUI.clearAll();
-    } else {
-      logger.warn('UIManager', 'Document UI not available for clear all');
-    }
-  }
 }

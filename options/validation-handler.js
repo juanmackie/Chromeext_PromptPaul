@@ -70,7 +70,6 @@ export class ValidationHandler {
       }
     }
 
-    // Validate and sanitize model name
     if (!formData.modelName || formData.modelName.trim() === '') {
       errors.push('Model name is required');
     } else {
@@ -270,7 +269,7 @@ export class ValidationHandler {
         token.length > 8
           ? token.slice(0, 2) + '•'.repeat(token.length - 4) + token.slice(-2)
           : '•'.repeat(token.length);
-      return parts[0] + ' ' + masked;
+      return `${parts[0]  } ${  masked}`;
     }
 
     return '•'.repeat(Math.min(12, value.length));

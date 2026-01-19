@@ -329,13 +329,13 @@ export class ApiClient {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let isFirstChunk = true;
+    const isFirstChunk = true;
 
-    // Send stream start message
+    // Send stream start message with longer timeout for readiness
     sendMessageWithRetry({
       action: 'streamApiStart',
       tabId: tabId,
-    }).catch(e => logger.error('Error sending stream start:', e));
+    }, 7, 1000).catch(e => logger.error('Error sending stream start:', e));
 
     try {
       while (true) {
@@ -357,12 +357,12 @@ export class ApiClient {
               const content = parsed.choices?.[0]?.delta?.content;
 
               if (content) {
-                // Send streaming chunk to chat
+                // Send streaming chunk to chat with readiness check
                 sendMessageWithRetry({
                   action: 'streamApiResponseChunk',
                   chunk: content,
                   tabId: tabId,
-                }).catch(e => logger.error('Error sending streaming chunk:', e));
+                }, 3, 500).catch(e => logger.error('Error sending streaming chunk:', e));
               }
             } catch {
               // Ignore JSON parse errors for streaming data
@@ -375,8 +375,7 @@ export class ApiClient {
       sendMessageWithRetry({
         action: 'streamApiEnd',
         tabId: tabId,
-      }).catch(e => logger.error('Error sending stream end:', e));
-
+      }, 5, 750).catch(e => logger.error('Error sending stream end:', e));
     } catch (error) {
       logger.error('BackgroundApiClient', 'Streaming error:', error);
       // Send stream end even on error
@@ -384,7 +383,16 @@ export class ApiClient {
         action: 'streamApiEnd',
         tabId: tabId,
         error: error.message,
-      }).catch(e => logger.error('Error sending stream end:', e));
+      }, 5, 750).catch(e => logger.error('Error sending stream end:', e));
+    } finally {
+      // Cleanup: Cancel reader to prevent resource leak
+      try {
+        if (reader) {
+          reader.cancel();
+        }
+      } catch (cancelError) {
+        logger.warn('BackgroundApiClient', 'Failed to cancel reader:', cancelError);
+      }
     }
   }
 

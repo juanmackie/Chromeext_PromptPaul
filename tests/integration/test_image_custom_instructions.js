@@ -159,7 +159,7 @@ async function runComprehensiveTest() {
     }
   }
 
-  console.log('\n' + '='.repeat(60));
+  console.log(`\n${  '='.repeat(60)}`);
   console.log('🏁 Comprehensive test completed!');
   console.log('\n💡 Next steps:');
   console.log('   1. Right-click on an image and check context menu');

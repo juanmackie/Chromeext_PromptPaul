@@ -551,9 +551,41 @@ export class StreamingManager {
    * Create abort controller for new request
    * @returns {AbortController} New abort controller
    */
-  createAbortController() {
+   createAbortController() {
+    // Clean up any existing abort controller
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+    }
+    
     this.currentAbortController = new AbortController();
     return this.currentAbortController;
+  }
+ 
+  /**
+   * Cancel current streaming request
+   * @returns {boolean} True if cancellation was successful
+   */
+  cancelStream() {
+    if (this.currentAbortController) {
+      try {
+        logger.info('StreamingManager', '🛑 Canceling streaming request via AbortController');
+        this.currentAbortController.abort();
+        logger.info('StreamingManager', '✅ Streaming request canceled successfully');
+      } catch (error) {
+        logger.warn('StreamingManager', '⚠️ Error during stream cancellation:', error);
+      }
+      this.currentAbortController = null;
+      return true;
+    }
+    return false;
+  }
+ 
+  /**
+   * Get current abort signal for passing to API calls
+   * @returns {AbortSignal|null} Current abort signal or null
+   */
+  getCurrentAbortSignal() {
+    return this.currentAbortController?.signal || null;
   }
 
   /**

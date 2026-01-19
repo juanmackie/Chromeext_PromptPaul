@@ -98,7 +98,7 @@ export class MediaHandler {
               }
               const dataUrl = result;
               // If the data URL MIME type differs from our detected one, fix it
-              let base64 = dataUrl.split(',')[1];
+              const base64 = dataUrl.split(',')[1];
 
               resolve({
                 base64,

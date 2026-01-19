@@ -79,7 +79,7 @@ export class InstructionManager {
         } else {
           // Add new instruction
           const newInstruction = {
-            id: 'inst_' + Date.now(),
+            id: `inst_${  Date.now()}`,
             name: name.trim(),
             content: content.trim(),
             tool_choice: tool_choice || 'none',
@@ -315,7 +315,7 @@ export class InstructionManager {
             
             // Debug logging for raw response (sanitized)
             const responsePreview = responseContent.length > 500 
-              ? responseContent.substring(0, 500) + '...' 
+              ? `${responseContent.substring(0, 500)  }...` 
               : responseContent;
             console.debug('Raw API response for instruction generation:', responsePreview);
             
@@ -331,7 +331,7 @@ export class InstructionManager {
                 category: ErrorCategory.API,
                 severity: ErrorSeverity.MEDIUM,
                 context: { 
-                  responsePreview: cleanedContent.substring(0, 200) + '...',
+                  responsePreview: `${cleanedContent.substring(0, 200)  }...`,
                   responseLength: cleanedContent.length 
                 },
               });
@@ -386,7 +386,7 @@ export class InstructionManager {
             
             // If we still don't have a valid instruction, throw the error
             if (!generatedInstruction || !generatedInstruction.name || !generatedInstruction.content) {
-              throw createError('Failed to parse generated instruction: ' + parseError.message, {
+              throw createError(`Failed to parse generated instruction: ${  parseError.message}`, {
                 category: ErrorCategory.API,
                 severity: ErrorSeverity.MEDIUM,
                 context: errorContext,
@@ -595,7 +595,7 @@ export class InstructionManager {
             // Add new instruction
             existingInstructions.push({
               ...importedInst,
-              id: importedInst.id || 'inst_' + Date.now(),
+              id: importedInst.id || `inst_${  Date.now()}`,
               createdAt: importedInst.createdAt || new Date().toISOString(),
               lastUpdated: new Date().toISOString(),
             });
@@ -667,7 +667,7 @@ export class InstructionManager {
       cleaned = cleaned.replace(/(\w)"(\w)/g, '$1\\"$2');
       
       // Ensure proper string termination by balancing quotes
-      let openQuotes = (cleaned.match(/"/g) || []).length;
+      const openQuotes = (cleaned.match(/"/g) || []).length;
       if (openQuotes % 2 !== 0) {
         // If odd number of quotes, try to find and fix the unterminated string
         const lastQuoteIndex = cleaned.lastIndexOf('"');
@@ -777,8 +777,8 @@ export class InstructionManager {
             const structureMatch = remainingContent.match(/\s*[,\}\]]\s*/);
             if (structureMatch) {
               // Add the missing quote before the JSON structure
-              repaired = repaired.substring(0, lastQuotePosition + unterminatedString.length) + 
-                         '"' + remainingContent;
+              repaired = `${repaired.substring(0, lastQuotePosition + unterminatedString.length)  
+                         }"${  remainingContent}`;
             } else {
               // If no clear structure, just add the missing quote at the end
               repaired += '"';

@@ -143,12 +143,30 @@
 
 .collapsible-icon {
   margin-left: auto;
-  transition: transform var(--transition-press);
+  transition: transform 0.3s ease;
+}
+
+.collapsible-header.expanded .collapsible-icon {
+  transform: rotate(180deg);
+}
+
+.collapsible-header.collapsed .collapsible-icon {
+  transform: rotate(0deg);
 }
 
 .collapsible-content {
   position: relative;
   z-index: 2;
+  display: none;
+  padding-top: 1rem;
+}
+
+.collapsible-content.expanded {
+  display: block;
+}
+
+.collapsible-content.collapsed {
+  display: none;
 }
 
 /* Terminal Grid Form */
@@ -820,14 +838,7 @@ td[data-label='Actions'] .hextaui-btn-outline {
   transform: rotate(180deg);
 }
 
-.collapsible-content {
-  display: none;
-  padding-top: 1rem;
-}
 
-.collapsible-content.expanded {
-  display: block;
-}
 
  .instruction-form.card {
    background-color: var(--card);
@@ -897,6 +908,57 @@ footer a:hover {
   .card {
     padding: 1.5rem;
     margin-bottom: 1.5rem;
+  }
+
+  /* ===== Instruction & Tool Card Internal Layouts ===== */
+
+  /* Card inner container - provides flex column layout */
+  .card-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 16px;
+    justify-content: space-between;
+  }
+
+  /* Card title styling */
+  .card-title {
+    font-size: 1.1rem;
+    margin: 0 0 8px 0;
+    color: var(--foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Card description - shorter variant (60px height) */
+  .card-description {
+    font-size: 0.8rem;
+    color: var(--foreground-muted);
+    margin: 0;
+    height: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  /* Card description - taller variant (80px height) */
+  .card-description.tall {
+    height: 80px;
+  }
+
+  /* Card metadata section (tool choice, modalities, etc.) */
+  .card-metadata {
+    font-size: 0.75rem;
+    color: var(--foreground-muted);
+    margin: 10px 0;
+  }
+
+  /* Card action buttons container */
+  .card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
   }
 
   h1 {
@@ -1475,6 +1537,36 @@ div[style*='display: flex'] button {
   max-width: 100%;
 }
 
+/* Smooth visibility transitions for layout stability */
+.visibility-transition {
+  transition:
+    opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    margin 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+/* Hidden state - maintains layout space during transition */
+.field-hidden {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* Visible state - full layout presence */
+.field-visible {
+  opacity: 1;
+  max-height: 800px;
+  visibility: visible;
+  pointer-events: auto;
+}
+
 .form-field {
   display: flex;
   flex-direction: column;
@@ -1709,30 +1801,7 @@ div[style*='display: flex'] button {
   flex-wrap: wrap;
 }
 
-/* Collapsible functionality */
-.collapsible-header {
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
-}
 
-.collapsible-header:hover {
-  color: var(--primary);
-}
-
-.collapsible-header .collapsible-icon {
-  margin-left: auto;
-  transition: transform 0.3s ease;
-}
-
-.collapsible-header[aria-expanded='false'] .collapsible-icon {
-  transform: rotate(-90deg);
-}
-
-.collapsible-content {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
 
 /* Password Input with Toggle and Copy */
 .password-input-container {

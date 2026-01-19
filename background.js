@@ -138,6 +138,8 @@ async function setupContextMenu() {
 // Initialize on extension startup
 chrome.runtime.onInstalled.addListener(async () => {
   logger.info('Background', 'PromptPaul extension installed');
+  
+  analytics.trackInstalled();
 
   // Initialize default configuration in sync storage
   // This ensures the API client has access to configuration immediately
@@ -188,8 +190,6 @@ chrome.runtime.onInstalled.addListener(async () => {
 
   setupContextMenu();
 });
-
-// Local sendMessageWithRetry removed in favor of imported utility
 
 // Helper function to process images for analysis
 async function processImageForAnalysis(imageUrl, tab, actionType, instructionId = null) {
@@ -365,6 +365,24 @@ function handleContextMenuActionAfterSidePanelOpen(info, tab, menuItemId, sidePa
           // Use setMediaForAnalysis for images
           await processImageForAnalysis(info.srcUrl, tab, 'analyze');
         } else {
+          // Validate we have content to send
+          if (!promptContent || promptContent.trim().length === 0) {
+            logger.warn('Background', 'No content selected for oneoff instruction');
+            if (chrome.notifications) {
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icons/icon128.png',
+                title: 'No Content Selected',
+                message: 'Please select some text before using one-off instruction.'
+              });
+            }
+            return;
+          }
+
+          logger.info('Background', 'Sending oneoff instruction', {
+            contentLength: promptContent.length
+          });
+
           // Use retry logic to ensure side panel is ready to receive
           sendMessageWithRetry({
             action: 'setSelectedText',
@@ -429,7 +447,7 @@ function handleContextMenuActionAfterSidePanelOpen(info, tab, menuItemId, sidePa
           await processImageForAnalysis(info.srcUrl, tab, menuItemId);
         } else {
           // Existing text handling logic
-          let fullPrompt = `${commandMap[menuItemId]}:\n${promptContent}`;
+          const fullPrompt = `${commandMap[menuItemId]}:\n${promptContent}`;
           await apiClient.makeApiRequest(fullPrompt, tab.id);
         }
         return;
@@ -544,7 +562,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             logger.error('Background', 'getTabContent error:', error);
             safeSendResponse({
               success: false,
-              error: 'Failed to inject/execute content script: ' + (error.message || String(error))
+              error: `Failed to inject/execute content script: ${  error.message || String(error)}`
             });
           }
           break;
@@ -595,7 +613,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             safeSendResponse({
               action: 'explainContentResponse',
               success: false,
-              error: 'Failed to inject script: ' + error.message,
+              error: `Failed to inject script: ${  error.message}`,
               content: '',
               instruction: request.instruction
             });
@@ -680,10 +698,6 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 // Analytics tracking for extension usage
 chrome.runtime.onStartup.addListener(() => {
   analytics.sendUmamiEvent('extension_startup', { action: 'startup' });
-});
-
-chrome.runtime.onInstalled.addListener(() => {
-  analytics.trackInstalled();
 });
 
 logger.info('Background', 'PromptPaul background script initialized');

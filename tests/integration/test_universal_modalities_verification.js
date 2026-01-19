@@ -415,8 +415,8 @@ async function testRegression() {
     instructionIdField.value = testInstruction.id;
 
     // Populate form with instruction data
-    simulateInput(nameField, testInstruction.name + ' (Edited)');
-    simulateInput(contentField, testInstruction.content + ' (Updated)');
+    simulateInput(nameField, `${testInstruction.name  } (Edited)`);
+    simulateInput(contentField, `${testInstruction.content  } (Updated)`);
     toolChoiceField.value = 'none'; // Change tool choice
 
     details.push('✅ Form populated with edited instruction data');
@@ -434,7 +434,7 @@ async function testRegression() {
 
     const updatedInstructions = updatedResult.instructions || [];
     const updatedInstruction = updatedInstructions.find(
-      inst => inst.name === TEST_CONFIG.testInstructionName + ' (Edited)'
+      inst => inst.name === `${TEST_CONFIG.testInstructionName  } (Edited)`
     );
 
     if (updatedInstruction) {
@@ -538,7 +538,7 @@ async function runComprehensiveVerification() {
     const duration = endTime - startTime;
 
     // Generate comprehensive report
-    console.log('\n' + '='.repeat(80));
+    console.log(`\n${  '='.repeat(80)}`);
     console.log('📊 COMPREHENSIVE VERIFICATION REPORT');
     console.log('='.repeat(80));
 
@@ -567,7 +567,7 @@ async function runComprehensiveVerification() {
       contextMenuValidationResult &&
       regressionTestResult;
 
-    console.log('\n' + '='.repeat(80));
+    console.log(`\n${  '='.repeat(80)}`);
     console.log(
       `🎯 OVERALL RESULT: ${allTestsPassed ? '✅ ALL TESTS PASSED' : '❌ SOME TESTS FAILED'}`
     );

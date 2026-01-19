@@ -21,6 +21,7 @@ export class ProfileManager {
     this.defaultProfile = {
       id: 'default',
       name: 'Default',
+      provider: 'custom',
       llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
       apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
       modelName: 'mistral-small-latest',
@@ -40,7 +41,7 @@ export class ProfileManager {
         logger.info('ProfileManager', 'Loading profiles...');
 
         const result = await storageService.getLocal(['profiles']);
-        let profiles = result.profiles || [];
+        const profiles = result.profiles || [];
 
         // Ensure default profile exists
         if (!profiles.find(p => p.id === 'default')) {
@@ -135,9 +136,9 @@ export class ProfileManager {
   async saveProfile(profileData) {
     return wrapAsync(
       async () => {
-        const { id, name, llmEndpoint, apiKey, modelName, maxTokens, systemPrompt } = profileData;
+        const { id, name, provider, llmEndpoint, apiKey, modelName, maxTokens, systemPrompt } = profileData;
 
-        logger.info('ProfileManager', 'Saving profile:', { id, name, hasEndpoint: !!llmEndpoint });
+        logger.info('ProfileManager', 'Saving profile:', { id, name, provider, hasEndpoint: !!llmEndpoint });
 
         const profiles = await this.loadProfiles();
         let profileToUpdate = profiles.find(p => p.id === id);
@@ -147,6 +148,7 @@ export class ProfileManager {
           profileToUpdate = {
             id,
             name: id === 'default' ? 'Default' : name || `Profile ${Date.now()}`,
+            provider: provider || 'custom',
             llmEndpoint,
             apiKey,
             modelName,
@@ -213,7 +215,7 @@ export class ProfileManager {
     return wrapAsync(
       async () => {
         const profiles = await this.loadProfiles();
-        const newProfileId = 'profile_' + Date.now();
+        const newProfileId = `profile_${  Date.now()}`;
 
         const newProfile = {
           id: newProfileId,
@@ -328,7 +330,7 @@ export class ProfileManager {
       try {
         new URL(profileData.llmEndpoint);
       } catch (e) {
-        errors.push('Please enter a valid URL for the API endpoint');
+        errors.push('Please enter a valid URL for API endpoint');
       }
     }
 
@@ -411,7 +413,7 @@ export class ProfileManager {
             // Add new profile
             existingProfiles.push({
               ...importedProfile,
-              id: importedProfile.id || 'profile_' + Date.now(),
+              id: importedProfile.id || `profile_${  Date.now()}`,
               createdAt: importedProfile.createdAt || new Date().toISOString(),
               lastUpdated: new Date().toISOString(),
             });

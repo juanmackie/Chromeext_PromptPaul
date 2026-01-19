@@ -152,7 +152,7 @@ if (!SpeechRecognition) {
         // Add a space if needed
         const prefixedText =
             start > 0 && value.charAt(start - 1) !== ' ' && value.charAt(start - 1) !== '\n'
-                ? ' ' + text
+                ? ` ${  text}`
                 : text;
 
         this.inputArea.value = value.substring(0, start) + prefixedText + value.substring(end);
@@ -183,14 +183,14 @@ if (!SpeechRecognition) {
             const errorDiv = document.createElement('div');
             errorDiv.className = 'message system-message';
             errorDiv.innerHTML = `
-                <div style="color: var(--destructive); font-weight: bold; margin-bottom: 8px;">
-                    <span class="material-icons" style="vertical-align: middle; margin-right: 4px;">mic_off</span>
+                <div class="mic-error-header">
+                    <span class="material-icons mic-error-icon">mic_off</span>
                     Microphone Access Required
                 </div>
                 <div>
                     Voice dictation requires microphone access. Due to Chrome's security policy, you may need to grant this on a full extension page.
                 </div>
-                <button id="fix-mic-permission-btn" class="ext-btn hextaui-btn-primary" style="margin-top: 10px; width: 100%;">
+                <button id="fix-mic-permission-btn" class="ext-btn hextaui-btn-primary mic-permission-button">
                     Open Permission Settings
                 </button>
             `;
@@ -200,7 +200,7 @@ if (!SpeechRecognition) {
             const fixBtn = errorDiv.querySelector('#fix-mic-permission-btn');
             if (fixBtn) {
                 fixBtn.addEventListener('click', () => {
-                    const optionsUrl = chrome.runtime.getURL('options.html') + '?requestMic=true';
+                    const optionsUrl = `${chrome.runtime.getURL('options.html')  }?requestMic=true`;
                     chrome.tabs.create({ url: optionsUrl });
                 });
             }
