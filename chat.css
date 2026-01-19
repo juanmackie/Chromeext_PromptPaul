@@ -6,33 +6,7 @@
   --standard-button-size: 48px;
 }
 
-/* Chat-specific layout adjustments */
-.chat-container {
-  flex-grow: 1;
-  height: 100%;
-  min-height: 0;
-  /* Allow inner scroll containers (like #chat-area) to shrink properly */
-  display: grid;
-  grid-template-rows: 1fr auto;
-  /* overflow: hidden; */
-  /* Allow inner chat area to scroll */
-  background: transparent;
-  position: relative;
-  isolation: isolate;
-  /* Add containment to isolate from page styles */
-  contain: layout style paint;
-  /* Create new stacking context to avoid conflicts */
-  transform: translateZ(0);
-}
-
-#chat-area {
-  position: relative;
-  overflow-y: auto;
-  scroll-behavior: smooth;
-  z-index: 1;
-  padding-bottom: 20px;
-  min-height: 0;
-}
+/* Chat-specific layout adjustments are consolidated in the .chat-container and #chat-area definitions below */
 
 #input-area {
   grid-column: 1 / span 2;
@@ -299,12 +273,11 @@ body {
 }
 
 #chat-main-area {
-  grid-column: 2;
-  grid-row: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
+  flex: 1;
 }
 
 #input-area {
@@ -350,6 +323,8 @@ body[data-theme='dark'] {
 }
 
 .chat-container {
+  grid-column: 2;
+  grid-row: 1;
   height: 100%;
   overflow: hidden;
   /* Prevent container scrolling, let chat area handle it */
