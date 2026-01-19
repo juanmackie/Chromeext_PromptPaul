@@ -622,7 +622,7 @@ class OptionsOrchestrator {
     // Edit buttons
     document.querySelectorAll('.edit-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
-        const instructionId = e.target.dataset.id;
+        const instructionId = e.currentTarget.dataset.id;
         await this.handleEditInstruction(instructionId);
       });
     });
@@ -630,7 +630,7 @@ class OptionsOrchestrator {
     // Delete buttons
     document.querySelectorAll('.delete-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
-        const instructionId = e.target.dataset.id;
+        const instructionId = e.currentTarget.dataset.id;
         await this.handleDeleteInstruction(instructionId);
       });
     });
@@ -638,7 +638,7 @@ class OptionsOrchestrator {
     // Improve buttons
     document.querySelectorAll('.improve-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
-        const instructionId = e.target.dataset.id;
+        const instructionId = e.currentTarget.dataset.id;
         await this.handleImproveInstruction(instructionId);
       });
     });
@@ -942,7 +942,7 @@ class OptionsOrchestrator {
     // Edit buttons
     document.querySelectorAll('.edit-tool-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
-        const toolId = e.target.dataset.id;
+        const toolId = e.currentTarget.dataset.id;
         await this.handleEditTool(toolId);
       });
     });
@@ -950,7 +950,7 @@ class OptionsOrchestrator {
     // Delete buttons
     document.querySelectorAll('.delete-tool-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
-        const toolId = e.target.dataset.id;
+        const toolId = e.currentTarget.dataset.id;
         await this.handleDeleteTool(toolId);
       });
     });
