@@ -519,6 +519,7 @@ body.sidebar-open #chat-area {
 /* Custom dark theme toggle switch */
 #darkThemeToggle {
   appearance: none;
+  box-sizing: content-box;
   width: 32px;
   height: 20px;
   background-color: var(--ext-border);
@@ -542,7 +543,7 @@ body.sidebar-open #chat-area {
   background-color: var(--ext-primary);
   border-radius: 2px;
   top: 2px;
-  left: 8px;
+  left: 2px;
   transition: transform 0.2s ease;
   box-shadow: var(--ext-shadow-sm);
 }

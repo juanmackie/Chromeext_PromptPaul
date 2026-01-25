@@ -1188,6 +1188,7 @@ footer a:hover {
   border: 2px solid var(--ext-primary-deep);
   transition: background-color 0.2s ease;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .toggle-slider::before {
@@ -1220,6 +1221,13 @@ footer a:hover {
 
 .toggle-text {
   color: var(--ext-foreground);
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--ext-muted-foreground);
+  margin-top: 0.25rem;
+  line-height: 1.4;
 }
 
 /* Button Styles */
@@ -1807,11 +1815,3 @@ body.dark-theme #toolsTable tbody tr:hover {
 [data-theme="dark"] .modality-option small {
   color: #9ca3af;
 }
- 
- [ d a t a - t h e m e = " d a r k " ]   . m o d a l i t y - o p t i o n   s m a l l   { 
- 
-     c o l o r :   # 9 c a 3 a f ; 
- 
- }
- 
- 
