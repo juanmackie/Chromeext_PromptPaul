@@ -704,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function addMediaPreview(mediaData) {
         const previewDiv = document.createElement('div');
         previewDiv.classList.add('message', 'system-message');
-        previewDiv.style.cssText = 'background: #e3f2fd; border-left: 4px solid #2196f3; margin-bottom: 10px;';
+        previewDiv.style.cssText = 'background: var(--ext-muted); border-left: 4px solid var(--ext-primary); margin-bottom: 10px; color: var(--ext-muted-foreground);';
         
         if (mediaData.type === 'image') {
             previewDiv.innerHTML = `

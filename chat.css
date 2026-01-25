@@ -451,8 +451,9 @@ button:active {
 }
 
 #submitBtn {
-    background-color: #004e5b;
-    color: #a8ecff;
+    background-color: var(--ext-primary);
+    color: var(--ext-primary-foreground);
+    border-color: var(--ext-primary-deep);
 }
 
 /* Adjust input area and buttons when sidebar is open */
