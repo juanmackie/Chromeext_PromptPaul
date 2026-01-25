@@ -1,129 +1,286 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-    <meta charset="UTF-8">
     <title>LLM Chat</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap"
-        rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap"
-        rel="stylesheet">
-    <!-- Styles migrated to external stylesheets (theme.css, hextaui-components.css, chat.css, loading-states.css) to comply with CSP -->
+    <style>
+        :root {
+          --primary-color: #5046e5;
+          --surface-color: #ffffff;
+          --background-color: #fafafa;
+          --text-color: #1a1a2e;
+          --border-color: #4338ca;
+          --shadow-sm: 2px 2px 0px 0px #4f46b8;
+          --shadow-md: 4px 4px 0px 0px #4f46b8;
+          --shadow-lg: 6px 6px 0px 0px #4f46b8;
+        }
 
+        body {
+            font-family: 'Inter', sans-serif;
+            height: 100vh; /* Use viewport height */
+            width: 100%; /* Make width responsive */
+            display: flex;
+            flex-direction: column;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            padding: 0;
+            margin: 0;
+            overflow: hidden;
+        }
+        .chat-container {
+            display: flex;
+            height: 100%; /* Take up full height */
+            width: 100%;
+            overflow: hidden; /* Hide overflow at container level */
+            background-color: var(--surface-color);
+        }
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%; /* Set height to 100% */
+            overflow-y: auto; /* Enable vertical scroll */
+        }
+        #chat-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            height: calc(100% - 60px); /* Leave space for input area */
+            display: flex;
+            flex-direction: column;
+            background-color: transparent !important;
+        }
+        #input-area {
+            display: flex;
+            padding: 0.5rem;
+            padding-bottom: 1rem;
+            background-color: var(--surface-color);
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            border-top: 2px solid var(--border-color);
+            box-shadow: 0 -4px 0px 0px #4f46b8;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 0.6rem 2.5rem 0.6rem 1rem;
+            border: 2px solid var(--border-color);
+            border-radius: 4px;
+            box-shadow: var(--shadow-sm);
+        }
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border: 1px solid #4338ca;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            box-shadow: var(--shadow-md);
+        }
+        .message {
+            padding: 0.6rem;
+            margin-bottom: 0.6rem;
+            border-radius: 0px;
+            background-color: var(--background-color);
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            width: 100%;
+            box-sizing: border-box;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+        .user-message {
+            text-align: right;
+            background-color: #5046e5;
+            color: #ffffff;
+            border-right: 4px solid #4338ca;
+        }
+        /* LLM message styling removed from here - consolidated below */
+
+        #chat-main-area, #oneoff-instruction-area {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow-y: auto; /* Enable vertical scrolling */
+            position: relative; /* For absolute positioning of children */
+        }
+
+        /* Improve message display for long content */
+        .llm-message {
+            text-align: left;
+            background-color: #ffffff;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-wrap: break-word;
+            word-break: break-word;
+            border-left: 4px solid #5046e5;
+        }
+
+        /* Style for code blocks in messages */
+        .llm-message pre, .llm-message code {
+            white-space: pre-wrap;
+            overflow-x: auto;
+            width: 100%;
+            box-sizing: border-box;
+            background-color: #e8e6f0;
+            padding: 0.5rem;
+            border-radius: 0px;
+            border: 1px solid #4338ca;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+        }
+
+        /* Style for selected text display */
+        #selectedText {
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0px;
+            background-color: #e8e6f0;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* Style for instruction input */
+        #instructionInput {
+            width: 95%;
+            min-height: 100px;
+            padding: 0.5rem;
+            border: 2px solid var(--border-color);
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            resize: vertical;
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Add padding to the one-off instruction area */
+        #oneoff-instruction-area {
+            padding: 1rem;
+        }
+        
+        /* Media queries for responsive design */
+        @media (max-width: 300px) {
+            /* Adjustments for very narrow sidebars */
+            .message {
+                padding: 0.4rem;
+            }
+            
+            #input-area {
+                padding: 0.3rem;
+            }
+            
+            #user-input {
+                padding: 0.4rem 0.6rem;
+            }
+            
+            button {
+                padding: 0.4rem 0.8rem;
+            }
+            
+            th, td {
+                padding: 4px;
+                font-size: 0.9em;
+            }
+        }
+        
+        /* Responsive table styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed; /* Fixed layout for better control */
+        }
+        
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            word-wrap: break-word; /* Allow words to break */
+            overflow-wrap: break-word; /* Modern browsers */
+            hyphens: auto; /* Add hyphens where possible */
+            overflow: hidden; /* Hide overflow */
+            text-overflow: ellipsis; /* Add ellipsis for overflow */
+        }
+        
+        /* Make property column take 40% of the width */
+        .property-col {
+            width: 40%;
+        }
+        
+        /* Make reference column take 20% of the width */
+        .ref-col {
+            width: 20%;
+        }
+        
+        /* Make task column take 40% of the width */
+        .task-col {
+            width: 40%;
+        }
+        
+        /* Style for dividers between rows */
+        .row-divider {
+            height: 1px;
+            background-color: var(--border-color);
+            width: 100%;
+            margin: 4px 0;
+        }
+
+    </style>
 </head>
-
 <link rel="stylesheet" href="theme.css">
-<link rel="stylesheet" href="hextaui-components.css">
 <link rel="stylesheet" href="chat.css?v=2">
 <link rel="stylesheet" href="loading-states.css">
-
 <body>
-    <div class="main-layout">
-        <div id="quick-actions-sidebar" class="sidebar hextaui-sidebar">
-            <!-- Preset "Summarize this tab" button -->
-            <button id="summarize-tab-button" class="hextaui-sidebar-action quick-action-button"
-                title="Summarize this tab">S</button>
-            <button id="explain-button" class="hextaui-sidebar-action quick-action-button"
-                title="Explain this tab">E</button>
-            <button id="load-context-button" class="hextaui-sidebar-action quick-action-button"
-                title="Load Tab Context">
-                <span class="material-icons">web</span>
-            </button>
-
-            <!-- Guide Mode Toggle -->
-            <button id="guide-mode-toggle-btn" class="hextaui-sidebar-action quick-action-button"
-                title="Toggle Guide Mode">
-                <span class="material-icons">explore</span>
-            </button>
-
-            <!-- Actions section divider -->
-            <div class="sidebar-divider"></div>
-
-            <!-- Export button moved to main sidebar for alignment -->
-            <button class="hextaui-sidebar-action quick-action-button" id="export-conversation-btn"
-                title="Export conversation">
-                <span class="material-icons">download</span>
-            </button>
-
-            <!-- Theme Toggle converted to icon-only button -->
-            <button class="hextaui-sidebar-action quick-action-button" id="theme-toggle-btn" title="Toggle Theme">
-                <span class="material-icons" id="theme-icon">light_mode</span>
-            </button>
-
-            <!-- Pinned instructions will be added here by chat.js -->
-            <div id="pinned-actions-container"></div>
-            <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
-        </div>
-        <!-- Theme Toggle moved to sidebar for better UX hierarchy -->
-        <div class="chat-container">
-            <!-- Guide Mode Configuration Panel -->
-            <div id="guide-mode-panel" class="hextaui-card guide-panel hidden">
-                <div class="panel-header">
-                    <div class="header-left">
-                        <h4><span class="material-icons icon-inline">explore</span>
-                            Guide
-                            Mode</h4>
-                        <div id="guide-status-indicator" class="guide-status hidden">
-                            <span class="pulse-dot"></span>
-                            <span id="guide-countdown" class="guide-countdown"></span>
-                        </div>
-                    </div>
-                    <div class="header-actions">
-                        <button id="toggle-collapse-guide" class="icon-btn" title="Collapse/Expand"><span
-                                class="material-icons">expand_less</span></button>
-                        <button id="close-guide-panel" class="icon-btn" title="Close Panel"><span
-                                class="material-icons">close</span></button>
-                    </div>
-                </div>
-                <div id="guide-panel-content">
-                    <p class="panel-desc">Set your goal and I'll provide periodic insights based on your context.</p>
-                    <div class="input-group">
-                        <label for="guide-goal">Your Goal</label>
-                        <textarea id="guide-goal" class="hextaui-input" placeholder="e.g., I'm researching AI safety..."
-                            rows="2"></textarea>
-                    </div>
-                    <div class="panel-actions">
-                        <button id="start-guide-btn" class="hextaui-btn hextaui-btn-primary">Start Guide</button>
-                        <button id="stop-guide-btn" class="hextaui-btn hextaui-btn-outline hidden">Stop
-                            Guide</button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="chat-main-area" class="ui-visible">
-                <div id="chat-area">
-                </div>
-            </div>
-            <div id="oneoff-instruction-area" class="ui-hidden">
-                <h3>One-off Instruction context</h3>
-                <div class="context-container">
-                    <p class="context-label">Selected text:</p>
-                    <div id="selectedText" class="selected-text"></div>
-                </div>
-                <p class="instruction-guide">Type your instruction in the input box below.</p>
-            </div>
-        </div>
-        <!-- Input area moved outside chat-container -->
-        <div id="input-area">
-            <div class="input-wrapper">
-                <textarea id="user-input" class="ext-input hextaui-input" placeholder="Ask me anything..."
-                    rows="1"></textarea>
-                <div class="input-actions-overlay">
-                    <button id="mic-dictation-button" class="input-action-btn" title="Voice Dictation">
-                        <span class="material-icons" id="mic-icon">mic</span>
+    <div id="quick-actions-sidebar">
+        <!-- Preset "Summarize this tab" button -->
+        <button id="summarize-tab-button" class="quick-action-button" title="Summarize this tab">S</button>
+        <button id="explain-button" class="quick-action-button" title="Explain this tab">E</button>
+        <!-- Pinned instructions will be added here by chat.js -->
+        <div id="pinned-actions-container"></div>
+        <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
+    </div>
+    <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
+      <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center;">
+        <input type="checkbox" id="darkThemeToggle">
+        <span id="darkThemeIcon" style="margin-right: 4px; font-size: 1.2em; vertical-align: middle;" class="material-icons">brightness_2</span>
+        Dark/Light Theme
+      </label>
+    </div>
+    <div class="chat-container">
+        <div id="chat-main-area" style="display: block;">
+            <div id="chat-area"></div>
+            <div id="input-area">
+                <div id="input-wrapper">
+                    <textarea id="user-input" placeholder="Type your message (or right-click to analyze)" rows="1"></textarea>
+                    <button id="voice-toggle-button" title="Voice Input" type="button">
+                        <span class="material-icons">mic</span>
                     </button>
-                    <div class="input-help" id="input-help"
-                        data-tooltip="Right-click on images, text, or media to analyze them">
-                        <span class="material-icons">help_outline</span>
-                    </div>
                 </div>
+                <button id="send-button">Send</button>
+                <button id="clear-button">Clear</button>
             </div>
-            <button id="send-button" class="ext-btn hextaui-btn hextaui-btn-primary">Send</button>
-            <button id="clear-button" class="ext-btn hextaui-btn hextaui-btn-outline">Clear</button>
+        </div>
+
+        <div id="oneoff-instruction-area" style="display:none;">
+            <h3>One-off Instruction</h3>
+            <div>
+              <p>Selected text:</p>
+              <div id="selectedText" class="selected-text"></div>
+            </div>
+            <div>
+              <p>Enter your instruction:</p>
+              <textarea id="instructionInput" placeholder="Enter your instruction here..."></textarea>
+            </div>
+            <button id="submitBtn">Process</button>
         </div>
     </div>
+    <script src="marked.min.js"></script>
     <script type="module" src="chat.js"></script>
 </body>
-
 </html>

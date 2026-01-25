@@ -1,703 +1,2640 @@
-// Initialize browser polyfill for cross-browser compatibility
-import './utils/browser-polyfill.js';
+import './marked.min.js';
 
-// Import all modules
-import { memoryManager } from './background/memory-manager.js';
-import { mediaHandler } from './background/media-handler.js';
-import { toolManager } from './background/tool-manager.js';
-import { eventManager } from './background/event-manager.js';
-import { apiClient } from './background/api-client.js';
-import analytics from './analytics.js';
-import logger from './utils/logger.js';
+import { isValidURL } from './src/utils/validation.js';
 
-// Set cross-module references
-apiClient.setToolManager(toolManager);
+// ===== Umami Analytics Module (privacy-first, opt-out) =====
+const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
+const UMAMI_WEBSITE_ID = 'd1b4d7cb-2e57-44ec-a91f-6692fb365a02';
+const ANALYTICS_CONSENT_KEY = 'analyticsConsent';
+const ANALYTICS_INSTANCE_KEY = 'analyticsInstance';
+const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
+const ANALYTICS_ROTATE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
+const DENYLIST = ['email', 'token', 'key', 'password', 'secret', 'auth', 'cookie', 'session', 'ssid'];
 
-
-// Import utilities
-import { sendMessageWithRetry } from './utils/message-utils.js';
-
-// Register collections with memory manager
-memoryManager.register('activeToolExecutions', toolManager.activeToolExecutions);
-memoryManager.register('activeMessages', eventManager.activeMessages);
-memoryManager.register('eventListeners', eventManager.listeners);
-
-// Context menu setup
-async function setupContextMenu() {
-  // Clear existing context menus
-  chrome.contextMenus.removeAll(() => {
-    // Create one-off instruction menu item (always at top)
-    chrome.contextMenus.create({
-      id: 'oneoff_instruction',
-      title: '✨ One-off Instruction',
-      contexts: ['selection', 'image'],
-    });
-
-    // Create start chat menu item
-    chrome.contextMenus.create({
-      id: 'start_chat',
-      title: '💬 Start Chat',
-      contexts: ['selection', 'image'],
-    });
-
-    // Create parent menu for Prompt Paul
-    chrome.contextMenus.create({
-      id: 'prompt_paul',
-      title: 'Query Prompt Paul',
-      contexts: ['selection', 'image'],
-    });
-
-    // Create predefined menu items under Prompt Paul
-    chrome.contextMenus.create({
-      id: 'summarize',
-      title: '📝 Summarize',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    chrome.contextMenus.create({
-      id: 'analyze',
-      title: '🧐 Analyze',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    chrome.contextMenus.create({
-      id: 'explain',
-      title: '❓ Explain',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    chrome.contextMenus.create({
-      id: 'polish',
-      title: '🪄 Polish',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    chrome.contextMenus.create({
-      id: 'shorten',
-      title: '✂️ Shorten',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    chrome.contextMenus.create({
-      id: 'formal',
-      title: '💼 Formal',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    chrome.contextMenus.create({
-      id: 'casual',
-      title: '🤙 Casual',
-      contexts: ['selection', 'image'],
-      parentId: 'prompt_paul',
-    });
-
-    // Create parent menu for custom instructions
-    chrome.contextMenus.create({
-      id: 'customInstructions',
-      title: 'Custom Instructions',
-      contexts: ['selection', 'image'],
-    });
-
-    // Load and add custom instructions
-    chrome.storage.local.get(['instructions'], result => {
-      if (result.instructions && result.instructions.length > 0) {
-        result.instructions.forEach(instruction => {
-          chrome.contextMenus.create({
-            id: `custom_${instruction.id}`,
-            parentId: 'customInstructions',
-            title: `✨ ${instruction.name}`,
-            contexts: ['selection', 'image'],
-          });
-        });
-      }
-    });
-
-    // Add separator and manage instructions after a delay to ensure proper ordering
-    setTimeout(() => {
-      chrome.contextMenus.create({
-        id: 'separator',
-        type: 'separator',
-        contexts: ['selection', 'image'],
-      });
-
-      chrome.contextMenus.create({
-        id: 'manageInstructions',
-        title: 'Manage Custom Instructions',
-        contexts: ['selection', 'image'],
-      });
-    }, 100);
-  });
+function uuidv4() {
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11)
+    .replace(/[018]/g, c =>
+      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+    );
 }
 
-// Initialize on extension startup
-chrome.runtime.onInstalled.addListener(async () => {
-  logger.info('Background', 'PromptPaul extension installed');
-  
-  analytics.trackInstalled();
-
-  // Initialize default configuration in sync storage
-  // This ensures the API client has access to configuration immediately
-  const defaultConfig = {
-    llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-    apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-    modelName: 'mistral-small-latest',
-    maxTokens: 16000,
-    systemPrompt: 'You are a helpful assistant.',
-  };
-
-  // Check if configuration already exists
-  const syncData = await chrome.storage.sync.get(['apiKey', 'apiEndpoint']);
-
-  // Only set defaults if no configuration exists
-  if (!syncData.apiKey || !syncData.apiEndpoint) {
-    logger.info('Background', 'Setting default API configuration');
-    await chrome.storage.sync.set({
-      apiKey: defaultConfig.apiKey,
-      apiEndpoint: defaultConfig.llmEndpoint,
-      modelName: defaultConfig.modelName,
-      maxTokens: defaultConfig.maxTokens,
-      systemPrompt: defaultConfig.systemPrompt,
-      enableStreaming: true, // Enable streaming by default
-    });
-    logger.info('Background', 'Default API configuration set successfully');
-  } else {
-    logger.info('Background', 'API configuration already exists');
+function sanitizeLabel(v) {
+  if (typeof v !== 'string') return undefined;
+  let s = v.trim().toLowerCase();
+  if (!s) return undefined;
+  // quick deny if looks like an email or has spaces
+  if (s.includes('@') || s.includes(' ')) return undefined;
+  // denylisted keywords
+  for (const k of DENYLIST) {
+    if (s.includes(k)) return undefined;
   }
+  // enforce charset and length
+  if (!SAFE_LABEL_REGEX.test(s)) return undefined;
+  return s;
+}
 
-  // Configure side panel
-  chrome.sidePanel.setOptions({ path: 'chat.html', enabled: true }).catch(error => {
-    logger.error('Background', 'Error setting sidePanel options:', error);
-  });
-
-  // Configure side panel for each activated tab to prevent "No active side panel for windowId" errors
-  chrome.tabs.onActivated.addListener(({ tabId }) => {
-    chrome.sidePanel
-      .setOptions({
-        tabId,
-        path: 'chat.html',
-        enabled: true,
-      })
-      .catch(error => {
-        logger.error('Background', `Error setting side panel options for tab ${tabId}:`, error);
-      });
-  });
-
-  setupContextMenu();
-});
-
-// Helper function to process images for analysis
-async function processImageForAnalysis(imageUrl, tab, actionType, instructionId = null) {
+async function getEnvInfo() {
+  const manifest = chrome.runtime.getManifest();
+  const extVersion = manifest?.version || '0.0.0';
+  const platformInfo = await new Promise(resolve => chrome.runtime.getPlatformInfo(resolve));
+  let chromeMajor = '0';
   try {
-    // Show loading message immediately
-    await sendMessageWithRetry({
-      action: 'setMediaForAnalysis',
-      mediaData: {
-        type: 'image',
-        base64: null,
-        url: imageUrl,
-        mimeType: mediaHandler.getMimeTypeFromUrl(imageUrl),
-        loading: true,
-        actionType: actionType,
-        instructionId: instructionId,
-      },
-      tabId: tab.id,
-    });
+    const ua = navigator.userAgent;
+    const m = ua.match(/Chrome\/(\d+)/);
+    if (m) chromeMajor = m[1];
+  } catch (_) {}
+  return { extVersion, platform: platformInfo?.os || 'unknown', chromeMajor };
+}
 
-    // Fetch and convert image to base64
-    logger.info('Background', 'Fetching image for analysis:', imageUrl);
-    const { base64: base64Data, mimeType: detectedMimeType } = await mediaHandler.fetchMediaAsBase64(imageUrl);
-    const mimeType = detectedMimeType || mediaHandler.getMimeTypeFromUrl(imageUrl);
+async function getConsent() {
+  const { [ANALYTICS_CONSENT_KEY]: consent } = await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
+  // Default ON (opt-out)
+  return consent !== false;
+}
 
-    logger.info('Background', 'Image converted to base64, length:', base64Data.length);
+async function getInstanceId() {
+  const now = Date.now();
+  const res = await chrome.storage.local.get([ANALYTICS_INSTANCE_KEY, ANALYTICS_ROTATE_AT_KEY]);
+  let instance = res[ANALYTICS_INSTANCE_KEY];
+  let rotateAt = res[ANALYTICS_ROTATE_AT_KEY];
+  if (!instance || !rotateAt || now >= rotateAt) {
+    instance = uuidv4();
+    rotateAt = now + ANALYTICS_ROTATE_MS;
+    await chrome.storage.local.set({ [ANALYTICS_INSTANCE_KEY]: instance, [ANALYTICS_ROTATE_AT_KEY]: rotateAt });
+  }
+  return instance;
+}
 
-    // Send actual media data
-    await sendMessageWithRetry({
-      action: 'setMediaForAnalysis',
-      mediaData: {
-        type: 'image',
-        base64: base64Data,
-        url: imageUrl,
-        mimeType: mimeType,
-        loading: false,
-        actionType: actionType,
-        instructionId: instructionId,
-      },
-      tabId: tab.id,
-    });
+async function sendUmamiEvent(name, data) {
+  try {
+    const consent = await getConsent();
+    if (!consent) return;
 
-    logger.info('Background', 'Image analysis request sent successfully');
-  } catch (error) {
-    logger.error('Background', 'Error processing image for analysis:', error);
+    // Send richer segmentation to Umami so you can filter by instruction/model/tools directly.
+    // Umami supports additional fields in the payload object such as event_name and data.
+    // We keep name as a stable event category (e.g., "instruction_used") and also include
+    // event_name set to the specific instruction for top-level segmentation.
+    const payload = {
+      type: 'event',
+      payload: {
+        website: UMAMI_WEBSITE_ID,
+        hostname: 'extension',
+        url: `/ext/usage/${data?.instruction || 'unknown'}`,
+        referrer: '',
+        name, // high-level category, e.g., "instruction_used"
+        event_name: data?.instruction || name, // specific instruction or fallback to name
+        data: {
+          ...data,
+          // Duplicate key fields at top-level-friendly keys for Umami dashboards
+          instruction: data?.instruction || 'unknown',
+          model: data?.model || 'unknown',
+          tools: Array.isArray(data?.tools) ? data.tools : []
+        }
+      }
+    };
+    const body = JSON.stringify(payload);
 
-    // Send error state message
-    await sendMessageWithRetry({
-      action: 'setMediaForAnalysis',
-      mediaData: {
-        type: 'image',
-        base64: null,
-        url: imageUrl,
-        mimeType: null,
-        loading: false,
-        error: error.message,
-        actionType: actionType,
-        instructionId: instructionId,
-      },
-      tabId: tab.id,
-    });
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon(UMAMI_ENDPOINT, blob);
+    } else {
+      await fetch(UMAMI_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true
+      });
+    }
+  } catch (e) {
+    // never throw
+    console.warn('Analytics send failed:', e);
   }
 }
 
-// Helper to check if a URL is restricted for script injection
-function isRestrictedUrl(url) {
-  if (!url) return true;
-  return url.startsWith('chrome://') ||
-    url.startsWith('chrome-extension://') ||
-    url.startsWith('about:') ||
-    url.startsWith('edge://') ||
-    url.includes('chrome.google.com/webstore');
+async function trackInstalled() {
+  const env = await getEnvInfo();
+  const instance = await getInstanceId();
+  await sendUmamiEvent('installed', { ...env, instance });
 }
+
+async function trackErrorEvent(category, code) {
+  const env = await getEnvInfo();
+  const instance = await getInstanceId();
+  const cat = sanitizeLabel(category) || 'unknown';
+  const c = sanitizeLabel(code) || 'unknown';
+  await sendUmamiEvent('error_event', { ...env, instance, category: cat, code: c });
+}
+
+async function trackInstructionUsed({ instruction, model, tools }) {
+  const env = await getEnvInfo();
+  const instance = await getInstanceId();
+  const instr = sanitizeLabel(instruction) || 'unknown';
+  const mdl = sanitizeLabel(model) || 'unknown';
+  const toolsSafe = Array.isArray(tools)
+    ? tools.map(t => sanitizeLabel(String(t))).filter(Boolean).slice(0, 8)
+    : [];
+  // Put the instruction and model into the event "name" context via sendUmamiEvent enhancements above
+  await sendUmamiEvent('instruction_used', {
+    ...env,
+    instance,
+    instruction: instr,
+    model: mdl,
+    tools: toolsSafe,
+    count: 1
+  });
+}
+
+// Default consent: set to true if not present
+(async () => {
+  const existing = await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
+  if (!(ANALYTICS_CONSENT_KEY in existing)) {
+    await chrome.storage.local.set({ [ANALYTICS_CONSENT_KEY]: true });
+  }
+})();
+
+// Listen for options page consent changes
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[ANALYTICS_CONSENT_KEY]) {
+    // no-op, just acknowledge; future hook if batching is added
+  }
+});
+// Create context menus for images and other media
+chrome.runtime.onInstalled.addListener(async (details) => {
+    // Track install/update event once
+    try {
+      await trackInstalled();
+    } catch (_) {}
+    // Create parent menu for images
+    chrome.contextMenus.create({
+        id: "imageAnalysis",
+        title: "Analyze Image with Prompt Paul",
+        contexts: ["image"]
+    });
+    
+    // Quick actions for images
+    chrome.contextMenus.create({
+        id: "analyzeImage",
+        parentId: "imageAnalysis",
+        title: "🔍 General Analysis",
+        contexts: ["image"]
+    });
+    
+    chrome.contextMenus.create({
+        id: "summarizeImage", 
+        parentId: "imageAnalysis",
+        title: "📝 Summarize Image",
+        contexts: ["image"]
+    });
+    
+    chrome.contextMenus.create({
+        id: "explainImage",
+        parentId: "imageAnalysis", 
+        title: "💡 Explain Image",
+        contexts: ["image"]
+    });
+    
+    // Add separator
+    chrome.contextMenus.create({
+        id: "imageSeparator",
+        parentId: "imageAnalysis",
+        type: "separator",
+        contexts: ["image"]
+    });
+    
+    // Load and add custom instructions for images
+    await updateImageCustomInstructions();
+    
+    // Create parent menu for videos
+    chrome.contextMenus.create({
+        id: "videoAnalysis",
+        title: "Analyze Video with Prompt Paul", 
+        contexts: ["video"]
+    });
+    
+    chrome.contextMenus.create({
+        id: "analyzeVideo",
+        parentId: "videoAnalysis",
+        title: "🎥 General Analysis",
+        contexts: ["video"]
+    });
+    
+    // Create parent menu for audio
+    chrome.contextMenus.create({
+        id: "audioAnalysis", 
+        title: "Analyze Audio with Prompt Paul",
+        contexts: ["audio"]
+    });
+    
+    chrome.contextMenus.create({
+        id: "analyzeAudio",
+        parentId: "audioAnalysis",
+        title: "🎵 General Analysis", 
+        contexts: ["audio"]
+    });
+});
 
 // Handle context menu clicks
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  const menuItemId = info.menuItemId;
-  logger.info('Background', 'Context menu clicked:', menuItemId, 'Media Type:', info.mediaType);
-
-  // Handle manage instructions (doesn't need side panel)
-  if (menuItemId === 'manageInstructions') {
-    chrome.runtime.openOptionsPage();
-    return;
-  }
-
-  // Open side panel first (must be in direct response to user action)
-  // Open side panel first (must be in direct response to user action)
-  // This function must be synchronous to maintain user gesture context, but we can fire-and-forget the async part
-  const openSidePanelWithFallback = async () => {
-    let sidePanelOpened = false;
-
-    try {
-      // Try opening for the specific window first (most robust)
-      if (typeof tab.windowId === 'number') {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
+        info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
+        info.menuItemId.startsWith("imageCustom_")) {
         try {
-          await chrome.sidePanel.open({ windowId: tab.windowId });
-          sidePanelOpened = true;
-        } catch (windowError) {
-          logger.warn('Background', 'Failed to open side panel for window, attempting fallback to tab:', windowError);
-          // Fallback to tabId
-          await chrome.sidePanel.open({ tabId: tab.id });
-          sidePanelOpened = true;
+            // Open side panel FIRST (must be in direct response to user gesture)
+            await chrome.sidePanel.open({ tabId: tab.id });
+            
+            // Get the media URL and determine action type
+            const mediaUrl = info.srcUrl;
+            let mediaType, actionType, instructionId;
+            
+            if (info.menuItemId.startsWith("imageCustom_")) {
+                mediaType = "image";
+                actionType = "custom";
+                instructionId = info.menuItemId.replace("imageCustom_", "");
+            } else if (info.menuItemId === "summarizeImage") {
+                mediaType = "image";
+                actionType = "summarize";
+            } else if (info.menuItemId === "explainImage") {
+                mediaType = "image";
+                actionType = "explain";
+            } else {
+                // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
+                mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
+                actionType = "analyze";
+            }
+            
+            // Show loading message immediately (with error handling)
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'setMediaForAnalysis',
+                    mediaData: {
+                        type: mediaType,
+                        base64: null, // Will be set later
+                        url: mediaUrl,
+                        mimeType: getMimeTypeFromUrl(mediaUrl),
+                        loading: true
+                    },
+                    tabId: tab.id
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Background: setMediaForAnalysis (loading) message failed:', chrome.runtime.lastError.message);
+                    }
+                });
+            } catch (error) {
+                console.warn('Background: Exception sending setMediaForAnalysis (loading):', error.message);
+            }
+            
+            // Convert media to base64 for API (async operation)
+            fetchMediaAsBase64(mediaUrl).then(base64Data => {
+                const mimeType = getMimeTypeFromUrl(mediaUrl);
+
+                const sendMediaData = () => {
+                    try {
+                        chrome.runtime.sendMessage({
+                            action: 'setMediaForAnalysis',
+                            mediaData: {
+                                type: mediaType,
+                                base64: base64Data,
+                                url: mediaUrl,
+                                mimeType: mimeType,
+                                loading: false,
+                                actionType: actionType,
+                                instructionId: instructionId
+                            },
+                            tabId: tab.id
+                        }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn('Background: setMediaForAnalysis (data) message failed:', chrome.runtime.lastError.message);
+                            }
+                        });
+                    } catch (error) {
+                        console.warn('Background: Exception sending setMediaForAnalysis (data):', error.message);
+                        setTimeout(sendMediaData, 500);
+                    }
+                };
+
+                setTimeout(sendMediaData, 1000);
+            }).catch(async error => {
+                console.error('Error fetching media:', error);
+                try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
+                try {
+                    chrome.runtime.sendMessage({
+                        action: 'setMediaForAnalysis',
+                        mediaData: {
+                            type: mediaType,
+                            base64: null,
+                            url: mediaUrl,
+                            mimeType: getMimeTypeFromUrl(mediaUrl),
+                            error: error.message
+                        },
+                        tabId: tab.id
+                    }, (response) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn('Background: setMediaForAnalysis (error) message failed:', chrome.runtime.lastError.message);
+                        }
+                    });
+                } catch (err) {
+                    console.error('Background: Exception sending error message:', err.message);
+                }
+            });
+            
+        } catch (error) {
+            console.error('Error processing media:', error);
         }
-      } else {
-        // Direct fallback to tabId if no windowId
-        await chrome.sidePanel.open({ tabId: tab.id });
-        sidePanelOpened = true;
-      }
-    } catch (error) {
-      logger.error('Background', 'All side panel opening attempts failed:', error);
-      sidePanelOpened = false;
     }
-
-    // Continue after attempting to open
-    handleContextMenuActionAfterSidePanelOpen(info, tab, menuItemId, sidePanelOpened);
-  };
-
-  // Execute immediately
-  openSidePanelWithFallback();
 });
 
-// This function handles the rest of the context menu logic after side panel opening
-// It runs asynchronously after the user gesture context is complete
-function handleContextMenuActionAfterSidePanelOpen(info, tab, menuItemId, sidePanelOpened) {
-  // If side panel couldn't be opened, show error and abort
-  if (!sidePanelOpened) {
-    logger.error('Background', 'Could not open side panel. Aborting action to prevent connection errors.');
-    // Attempt to notify user via notification API since we can't open the side panel
-    if (chrome.notifications) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: 'Prompt Paul Error',
-        message: 'Failed to open side panel. Please try creating a new tab or restarting the browser.'
-      });
-    }
-    return;
-  }
-
-  // Continue with the original context menu processing logic
-  (async () => {
+// Helper function to fetch media and convert to base64
+async function fetchMediaAsBase64(url) {
     try {
-      // Determines content to process
-      let promptContent = '';
-      let isImage = false;
-
-      if (info.selectionText) {
-        promptContent = info.selectionText;
-        logger.info('Background', 'Processing selected text');
-      } else if (info.mediaType === 'image' && info.srcUrl) {
-        // Image detected - will be processed by the specific action handler
-        isImage = true;
-        logger.info('Background', 'Detected image URL:', info.srcUrl, '- will process via action handler');
-      } else {
-        // Fallback to page content
-        const [result] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            return {
-              title: document.title,
-              url: window.location.href,
-              pageContent: document.body.innerText,
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                const base64 = dataUrl.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+                resolve(base64);
             };
-          },
+            reader.onerror = (error) => {
+                console.error('FileReader error:', error);
+                reject(error);
+            };
+            reader.readAsDataURL(blob);
         });
-        promptContent = result.result?.pageContent || '';
-        logger.info('Background', 'Processing full page content');
-      }
-
-      // Handle different menu actions
-      if (menuItemId === 'oneoff_instruction') {
-        // One-off instruction - just show the selected text/image in chat
-        if (info.mediaType === 'image' && info.srcUrl) {
-          // Use setMediaForAnalysis for images
-          await processImageForAnalysis(info.srcUrl, tab, 'analyze');
-        } else {
-          // Validate we have content to send
-          if (!promptContent || promptContent.trim().length === 0) {
-            logger.warn('Background', 'No content selected for oneoff instruction');
-            if (chrome.notifications) {
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icons/icon128.png',
-                title: 'No Content Selected',
-                message: 'Please select some text before using one-off instruction.'
-              });
-            }
-            return;
-          }
-
-          logger.info('Background', 'Sending oneoff instruction', {
-            contentLength: promptContent.length
-          });
-
-          // Use retry logic to ensure side panel is ready to receive
-          sendMessageWithRetry({
-            action: 'setSelectedText',
-            selectedText: promptContent,
-            tabId: tab.id,
-            fromStartChat: false,
-          }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
-        }
-        return;
-      } else if (menuItemId === 'start_chat') {
-        // Start chat - send selected text/image and make API request
-        if (info.mediaType === 'image' && info.srcUrl) {
-          // Use setMediaForAnalysis for images
-          await processImageForAnalysis(info.srcUrl, tab, 'analyze');
-        } else {
-          // Use retry logic instead of fixed timeout
-          sendMessageWithRetry({
-            action: 'setSelectedText',
-            selectedText: promptContent,
-            tabId: tab.id,
-            fromStartChat: true,
-          }).catch(e => logger.error('Background', 'Error sending setSelectedText:', e));
-
-          const requestOptions = { isStartChat: true };
-          await apiClient.makeApiRequest(promptContent, tab.id, requestOptions);
-        }
-        return;
-      } else if (menuItemId.toString().startsWith('custom_')) {
-        // Handle custom instruction
-        const instructionId = menuItemId.toString().replace('custom_', '');
-        const { instructions } = await chrome.storage.local.get(['instructions']);
-        const instruction = instructions?.find(i => i.id === instructionId);
-
-        if (instruction) {
-          if (info.mediaType === 'image' && info.srcUrl) {
-            // Use setMediaForAnalysis for images with custom instruction
-            await processImageForAnalysis(info.srcUrl, tab, 'custom', instructionId);
-          } else {
-            // Existing text handling logic
-            const fullPrompt = `${instruction.content}\n\n${promptContent}`;
-            const toolChoice = instruction.tool_choice || 'none';
-            await apiClient.makeApiRequest(fullPrompt, tab.id, { customInstructionToolChoice: toolChoice });
-          }
-        }
-        return;
-      }
-
-      // Handle predefined instructions under "Query Prompt Paul"
-      const commandMap = {
-        summarize: 'Please summarize the following text into a bullet list of points',
-        explain: 'Explain this to me in a short concise MECE approach',
-        polish: 'Polish this text with clarity and purpose',
-        shorten: 'Shorten this text without losing its meaning and context',
-        formal: 'Make this text more formal and eloquent',
-        casual: 'Make this text more casual and fun',
-        analyze: 'Please analyze the following',
-      };
-
-      if (commandMap[menuItemId]) {
-        if (info.mediaType === 'image' && info.srcUrl) {
-          // Use setMediaForAnalysis for images
-          await processImageForAnalysis(info.srcUrl, tab, menuItemId);
-        } else {
-          // Existing text handling logic
-          const fullPrompt = `${commandMap[menuItemId]}:\n${promptContent}`;
-          await apiClient.makeApiRequest(fullPrompt, tab.id);
-        }
-        return;
-      }
-
-      // Send prompt to API if we have content
-      if (promptContent) {
-        await apiClient.makeApiRequest(promptContent, tab.id);
-      }
     } catch (error) {
-      logger.error('Background', 'Error handling context menu click:', error);
+        console.error('Error fetching media:', error);
+        throw error;
     }
-  })();
-
 }
 
-// Listen for messages from content scripts or popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // Register message for race condition protection
-  const messageId = eventManager.registerMessage(request, sender);
+// Track existing image custom instruction menu items
+let existingImageCustomMenuItems = new Set();
 
-  // Create enhanced sendResponse with race condition protection
-  const safeSendResponse = response => {
-    if (!eventManager.wasMessageResponded(messageId)) {
-      eventManager.markMessageResponded(messageId);
+// Helper function to update image custom instructions in context menu
+async function updateImageCustomInstructions() {
+    try {
+        // Remove existing custom instruction menu items that we know exist
+        for (const menuItemId of existingImageCustomMenuItems) {
+            try {
+                await new Promise((resolve, reject) => {
+                    chrome.contextMenus.remove(menuItemId, () => {
+                        if (chrome.runtime.lastError) {
+                            // Menu item doesn't exist, that's fine
+                            resolve();
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            } catch (e) {
+                // Ignore errors for non-existent menu items
+            }
+        }
+        existingImageCustomMenuItems.clear();
+        
+        // Add current custom instructions
+        const { instructions } = await chrome.storage.local.get(['instructions']);
+        if (instructions && instructions.length > 0) {
+            for (const instruction of instructions) {
+                const menuItemId = `imageCustom_${instruction.id}`;
+                try {
+                    await new Promise((resolve, reject) => {
+                        chrome.contextMenus.create({
+                            id: menuItemId,
+                            parentId: "imageAnalysis",
+                            title: `⚡ ${instruction.name}`,
+                            contexts: ["image"]
+                        }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.warn(`Failed to create menu item ${menuItemId}:`, chrome.runtime.lastError.message);
+                                resolve();
+                            } else {
+                                existingImageCustomMenuItems.add(menuItemId);
+                                resolve();
+                            }
+                        });
+                    });
+                } catch (e) {
+                    console.warn(`Error creating menu item for instruction ${instruction.name}:`, e);
+                }
+            }
+        } else {
+        }
+    } catch (error) {
+        console.error('Error updating image custom instructions:', error);
+    }
+}
 
-      if (response) {
-        response._messageId = messageId;
-        response._timestamp = Date.now();
-      }
+// Listen for storage changes to update context menus
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.instructions) {
+        updateImageCustomInstructions();
+    }
+});
 
-      sendResponse(response);
+// Helper function to determine MIME type from URL
+function getMimeTypeFromUrl(url) {
+    try {
+        // Handle query parameters and fragments
+        const cleanUrl = url.split('?')[0].split('#')[0];
+        const extension = cleanUrl.split('.').pop().toLowerCase();
+        
+        const mimeTypes = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'svg': 'image/svg+xml',
+            'bmp': 'image/bmp',
+            'tiff': 'image/tiff',
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'ogg': 'video/ogg',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'flac': 'audio/flac'
+        };
+        
+        const mimeType = mimeTypes[extension] || 'image/jpeg'; // Default to jpeg for images
+        return mimeType;
+    } catch (error) {
+        console.error('Error determining MIME type:', error);
+        return 'image/jpeg'; // Safe default
+    }
+}
+
+import { McpRegistry } from "./mcp/registry.js";
+
+let messageListenerAdded = false;
+let tabContentCallback = null; // To store sendResponse for getTabContent
+let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
+
+// --- MCP Registry Host (Phase 1) ---
+const mcpRegistry = new McpRegistry({
+    onLog: (e) => {
+        // Redacted, structured logs; store last N logs in memory and in storage for Options page viewer
+        const entry = {
+            ts: Date.now(),
+            level: e.level || "info",
+            type: e.type || "info",
+            serverId: e.serverId,
+            url: e.url,
+            msg: e.msg,
+            payload: e.payload,
+            latencyMs: e.latencyMs,
+            details: {
+                attempt: e.attempt,
+                delayMs: e.delayMs,
+                code: e.code,
+                reason: e.reason,
+                wasClean: e.wasClean,
+                tool: e.tool,
+                protocolVersion: e.protocolVersion
+            }
+        };
+        appendMcpLog(entry);
+    }
+});
+
+const MAX_MCP_LOGS = 500;
+let mcpLogsBuffer = [];
+
+function appendMcpLog(entry) {
+    try {
+        mcpLogsBuffer.push(entry);
+        if (mcpLogsBuffer.length > MAX_MCP_LOGS) {
+            mcpLogsBuffer.shift();
+        }
+    } catch (_) {}
+    // Persist a rolling window for options viewer
+    chrome.storage.local.set({ mcpLogs: mcpLogsBuffer.slice(-MAX_MCP_LOGS) });
+}
+
+// MCP Session Management
+let mcpSessions = {};
+const mcpClientCapabilities = {
+    experimental: {}, // For any experimental features client supports
+    // No 'roots' capability declared, as the extension doesn't primarily serve local file roots to tools.
+    // No 'sampling' capability declared, as tools don't typically ask the extension (client) to perform LLM sampling for them via MCP.
+    elicitation: {} // Declares that the client understands the elicitation protocol.
+                     // Actual handling of elicitation requests from the server would be a future enhancement.
+};
+const mcpClientInfo = { "name": "PromptPaulExtension", "version": "0.1.0" }; // Use appropriate version
+
+// Session lifecycle management constants
+const MCP_SESSION_TIMEOUT = 30000; // 30 seconds for requests
+const MCP_SESSION_MAX_AGE = 300000; // 5 minutes session lifetime
+const MCP_SESSION_CLEANUP_INTERVAL = 60000; // 1 minute cleanup interval
+const MCP_MAX_RETRY_ATTEMPTS = 3;
+const MCP_RETRY_DELAY = 1000; // 1 second base delay
+
+// Session cleanup timer
+let sessionCleanupTimer = null;
+
+// Circuit breaker for MCP servers
+const mcpCircuitBreakers = {};
+const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
+const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
+const CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS = 3;
+
+class CircuitBreaker {
+    constructor(serverUrl) {
+        this.serverUrl = serverUrl;
+        this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+        this.failureCount = 0;
+        this.lastFailureTime = null;
+        this.halfOpenCallCount = 0;
+    }
+    
+    async execute(operation) {
+        if (this.state === 'OPEN') {
+            if (Date.now() - this.lastFailureTime > CIRCUIT_BREAKER_TIMEOUT) {
+                this.state = 'HALF_OPEN';
+                this.halfOpenCallCount = 0;
+            } else {
+                throw new Error(`Circuit breaker OPEN for ${this.serverUrl}. Server temporarily unavailable.`);
+            }
+        }
+        
+        if (this.state === 'HALF_OPEN' && this.halfOpenCallCount >= CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS) {
+            throw new Error(`Circuit breaker HALF_OPEN limit reached for ${this.serverUrl}. Server still unstable.`);
+        }
+        
+        try {
+            const result = await operation();
+            this.onSuccess();
+            return result;
+        } catch (error) {
+            this.onFailure();
+            throw error;
+        }
+    }
+    
+    onSuccess() {
+        this.failureCount = 0;
+        if (this.state === 'HALF_OPEN') {
+            this.state = 'CLOSED';
+        }
+    }
+    
+    onFailure() {
+        this.failureCount++;
+        this.lastFailureTime = Date.now();
+        
+        if (this.state === 'HALF_OPEN') {
+            this.halfOpenCallCount++;
+        }
+        
+        if (this.failureCount >= CIRCUIT_BREAKER_FAILURE_THRESHOLD) {
+            this.state = 'OPEN';
+        }
+    }
+}
+
+function getCircuitBreaker(serverUrl) {
+    if (!mcpCircuitBreakers[serverUrl]) {
+        mcpCircuitBreakers[serverUrl] = new CircuitBreaker(serverUrl);
+    }
+    return mcpCircuitBreakers[serverUrl];
+}
+
+// Start session cleanup timer
+function startSessionCleanup() {
+    if (sessionCleanupTimer) return; // Already running
+    
+    sessionCleanupTimer = setInterval(() => {
+        const now = Date.now();
+        const sessionsToCleanup = [];
+        
+        for (const [url, session] of Object.entries(mcpSessions)) {
+            if (session.lastUsed && (now - session.lastUsed) > MCP_SESSION_MAX_AGE) {
+                sessionsToCleanup.push(url);
+            }
+        }
+        
+        for (const url of sessionsToCleanup) {
+            delete mcpSessions[url];
+        }
+        
+        if (Object.keys(mcpSessions).length === 0 && sessionCleanupTimer) {
+            clearInterval(sessionCleanupTimer);
+            sessionCleanupTimer = null;
+        }
+    }, MCP_SESSION_CLEANUP_INTERVAL);
+    
+}
+
+// Enhanced session health check
+function isSessionHealthy(session) {
+    if (!session || !session.initialized) return false;
+    
+    const now = Date.now();
+    if (session.lastUsed && (now - session.lastUsed) > MCP_SESSION_MAX_AGE) {
+        return false;
+    }
+    
+    return true;
+}
+
+// Timeout wrapper for fetch requests
+async function fetchWithTimeout(url, options, timeoutMs = MCP_SESSION_TIMEOUT) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeoutMs}ms`);
+        }
+        throw error;
+    }
+}
+
+// Retry wrapper with exponential backoff
+async function retryWithBackoff(operation, maxAttempts = MCP_MAX_RETRY_ATTEMPTS, baseDelay = MCP_RETRY_DELAY) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+            
+            if (attempt === maxAttempts) {
+                break;
+            }
+            
+            // Don't retry on certain errors
+            if (error.message.includes('404') || error.message.includes('401') || error.message.includes('403')) {
+                break;
+            }
+            
+            const delay = baseDelay * Math.pow(2, attempt - 1);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    
+    throw lastError;
+}
+
+async function sendMcpNotification(mcpServerUrl, method, params) {
+    const session = mcpSessions[mcpServerUrl]; // Get session, primarily for mcpSessionId
+
+    const notificationPayload = {
+        jsonrpc: "2.0",
+        method: method,
+        params: params || {}
+    };
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream' // Keep this from previous fix
+    };
+
+    if (session && session.mcpSessionId) {
+        headers['mcp-session-id'] = session.mcpSessionId;
+    } else if (method === "initialized") {
+        // The 'initialized' notification is part of the session setup.
+        // If mcpSessionId was just obtained in initializeMcpSession and set into mcpSessions,
+        // it *should* be found here. If not, it's a problem or the server didn't provide one.
+        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This might be an issue if the server expects it even for 'initialized'.`);
+    } else {
+        // For other methods, we should have a session ID if the session was properly initialized
+        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This could cause issues if the server requires it.`);
+    }
+
+
+    try {
+        const response = await fetchWithTimeout(mcpServerUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(notificationPayload)
+        });
+
+        if (!response.ok) {
+            // For notifications, we might not always get a body or a meaningful JSON error.
+            // The primary concern is whether the HTTP request itself succeeded.
+            console.warn(`MCP Notification HTTP error! Status: ${response.status} for method ${method}`);
+            // Optionally, try to read body if there's an issue.
+            try {
+                const errorBody = await response.text(); // Using text() as it might not be JSON
+                console.warn(`MCP Notification error body: ${errorBody}`);
+            } catch(e) { /* ignore */ }
+        }
+        // Notifications do not have responses to parse beyond HTTP status.
+    } catch (error) {
+        console.error(`Error sending MCP notification '${method}' to ${mcpServerUrl}:`, error);
+        // Depending on desired robustness, could throw or just log.
+    }
+}
+
+async function initializeMcpSession(mcpServerUrl) {
+    
+    // Check circuit breaker before attempting initialization
+    const circuitBreaker = getCircuitBreaker(mcpServerUrl);
+    
+    return await circuitBreaker.execute(async () => {
+        const requestId = `mcp-init-${Date.now()}`;
+        const initializeParams = {
+            protocolVersion: "0.1.0",
+            capabilities: mcpClientCapabilities,
+            clientInfo: mcpClientInfo
+        };
+        const requestPayload = {
+            jsonrpc: "2.0",
+            id: requestId,
+            method: "initialize",
+            params: initializeParams
+        };
+
+    try {
+        const response = await retryWithBackoff(async () => {
+            return await fetchWithTimeout(mcpServerUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream' // Correct Accept header
+                },
+                body: JSON.stringify(requestPayload)
+            });
+        });
+
+        if (!response.ok) {
+            let errorMsg = `MCP Initialize HTTP error! Status: ${response.status}`;
+            try {
+                const errorBody = await response.text(); // Use text() for potential non-JSON errors too
+                errorMsg += `, Body: ${errorBody}`;
+            } catch (e) { /* ignore */ }
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: HTTP status ${response.status}. Body: ${errorBody}`);
+        }
+
+        const mcpSessionId = response.headers.get('mcp-session-id');
+        if (!mcpSessionId) {
+            console.error(`MCP Initialize Error: mcp-session-id header not found in response from ${mcpServerUrl}. This is required for subsequent requests.`);
+            // This is now treated as an error since most servers will require the session ID
+            throw new Error(`MCP Initialize failed: mcp-session-id header missing in response from ${mcpServerUrl}`);
+        } else {
+        }
+
+        const responseText = await response.text();
+        console.debug(`MCP Initialize: Raw response text from ${mcpServerUrl} for request ID ${requestId}:\n${responseText}`);
+        let serverResponse = null;
+        let foundInitializeResult = false;
+
+        // Process potential SSE stream for the initialize response
+        // An SSE stream might contain multiple messages. We need to find the one that's a JSON-RPC response to our 'initialize' request.
+        const lines = responseText.split('\n');
+        let accumulatedData = ''; // For multi-line data fields in SSE
+
+        for (const line of lines) {
+            if (line.startsWith('data:')) {
+                accumulatedData += line.substring(5).trim(); // Accumulate data lines
+            } else if (line.trim() === '' && accumulatedData) { // Empty line signifies end of an SSE message's data
+                try {
+                    const parsedEventData = JSON.parse(accumulatedData);
+                    console.debug(`MCP Initialize: Parsed SSE data event from ${mcpServerUrl} for request ID ${requestId}:`, parsedEventData);
+                    if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
+                        serverResponse = parsedEventData;
+                        foundInitializeResult = true;
+                        break;
+                    }
+                } catch (e) {
+                    console.warn(`MCP Initialize: Could not parse accumulated SSE data as JSON or not the target response. Data: "${accumulatedData}". Error:`, e);
+                }
+                accumulatedData = ''; // Reset for next message
+            } else if (accumulatedData && !line.startsWith('id:') && !line.startsWith('event:') && !line.startsWith('retry:')) {
+                // If a line is not 'data:' but part of a multi-line data field (though less common for JSON-RPC over SSE)
+                // This simplistic accumulation might need refinement based on exact server behavior.
+                // For now, primary focus is on complete JSON objects per 'data:' line or block.
+                // The check `line.trim() === '' && accumulatedData` is more robust for distinct JSON objects.
+            }
+        }
+
+        // If after processing all lines, there's still accumulatedData, try to parse it (e.g., stream ended without a final empty line)
+        if (accumulatedData && !foundInitializeResult) {
+            try {
+                const parsedEventData = JSON.parse(accumulatedData);
+                console.debug(`MCP Initialize: Parsed final accumulated SSE data event from ${mcpServerUrl} for request ID ${requestId}:`, parsedEventData);
+                if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
+                    serverResponse = parsedEventData;
+                    foundInitializeResult = true;
+                }
+            } catch (e) {
+                console.warn(`MCP Initialize: Could not parse final accumulated SSE data as JSON. Data: "${accumulatedData}". Error:`, e);
+            }
+        }
+
+        if (!foundInitializeResult || !serverResponse) {
+            // Fallback: if SSE parsing didn't yield a result, try parsing the whole responseText as a single JSON object
+            // This handles cases where the server might not use SSE for the initialize response despite Accept header.
+            if (!responseText.includes('data:')) { // Only try this if it doesn't look like SSE at all
+                try {
+                    const parsedResponse = JSON.parse(responseText);
+                    if (parsedResponse.id === requestId && (parsedResponse.result || parsedResponse.error)) {
+                        serverResponse = parsedResponse;
+                        foundInitializeResult = true;
+                    }
+                } catch (e) {
+                    console.warn(`MCP Initialize: Failed to parse response as plain JSON after SSE attempt failed for ${mcpServerUrl}. Error:`, e);
+                }
+            }
+        }
+
+        if (!foundInitializeResult || !serverResponse) {
+            console.error(`MCP Initialize: Critical - JSON-RPC response for request ID ${requestId} not found in response from ${mcpServerUrl}. Full response text was logged previously.`);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: JSON-RPC response for request ID ${requestId} not found.`);
+        }
+
+        if (serverResponse.error) {
+            console.error(`MCP Initialize: Server returned an error for request ID ${requestId}:`, serverResponse.error);
+            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
+        }
+
+        if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
+            console.error(`MCP Initialize: Invalid result structure in response for ID ${requestId} from ${mcpServerUrl}:`, serverResponse.result);
+            throw new Error(`MCP Initialize failed: Invalid result structure from server for request ID ${requestId}.`);
+        }
+
+        if (serverResponse.result.protocolVersion !== initializeParams.protocolVersion) {
+            console.warn(`MCP Protocol version mismatch: Client sent ${initializeParams.protocolVersion}, Server responded with ${serverResponse.result.protocolVersion}. Proceeding.`);
+        }
+
+        const session = {
+            mcpSessionId: mcpSessionId, // Store the extracted session ID
+            serverUrl: mcpServerUrl,
+            serverCapabilities: serverResponse.result.capabilities,
+            protocolVersion: serverResponse.result.protocolVersion,
+            initialized: true,
+            createdAt: Date.now(),
+            lastUsed: Date.now()
+        };
+        mcpSessions[mcpServerUrl] = session; // Cache the session
+        
+        // Start cleanup timer if this is the first session
+        startSessionCleanup();
+
+        // Send "initialized" notification
+        await sendMcpNotification(mcpServerUrl, "initialized", {});
+
+        // Attempt to list tools from the MCP server
+        try {
+            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
+            // This is okay because we've already cached it above.
+            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
+            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
+            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
+            const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
+            if (discoveredTools && discoveredTools.length > 0) {
+                session.tools = discoveredTools;
+            } else {
+                session.tools = []; // Ensure session.tools is always an array
+            }
+        } catch (toolError) {
+            console.error(`MCP Initialize: Failed to list tools from ${mcpServerUrl}. Error:`, toolError.message);
+            session.tools = []; // Ensure session.tools is an array even on error
+            // Do not re-throw; session initialization can proceed without tools.
+        }
+
+        return session;
+
+    } catch (error) {
+        console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
+        delete mcpSessions[mcpServerUrl];
+        // Enhanced error message with more details
+        const enhancedError = new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
+        enhancedError.cause = error; // Attach the original error as cause
+        throw enhancedError;
+    }
+    }); // Close circuit breaker execute
+}
+
+async function getMcpSession(mcpServerUrl) {
+    const existingSession = mcpSessions[mcpServerUrl];
+    
+    if (existingSession && isSessionHealthy(existingSession)) {
+        existingSession.lastUsed = Date.now(); // Update last used timestamp
+        return existingSession;
+    }
+    
+    if (existingSession && !isSessionHealthy(existingSession)) {
+        delete mcpSessions[mcpServerUrl];
+    }
+    
+    return await initializeMcpSession(mcpServerUrl);
+}
+
+// New function to list tools from an MCP server
+async function listMcpTools(mcpServerUrl, sessionId) { // sessionId might not be strictly needed if sendMcpRequest uses global session
+    const requestId = `mcp-listtools-${Date.now()}`;
+    const requestPayload = {
+        jsonrpc: "2.0",
+        id: requestId,
+        method: "tools/list", // Standard MCP method for listing tools
+        params: {} // Typically no parameters for a list method
+    };
+
+    try {
+        // sendMcpRequest will use the mcpSessionId from the cached session for mcpServerUrl
+        const mcpResponse = await sendMcpRequest(mcpServerUrl, requestPayload);
+
+        if (mcpResponse && mcpResponse.result && Array.isArray(mcpResponse.result.tools)) {
+            return mcpResponse.result.tools; // Expected structure { tools: [...] }
+        } else {
+            console.error(`MCP tools/list: Unexpected response format from ${mcpServerUrl}. Response:`, mcpResponse);
+            return []; // Return empty array on unexpected format
+        }
+    } catch (error) {
+        console.error(`MCP tools/list: Error listing tools from ${mcpServerUrl}: ${error.message}`);
+        // Depending on desired strictness, could throw error or return empty array.
+        // For robustness of session initialization, returning empty array.
+        return [];
+    }
+}
+
+function createMcpToolCallPayload(toolName, toolArguments, requestId) {
+    // Ensure toolArguments is an object, as expected by MCP for structured params.
+    // The LLM often sends arguments as a JSON string, which should be parsed *before* calling this.
+    // If toolArguments is already an object, this is fine. If it's a string,
+    // it indicates it wasn't parsed at the executePromptPaulTool level.
+    // For safety, though this function expects an object:
+    let paramsArguments = toolArguments;
+    // Ensure toolArguments is an object
+    if (typeof toolArguments === 'string') {
+        try {
+            paramsArguments = JSON.parse(toolArguments);
+        } catch (e) {
+            console.error("Tool arguments for MCP call were a string but not valid JSON:", toolArguments, e);
+            throw new Error("Tool arguments must be a valid JSON object or pre-parsed object.");
+        }
+    } else if (typeof toolArguments !== 'object' || toolArguments === null) {
+        console.error("Tool arguments must be an object:", toolArguments);
+        throw new Error("Tool arguments must be an object.");
+    }
+
+    const toolCallParams = {
+        name: toolName,
+        arguments: paramsArguments
+    };
+
+    const requestPayload = {
+        jsonrpc: "2.0",
+        id: requestId, // Caller should generate a unique ID for each request
+        method: "tools/call",
+        params: toolCallParams
+    };
+
+    return requestPayload;
+}
+
+async function sendMcpRequest(mcpServerUrl, requestPayload) {
+    const session = mcpSessions[mcpServerUrl];
+    const headers = {
+        'Content-Type': 'application/json',
+
+        'Accept': 'application/json, text/event-stream'
+    };
+
+    if (session && session.mcpSessionId) {
+        headers['mcp-session-id'] = session.mcpSessionId;
+    } else {
+        // For the 'initialize' method, mcpSessionId is not expected in the request header.
+        // For other methods, its absence is a problem if a session was expected to be established.
+        if (requestPayload.method !== 'initialize') {
+            console.error(`MCP sendMcpRequest: Critical - No mcpSessionId found for ${mcpServerUrl} when sending method '${requestPayload.method}'. This will likely cause the request to fail.`);
+            // Optionally, could throw an error here if a session was strictly required:
+            // throw new Error(`MCP sendMcpRequest: mcpSessionId is missing for server ${mcpServerUrl} during method ${requestPayload.method}.`);
+        } else {
+        }
+    }
+
+    try {
+        const response = await retryWithBackoff(async () => {
+            return await fetchWithTimeout(mcpServerUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestPayload)
+            });
+        });
+
+        if (!response.ok) {
+            let errorMsg = `MCP Request HTTP error! Status: ${response.status}`;
+            try {
+                const errorBody = await response.text(); // Use text() for more robust error body reading
+                errorMsg += `, Body: ${errorBody}`;
+            } catch (e) { /* ignore if body isn't text */ }
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: HTTP status ${response.status}. Body: ${errorBody}`);
+        }
+
+        const responseText = await response.text();
+        console.debug(`MCP sendMcpRequest: Raw response text from ${mcpServerUrl} for method '${requestPayload.method}', ID ${requestPayload.id}:\n${responseText}`);
+        let serverResponse = null;
+        let foundResponse = false;
+
+        // Attempt to parse as SSE if response looks like it might be SSE
+        if (responseText.includes('data:')) { // A simple heuristic for SSE
+            console.debug(`MCP sendMcpRequest: Attempting to parse response from ${mcpServerUrl} (method '${requestPayload.method}', ID ${requestPayload.id}) as SSE.`);
+            const lines = responseText.split('\n');
+            let accumulatedData = '';
+
+            for (const line of lines) {
+                if (line.startsWith('data:')) {
+                    accumulatedData += line.substring(5).trim();
+                } else if (line.trim() === '' && accumulatedData) { // End of an SSE message
+                    try {
+                        const parsedEventData = JSON.parse(accumulatedData);
+                        console.debug(`MCP sendMcpRequest: Parsed SSE data event for ID ${requestPayload.id}:`, parsedEventData);
+                        if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
+                            serverResponse = parsedEventData;
+                            foundResponse = true;
+                            break;
+                        }
+                    } catch (e) {
+                        console.warn(`MCP sendMcpRequest: Could not parse accumulated SSE data for ID ${requestPayload.id} as JSON. Data: "${accumulatedData}". Error:`, e);
+                    }
+                    accumulatedData = ''; // Reset for next message
+                }
+            }
+            // Process any remaining accumulated data if the stream didn't end with a blank line
+            if (accumulatedData && !foundResponse) {
+                try {
+                    const parsedEventData = JSON.parse(accumulatedData);
+                    console.debug(`MCP sendMcpRequest: Parsed final accumulated SSE data for ID ${requestPayload.id}:`, parsedEventData);
+                    if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
+                        serverResponse = parsedEventData;
+                        foundResponse = true;
+                    }
+                } catch (e) {
+                    console.warn(`MCP sendMcpRequest: Could not parse final accumulated SSE data for ID ${requestPayload.id} as JSON. Data: "${accumulatedData}". Error:`, e);
+                }
+            }
+        }
+
+        // If not found via SSE parsing, or if it didn't look like SSE, try parsing as plain JSON
+        if (!foundResponse) {
+            console.debug(`MCP sendMcpRequest: SSE parsing did not yield response for ID ${requestPayload.id} (method '${requestPayload.method}'). Attempting plain JSON parse.`);
+            try {
+                const parsedJson = JSON.parse(responseText);
+                if (parsedJson.id === requestPayload.id && (parsedJson.result !== undefined || parsedJson.error !== undefined)) {
+                    serverResponse = parsedJson;
+                    foundResponse = true;
+                } else {
+                     console.warn(`MCP sendMcpRequest: Parsed plain JSON, but ID mismatch or missing result/error. Expected ID ${requestPayload.id}, got:`, parsedJson.id);
+                }
+            } catch (e) {
+                console.warn(`MCP sendMcpRequest: Failed to parse response as plain JSON for ID ${requestPayload.id} (method '${requestPayload.method}'). Error:`, e);
+            }
+        }
+
+        if (!foundResponse || !serverResponse) {
+            console.error(`MCP sendMcpRequest: Critical - JSON-RPC response for request ID ${requestPayload.id} (method '${requestPayload.method}') not found in response from ${mcpServerUrl}. Full response text was logged previously.`);
+            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} (ID: ${requestPayload.id}) failed: Pertinent JSON-RPC response not found in server's output.`);
+        }
+
+        if (serverResponse.error) {
+            console.error(`MCP sendMcpRequest: Server returned an error for request ID ${requestPayload.id} (method '${requestPayload.method}'):`, serverResponse.error);
+            const mcpError = new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
+            mcpError.details = serverResponse.error; // Attach full error object
+            throw mcpError;
+        }
+
+        return serverResponse; // This will be the full JSON-RPC response {jsonrpc, id, result}
+
+    } catch (error) {
+        console.error(`Error sending MCP request '${requestPayload.method}' to ${mcpServerUrl}:`, error);
+        throw new Error(`MCP request '${requestPayload.method}' to ${mcpServerUrl} encountered an error: ${error.message}`);
+    }
+}
+
+// Enable the side panel on all pages
+chrome.sidePanel
+  .setOptions({ path: 'chat.html' })
+  .catch((error) => console.error(error));
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  chrome.sidePanel.setOptions({
+    tabId,
+    path: 'chat.html',
+    enabled: true
+  }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
+});
+
+// Optimized context menu click handler
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // Skip media analysis menu items - they're handled by the new multimodal handler above
+  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
+      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
+      info.menuItemId.startsWith("imageCustom_") || 
+      info.menuItemId === "imageAnalysis" || info.menuItemId === "videoAnalysis" || info.menuItemId === "audioAnalysis") {
+    return; // Let the new handler above handle these
+  }
+  
+  await chrome.sidePanel.open({ tabId: tab.id });
+
+  let originalSelectionText = info.selectionText;
+  let promptContent = info.selectionText || '';
+
+  if (!originalSelectionText) {
+    try {
+        // The contextMenus.onClicked listener IS async (line 23).
+        const tabDataResponse = await new Promise((resolve, reject) => {
+            const messageTimeout = setTimeout(() => {
+                reject(new Error("Timeout waiting for getTabContent response"));
+            }, 5000); // 5 second timeout for the message response
+
+            chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
+                clearTimeout(messageTimeout);
+                if (chrome.runtime.lastError) {
+                    console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
+                    return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
+                }
+                if (response) {
+                    resolve(response); // Resolve with the full response object
+                } else {
+                    // This case should ideally be caught by chrome.runtime.lastError if sendResponse is not called
+                    reject(new Error("Failed to get tab content: No response from getTabContent handler."));
+                }
+            });
+        });
+
+        // Check for both content and data properties to handle different response formats
+        if (tabDataResponse && tabDataResponse.success) {
+            if (tabDataResponse.content) {
+                promptContent = tabDataResponse.content;
+            } else if (tabDataResponse.data) {
+                promptContent = tabDataResponse.data;
+            } else {
+                console.error("Background: Tab content response successful but missing content/data property. Response:", tabDataResponse);
+                promptContent = originalSelectionText; // Fallback
+            }
+        } else {
+            console.error("Background: Failed to get tab content via 'getTabContent' message. Response:", tabDataResponse);
+            promptContent = originalSelectionText; // Fallback to empty or original selection
+        }
+    } catch (error) {
+        console.error("Background: Exception while fetching tab content via 'getTabContent' message:", error.message);
+        promptContent = originalSelectionText; // Fallback
+    }
+  }
+  
+  // Handle image context (only for non-multimodal menu items)
+  // This should be applied *after* potentially fetching tab content if selection was empty
+  // Skip this for our new multimodal menu items since they're handled separately
+  if (info.mediaType === 'image' && info.srcUrl && 
+      !info.menuItemId.includes("Image") && !info.menuItemId.includes("Video") && !info.menuItemId.includes("Audio")) {
+    // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
+    promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
+  }
+
+
+  // Handle special menu items
+  if (info.menuItemId === 'manageInstructions') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
+    return;
+  }
+
+  // Common message sending function
+  const sendMessage = (action, extra = {}) => {
+    try {
+      chrome.runtime.sendMessage({
+        action,
+        selectedText: promptContent,
+        tabId: tab.id,
+        ...extra
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn(`Background: sendMessage (${action}) failed:`, chrome.runtime.lastError.message);
+        }
+      });
+    } catch (error) {
+      console.error(`Background: Exception sending message (${action}):`, error.message);
     }
   };
 
-  // Handle different message types
-  (async () => {
-    try {
-      switch (request.action) {
-        case 'getTabContent':
-          // Prefer tabId from request, fallback to sender.tab, then query active tab
-          let targetTabId = request.tabId || sender.tab?.id;
-
-          if (!targetTabId) {
-            // Query active tab as fallback
-            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tabs && tabs[0] && typeof tabs[0].id === 'number') {
-              targetTabId = tabs[0].id;
-            }
-          }
-
-          if (!targetTabId) {
-            logger.warn('Background', 'getTabContent failed: No tab context available');
-            safeSendResponse({ success: false, error: 'No tab context available' });
-            break;
-          }
-
-          try {
-            // Get tab details to check URL
-            const tab = await chrome.tabs.get(targetTabId);
-            if (isRestrictedUrl(tab.url)) {
-              logger.info('Background', `getTabContent skipped: Restricted URL ${tab.url}`);
-              safeSendResponse({
-                success: false,
-                error: 'restricted_page',
-                url: tab.url
-              });
-              break;
-            }
-
-            logger.info('Background', `getTabContent executing for tab: ${targetTabId}`);
-
-            const [result] = await chrome.scripting.executeScript({
-              target: { tabId: targetTabId },
-              files: ['content_script_unified.js'],
-            });
-
-            if (result && result.result) {
-              const extResult = result.result;
-
-              // Handle optional image fetching if requested (e.g. for Guide Mode)
-              let primaryImageData = null;
-              if (request.includeImages && extResult.images && extResult.images.length > 0) {
-                const imageUrl = extResult.images[0];
-                try {
-                  const mediaData = await mediaHandler.fetchMediaAsBase64(imageUrl);
-                  primaryImageData = {
-                    base64: mediaData.base64,
-                    mimeType: mediaData.mimeType || mediaHandler.getMimeTypeFromUrl(imageUrl),
-                    url: imageUrl,
-                    type: 'image'
-                  };
-                } catch (imgError) {
-                  logger.warn('Background', 'Failed to fetch prominent image for tab content:', imgError);
-                }
-              }
-
-              safeSendResponse({
-                success: true,
-                content: extResult.data || '',
-                text: extResult.data || '', // Duplicate for compatibility
-                images: extResult.images || [],
-                primaryImage: primaryImageData,
-                title: extResult.title || '',
-                url: extResult.url || ''
-              });
-            } else {
-              logger.warn('Background', 'getTabContent failed: Extraction returned no result');
-              safeSendResponse({ success: false, error: 'Failed to extract content' });
-            }
-          } catch (error) {
-            logger.error('Background', 'getTabContent error:', error);
-            safeSendResponse({
-              success: false,
-              error: `Failed to inject/execute content script: ${  error.message || String(error)}`
-            });
-          }
-          break;
-
-        case 'getExplainContent':
-          // Use tabId from request if available, otherwise from sender
-          const explainTabId = request.tabId || sender.tab?.id;
-
-          if (!explainTabId) {
-            safeSendResponse({
-              action: 'explainContentResponse',
-              success: false,
-              error: 'No tab context available',
-              content: ''
-            });
-            break;
-          }
-
-          try {
-            const [result] = await chrome.scripting.executeScript({
-              target: { tabId: explainTabId },
-              files: ['content_script_unified.js'],
-            });
-
-            if (result && result.result) {
-              const extractionResult = result.result;
-              console.log('Background: getExplainContent - Result from content_script_unified.js:', extractionResult);
-
-              safeSendResponse({
-                action: 'explainContentResponse',
-                success: extractionResult.success,
-                content: extractionResult.data || extractionResult.content || '',
-                error: extractionResult.error,
-                instruction: request.instruction
-              });
-            } else {
-              console.error('Background: getExplainContent - No result from content_script_unified.js');
-              safeSendResponse({
-                action: 'explainContentResponse',
-                success: false,
-                error: 'No result from content script',
-                content: '',
-                instruction: request.instruction
-              });
-            }
-          } catch (error) {
-            console.error('Failed to inject/execute content_script_unified.js for getExplainContent:', error);
-            safeSendResponse({
-              action: 'explainContentResponse',
-              success: false,
-              error: `Failed to inject script: ${  error.message}`,
-              content: '',
-              instruction: request.instruction
-            });
-          }
-          break;
-
-
-        case 'makeLlmApiRequest':
-          // Use tabId from request if available, otherwise from sender
-          const tabId = request.tabId || sender.tab?.id;
-          if (!tabId) {
-            safeSendResponse({ error: 'No tab ID available' });
-            break;
-          }
-          await apiClient.makeApiRequest(request.prompt, tabId, request.options);
-          safeSendResponse({ success: true });
-          break;
-
-        case 'executeTool':
-          const toolResult = await toolManager.executeTool(request.toolCall, request.config);
-          safeSendResponse(toolResult);
-          break;
-
-        case 'captureTab':
-          try {
-            const captureWindowId = request.windowId || sender.tab?.windowId;
-            if (typeof captureWindowId !== 'number') {
-              safeSendResponse({ success: false, error: 'No window context for capture' });
-              break;
-            }
-
-            logger.info('Background', `Capturing visible tab for window: ${captureWindowId}`);
-            chrome.tabs.captureVisibleTab(captureWindowId, { format: 'png' }, (dataUrl) => {
-              if (chrome.runtime.lastError) {
-                logger.error('Background', 'captureVisibleTab error:', chrome.runtime.lastError.message);
-                safeSendResponse({ success: false, error: chrome.runtime.lastError.message });
-              } else {
-                safeSendResponse({ success: true, dataUrl });
-              }
-            });
-            // We return true at the end of the listener to keep channel open
-          } catch (error) {
-            logger.error('Background', 'captureTab exception:', error);
-            safeSendResponse({ success: false, error: error.message });
-          }
-          break;
-
-        case 'getMemoryReport':
-          safeSendResponse(memoryManager.getReport());
-          break;
-
-        case 'getToolManagerReport':
-          safeSendResponse(toolManager.getReport());
-          break;
-
-        case 'getEventManagerReport':
-          safeSendResponse(eventManager.getReport());
-          break;
-
-        default:
-          logger.warn('Background', 'Unknown action:', request.action);
-          safeSendResponse({ error: 'Unknown action' });
-      }
-    } catch (error) {
-      logger.error('Background', 'Error handling message:', error);
-      safeSendResponse({ error: error.message });
-    }
-  })();
-
-  // Return true to indicate async response
-  return true;
-});
-
-// Storage change listener
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local' && changes.instructions) {
-    // Rebuild context menu when instructions change
-    setupContextMenu();
+  if (info.menuItemId === 'oneoff_instruction') {
+    setTimeout(() => sendMessage('setSelectedText'), 100); // sendMessage already logs errors
+    return;
   }
+
+  if (info.menuItemId === 'start_chat') {
+    sendMessage('setSelectedText', { fromStartChat: true });
+    await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
+    return;
+  }
+
+  // Handle custom instructions
+  if (info.menuItemId.startsWith('custom_')) {
+    const instructionId = info.menuItemId.replace('custom_', '');
+    const { instructions } = await chrome.storage.local.get(['instructions']);
+    const instruction = instructions.find(i => i.id === instructionId);
+    
+    if (instruction) {
+      // Track custom instruction usage
+      try {
+        const cfg = await validateConfig().catch(() => ({}));
+        await trackInstructionUsed({ instruction: instruction.name || 'custom', model: cfg?.modelName, tools: Array.isArray(instruction.tool_choice) ? instruction.tool_choice : (instruction.tool_choice && instruction.tool_choice !== 'none' ? [instruction.tool_choice] : []) });
+      } catch (_) {}
+      promptContent = `${instruction.content}\n\n${promptContent}`;
+      const toolChoice = instruction.tool_choice || 'none';
+      await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
+    } else {
+      console.error("Custom instruction not found for ID:", instructionId);
+    }
+    return;
+  }
+
+  // Handle predefined commands
+  const commandMap = {
+    summarize: 'Please summarize the following text into a bullet list of points',
+    explain: 'Explain this to me in a short concise MECE approach',
+    // explain: 'Explain this to me in a short concise MECE approach', // Duplicate "explain" removed
+    polish: 'Polish this text with clarity and purpose',
+    shorten: 'Shorten this text without losing its meaning and context',
+    formal: 'Make this text more formal and eloquent',
+    casual: 'Make this text more casual and fun',
+    analyze: 'Please analyze the following text'
+  };
+
+  if (commandMap[info.menuItemId]) {
+    // Track predefined instruction usage
+    try {
+      const cfg = await validateConfig().catch(() => ({}));
+      await trackInstructionUsed({ instruction: info.menuItemId, model: cfg?.modelName, tools: [] });
+    } catch (_) {}
+    promptContent = `${commandMap[info.menuItemId]}:\n${promptContent}`;
+  } else if (info.menuItemId.startsWith('custom_')) {
+    // handled earlier, but if reaches here ignore
+  } else if (info.menuItemId !== 'prompt_paul' && info.menuItemId !== 'oneoff_instruction' && info.menuItemId !== 'start_chat' && info.menuItemId !== 'manageInstructions') {
+  }
+
+  await makeLlmApiRequest(promptContent, tab.id);
 });
 
-// Analytics tracking for extension usage
-chrome.runtime.onStartup.addListener(() => {
-  analytics.sendUmamiEvent('extension_startup', { action: 'startup' });
+// Simplified validateConfig function
+async function validateConfig() {
+  const result = await new Promise(resolve =>
+    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
+  );
+  
+  const profiles = result.profiles || [];
+  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+  const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
+
+  // Find profiles
+  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
+  const defaultProfile = profiles.find(p => p.id === 'default');
+
+  // Validate profile with optional endpoint override
+  const validateProfile = (profile, endpointOverride = null) => {
+    const endpoint = endpointOverride || profile?.llmEndpoint;
+    return endpoint && isValidURL(endpoint) && profile?.apiKey && profile?.modelName;
+  };
+
+  // Check profiles in priority order
+  let validProfile = null;
+  if (validateProfile(selectedProfile)) {
+    validProfile = selectedProfile;
+  } else if (validateProfile(selectedProfile, defaultLlmEndpoint)) {
+    validProfile = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
+  } else if (validateProfile(defaultProfile)) {
+    validProfile = defaultProfile;
+  } else if (validateProfile(defaultProfile, defaultLlmEndpoint)) {
+    validProfile = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
+  }
+
+  if (validProfile) {
+    return validProfile;
+  }
+
+  // Handle errors
+  const hasEndpoint = defaultLlmEndpoint && isValidURL(defaultLlmEndpoint);
+  const hasValidProfile = selectedProfile || defaultProfile;
+  
+  if (!hasEndpoint) {
+    throw new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
+  } else if (!hasValidProfile) {
+    throw new Error('No valid profiles found. Please create a profile in the options page.');
+  } else {
+    throw new Error('Configuration is incomplete. Please set API key and model name in the options page.');
+  }
+}
+
+// Helper function to process API response and send messages to chat.js (for NON-STREAMING responses)
+async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext, usingAnthropicMcp) {
+    const sendMessageDelay = isStartChatContext ? 300 : 200;
+
+    if (usingAnthropicMcp) {
+        // This branch handles non-streaming responses when the Anthropic MCP Connector was used.
+        // Anthropic's response (responseMessage) will be an object where responseMessage.content is an array of blocks
+        // (e.g., text, mcp_tool_use, mcp_tool_result).
+        setTimeout(() => {
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'setApiResponse',
+                    apiResponse: responseMessage, // Send whole Anthropic message object
+                    isAnthropicMcp: true, // Flag for chat.js to identify this response type
+                    prompt: prompt,
+                    tabId: tabId,
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Background: setApiResponse (Anthropic MCP) message failed:', chrome.runtime.lastError.message);
+                    }
+                });
+            } catch (error) {
+                console.error('Background: Exception sending setApiResponse (Anthropic MCP):', error.message);
+            }
+        }, sendMessageDelay);
+
+    } else if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+        // This is the OpenAI-style tool call
+        setTimeout(() => {
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'handleToolCallResponse', // chat.js handles this by calling executePromptPaulTool
+                    responseMessage: responseMessage,
+                    prompt: prompt,
+                    tabId: tabId,
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Background: handleToolCallResponse message failed:', chrome.runtime.lastError.message);
+                    }
+                });
+            } catch (error) {
+                console.error('Background: Exception sending handleToolCallResponse:', error.message);
+            }
+        }, sendMessageDelay);
+
+    } else if (responseMessage.content) { // Standard text response
+        const latestResponse = typeof responseMessage.content === 'string' ? responseMessage.content : JSON.stringify(responseMessage.content);
+        setTimeout(() => {
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'setApiResponse',
+                    apiResponse: latestResponse,
+                    isAnthropicMcp: false, // Explicitly false
+                    prompt: prompt,
+                    tabId: tabId,
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Background: setApiResponse (standard) message failed:', chrome.runtime.lastError.message);
+                    }
+                });
+            } catch (error) {
+                console.error('Background: Exception sending setApiResponse (standard):', error.message);
+            }
+        }, sendMessageDelay);
+    } else {
+        console.error("Background: API response message has neither standard content nor tool_calls (OpenAI/Anthropic MCP):", responseMessage);
+        setTimeout(() => {
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'setApiResponse',
+                    apiResponse: "Error: Received an empty or invalid response from the AI.",
+                    isAnthropicMcp: false, // Explicitly false
+                    prompt: prompt,
+                    tabId: tabId,
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Background: setApiResponse (error) message failed:', chrome.runtime.lastError.message);
+                    }
+                });
+            } catch (error) {
+                console.error('Background: Exception sending setApiResponse (error):', error.message);
+            }
+        }, sendMessageDelay);
+    }
+}
+
+// Refactored function to make LLM API calls
+async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+    let config, tools, enableStreaming, usingAnthropicMcpConnectorGlobal = false; // Keep track of connector usage
+    try {
+        // Step 1: Validate configuration and get tool definitions
+        try {
+            const results = await Promise.all([
+                validateConfig(),
+                getAllToolDefinitions(),
+                new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, data => resolve(data)))
+            ]);
+            config = results[0];
+            tools = results[1];
+            enableStreaming = results[2].enableStreaming;
+        } catch (error) {
+            // Check if this is the specific configuration error we're looking for
+            if (error.message === "LLM API endpoint is missing or invalid. Please configure it in the options page.") {
+                console.warn("Background: Caught specific LLM endpoint configuration error.");
+                chrome.runtime.sendMessage({
+                    action: 'displayErrorInChat', // New action for chat.js
+                    errorMessage: "The LLM API endpoint is not configured or is invalid. Please go to the extension options page (right-click the extension icon) and set it up.",
+                    tabId: tabId,
+                    prompt: promptContent // Pass prompt content for context if needed
+                }).catch(e => console.error("Background: Error sending displayErrorInChat message:", e));
+                return; // Stop further execution in this function
+            }
+            // If it's a different error from validateConfig or other setup, re-throw it
+            throw error;
+        }
+
+        const formattedTools = tools.map(tool => {
+            try {
+                return {
+                    type: 'function',
+                    function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: JSON.parse(tool.parameters || '{}')
+                    }
+                };
+            } catch (e) {
+                console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e);
+                return null;
+            }
+        }).filter(tool => tool !== null);
+
+        const messages = [];        const now = new Date();        const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;        let systemPromptContent = dateTimeString;        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            systemPromptContent += `
+
+${config.systemPrompt}`;        }        messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
+
+        // START SHARED API REQUEST PREP LOGIC (manual sync with chat.js)
+        // Note: 'tools' variable here is 'allAvailableTools' in chat.js
+        // 'customInstructionToolChoice' is 'tool_choice' in chat.js makeApiCall signature
+        const allAvailableToolsRaw = tools; // Alias for clarity within this block
+        const current_tool_choice_option = customInstructionToolChoice; // Parameter to this function
+
+        const formattedToolsForRequest = allAvailableToolsRaw.map(tool => {
+            try {
+                return {
+                    type: 'function',
+                    function: { name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters || '{}') }
+                };
+            } catch (e) {
+                console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e); // Context-specific error
+                return null;
+            }
+        }).filter(tool => tool !== null);
+
+        let toolChoicePayload = {};
+
+        if (current_tool_choice_option === 'none' || formattedToolsForRequest.length === 0) {
+            toolChoicePayload = {};
+            if (formattedToolsForRequest.length === 0 && current_tool_choice_option !== 'none') {
+                 console.warn("Background: makeLlmApiRequest - No tools available, though choice was not 'none'. Sending request without tools.");
+            } else {
+            }
+        } else if (current_tool_choice_option === 'auto') {
+            toolChoicePayload = { tools: formattedToolsForRequest, tool_choice: "auto" };
+        } else if (typeof current_tool_choice_option === 'string') { // Specific tool name
+            const specificTool = formattedToolsForRequest.find(t => t.function.name === current_tool_choice_option);
+            if (specificTool) {
+                toolChoicePayload = { tools: [specificTool], tool_choice: { type: "function", function: { name: current_tool_choice_option } } };
+            } else {
+                console.warn(`Background: Specified tool "${current_tool_choice_option}" not found. No tools will be sent.`); // Context-specific error
+                toolChoicePayload = {};
+            }
+        } else if (Array.isArray(current_tool_choice_option) && current_tool_choice_option.length > 0) {
+            // This part is still specific to background.js as chat.js doesn't handle array of tool names yet.
+            // If it needs to be fully harmonized, chat.js would need this logic too, or it's removed from here.
+            // For now, keeping it as per current background.js capability.
+            const selectedTools = formattedToolsForRequest.filter(tool =>
+                current_tool_choice_option.includes(tool.function.name)
+            );
+            if (selectedTools.length > 0) {
+                const tcObject = selectedTools.length === 1
+                    ? { type: 'function', function: { name: selectedTools[0].function.name } }
+                    // The API spec for tool_choice array seems to expect specific objects if not 'auto' or 'none'
+                    // Forcing a specific tool with an array of names might require multiple {type: "function", function: {name: "X"}} objects
+                    // or it might imply 'any' of these. Let's assume for now it means "the LLM must call one of these tools".
+                    // The most robust way if the API supports it would be just to list the tools and let the LLM pick.
+                    // However, to be explicit for "tool_choice" when it's a list:
+                    // OpenAI docs are a bit sparse on this exact format for an array of *required* tools.
+                    // Typically, 'tool_choice' is one specific tool or 'auto'/'none'.
+                    // If the intention is to make a *subset* of tools available, that's done by filtering the `tools` array.
+                    // If the intention for an array in `customInstructionToolChoice` was to *force one from a list*,
+                    // the API usually expects a single tool object for `tool_choice`.
+                    // Given this, the most direct interpretation matching the previous logic for an array:
+                    // This implies the model *must* choose one of the functions in this list.
+                    // The `tools` parameter should list these, and `tool_choice` could be "auto" over this subset,
+                    // or if the API supports it, a list of functions.
+                    // Let's simplify: if an array is passed, we'll make *only those tools available* and set choice to "auto".
+                    // This aligns better with typical API usage.
+                    : "auto"; // If multiple tools in the array, let the model choose from them.
+
+                toolChoicePayload = { tools: selectedTools, tool_choice: tcObject };
+            } else {
+                 console.warn(`Background: Specified tools in array "${current_tool_choice_option}" not found. No tools will be sent.`);
+                 toolChoicePayload = {};
+            }
+        } else {
+            console.warn(`Background: Invalid tool choice format: ${current_tool_choice_option}. Defaulting to no tools.`);
+            toolChoicePayload = {};
+        }
+        // END SHARED API REQUEST PREP LOGIC
+
+        const apiRequestBody = {
+            model: config.modelName,
+            messages: messages,
+            max_tokens: parseInt(config.maxTokens) || 2048,
+            // toolChoicePayload will be spread later after checking for Anthropic MCP
+        };
+
+        const fetchHeaders = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.apiKey}`,
+        };
+
+        // --- Anthropic MCP Connector Logic ---
+        // This section implements the "Managed MCP Approach (Anthropic-style)".
+        // If the configured LLM endpoint is identified as an Anthropic API endpoint
+        // and there are tools configured with an "mcpServerUrl", this logic will:
+        // 1. Add the 'anthropic-beta: mcp-client-2025-04-04' header.
+        // 2. Construct an 'mcp_servers' array in the API request body, listing the MCP servers.
+        // 3. Anthropic's backend will then manage the discovery and execution of tools from these servers.
+        // 4. The OpenAI-style 'tools' and 'tool_choice' parameters are omitted in this case.
+        // The response from Anthropic will include specific content blocks like 'mcp_tool_use' and 'mcp_tool_result'.
+
+        // Simple check for Anthropic endpoint, can be made more robust
+        const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
+        let usingAnthropicMcpConnector = false; // This flag will be passed down to response handlers
+
+        if (isAnthropicEndpoint) {
+            const mcpConfiguredTools = allAvailableToolsRaw.filter(tool => tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "");
+
+            if (mcpConfiguredTools.length > 0) {
+                usingAnthropicMcpConnector = true;
+                usingAnthropicMcpConnectorGlobal = true; // Fix: Set global variable for streaming
+                fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header
+
+                apiRequestBody.mcp_servers = mcpConfiguredTools.map(tool => {
+                    const serverEntry = {
+                        type: "url",
+                        url: tool.mcpServerUrl, // This should be the direct URL to the MCP server
+                        name: tool.name, // Tool name used as server identifier for Anthropic
+                        // tool_configuration: { enabled: true } // by default all tools on server are enabled
+                    };
+                    return serverEntry;
+                });
+                // When using Anthropic MCP Connector, we don't send OpenAI-style 'tools' or 'tool_choice'
+                // The 'tools' are implicitly discovered by Anthropic from the mcp_servers.
+            } else {
+                // Spread OpenAI-style toolChoicePayload if not using Anthropic MCP connector
+                Object.assign(apiRequestBody, toolChoicePayload);
+            }
+        } else {
+            // Not an Anthropic endpoint, use standard OpenAI-style tool definition
+            Object.assign(apiRequestBody, toolChoicePayload);
+        }
+        // --- End Anthropic MCP Connector Logic ---
+        
+        if (enableStreaming && !usingAnthropicMcpConnector) { // Anthropic might handle streaming differently with MCP, or this might need adjustment
+            apiRequestBody.stream = true;
+        } else if (enableStreaming && usingAnthropicMcpConnector) {
+            // Anthropic Messages API with mcp_servers supports streaming for the main content.
+            // The tool_use and tool_result blocks appear as discrete messages in the stream.
+            apiRequestBody.stream = true;
+        }
+
+
+
+
+        const apiResponse = await fetch(config.llmEndpoint, {
+            method: 'POST',
+            headers: fetchHeaders,
+            body: JSON.stringify(apiRequestBody),
+        });
+
+        if (!apiResponse.ok) {
+            const errorData = await apiResponse.json().catch(() => null);
+            throw new Error(
+                `API request failed with status ${apiResponse.status}: ${
+                errorData ? JSON.stringify(errorData) : apiResponse.statusText
+                }`
+            );
+        }
+
+        if (enableStreaming) {
+            const reader = apiResponse.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            // Send a message to chat.js to indicate streaming has started
+            // This allows chat.js to prepare the UI for incoming chunks
+            // Moved out of setTimeout to send immediately
+            try {
+                chrome.runtime.sendMessage({
+                    action: 'streamApiStart',
+                    tabId: tabId,
+                    prompt: promptContent
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.warn('Background: streamApiStart message failed:', chrome.runtime.lastError.message);
+                    }
+                });
+            } catch (error) {
+                console.error('Background: Exception sending streamApiStart:', error.message);
+            }
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    try {
+                        chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn('Background: streamApiEnd message failed:', chrome.runtime.lastError.message);
+                            }
+                        });
+                    } catch (error) {
+                        console.error('Background: Exception sending streamApiEnd:', error.message);
+                    }
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Process buffer line by line for SSE
+                let lines = buffer.split('\n');
+                buffer = lines.pop(); // Keep the last partial line in the buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data:')) {
+                        let currentPayload = line.substring(5).trim(); // Remove the initial "data:" prefix and trim
+
+                        // Aggressively strip any further "data:" prefixes
+                        while (currentPayload.startsWith('data:')) {
+                            console.warn("Background: Stripping nested 'data:' prefix. Current payload before strip:", currentPayload);
+                            currentPayload = currentPayload.substring(5).trim();
+                            console.warn("Background: Current payload after strip:", currentPayload);
+                        }
+
+                        if (currentPayload === '[DONE]') {
+                            continue;
+                        }
+
+                        // Proceed to parse only if currentPayload is not empty and looks like JSON
+                        if (currentPayload && currentPayload.length > 0 && (currentPayload.startsWith('{') || currentPayload.startsWith('['))) {
+                            try {
+                                const parsed = JSON.parse(currentPayload);
+
+                                // Check if we are using Anthropic MCP Connector for this request (Managed Approach)
+                                if (usingAnthropicMcpConnectorGlobal) {
+                                    // Handle Anthropic's specific streaming events.
+                                    // These events include message_start, content_block_start, content_block_delta,
+                                    // content_block_stop, message_delta, and message_stop.
+                                    // The extension forwards relevant parts to chat.js for rendering.
+                                    // Tool execution is handled by Anthropic's backend.
+
+                                    if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.type === 'text_delta') {
+                                        // Stream text chunks as they arrive.
+                                        try {
+                                            chrome.runtime.sendMessage({
+                                                action: 'streamApiResponseChunk',
+                                                chunk: parsed.delta.text,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            }, (response) => {
+                                                if (chrome.runtime.lastError) {
+                                                    console.warn('Background: streamApiResponseChunk message failed:', chrome.runtime.lastError.message);
+                                                }
+                                            });
+                                        } catch (error) {
+                                            console.error('Background: Exception sending streamApiResponseChunk:', error.message);
+                                        }
+                                    } else if (parsed.type === 'content_block_start' && parsed.content_block) {
+                                        // A new content block has started (e.g., text block or mcp_tool_use).
+                                        // Send the initial content_block to chat.js.
+                                        // chat.js will use this to display "Using tool..." for mcp_tool_use blocks.
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiAnthropicContentBlockStart',
+                                            contentBlock: parsed.content_block, // Contains type ('text' or 'mcp_tool_use'), name, input etc. for tools
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        });
+                                    } else if (parsed.type === 'message_delta' && parsed.delta && parsed.delta.stop_reason) {
+                                        // Log message_delta, especially if it contains stop_reason or usage data.
+                                    } else if (parsed.type === 'message_stop') {
+                                        // This event signals the end of the message from Anthropic.
+                                        // It often contains the complete final message object including all content blocks.
+                                        if (parsed.message) { // The 'message' field holds the final assistant message.
+                                             chrome.runtime.sendMessage({
+                                                action: 'streamApiAnthropicMessageStop',
+                                                anthropicMessage: parsed.message,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            });
+                                        }
+                                    }
+                                    // Other events like 'message_start', 'content_block_stop' are logged but not specifically actioned to chat.js unless needed.
+                                } else {
+                                    // Standard OpenAI-style streaming (Client-Managed tools if any, or text)
+                                    // This path is taken if not using Anthropic or if Anthropic endpoint but no MCP tools were configured for it.
+                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                        const contentChunk = parsed.choices[0].delta.content;
+                                        const toolCallChunk = parsed.choices[0].delta.tool_calls;
+
+                                        if (contentChunk) {
+                                            chrome.runtime.sendMessage({
+                                                action: 'streamApiResponseChunk',
+                                                chunk: contentChunk,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            });
+                                        }
+
+                                        if (toolCallChunk) {
+                                            chrome.runtime.sendMessage({
+                                                action: 'streamApiToolCallChunk', // This tells chat.js to expect OpenAI tool_call
+                                                toolCallChunk: toolCallChunk,
+                                                tabId: tabId,
+                                                prompt: promptContent
+                                            });
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error("Background: Error parsing JSON from stream:", e, "Attempted to parse:", currentPayload, "Original full line:", line);
+                            }
+                        } else if (currentPayload) {
+                        }
+                    }
+                }
+            }
+        } else { // Non-streaming path
+            const responseData = await apiResponse.json();
+            // For Anthropic MCP non-streaming, responseData.content will be an array of blocks.
+            // For OpenAI, responseData.choices[0].message is the object to check.
+            const messageObject = usingAnthropicMcpConnectorGlobal ? responseData : (responseData.choices && responseData.choices[0] ? responseData.choices[0].message : null);
+
+            if (!messageObject) {
+                 throw new Error('Invalid response format from API: Missing message structure.');
+            }
+            // Pass usingAnthropicMcpConnectorGlobal to _handleApiResponseAndSendMessage
+            await _handleApiResponseAndSendMessage(messageObject, promptContent, tabId, isStartChat, usingAnthropicMcpConnectorGlobal);
+        }
+
+    } catch (error) {
+        // This is the generic catch block for any other errors that occur in makeLlmApiRequest
+        console.error('Error in makeLlmApiRequest (generic catch):', error);
+        try {
+          const cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
+          const code = (error?.message || 'error').slice(0, 64);
+          await trackErrorEvent(cat, code);
+        } catch (_) {}
+        const errorDelay = isStartChat ? 300 : 200;
+        setTimeout(() => {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: `Error: ${error.message}`, // Standard error reporting
+                prompt: promptContent,
+                tabId: tabId,
+            }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
+        }, errorDelay);
+    }
+}
+
+// Create context menu items
+chrome.runtime.onInstalled.addListener(async () => {
+
+  // Create one-off instruction menu item (always at top)
+  chrome.contextMenus.create({
+    id: 'oneoff_instruction',
+    title: '✨ One-off Instruction',
+    contexts: ['selection', 'image'],
+  });
+  // Create start chat menu item
+  chrome.contextMenus.create({
+    id: 'start_chat',
+    title: '💬 Start Chat',
+    contexts: ['selection', 'image'],
+  });
+
+  // Create parent menu for Prompt Paul
+  chrome.contextMenus.create({
+    id: 'prompt_paul',
+    title: 'Query Prompt Paul',
+    contexts: ['selection', 'image'],
+  });
+
+  // Create predefined menu items under Prompt Paul
+  chrome.contextMenus.create({
+    id: 'summarize',
+    title: '📝 Summarize',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+  chrome.contextMenus.create({
+    id: 'analyze',
+    title: '🧐 Analyze',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+  chrome.contextMenus.create({
+    id: 'explain',
+    title: '❓ Explain',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+  chrome.contextMenus.create({
+    id: 'polish',
+    title: '🪄 Polish',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+    
+  chrome.contextMenus.create({
+    id: 'shorten',
+    title: '✂️ Shorten',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+
+  chrome.contextMenus.create({
+    id: 'formal',
+    title: '💼 Formal',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+  chrome.contextMenus.create({
+    id: 'casual',
+    title: '🤙 Casual',
+    contexts: ['selection', 'image'],
+    parentId: 'prompt_paul'
+  });
+  // Create custom instructions menu items
+  // Create parent menu for custom instructions
+  chrome.contextMenus.create({
+    id: 'customInstructions',
+    title: 'Custom Instructions',
+    contexts: ['selection', 'image'],
+  });
+  const { instructions } = await chrome.storage.local.get(['instructions']);
+  if (instructions && instructions.length > 0) {
+    instructions.forEach(instruction => {
+      chrome.contextMenus.create({
+        id: `custom_${instruction.id}`,
+        parentId: 'customInstructions',
+        title: `✨ ${instruction.name}`,
+        contexts: ['selection', 'image'],
+      });
+    });
+  }
+
+  // Add a separator and manage instructions at the end
+  setTimeout(() => {
+    // Add a separator
+    chrome.contextMenus.create({
+      id: 'separator',
+      type: 'separator',
+      contexts: ['selection', 'image'],
+    });
+
+     // Add option to manage custom instructions as the last item
+    chrome.contextMenus.create({
+      id: 'manageInstructions',
+      title: 'Manage Custom Instructions',
+      contexts: ['selection', 'image'],
+    });
+  }, 100);
 });
 
-logger.info('Background', 'PromptPaul background script initialized');
+// Update context menus when instructions change
+chrome.storage.onChanged.addListener(async (changes, namespace) => {
+if (namespace === 'local' && changes.instructions) {
+  // Remove existing menu items
+  if (changes.instructions.oldValue) {
+    changes.instructions.oldValue.forEach(instruction => {
+      chrome.contextMenus.remove(`custom_${instruction.id}`, () => {
+        if (chrome.runtime.lastError) {
+          // Ignore errors if menu doesn't exist
+        }
+      });
+    });
+  }
+
+  // Remove static menu items
+  const staticMenuIds = ['customInstructions', 'separator', 'manageInstructions'];
+  staticMenuIds.forEach(id => {
+    chrome.contextMenus.remove(id, () => {
+      if (chrome.runtime.lastError) {
+        // Ignore errors if menu doesn't exist
+      }
+    });
+  });
+
+  // Get updated instructions
+  const { instructions } = await chrome.storage.local.get(['instructions']);
+  
+  // Recreate custom instructions menu
+  chrome.contextMenus.create({
+    id: 'customInstructions',
+    title: 'Custom Instructions',
+    contexts: ['selection', 'image'], // Add 'image' context here
+  });
+  
+  if (instructions && instructions.length > 0) {
+    instructions.forEach(instruction => {
+      chrome.contextMenus.create({
+        id: `custom_${instruction.id}`,
+        parentId: 'customInstructions',
+        title: `✨ ${instruction.name}`,
+        contexts: ['selection', 'image'], // Add 'image' context here
+      });
+    });
+  }
+
+  // Add separator and manage instructions at the end
+  setTimeout(() => { // Original setTimeout kept
+    // Add a separator
+    chrome.contextMenus.create({
+      id: 'separator',
+      type: 'separator',
+      contexts: ['selection', 'image'], // Add 'image' context here
+    });
+
+     // Add option to manage custom instructions as the last item
+    chrome.contextMenus.create({
+      id: 'manageInstructions',
+      title: 'Manage Custom Instructions',
+      contexts: ['selection', 'image'], // Add 'image' context here
+    });
+  }, 100); // Original setTimeout kept
+}
+});
+
+// --- Tool Execution Logic ---
+
+// Helper function to get all tool definitions from storage
+async function getAllToolDefinitions() {
+    const localTools = await new Promise((resolve) => {
+        chrome.storage.local.get(['promptPaulTools'], (result) => {
+            resolve(result.promptPaulTools || []);
+        });
+    });
+    return localTools;
+}
+
+// Function to get a single tool definition by name from storage
+async function getToolDefinition(name) {
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(['promptPaulTools'], (result) => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        const toolsArray = result.promptPaulTools || [];
+        const tool = toolsArray.find(t => t.name === name);
+        resolve(tool);
+      }
+    });
+  });
+}
+
+// Generic function to call a user-defined endpoint
+async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, originalToolName = null, mcpProxyUrlBase = null) { // Added userDefinedMethod parameter
+    try {
+        let finalEndpointUrl = endpointUrl;
+        let finalFetchOptions = { // Initialize with common headers
+            headers: {
+                'Accept': 'application/json' // Always accept JSON response
+            }
+        };
+        let finalArgs = args;
+
+        if (mcpProxyUrlBase && isValidURL(mcpProxyUrlBase)) {
+            try {
+                finalEndpointUrl = new URL(endpointUrl, mcpProxyUrlBase).href;
+                // For MCP proxy, always POST a JSON payload with tool name and args
+                finalFetchOptions.method = 'POST'; // Override method to POST for MCP proxy
+                finalFetchOptions.headers['Content-Type'] = 'application/json';
+                finalArgs = { tool_name: originalToolName, arguments: args }; // Structure payload for MCP proxy
+                finalFetchOptions.body = JSON.stringify(finalArgs);
+            } catch (e) {
+                console.error(`Background: Error constructing MCP proxy URL from base '${mcpProxyUrlBase}' and path '${endpointUrl}':`, e);
+                throw new Error(`Invalid MCP Proxy URL configuration: ${e.message}`);
+            }
+        } else {
+            // Existing logic for non-MCP tools (handling GET/POST based on args and userDefinedMethod)
+            const isEmptyArgs = !args || Object.keys(args).length === 0;
+            let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
+            method = method.toUpperCase();
+            finalFetchOptions.method = method;
+
+            if (method === 'GET' && !isEmptyArgs) {
+                const queryParams = new URLSearchParams(finalArgs).toString();
+                finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
+            } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
+                finalFetchOptions.headers['Content-Type'] = 'application/json';
+                finalFetchOptions.body = JSON.stringify(finalArgs);
+            }
+        }
+        // For DELETE, args might be used in the URL path (not handled here) or ignored, body is typically empty.
+        // If args are needed for DELETE, the user should construct the endpointUrl accordingly in the tool definition.
+        
+
+        const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
+
+        if (!response.ok) {
+            let errorBody = '';
+            try {
+                errorBody = await response.text(); // Try to get error details from response body
+            } catch (_) { /* Ignore if body cannot be read */ }
+            const errorMsg = `HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim();
+            console.error(`Background: HTTP error for ${finalEndpointUrl}:`, errorMsg);
+            throw new Error(errorMsg);
+        }
+
+        // Attempt to parse response as JSON, fall back to text if not JSON
+        const contentType = response.headers.get('content-type');
+        
+        let result;
+        if (contentType && contentType.includes('application/json')) {
+            result = await response.json();
+        } else {
+            result = await response.text();
+        }
+        
+        return result;
+
+    } catch (error) {
+        console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
+        // Rethrow a more specific error message
+        throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
+    }
+}
+
+
+// Registry for *built-in* tool implementations (developer adds specific functions here)
+// User-defined endpoints will be handled separately.
+const toolImplementations = {
+    // Example built-in tool (if any are needed):
+    /*
+    'getCurrentTime': async (args) => {
+        return { currentTime: new Date().toISOString() };
+    }
+    */
+   // Add the generic caller function to the registry for potential direct use if needed,
+   // but the main logic will check endpointUrl first.
+   _callUserDefinedEndpoint: callUserDefinedEndpoint
+};
+
+
+// Track active tool executions to prevent duplicates
+const activeToolExecutions = new Set();
+
+// Listener for messages from content scripts or other extension parts (like chat.js)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Flag to indicate if sendResponse has been called for this message
+    let responseSent = false;
+    const originalSendResponse = sendResponse;
+
+    // Wrap sendResponse to ensure it's only called once and to clear timeouts
+    sendResponse = (response) => {
+        if (!responseSent) {
+            originalSendResponse(response);
+            responseSent = true;
+            // Clear any associated timeouts here if they were set for this specific message
+            // (This requires passing timeoutId into the scope of this wrapped sendResponse)
+        } else {
+            console.warn("Background: Attempted to call sendResponse multiple times for the same message.");
+        }
+    };
+
+    // --- MCP Management API (Phase 1, config-first: no default servers) ---
+    if (request.action === 'mcp.addServer') {
+        (async () => {
+            try {
+                const cfg = await mcpRegistry.addServer(request.config);
+                sendResponse({ success: true, config: cfg });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.updateServer') {
+        (async () => {
+            try {
+                const cfg = await mcpRegistry.updateServer(request.config);
+                sendResponse({ success: true, config: cfg });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.removeServer') {
+        (async () => {
+            try {
+                await mcpRegistry.removeServer(request.serverId);
+                sendResponse({ success: true });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.listServers') {
+        (async () => {
+            try {
+                const servers = await mcpRegistry.listServers();
+                sendResponse({ success: true, servers });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.testConnect') {
+        (async () => {
+            try {
+                const res = await mcpRegistry.testConnect(request.serverId);
+                sendResponse({ success: res.ok, ...res });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.listTools') {
+        (async () => {
+            try {
+                const tools = await mcpRegistry.listTools(request.serverId);
+                sendResponse({ success: true, tools });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.callTool') {
+        (async () => {
+            try {
+                const result = await mcpRegistry.callTool(request.serverId, request.toolName, request.params || {});
+                sendResponse({ success: true, result });
+            } catch (e) {
+                sendResponse({ success: false, error: String(e.message || e) });
+            }
+        })();
+        return true;
+    } else if (request.action === 'mcp.getLogs') {
+        const limit = typeof request.limit === 'number' ? request.limit : 200;
+        const slice = mcpLogsBuffer.slice(-limit);
+        sendResponse({ success: true, logs: slice });
+        return true;
+    } else if (request.action === 'mcp.getState') {
+        try {
+            const st = mcpRegistry.getState(request.serverId);
+            sendResponse({ success: true, state: st });
+        } catch (e) {
+            sendResponse({ success: false, error: String(e.message || e) });
+        }
+        return true;
+    }
+
+    if (request.action === 'getTabContent') {
+        if (tabContentCallback) {
+            sendResponse({ action: 'tabContentResponse', success: false, error: 'Another content extraction is already in progress' });
+            return true;
+        }
+        
+        tabContentCallback = sendResponse;
+        
+        const timeoutId = setTimeout(() => {
+            if (tabContentCallback) {
+                console.error('Background: getTabContent timed out.');
+                tabContentCallback({ action: 'tabContentResponse', success: false, error: 'Background: Content extraction timed out' });
+                tabContentCallback = null;
+            }
+        }, 30000); // 30 seconds timeout
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_unified.js']
+}, (injectionResults) => {
+    clearTimeout(timeoutId); // Ensure timeout is cleared
+    if (chrome.runtime.lastError) {
+        console.error('Background: Error executing content_script_unified.js for getTabContent:', chrome.runtime.lastError);
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'tabContentResponse', success: false, error: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+            tabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        if (tabContentCallback) {
+            tabContentCallback({
+                action: 'tabContentResponse',
+                success: result.success,
+                content: result.data, // Ensure 'content' field is used as expected by chat.js
+                error: result.error
+            });
+            tabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getTabContent - No result from content_script_unified.js');
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'tabContentResponse', success: false, error: 'No result from content script', content: '' }); // Ensure content is defined
+            tabContentCallback = null;
+        }
+    }
+});
+            } else {
+                console.error('No active tab found for getTabContent.');
+                clearTimeout(timeoutId); // Clear timeout if no tab found
+                if (tabContentCallback) {
+                    tabContentCallback({ action: 'tabContentResponse', success: false, error: 'No active tab found.' });
+                    tabContentCallback = null;
+                }
+            }
+        });
+        return true; // Indicates that sendResponse will be called asynchronously.
+    } else if (request.action === 'extractedTabContent') {
+        // Handle content extracted by content_script_unified.js
+        // This message is sent by content_script_unified.js
+        if (tabContentCallback) {
+            tabContentCallback({
+                action: 'tabContentResponse',
+                success: request.success,
+                content: request.data, // Use 'content' field for consistency
+                data: request.data,    // Also keep 'data' field for backward compatibility
+                error: request.error
+            });
+            tabContentCallback = null; // Clear callback
+        } else if (pinnedActionTabContentCallback) { // Also check for pinned action callback
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: request.success,
+                content: request.data, // Use 'content' for pinned action response
+                error: request.error
+            });
+            pinnedActionTabContentCallback = null; // Clear callback
+        } else {
+            console.warn("Background: Received 'extractedTabContent' but no pending callback.");
+        }
+        return true; // Indicate async response, though sendResponse might have been called by the callback
+    } else if (request.action === 'getPinnedActionTabContent') {
+        if (pinnedActionTabContentCallback) {
+            sendResponse({ action: 'pinnedActionTabContentResponse', success: false, content: 'Another content extraction is already in progress' });
+            return true;
+        }
+        
+        pinnedActionTabContentCallback = sendResponse;
+        
+        const timeoutId = setTimeout(() => {
+            if (pinnedActionTabContentCallback) {
+                console.error('Background: getPinnedActionTabContent timed out.');
+                pinnedActionTabContentCallback({ action: 'pinnedActionTabContentResponse', success: false, content: 'Background: Content extraction timed out' });
+                pinnedActionTabContentCallback = null;
+            }
+        }, 30000); // 30 seconds timeout
+        
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_unified.js']
+}, (injectionResults) => {
+    clearTimeout(timeoutId); // Ensure timeout is cleared
+    if (chrome.runtime.lastError) {
+        console.error('Background: Error executing content_script_unified.js for getPinnedActionTabContent:', chrome.runtime.lastError);
+        if (pinnedActionTabContentCallback) {
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: false,
+                content: 'Failed to execute script: ' + chrome.runtime.lastError.message,
+                instruction: request.instruction // Echo back instruction on error
+            });
+            pinnedActionTabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        if (pinnedActionTabContentCallback) {
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: result.success,
+                content: result.data,
+                data: result.data,
+                error: result.error,
+                instruction: request.instruction // Echo back instruction on success
+            });
+            pinnedActionTabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getPinnedActionTabContent - No result from content_script_unified.js');
+        if (pinnedActionTabContentCallback) {
+            pinnedActionTabContentCallback({
+                action: 'pinnedActionTabContentResponse',
+                success: false,
+                content: 'No result from content script',
+                instruction: request.instruction // Echo back instruction on error
+            });
+            pinnedActionTabContentCallback = null;
+        }
+    }
+});
+            } else {
+                console.error('No active tab found for getPinnedActionTabContent.');
+                clearTimeout(timeoutId); // Clear timeout if no tab found
+                if (pinnedActionTabContentCallback) {
+                    pinnedActionTabContentCallback({
+                        action: 'pinnedActionTabContentResponse',
+                        success: false,
+                        content: 'No active tab found.',
+                        instruction: request.instruction // Echo back instruction on error
+                    });
+                    pinnedActionTabContentCallback = null;
+                }
+            }
+        });
+        return true; // Async response
+    } else if (request.action === 'getExplainContent') {
+        // Store the sendResponse function to call it later
+        tabContentCallback = sendResponse;
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+chrome.scripting.executeScript({
+    target: { tabId: activeTabId },
+    files: ['content_script_unified.js']
+}, (injectionResults) => {
+    // If there was a timeout for getExplainContent, clear it here.
+    // clearTimeout(timeoutId_for_getExplainContent);
+    if (chrome.runtime.lastError) {
+        console.error('Failed to inject/execute content_script_unified.js:', chrome.runtime.lastError);
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'Failed to inject script. ' + (chrome.runtime.lastError ? chrome.runtime.lastError.message : 'Unknown error'), content: '' });
+            tabContentCallback = null;
+        }
+        return;
+    }
+    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+        const result = injectionResults[0].result;
+        if (tabContentCallback) {
+            tabContentCallback({
+                action: 'explainContentResponse',
+                success: result.success,
+                content: result.data, // Ensure 'content' field is used
+                error: result.error
+            });
+            tabContentCallback = null;
+        }
+    } else {
+        console.error('Background: getExplainContent - No result from content_script_unified.js');
+        if (tabContentCallback) {
+            tabContentCallback({ action: 'explainContentResponse', success: false, error: 'No result from content script', content: '' });
+            tabContentCallback = null;
+        }
+    }
+});
+            } else {
+                console.error('No active tab found for getExplainContent.');
+                if (tabContentCallback) {
+                    tabContentCallback({ action: 'explainContentResponse', success: false, error: 'No active tab found.' });
+                    tabContentCallback = null;
+                }
+            }
+        });
+        return true;
+    } else if (request.action === 'executePromptPaulTool') {
+        const { id, name, arguments: argsString } = request.toolCall;
+
+        // Prevent duplicate executions
+        const executionKey = `${id}-${name}`;
+        if (activeToolExecutions.has(executionKey)) {
+            return true;
+        }
+        
+        activeToolExecutions.add(executionKey);
+
+        (async () => {
+            try {
+                const allTools = await getAllToolDefinitions();
+                const toolDefinition = allTools.find(t => t.name === name);
+
+                if (!toolDefinition) {
+                    throw new Error(`Tool definition for '${name}' not found in storage.`);
+                }
+
+                let argsObject;
+                try {
+                    argsObject = JSON.parse(argsString || '{}');
+                } catch (parseError) {
+                    throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
+                }
+
+                // === NEW MCP LOGIC STARTS HERE ===
+                if (toolDefinition.mcpServerUrl && toolDefinition.mcpServerUrl.trim() !== "") {
+                    try {
+                        const session = await getMcpSession(toolDefinition.mcpServerUrl);
+                        if (!session || !session.initialized) {
+                            throw new Error("MCP session could not be initialized.");
+                        }
+                        
+                        // Update session last used timestamp
+                        session.lastUsed = Date.now();
+                        
+                        // Add debug logging for MCP tool execution
+                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
+                        
+                        // Validate that the server supports this tool
+                        // Check if tools exists and is an array before using .some()
+                        const serverTools = session.tools;
+                        if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
+                            console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
+                            throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
+                        }
+
+                        const requestId = `mcp-tc-${Date.now()}`;
+                        const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
+
+                        // Execute MCP request with circuit breaker protection
+                        const circuitBreaker = getCircuitBreaker(toolDefinition.mcpServerUrl);
+                        const mcpResponse = await circuitBreaker.execute(async () => {
+                            return await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
+                        });
+
+                        // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
+                        // The actual data might be in mcpResponse.result.content or just mcpResponse.result
+                        // For now, sending mcpResponse.result as per the generic structure.
+                        // The structure of 'result' from 'tools/call' should be: { content: "...", isError: false/true }
+                        // So, mcpResponse.result should be this object.
+                        try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
+                        sendResponse({ result: mcpResponse.result });
+
+                    } catch (mcpError) {
+                        console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
+                        // Enhanced error logging for TypeErrors
+                        // The existing mcpError.details logging seems correct as per the requirement.
+                        // The requirement states: "ensure the console.error in the catch (mcpError) block ... correctly logs mcpError.details if it exists, which it already seems to do."
+                        // The existing line is: console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details);
+                        // This already logs mcpError.details if it exists.
+                        if (mcpError instanceof TypeError) {
+                            // This debug info is helpful for TypeErrors which was the original problem.
+                            console.error('MCP Capabilities Debug Info during TypeError:', {
+                                serverCapabilities: session?.serverCapabilities, // Use optional chaining for session as well
+                                tools: session?.serverCapabilities?.tools
+                            });
+                        }
+                        let userFriendlyMessage;
+                        if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
+                            userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
+                        } else {
+                            userFriendlyMessage = `Failed to execute MCP tool '${name}': ${mcpError.message || 'An unknown error occurred during MCP tool execution.'}`;
+                        }
+                        try { await trackErrorEvent('tool_error', name); } catch (_) {}
+                        sendResponse({ error: userFriendlyMessage });
+                    }
+                } else if (toolDefinition.endpointUrl) { // Existing non-MCP tool logic
+                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
+                    try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
+                    sendResponse({ result: result });
+                } else { // Existing built-in tool logic (if any)
+                    const builtInFunction = toolImplementations[name];
+                    if (builtInFunction) {
+                        const result = await builtInFunction(argsObject);
+                        try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
+                        sendResponse({ result: result });
+                    } else {
+                        throw new Error(`Tool '${name}' is not properly configured: It has no mcpServerUrl, no endpointUrl, and no built-in implementation.`);
+                    }
+                }
+                // === MCP LOGIC ENDS HERE ===
+
+            } catch (error) { // General error catch for executePromptPaulTool
+                console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
+                // Provide more detailed error message for MCP tools
+                let errorMessage = error.message || 'Tool processing failed';
+                if (error.details) {
+                    errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
+                }
+                sendResponse({ error: errorMessage });
+            } finally {
+                // Always remove from active executions when done
+                activeToolExecutions.delete(executionKey);
+            }
+        })();
+        return true; // Crucial for async sendResponse
+    } else if (request.action === 'getDiscoveredMcpToolSchema') {
+        (async () => {
+            const { mcpServerUrl, toolName } = request;
+            if (!mcpServerUrl || !toolName) {
+                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request.' });
+                return;
+            }
+
+            const session = mcpSessions[mcpServerUrl];
+            if (session && session.tools && Array.isArray(session.tools)) {
+                const discoveredTool = session.tools.find(t => t.name === toolName);
+                if (discoveredTool) {
+                    // The discoveredTool object should contain name, description, and inputSchema (or similar)
+                    sendResponse({ success: true, toolSchema: discoveredTool });
+                } else {
+                    sendResponse({ success: false, error: `Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}.` });
+                }
+            } else {
+                sendResponse({ success: false, error: `MCP session for ${mcpServerUrl} not active or tools not listed.` });
+            }
+        })();
+        return true; // Indicates asynchronous response
+    } else if (request.action === 'fetchMcpToolDetailsFromServer') {
+        (async () => {
+            const { mcpServerUrl, toolName } = request;
+            if (!mcpServerUrl || !toolName) {
+                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request for fetchMcpToolDetailsFromServer.' });
+                return;
+            }
+            try {
+                // Ensure session is initialized and tools are listed
+                const session = await getMcpSession(mcpServerUrl); // This initializes and calls listMcpTools internally
+                if (!session || !session.initialized) {
+                    throw new Error(`MCP session could not be initialized for ${mcpServerUrl}.`);
+                }
+
+                if (session.tools && Array.isArray(session.tools)) {
+                    const discoveredTool = session.tools.find(t => t.name === toolName);
+                    if (discoveredTool) {
+                        // Send back the full tool schema as discovered from the server
+                        sendResponse({ success: true, toolSchema: discoveredTool });
+                    } else {
+                        console.warn(`Background: fetchMcpToolDetailsFromServer - Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}. Available tools:`, session.tools.map(t => t.name));
+                        sendResponse({ success: false, error: `Tool '${toolName}' not found among tools listed by ${mcpServerUrl}.` });
+                    }
+                } else {
+                    console.error(`Background: fetchMcpToolDetailsFromServer - MCP session for ${mcpServerUrl} does not have a valid 'tools' array. Session state:`, session);
+                    sendResponse({ success: false, error: `Failed to list or retrieve tools from ${mcpServerUrl}. Session 'tools' array is invalid or missing.` });
+                }
+            } catch (error) {
+                console.error(`Background: fetchMcpToolDetailsFromServer - Error fetching tool details for '${toolName}' from ${mcpServerUrl}:`, error);
+                sendResponse({ success: false, error: `Error initializing session or fetching tool details: ${error.message}` });
+            }
+        })();
+        return true; // Indicates asynchronous response
+    } else if (request.action === 'executeLlmApiRequest') {
+        const { prompt, tool_choice } = request;
+        (async () => {
+            await makeLlmApiRequest(prompt, null, { customInstructionToolChoice: tool_choice });
+        })();
+        return true;
+    }
+    // Handle other actions if any
+});
+
+// Cleanup function for extension shutdown
+function cleanupMcpSessions() {
+    
+    // Clear session cleanup timer
+    if (sessionCleanupTimer) {
+        clearInterval(sessionCleanupTimer);
+        sessionCleanupTimer = null;
+    }
+    
+    // Clear all sessions
+    const sessionCount = Object.keys(mcpSessions).length;
+    mcpSessions = {};
+    
+    // Clear circuit breakers
+    const breakerCount = Object.keys(mcpCircuitBreakers).length;
+    for (const url in mcpCircuitBreakers) {
+        delete mcpCircuitBreakers[url];
+    }
+    
+}
+
+// Handle extension lifecycle events
+chrome.runtime.onSuspend?.addListener(() => {
+    cleanupMcpSessions();
+});
+
+// Add periodic health check for sessions
+function performSessionHealthCheck() {
+    const now = Date.now();
+    let healthyCount = 0;
+    let unhealthyCount = 0;
+    
+    for (const [url, session] of Object.entries(mcpSessions)) {
+        if (isSessionHealthy(session)) {
+            healthyCount++;
+        } else {
+            unhealthyCount++;
+        }
+    }
+    
+    if (healthyCount > 0 || unhealthyCount > 0) {
+    }
+}
+
+// Run health check every 2 minutes
+setInterval(performSessionHealthCheck, 120000);

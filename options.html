@@ -5,13 +5,108 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Prompt Paul Config</title>
   <link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="theme.css">
-  <link rel="stylesheet" href="hextaui-components.css">
   <link rel="stylesheet" href="options.css">
   <link rel="stylesheet" href="loading-states.css">
+  <!-- Add shadcn/ui CSS -->
+  <style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 1.4rem;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Shadcn theme variables */
+    :root {
+      --background: #FFFFFF;
+      --foreground: #0F172A;
+      --primary: #5046e5;
+      --primary-foreground: #FFFFFF;
+      --border: #E2E8F0;
+      --input: #2C323A;
+      --ring: #6366f1;
+    }
+
+    .dark {
+      --background: #020617;
+      --foreground: #E2E8F0;
+      --primary: #818cf8;
+      --primary-foreground: #FFFFFF;
+      --border: #312e81;
+      --input: #1e1e35;
+      --ring: #a5b4fc;
+    }
+
+    #addProfileButton {
+      border-radius: 4px;
+    }
+
+    #deleteProfileButton {
+      border-radius: 4px;
+    }
+
+    /* Ensure profile buttons are properly aligned */
+    #addProfileButton,
+    #deleteProfileButton {
+      height: 2.75rem !important;
+      font-weight: 500;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 0.5rem;
+      margin: 0 !important;
+      padding: 0.75rem 1.5rem !important;
+      box-sizing: border-box;
+    }
+
+    /* Ensure the form fields containing the profile buttons are aligned */
+    .profile-button-field {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: stretch;
+    }
+
+    #promptTemplate {
+      border-radius: 4px;
+    }
+
+    .button-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      width: 100%;
+    }
+
+    /* Ensure the three action buttons share the same horizontal centre */
+    .button-container .ko-fi-button,
+    .button-container #revertDefaultsButton,
+    .button-container #feedbackButton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      /* Prevent differing intrinsic widths from shifting center alignment perception */
+      text-align: center;
+    }
+
+    /* Ensure anchor tags within the button container behave correctly in flex layout */
+    .button-container a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
 </head>
 <body>
   <main class="container">
@@ -21,7 +116,7 @@
     </div>
 
     <!-- Connection Section -->
-    <section class="hextaui-card section-card">
+    <section class="section-card">
       <div class="section-header">
         <h2 class="section-title">
           <span class="material-symbols-outlined section-icon">link</span>
@@ -30,41 +125,40 @@
         <div class="section-divider"></div>
       </div>
       
-        <div class="button-container">
-          <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
-            <button class="hextaui-btn hextaui-btn-accent">
-              &#9749; Buy me a coffee
-            </button>
-          </a>
-          <button id="revertDefaultsButton" class="hextaui-btn hextaui-btn-destructive">Revert to default API</button>
-          <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
-            <button id="feedbackButton" class="hextaui-btn hextaui-btn-primary">Feedback</button>
-          </a>
-        </div>
+      <div class="button-container">
+        <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
+          <button class="ko-fi-button">
+            &#9749; Buy me a coffee
+          </button>
+        </a>
+        <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
+        <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
+          <button id="feedbackButton" class="feedback-button">Feedback</button>
+        </a>
+      </div>
       <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
 
       <form id="optionsForm" class="grid-form">
-        <div id="externalApiFields" class="visibility-transition field-visible col-span-12 grid-form">
-        <div class="hextaui-form-field col-span-12">
-          <label for="llmEndpoint" class="hextaui-form-label">
+        <div class="form-field col-span-12">
+          <label for="llmEndpoint" class="form-label">
             LLM API Endpoint
-            <button type="button" class="help-tooltip" data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
+            <button type="button" class="help-tooltip" data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <input type="url" id="llmEndpoint" class="hextaui-input" placeholder="https://api.mistral.ai/v1/chat/completions">
-          <div class="hextaui-form-error" id="llmEndpointError"></div>
+          <input type="url" id="llmEndpoint" class="shadcn-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+          <div class="field-error" id="llmEndpointError"></div>
         </div>
 
-        <div class="hextaui-form-field col-span-12">
-          <label for="apiKey" class="hextaui-form-label">
+        <div class="form-field col-span-12">
+          <label for="apiKey" class="form-label">
             API Key
-            <button type="button" class="help-tooltip" data-tooltip="Your API key for authentication. Keep this secure and never share it publicly. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
+            <button type="button" class="help-tooltip" data-tooltip="Your API key for authentication. Keep this secure and never share it publicly.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
           <div class="password-input-container">
-            <input type="password" id="apiKey" class="hextaui-input password-input" placeholder="sk-..." required>
+            <input type="password" id="apiKey" class="shadcn-input password-input" placeholder="sk-..." required>
             <button type="button" class="password-toggle" id="apiKeyToggle">
               <span class="material-symbols-outlined">visibility</span>
             </button>
@@ -72,49 +166,49 @@
               <span class="material-symbols-outlined">content_copy</span>
             </button>
           </div>
-          <div class="hextaui-form-error" id="apiKeyError"></div>
+          <div class="field-error" id="apiKeyError"></div>
         </div>
-        </div><!-- End externalApiFields -->
 
-        <div id="modelNameField" class="visibility-transition field-visible col-span-12 grid-form">
         <!-- Model Configuration Fields -->
-        <div class="hextaui-form-field col-span-4">
-          <label for="modelName" class="hextaui-form-label">
+        <div class="form-field col-span-4">
+          <label for="modelName" class="form-label">
             Model Name
-            <button type="button" class="help-tooltip" data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
+            <button type="button" class="help-tooltip" data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
           <div class="model-selector-container">
-            <input type="text" id="modelName" class="hextaui-input" placeholder="Enter model name" required>
+            <input type="text" id="modelName" class="shadcn-input" placeholder="Enter model name" required>
           </div>
-          <div class="hextaui-form-error" id="modelNameError"></div>
+          <div class="field-error" id="modelNameError"></div>
         </div>
-        </div><!-- End modelNameField -->
 
-        <div class="hextaui-form-field col-span-8">
-          <label for="maxTokens" class="hextaui-form-label">
+        <div class="form-field col-span-8">
+          <label for="maxTokens" class="form-label">
             Max Tokens
-            <button type="button" class="help-tooltip" data-tooltip="Maximum number of tokens the model can generate. Higher values allow longer responses but cost more. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
+            <button type="button" class="help-tooltip" data-tooltip="Maximum number of tokens the model can generate. Higher values allow longer responses but cost more.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <input type="number" id="maxTokens" class="hextaui-input" min="1" value="16000" required>
+          <div class="token-input-container">
+            <input type="number" id="maxTokens" class="shadcn-input token-number-input" value="16000" required>
+          </div>
           <div class="token-info">
             <span id="tokenValue">16000</span> tokens
+            <span id="contextHint" class="context-hint"></span>
           </div>
-          <div class="hextaui-form-error" id="maxTokensError"></div>
+          <div class="field-error" id="maxTokensError"></div>
         </div>
 
-        <div class="hextaui-form-field col-span-12">
-          <label for="systemPrompt" class="hextaui-form-label">
+        <div class="form-field col-span-12">
+          <label for="systemPrompt" class="form-label">
             System Prompt (Optional)
-            <button type="button" class="help-tooltip" data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
+            <button type="button" class="help-tooltip" data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
           <div class="system-prompt-controls">
-            <select id="promptTemplate" class="hextaui-select template-selector">
+            <select id="promptTemplate" class="template-selector">
               <option value="">Insert template...</option>
               <option value="general">General Helper</option>
               <option value="code">Code Reviewer</option>
@@ -123,73 +217,64 @@
               <option value="writer">Creative Writer</option>
             </select>
           </div>
-          <textarea id="systemPrompt" class="hextaui-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
+          <textarea id="systemPrompt" class="shadcn-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
           <div class="character-counter">
             <span id="charCount">0</span> characters
           </div>
-          <div class="hextaui-form-error" id="systemPromptError"></div>
+          <div class="field-error" id="systemPromptError"></div>
         </div>
 
         <!-- Behavior Settings -->
-        <div class="hextaui-form-field col-span-6">
-          <label class="hextaui-form-label">Streaming Responses</label>
-          <label class="hextaui-toggle">
-            <input type="checkbox" id="enableStreamingToggle" class="hextaui-toggle-input">
-            <span class="hextaui-toggle-label">Enable Streaming</span>
-          </label>
+        <div class="form-field col-span-6">
+          <label class="form-label">Streaming Responses</label>
+          <div class="setting-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" id="enableStreamingToggle" class="toggle-input">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">Enable Streaming</span>
+            </label>
+          </div>
         </div>
 
-        <div class="hextaui-form-field col-span-6">
-          <label class="hextaui-form-label">Theme</label>
-          <label class="hextaui-toggle">
-            <span id="darkThemeIcon" class="material-symbols-outlined">brightness_2</span>
-            <input type="checkbox" id="optionsThemeToggle" class="hextaui-toggle-input">
-            <span class="hextaui-toggle-label">Dark Theme</span>
-          </label>
-        </div>
-
-        <div class="hextaui-form-field col-span-12">
-          <label for="logLevelSelect" class="hextaui-form-label">
-            Debug Log Level
-            <button type="button" class="help-tooltip" data-tooltip="Control the verbosity of console logs. ERROR shows only critical errors, DEBUG shows all logs including detailed debugging information.">
-              <span class="material-symbols-outlined">help</span>
-            </button>
-          </label>
-          <select id="logLevelSelect" class="hextaui-select">
-            <option value="ERROR">ERROR - Critical errors only</option>
-            <option value="WARN">WARN - Warnings and errors</option>
-            <option value="INFO">INFO - General information</option>
-            <option value="DEBUG">DEBUG - All debugging information</option>
-          </select>
+        <div class="form-field col-span-6">
+          <label class="form-label">Theme</label>
+          <div class="setting-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" id="darkThemeToggle" class="toggle-input">
+              <span class="toggle-slider"></span>
+              <span id="darkThemeIcon" class="material-symbols-outlined toggle-icon">brightness_2</span>
+              <span class="toggle-text">Dark Theme</span>
+            </label>
+          </div>
         </div>
 
         <!-- Profile Management -->
-        <div class="hextaui-form-field col-span-12">
-          <label for="profileSelect" class="hextaui-form-label">
+        <div class="form-field col-span-12">
+          <label for="profileSelect" class="form-label">
             Current Profile
-            <button type="button" class="help-tooltip" data-tooltip="Profiles save different API configurations. Switch between them for different use cases. (Click for more help)" data-link="https://promptpaul.juanmackie.com/#faq">
+            <button type="button" class="help-tooltip" data-tooltip="Profiles save different API configurations. Switch between them for different use cases.">
               <span class="material-symbols-outlined">help</span>
             </button>
           </label>
-          <select id="profileSelect" class="hextaui-select">
+          <select id="profileSelect" class="shadcn-input">
             <!-- Options will be populated by JavaScript -->
           </select>
         </div>
-        <div class="hextaui-form-field col-span-6 profile-button-field">
-          <label class="hextaui-form-label">&nbsp;</label>
-          <button type="button" id="addProfileButton" class="hextaui-btn hextaui-btn-secondary w-full">
+        <div class="form-field col-span-6 profile-button-field">
+          <label class="form-label">&nbsp;</label>
+          <button type="button" id="addProfileButton" class="btn-secondary w-full">
             <span class="material-symbols-outlined">add</span> New Profile
           </button>
         </div>
-        <div class="hextaui-form-field col-span-6 profile-button-field">
-          <label class="hextaui-form-label">&nbsp;</label>
-          <button type="button" id="deleteProfileButton" class="hextaui-btn hextaui-btn-destructive w-full" disabled>
+        <div class="form-field col-span-6 profile-button-field">
+          <label class="form-label">&nbsp;</label>
+          <button type="button" id="deleteProfileButton" class="btn-destructive w-full" disabled>
             <span class="material-symbols-outlined">delete</span> Delete
           </button>
         </div>
         
         <div class="form-field col-span-12">
-          <button type="submit" id="save" class="hextaui-btn hextaui-btn-primary">
+          <button type="submit" id="save" class="btn-primary">
             <span class="material-symbols-outlined mr-2">save</span> Save Settings
           </button>
         </div>
@@ -197,7 +282,7 @@
     </section>
 
     <!-- Privacy Section -->
-    <section class="hextaui-card section-card">
+    <section class="section-card">
       <div class="section-header">
         <h2 class="section-title">
           <span class="material-symbols-outlined section-icon">shield_person</span>
@@ -205,26 +290,38 @@
         </h2>
         <div class="section-divider"></div>
       </div>
-
-      <!-- Match toggle structure/styles with Theme toggle -->
-      <div class="hextaui-form-field col-span-12">
-        <label class="hextaui-form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
-        <label class="hextaui-toggle">
-          <input type="checkbox" id="analyticsConsentToggle" class="hextaui-toggle-input" checked>
-          <span class="hextaui-toggle-label">
+      <div class="form-field col-span-12">
+        <label class="form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
+        <label class="toggle-label" style="display:inline-flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-text">
             Allow anonymous usage analytics (instructions/models/tools only)
+            <div class="hint">
+              Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs/titles/content or identifiers. A random instance ID rotates monthly. You can disable anytime.
+            </div>
           </span>
         </label>
-        <p class="hextaui-form-description">
-          Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs, titles, page content, or identifiers are collected. A random instance ID rotates monthly. You can disable this at any time.
-        </p>
+      </div>
+      <div class="form-field col-span-12">
+        <label class="form-label">Microphone Access (Voice Input)</label>
+        <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
+          <button type="button" id="testMicPermissionBtn" class="btn-secondary" style="padding: 8px 16px;">
+            <span class="material-symbols-outlined" style="font-size: 1.2em; margin-right: 4px; vertical-align: middle;">mic</span>
+            Test Microphone Access
+          </button>
+          <span id="micPermissionStatus" style="font-size: 14px; color: var(--ext-muted-foreground);">Not tested</span>
+        </div>
+        <div class="hint" style="margin-top: 8px;">
+          Required for voice input feature in side panel. Click to test and request microphone permission. If denied, click lock icon 🔒 in your browser address bar to enable.
+        </div>
       </div>
     </section>
 
     <!-- Configuration Complete -->
 
     <!-- Instructions Section -->
-    <section class="hextaui-card section-card">
+    <section class="section-card">
       <div class="section-header">
         <h2 class="section-title collapsible-header">
           <span class="material-symbols-outlined section-icon">description</span>
@@ -235,13 +332,13 @@
       </div>
       <div class="collapsible-content">
 
-      <div id="migrationPrompt" class="migration-prompt">
+      <div id="migrationPrompt" class="migration-prompt" style="display: none; margin-bottom: 1em; padding: 1rem; background: var(--ext-accent); border-radius: 0px; border: 1px solid var(--ext-border);">
         <span>
           <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
         </span>
-        <div class="button-group migration-button-group">
-          <button type="button" id="migrateInstructionsBtn" class="hextaui-btn hextaui-btn-secondary">&#128190; Migrate</button>
-          <button type="button" id="dismissMigrationBtn" class="hextaui-btn hextaui-btn-outline">&#10006; Dismiss</button>
+        <div class="button-group" style="margin-top: 0.5em;">
+          <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">&#128190; Migrate</button>
+          <button type="button" id="dismissMigrationBtn" class="clear-form-button">&#10006; Dismiss</button>
         </div>
       </div>
 
@@ -269,62 +366,86 @@
         </div>
       </div>
 
-       <div class="hextaui-card instruction-form mt-8">
-         <h3>Add/Edit Instruction</h3>
-         <div class="hextaui-form-field">
-           <label for="instructionGoal" class="hextaui-form-label">
-             Goal Description (Optional)
-             <button type="button" class="help-tooltip" data-tooltip="Describe what you want the AI to achieve (e.g., 'write a prompt to summarize research papers'). Click 'Generate Instruction' to create a complete, optimized prompt automatically.">
-               <span class="material-symbols-outlined">help</span>
-             </button>
-           </label>
-           <textarea id="instructionGoal" class="hextaui-textarea" placeholder="Describe what you want to achieve (e.g., 'write a prompt to summarize research papers')" rows="2"></textarea>
-           <p class="hextaui-form-description">Describe your goal and click "Generate Instruction" to create a complete prompt automatically.</p>
-         </div>
-         <div class="hextaui-form-field">
-           <label for="instructionName" class="hextaui-form-label">Instruction Name</label>
-           <input type="text" id="instructionName" class="hextaui-input" placeholder="Enter instruction name">
-         </div>
-         <div class="hextaui-form-field">
-           <label for="instructionContent" class="hextaui-form-label">Instruction Content</label>
-           <textarea id="instructionContent" class="hextaui-textarea" placeholder="Enter instruction content" rows="4"></textarea>
-         </div>
-        <div class="hextaui-form-field">
-          <label for="instructionToolChoice" class="hextaui-form-label">Tool Choice</label>
-          <select id="instructionToolChoice" class="hextaui-select">
+      <div class="instruction-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
+        <h3>Add/Edit Instruction</h3>
+        <div class="form-group">
+          <label for="instructionName">Instruction Name</label>
+          <input type="text" id="instructionName" placeholder="Enter instruction name">
+        </div>
+        <div class="form-group">
+          <label for="instructionContent">Instruction Content</label>
+          <textarea id="instructionContent" placeholder="Enter instruction content" rows="4"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="instructionToolChoice">Tool Choice</label>
+          <select id="instructionToolChoice" class="shadcn-input">
             <option value="none">None</option>
             <option value="auto">Auto</option>
             <!-- Tools will be populated here by options.js -->
           </select>
-          <p class="hextaui-form-description">Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</p>
+          <small>Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</small>
         </div>
         
-         <input type="hidden" id="instructionId">
-         <div class="button-group">
-           <button type="button" id="generateInstruction" class="hextaui-btn hextaui-btn-primary">
-             <span class="material-symbols-outlined">auto_awesome</span> Generate Instruction
-           </button>
-           <button type="button" id="saveInstruction" class="hextaui-btn hextaui-btn-secondary"><span class="material-symbols-outlined">save</span> Save Instruction</button>
-           <button type="button" id="clearForm" class="hextaui-btn hextaui-btn-outline">
-             <span class="material-symbols-outlined">clear_all</span>
-             Clear Form
-           </button>
-         </div>
+        <div class="form-group">
+          <label>Available Modalities</label>
+          <div class="modality-checkboxes">
+            <div class="modality-option">
+              <input type="checkbox" id="modalityText" value="text" checked>
+              <label for="modalityText">
+                <span class="modality-icon">📝</span>
+                <span class="modality-label">Text</span>
+                <small>Context menus, selected text, page content</small>
+              </label>
+            </div>
+            <div class="modality-option">
+              <input type="checkbox" id="modalityImage" value="image">
+              <label for="modalityImage">
+                <span class="modality-icon">🖼️</span>
+                <span class="modality-label">Images</span>
+                <small>Right-click image analysis</small>
+              </label>
+            </div>
+            <div class="modality-option">
+              <input type="checkbox" id="modalityVideo" value="video">
+              <label for="modalityVideo">
+                <span class="modality-icon">🎥</span>
+                <span class="modality-label">Video</span>
+                <small>Right-click video analysis</small>
+              </label>
+            </div>
+            <div class="modality-option">
+              <input type="checkbox" id="modalityAudio" value="audio">
+              <label for="modalityAudio">
+                <span class="modality-icon">🎵</span>
+                <span class="modality-label">Audio</span>
+              </label>
+            </div>
+          </div>
+          <small>Select which types of content this instruction can be applied to. Text is always available for general use.<i>(Ensure your model supports multi modality)</i></small>
+        </div>
+        <input type="hidden" id="instructionId">
+        <div class="button-group">
+          <button type="button" id="saveInstruction" class="save-instruction-button"><span class="material-symbols-outlined">save</span> Save Instruction</button>
+          <button type="button" id="clearForm" class="clear-form-button">
+            <span class="material-symbols-outlined">clear_all</span>
+            Clear Form
+          </button>
+        </div>
       </div>
 
-      <div class="hextaui-card import-export mt-4">
+      <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
         <h3>Import/Export Instructions</h3>
         <div class="button-group">
-          <button type="button" id="exportInstructions" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
-          <input type="file" id="importFile" accept=".json" class="hidden">
-          <button type="button" id="importInstructions" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Instructions</button>
+          <button type="button" id="exportInstructions" class="export-button"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
+          <input type="file" id="importFile" accept=".json" style="display: none;">
+          <button type="button" id="importInstructions" class="import-button"><span class="material-symbols-outlined">download</span> Import Instructions</button>
         </div>
       </div>
     </div>
   </section>
 
     <!-- Tools Section -->
-    <section class="hextaui-card section-card">
+    <section class="section-card">
       <div class="section-header">
         <h2 class="section-title collapsible-header">
           <span class="material-symbols-outlined section-icon">build</span>
@@ -343,6 +464,7 @@
               <tr>
                 <th>Name</th>
                 <th>Description</th>
+                <th>MCP Server URL</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -358,35 +480,44 @@
         </div>
       </div>
 
-      <div class="hextaui-card tool-form mt-8">
+      <div class="tool-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
         <h3>Add/Edit Tool</h3>
-        <div class="hextaui-form-field">
-          <label for="toolName" class="hextaui-form-label">Tool Name</label>
-          <input type="text" id="toolName" class="hextaui-input" placeholder="e.g., getWeather">
+        <div class="form-group">
+          <label for="toolName">Tool Name</label>
+          <input type="text" id="toolName" placeholder="e.g., getWeather">
         </div>
-        <div class="hextaui-form-field">
-          <label for="toolDescription" class="hextaui-form-label">Tool Description</label>
-          <textarea id="toolDescription" class="hextaui-textarea" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
+        <div class="form-group">
+          <label for="toolDescription">Tool Description (Fallback for MCP)</label>
+          <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
+          <p id="toolDescriptionSource" class="mcp-data-source-note" style="display: none;">Source: MCP Server (dynamic)</p>
         </div>
-        <div class="hextaui-form-field">
-          <label for="toolParameters" class="hextaui-form-label">Parameters (JSON Schema)</label>
-          <textarea id="toolParameters" class="hextaui-textarea" placeholder='e.g., {
+        <div class="form-group">
+          <label for="toolParameters">Parameters (JSON Schema - Fallback for MCP)</label>
+          <textarea id="toolParameters" placeholder='e.g., {
   "type": "object",
   "properties": {
     "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
   },
   "required": ["location"]
 }' rows="6"></textarea>
-          <p class="hextaui-form-description">Define the input parameters for the tool using JSON Schema format.</p>
+          <p id="toolParametersSource" class="mcp-data-source-note" style="display: none;">Source: MCP Server (dynamic)</p>
+          <small>Define the input parameters for the tool using JSON Schema format.</small>
         </div>
-        <div class="hextaui-form-field">
-          <label for="toolEndpointUrl" class="hextaui-form-label">Endpoint URL (Optional)</label>
-          <input type="url" id="toolEndpointUrl" class="hextaui-input" placeholder="e.g., https://api.example.com/webhook">
-          <p class="hextaui-form-description">If this tool calls an external API or webhook, enter the URL here.</p>
+        <div class="form-group">
         </div>
-        <div class="hextaui-form-field">
-          <label for="toolHttpMethod" class="hextaui-form-label">HTTP Method (Optional)</label>
-          <select id="toolHttpMethod" class="hextaui-select">
+        <div class="form-group">
+          <label for="toolEndpointUrl">Endpoint URL (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
+          <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
+          <small>If this tool calls an external API or webhook, enter the URL here.</small>
+        </div>
+        <div class="form-group">
+          <label for="toolMcpProxyUrl">MCP Proxy URL (Optional - for custom tool routing)</label>
+          <input type="url" id="toolMcpProxyUrl" placeholder="e.g., https://mcp-proxy.example.com">
+          <small>If your tool needs to be called via a specific proxy server (which then might call another service or an MCP server), enter its URL here. This is typically for non-standard setups. If you use 'MCP Server URL' below, this field is usually not needed.</small>
+        </div>
+        <div class="form-group">
+          <label for="toolHttpMethod">HTTP Method (Optional) <small class="field-note">(Not used if MCP Server URL is provided)</small></label>
+          <select id="toolHttpMethod">
             <option value="">Auto (GET if no params, POST if params)</option>
             <option value="GET">GET</option>
             <option value="POST">POST</option>
@@ -394,34 +525,143 @@
             <option value="DELETE">DELETE</option>
             <option value="PATCH">PATCH</option>
           </select>
-          <p class="hextaui-form-description">Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</p>
+          <small>Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</small>
+        </div>
+        <div class="form-group">
+          <label for="toolMcpServerUrl">MCP Server URL (Optional - for standard MCP tools)</label>
+          <input type="url" id="toolMcpServerUrl" placeholder="e.g., https://mcp.example.com">
+          <button type="button" id="fetchMcpToolInfoBtn" class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 py-1 mt-1 ml-2">
+            <span class="material-symbols-outlined mr-1" style="font-size: 1em;">sync</span> Fetch Tool Info
+          </button>
+          <small>If this tool is provided by a standard Model Context Protocol (MCP) server, enter the server's base URL here (e.g., https://mcp.example.com).
+            <p class="mcp-note" style="font-size: 0.8em; margin-top: 0.5em;"><strong>Note:</strong> When an MCP Server URL is specified, the extension will attempt to fetch the tool's name, description, and input schema dynamically from that server. The 'Tool Name' you enter above will be used as a local alias. The 'Tool Description' and 'Parameters (JSON Schema)' fields above will serve as fallbacks if the server doesn't provide them or if the dynamic fetch fails. Fields like 'Endpoint URL' and 'HTTP Method' are ignored when MCP Server URL is used.</p>
+          </small>
         </div>
         <input type="hidden" id="toolId">
         <div class="button-group">
-          <button type="button" id="saveTool" class="hextaui-btn hextaui-btn-secondary">
+          <button type="button" id="saveTool" class="save-button">
             <span class="material-symbols-outlined">save</span> Save Tool
           </button>
-          <button type="button" id="clearToolForm" class="hextaui-btn hextaui-btn-outline">
+          <button type="button" id="clearToolForm" class="clear-form-button">
             <span class="material-symbols-outlined">clear_all</span>
             Clear Form
           </button>
         </div>
       </div>
 
-      <div class="hextaui-card import-export mt-4">
+      <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
         <h3>Import/Export Tools</h3>
         <div class="button-group">
-          <button type="button" id="exportTools" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">upload</span> Export Tools</button>
-          <input type="file" id="importToolsFile" accept=".json" class="hidden">
-          <button type="button" id="importTools" class="hextaui-btn hextaui-btn-accent"><span class="material-symbols-outlined">download</span> Import Tools</button>
+          <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
+          <input type="file" id="importToolsFile" accept=".json" style="display: none;">
+          <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
         </div>
       </div>
 
-      <!-- MCP Servers management UI removed: MCP support is deprecated in this version. -->
+      <!-- NEW: MCP Servers Management (config-first, no default servers) -->
+      <div class="section-divider" style="margin: 2rem 0;"></div>
+      <section id="mcpSection" class="section-card" style="margin-top: 1rem;">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined section-icon">hub</span>
+            MCP Servers
+          </h2>
+          <div class="section-divider"></div>
+        </div>
+        <p class="hint">Config-first. No default servers. Add a server to enable MCP tool access.</p>
+        <div class="form-row" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button id="mcpAddServerBtn" class="btn-primary">
+            <span class="material-symbols-outlined">add</span> Add Server
+          </button>
+          <button id="mcpExportBtn" class="btn-secondary">
+            <span class="material-symbols-outlined">upload</span> Export Config
+          </button>
+          <input type="file" id="mcpImportFile" accept="application/json" style="display:none">
+          <button id="mcpImportBtn" class="btn-secondary">
+            <span class="material-symbols-outlined">download</span> Import Config
+          </button>
+          <label class="inline" style="display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="mcpVerboseLogsToggle"> Verbose logs
+          </label>
+        </div>
+
+        <div class="table-container" style="margin-top: 1rem;">
+          <table class="responsive-table" id="mcpServersTable">
+            <thead class="sticky-header">
+              <tr>
+                <th>Name</th>
+                <th>URL (wss://)</th>
+                <th>Allowlisted</th>
+                <th>Enabled</th>
+                <th>Status</th>
+                <th>Tools</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="mcpServersTbody">
+              <!-- populated by options.js -->
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:1rem;">Logs</h3>
+        <div id="mcpLogs" class="log-viewer" style="max-height:200px; overflow:auto; background: var(--ext-muted); border:1px solid var(--ext-border); border-radius:0px; padding:8px;"></div>
+      </section>
+
+      <!-- Modal for Add/Edit Server -->
+      <div id="mcpServerModal" class="modal hidden">
+        <div class="modal-content">
+          <h3 id="mcpModalTitle">Add MCP Server</h3>
+          <div class="form-group">
+            <label for="mcpName">Name</label>
+            <input id="mcpName" type="text" placeholder="My Server">
+          </div>
+          <div class="form-group">
+            <label for="mcpUrl">WSS URL</label>
+            <input id="mcpUrl" type="text" placeholder="wss://server.example.com/ws">
+            <div id="mcpUrlError" class="error-message"></div>
+          </div>
+          <div class="form-group">
+            <label for="mcpAuth">Authorization (Bearer ...)</label>
+            <input id="mcpAuth" type="password" placeholder="Bearer TOKEN (optional)">
+          </div>
+          <div class="form-row" style="display:flex; gap:12px; flex-wrap:wrap;">
+            <label class="inline"><input type="checkbox" id="mcpAllowlisted"> Allowlisted</label>
+            <label class="inline"><input type="checkbox" id="mcpEnabled" checked> Enabled</label>
+            <label class="inline"><input type="checkbox" id="mcpSensitiveConfirm" checked> Sensitive tools require confirm</label>
+          </div>
+          <div class="form-row" style="display:grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap:12px;">
+            <div class="form-group small">
+              <label for="mcpTimeout">Call Timeout (ms)</label>
+              <input id="mcpTimeout" type="number" value="20000" min="1000" step="500">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffBase">Backoff Base (ms)</label>
+              <input id="mcpBackoffBase" type="number" value="500" min="100" step="100">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffMax">Backoff Max (ms)</label>
+              <input id="mcpBackoffMax" type="number" value="10000" min="1000" step="500">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffFactor">Backoff Factor</label>
+              <input id="mcpBackoffFactor" type="number" value="2" min="1" step="0.1">
+            </div>
+            <div class="form-group small">
+              <label for="mcpBackoffJitter">Backoff Jitter</label>
+              <input id="mcpBackoffJitter" type="number" value="0.2" min="0" step="0.05">
+            </div>
+          </div>
+          <div class="form-row" style="display:flex; gap:8px; justify-content:flex-end;">
+            <button id="mcpSaveServerBtn" class="btn-primary">Save</button>
+            <button id="mcpCancelServerBtn" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- About Section -->
-    <section class="hextaui-card section-card">
+    <section class="section-card">
       <div class="section-header">
         <h2 class="section-title">
           <span class="material-symbols-outlined section-icon">info</span>
@@ -429,32 +669,32 @@
         </h2>
         <div class="section-divider"></div>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">API Endpoint</label>
+      <div class="form-group">
+        <label>API Endpoint</label>
         <p id="currentEndpoint">Not set</p>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">API Key</label>
+      <div class="form-group">
+        <label>API Key</label>
         <p id="currentApiKey" class="masked-value">Not set</p>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">Model Name</label>
+      <div class="form-group">
+        <label>Model Name</label>
         <p id="currentModelName">Not set</p>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">Max Tokens</label>
+      <div class="form-group">
+        <label>Max Tokens</label>
         <p id="currentMaxTokens">2048</p>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">System Prompt</label>
+      <div class="form-group">
+        <label>System Prompt</label>
         <p id="currentSystemPrompt">Not set</p>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">Selected Profile</label>
+      <div class="form-group">
+        <label>Selected Profile</label>
         <p id="currentProfile">Default</p>
       </div>
-      <div class="hextaui-form-field">
-        <label class="hextaui-form-label">Last Updated</label>
+      <div class="form-group">
+        <label>Last Updated</label>
         <p id="lastUpdated">Never</p>
       </div>
     </section>
@@ -464,8 +704,7 @@
     Made with &#10084; by <a href="https://juanmackie.com/" target="_blank">Juan</a>
   </footer>
 
-  <!-- Status div retained for compatibility but hidden; all notifications now use the unified toast system -->
-  <div id="status" class="status hidden"></div>
+  <div id="status" class="status"></div>
 
   <script src="collapsible.js"></script>
   <script src="input-controls.js"></script>

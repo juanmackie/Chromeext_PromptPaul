@@ -1,5 +1,2 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-# Shell scripts and Husky hooks require Unix line endings
-*.sh text eol=lf
-.husky/* text eol=lf

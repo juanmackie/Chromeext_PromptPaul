@@ -1,927 +1,269 @@
-/* Terminal Brutalism + Cassette Futurism Hybrid Theme */
-/* Import JetBrains Mono for Terminal Brutalism */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+/* Unified Extension Theme System */
+/* This file contains all theme variables and should be imported first in all HTML files */
 
-:root,
-[data-theme='light'] {
-  /* Terminal Brutalism - Light Mode "Blueprint" */
-  --background: #ffffff;
-  --background-weathered: #f8fafc;
-
-  /* High Contrast Blueprint Colors */
-  --foreground: #1e293b;
-  /* Slate 900 */
-  --foreground-secondary: #475569;
-  /* Slate 600 */
-  --foreground-muted: #64748b;
-  /* Slate 500 */
-
-  /* Surface Colors with Analog Warmth */
-  --surface: #ffffff;
-  --surface-variant: #f1f5f9;
-  --card: #ffffff;
-  --card-foreground: #1e293b;
-
-  /* Primary Blueprint Blue */
-  --primary: #2563eb;
-  /* Vibrant Blue */
-  --primary-foreground: #ffffff;
-  --primary-hover: #1d4ed8;
-
-  /* Secondary with Warm Analog Undertones */
-  --secondary: #f8fafc;
-  --secondary-foreground: #1e293b;
-  --secondary-hover: #f1f5f9;
-
-  /* Monochromatic Blue Accents */
-  --accent: #5b93ff;
-  /* Lighter Blue */
-  --accent-foreground: #ffffff;
-  --accent-vintage: #2563eb;
-  /* Primary Blue */
-  --accent-warm: #1d4ed8;
-  /* Darker Blue */
-
-  /* Muted Colors */
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-
-  /* State Colors */
-  --success: #059669;
-  --warning: #d97706;
-  --error: #dc2626;
-  --error-foreground: #ffffff;
-
-  /* Terminal Brutalism Borders */
-  --border: #2563eb;
-  /* Blueprint Blue Borders */
-  --border-focus: #1d4ed8;
-  --input: #ffffff;
-  --input-border: #2563eb;
-  --input-focus: #1d4ed8;
-
-  /* Soft Shadow System - Clean HextaUI aesthetic */
-  --shadow-color: rgba(37, 99, 235, 0.1);
-  --shadow-sm: 0 1px 2px var(--shadow-color);
-  --shadow-md: 0 4px 6px var(--shadow-color);
-  --shadow-lg: 0 10px 15px var(--shadow-color);
-  --shadow-xl: 0 20px 25px var(--shadow-color);
-
-  /* General shadow */
-  --shadow: var(--shadow-sm);
-
-  /* Destructive color */
-  --destructive: var(--error);
-
-  /* Focus and Ring */
-  --ring: #2563eb;
-  --ring-focus: rgba(37, 99, 235, 0.2);
-
-  /* Font Families - Geist Mono and Playfair Display */
-  --font-geistMono: 'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
-  --font-playfairDisplay: 'Playfair Display', serif;
-  --font-sans: var(--font-geistMono);
-  --font-mono: var(--font-geistMono);
-  --font-serif: var(--font-playfairDisplay);
-  --font-brutalist: var(--font-geistMono);
-  --font-terminal: var(--font-geistMono);
-
-  /* Brutalist Spacing */
-  --spacing: 0.25rem;
-  --spacing-xs: calc(var(--spacing) * 1);
-  --spacing-sm: calc(var(--spacing) * 2);
-  --spacing-md: calc(var(--spacing) * 3);
-  --spacing-lg: calc(var(--spacing) * 4);
-  --spacing-xl: calc(var(--spacing) * 6);
-  --spacing-2xl: calc(var(--spacing) * 8);
-
-  /* Sharp Corners - Standardized to 2px for HextaUI aesthetic */
-  --radius-xs: 1px;
-  --radius-sm: 2px;
-  --radius: 2px;
-  --radius-md: 2px;
-  --radius-lg: 2px;
-  --radius-xl: 4px;
-
-  /* Smooth Transitions */
-  --transition-brutal: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-press: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-hover: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Popover/Tooltip Colors - High Contrast for Readability */
-  --popover: #1e293b;
-  /* Dark slate background for tooltips */
-  --popover-foreground: #ffffff;
-  /* White text for high contrast */
-
-  /* Sidebar Colors */
-  --sidebar: var(--surface-variant);
-  /* Sidebar background */
-  --sidebar-border: var(--border);
-  /* Sidebar border color */
-
-  /* Clean Interface - Muted Color Variants */
-  --foreground-muted-clean: #475569;
-  --border-muted: rgba(37, 99, 235, 0.5);
-  --background-muted-clean: rgba(255, 255, 255, 0.95);
-  --primary-muted: rgba(37, 99, 235, 0.8);
-  --accent-muted: rgba(91, 147, 255, 0.7);
-  --border-industrial: #2563eb;
-  --border-industrial-muted: #64748b;
-
-  /* Options Page Background - Gradient based on theme colors */
-  /* Light mode: Subtle gradient using accent and muted tones */
-  --options-background:
-    linear-gradient(
-      135deg,
-      oklch(0.94 0 0) 0%,
-      oklch(0.98 0 0) 40%,
-      oklch(0.9189 0.0147 106.6853) 100%
-    );
+:root {
+  /* Core Colors - Light Theme - Indigo Monochromatic */
+  --ext-background: #fafafa;
+  --ext-foreground: #1a1a2e;
+  --ext-card: #ffffff;
+  --ext-card-foreground: #1a1a2e;
+  --ext-popover: #ffffff;
+  --ext-popover-foreground: #1a1a2e;
+  --ext-primary: #5046e5;
+  --ext-primary-deep: #4338ca;
+  --ext-primary-bright: #6366f1;
+  --ext-primary-foreground: #ffffff;
+  --ext-secondary: #6366f1;
+  --ext-secondary-foreground: #ffffff;
+  --ext-muted: #e8e6f0;
+  --ext-muted-foreground: #6b6b7b;
+  --ext-accent: #6366f1;
+  --ext-accent-foreground: #ffffff;
+  --ext-destructive: #dc2626;
+  --ext-destructive-foreground: #ffffff;
+  --ext-border: #4338ca;
+  --ext-input: #e8e6f0;
+  --ext-ring: #6366f1;
+  --ext-shadow-color: #4f46b8;
   
-  --options-background-size: 100% 100%;
-  --options-background-opacity: 1.0;
-  background-blend-mode: normal;
+  /* Chart Colors - Indigo Variations */
+  --ext-chart-1: #5046e5;
+  --ext-chart-2: #6366f1;
+  --ext-chart-3: #818cf8;
+  --ext-chart-4: #a5b4fc;
+  --ext-chart-5: #c7d2fe;
+  
+  /* Sidebar Colors */
+  --ext-sidebar: #fafafa;
+  --ext-sidebar-foreground: #1a1a2e;
+  --ext-sidebar-primary: #5046e5;
+  --ext-sidebar-primary-foreground: #ffffff;
+  --ext-sidebar-accent: #6366f1;
+  --ext-sidebar-accent-foreground: #ffffff;
+  --ext-sidebar-border: #4338ca;
+  --ext-sidebar-ring: #6366f1;
+  
+  /* Layout & Spacing */
+  --ext-radius: 0px;
+  --ext-radius-sm: 0px;
+  --ext-radius-md: 0px;
+  --ext-radius-lg: 0px;
+  --ext-radius-xl: 0px;
+  --ext-radius-interactive: 4px;
+  
+  /* Brutalist Hard Shadows (No Blur) */
+  --ext-shadow-sm: 2px 2px 0px 0px var(--ext-shadow-color);
+  --ext-shadow: 4px 4px 0px 0px var(--ext-shadow-color);
+  --ext-shadow-md: 4px 4px 0px 0px var(--ext-shadow-color);
+  --ext-shadow-lg: 6px 6px 0px 0px var(--ext-shadow-color);
+  --ext-shadow-xl: 8px 8px 0px 0px var(--ext-shadow-color);
+  --ext-shadow-hover: 6px 6px 0px 0px var(--ext-shadow-color);
+  --ext-shadow-active: 2px 2px 0px 0px var(--ext-shadow-color);
+  
+  /* Typography - Geist Mono Dominance */
+  --ext-font-family: 'Geist Mono', 'JetBrains Mono', 'SF Mono', 'Monaco', monospace;
+  --ext-font-display: 'Playfair Display', Georgia, serif;
+  --ext-font-size-xs: 0.75rem;
+  --ext-font-size-sm: 0.875rem;
+  --ext-font-size-base: 1rem;
+  --ext-font-size-lg: 1.125rem;
+  --ext-font-size-xl: 1.25rem;
+  --ext-font-size-2xl: 1.5rem;
+  --ext-letter-spacing: 0em;
+  
+  /* Transitions - Snappy, Technical */
+  --ext-transition: all 200ms cubic-bezier(0.4, 0.0, 0.2, 1);
+  --ext-transition-fast: all 150ms cubic-bezier(0.4, 0.0, 0.2, 1);
+  --ext-transition-slow: all 300ms cubic-bezier(0.4, 0.0, 0.2, 1);
+  
+  /* Gradients - Indigo Energy */
+  --ext-gradient-header: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-bright) 100%);
+  --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
+  --ext-gradient-sharp: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-deep) 60%, transparent 100%);
+  
+  /* Z-Index Scale */
+  --ext-z-dropdown: 1000;
+  --ext-z-modal: 1050;
+  --ext-z-popover: 1060;
+  --ext-z-tooltip: 1070;
+  --ext-z-toast: 1080;
+  
+  /* Legacy/Compatibility Variables */
+  --background: var(--ext-background);
+  --foreground: var(--ext-foreground);
+  --card: var(--ext-card);
+  --card-foreground: var(--ext-card-foreground);
+  --popover: var(--ext-popover);
+  --popover-foreground: var(--ext-popover-foreground);
+  --primary: var(--ext-primary);
+  --primary-foreground: var(--ext-primary-foreground);
+  --secondary: var(--ext-secondary);
+  --secondary-foreground: var(--ext-secondary-foreground);
+  --muted: var(--ext-muted);
+  --muted-foreground: var(--ext-muted-foreground);
+  --accent: var(--ext-accent);
+  --accent-foreground: var(--ext-accent-foreground);
+  --destructive: var(--ext-destructive);
+  --destructive-foreground: var(--ext-destructive-foreground);
+  --border: var(--ext-border);
+  --input: var(--ext-input);
+  --ring: var(--ext-ring);
+  
+  /* Brand Variables (Legacy) */
+  --brand-primary: var(--ext-primary);
+  --brand-secondary: var(--ext-secondary);
+  --brand-background: var(--ext-background);
+  --brand-text: var(--ext-foreground);
+  --surface-color: var(--ext-card);
+  --background-color: var(--ext-background);
+  --text-color: var(--ext-foreground);
+  --border-color: var(--ext-border);
+  --shadow-sm: var(--ext-shadow-sm);
+  --shadow-md: var(--ext-shadow-md);
+  --shadow-lg: var(--ext-shadow-lg);
+  --font-family: var(--ext-font-family);
 }
 
-/* Terminal Brutalism + Cassette Futurism - Dark Mode "Deep Space Terminal" */
-.dark,
-[data-theme='dark'] {
-  /* Deep Space Terminal Background */
-  --background: #02020b;
-  /* Deepest Navy/Black */
-  --background-weathered: #0a0a16;
-  /* Slightly lighter Navy */
-
-  /* High Contrast Terminal Colors */
-  --foreground: #ffffff;
-  /* White Text */
-  --foreground-secondary: #94a3b8;
-  /* Slate 400 */
-  --foreground-muted: #64748b;
-  /* Slate 500 */
-
-  /* Surface Colors with Analog Depth */
-  --surface: #0a0a16;
-  --surface-variant: #1e293b;
-  --card: #0a0a16;
-  --card-foreground: #ffffff;
-
-  /* Primary Terminal Colors - Cream/Ivory */
-  --primary: #fffff0;
-  /* Ivory/Cream for high contrast */
-  --primary-foreground: #02020b;
-  /* Black text on cream button */
-  --primary-hover: #f0f4e8;
-
-  /* Secondary with Terminal Depth */
-  --secondary: #1e293b;
-  --secondary-foreground: #ffffff;
-  --secondary-hover: #334155;
-
-  /* Monochromatic Blue Accents - Dark Mode */
-  --accent: #81a8ff;
-  /* Lighter Blue for dark mode */
-  --accent-foreground: #02020b;
-  --accent-vintage: #4f46e5;
-  /* Primary Indigo */
-  --accent-warm: #3730a3;
-  /* Darker Indigo */
-
-  /* Muted Colors */
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-
-  /* State Colors - Adjusted for Dark Mode */
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #f87171;
-  --error-foreground: #02020b;
-
-  /* Terminal Brutalism Borders */
-  --border: #4f46e5;
-  /* Indigo Borders */
-  --border-focus: #6366f1;
-  --input: #0a0a16;
-  --input-border: #4f46e5;
-  --input-focus: #6366f1;
-
-  /* Soft Shadow System - Dark Mode */
-  --shadow-color: rgba(79, 70, 229, 0.15);
-  --shadow-sm: 0 1px 2px var(--shadow-color);
-  --shadow-md: 0 4px 6px var(--shadow-color);
-  --shadow-lg: 0 10px 15px var(--shadow-color);
-  --shadow-xl: 0 20px 25px var(--shadow-color);
-
-  /* General shadow */
-  --shadow: var(--shadow-sm);
-
-  /* Destructive color */
-  --destructive: var(--error);
-
-  /* Destructive color */
-  --destructive: var(--error);
-
-  /* Popover/Tooltip Colors - Dark Mode */
-  --popover: #ffffff;
-  /* White background for tooltips */
-  --popover-foreground: #02020b;
-  /* Dark text for high contrast */
-
-  /* Sidebar Colors */
-  --sidebar: var(--surface-variant);
-  /* Sidebar background */
-  --sidebar-border: var(--border);
-  /* Sidebar border color */
-
-  /* Clean Interface - Muted Color Variants (Dark Mode) */
-  --foreground-muted-clean: #94a3b8;
-  --border-muted: rgba(79, 70, 229, 0.4);
-  --background-muted-clean: rgba(10, 10, 22, 0.98);
-  --primary-muted: rgba(255, 255, 240, 0.8);
-  --accent-muted: rgba(129, 168, 255, 0.6);
-  --border-industrial: #4f46e5;
-  --border-industrial-muted: #64748b;
-
-  /* Options Page Background - Gradient based on theme colors (Dark Mode) */
-  /* Dark mode: Rich gradient using muted and border tones */
-  --options-background:
-    linear-gradient(
-      135deg,
-      oklch(0.228 0.127 269.556) 0%,
-      oklch(0 0.151 268.343) 40%,
-      oklch(0.427 0.149 277.089) 100%
-    );
+/* Dark Theme */
+[data-theme="dark"],
+.dark-theme,
+.ext-dark {
+  /* Core Colors - Dark Theme - Indigo Monochromatic */
+  --ext-background: #0a0a1a;
+  --ext-foreground: #e8e6f0;
+  --ext-card: #121225;
+  --ext-card-foreground: #e8e6f0;
+  --ext-popover: #121225;
+  --ext-popover-foreground: #e8e6f0;
+  --ext-primary: #818cf8;
+  --ext-primary-deep: #6366f1;
+  --ext-primary-bright: #a5b4fc;
+  --ext-primary-foreground: #0a0a1a;
+  --ext-secondary: #6366f1;
+  --ext-secondary-foreground: #ffffff;
+  --ext-muted: #1e1e35;
+  --ext-muted-foreground: #9ca3af;
+  --ext-accent: #818cf8;
+  --ext-accent-foreground: #0a0a1a;
+  --ext-destructive: #f87171;
+  --ext-destructive-foreground: #ffffff;
+  --ext-border: #312e81;
+  --ext-input: #1e1e35;
+  --ext-ring: #a5b4fc;
+  --ext-shadow-color: #312e81;
   
-  --options-background-size: 100% 100%;
-  --options-background-opacity: 1.0;
-  background-blend-mode: normal;
+  /* Chart Colors - Dark Theme - Indigo Variations */
+  --ext-chart-1: #818cf8;
+  --ext-chart-2: #a5b4fc;
+  --ext-chart-3: #c7d2fe;
+  --ext-chart-4: #e0e7ff;
+  --ext-chart-5: #ffffff;
+  
+  /* Sidebar Colors - Dark Theme */
+  --ext-sidebar: #0a0a1a;
+  --ext-sidebar-foreground: #e8e6f0;
+  --ext-sidebar-primary: #818cf8;
+  --ext-sidebar-primary-foreground: #0a0a1a;
+  --ext-sidebar-accent: #a5b4fc;
+  --ext-sidebar-accent-foreground: #0a0a1a;
+  --ext-sidebar-border: #312e81;
+  --ext-sidebar-ring: #a5b4fc;
+  
+  /* Gradients - Dark Theme */
+  --ext-gradient-header: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-bright) 100%);
+  --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
+  --ext-gradient-sharp: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-deep) 60%, transparent 100%);
 }
 
-/* ===== BASE STYLES ===== */
+/* System Preference Detection */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not(.light-theme):not(.ext-light) {
+    /* Apply dark theme variables when system prefers dark and no explicit light theme is set */
+    --ext-background: #0a0a1a;
+    --ext-foreground: #e8e6f0;
+    --ext-card: #121225;
+    --ext-card-foreground: #e8e6f0;
+    --ext-popover: #121225;
+    --ext-popover-foreground: #e8e6f0;
+    --ext-primary: #818cf8;
+    --ext-primary-deep: #6366f1;
+    --ext-primary-bright: #a5b4fc;
+    --ext-primary-foreground: #0a0a1a;
+    --ext-secondary: #6366f1;
+    --ext-secondary-foreground: #ffffff;
+    --ext-muted: #1e1e35;
+    --ext-muted-foreground: #9ca3af;
+    --ext-accent: #818cf8;
+    --ext-accent-foreground: #0a0a1a;
+    --ext-destructive: #f87171;
+    --ext-destructive-foreground: #ffffff;
+    --ext-border: #312e81;
+    --ext-input: #1e1e35;
+    --ext-ring: #a5b4fc;
+    --ext-shadow-color: #312e81;
+    --ext-sidebar: #0a0a1a;
+    --ext-sidebar-foreground: #e8e6f0;
+    --ext-sidebar-primary: #818cf8;
+    --ext-sidebar-primary-foreground: #0a0a1a;
+    --ext-sidebar-accent: #a5b4fc;
+    --ext-sidebar-accent-foreground: #0a0a1a;
+    --ext-sidebar-border: #312e81;
+    --ext-sidebar-ring: #a5b4fc;
+    --ext-gradient-header: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-bright) 100%);
+    --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
+    --ext-gradient-sharp: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-deep) 60%, transparent 100%);
+  }
+}
+
+/* Base Styles */
 * {
   box-sizing: border-box;
 }
 
- html {
-  font-family: var(--font-geistMono);
-  line-height: 1.4;
-  /* Tighter for brutalist feel */
-  -webkit-text-size-adjust: 100%;
-  -moz-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-  text-rendering: optimizeSpeed;
-}
-
 body {
+  font-family: var(--ext-font-family);
+  letter-spacing: var(--ext-letter-spacing);
+  background-color: var(--ext-background);
+  color: var(--ext-foreground);
   margin: 0;
   padding: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geistMono);
-  font-weight: 400;
-  line-height: 1.4;
-  transition:
-    background var(--transition-brutal),
-    color var(--transition-brutal);
-  position: relative;
-  overflow-x: hidden;
-  min-height: 100vh;
-}
-
-/* Ensure theme switching works properly */
-body[data-theme='dark'],
-.dark body {
-  background: var(--background);
-  color: var(--foreground);
-}
-
-body[data-theme='light'],
-.light body {
-  background: var(--background);
-  color: var(--foreground);
-}
-
-/* Force background override for theme switching */
-html,
-html[data-theme='dark'],
-html[data-theme='light'] {
-  background: var(--background);
-  transition: background var(--transition-brutal);
-}
-
-/* Content layers */
-main,
-.container {
-  position: relative;
-  z-index: 10;
-}
-
-/* Terminal-style text selection */
-::selection {
-  background: var(--accent);
-  color: var(--accent-foreground);
-}
-
-/* Terminal cursor focus effect */
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  animation: terminal-cursor 1s infinite;
-}
-
-@keyframes terminal-cursor {
-
-  0%,
-  50% {
-    opacity: 1;
-  }
-
-  51%,
-  100% {
-    opacity: 0.3;
-  }
-}
-
-/* ===== HEXTAUI SIDEBAR COMPONENTS ===== */
-.hextaui-sidebar {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--spacing-md) var(--spacing-sm) var(--spacing-xl);
-  background: var(--background-muted-clean);
-  border-right: 1px solid var(--border);
-  position: relative;
-  overflow: visible;
-}
-
-.hextaui-sidebar-section {
-  width: 100%;
-  margin-bottom: var(--spacing-lg);
-  position: relative;
-}
-
-.hextaui-sidebar-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--foreground-muted-clean);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  text-align: center;
-  margin-bottom: var(--spacing-sm);
-  padding: 0 var(--spacing-xs);
-  position: relative;
-}
-
-.hextaui-sidebar-divider {
-  width: 40px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
-  margin: var(--spacing-sm) 0;
-  opacity: 0.5;
-}
-
-/* ===== HEXTAUI INPUT WRAPPER ===== */
-.hextaui-input-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex-grow: 1;
-}
-
-.hextaui-input-actions {
-  position: absolute;
-  right: var(--spacing-sm);
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  pointer-events: none;
-}
-
-.hextaui-input-action {
-  pointer-events: auto;
-  color: var(--foreground-muted-clean);
-  cursor: pointer;
-  opacity: 0.8;
-  transition: all var(--transition-hover);
-  border-radius: var(--radius-sm);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--background-muted-clean);
-  border: 1px solid var(--border-industrial-muted);
-  padding: 0;
-}
-
-.hextaui-input-action:hover {
-  opacity: 1;
-  background: var(--accent-muted);
-  color: var(--accent-foreground);
-  border-color: var(--border);
-  transform: scale(1.05);
-  box-shadow: var(--shadow-sm);
-}
-
-/* ===== HEXTAUI CHAT MESSAGES ===== */
-.hextaui-chat-message {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: var(--spacing-md);
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius);
-  width: auto;
-  max-width: 85%;
-  box-shadow: var(--shadow-sm);
-  position: relative;
-  overflow: visible;
-  transition: all var(--transition-hover);
-  font-family: var(--font-geistMono);
-  font-size: 14px;
-  font-weight: 400;
-  word-wrap: break-word;
-  word-break: break-word;
-}
-
-.hextaui-chat-message:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.hextaui-chat-message-user {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  align-self: flex-end;
-  width: fit-content;
-  max-width: 85%;
-  margin-right: var(--spacing-xl);
-  position: relative;
-}
-
-.hextaui-chat-message-llm {
-  background: var(--card);
-  color: var(--card-foreground);
-  align-self: flex-start;
-  border-left: 3px solid var(--primary);
-  margin-left: var(--spacing-xl);
-  position: relative;
-}
-
-.hextaui-chat-message-system {
-  background-color: var(--muted);
-  color: var(--muted-foreground);
-  align-self: center;
-  font-style: normal;
-  font-size: 13px;
-  font-weight: 400;
-  width: fit-content;
-  max-width: 95%;
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius);
-  font-family: var(--font-geistMono);
-  padding: var(--spacing-sm) var(--spacing-md);
-}
-
-/* ===== HEXTAUI GUIDE PANEL ===== */
-.hextaui-guide-panel {
-  position: absolute;
-  top: var(--spacing-md);
-  left: var(--spacing-md);
-  right: var(--spacing-md);
-  z-index: 1001;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  padding: var(--spacing-lg);
-  border-radius: var(--radius);
-  animation: hextaui-slide-down 0.3s ease-out;
-  transition: all var(--transition-hover);
-}
-
-.hextaui-guide-panel.collapsed {
-  padding-bottom: var(--spacing-sm);
-}
-
-.hextaui-guide-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-sm);
-}
-
-.hextaui-guide-panel-header h4 {
-  margin: 0;
-  color: var(--primary);
-  font-family: var(--font-geistMono);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-
-.hextaui-guide-panel-desc {
-  font-size: 13px;
-  color: var(--foreground-muted-clean);
-  margin-bottom: var(--spacing-md);
-}
-
-@keyframes hextaui-slide-down {
-  from {
-    transform: translateY(calc(var(--spacing-md) * -1));
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-/* ===== HEXTAUI STATUS INDICATORS ===== */
-.hextaui-status {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--primary);
-  background: rgba(var(--primary-rgb), 0.1);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius);
-}
-
-.hextaui-pulse-dot {
-  width: 8px;
-  height: 8px;
-  background-color: var(--primary);
-  border-radius: 50%;
-  animation: hextaui-pulse 2s infinite;
-}
-
-@keyframes hextaui-pulse {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0.7);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 10px rgba(var(--primary-rgb), 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(var(--primary-rgb), 0);
-  }
-}
-
-/* ===== HEXTAUI TOAST NOTIFICATIONS ===== */
-.hextaui-toast {
-  position: fixed;
-  bottom: var(--spacing-xl);
-  right: var(--spacing-xl);
-  max-width: 400px;
-  padding: var(--spacing-md);
-  background: var(--popover);
-  color: var(--popover-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(8px);
-  animation: hextaui-slide-in 0.3s ease-out;
-  z-index: 1000;
-}
-
-.hextaui-toast::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(45deg, var(--accent) 0%, var(--accent-foreground) 100%);
-  opacity: 0.1;
-  pointer-events: none;
-  border-radius: var(--radius);
-}
-
-.hextaui-toast-success {
-  background-color: var(--success);
-  color: var(--success-foreground);
-  border-color: var(--success);
-}
-
-.hextaui-toast-error {
-  background-color: var(--destructive);
-  color: var(--destructive-foreground);
-  border-color: var(--destructive);
-}
-
-@keyframes hextaui-slide-in {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.hextaui-toast.fade-out {
-  opacity: 0;
-  transition: opacity 0.3s ease-out;
-}
-
-/* ===== HEXTAUI CODE BLOCKS ===== */
-.hextaui-code-block {
-  background-color: var(--muted);
-  color: var(--muted-foreground);
-  padding: var(--spacing-md);
-  border-radius: var(--radius);
-  overflow-x: auto;
-  overflow-y: visible;
-  max-height: none;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: var(--font-geistMono);
-  border: 1px solid var(--border-muted);
-  box-shadow: var(--shadow-sm);
-}
-
-.hextaui-code-inline {
-  font-family: var(--font-geistMono);
-  font-size: 0.9em;
-  background-color: var(--muted);
-  padding: 0.2em 0.4em;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-industrial-muted);
-}
-
-/* ===== HEXTAUI TABLES ===== */
-.hextaui-table-container {
-  overflow-x: auto;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-industrial-muted);
-  margin-bottom: var(--spacing-md);
-}
-
-.hextaui-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--card);
-  min-width: 600px;
-}
-
-.hextaui-table thead {
-  background: var(--background-muted-clean);
-}
-
-.hextaui-table th {
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 12px;
-  padding: var(--spacing-sm) var(--spacing-md);
-  text-align: left;
-  border-bottom: 2px solid var(--border-industrial);
-  color: var(--foreground-muted-clean);
-  position: relative;
-}
-
-.hextaui-table th::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--ruler-marks);
-  background-size: 20px 100%;
-  opacity: 0.2;
-}
-
-.hextaui-table td {
-  padding: var(--spacing-sm) var(--spacing-md);
-  text-align: left;
-  border-bottom: 1px solid var(--border-industrial-muted);
-  font-size: 13px;
-  vertical-align: top;
-}
-
-.hextaui-table tbody tr:hover td {
-  background: var(--accent-muted);
-  color: var(--foreground);
-}
-
-.hextaui-table tbody tr:hover {
-  box-shadow: inset 0 0 0 1px var(--border-industrial);
-}
-
-.hextaui-table-sticky-header th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-/* ===== HEXTAUI MOBILE CARDS ===== */
-.hextaui-mobile-cards {
-  display: none;
-}
-
-.hextaui-mobile-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.hextaui-mobile-card-header {
-  font-weight: 600;
-  margin-bottom: var(--spacing-sm);
-  color: var(--foreground);
-  font-family: var(--font-geistMono);
-}
-
-.hextaui-mobile-card-field {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-xs) 0;
-}
-
-.hextaui-mobile-card-label {
-  font-size: 13px;
-  color: var(--foreground-muted-clean);
-  font-weight: 500;
-}
-
-.hextaui-mobile-card-value {
-  font-size: 13px;
-  color: var(--foreground);
-}
-
-.hextaui-mobile-card-actions {
-  margin-top: var(--spacing-sm);
-  display: flex;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .hextaui-table-container {
-    display: none;
-  }
-
-  .hextaui-mobile-cards {
-    display: block;
-  }
-}
-
-/* ===== HEXTAUI HELP TOOLTIPS ===== */
-.hextaui-help-tooltip {
-  background: none;
-  border: none;
-  color: var(--foreground-muted-clean);
-  cursor: pointer;
-  padding: 2px;
-  margin-left: var(--spacing-xs);
-  border-radius: 50%;
-  transition: all var(--transition-hover);
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hextaui-help-tooltip:hover {
-  color: var(--primary);
-  background: var(--accent-muted);
-  transform: scale(1.1);
-}
-
-.hextaui-help-tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--popover);
-  color: var(--popover-foreground);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius);
-  font-size: 12px;
-  white-space: nowrap;
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.2s ease;
-  z-index: 1000;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  max-width: 250px;
-  white-space: normal;
-  backdrop-filter: blur(2px);
-  margin-bottom: var(--spacing-sm);
-}
-
-.hextaui-help-tooltip:hover::after {
-  opacity: 1;
-  visibility: visible;
-}
-
-/* ===== HEXTAUI PASSWORD INPUT ===== */
-.hextaui-password-input-container {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.hextaui-password-input {
-  padding-right: var(--spacing-2xl);
-}
-
-.hextaui-password-toggle,
-.hextaui-copy-btn {
-  position: absolute;
-  right: var(--spacing-sm);
-  background: none;
-  border: none;
-  color: var(--foreground-muted);
-  cursor: pointer;
-  padding: var(--spacing-xs);
-  border-radius: var(--radius-xs);
-  transition: color var(--transition-brutal);
-}
-
-.hextaui-password-toggle:hover,
-.hextaui-copy-btn:hover {
-  color: var(--accent);
-}
-
-.hextaui-copy-btn {
-  right: var(--spacing-lg);
-}
-
-/* ===== HEXTAUI TOKEN INFO ===== */
-.hextaui-token-info {
-  font-family: var(--font-geistMono);
-  font-size: 12px;
-  color: var(--foreground-muted);
-  margin-top: var(--spacing-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.hextaui-character-counter {
-  font-family: var(--font-geistMono);
-  font-size: 12px;
-  color: var(--foreground-muted);
-  text-align: right;
-  margin-top: var(--spacing-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* ===== HEXTAUI IMPORT/EXPORT ===== */
-.hextaui-import-export {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--spacing-lg);
-  margin-top: var(--spacing-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.hextaui-import-export h3 {
-  margin-top: 0;
-  margin-bottom: var(--spacing-md);
-  font-family: var(--font-geistMono);
-  font-size: var(--font-small-size);
-  font-weight: 600;
-  color: var(--foreground);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.hextaui-file-input {
-  display: none;
-}
-
-/* ===== HEXTAUI MIGRATION PROMPT ===== */
-.hextaui-migration-prompt {
-  background: var(--secondary);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  padding: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
-  font-family: var(--font-geistMono);
-  font-size: 14px;
-  color: var(--foreground);
-  box-shadow: var(--shadow-sm);
-}
-
-.hextaui-migration-prompt strong {
-  color: var(--primary);
-}
+  transition: var(--ext-transition);
+}
+
+/* Utility Classes */
+.ext-bg-background { background-color: var(--ext-background); }
+.ext-bg-card { background-color: var(--ext-card); }
+.ext-bg-primary { background-color: var(--ext-primary); }
+.ext-bg-secondary { background-color: var(--ext-secondary); }
+.ext-bg-muted { background-color: var(--ext-muted); }
+.ext-bg-accent { background-color: var(--ext-accent); }
+.ext-bg-destructive { background-color: var(--ext-destructive); }
+
+.ext-text-foreground { color: var(--ext-foreground); }
+.ext-text-primary { color: var(--ext-primary); }
+.ext-text-secondary { color: var(--ext-secondary); }
+.ext-text-muted { color: var(--ext-muted-foreground); }
+.ext-text-accent { color: var(--ext-accent); }
+.ext-text-destructive { color: var(--ext-destructive); }
+
+.ext-border { border: 1px solid var(--ext-border); }
+.ext-border-primary { border: 1px solid var(--ext-primary); }
+.ext-border-secondary { border: 1px solid var(--ext-secondary); }
+.ext-border-muted { border: 1px solid var(--ext-muted); }
+.ext-border-destructive { border: 1px solid var(--ext-destructive); }
+
+.ext-rounded { border-radius: var(--ext-radius); }
+.ext-rounded-sm { border-radius: var(--ext-radius-sm); }
+.ext-rounded-md { border-radius: var(--ext-radius-md); }
+.ext-rounded-lg { border-radius: var(--ext-radius-lg); }
+.ext-rounded-xl { border-radius: var(--ext-radius-xl); }
+
+.ext-shadow-sm { box-shadow: var(--ext-shadow-sm); }
+.ext-shadow { box-shadow: var(--ext-shadow); }
+.ext-shadow-md { box-shadow: var(--ext-shadow-md); }
+.ext-shadow-lg { box-shadow: var(--ext-shadow-lg); }
+.ext-shadow-xl { box-shadow: var(--ext-shadow-xl); }
+
+.ext-transition { transition: var(--ext-transition); }
+.ext-transition-fast { transition: var(--ext-transition-fast); }
+.ext-transition-slow { transition: var(--ext-transition-slow); }

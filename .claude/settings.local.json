@@ -1,18 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:github.com)",
+      "Bash(dir /s /b)",
+      "Bash(cd:*)",
+      "Bash(wc:*)",
       "Bash(grep:*)",
-      "Bash(curl:*)",
-      "Bash(printf:*)",
-      "Bash(openssl sha256:*)",
-      "Bash(openssl base64:*)",
-      "WebFetch(domain:dev.to)",
-      "WebSearch",
-      "WebFetch(domain:developer.chrome.com)",
-      "WebFetch(domain:medium.com)",
-      "WebFetch(domain:thoughtbot.com)",
-      "Bash(ls:*)"
+      "Bash(dir \"C:\\\\Users\\\\Juan Mackie\\\\Documents\\\\GitHub\\\\V5.0_Chrome_PromptPaul_TOOLUSE\\\\EXPERIMENTAL_Chrome_PromptPaul_TOOLUSE\\\\nul\")"
     ]
   }
 }

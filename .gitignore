@@ -16,9 +16,10 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Ignore coverage directories and files
-coverage/
-lcov.info
-*.lcov
-coverage-final.json
-clover.xml
+# Ignore Claude AI
+.claude/
+
+# Ignore backup and temporary files
+*.bak
+*.tmp
+*.log
