@@ -2196,6 +2196,71 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
+    if (request.action === 'getLoadContent') {
+        if (tabContentCallback) {
+            sendResponse({ action: 'loadContentResponse', success: false, error: 'Another content extraction is already in progress' });
+            return true;
+        }
+        
+        tabContentCallback = sendResponse;
+        
+        const timeoutId = setTimeout(() => {
+            if (tabContentCallback) {
+                console.error('Background: getLoadContent timed out.');
+                tabContentCallback({ action: 'loadContentResponse', success: false, error: 'Background: Content extraction timed out' });
+                tabContentCallback = null;
+            }
+        }, 30000);
+
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs[0] && tabs[0].id) {
+                const activeTabId = tabs[0].id;
+                chrome.scripting.executeScript({
+                    target: { tabId: activeTabId },
+                    files: ['content_script_unified.js']
+                }, (injectionResults) => {
+                    clearTimeout(timeoutId);
+                    if (chrome.runtime.lastError) {
+                        console.error('Background: Error executing content_script_unified.js for getLoadContent:', chrome.runtime.lastError);
+                        if (tabContentCallback) {
+                            tabContentCallback({ action: 'loadContentResponse', success: false, error: 'Failed to execute script: ' + chrome.runtime.lastError.message });
+                            tabContentCallback = null;
+                        }
+                        return;
+                    }
+                    if (injectionResults && injectionResults[0] && injectionResults[0].result) {
+                        const result = injectionResults[0].result;
+                        if (tabContentCallback) {
+                            tabContentCallback({
+                                action: 'loadContentResponse',
+                                success: result.success,
+                                content: result.data,
+                                title: result.title,
+                                url: result.url,
+                                error: result.error
+                            });
+                            tabContentCallback = null;
+                        }
+                    } else {
+                        console.error('Background: getLoadContent - No result from content_script_unified.js');
+                        if (tabContentCallback) {
+                            tabContentCallback({ action: 'loadContentResponse', success: false, error: 'No result from content script', content: '' });
+                            tabContentCallback = null;
+                        }
+                    }
+                });
+            } else {
+                console.error('No active tab found for getLoadContent.');
+                clearTimeout(timeoutId);
+                if (tabContentCallback) {
+                    tabContentCallback({ action: 'loadContentResponse', success: false, error: 'No active tab found.' });
+                    tabContentCallback = null;
+                }
+            }
+        });
+        return true;
+    }
+
     if (request.action === 'getTabContent') {
         if (tabContentCallback) {
             sendResponse({ action: 'tabContentResponse', success: false, error: 'Another content extraction is already in progress' });

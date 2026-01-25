@@ -5,7 +5,8 @@
       "Bash(cd:*)",
       "Bash(wc:*)",
       "Bash(grep:*)",
-      "Bash(dir \"C:\\\\Users\\\\Juan Mackie\\\\Documents\\\\GitHub\\\\V5.0_Chrome_PromptPaul_TOOLUSE\\\\EXPERIMENTAL_Chrome_PromptPaul_TOOLUSE\\\\nul\")"
+      "Bash(dir \"C:\\\\Users\\\\Juan Mackie\\\\Documents\\\\GitHub\\\\V5.0_Chrome_PromptPaul_TOOLUSE\\\\EXPERIMENTAL_Chrome_PromptPaul_TOOLUSE\\\\nul\")",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

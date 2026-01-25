@@ -12,10 +12,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
 
     // Quick Actions Sidebar Elements
+    const loadContentButton = document.getElementById('load-content-button');
     const summarizeTabButton = document.getElementById('summarize-tab-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
 
     // Add event listeners for quick action buttons
+    if (loadContentButton) {
+        loadContentButton.addEventListener('click', () => {
+            loadingManager.showToast('Loading tab content...', 'info');
+            chrome.runtime.sendMessage({ action: 'getLoadContent' }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error("Chat.js: Load content button - Error:", chrome.runtime.lastError.message);
+                    loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
+                    return;
+                }
+                
+                if (response && response.action === 'loadContentResponse') {
+                    if (response.success && response.content) {
+                        const previewLength = 500;
+                        const preview = response.content.substring(0, previewLength) + (response.content.length > previewLength ? '...' : '');
+                        
+                        // Show system message
+                        addMessage('System', `📄 **Content loaded from:** ${response.title}\n\n**Preview:**\n${preview}`);
+                        
+                        // Add to history as user message so LLM sees it in context
+                        conversationHistory.push({ 
+                            role: 'user', 
+                            content: `I have loaded the content from the page "${response.title}" (${response.url}). Here is the content:\n\n${response.content}` 
+                        });
+                        
+                        chatMainArea.style.display = 'block';
+                        oneoffInstructionArea.style.display = 'none';
+                        userInput.focus();
+                        loadingManager.showToast('Content loaded! You can now ask questions about it.', 'success');
+                    } else {
+                        console.error("Chat.js: Load content button - Failed:", response.error);
+                        loadingManager.showToast('No content received: ' + (response.error || 'Content not available'), 'error');
+                    }
+                }
+            });
+        });
+    }
+
     // summarizeTabButton listener moved to lines 878-905 to consolidate logic
     // and prevent duplicate message sending.
     const explainBtn = document.getElementById('explain-button');
