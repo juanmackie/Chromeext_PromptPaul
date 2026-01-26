@@ -235,6 +235,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 chatMainArea.style.display = 'none';
                 oneoffInstructionArea.style.display = 'block';
             }
+            if (sendResponse) sendResponse({ success: true });
+            return true;
         } else if (request.action === 'setMediaForAnalysis') {
             // Handle media data from context menu
             const mediaData = request.mediaData;
@@ -288,6 +290,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 makeApiCallWithMedia(analysisPrompt, currentMediaData);
             }
+            if (sendResponse) sendResponse({ success: true });
+            return true;
         } else if (request.action === 'setApiResponse') {
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
@@ -359,8 +363,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (request.apiResponse) { // Fallback for unexpected structure
                  console.warn("Chat: setApiResponse received apiResponse in unexpected format:", request.apiResponse);
                  addMessage('LLM', JSON.stringify(request.apiResponse));
-                 conversationHistory.push({ role: 'assistant', content: JSON.stringify(request.apiResponse) });
+                  conversationHistory.push({ role: 'assistant', content: JSON.stringify(request.apiResponse) });
             }
+            if (sendResponse) sendResponse({ success: true });
+            return true;
         } else if (request.action === 'streamApiStart') {
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
@@ -378,6 +384,8 @@ document.addEventListener('DOMContentLoaded', () => {
             currentStreamingMessageDiv = messageDiv;
             currentStreamingContentElement = contentElement;
             currentStreamingUniqueId = uniqueIdString;
+            if (sendResponse) sendResponse({ success: true });
+            return true;
         } else if (request.action === 'streamApiResponseChunk') {
             if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
             if (currentStreamingContentElement && request.chunk != null) {
@@ -386,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
         } else if (request.action === 'streamApiEnd') {
-
+            if (sendResponse) sendResponse({ success: true });
             // Check if Anthropic stream was already finalized by 'streamApiAnthropicMessageStop'
             // This flag is set by the streamApiAnthropicMessageStop handler to prevent this streamApiEnd handler
             // from duplicating UI resets and history additions for Anthropic streams.
@@ -589,12 +597,13 @@ document.addEventListener('DOMContentLoaded', () => {
                  chatArea.scrollTop = chatArea.scrollHeight;
             }
         } else if (request.action === 'streamApiAnthropicMessageStop') {
+            if (sendResponse) sendResponse({ success: true });
             // This handler is called when background.js receives a 'message_stop' event from an Anthropic stream,
-            // indicating the end of the message. request.anthropicMessage contains the complete final message object.
+            // indicating end of message. request.anthropicMessage contains complete final message object.
             if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
                 // The accumulatedStreamedText should reflect the text parts.
                 // The full message from Anthropic (request.anthropicMessage) contains all blocks.
-                // Finalize the display with accumulatedStreamedText (which should be the text part)
+                // Finalize the display with accumulatedStreamedText (which should be text part)
                 currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
                 const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
                 const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
@@ -623,6 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Set a flag to prevent streamApiEnd from duplicating actions
             window.anthropicStreamFinalizedByStopEvent = true;
+            return true;
 
         } else if (request.action === 'handleToolCallResponse') { // This handles OpenAI-style non-streaming tool calls
             chatMainArea.style.display = 'block';
@@ -630,6 +640,8 @@ document.addEventListener('DOMContentLoaded', () => {
             userInput.disabled = false;
             sendButton.disabled = false;
             const { responseMessage, prompt: originalPrompt } = request;
+            if (sendResponse) sendResponse({ success: true });
+            return true;
 
             // For context menu tool calls, history is usually fresh or should be reset
              if (conversationHistory.length === 0 && originalPrompt) {
@@ -1385,11 +1397,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const prompt = instruction + '\n\n' + selectedText;
             let oneOffHistory = [{ role: 'user', content: prompt }];
 
-                const requestBody = {
+            // Build system prompt with date/time
+            const now = new Date();
+            const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
+            let systemPromptContent = dateTimeString;
+            if (config.systemPrompt && config.systemPrompt.trim() !== '') {
+                systemPromptContent += `\n\n${config.systemPrompt}`;
+            }
+            const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...oneOffHistory];
+
+            // Get tools and prepare tool choice payload
+            const allAvailableTools = await getTools();
+            const formattedTools = allAvailableTools.map(tool => {
+                return {
+                    type: 'function',
+                    function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: tool.parametersForLlm
+                    }
+                };
+            }).filter(tool => tool !== null);
+
+            let toolChoicePayload = {};
+            if (formattedTools.length > 0) {
+                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+            }
+
+            const requestBody = {
                 model: config.modelName,
                 messages: messagesForRequest,
                 ...toolChoicePayload
-                };
+            };
             
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
