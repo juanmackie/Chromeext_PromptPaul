@@ -814,7 +814,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const requestBody = {
                 model: config.modelName,
                 messages: messagesForRequest,
-                max_tokens: parseInt(config.maxTokens) || 2048,
                 ...toolChoicePayload
             };
 
@@ -1082,8 +1081,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const requestBody = {
                 model: config.modelName,
                 messages: messagesForRequest,
-                max_tokens: parseInt(config.maxTokens) || 2048,
-                // toolChoicePayload will be spread conditionally below
+                ...toolChoicePayload
             };
 
             const fetchHeaders = {
@@ -1387,11 +1385,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const prompt = instruction + '\n\n' + selectedText;
             let oneOffHistory = [{ role: 'user', content: prompt }];
 
-            const requestBody = {
+                const requestBody = {
                 model: config.modelName,
-                messages: oneOffHistory,
-                max_tokens: parseInt(config.maxTokens) || 2048,
-            };
+                messages: messagesForRequest,
+                ...toolChoicePayload
+                };
             
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 

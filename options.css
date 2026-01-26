@@ -1477,59 +1477,6 @@ footer a:hover {
   margin-top: 0.5rem;
 }
 
-/* Token Input with Slider */
-.token-input-container {
-  display: grid;
-  grid-template-columns: 1fr auto; /* slider grows, number stays compact */
-  gap: 0.75rem;
-  align-items: center;
-  width: 100%;
-  max-width: 100%;
-}
-
-.token-slider {
-  flex: 1;
-  height: 0.375rem;
-  background: var(--ext-border);
-  border-radius: 0.375rem;
-  outline: none;
-  -webkit-appearance: none;
-}
-
-.token-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 1rem;
-  height: 1rem;
-  background: var(--ext-primary);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.token-slider::-moz-range-thumb {
-  width: 1rem;
-  height: 1rem;
-  background: var(--ext-primary);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-}
-
-.token-number-input {
-  width: 6rem; /* slightly wider for up to 5 digits */
-  justify-self: end; /* align to the right of the grid */
-}
-
-.token-info {
-  font-size: 0.75rem;
-  color: var(--ext-muted-foreground);
-  margin-top: 0.25rem;
-}
-
-.context-hint {
-  color: var(--ext-primary);
-  font-weight: 500;
-}
-
 /* System Prompt Controls */
 .system-prompt-controls {
   margin-bottom: 0.5rem;
@@ -1629,7 +1576,8 @@ footer a:hover {
   .token-number-input {
     width: 100%;
   }
-  
+
+
   .help-tooltip::after {
     left: 0;
     transform: none;
@@ -1815,3 +1763,4 @@ body.dark-theme #toolsTable tbody tr:hover {
 [data-theme="dark"] .modality-option small {
   color: #9ca3af;
 }
+

@@ -183,23 +183,6 @@
           <div class="field-error" id="modelNameError"></div>
         </div>
 
-        <div class="form-field col-span-8">
-          <label for="maxTokens" class="form-label">
-            Max Tokens
-            <button type="button" class="help-tooltip" data-tooltip="Maximum number of tokens the model can generate. Higher values allow longer responses but cost more.">
-              <span class="material-symbols-outlined">help</span>
-            </button>
-          </label>
-          <div class="token-input-container">
-            <input type="number" id="maxTokens" class="shadcn-input token-number-input" value="16000" required>
-          </div>
-          <div class="token-info">
-            <span id="tokenValue">16000</span> tokens
-            <span id="contextHint" class="context-hint"></span>
-          </div>
-          <div class="field-error" id="maxTokensError"></div>
-        </div>
-
         <div class="form-field col-span-12">
           <label for="systemPrompt" class="form-label">
             System Prompt (Optional)
@@ -682,10 +665,6 @@
       <div class="form-group">
         <label>Model Name</label>
         <p id="currentModelName">Not set</p>
-      </div>
-      <div class="form-group">
-        <label>Max Tokens</label>
-        <p id="currentMaxTokens">2048</p>
       </div>
       <div class="form-group">
         <label>System Prompt</label>

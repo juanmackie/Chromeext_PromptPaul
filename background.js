@@ -1547,7 +1547,6 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
         const apiRequestBody = {
             model: config.modelName,
             messages: messages,
-            max_tokens: parseInt(config.maxTokens) || 2048,
             // toolChoicePayload will be spread later after checking for Anthropic MCP
         };
 

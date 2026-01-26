@@ -364,15 +364,6 @@ function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, prof
   if (currentProfileElement) {
     currentProfileElement.textContent = profile || 'Default'; // Display profile
   }
-
-  // Get max tokens from storage and display it
-  chrome.storage.sync.get(['maxTokens'], (result) => {
-    const maxTokens = result.maxTokens || 2048;
-    const maxTokensDisplay = document.getElementById('currentMaxTokens');
-    if (maxTokensDisplay) {
-      maxTokensDisplay.textContent = maxTokens;
-    }
-  });
 }
 
 // Function to validate inputs
@@ -428,13 +419,6 @@ function saveOptions(e) {
   }
   const modelNameValue = modelName.value.trim();
 
-  const maxTokens = document.getElementById('maxTokens');
-  if (!maxTokens) {
-    console.error('maxTokens element is missing in the DOM.');
-    showStatus('Error: maxTokens element is missing. Please reload the page.', true);
-    return;
-  }
-  const maxTokensValue = maxTokens.value.trim();
 
   const systemPrompt = document.getElementById('systemPrompt');
   if (!systemPrompt) {
@@ -466,7 +450,6 @@ function saveOptions(e) {
         llmEndpoint: llmEndpointValue,
         apiKey: apiKeyValue,
         modelName: modelNameValue,
-        maxTokens: maxTokensValue || 2048,
         systemPrompt: systemPromptValue,
         lastUpdated: new Date().toLocaleString()
       };
@@ -475,7 +458,6 @@ function saveOptions(e) {
       profileToUpdate.llmEndpoint = llmEndpointValue;
       profileToUpdate.apiKey = apiKeyValue;
       profileToUpdate.modelName = modelNameValue;
-      profileToUpdate.maxTokens = maxTokensValue || 2048;
       profileToUpdate.systemPrompt = systemPromptValue;
       profileToUpdate.lastUpdated = new Date().toLocaleString();
       // profileToUpdate.name is handled during creation or if user edits it (future feature)
@@ -506,8 +488,6 @@ function loadProfileSettings(profileId) {
       document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
       document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
       document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
-      document.getElementById('maxTokens').value = selectedProfile.maxTokens || 16000;
-      document.getElementById('tokenValue').textContent = selectedProfile.maxTokens || 16000;
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
       updateCurrentConfig(
         selectedProfile.llmEndpoint,
@@ -524,7 +504,6 @@ function loadProfileSettings(profileId) {
           llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
           apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
           modelName: 'mistral-small-latest',
-          maxTokens: 32000,
           systemPrompt: '',
           lastUpdated: '',
           profileSelect: 'default'
@@ -538,7 +517,6 @@ function loadProfileSettings(profileId) {
           document.getElementById('llmEndpoint').value = items.llmEndpoint;
           document.getElementById('apiKey').value = items.apiKey;
           document.getElementById('modelName').value = items.modelName;
-          document.getElementById('maxTokens').value = items.maxTokens;
           document.getElementById('systemPrompt').value = items.systemPrompt;
           updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.profileSelect);
         }
@@ -591,7 +569,6 @@ function loadOptions() {
         llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
         apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
         modelName: 'mistral-small-latest',
-        maxTokens: 16000,
         systemPrompt: 'You are a helpful assistant.',
         lastUpdated: new Date().toLocaleString()
       };
@@ -759,9 +736,6 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
       document.getElementById('apiKey').value = defaultApiKey;
       document.getElementById('modelName').value = defaultModelName;
 
-      // Optionally, clear maxTokens and systemPrompt or set to their defaults if needed
-      document.getElementById('maxTokens').value = '16000'; // Default max tokens
-      document.getElementById('tokenValue').textContent = '16000';
       // document.getElementById('systemPrompt').value = ''; // Default system prompt
 
       showStatus('Settings reverted to defaults. Click "Save Settings" to apply.', false, true); // Show as a toast
@@ -789,7 +763,6 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
               llmEndpoint: document.getElementById('llmEndpoint').value.trim() || currentProfile.llmEndpoint,
               apiKey: document.getElementById('apiKey').value.trim() || currentProfile.apiKey,
               modelName: document.getElementById('modelName').value.trim() || currentProfile.modelName,
-              maxTokens: document.getElementById('maxTokens').value.trim() || currentProfile.maxTokens || 2048,
               systemPrompt: document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
               lastUpdated: new Date().toLocaleString()
             };
@@ -1294,7 +1267,6 @@ async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
     body: JSON.stringify({
       model: modelName,
       messages: messages,
-      max_tokens: 1000, // Limit response length for prompt improvement
       temperature: 0.7,
     }),
   });

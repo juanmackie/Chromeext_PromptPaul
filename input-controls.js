@@ -32,48 +32,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     
     
-    // Token input synchronization
-    const tokenInput = document.getElementById('maxTokens');
-    const tokenValue = document.getElementById('tokenValue');
-
-    function syncTokenInputs(value) {
-        if (tokenInput) tokenInput.value = value;
-        if (tokenValue) tokenValue.textContent = value;
-        updateContextHint();
-    }
-
-    if (tokenInput) {
-        tokenInput.addEventListener('input', function() {
-            syncTokenInputs(this.value);
-        });
-    }
-
-    // Context hint based on model
-    function updateContextHint(modelName) {
-        const contextHint = document.getElementById('contextHint');
-        if (!contextHint) return;
-        
-        const currentTokens = parseInt(tokenInput?.value || 2048);
-        const modelContextLimits = {
-            'gpt-4o': 128000,
-            'gpt-4o-mini': 128000,
-            'gpt-3.5-turbo': 16385,
-            'claude-3-5-sonnet-20241022': 200000,
-            'claude-3-haiku-20240307': 200000,
-            'mistral-small-latest': 32000,
-            'mistral-medium-latest': 32000,
-            'mistral-large-latest': 32000
-        };
-        
-        const limit = modelContextLimits[modelName || document.getElementById('modelName')?.value];
-        if (limit) {
-            const remaining = limit - currentTokens;
-            contextHint.textContent = ` (${remaining.toLocaleString()} remaining of ${limit.toLocaleString()})`;
-        } else {
-            contextHint.textContent = '';
-        }
-    }
-    
     // System prompt templates
     const promptTemplate = document.getElementById('promptTemplate');
     const systemPrompt = document.getElementById('systemPrompt');
