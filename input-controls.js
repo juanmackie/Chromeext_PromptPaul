@@ -188,7 +188,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Initialize
-    updateContextHint();
     updateCharacterCount();
     updateAboutSection();
 });

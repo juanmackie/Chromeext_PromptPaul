@@ -613,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const micPermissionStatus = document.getElementById('micPermissionStatus');
 
   if (testMicPermissionBtn && micPermissionStatus) {
-    function testMicrophonePermission() {
+    async function testMicrophonePermission() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       
       if (!SpeechRecognition) {
@@ -627,6 +627,14 @@ document.addEventListener('DOMContentLoaded', () => {
       testMicPermissionBtn.disabled = true;
 
       try {
+        // Explicitly request permission via getUserMedia to ensure persistence
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+        } catch (e) {
+            console.warn('getUserMedia check failed, falling back to SpeechRecognition:', e);
+        }
+
         const recognition = new SpeechRecognition();
         recognition.lang = 'en-US';
         recognition.maxAlternatives = 1;

@@ -1750,8 +1750,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function startVoiceInput() {
+    async function startVoiceInput() {
         try {
+            // Explicitly request permission via getUserMedia to ensure persistence
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+            } catch (e) {
+                console.warn('getUserMedia check failed, falling back to SpeechRecognition:', e);
+            }
+
             speechRecognition = new SpeechRecognition();
             speechRecognition.continuous = true;
             speechRecognition.interimResults = true;
