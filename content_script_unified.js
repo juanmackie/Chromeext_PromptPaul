@@ -1,4 +1,6 @@
 // content_script_unified.js - Consolidated content extraction script
+// Wrap in IIFE to prevent variable conflicts with page scripts
+(function() {
 // Module-scoped variables for extraction result
 let content = "";
 let success = false;
@@ -309,4 +311,5 @@ function main() {
 // Execute main and expose result for chrome.scripting.executeScript
 // This pattern allows the script to be injected and return a result
 const extractionResult = main();
-extractionResult;
+return extractionResult;
+})();
