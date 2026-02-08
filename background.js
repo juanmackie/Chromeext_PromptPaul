@@ -241,80 +241,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // no-op, just acknowledge; future hook if batching is added
   }
 });
-// Create context menus for images and other media
-chrome.runtime.onInstalled.addListener(async (details) => {
-    // Track install/update event once
-    try {
-      await trackInstalled();
-    } catch (_) {}
-    // Create parent menu for images
-    chrome.contextMenus.create({
-        id: "imageAnalysis",
-        title: "Analyze Image with Prompt Paul",
-        contexts: ["image"]
-    });
-
-    // Quick actions for images
-    chrome.contextMenus.create({
-        id: "analyzeImage",
-        parentId: "imageAnalysis",
-        title: "🔍 General Analysis",
-        contexts: ["image"]
-    });
-
-    chrome.contextMenus.create({
-        id: "summarizeImage",
-        parentId: "imageAnalysis",
-        title: "📝 Summarize Image",
-        contexts: ["image"]
-    });
-
-    chrome.contextMenus.create({
-        id: "explainImage",
-        parentId: "imageAnalysis",
-        title: "💡 Explain Image",
-        contexts: ["image"]
-    });
-
-    // Add separator
-    chrome.contextMenus.create({
-        id: "imageSeparator",
-        parentId: "imageAnalysis",
-        type: "separator",
-        contexts: ["image"]
-    });
-
-    // Load and add custom instructions for images
-    await updateImageCustomInstructions();
-
-    // Create parent menu for videos
-    chrome.contextMenus.create({
-        id: "videoAnalysis",
-        title: "Analyze Video with Prompt Paul",
-        contexts: ["video"]
-    });
-
-    chrome.contextMenus.create({
-        id: "analyzeVideo",
-        parentId: "videoAnalysis",
-        title: "🎥 General Analysis",
-        contexts: ["video"]
-    });
-
-    // Create parent menu for audio
-    chrome.contextMenus.create({
-        id: "audioAnalysis",
-        title: "Analyze Audio with Prompt Paul",
-        contexts: ["audio"]
-    });
-
-    chrome.contextMenus.create({
-        id: "analyzeAudio",
-        parentId: "audioAnalysis",
-        title: "🎵 General Analysis",
-        contexts: ["audio"]
-    });
-});
 
 /**
  * Sends media analysis data to the side panel for processing.
@@ -338,195 +264,7 @@ async function sendMediaAnalysisMessage(tabId, mediaData) {
 }
 
 /**
- * Parses a context menu item ID to determine media type and action.
- * @param {string} menuItemId - The context menu item ID.
- * @returns {{mediaType: string, actionType: string, instructionId: string|null}} Parsed menu info.
- */
-function parseMediaMenuItem(menuItemId) {
-    if (menuItemId.startsWith("imageCustom_")) {
-        return {
-            mediaType: "image",
-            actionType: "custom",
-            instructionId: menuItemId.replace("imageCustom_", "")
-        };
-    } else if (menuItemId === "summarizeImage") {
-        return { mediaType: "image", actionType: "summarize", instructionId: null };
-    } else if (menuItemId === "explainImage") {
-        return { mediaType: "image", actionType: "explain", instructionId: null };
-    } else {
-        // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
-        return {
-            mediaType: menuItemId.replace("analyze", "").toLowerCase(),
-            actionType: "analyze",
-            instructionId: null
-        };
-    }
-}
-
-// Handle context menu clicks
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" ||
-        info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" ||
-        info.menuItemId.startsWith("imageCustom_")) {
-        try {
-            // Open side panel FIRST (must be in direct response to user gesture)
-            await chrome.sidePanel.open({ tabId: tab.id });
-
-            // Get the media URL and determine action type
-            const mediaUrl = info.srcUrl;
-            const { mediaType, actionType, instructionId } = parseMediaMenuItem(info.menuItemId);
-
-            // Show loading message immediately
-            await sendMediaAnalysisMessage(tab.id, {
-                type: mediaType,
-                base64: null,
-                url: mediaUrl,
-                mimeType: getMimeTypeFromUrl(mediaUrl),
-                loading: true
-            });
-
-            // Convert media to base64 for API
-            try {
-                const base64Data = await fetchMediaAsBase64(mediaUrl);
-                const mimeType = getMimeTypeFromUrl(mediaUrl);
-
-                // Delay to ensure side panel is ready
-                await new Promise(resolve => setTimeout(resolve, SIDE_PANEL_READY_DELAY_MS));
-
-                await sendMediaAnalysisMessage(tab.id, {
-                    type: mediaType,
-                    base64: base64Data,
-                    url: mediaUrl,
-                    mimeType: mimeType,
-                    loading: false,
-                    actionType: actionType,
-                    instructionId: instructionId
-                });
-            } catch (error) {
-                console.error('Error fetching media:', error);
-                try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
-
-                await sendMediaAnalysisMessage(tab.id, {
-                    type: mediaType,
-                    base64: null,
-                    url: mediaUrl,
-                    mimeType: getMimeTypeFromUrl(mediaUrl),
-                    error: error.message
-                });
-            }
-
-        } catch (error) {
-            console.error('Error processing media:', error);
-        }
-    }
-});
-
-/**
- * Fetches media from a URL and converts it to base64 encoding.
- * @param {string} url - The URL of the media to fetch.
- * @returns {Promise<string>} Base64 encoded string of the media.
- * @throws {Error} If the fetch fails or the media cannot be read.
- */
-async function fetchMediaAsBase64(url) {
-    try {
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
-
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = reader.result;
-                const base64 = dataUrl.split(',')[1]; // Remove data:image/jpeg;base64, prefix
-                resolve(base64);
-            };
-            reader.onerror = (error) => {
-                console.error('FileReader error:', error);
-                reject(error);
-            };
-            reader.readAsDataURL(blob);
-        });
-    } catch (error) {
-        console.error('Error fetching media:', error);
-        throw error;
-    }
-}
-
-/** @type {Set<string>} Track existing image custom instruction menu items */
-let existingImageCustomMenuItems = new Set();
-
-/**
- * Updates the context menu with custom instructions for image analysis.
- * Removes existing custom menu items and adds current ones from storage.
- * @returns {Promise<void>}
- */
-async function updateImageCustomInstructions() {
-    try {
-        // Remove existing custom instruction menu items that we know exist
-        for (const menuItemId of existingImageCustomMenuItems) {
-            try {
-                await new Promise((resolve, reject) => {
-                    chrome.contextMenus.remove(menuItemId, () => {
-                        if (chrome.runtime.lastError) {
-                            // Menu item doesn't exist, that's fine
-                            resolve();
-                        } else {
-                            resolve();
-                        }
-                    });
-                });
-            } catch (e) {
-                // Ignore errors for non-existent menu items
-            }
-        }
-        existingImageCustomMenuItems.clear();
-
-        // Add current custom instructions
-        const { instructions } = await chrome.storage.local.get(['instructions']);
-        if (instructions && instructions.length > 0) {
-            for (const instruction of instructions) {
-                const menuItemId = `imageCustom_${instruction.id}`;
-                try {
-                    await new Promise((resolve, reject) => {
-                        chrome.contextMenus.create({
-                            id: menuItemId,
-                            parentId: "imageAnalysis",
-                            title: `⚡ ${instruction.name}`,
-                            contexts: ["image"]
-                        }, () => {
-                            if (chrome.runtime.lastError) {
-                                console.warn(`Failed to create menu item ${menuItemId}:`, chrome.runtime.lastError.message);
-                                resolve();
-                            } else {
-                                existingImageCustomMenuItems.add(menuItemId);
-                                resolve();
-                            }
-                        });
-                    });
-                } catch (e) {
-                    console.warn(`Error creating menu item for instruction ${instruction.name}:`, e);
-                }
-            }
-        } else {
-        }
-    } catch (error) {
-        console.error('Error updating image custom instructions:', error);
-    }
-}
-
-// Listen for storage changes to update context menus
-chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.instructions) {
-        updateImageCustomInstructions();
-    }
-});
-
-/**
- * Determines the MIME type based on the file extension in a URL.
+ * Determines MIME type based on file extension in a URL.
  * @param {string} url - The URL of the media file.
  * @returns {string} The MIME type string (defaults to 'image/jpeg' if unknown).
  */
@@ -553,17 +291,52 @@ function getMimeTypeFromUrl(url) {
             'flac': 'audio/flac'
         };
 
-        const mimeType = mimeTypes[extension] || 'image/jpeg'; // Default to jpeg for images
+        const mimeType = mimeTypes[extension] || 'image/jpeg';
         return mimeType;
     } catch (error) {
         console.error('Error determining MIME type:', error);
-        return 'image/jpeg'; // Safe default
+        return 'image/jpeg';
+    }
+}
+
+/**
+ * Fetches media from a URL and converts it to base64 encoding.
+ * @param {string} url - The URL of the media to fetch.
+ * @returns {Promise<string>} Base64 encoded string of media.
+ * @throws {Error} If the fetch fails or the media cannot be read.
+ */
+async function fetchMediaAsBase64(url) {
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const dataUrl = reader.result;
+                const base64 = dataUrl.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = (error) => {
+                console.error('FileReader error:', error);
+                reject(error);
+            };
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        console.error('Error fetching media:', error);
+        throw error;
     }
 }
 
 let messageListenerAdded = false;
-let tabContentCallback = null; // To store sendResponse for getTabContent
-let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
+let tabContentCallback = null;
+let pinnedActionTabContentCallback = null;
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -578,155 +351,216 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
 });
 
-// Optimized context menu click handler
+// Unified context menu click handler for all modalities
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  // Skip media analysis menu items - they're handled by the new multimodal handler above
-  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" ||
-      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" ||
-      info.menuItemId.startsWith("imageCustom_") ||
-      info.menuItemId === "imageAnalysis" || info.menuItemId === "videoAnalysis" || info.menuItemId === "audioAnalysis") {
-    return; // Let the new handler above handle these
-  }
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
 
-  await chrome.sidePanel.open({ tabId: tab.id });
+    // Detect media context
+    const isMediaContext = info.mediaType === 'image' || info.mediaType === 'video' || info.mediaType === 'audio';
+    const mediaUrl = info.srcUrl || '';
+    const mediaType = info.mediaType || 'text';
 
-  let originalSelectionText = info.selectionText;
-  let promptContent = info.selectionText || '';
+    // Normalize selection text to avoid undefined
+    let originalSelectionText = info.selectionText || '';
+    let promptContent = originalSelectionText;
 
-  if (!originalSelectionText) {
-    try {
-        // The contextMenus.onClicked listener IS async (line 23).
+    // Fetch tab content only if we have no media and no selection
+    if (!isMediaContext && !originalSelectionText) {
+      try {
         const tabDataResponse = await new Promise((resolve, reject) => {
-            const messageTimeout = setTimeout(() => {
-                reject(new Error("Timeout waiting for getTabContent response"));
-            }, 5000); // 5 second timeout for the message response
+          const messageTimeout = setTimeout(() => {
+            reject(new Error("Timeout waiting for getTabContent response"));
+          }, 5000);
 
-            chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
-                clearTimeout(messageTimeout);
-                if (chrome.runtime.lastError) {
-                    console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
-                    return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
-                }
-                if (response) {
-                    resolve(response); // Resolve with the full response object
-                } else {
-                    // This case should ideally be caught by chrome.runtime.lastError if sendResponse is not called
-                    reject(new Error("Failed to get tab content: No response from getTabContent handler."));
-                }
-            });
+          chrome.runtime.sendMessage({ action: 'getTabContent', tabId: tab.id }, (response) => {
+            clearTimeout(messageTimeout);
+            if (chrome.runtime.lastError) {
+              console.error("Background: Error receiving getTabContent response:", chrome.runtime.lastError.message);
+              return reject(new Error("Failed to get tab content: " + chrome.runtime.lastError.message));
+            }
+            if (response) {
+              resolve(response);
+            } else {
+              reject(new Error("Failed to get tab content: No response from getTabContent handler."));
+            }
+          });
         });
 
-        // Check for both content and data properties to handle different response formats
         if (tabDataResponse && tabDataResponse.success) {
-            if (tabDataResponse.content) {
-                promptContent = tabDataResponse.content;
-            } else if (tabDataResponse.data) {
-                promptContent = tabDataResponse.data;
-            } else {
-                console.error("Background: Tab content response successful but missing content/data property. Response:", tabDataResponse);
-                promptContent = originalSelectionText; // Fallback
-            }
-        } else {
-            console.error("Background: Failed to get tab content via 'getTabContent' message. Response:", tabDataResponse);
-            promptContent = originalSelectionText; // Fallback to empty or original selection
+          if (tabDataResponse.content) {
+            promptContent = tabDataResponse.content;
+          } else if (tabDataResponse.data) {
+            promptContent = tabDataResponse.data;
+          }
         }
-    } catch (error) {
-        console.error("Background: Exception while fetching tab content via 'getTabContent' message:", error.message);
-        promptContent = originalSelectionText; // Fallback
+      } catch (error) {
+        console.error("Background: Exception while fetching tab content:", error.message);
+        promptContent = '';
+      }
     }
-  }
 
-  // Handle image context (only for non-multimodal menu items)
-  // This should be applied *after* potentially fetching tab content if selection was empty
-  // Skip this for our new multimodal menu items since they're handled separately
-  if (info.mediaType === 'image' && info.srcUrl &&
-      !info.menuItemId.includes("Image") && !info.menuItemId.includes("Video") && !info.menuItemId.includes("Audio")) {
-    // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
-    promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
-  }
+    // Handle media loading
+    let mediaData = null;
+    if (isMediaContext && mediaUrl) {
+      try {
+        const base64Data = await fetchMediaAsBase64(mediaUrl);
+        const mimeType = getMimeTypeFromUrl(mediaUrl);
 
+        mediaData = {
+          type: mediaType,
+          base64: base64Data,
+          url: mediaUrl,
+          mimeType: mimeType
+        };
+      } catch (error) {
+        console.error('Error fetching media:', error);
+        try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
 
-  // Handle special menu items
-  if (info.menuItemId === 'manageInstructions') {
-    chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
-    return;
-  }
+        mediaData = {
+          type: mediaType,
+          base64: null,
+          url: mediaUrl,
+          mimeType: getMimeTypeFromUrl(mediaUrl),
+          error: error.message
+        };
+      }
 
-  // Common message sending function
-  const sendMessage = (action, extra = {}) => {
-    try {
-      chrome.runtime.sendMessage({
-        action,
-        selectedText: promptContent,
-        tabId: tab.id,
-        ...extra
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn(`Background: sendMessage (${action}) failed:`, chrome.runtime.lastError.message);
-        }
+      // Send media to chat
+      await sendMediaAnalysisMessage(tab.id, {
+        ...mediaData,
+        loading: false
       });
-    } catch (error) {
-      console.error(`Background: Exception sending message (${action}):`, error.message);
     }
-  };
 
-  if (info.menuItemId === 'oneoff_instruction') {
-    setTimeout(() => sendMessage('setSelectedText'), 100); // sendMessage already logs errors
-    return;
-  }
+    // Handle special menu items
+    if (info.menuItemId === 'manageInstructions') {
+      chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
+      return;
+    }
 
-  if (info.menuItemId === 'start_chat') {
-    sendMessage('setSelectedText', { fromStartChat: true });
-    await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
-    return;
-  }
+    // Common message sending function
+    const sendMessage = (action, extra = {}) => {
+      try {
+        chrome.runtime.sendMessage({
+          action,
+          selectedText: promptContent || '',
+          tabId: tab.id,
+          ...extra
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn(`Background: sendMessage (${action}) failed:`, chrome.runtime.lastError.message);
+          }
+        });
+      } catch (error) {
+        console.error(`Background: Exception sending message (${action}):`, error.message);
+      }
+    };
 
-  // Handle custom instructions
-  if (info.menuItemId.startsWith('custom_')) {
-    const instructionId = info.menuItemId.replace('custom_', '');
-    const { instructions } = await chrome.storage.local.get(['instructions']);
-    const instruction = instructions.find(i => i.id === instructionId);
+    // One-off instruction - open composer with optional media
+    if (info.menuItemId === 'oneoff_instruction') {
+      if (isMediaContext) {
+        // For media, load it first, then open one-off with media attached
+        setTimeout(() => {
+          chrome.runtime.sendMessage({
+            action: 'setSelectedText',
+            selectedText: '',
+            tabId: tab.id,
+            mediaData: mediaData
+          });
+        }, SIDE_PANEL_READY_DELAY_MS);
+      } else {
+        // For text, just open composer
+        setTimeout(() => sendMessage('setSelectedText'), 100);
+      }
+      return;
+    }
 
-    if (instruction) {
-      // Track custom instruction usage
+    // Start chat
+    if (info.menuItemId === 'start_chat') {
+      sendMessage('setSelectedText', { fromStartChat: true, mediaData });
+      if (isMediaContext) {
+        // Media will be handled in chat.js via currentMediaData
+        return;
+      }
+      await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
+      return;
+    }
+
+    // Handle custom instructions
+    if (info.menuItemId.startsWith('custom_')) {
+      const instructionId = info.menuItemId.replace('custom_', '');
+      const { instructions } = await chrome.storage.local.get(['instructions']);
+      const instruction = instructions.find(i => i.id === instructionId);
+
+      if (instruction) {
+        try {
+          const cfg = await validateConfig().catch(() => ({}));
+          await trackInstructionUsed({ instruction: instruction.name || 'custom', model: cfg?.modelName, tools: Array.isArray(instruction.tool_choice) ? instruction.tool_choice : (instruction.tool_choice && instruction.tool_choice !== 'none' ? [instruction.tool_choice] : []) });
+        } catch (_) {}
+
+        const toolChoice = instruction.tool_choice || 'none';
+
+        if (isMediaContext) {
+          // Send media with custom instruction to chat
+          chrome.runtime.sendMessage({
+            action: 'setMediaForAnalysis',
+            mediaData: {
+              ...mediaData,
+              actionType: 'custom',
+              instructionId: instructionId
+            },
+            tabId: tab.id
+          });
+        } else {
+          // Text-only custom instruction
+          const fullPrompt = `${instruction.content}\n\n${promptContent}`;
+          await makeLlmApiRequest(fullPrompt, tab.id, { customInstructionToolChoice: toolChoice });
+        }
+      } else {
+        console.error("Custom instruction not found for ID:", instructionId);
+      }
+      return;
+    }
+
+    // Handle predefined commands (modality-neutral prompts)
+    const commandMap = {
+      summarize: 'Please summarize the following content into a bullet list of key points',
+      explain: 'Explain the following content to me in a short concise MECE approach. Break down what you see into clear, structured categories.',
+      polish: 'Polish the following content with clarity and purpose',
+      shorten: 'Shorten the following content without losing its meaning and context',
+      formal: 'Make the following content more formal and eloquent',
+      casual: 'Make the following content more casual and fun',
+      analyze: 'Please analyze the following content. Describe what you see and provide any relevant insights.'
+    };
+
+    if (commandMap[info.menuItemId]) {
       try {
         const cfg = await validateConfig().catch(() => ({}));
-        await trackInstructionUsed({ instruction: instruction.name || 'custom', model: cfg?.modelName, tools: Array.isArray(instruction.tool_choice) ? instruction.tool_choice : (instruction.tool_choice && instruction.tool_choice !== 'none' ? [instruction.tool_choice] : []) });
+        await trackInstructionUsed({ instruction: info.menuItemId, model: cfg?.modelName, tools: [] });
       } catch (_) {}
-      promptContent = `${instruction.content}\n\n${promptContent}`;
-      const toolChoice = instruction.tool_choice || 'none';
-      await makeLlmApiRequest(promptContent, tab.id, { customInstructionToolChoice: toolChoice });
-    } else {
-      console.error("Custom instruction not found for ID:", instructionId);
+
+      if (isMediaContext) {
+        // Send media with predefined instruction
+        const actionType = info.menuItemId;
+        chrome.runtime.sendMessage({
+          action: 'setMediaForAnalysis',
+          mediaData: {
+            ...mediaData,
+            actionType: actionType,
+            instructionId: null
+          },
+          tabId: tab.id
+        });
+      } else {
+        // Text-only predefined instruction
+        const fullPrompt = `${commandMap[info.menuItemId]}:\n\n${promptContent}`;
+        await makeLlmApiRequest(fullPrompt, tab.id);
+      }
     }
-    return;
+  } catch (error) {
+    console.error('Error in context menu click handler:', error);
   }
-
-  // Handle predefined commands
-  const commandMap = {
-    summarize: 'Please summarize the following text into a bullet list of points',
-    explain: 'Explain this to me in a short concise MECE approach',
-    // explain: 'Explain this to me in a short concise MECE approach', // Duplicate "explain" removed
-    polish: 'Polish this text with clarity and purpose',
-    shorten: 'Shorten this text without losing its meaning and context',
-    formal: 'Make this text more formal and eloquent',
-    casual: 'Make this text more casual and fun',
-    analyze: 'Please analyze the following text'
-  };
-
-  if (commandMap[info.menuItemId]) {
-    // Track predefined instruction usage
-    try {
-      const cfg = await validateConfig().catch(() => ({}));
-      await trackInstructionUsed({ instruction: info.menuItemId, model: cfg?.modelName, tools: [] });
-    } catch (_) {}
-    promptContent = `${commandMap[info.menuItemId]}:\n${promptContent}`;
-  } else if (info.menuItemId.startsWith('custom_')) {
-    // handled earlier, but if reaches here ignore
-  } else if (info.menuItemId !== 'prompt_paul' && info.menuItemId !== 'oneoff_instruction' && info.menuItemId !== 'start_chat' && info.menuItemId !== 'manageInstructions') {
-  }
-
-  await makeLlmApiRequest(promptContent, tab.id);
 });
 
 // Simplified validateConfig function
@@ -1123,81 +957,84 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
     }
 }
 
-// Create context menu items
-chrome.runtime.onInstalled.addListener(async () => {
+// Unified context menu creation for all modalities
+async function createUnifiedMenus() {
+  const modalities = ['selection', 'image', 'video', 'audio'];
 
   // Create one-off instruction menu item (always at top)
   chrome.contextMenus.create({
     id: 'oneoff_instruction',
     title: '✨ One-off Instruction',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
   });
+
   // Create start chat menu item
   chrome.contextMenus.create({
     id: 'start_chat',
     title: '💬 Start Chat',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
   });
 
   // Create parent menu for Prompt Paul
   chrome.contextMenus.create({
     id: 'prompt_paul',
     title: 'Query Prompt Paul',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
   });
 
   // Create predefined menu items under Prompt Paul
   chrome.contextMenus.create({
     id: 'summarize',
     title: '📝 Summarize',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
   chrome.contextMenus.create({
     id: 'analyze',
-    title: '🧐 Analyze',
-    contexts: ['selection', 'image'],
+    title: '🔍 Analyze',
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
   chrome.contextMenus.create({
     id: 'explain',
     title: '❓ Explain',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
   chrome.contextMenus.create({
     id: 'polish',
     title: '🪄 Polish',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
 
   chrome.contextMenus.create({
     id: 'shorten',
     title: '✂️ Shorten',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
 
   chrome.contextMenus.create({
     id: 'formal',
     title: '💼 Formal',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
   chrome.contextMenus.create({
     id: 'casual',
     title: '🤙 Casual',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
     parentId: 'prompt_paul'
   });
+
   // Create custom instructions menu items
-  // Create parent menu for custom instructions
   chrome.contextMenus.create({
     id: 'customInstructions',
     title: 'Custom Instructions',
-    contexts: ['selection', 'image'],
+    contexts: modalities,
   });
+
   const { instructions } = await chrome.storage.local.get(['instructions']);
   if (instructions && instructions.length > 0) {
     instructions.forEach(instruction => {
@@ -1205,91 +1042,70 @@ chrome.runtime.onInstalled.addListener(async () => {
         id: `custom_${instruction.id}`,
         parentId: 'customInstructions',
         title: `✨ ${instruction.name}`,
-        contexts: ['selection', 'image'],
+        contexts: modalities,
       });
     });
   }
 
   // Add a separator and manage instructions at the end
   setTimeout(() => {
-    // Add a separator
     chrome.contextMenus.create({
       id: 'separator',
       type: 'separator',
-      contexts: ['selection', 'image'],
+      contexts: modalities,
     });
 
-     // Add option to manage custom instructions as the last item
     chrome.contextMenus.create({
       id: 'manageInstructions',
       title: 'Manage Custom Instructions',
-      contexts: ['selection', 'image'],
+      contexts: modalities,
     });
   }, 100);
+}
+
+// Create context menu items on install
+chrome.runtime.onInstalled.addListener(async () => {
+  await createUnifiedMenus();
 });
 
 // Update context menus when instructions change
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
-if (namespace === 'local' && changes.instructions) {
-  // Remove existing menu items
-  if (changes.instructions.oldValue) {
-    changes.instructions.oldValue.forEach(instruction => {
-      chrome.contextMenus.remove(`custom_${instruction.id}`, () => {
+  if (namespace === 'local' && changes.instructions) {
+    // Remove all unified menu items and recreate
+    const menuIdsToRemove = [
+      'oneoff_instruction',
+      'start_chat',
+      'prompt_paul',
+      'summarize',
+      'analyze',
+      'explain',
+      'polish',
+      'shorten',
+      'formal',
+      'casual',
+      'customInstructions',
+      'separator',
+      'manageInstructions'
+    ];
+
+    // Remove existing custom instruction menu items
+    if (changes.instructions.oldValue) {
+      changes.instructions.oldValue.forEach(instruction => {
+        menuIdsToRemove.push(`custom_${instruction.id}`);
+      });
+    }
+
+    menuIdsToRemove.forEach(id => {
+      chrome.contextMenus.remove(id, () => {
         if (chrome.runtime.lastError) {
           // Ignore errors if menu doesn't exist
         }
       });
     });
+
+    // Recreate all menus
+    await createUnifiedMenus();
   }
-
-  // Remove static menu items
-  const staticMenuIds = ['customInstructions', 'separator', 'manageInstructions'];
-  staticMenuIds.forEach(id => {
-    chrome.contextMenus.remove(id, () => {
-      if (chrome.runtime.lastError) {
-        // Ignore errors if menu doesn't exist
-      }
-    });
-  });
-
-  // Get updated instructions
-  const { instructions } = await chrome.storage.local.get(['instructions']);
-
-  // Recreate custom instructions menu
-  chrome.contextMenus.create({
-    id: 'customInstructions',
-    title: 'Custom Instructions',
-    contexts: ['selection', 'image'], // Add 'image' context here
-  });
-
-  if (instructions && instructions.length > 0) {
-    instructions.forEach(instruction => {
-      chrome.contextMenus.create({
-        id: `custom_${instruction.id}`,
-        parentId: 'customInstructions',
-        title: `✨ ${instruction.name}`,
-        contexts: ['selection', 'image'], // Add 'image' context here
-      });
-    });
-  }
-
-  // Add separator and manage instructions at the end
-  setTimeout(() => { // Original setTimeout kept
-    // Add a separator
-    chrome.contextMenus.create({
-      id: 'separator',
-      type: 'separator',
-      contexts: ['selection', 'image'], // Add 'image' context here
-    });
-
-     // Add option to manage custom instructions as the last item
-    chrome.contextMenus.create({
-      id: 'manageInstructions',
-      title: 'Manage Custom Instructions',
-      contexts: ['selection', 'image'], // Add 'image' context here
-    });
-  }, 100); // Original setTimeout kept
-}
 });
 
 // --- Tool Execution Logic ---

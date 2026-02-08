@@ -301,9 +301,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'setSelectedText') {
-            selectedText = request.selectedText;
+            selectedText = request.selectedText || '';
             tabId = request.tabId;
-            if (request.fromStartChat) {
+            
+            // Handle media data from context menu
+            if (request.mediaData) {
+                currentMediaData = request.mediaData;
+                
+                // Show chat area with media preview
+                chatMainArea.style.display = 'block';
+                oneoffInstructionArea.style.display = 'none';
+                
+                if (currentMediaData.error) {
+                    addMessage('System', `❌ Error loading ${currentMediaData.type}: ${currentMediaData.error}`);
+                } else if (currentMediaData.base64) {
+                    addMediaPreview(currentMediaData);
+                }
+            } else if (request.fromStartChat) {
                 chatMainArea.style.display = 'block';
                 oneoffInstructionArea.style.display = 'none';
                 conversationHistory = [];
@@ -1476,7 +1490,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     submitBtn.addEventListener('click', async () => {
-        activeStreamingToolCall = null; // Reset active tool call
+        activeStreamingToolCall = null;
         const instruction = instructionInput.value;
         if (!instruction.trim()) {
             loadingManager.showToast('Please enter an instruction', 'warning');
@@ -1484,172 +1498,232 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         try {
             const config = await getApiConfig();
-            const prompt = instruction + '\n\n' + selectedText;
-            let oneOffHistory = [{ role: 'user', content: prompt }];
-
-            // Build system prompt with date/time
-            const now = new Date();
-            const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
-            let systemPromptContent = dateTimeString;
-            if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-                systemPromptContent += `\n\n${config.systemPrompt}`;
-            }
-            const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...oneOffHistory];
-
-            // Get tools and prepare tool choice payload
-            const allAvailableTools = await getTools();
-            const formattedTools = allAvailableTools.map(tool => {
-                return {
-                    type: 'function',
-                    function: {
-                        name: tool.name,
-                        description: tool.description,
-                        parameters: tool.parametersForLlm
-                    }
-                };
-            }).filter(tool => tool !== null);
-
-            let toolChoicePayload = {};
-            if (formattedTools.length > 0) {
-                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
-            }
-
-            const requestBody = {
-                model: config.modelName,
-                messages: messagesForRequest,
-                ...toolChoicePayload
-            };
-
-            const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
-
-            // Display user message in main chat UI
-            addMessage('User', instruction + "\n\n[Selected text: " + selectedText.substring(0, 50) + (selectedText.length > 50 ? "..." : "") + "]");
-            // Also add to main conversation history for context
-            conversationHistory.push({role: 'user', content: prompt});
-
-            let effectiveEnableStreaming = enableStreaming;
-            // As per subtask, check global conversationHistory, not oneOffHistory for tool messages.
-            const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
-
-            if (hasToolMessage && enableStreaming) {
-                effectiveEnableStreaming = false;
-            }
-
-            if (effectiveEnableStreaming) {
-                requestBody.stream = true;
-                oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'block';
-                userInput.disabled = true; sendButton.disabled = true;
-                clearButton.textContent = 'Stop';
-
-                const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-                currentStreamingMessageDiv = messageDiv;
-                currentStreamingContentElement = contentElement;
-                currentStreamingUniqueId = uniqueIdString;
-                accumulatedStreamedText = "";
-
-                currentAbortController = new AbortController();
-                const signal = currentAbortController.signal;
-
-                const apiResponse = await fetch(config.llmEndpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                    body: JSON.stringify(requestBody),
-                    signal,
-                });
-                 if (!apiResponse.ok) {
-                    const errorText = await apiResponse.text();
-                    let errorDetail = errorText;
-                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
-                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-                }
-                const reader = apiResponse.body.getReader();
-                const decoder = new TextDecoder();
-                let sseBuffer = "";
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        if (currentStreamingContentElement && currentStreamingUniqueId) {
-                           const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                           const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                           if (copyIconElem && copyFormattedIconElem) {
-                            attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                           }
+            
+            // Build prompt based on available content (text or media)
+            let prompt;
+            let contentSummary = '';
+            
+            if (currentMediaData && currentMediaData.base64) {
+                // Have media loaded - include compatibility mode info
+                const mediaInfo = `[${currentMediaData.type.toUpperCase()} loaded: ${currentMediaData.mimeType}, URL: ${currentMediaData.url || 'embedded'}]`;
+                contentSummary = mediaInfo;
+                prompt = instruction + '\n\n' + contentSummary;
+                
+                // Add user message with media context
+                addMessage('User', `${instruction}\n\n[${contentSummary}]`);
+                
+                // Use media API call
+                const allAvailableTools = await getTools();
+                const formattedTools = allAvailableTools.map(tool => {
+                    return {
+                        type: 'function',
+                        function: {
+                            name: tool.name,
+                            description: tool.description,
+                            parameters: tool.parametersForLlm
                         }
-                        conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
-                        currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
-                        userInput.disabled = false; sendButton.disabled = false;
-                        clearButton.textContent = 'Clear';
-                        instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
-                         oneoffInstructionArea.style.display = 'none';
-                         chatMainArea.style.display = 'block';
-                        userInput.focus();
-                        break;
-                    }
-                    sseBuffer += decoder.decode(value, { stream: true });
-                    let eolIndex;
-                    while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
-                        const line = sseBuffer.substring(0, eolIndex).trim();
-                        sseBuffer = sseBuffer.substring(eolIndex + 1);
-                        if (line.startsWith('data:')) {
-                            let jsonData = line.substring(5).trim();
-                            if (jsonData.startsWith('data:')) { jsonData = jsonData.substring(5).trim(); }
-                            if (jsonData === '[DONE]') continue;
-                            if (jsonData) {
-                                try {
-                                    const parsed = JSON.parse(jsonData);
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                        accumulatedStreamedText += parsed.choices[0].delta.content;
-                                        if(currentStreamingContentElement) {
-                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                                        }
-                                        chatArea.scrollTop = chatArea.scrollHeight;
+                    };
+                }).filter(tool => tool !== null);
+
+                let toolChoicePayload = {};
+                if (formattedTools.length > 0) {
+                    toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+                }
+
+                // Build system prompt
+                const now = new Date();
+                const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
+                let systemPromptContent = dateTimeString;
+                if (config.systemPrompt && config.systemPrompt.trim() !== '') {
+                    systemPromptContent += `\n\n${config.systemPrompt}`;
+                }
+
+                // Prepare messages
+                let messageContent = [{ type: 'text', text: prompt }];
+                
+                // For images, attach as multimodal content
+                if (currentMediaData.type === 'image' && currentMediaData.base64) {
+                    messageContent.push({
+                        type: 'image_url',
+                        image_url: {
+                            url: `data:${currentMediaData.mimeType};base64,${currentMediaData.base64}`
+                        }
+                    });
+                }
+
+                const messagesForRequest = [{ role: 'system', content: systemPromptContent }, { role: 'user', content: messageContent }];
+
+                const requestBody = {
+                    model: config.modelName,
+                    messages: messagesForRequest,
+                    ...toolChoicePayload
+                };
+
+                // Convert for Anthropic if needed
+                const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
+                if (isAnthropicEndpoint && currentMediaData.type === 'image' && currentMediaData.base64) {
+                    const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
+                    if (lastUserMessage && lastUserMessage.role === 'user' && Array.isArray(lastUserMessage.content)) {
+                        lastUserMessage.content = lastUserMessage.content.map(content => {
+                            if (content.type === 'image_url') {
+                                return {
+                                    type: 'image',
+                                    source: {
+                                        type: 'base64',
+                                        media_type: currentMediaData.mimeType,
+                                        data: currentMediaData.base64
                                     }
-                                } catch (e) { console.warn("SSE JSON Parse Error (one-off submit):", e, jsonData); }
+                                };
+                            }
+                            return content;
+                        });
+                    }
+                }
+
+                const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
+                let effectiveEnableStreaming = enableStreaming;
+                const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
+
+                if (hasToolMessage && enableStreaming) {
+                    effectiveEnableStreaming = false;
+                }
+
+                // Disable streaming for media in compatibility mode
+                if (currentMediaData && !enableStreaming) {
+                    effectiveEnableStreaming = false;
+                }
+
+                if (effectiveEnableStreaming) {
+                    requestBody.stream = true;
+                    oneoffInstructionArea.style.display = 'none';
+                    chatMainArea.style.display = 'block';
+                    userInput.disabled = true;
+                    sendButton.disabled = true;
+                    clearButton.textContent = 'Stop';
+
+                    const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
+                    currentStreamingMessageDiv = messageDiv;
+                    currentStreamingContentElement = contentElement;
+                    currentStreamingUniqueId = uniqueIdString;
+                    accumulatedStreamedText = "";
+
+                    currentAbortController = new AbortController();
+                    const signal = currentAbortController.signal;
+
+                    const apiResponse = await fetch(config.llmEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                        body: JSON.stringify(requestBody),
+                        signal,
+                    });
+                    if (!apiResponse.ok) {
+                        const errorText = await apiResponse.text();
+                        let errorDetail = errorText;
+                        try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
+                        throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                    }
+                    const reader = apiResponse.body.getReader();
+                    const decoder = new TextDecoder();
+                    let sseBuffer = "";
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            if (currentStreamingContentElement && currentStreamingUniqueId) {
+                               const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
+                               const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
+                               if (copyIconElem && copyFormattedIconElem) {
+                                 attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
+                                }
+                            }
+                            conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
+                            currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
+                            userInput.disabled = false; sendButton.disabled = false;
+                            clearButton.textContent = 'Clear';
+                            instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
+                            currentMediaData = null;
+                            oneoffInstructionArea.style.display = 'none';
+                            chatMainArea.style.display = 'block';
+                            userInput.focus();
+                            break;
+                        }
+                        sseBuffer += decoder.decode(value, { stream: true });
+                        let eolIndex;
+                        while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
+                            const line = sseBuffer.substring(0, eolIndex).trim();
+                            sseBuffer = sseBuffer.substring(eolIndex + 1);
+                            if (line.startsWith('data:')) {
+                                let jsonData = line.substring(5).trim();
+                                if (jsonData.startsWith('data:')) { jsonData = jsonData.substring(5).trim(); }
+                                if (jsonData === '[DONE]') continue;
+                                if (jsonData) {
+                                    try {
+                                        const parsed = JSON.parse(jsonData);
+                                        if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                            accumulatedStreamedText += parsed.choices[0].delta.content;
+                                            if(currentStreamingContentElement) {
+                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                            }
+                                            chatArea.scrollTop = chatArea.scrollHeight;
+                                        }
+                                    } catch (e) { console.warn("SSE JSON Parse Error (one-off submit):", e, jsonData); }
+                                }
                             }
                         }
                     }
-                }
-            } else {
-                userInput.disabled = true;
-                sendButton.disabled = true;
-                clearButton.textContent = 'Stop';
-                currentAbortController = new AbortController();
-                const signal = currentAbortController.signal;
+                } else {
+                    userInput.disabled = true;
+                    sendButton.disabled = true;
+                    clearButton.textContent = 'Stop';
+                    currentAbortController = new AbortController();
+                    const signal = currentAbortController.signal;
 
-                const apiResponse = await fetch(config.llmEndpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                    body: JSON.stringify(requestBody),
-                    signal,
-                });
-                if (!apiResponse.ok) {
-                    const errorText = await apiResponse.text();
-                    let errorDetail = errorText;
-                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
-                    throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-                }
-                const responseData = await apiResponse.json();
-                if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message || !responseData.choices[0].message.content) {
-                    throw new Error('Invalid response format from API');
-                }
-                const responseContent = responseData.choices[0].message.content;
-                conversationHistory.push({ role: 'assistant', content: responseContent });
-                addMessage('LLM', responseContent);
+                    const apiResponse = await fetch(config.llmEndpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
+                        body: JSON.stringify(requestBody),
+                        signal,
+                    });
+                    if (!apiResponse.ok) {
+                        const errorText = await apiResponse.text();
+                        let errorDetail = errorText;
+                        try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
+                        throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
+                    }
+                    const responseData = await apiResponse.json();
+                    if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
+                        throw new Error('Invalid response format from API');
+                    }
+                    const responseMessage = responseData.choices[0].message;
+                    conversationHistory.push(responseMessage);
 
+                    if (responseMessage.content) {
+                        addMessage('LLM', responseMessage.content);
+                    }
+
+                    instructionInput.value = '';
+                    selectedTextDiv.textContent = '';
+                    selectedText = null;
+                    currentMediaData = null;
+                    oneoffInstructionArea.style.display = 'none';
+                    chatMainArea.style.display = 'block';
+
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    clearButton.textContent = 'Clear';
+                    currentAbortController = null;
+                }
+            } else if (selectedText && selectedText.trim()) {
+                // Text-only one-off - use shared makeApiCall
+                prompt = instruction + '\n\n' + selectedText;
+                addMessage('User', `${instruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`);
+                await makeApiCall(prompt, 'auto');
                 instructionInput.value = '';
                 selectedTextDiv.textContent = '';
                 selectedText = null;
-                oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'block';
-
-                userInput.disabled = false;
-                sendButton.disabled = false;
-                clearButton.textContent = 'Clear';
-                currentAbortController = null;
+            } else {
+                loadingManager.showToast('Please select text or load media first', 'warning');
             }
         } catch (error) {
-            // Show more detailed error messages
             if (error.name === 'AbortError') {
                 addMessage('System', 'Response stopped');
             } else {
