@@ -1,7 +1,27 @@
+/**
+ * @fileoverview Options Page for Prompt Paul Chrome Extension
+ *
+ * This module handles the options/configuration page including:
+ * - API endpoint and key configuration
+ * - Profile management (multiple API configurations)
+ * - Custom instructions management
+ * - MCP server configuration
+ * - Analytics consent settings
+ *
+ * @module options
+ * @requires ./loadingManager.js
+ * @requires ./src/utils/validation.js
+ */
+
 import { loadingManager } from './loadingManager.js';
 import { isValidURL } from './src/utils/validation.js';
 
-// Function to show status message
+/**
+ * Displays a status message to the user.
+ * @param {string} message - The message to display.
+ * @param {boolean} [isError=false] - Whether the message is an error.
+ * @param {boolean} [isToast=false] - Whether to show as a toast notification.
+ */
 function showStatus(message, isError = false, isToast = false) {
   if (isToast) {
     // Only show toast notification when isToast is true
@@ -26,333 +46,6 @@ function showStatus(message, isError = false, isToast = false) {
   }
 }
 
-// ================= MCP Options UI wiring (Phase 1, config-first) =================
-
-function redactAuth(value) {
-  if (!value) return '';
-  // Preserve scheme e.g. 'Bearer ' then mask token
-  const parts = value.split(/\s+/, 2);
-  if (parts.length === 2) {
-    const token = parts[1];
-    const masked = token.length > 8 ? token.slice(0, 2) + '•'.repeat(token.length - 4) + token.slice(-2) : '•'.repeat(token.length);
-    return parts[0] + ' ' + masked;
-  }
-  return '•'.repeat(Math.min(12, value.length));
-}
-
-function bindMcpOptionsUI() {
-  const addBtn = document.getElementById('mcpAddServerBtn');
-  const exportBtn = document.getElementById('mcpExportBtn');
-  const importBtn = document.getElementById('mcpImportBtn');
-  const importFile = document.getElementById('mcpImportFile');
-  const verboseToggle = document.getElementById('mcpVerboseLogsToggle');
-  const serversTbody = document.getElementById('mcpServersTbody');
-  const logsDiv = document.getElementById('mcpLogs');
-
-  const modal = document.getElementById('mcpServerModal');
-  const modalTitle = document.getElementById('mcpModalTitle');
-  const nameEl = document.getElementById('mcpName');
-  const urlEl = document.getElementById('mcpUrl');
-  const urlErr = document.getElementById('mcpUrlError');
-  const authEl = document.getElementById('mcpAuth');
-  const allowlistedEl = document.getElementById('mcpAllowlisted');
-  const enabledEl = document.getElementById('mcpEnabled');
-  const sensitiveEl = document.getElementById('mcpSensitiveConfirm');
-  const timeoutEl = document.getElementById('mcpTimeout');
-  const backoffBaseEl = document.getElementById('mcpBackoffBase');
-  const backoffMaxEl = document.getElementById('mcpBackoffMax');
-  const backoffFactorEl = document.getElementById('mcpBackoffFactor');
-  const backoffJitterEl = document.getElementById('mcpBackoffJitter');
-  const modalSave = document.getElementById('mcpSaveServerBtn');
-  const modalCancel = document.getElementById('mcpCancelServerBtn');
-
-  let editingServerId = null;
-
-  function validateWss(u) {
-    try {
-      const x = new URL(u);
-      return x.protocol === 'wss:';
-    } catch {
-      return false;
-    }
-  }
-
-  function closeModal() {
-    editingServerId = null;
-    modal.classList.add('hidden');
-    nameEl.value = '';
-    urlEl.value = '';
-    authEl.value = '';
-    allowlistedEl.checked = false;
-    enabledEl.checked = true;
-    sensitiveEl.checked = true;
-    timeoutEl.value = 20000;
-    backoffBaseEl.value = 500;
-    backoffMaxEl.value = 10000;
-    backoffFactorEl.value = 2;
-    backoffJitterEl.value = 0.2;
-    urlErr.textContent = '';
-  }
-
-  function openModal(server) {
-    modal.classList.remove('hidden');
-    if (server) {
-      editingServerId = server.id;
-      modalTitle.textContent = 'Edit MCP Server';
-      nameEl.value = server.name || '';
-      urlEl.value = server.url || '';
-      authEl.value = (server.headers && server.headers.Authorization) || '';
-      allowlistedEl.checked = !!server.allowlisted;
-      enabledEl.checked = !!server.enabled;
-      sensitiveEl.checked = !!(server.policy && server.policy.sensitiveRequireConfirm);
-      timeoutEl.value = (server.timeouts && server.timeouts.callMs) || 20000;
-      backoffBaseEl.value = (server.backoff && server.backoff.baseMs) || 500;
-      backoffMaxEl.value = (server.backoff && server.backoff.maxMs) || 10000;
-      backoffFactorEl.value = (server.backoff && server.backoff.factor) || 2;
-      backoffJitterEl.value = (server.backoff && server.backoff.jitter) || 0.2;
-    } else {
-      editingServerId = null;
-      modalTitle.textContent = 'Add MCP Server';
-    }
-  }
-
-  function renderServers(servers) {
-    serversTbody.innerHTML = '';
-    servers.forEach(s => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td data-label="Name">${s.name || ''}</td>
-        <td data-label="URL">${s.url || ''}</td>
-        <td data-label="Allowlisted">${s.allowlisted ? 'Yes' : 'No'}</td>
-        <td data-label="Enabled">
-          <input type="checkbox" data-action="toggle-enabled" data-id="${s.id}" ${s.enabled ? 'checked' : ''}/>
-        </td>
-        <td data-label="Status">${s.status || 'idle'}</td>
-        <td data-label="Tools">${Array.isArray(s.tools) ? s.tools.length : 0}</td>
-        <td data-label="Actions">
-          <button data-action="test" data-id="${s.id}">Test</button>
-          <button data-action="edit" data-id="${s.id}">Edit</button>
-          <button data-action="remove" data-id="${s.id}">Remove</button>
-          <button data-action="listtools" data-id="${s.id}">List Tools</button>
-        </td>
-      `;
-      serversTbody.appendChild(tr);
-    });
-  }
-
-  function renderLogs(serverId) {
-    chrome.runtime.sendMessage({ action: 'mcp.getLogs', serverId, limit: 200 }, (res) => {
-      if (!res || !res.success) {
-        logsDiv.textContent = 'No logs.';
-        return;
-      }
-      const entries = res.logs || [];
-      logsDiv.innerHTML = entries.map(e => {
-        const payload = JSON.stringify(e.payloadRedacted ?? e.redactedPayload ?? {}, null, 0);
-        return `<div style="font-family:monospace; font-size: 12px;">
-          [${new Date(e.ts).toLocaleTimeString()}] ${e.dir || e.direction || ''} ${e.type || ''} ${e.status || ''} ${e.latencyMs ? e.latencyMs + 'ms' : ''}
-          <pre style="white-space:pre-wrap; margin:4px 0;">${payload}</pre>
-        </div>`;
-      }).join('');
-    });
-  }
-
-  function refreshServers() {
-    chrome.runtime.sendMessage({ action: 'mcp.getServers' }, (res) => {
-      if (!res || !res.success) {
-        renderServers([]);
-        return;
-      }
-      renderServers(res.servers || []);
-    });
-  }
-
-  // initial load
-  refreshServers();
-
-  // add server
-  if (addBtn) {
-    addBtn.addEventListener('click', () => openModal(null));
-  }
-
-  // export config
-  if (exportBtn) {
-    exportBtn.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ action: 'mcp.exportConfig' }, (res) => {
-        if (!res || !res.success) {
-          showStatus('Failed to export MCP config', true);
-          return;
-        }
-        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(res.config, null, 2));
-        const a = document.createElement('a');
-        a.href = dataStr;
-        a.download = 'mcp_config.json';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      });
-    });
-  }
-
-  // import config
-  if (importBtn && importFile) {
-    importBtn.addEventListener('click', () => importFile.click());
-    importFile.addEventListener('change', () => {
-      const file = importFile.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const parsed = JSON.parse(reader.result);
-          chrome.runtime.sendMessage({ action: 'mcp.importConfig', configs: parsed }, (res) => {
-            if (!res || !res.success) {
-              showStatus('Failed to import MCP config', true);
-              return;
-            }
-            showStatus('Imported MCP config', false, true);
-            refreshServers();
-          });
-        } catch (e) {
-          showStatus('Invalid MCP config JSON', true);
-        }
-      };
-      reader.readAsText(file);
-    });
-  }
-
-  // verbose logs toggle
-  if (verboseToggle) {
-    chrome.storage.local.get({ mcpVerboseLogs: false }, ({ mcpVerboseLogs }) => {
-      verboseToggle.checked = !!mcpVerboseLogs;
-    });
-    verboseToggle.addEventListener('change', () => {
-      chrome.storage.local.set({ mcpVerboseLogs: !!verboseToggle.checked });
-      showStatus(`MCP verbose logs ${verboseToggle.checked ? 'enabled' : 'disabled'}.`, false, true);
-    });
-  }
-
-  // table actions
-  if (serversTbody) {
-    serversTbody.addEventListener('click', (e) => {
-      const target = e.target.closest('button,input');
-      if (!target) return;
-      const action = target.dataset.action;
-      const id = target.dataset.id;
-      if (!action || !id) return;
-
-      if (action === 'edit') {
-        chrome.runtime.sendMessage({ action: 'mcp.getServers' }, (res) => {
-          const server = (res.servers || []).find(s => s.id === id);
-          if (server) openModal(server);
-        });
-      } else if (action === 'remove') {
-        chrome.runtime.sendMessage({ action: 'mcp.removeServer', serverId: id }, (res) => {
-          if (!res || !res.success) {
-            showStatus('Failed to remove server', true);
-            return;
-          }
-          showStatus('Server removed', false, true);
-          refreshServers();
-        });
-      } else if (action === 'test') {
-        chrome.runtime.sendMessage({ action: 'mcp.testConnect', serverId: id }, (res) => {
-          if (!res || !res.success) {
-            showStatus(`Test failed: ${res && res.error ? res.error : 'unknown error'}`, true, true);
-            renderLogs(id);
-            refreshServers();
-            return;
-          }
-          showStatus('Connection successful', false, true);
-          renderLogs(id);
-          refreshServers();
-        });
-      } else if (action === 'listtools') {
-        chrome.runtime.sendMessage({ action: 'mcp.listTools', serverId: id }, (res) => {
-          if (!res || !res.success) {
-            showStatus(`List tools failed: ${res && res.error ? res.error : 'unknown error'}`, true, true);
-            renderLogs(id);
-            refreshServers();
-            return;
-          }
-          showStatus(`Discovered ${Array.isArray(res.tools) ? res.tools.length : 0} tools`, false, true);
-          renderLogs(id);
-          refreshServers();
-        });
-      } else if (action === 'toggle-enabled' && target.type === 'checkbox') {
-        const enabled = target.checked;
-        chrome.runtime.sendMessage({ action: 'mcp.getServers' }, (res) => {
-          const server = (res.servers || []).find(s => s.id === id);
-          if (!server) return;
-          const updated = { ...server, enabled };
-          chrome.runtime.sendMessage({ action: 'mcp.updateServer', config: updated }, (r) => {
-            if (!r || !r.success) {
-              showStatus('Failed to update server', true);
-              refreshServers();
-              return;
-            }
-            showStatus(`Server ${enabled ? 'enabled' : 'disabled'}`, false, true);
-            refreshServers();
-          });
-        });
-      }
-    });
-  }
-
-  // modal events
-  if (modalCancel) modalCancel.addEventListener('click', closeModal);
-  if (modalSave) {
-    modalSave.addEventListener('click', () => {
-      const name = nameEl.value.trim();
-      const url = urlEl.value.trim();
-      const auth = authEl.value.trim();
-      const allowlisted = !!allowlistedEl.checked;
-      const enabled = !!enabledEl.checked;
-      const sensitiveRequireConfirm = !!sensitiveEl.checked;
-      const callMs = Math.max(1000, Number(timeoutEl.value) || 20000);
-      const backoff = {
-        baseMs: Math.max(0, Number(backoffBaseEl.value) || 500),
-        maxMs: Math.max(0, Number(backoffMaxEl.value) || 10000),
-        factor: Math.max(1, Number(backoffFactorEl.value) || 2),
-        jitter: Math.max(0, Number(backoffJitterEl.value) || 0.2)
-      };
-
-      if (!name) { showStatus('Name is required', true); return; }
-      if (!validateWss(url)) {
-        urlErr.textContent = 'Enter a valid wss:// URL';
-        return;
-      }
-      urlErr.textContent = '';
-
-      const headers = {};
-      if (auth) headers.Authorization = auth;
-
-      const config = {
-        id: editingServerId || ('mcp_' + Date.now()),
-        name,
-        url,
-        headers,
-        enabled,
-        allowlisted,
-        timeouts: { callMs },
-        backoff,
-        policy: { sensitiveRequireConfirm },
-        clientMeta: { name: 'PromptPaul', version: '1.0.0' }
-      };
-
-      const action = editingServerId ? 'mcp.updateServer' : 'mcp.addServer';
-      chrome.runtime.sendMessage({ action, config }, (res) => {
-        if (!res || !res.success) {
-          showStatus(`Failed to ${editingServerId ? 'update' : 'add'} server`, true);
-          return;
-        }
-        showStatus(`Server ${editingServerId ? 'updated' : 'added'}`, false, true);
-        closeModal();
-        refreshServers();
-      });
-    });
-  }
-}
-
 
 function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, profile) {
   document.getElementById('currentEndpoint').textContent = endpoint || 'Not set';
@@ -366,7 +59,13 @@ function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, prof
   }
 }
 
-// Function to validate inputs
+/**
+ * Validates the required API configuration inputs.
+ * @param {string} endpoint - The LLM API endpoint URL.
+ * @param {string} key - The API key.
+ * @param {string} model - The model name.
+ * @returns {boolean} True if all inputs are valid, false otherwise.
+ */
 function validateInputs(endpoint, key, model) {
   if (!endpoint || !key || !model) {
     showStatus('API endpoint, API key, and model name are required', true);
@@ -383,7 +82,11 @@ function validateInputs(endpoint, key, model) {
   return true;
 }
 
-// Save options to chrome.storage
+/**
+ * Saves the current options to Chrome storage.
+ * @param {Event} e - The form submit event.
+ * @returns {void}
+ */
 function saveOptions(e) {
   e.preventDefault();
 
@@ -477,8 +180,11 @@ function saveOptions(e) {
   });
 }
 
-// Load saved options
-// Function to load settings for a specific profile
+/**
+ * Loads settings for a specific profile from Chrome storage.
+ * @param {string} profileId - The ID of the profile to load.
+ * @returns {void}
+ */
 function loadProfileSettings(profileId) {
   chrome.storage.local.get(['profiles'], (result) => {
     const profiles = result.profiles || [];
@@ -538,7 +244,7 @@ function loadOptions() {
     addNewOption.value = 'add_new_profile';
     addNewOption.textContent = '+ Add New Profile...';
     profileSelectElement.appendChild(addNewOption);
-    
+
     const defaultOption = document.createElement('option');
     defaultOption.value = 'default';
     defaultOption.textContent = 'Default';
@@ -581,7 +287,7 @@ function loadOptions() {
       }); // Save updated profiles array
     } else {
     }
-    
+
     populateProfileDropdown(profiles, lastSelectedProfileId);
     loadProfileSettings(lastSelectedProfileId); // Load settings for the last selected or default profile
   });
@@ -615,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (testMicPermissionBtn && micPermissionStatus) {
     async function testMicrophonePermission() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      
+
       if (!SpeechRecognition) {
         micPermissionStatus.textContent = 'Not supported in this browser';
         micPermissionStatus.style.color = 'var(--ext-destructive)';
@@ -639,17 +345,17 @@ document.addEventListener('DOMContentLoaded', () => {
         recognition.lang = 'en-US';
         recognition.maxAlternatives = 1;
         recognition.continuous = false;
-        
+
         recognition.onstart = function() {
           micPermissionStatus.textContent = '✓ Granted';
           micPermissionStatus.style.color = '#10b981';
           recognition.stop();
           showStatus('Microphone permission granted!', false, true);
         };
-        
+
         recognition.onerror = function(event) {
           testMicPermissionBtn.disabled = false;
-          
+
           if (event.error === 'not-allowed') {
             micPermissionStatus.textContent = '✗ Denied';
             micPermissionStatus.style.color = 'var(--ext-destructive)';
@@ -660,13 +366,13 @@ document.addEventListener('DOMContentLoaded', () => {
             showStatus('Could not determine microphone status: ' + event.error, true, true);
           }
         };
-        
+
         recognition.onend = function() {
           testMicPermissionBtn.disabled = false;
         };
 
         recognition.start();
-        
+
       } catch (error) {
         testMicPermissionBtn.disabled = false;
         micPermissionStatus.textContent = 'Test failed';
@@ -886,8 +592,14 @@ async function populateToolDropdown() {
   }
 
   try {
-    const result = await new Promise((resolve) => {
-      chrome.storage.local.get(['promptPaulTools'], resolve);
+    const result = await new Promise((resolve, reject) => {
+      chrome.storage.local.get(['promptPaulTools'], (res) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(res);
+        }
+      });
     });
     const tools = result.promptPaulTools || [];
 
@@ -910,7 +622,7 @@ async function populateToolDropdown() {
 
   } catch (error) {
     console.error("Error loading tools for dropdown:", error);
-    showStatus("Error loading tools for dropdown.", true);
+    showStatus("Error loading tools for dropdown: " + error.message, true);
   }
 }
 
@@ -1179,13 +891,13 @@ function setupInstructionHandlers() {
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
     document.getElementById('instructionToolChoice').value = '';
-    
+
     // Reset modality checkboxes - Text checked by default, others unchecked
     document.getElementById('modalityText').checked = true;
     document.getElementById('modalityImage').checked = false;
     document.getElementById('modalityVideo').checked = false;
     document.getElementById('modalityAudio').checked = false;
-    
+
     showStatus('Form cleared.');
   }
 
@@ -1309,64 +1021,8 @@ function isValidJson(str) {
 function setupToolHandlers() {
   const saveToolBtn = document.getElementById('saveTool');
   const clearToolFormBtn = document.getElementById('clearToolForm');
-  const toolMcpServerUrlEl = document.getElementById('toolMcpServerUrl');
   const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
   const toolHttpMethodEl = document.getElementById('toolHttpMethod');
-  const fetchMcpToolInfoBtn = document.getElementById('fetchMcpToolInfoBtn');
-
-  function updateToolFieldStates() {
-    const mcpUrl = toolMcpServerUrlEl.value.trim();
-    const endpointUrl = toolEndpointUrlEl.value.trim();
-    const toolDescriptionEl = document.getElementById('toolDescription');
-    const toolParametersEl = document.getElementById('toolParameters');
-    const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
-    const toolParametersSourceEl = document.getElementById('toolParametersSource');
-
-    if (mcpUrl) {
-      toolEndpointUrlEl.disabled = true;
-      toolHttpMethodEl.disabled = true;
-      // Optionally, clear them or just disable
-      // toolEndpointUrlEl.value = '';
-      // toolHttpMethodEl.value = '';
-      toolDescriptionEl.dataset.source = 'mcp';
-      toolParametersEl.dataset.source = 'mcp';
-      toolDescriptionEl.classList.add('mcp-sourced');
-      toolParametersEl.classList.add('mcp-sourced');
-      toolDescriptionSourceEl.textContent = 'Source: MCP Server (dynamic). Local content is fallback.';
-      toolDescriptionSourceEl.style.display = 'block';
-      toolParametersSourceEl.textContent = 'Source: MCP Server (dynamic). Local content is fallback.';
-      toolParametersSourceEl.style.display = 'block';
-      // IMPORTANT: Do not set readOnly here. Fields remain editable for fallback.
-    } else {
-      toolEndpointUrlEl.disabled = false;
-      toolHttpMethodEl.disabled = false;
-      toolDescriptionEl.removeAttribute('dataset.source');
-      toolParametersEl.removeAttribute('dataset.source');
-      toolDescriptionEl.classList.remove('mcp-sourced');
-      toolParametersEl.classList.remove('mcp-sourced');
-      toolDescriptionSourceEl.style.display = 'none';
-      toolParametersSourceEl.style.display = 'none';
-      // Ensure fields are editable if MCP URL is removed
-      toolDescriptionEl.readOnly = false;
-      toolParametersEl.readOnly = false;
-      toolDescriptionEl.classList.remove('read-only-mcp');
-      toolParametersEl.classList.remove('read-only-mcp');
-    }
-
-    if (endpointUrl) {
-      toolMcpServerUrlEl.disabled = true;
-    } else if (!mcpUrl) { // Only enable mcpUrl if endpointUrl is also empty (and mcpUrl itself was empty before this check)
-      toolMcpServerUrlEl.disabled = false;
-    }
-    // If mcpUrl is filled, endpointUrl related fields are disabled.
-    // If endpointUrl is filled, mcpUrl field is disabled.
-    // If both are empty, all are enabled.
-  }
-
-  if (toolMcpServerUrlEl && toolEndpointUrlEl) { // Ensure elements exist before adding listeners
-    toolMcpServerUrlEl.addEventListener('input', updateToolFieldStates);
-    toolEndpointUrlEl.addEventListener('input', updateToolFieldStates);
-  }
 
   // Load and display tools
   function loadTools() {
@@ -1380,7 +1036,6 @@ function setupToolHandlers() {
         row.innerHTML = `
           <td data-label="Name">${tool.name}</td>
           <td data-label="Description">${tool.description}</td>
-          <td data-label="MCP Server URL">${tool.mcpServerUrl || ''}</td>
           <td data-label="Actions">
             <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
             <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
@@ -1394,6 +1049,11 @@ function setupToolHandlers() {
         btn.addEventListener('click', (e) => {
           const toolId = e.target.dataset.id;
           chrome.storage.local.get(['promptPaulTools'], (result) => {
+            if (chrome.runtime.lastError) {
+              console.error('Error loading tool for edit:', chrome.runtime.lastError.message);
+              showStatus('Error loading tool data.', true);
+              return;
+            }
             const tools = result.promptPaulTools || [];
             const tool = tools.find(t => t.id === toolId);
             if (tool) {
@@ -1402,10 +1062,7 @@ function setupToolHandlers() {
               document.getElementById('toolParameters').value = tool.parameters || '';
               document.getElementById('toolEndpointUrl').value = tool.endpointUrl || '';
               document.getElementById('toolHttpMethod').value = tool.httpMethod || '';
-              // toolMcpId is removed, so no need to load it into a field.
-              document.getElementById('toolMcpServerUrl').value = tool.mcpServerUrl || '';
               document.getElementById('toolId').value = tool.id;
-              updateToolFieldStates(); // Update field states when a tool is loaded for editing
             }
           });
         });
@@ -1416,9 +1073,19 @@ function setupToolHandlers() {
           const toolId = e.target.dataset.id;
           if (confirm('Are you sure you want to delete this tool?')) {
             chrome.storage.local.get(['promptPaulTools'], (result) => {
+              if (chrome.runtime.lastError) {
+                console.error('Error loading tools for delete:', chrome.runtime.lastError.message);
+                showStatus('Error loading tool data.', true);
+                return;
+              }
               let tools = result.promptPaulTools || [];
               tools = tools.filter(t => t.id !== toolId);
               chrome.storage.local.set({ promptPaulTools: tools }, () => {
+                if (chrome.runtime.lastError) {
+                  console.error('Error deleting tool:', chrome.runtime.lastError.message);
+                  showStatus('Error deleting tool.', true);
+                  return;
+                }
                 showStatus('Tool deleted!');
                 loadTools(); // Reload the table
                 populateToolDropdown(); // Update tool dropdown
@@ -1443,7 +1110,6 @@ function setupToolHandlers() {
       const toolParameters = document.getElementById('toolParameters').value.trim();
       const toolEndpointUrl = document.getElementById('toolEndpointUrl').value.trim();
       const toolHttpMethod = document.getElementById('toolHttpMethod').value;
-      let toolMcpServerUrl = document.getElementById('toolMcpServerUrl').value.trim();
       const toolId = document.getElementById('toolId').value;
 
       if (!toolName || !toolDescription) {
@@ -1472,7 +1138,6 @@ function setupToolHandlers() {
                 parameters: toolParameters,
                 endpointUrl: toolEndpointUrl,
                 httpMethod: toolHttpMethod,
-                mcpServerUrl: toolMcpServerUrl,
                 lastUpdated: now
               };
             }
@@ -1488,7 +1153,6 @@ function setupToolHandlers() {
             parameters: toolParameters,
             endpointUrl: toolEndpointUrl,
             httpMethod: toolHttpMethod,
-            mcpServerUrl: toolMcpServerUrl,
             createdAt: now,
             lastUpdated: now
           };
@@ -1517,18 +1181,8 @@ function setupToolHandlers() {
     document.getElementById('toolParameters').value = '';
     document.getElementById('toolEndpointUrl').value = '';
     document.getElementById('toolHttpMethod').value = '';
-    // toolMcpId is removed, so no need to clear its field.
-    document.getElementById('toolMcpServerUrl').value = '';
     document.getElementById('toolId').value = '';
-    updateToolFieldStates(); // Reset field states when form is cleared
     showStatus('Tool form cleared.');
-    // Ensure fields are reset to be editable and styling removed
-    document.getElementById('toolDescription').readOnly = false;
-    document.getElementById('toolParameters').readOnly = false;
-    document.getElementById('toolDescription').classList.remove('read-only-mcp');
-    document.getElementById('toolParameters').classList.remove('read-only-mcp');
-    document.getElementById('toolDescriptionSource').style.display = 'none';
-    document.getElementById('toolParametersSource').style.display = 'none';
   }
 
   // Export tools handler
@@ -1599,90 +1253,4 @@ function setupToolHandlers() {
 
   // Initial load of tools
   loadTools();
-
-  if (fetchMcpToolInfoBtn) {
-    fetchMcpToolInfoBtn.addEventListener('click', async () => { // Made async
-      const toolMcpServerUrl = toolMcpServerUrlEl.value.trim();
-      const toolNameValue = document.getElementById('toolName').value.trim();
-
-      if (!toolMcpServerUrl) {
-        showStatus("Please enter an MCP Server URL first.", true);
-        return;
-      }
-      if (!toolNameValue) {
-        showStatus("Please enter a Tool Name to fetch its details.", true);
-        return;
-      }
-
-
-      // --- Start of actual fetch logic using chrome.runtime.sendMessage ---
-      showStatus("Fetching tool information from MCP server...", false, true);
-      // Reset fields to editable and remove MCP styling initially
-      const toolDescriptionEl = document.getElementById('toolDescription');
-      const toolParametersEl = document.getElementById('toolParameters');
-      const toolDescriptionSourceEl = document.getElementById('toolDescriptionSource');
-      const toolParametersSourceEl = document.getElementById('toolParametersSource');
-
-      toolDescriptionEl.readOnly = false;
-      toolParametersEl.readOnly = false;
-      toolDescriptionEl.classList.remove('read-only-mcp');
-      toolParametersEl.classList.remove('read-only-mcp');
-      toolDescriptionSourceEl.style.display = 'none';
-      toolParametersSourceEl.style.display = 'none';
-
-      chrome.runtime.sendMessage(
-        {
-          action: 'fetchMcpToolDetailsFromServer',
-          mcpServerUrl: toolMcpServerUrl,
-          toolName: toolNameValue
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('Options: Error sending fetchMcpToolDetailsFromServer message:', chrome.runtime.lastError.message);
-            showStatus(`Error fetching tool details: ${chrome.runtime.lastError.message}`, true);
-            toolDescriptionSourceEl.textContent = 'Source: Local fallback (Error sending message to background).';
-            toolParametersSourceEl.textContent = 'Source: Local fallback (Error sending message to background).';
-            toolDescriptionSourceEl.style.display = 'block';
-            toolParametersSourceEl.style.display = 'block';
-            return;
-          }
-
-          if (response && response.success && response.toolSchema) {
-            const { description, inputSchema, name: mcpToolName } = response.toolSchema;
-
-            // Log the original name from the user and the name from the MCP server
-
-            // It's generally better to trust the schema's name if it exists and differs,
-            // but for this UI, the "Tool Name" field is the local alias and primary identifier.
-            // We will populate description and parameters from the schema.
-            // If `mcpToolName` (from schema) is different from `toolNameValue` (from form),
-            // it's worth noting, but we don't change `toolNameValue` here as it's the key for storage.
-
-            toolDescriptionEl.value = description || '';
-            toolParametersEl.value = inputSchema ? JSON.stringify(inputSchema, null, 2) : '{}';
-
-            // Make fields read-only and style them as MCP-sourced
-            toolDescriptionEl.readOnly = true;
-            toolParametersEl.readOnly = true;
-            toolDescriptionEl.classList.add('read-only-mcp');
-            toolParametersEl.classList.add('read-only-mcp');
-            toolDescriptionSourceEl.textContent = `Source: MCP Server (${mcpToolName}). Overrides local content.`;
-            toolParametersSourceEl.textContent = `Source: MCP Server (${mcpToolName}). Overrides local content.`;
-            toolDescriptionSourceEl.style.display = 'block';
-            toolParametersSourceEl.style.display = 'block';
-            showStatus(`Tool details for '${mcpToolName}' fetched and populated successfully!`, false, true);
-          } else {
-            const errorMsg = response ? response.error : "Unknown error or no response from background script.";
-            console.error('Options: Failed to fetch MCP tool details. Response:', response);
-            showStatus(`Failed to fetch tool details: ${errorMsg}`, true);
-            toolDescriptionSourceEl.textContent = `Source: Local fallback (Fetch failed: ${errorMsg})`;
-            toolParametersSourceEl.textContent = `Source: Local fallback (Fetch failed: ${errorMsg})`;
-            toolDescriptionSourceEl.style.display = 'block';
-            toolParametersSourceEl.style.display = 'block';
-          }
-        }
-      );
-      // --- End of actual fetch logic ---
-    });
-  }
 }

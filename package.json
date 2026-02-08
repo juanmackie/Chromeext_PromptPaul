@@ -3,10 +3,6 @@
   "version": "1.0.0",
   "description": "Chrome extension for custom instructions",
   "main": "background.js",
-  "scripts": {
-    "start": "node background.js"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.3"
-  }
+  "scripts": {},
+  "dependencies": {}
 }

@@ -82,8 +82,11 @@ document.addEventListener('DOMContentLoaded', function() {
         addProfileButton.addEventListener('click', function() {
             const profileName = prompt('Enter a name for the new profile:');
             if (profileName && profileName.trim()) {
-                // This would be handled by the main options.js
-                console.log('Creating new profile:', profileName.trim());
+                // Profile creation is handled by the main options.js
+                // Dispatch custom event to notify options.js
+                document.dispatchEvent(new CustomEvent('inputControls:createProfile', {
+                    detail: { name: profileName.trim() }
+                }));
             }
         });
     }
@@ -93,8 +96,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const currentProfile = profileSelect?.value;
             if (currentProfile && currentProfile !== 'default') {
                 if (confirm(`Are you sure you want to delete the profile "${currentProfile}"? This action cannot be undone.`)) {
-                    // This would be handled by the main options.js
-                    console.log('Deleting profile:', currentProfile);
+                    // Profile deletion is handled by the main options.js
+                    // Dispatch custom event to notify options.js
+                    document.dispatchEvent(new CustomEvent('inputControls:deleteProfile', {
+                        detail: { profileId: currentProfile }
+                    }));
                 }
             }
         });

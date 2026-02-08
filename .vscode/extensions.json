@@ -1,0 +1,51 @@
+{
+  // Recommended extensions for Prompt Paul Chrome Extension development
+  // Install all recommended extensions with: code --list-extensions | xargs -L 1 code --install-extension
+  "recommendations": [
+    // Chrome Extension Development
+    "msjsdiag.debugger-for-chrome",
+    "firefox-devtools.vscode-firefox-debug",
+
+    // JavaScript & TypeScript
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+
+    // JSDoc & Documentation
+    "joelday.docthis",
+    "lllllllqw.jsdoc",
+
+    // HTML & CSS
+    "formulahendry.auto-rename-tag",
+    "bradlc.vscode-tailwindcss",
+    "ecmel.vscode-html-css",
+
+    // Markdown
+    "davidanson.vscode-markdownlint",
+    "yzhang.markdown-all-in-one",
+
+    // Git
+    "eamodio.gitlens",
+    "github.vscode-pull-request-github",
+
+    // Code Quality
+    "sonarsource.sonarlint-vscode",
+    "wallabyjs.quokka-vscode",
+
+    // Productivity
+    "christian-kohler.path-intellisense",
+    "visualstudioexptteam.vscodeintellicode",
+    "aaron-bond.better-comments",
+
+    // JSON
+    "mohsen1.prettify-json-mode",
+
+    // EditorConfig
+    "editorconfig.editorconfig"
+  ],
+  "unwantedRecommendations": [
+    // Extensions that may conflict with Chrome Extension development
+    "ms-vscode.vscode-typescript-next"
+  ]
+}

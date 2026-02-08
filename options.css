@@ -8,7 +8,7 @@
   --border-radius: 1rem;
 }
 
-/* Dark theme variables are now defined in theme.css */
+/* Material Symbols Outlined font styling */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
   font-weight: normal;
@@ -21,6 +21,60 @@
   white-space: nowrap;
   direction: ltr;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Profile button styles */
+#addProfileButton,
+#deleteProfileButton {
+  border-radius: 4px;
+  height: 2.75rem !important;
+  font-weight: 500;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem;
+  margin: 0 !important;
+  padding: 0.75rem 1.5rem !important;
+  box-sizing: border-box;
+}
+
+/* Profile button field container */
+.profile-button-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+}
+
+/* Prompt template selector */
+#promptTemplate {
+  border-radius: 4px;
+}
+
+/* Button container for action buttons */
+.button-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+/* Ensure action buttons share the same horizontal centre */
+.button-container .ko-fi-button,
+.button-container #revertDefaultsButton,
+.button-container #feedbackButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Anchor tags within button container */
+.button-container a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Removed the redundant :root and .dark variable declarations as they are already defined with --ext- prefix */

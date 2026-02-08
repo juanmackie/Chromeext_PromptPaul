@@ -1,3 +1,19 @@
+/**
+ * @fileoverview Chat Interface for Prompt Paul Chrome Extension
+ *
+ * This module handles the side panel chat interface including:
+ * - Message sending and receiving
+ * - Streaming API response handling
+ * - Quick actions (load content, summarize, explain)
+ * - Pinned custom instructions
+ * - Copy functionality for messages
+ * - Voice input support
+ *
+ * @module chat
+ * @requires ./themeUtils.js
+ * @requires ./loadingManager.js
+ */
+
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 
@@ -18,39 +34,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add event listeners for quick action buttons
     if (loadContentButton) {
-        loadContentButton.addEventListener('click', () => {
-            loadingManager.showToast('Loading tab content...', 'info');
-            chrome.runtime.sendMessage({ action: 'getLoadContent' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Chat.js: Load content button - Error:", chrome.runtime.lastError.message);
-                    loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
-                    return;
-                }
-                
+        loadContentButton.addEventListener('click', async () => {
+            try {
+                loadingManager.showToast('Loading tab content...', 'info');
+
+                const response = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: 'getLoadContent' }, (res) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve(res);
+                        }
+                    });
+                });
+
                 if (response && response.action === 'loadContentResponse') {
                     if (response.success && response.content) {
                         const previewLength = 500;
                         const preview = response.content.substring(0, previewLength) + (response.content.length > previewLength ? '...' : '');
-                        
+
                         // Show system message
                         addMessage('System', `📄 **Content loaded from:** ${response.title}\n\n**Preview:**\n${preview}`);
-                        
+
                         // Add to history as user message so LLM sees it in context
-                        conversationHistory.push({ 
-                            role: 'user', 
-                            content: `I have loaded the content from the page "${response.title}" (${response.url}). Here is the content:\n\n${response.content}` 
+                        conversationHistory.push({
+                            role: 'user',
+                            content: `I have loaded the content from the page "${response.title}" (${response.url}). Here is the content:\n\n${response.content}`
                         });
-                        
+
                         chatMainArea.style.display = 'block';
                         oneoffInstructionArea.style.display = 'none';
                         userInput.focus();
                         loadingManager.showToast('Content loaded! You can now ask questions about it.', 'success');
                     } else {
-                        console.error("Chat.js: Load content button - Failed:", response.error);
-                        loadingManager.showToast('No content received: ' + (response.error || 'Content not available'), 'error');
+                        const errorMsg = response.error || 'Content not available';
+                        console.error("Chat.js: Load content button - Failed:", errorMsg);
+                        loadingManager.showToast('No content received: ' + errorMsg, 'error');
                     }
+                } else {
+                    loadingManager.showToast('Unexpected response from background script', 'error');
                 }
-            });
+            } catch (error) {
+                console.error("Chat.js: Load content button - Error:", error.message);
+                loadingManager.showToast(`Error: ${error.message}`, 'error');
+            }
         });
     }
 
@@ -58,14 +85,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // and prevent duplicate message sending.
     const explainBtn = document.getElementById('explain-button');
     if (explainBtn) {
-        explainBtn.addEventListener('click', () => {
-            loadingManager.showToast('Requesting tab content for explanation...', 'info');
-            chrome.runtime.sendMessage({ action: 'getExplainContent' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Chat.js: Explain button - Error sending getExplainContent message:", chrome.runtime.lastError.message);
-                    loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
-                    return;
-                }
+        explainBtn.addEventListener('click', async () => {
+            try {
+                loadingManager.showToast('Requesting tab content for explanation...', 'info');
+
+                const response = await new Promise((resolve, reject) => {
+                    chrome.runtime.sendMessage({ action: 'getExplainContent' }, (res) => {
+                        if (chrome.runtime.lastError) {
+                            reject(new Error(chrome.runtime.lastError.message));
+                        } else {
+                            resolve(res);
+                        }
+                    });
+                });
 
                 if (response && response.action === 'explainContentResponse') {
                     if (response.success && response.content) {
@@ -75,14 +107,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         makeApiCall(prompt);
                         loadingManager.showToast('Tab content received, explaining...', 'success');
                     } else {
-                        console.error("Chat.js: Explain button - Failed to get content or content missing. Success:", response.success, "Error:", response.error);
-                        loadingManager.showToast('No content received for explanation: ' + (response.error || 'Content not available'), 'error');
+                        const errorMsg = response.error || 'Content not available';
+                        console.error("Chat.js: Explain button - Failed to get content:", errorMsg);
+                        loadingManager.showToast('No content received for explanation: ' + errorMsg, 'error');
                     }
                 } else {
-                    console.warn("Chat.js: Explain button - Received unexpected response action or missing action. Response:", response);
+                    console.warn("Chat.js: Explain button - Received unexpected response:", response);
                     loadingManager.showToast('Received an unexpected response for explain action.', 'warning');
                 }
-            });
+            } catch (error) {
+                console.error("Chat.js: Explain button - Error:", error.message);
+                loadingManager.showToast(`Error: ${error.message}`, 'error');
+            }
         });
     }
 
@@ -107,19 +143,35 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentAbortController = null;
     let currentMediaData = null; // Store media data for analysis
 
+    /**
+     * Stops the current API request by aborting the AbortController.
+     */
     function stopApiRequest() {
         if (currentAbortController) {
             currentAbortController.abort();
         }
     }
 
+    /**
+     * Retrieves the API configuration from Chrome storage.
+     * @returns {Promise<Object>} The selected profile configuration.
+     * @throws {Error} If configuration is incomplete or cannot be read.
+     */
     async function getApiConfig() {
         return new Promise((resolve, reject) => {
             chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+                if (chrome.runtime.lastError) {
+                    const error = new Error(`Failed to read configuration: ${chrome.runtime.lastError.message}`);
+                    console.error("Chat: Storage read error:", chrome.runtime.lastError.message);
+                    loadingManager.showToast('Error reading configuration', 'error');
+                    reject(error);
+                    return;
+                }
+
                 const profiles = result.profiles || [];
                 const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
                 const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId) || profiles.find(p => p.id === 'default');
-                
+
                 if (!selectedProfile || !selectedProfile.llmEndpoint || !selectedProfile.apiKey || !selectedProfile.modelName) {
                     console.error("Chat: Configuration is incomplete or missing.");
                     const error = new Error('Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.');
@@ -132,6 +184,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * Attaches click event listeners to copy icons for copying message content.
+     * @param {string} rawMessage - The raw text message to copy.
+     * @param {HTMLElement} contentElement - The element containing the formatted content.
+     * @param {HTMLElement} copyIconElement - The copy icon element for plain text.
+     * @param {HTMLElement} copyFormattedIconElement - The copy icon element for formatted text.
+     */
     function attachCopyListeners(rawMessage, contentElement, copyIconElement, copyFormattedIconElement) {
         const newCopyIcon = copyIconElement.cloneNode(true);
         if (copyIconElement.parentNode) {
@@ -141,28 +200,46 @@ document.addEventListener('DOMContentLoaded', () => {
         if (copyFormattedIconElement.parentNode) {
             copyFormattedIconElement.parentNode.replaceChild(newFormattedCopyIcon, copyFormattedIconElement);
         }
-        newCopyIcon.addEventListener('click', function(event) {
+        newCopyIcon.addEventListener('click', async function(event) {
             event.stopPropagation();
-            navigator.clipboard.writeText(rawMessage).then(() => loadingManager.showToast('Copied raw text to clipboard', 'success'))
-                .catch(err => { console.error('Failed to copy raw text: ', err); loadingManager.showToast('Error copying raw text.', 'error'); });
+            try {
+                await navigator.clipboard.writeText(rawMessage);
+                loadingManager.showToast('Copied raw text to clipboard', 'success');
+            } catch (err) {
+                console.error('Failed to copy raw text: ', err);
+                loadingManager.showToast('Error copying raw text.', 'error');
+            }
         });
-        newFormattedCopyIcon.addEventListener('click', function(event) {
+        newFormattedCopyIcon.addEventListener('click', async function(event) {
             event.stopPropagation();
             const htmlContent = contentElement.innerHTML;
-            navigator.clipboard.write([
-                new ClipboardItem({
-                    'text/html': new Blob([htmlContent], { type: 'text/html' }),
-                    'text/plain': new Blob([rawMessage], { type: 'text/plain' })
-                })
-            ]).then(() => loadingManager.showToast('Copied formatted text to clipboard', 'success'))
-              .catch(err => {
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': new Blob([htmlContent], { type: 'text/html' }),
+                        'text/plain': new Blob([rawMessage], { type: 'text/plain' })
+                    })
+                ]);
+                loadingManager.showToast('Copied formatted text to clipboard', 'success');
+            } catch (err) {
                 console.error('Failed to copy formatted text: ', err);
-                navigator.clipboard.writeText(rawMessage).then(() => loadingManager.showToast('Copied (plain text fallback) to clipboard', 'success'))
-                    .catch(errFallback => { console.error('Failed to copy plain text fallback: ', errFallback); loadingManager.showToast('Error copying text.', 'error'); });
-            });
+                try {
+                    await navigator.clipboard.writeText(rawMessage);
+                    loadingManager.showToast('Copied (plain text fallback) to clipboard', 'success');
+                } catch (errFallback) {
+                    console.error('Failed to copy plain text fallback: ', errFallback);
+                    loadingManager.showToast('Error copying text.', 'error');
+                }
+            }
         });
     }
 
+    /**
+     * Adds a message to the chat area.
+     * @param {string} sender - The sender name ('User', 'Assistant', or 'System').
+     * @param {string} message - The message content (can contain Markdown).
+     * @returns {void}
+     */
     function addMessage(sender, message) {
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
@@ -193,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const copyIcon = document.createElement('img');
         copyIcon.id = `copy-icon-${uniqueIdString}`;
         // Replaced base64 string with a file path
-        copyIcon.src = document.body.classList.contains('dark-theme') ? 'icons/light_copy markdown.png' : 'icons/copy markdown.png';
+        copyIcon.src = document.body.classList.contains('dark-theme') ? 'icons/light-copy-markdown.png' : 'icons/copy-markdown.png';
         copyIcon.alt = "Copy Raw";
         copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
         messageDiv.appendChild(copyIcon);
@@ -202,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const copyFormattedIcon = document.createElement('img');
         copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
         // Replaced base64 string with a file path
-        const formattedIconSrc = document.body.classList.contains('dark-theme') ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
+        const formattedIconSrc = document.body.classList.contains('dark-theme') ? 'icons/light-copy-formatted.png' : 'icons/copy-formatted.png';
         copyFormattedIcon.src = formattedIconSrc;
         copyFormattedIcon.alt = "Copy Formatted";
         copyFormattedIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
@@ -241,11 +318,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Handle media data from context menu
             const mediaData = request.mediaData;
             tabId = request.tabId;
-            
+
             // Show chat area
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
-            
+
             if (mediaData.loading) {
                 // Show loading state
                 addMessage('System', `📥 Loading ${mediaData.type} for analysis...`);
@@ -255,10 +332,10 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (mediaData.base64) {
                 // Media loaded successfully
                 currentMediaData = mediaData;
-                
+
                 // Add media preview to chat
                 addMediaPreview(currentMediaData);
-                
+
                 // Generate prompt based on action type
                 let analysisPrompt;
                 if (mediaData.actionType === "custom" && mediaData.instructionId) {
@@ -717,12 +794,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const previewDiv = document.createElement('div');
         previewDiv.classList.add('message', 'system-message');
         previewDiv.style.cssText = 'background: var(--ext-muted); border-left: 4px solid var(--ext-primary); margin-bottom: 10px; color: var(--ext-muted-foreground);';
-        
+
         if (mediaData.type === 'image') {
             previewDiv.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <img src="data:${mediaData.mimeType};base64,${mediaData.base64}" 
-                         style="max-width: 200px; max-height: 150px; border-radius: 4px;" 
+                    <img src="data:${mediaData.mimeType};base64,${mediaData.base64}"
+                         style="max-width: 200px; max-height: 150px; border-radius: 4px;"
                          alt="Image for analysis">
                     <div>
                         <strong>📷 Image Analysis</strong><br>
@@ -733,8 +810,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (mediaData.type === 'video') {
             previewDiv.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <video src="data:${mediaData.mimeType};base64,${mediaData.base64}" 
-                           style="max-width: 200px; max-height: 150px; border-radius: 4px;" 
+                    <video src="data:${mediaData.mimeType};base64,${mediaData.base64}"
+                           style="max-width: 200px; max-height: 150px; border-radius: 4px;"
                            controls>
                     </video>
                     <div>
@@ -746,8 +823,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (mediaData.type === 'audio') {
             previewDiv.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <audio src="data:${mediaData.mimeType};base64,${mediaData.base64}" 
-                           style="width: 200px;" 
+                    <audio src="data:${mediaData.mimeType};base64,${mediaData.base64}"
+                           style="width: 200px;"
                            controls>
                     </audio>
                     <div>
@@ -757,11 +834,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }
-        
+
         chatArea.appendChild(previewDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
     }
 
+    /**
+     * Makes an API call with media content (images, video, audio).
+     * @param {string} userMessage - The user's message/prompt.
+     * @param {Object} mediaData - The media data object containing base64, mimeType, etc.
+     * @param {string} [tool_choice='none'] - The tool choice strategy ('none', 'auto', or specific tool name).
+     * @returns {Promise<void>}
+     */
     async function makeApiCallWithMedia(userMessage, mediaData, tool_choice = 'none') {
         try {
             const config = await getApiConfig();
@@ -769,16 +853,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (userMessage) {
                 addMessage('User', userMessage);
-                
+
                 // Create message content with media
                 const messageContent = [];
-                
+
                 // Add text content
                 messageContent.push({
                     type: 'text',
                     text: userMessage
                 });
-                
+
                 // Add media content for vision models (OpenAI format)
                 if (mediaData.type === 'image') {
                     messageContent.push({
@@ -789,10 +873,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                 }
-                
-                conversationHistory.push({ 
-                    role: 'user', 
-                    content: messageContent 
+
+                conversationHistory.push({
+                    role: 'user',
+                    content: messageContent
                 });
             }
 
@@ -803,7 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 systemPromptContent += `\n\n${config.systemPrompt}`;
             }
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
-            
+
             // Use existing tool preparation logic
             const formattedTools = allAvailableTools.map(tool => {
                 return {
@@ -874,8 +958,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!apiResponse.ok) {
                 const errorText = await apiResponse.text();
                 let errorDetail = errorText;
-                try { 
-                    const errorJson = JSON.parse(errorText); 
+                try {
+                    const errorJson = JSON.parse(errorText);
                     errorDetail = errorJson.error ? errorJson.error.message : errorText;
                 } catch (e) { /* ignore */ }
                 throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
@@ -913,7 +997,7 @@ document.addEventListener('DOMContentLoaded', () => {
             userInput.focus();
         }
     }
-    
+
     // Removed handleSummarizeTabButtonClick as its logic is now consolidated
     // in the event listener at lines 878-905.
     // Removed handleExplainButtonClick as its logic is now consolidated
@@ -932,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
             userInput.value = '';
         }
     }
-    
+
     async function getTools() {
         const { promptPaulTools: definedTools = [] } = await new Promise((resolve) => {
             chrome.storage.local.get(['promptPaulTools'], resolve);
@@ -1018,6 +1102,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return processedTools;
     }
 
+    /**
+     * Makes an API call to the LLM endpoint.
+     * @param {string|null} [userMessage=null] - The user's message/prompt.
+     * @param {string} [tool_choice='none'] - The tool choice strategy ('none', 'auto', or specific tool name).
+     * @returns {Promise<void>}
+     */
     async function makeApiCall(userMessage = null, tool_choice = 'none') { // Added tool_choice, default to 'none'
         try {
             const config = await getApiConfig();
@@ -1025,7 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (userMessage) {
                 addMessage('User', userMessage);
-                
+
                 // Check if we have media data to include
                 if (currentMediaData && currentMediaData.type === 'image') {
                     const messageContent = [
@@ -1053,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 systemPromptContent += `\n\n${config.systemPrompt}`;
             }
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
-            
+
             // START SHARED API REQUEST PREP LOGIC
             // Now uses parametersForLlm from getTools()
             const formattedTools = allAvailableTools.map(tool => {
@@ -1104,7 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // --- Handle media data formatting for different providers ---
             const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
             const isOpenAIEndpoint = config.llmEndpoint.includes('api.openai.com') || config.llmEndpoint.includes('openai');
-            
+
             // Convert image format for Anthropic if needed
             if (isAnthropicEndpoint && currentMediaData && currentMediaData.type === 'image') {
                 const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
@@ -1189,7 +1279,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Show loading state
                 const loaderId = loadingManager.showLoading('#chat-area', 'Processing your request...');
                 loadingManager.showConnectionStatus('#chat-area', 'connecting');
-                
+
                 const apiResponse = await fetch(config.llmEndpoint, {
                     method: 'POST',
                     headers: fetchHeaders, // Use potentially modified headers
@@ -1360,14 +1450,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             loadingManager.hideLoading('#chat-area');
             loadingManager.showConnectionStatus('#chat-area', 'disconnected');
-            
+
             if (error.name === 'AbortError') {
                 addMessage('System', 'Response stopped');
                 loadingManager.showToast('Request stopped by user', 'warning');
             } else {
                 console.error("makeApiCall Error:", error);
                 addMessage('System', 'Error: ' + error.message);
-                
+
                 // Show user-friendly error with retry option
                 loadingManager.showError('#chat-area', error, {
                     title: 'API Request Failed',
@@ -1429,7 +1519,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 messages: messagesForRequest,
                 ...toolChoicePayload
             };
-            
+
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
             // Display user message in main chat UI
@@ -1791,11 +1881,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             speechRecognition.onerror = function(event) {
                 console.error('Speech recognition error:', event.error);
-                
+
                 if (event.error === 'not-allowed') {
                     if (firstPermissionDenial) {
                         loadingManager.showToast(
-                            'Microphone access required. Click the lock icon 🔒 in your browser address bar and select \'Allow\' next to Microphone to use voice input.', 
+                            'Microphone access required. Click the lock icon 🔒 in your browser address bar and select \'Allow\' next to Microphone to use voice input.',
                             'error',
                             8000
                         );
@@ -1806,7 +1896,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     loadingManager.showToast('Voice error: ' + event.error, 'error');
                 }
-                
+
                 stopVoiceInput();
             };
 

@@ -1,6 +1,40 @@
-import './marked.min.js';
+/**
+ * @fileoverview Background Service Worker for Prompt Paul Chrome Extension
+ *
+ * This service worker handles:
+ * - Context menu creation and click handling for text, image, video, and audio analysis
+ * - Message routing between content scripts, side panel, and options page
+ * - LLM API communication with streaming support
+ * - Analytics tracking via Umami
+ *
+ * @module background
+ * @requires ./src/utils/validation.js
+ */
 
 import { isValidURL } from './src/utils/validation.js';
+
+// ===== Named Constants =====
+// Time constants
+const THIRTY_DAYS_IN_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_SECOND_IN_MS = 1000;
+const MESSAGE_RETRY_DELAY_MS = 500;
+const SIDE_PANEL_READY_DELAY_MS = 1000;
+
+// Content extraction constants
+const MIN_CONTENT_LENGTH = 50;
+const CONTENT_PREVIEW_LENGTH = 500;
+
+// HTTP status codes
+const HTTP_STATUS_BAD_REQUEST = 400;
+const HTTP_STATUS_UNAUTHORIZED = 401;
+const HTTP_STATUS_FORBIDDEN = 403;
+const HTTP_STATUS_NOT_FOUND = 404;
+const HTTP_STATUS_TOO_MANY_REQUESTS = 429;
+const HTTP_STATUS_INTERNAL_ERROR = 500;
+
+// API limits
+const MAX_RESPONSE_TOKENS = 4096;
+const MAX_TOOL_CALL_RETRIES = 3;
 
 // ===== Umami Analytics Module (privacy-first, opt-out) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -8,10 +42,14 @@ const UMAMI_WEBSITE_ID = 'd1b4d7cb-2e57-44ec-a91f-6692fb365a02';
 const ANALYTICS_CONSENT_KEY = 'analyticsConsent';
 const ANALYTICS_INSTANCE_KEY = 'analyticsInstance';
 const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
-const ANALYTICS_ROTATE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const ANALYTICS_ROTATE_MS = THIRTY_DAYS_IN_MS;
 const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
 const DENYLIST = ['email', 'token', 'key', 'password', 'secret', 'auth', 'cookie', 'session', 'ssid'];
 
+/**
+ * Generates a UUID v4 compliant unique identifier.
+ * @returns {string} A randomly generated UUID string.
+ */
 function uuidv4() {
   return ([1e7]+-1e3+-4e3+-8e3+-1e11)
     .replace(/[018]/g, c =>
@@ -19,6 +57,12 @@ function uuidv4() {
     );
 }
 
+/**
+ * Sanitizes a label string for safe use in analytics.
+ * Removes potentially sensitive information and enforces character restrictions.
+ * @param {string} v - The label value to sanitize.
+ * @returns {string|undefined} The sanitized label, or undefined if invalid.
+ */
 function sanitizeLabel(v) {
   if (typeof v !== 'string') return undefined;
   let s = v.trim().toLowerCase();
@@ -34,6 +78,10 @@ function sanitizeLabel(v) {
   return s;
 }
 
+/**
+ * Retrieves environment information for analytics purposes.
+ * @returns {Promise<{extVersion: string, platform: string, chromeMajor: string}>} Environment info object.
+ */
 async function getEnvInfo() {
   const manifest = chrome.runtime.getManifest();
   const extVersion = manifest?.version || '0.0.0';
@@ -47,12 +95,21 @@ async function getEnvInfo() {
   return { extVersion, platform: platformInfo?.os || 'unknown', chromeMajor };
 }
 
+/**
+ * Checks if the user has consented to analytics tracking.
+ * Default is opt-in (consent = true).
+ * @returns {Promise<boolean>} True if user has consented to analytics.
+ */
 async function getConsent() {
   const { [ANALYTICS_CONSENT_KEY]: consent } = await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
   // Default ON (opt-out)
   return consent !== false;
 }
 
+/**
+ * Gets or creates a unique instance ID for analytics, rotating every 30 days.
+ * @returns {Promise<string>} The instance identifier.
+ */
 async function getInstanceId() {
   const now = Date.now();
   const res = await chrome.storage.local.get([ANALYTICS_INSTANCE_KEY, ANALYTICS_ROTATE_AT_KEY]);
@@ -66,6 +123,13 @@ async function getInstanceId() {
   return instance;
 }
 
+/**
+ * Sends an analytics event to the Umami analytics endpoint.
+ * Only sends if user has consented to analytics.
+ * @param {string} name - The event name/category.
+ * @param {Object} [data] - Additional event data to include.
+ * @returns {Promise<void>}
+ */
 async function sendUmamiEvent(name, data) {
   try {
     const consent = await getConsent();
@@ -112,12 +176,22 @@ async function sendUmamiEvent(name, data) {
   }
 }
 
+/**
+ * Tracks when the extension is installed or updated.
+ * @returns {Promise<void>}
+ */
 async function trackInstalled() {
   const env = await getEnvInfo();
   const instance = await getInstanceId();
   await sendUmamiEvent('installed', { ...env, instance });
 }
 
+/**
+ * Tracks an error event for analytics purposes.
+ * @param {string} category - The error category.
+ * @param {string} code - The error code.
+ * @returns {Promise<void>}
+ */
 async function trackErrorEvent(category, code) {
   const env = await getEnvInfo();
   const instance = await getInstanceId();
@@ -126,6 +200,14 @@ async function trackErrorEvent(category, code) {
   await sendUmamiEvent('error_event', { ...env, instance, category: cat, code: c });
 }
 
+/**
+ * Tracks when a custom instruction is used.
+ * @param {Object} params - The tracking parameters.
+ * @param {string} params.instruction - The instruction name.
+ * @param {string} params.model - The model name used.
+ * @param {Array<string>} [params.tools] - Array of tool names used.
+ * @returns {Promise<void>}
+ */
 async function trackInstructionUsed({ instruction, model, tools }) {
   const env = await getEnvInfo();
   const instance = await getInstanceId();
@@ -171,7 +253,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         title: "Analyze Image with Prompt Paul",
         contexts: ["image"]
     });
-    
+
     // Quick actions for images
     chrome.contextMenus.create({
         id: "analyzeImage",
@@ -179,21 +261,21 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         title: "🔍 General Analysis",
         contexts: ["image"]
     });
-    
+
     chrome.contextMenus.create({
-        id: "summarizeImage", 
+        id: "summarizeImage",
         parentId: "imageAnalysis",
         title: "📝 Summarize Image",
         contexts: ["image"]
     });
-    
+
     chrome.contextMenus.create({
         id: "explainImage",
-        parentId: "imageAnalysis", 
+        parentId: "imageAnalysis",
         title: "💡 Explain Image",
         contexts: ["image"]
     });
-    
+
     // Add separator
     chrome.contextMenus.create({
         id: "imageSeparator",
@@ -201,160 +283,160 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         type: "separator",
         contexts: ["image"]
     });
-    
+
     // Load and add custom instructions for images
     await updateImageCustomInstructions();
-    
+
     // Create parent menu for videos
     chrome.contextMenus.create({
         id: "videoAnalysis",
-        title: "Analyze Video with Prompt Paul", 
+        title: "Analyze Video with Prompt Paul",
         contexts: ["video"]
     });
-    
+
     chrome.contextMenus.create({
         id: "analyzeVideo",
         parentId: "videoAnalysis",
         title: "🎥 General Analysis",
         contexts: ["video"]
     });
-    
+
     // Create parent menu for audio
     chrome.contextMenus.create({
-        id: "audioAnalysis", 
+        id: "audioAnalysis",
         title: "Analyze Audio with Prompt Paul",
         contexts: ["audio"]
     });
-    
+
     chrome.contextMenus.create({
         id: "analyzeAudio",
         parentId: "audioAnalysis",
-        title: "🎵 General Analysis", 
+        title: "🎵 General Analysis",
         contexts: ["audio"]
     });
 });
 
+/**
+ * Sends media analysis data to the side panel for processing.
+ * @param {number} tabId - The ID of the tab where media was selected.
+ * @param {Object} mediaData - The media data object containing type, base64, URL, etc.
+ * @returns {Promise<Object>} The response from the message handler.
+ */
+async function sendMediaAnalysisMessage(tabId, mediaData) {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+            action: 'setMediaForAnalysis',
+            mediaData: mediaData,
+            tabId: tabId
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.warn('Background: setMediaForAnalysis message failed:', chrome.runtime.lastError.message);
+            }
+            resolve(response);
+        });
+    });
+}
+
+/**
+ * Parses a context menu item ID to determine media type and action.
+ * @param {string} menuItemId - The context menu item ID.
+ * @returns {{mediaType: string, actionType: string, instructionId: string|null}} Parsed menu info.
+ */
+function parseMediaMenuItem(menuItemId) {
+    if (menuItemId.startsWith("imageCustom_")) {
+        return {
+            mediaType: "image",
+            actionType: "custom",
+            instructionId: menuItemId.replace("imageCustom_", "")
+        };
+    } else if (menuItemId === "summarizeImage") {
+        return { mediaType: "image", actionType: "summarize", instructionId: null };
+    } else if (menuItemId === "explainImage") {
+        return { mediaType: "image", actionType: "explain", instructionId: null };
+    } else {
+        // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
+        return {
+            mediaType: menuItemId.replace("analyze", "").toLowerCase(),
+            actionType: "analyze",
+            instructionId: null
+        };
+    }
+}
+
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
-        info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
+    if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" ||
+        info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" ||
         info.menuItemId.startsWith("imageCustom_")) {
         try {
             // Open side panel FIRST (must be in direct response to user gesture)
             await chrome.sidePanel.open({ tabId: tab.id });
-            
+
             // Get the media URL and determine action type
             const mediaUrl = info.srcUrl;
-            let mediaType, actionType, instructionId;
-            
-            if (info.menuItemId.startsWith("imageCustom_")) {
-                mediaType = "image";
-                actionType = "custom";
-                instructionId = info.menuItemId.replace("imageCustom_", "");
-            } else if (info.menuItemId === "summarizeImage") {
-                mediaType = "image";
-                actionType = "summarize";
-            } else if (info.menuItemId === "explainImage") {
-                mediaType = "image";
-                actionType = "explain";
-            } else {
-                // Default analysis (analyzeImage, analyzeVideo, analyzeAudio)
-                mediaType = info.menuItemId.replace("analyze", "").toLowerCase();
-                actionType = "analyze";
-            }
-            
-            // Show loading message immediately (with error handling)
+            const { mediaType, actionType, instructionId } = parseMediaMenuItem(info.menuItemId);
+
+            // Show loading message immediately
+            await sendMediaAnalysisMessage(tab.id, {
+                type: mediaType,
+                base64: null,
+                url: mediaUrl,
+                mimeType: getMimeTypeFromUrl(mediaUrl),
+                loading: true
+            });
+
+            // Convert media to base64 for API
             try {
-                chrome.runtime.sendMessage({
-                    action: 'setMediaForAnalysis',
-                    mediaData: {
-                        type: mediaType,
-                        base64: null, // Will be set later
-                        url: mediaUrl,
-                        mimeType: getMimeTypeFromUrl(mediaUrl),
-                        loading: true
-                    },
-                    tabId: tab.id
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn('Background: setMediaForAnalysis (loading) message failed:', chrome.runtime.lastError.message);
-                    }
-                });
-            } catch (error) {
-                console.warn('Background: Exception sending setMediaForAnalysis (loading):', error.message);
-            }
-            
-            // Convert media to base64 for API (async operation)
-            fetchMediaAsBase64(mediaUrl).then(base64Data => {
+                const base64Data = await fetchMediaAsBase64(mediaUrl);
                 const mimeType = getMimeTypeFromUrl(mediaUrl);
 
-                const sendMediaData = () => {
-                    try {
-                        chrome.runtime.sendMessage({
-                            action: 'setMediaForAnalysis',
-                            mediaData: {
-                                type: mediaType,
-                                base64: base64Data,
-                                url: mediaUrl,
-                                mimeType: mimeType,
-                                loading: false,
-                                actionType: actionType,
-                                instructionId: instructionId
-                            },
-                            tabId: tab.id
-                        }, (response) => {
-                            if (chrome.runtime.lastError) {
-                                console.warn('Background: setMediaForAnalysis (data) message failed:', chrome.runtime.lastError.message);
-                            }
-                        });
-                    } catch (error) {
-                        console.warn('Background: Exception sending setMediaForAnalysis (data):', error.message);
-                        setTimeout(sendMediaData, 500);
-                    }
-                };
+                // Delay to ensure side panel is ready
+                await new Promise(resolve => setTimeout(resolve, SIDE_PANEL_READY_DELAY_MS));
 
-                setTimeout(sendMediaData, 1000);
-            }).catch(async error => {
+                await sendMediaAnalysisMessage(tab.id, {
+                    type: mediaType,
+                    base64: base64Data,
+                    url: mediaUrl,
+                    mimeType: mimeType,
+                    loading: false,
+                    actionType: actionType,
+                    instructionId: instructionId
+                });
+            } catch (error) {
                 console.error('Error fetching media:', error);
                 try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
-                try {
-                    chrome.runtime.sendMessage({
-                        action: 'setMediaForAnalysis',
-                        mediaData: {
-                            type: mediaType,
-                            base64: null,
-                            url: mediaUrl,
-                            mimeType: getMimeTypeFromUrl(mediaUrl),
-                            error: error.message
-                        },
-                        tabId: tab.id
-                    }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.warn('Background: setMediaForAnalysis (error) message failed:', chrome.runtime.lastError.message);
-                        }
-                    });
-                } catch (err) {
-                    console.error('Background: Exception sending error message:', err.message);
-                }
-            });
-            
+
+                await sendMediaAnalysisMessage(tab.id, {
+                    type: mediaType,
+                    base64: null,
+                    url: mediaUrl,
+                    mimeType: getMimeTypeFromUrl(mediaUrl),
+                    error: error.message
+                });
+            }
+
         } catch (error) {
             console.error('Error processing media:', error);
         }
     }
 });
 
-// Helper function to fetch media and convert to base64
+/**
+ * Fetches media from a URL and converts it to base64 encoding.
+ * @param {string} url - The URL of the media to fetch.
+ * @returns {Promise<string>} Base64 encoded string of the media.
+ * @throws {Error} If the fetch fails or the media cannot be read.
+ */
 async function fetchMediaAsBase64(url) {
     try {
         const response = await fetch(url);
-        
+
         if (!response.ok) {
             throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
         }
-        
+
         const blob = await response.blob();
-        
+
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => {
@@ -374,10 +456,14 @@ async function fetchMediaAsBase64(url) {
     }
 }
 
-// Track existing image custom instruction menu items
+/** @type {Set<string>} Track existing image custom instruction menu items */
 let existingImageCustomMenuItems = new Set();
 
-// Helper function to update image custom instructions in context menu
+/**
+ * Updates the context menu with custom instructions for image analysis.
+ * Removes existing custom menu items and adds current ones from storage.
+ * @returns {Promise<void>}
+ */
 async function updateImageCustomInstructions() {
     try {
         // Remove existing custom instruction menu items that we know exist
@@ -398,7 +484,7 @@ async function updateImageCustomInstructions() {
             }
         }
         existingImageCustomMenuItems.clear();
-        
+
         // Add current custom instructions
         const { instructions } = await chrome.storage.local.get(['instructions']);
         if (instructions && instructions.length > 0) {
@@ -439,13 +525,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 });
 
-// Helper function to determine MIME type from URL
+/**
+ * Determines the MIME type based on the file extension in a URL.
+ * @param {string} url - The URL of the media file.
+ * @returns {string} The MIME type string (defaults to 'image/jpeg' if unknown).
+ */
 function getMimeTypeFromUrl(url) {
     try {
         // Handle query parameters and fragments
         const cleanUrl = url.split('?')[0].split('#')[0];
         const extension = cleanUrl.split('.').pop().toLowerCase();
-        
+
         const mimeTypes = {
             'jpg': 'image/jpeg',
             'jpeg': 'image/jpeg',
@@ -462,7 +552,7 @@ function getMimeTypeFromUrl(url) {
             'wav': 'audio/wav',
             'flac': 'audio/flac'
         };
-        
+
         const mimeType = mimeTypes[extension] || 'image/jpeg'; // Default to jpeg for images
         return mimeType;
     } catch (error) {
@@ -471,654 +561,9 @@ function getMimeTypeFromUrl(url) {
     }
 }
 
-import { McpRegistry } from "./mcp/registry.js";
-
 let messageListenerAdded = false;
 let tabContentCallback = null; // To store sendResponse for getTabContent
 let pinnedActionTabContentCallback = null; // To store sendResponse for getPinnedActionTabContent
-
-// --- MCP Registry Host (Phase 1) ---
-const mcpRegistry = new McpRegistry({
-    onLog: (e) => {
-        // Redacted, structured logs; store last N logs in memory and in storage for Options page viewer
-        const entry = {
-            ts: Date.now(),
-            level: e.level || "info",
-            type: e.type || "info",
-            serverId: e.serverId,
-            url: e.url,
-            msg: e.msg,
-            payload: e.payload,
-            latencyMs: e.latencyMs,
-            details: {
-                attempt: e.attempt,
-                delayMs: e.delayMs,
-                code: e.code,
-                reason: e.reason,
-                wasClean: e.wasClean,
-                tool: e.tool,
-                protocolVersion: e.protocolVersion
-            }
-        };
-        appendMcpLog(entry);
-    }
-});
-
-const MAX_MCP_LOGS = 500;
-let mcpLogsBuffer = [];
-
-function appendMcpLog(entry) {
-    try {
-        mcpLogsBuffer.push(entry);
-        if (mcpLogsBuffer.length > MAX_MCP_LOGS) {
-            mcpLogsBuffer.shift();
-        }
-    } catch (_) {}
-    // Persist a rolling window for options viewer
-    chrome.storage.local.set({ mcpLogs: mcpLogsBuffer.slice(-MAX_MCP_LOGS) });
-}
-
-// MCP Session Management
-let mcpSessions = {};
-const mcpClientCapabilities = {
-    experimental: {}, // For any experimental features client supports
-    // No 'roots' capability declared, as the extension doesn't primarily serve local file roots to tools.
-    // No 'sampling' capability declared, as tools don't typically ask the extension (client) to perform LLM sampling for them via MCP.
-    elicitation: {} // Declares that the client understands the elicitation protocol.
-                     // Actual handling of elicitation requests from the server would be a future enhancement.
-};
-const mcpClientInfo = { "name": "PromptPaulExtension", "version": "0.1.0" }; // Use appropriate version
-
-// Session lifecycle management constants
-const MCP_SESSION_TIMEOUT = 30000; // 30 seconds for requests
-const MCP_SESSION_MAX_AGE = 300000; // 5 minutes session lifetime
-const MCP_SESSION_CLEANUP_INTERVAL = 60000; // 1 minute cleanup interval
-const MCP_MAX_RETRY_ATTEMPTS = 3;
-const MCP_RETRY_DELAY = 1000; // 1 second base delay
-
-// Session cleanup timer
-let sessionCleanupTimer = null;
-
-// Circuit breaker for MCP servers
-const mcpCircuitBreakers = {};
-const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5;
-const CIRCUIT_BREAKER_TIMEOUT = 60000; // 1 minute
-const CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS = 3;
-
-class CircuitBreaker {
-    constructor(serverUrl) {
-        this.serverUrl = serverUrl;
-        this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
-        this.failureCount = 0;
-        this.lastFailureTime = null;
-        this.halfOpenCallCount = 0;
-    }
-    
-    async execute(operation) {
-        if (this.state === 'OPEN') {
-            if (Date.now() - this.lastFailureTime > CIRCUIT_BREAKER_TIMEOUT) {
-                this.state = 'HALF_OPEN';
-                this.halfOpenCallCount = 0;
-            } else {
-                throw new Error(`Circuit breaker OPEN for ${this.serverUrl}. Server temporarily unavailable.`);
-            }
-        }
-        
-        if (this.state === 'HALF_OPEN' && this.halfOpenCallCount >= CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS) {
-            throw new Error(`Circuit breaker HALF_OPEN limit reached for ${this.serverUrl}. Server still unstable.`);
-        }
-        
-        try {
-            const result = await operation();
-            this.onSuccess();
-            return result;
-        } catch (error) {
-            this.onFailure();
-            throw error;
-        }
-    }
-    
-    onSuccess() {
-        this.failureCount = 0;
-        if (this.state === 'HALF_OPEN') {
-            this.state = 'CLOSED';
-        }
-    }
-    
-    onFailure() {
-        this.failureCount++;
-        this.lastFailureTime = Date.now();
-        
-        if (this.state === 'HALF_OPEN') {
-            this.halfOpenCallCount++;
-        }
-        
-        if (this.failureCount >= CIRCUIT_BREAKER_FAILURE_THRESHOLD) {
-            this.state = 'OPEN';
-        }
-    }
-}
-
-function getCircuitBreaker(serverUrl) {
-    if (!mcpCircuitBreakers[serverUrl]) {
-        mcpCircuitBreakers[serverUrl] = new CircuitBreaker(serverUrl);
-    }
-    return mcpCircuitBreakers[serverUrl];
-}
-
-// Start session cleanup timer
-function startSessionCleanup() {
-    if (sessionCleanupTimer) return; // Already running
-    
-    sessionCleanupTimer = setInterval(() => {
-        const now = Date.now();
-        const sessionsToCleanup = [];
-        
-        for (const [url, session] of Object.entries(mcpSessions)) {
-            if (session.lastUsed && (now - session.lastUsed) > MCP_SESSION_MAX_AGE) {
-                sessionsToCleanup.push(url);
-            }
-        }
-        
-        for (const url of sessionsToCleanup) {
-            delete mcpSessions[url];
-        }
-        
-        if (Object.keys(mcpSessions).length === 0 && sessionCleanupTimer) {
-            clearInterval(sessionCleanupTimer);
-            sessionCleanupTimer = null;
-        }
-    }, MCP_SESSION_CLEANUP_INTERVAL);
-    
-}
-
-// Enhanced session health check
-function isSessionHealthy(session) {
-    if (!session || !session.initialized) return false;
-    
-    const now = Date.now();
-    if (session.lastUsed && (now - session.lastUsed) > MCP_SESSION_MAX_AGE) {
-        return false;
-    }
-    
-    return true;
-}
-
-// Timeout wrapper for fetch requests
-async function fetchWithTimeout(url, options, timeoutMs = MCP_SESSION_TIMEOUT) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    
-    try {
-        const response = await fetch(url, {
-            ...options,
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        return response;
-    } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-            throw new Error(`Request timeout after ${timeoutMs}ms`);
-        }
-        throw error;
-    }
-}
-
-// Retry wrapper with exponential backoff
-async function retryWithBackoff(operation, maxAttempts = MCP_MAX_RETRY_ATTEMPTS, baseDelay = MCP_RETRY_DELAY) {
-    let lastError;
-    
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-            return await operation();
-        } catch (error) {
-            lastError = error;
-            
-            if (attempt === maxAttempts) {
-                break;
-            }
-            
-            // Don't retry on certain errors
-            if (error.message.includes('404') || error.message.includes('401') || error.message.includes('403')) {
-                break;
-            }
-            
-            const delay = baseDelay * Math.pow(2, attempt - 1);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-    
-    throw lastError;
-}
-
-async function sendMcpNotification(mcpServerUrl, method, params) {
-    const session = mcpSessions[mcpServerUrl]; // Get session, primarily for mcpSessionId
-
-    const notificationPayload = {
-        jsonrpc: "2.0",
-        method: method,
-        params: params || {}
-    };
-
-    const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream' // Keep this from previous fix
-    };
-
-    if (session && session.mcpSessionId) {
-        headers['mcp-session-id'] = session.mcpSessionId;
-    } else if (method === "initialized") {
-        // The 'initialized' notification is part of the session setup.
-        // If mcpSessionId was just obtained in initializeMcpSession and set into mcpSessions,
-        // it *should* be found here. If not, it's a problem or the server didn't provide one.
-        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This might be an issue if the server expects it even for 'initialized'.`);
-    } else {
-        // For other methods, we should have a session ID if the session was properly initialized
-        console.warn(`Sending '${method}' notification to ${mcpServerUrl} WITHOUT mcpSessionId. This could cause issues if the server requires it.`);
-    }
-
-
-    try {
-        const response = await fetchWithTimeout(mcpServerUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(notificationPayload)
-        });
-
-        if (!response.ok) {
-            // For notifications, we might not always get a body or a meaningful JSON error.
-            // The primary concern is whether the HTTP request itself succeeded.
-            console.warn(`MCP Notification HTTP error! Status: ${response.status} for method ${method}`);
-            // Optionally, try to read body if there's an issue.
-            try {
-                const errorBody = await response.text(); // Using text() as it might not be JSON
-                console.warn(`MCP Notification error body: ${errorBody}`);
-            } catch(e) { /* ignore */ }
-        }
-        // Notifications do not have responses to parse beyond HTTP status.
-    } catch (error) {
-        console.error(`Error sending MCP notification '${method}' to ${mcpServerUrl}:`, error);
-        // Depending on desired robustness, could throw or just log.
-    }
-}
-
-async function initializeMcpSession(mcpServerUrl) {
-    
-    // Check circuit breaker before attempting initialization
-    const circuitBreaker = getCircuitBreaker(mcpServerUrl);
-    
-    return await circuitBreaker.execute(async () => {
-        const requestId = `mcp-init-${Date.now()}`;
-        const initializeParams = {
-            protocolVersion: "0.1.0",
-            capabilities: mcpClientCapabilities,
-            clientInfo: mcpClientInfo
-        };
-        const requestPayload = {
-            jsonrpc: "2.0",
-            id: requestId,
-            method: "initialize",
-            params: initializeParams
-        };
-
-    try {
-        const response = await retryWithBackoff(async () => {
-            return await fetchWithTimeout(mcpServerUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream' // Correct Accept header
-                },
-                body: JSON.stringify(requestPayload)
-            });
-        });
-
-        if (!response.ok) {
-            let errorMsg = `MCP Initialize HTTP error! Status: ${response.status}`;
-            try {
-                const errorBody = await response.text(); // Use text() for potential non-JSON errors too
-                errorMsg += `, Body: ${errorBody}`;
-            } catch (e) { /* ignore */ }
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: HTTP status ${response.status}. Body: ${errorBody}`);
-        }
-
-        const mcpSessionId = response.headers.get('mcp-session-id');
-        if (!mcpSessionId) {
-            console.error(`MCP Initialize Error: mcp-session-id header not found in response from ${mcpServerUrl}. This is required for subsequent requests.`);
-            // This is now treated as an error since most servers will require the session ID
-            throw new Error(`MCP Initialize failed: mcp-session-id header missing in response from ${mcpServerUrl}`);
-        } else {
-        }
-
-        const responseText = await response.text();
-        console.debug(`MCP Initialize: Raw response text from ${mcpServerUrl} for request ID ${requestId}:\n${responseText}`);
-        let serverResponse = null;
-        let foundInitializeResult = false;
-
-        // Process potential SSE stream for the initialize response
-        // An SSE stream might contain multiple messages. We need to find the one that's a JSON-RPC response to our 'initialize' request.
-        const lines = responseText.split('\n');
-        let accumulatedData = ''; // For multi-line data fields in SSE
-
-        for (const line of lines) {
-            if (line.startsWith('data:')) {
-                accumulatedData += line.substring(5).trim(); // Accumulate data lines
-            } else if (line.trim() === '' && accumulatedData) { // Empty line signifies end of an SSE message's data
-                try {
-                    const parsedEventData = JSON.parse(accumulatedData);
-                    console.debug(`MCP Initialize: Parsed SSE data event from ${mcpServerUrl} for request ID ${requestId}:`, parsedEventData);
-                    if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
-                        serverResponse = parsedEventData;
-                        foundInitializeResult = true;
-                        break;
-                    }
-                } catch (e) {
-                    console.warn(`MCP Initialize: Could not parse accumulated SSE data as JSON or not the target response. Data: "${accumulatedData}". Error:`, e);
-                }
-                accumulatedData = ''; // Reset for next message
-            } else if (accumulatedData && !line.startsWith('id:') && !line.startsWith('event:') && !line.startsWith('retry:')) {
-                // If a line is not 'data:' but part of a multi-line data field (though less common for JSON-RPC over SSE)
-                // This simplistic accumulation might need refinement based on exact server behavior.
-                // For now, primary focus is on complete JSON objects per 'data:' line or block.
-                // The check `line.trim() === '' && accumulatedData` is more robust for distinct JSON objects.
-            }
-        }
-
-        // If after processing all lines, there's still accumulatedData, try to parse it (e.g., stream ended without a final empty line)
-        if (accumulatedData && !foundInitializeResult) {
-            try {
-                const parsedEventData = JSON.parse(accumulatedData);
-                console.debug(`MCP Initialize: Parsed final accumulated SSE data event from ${mcpServerUrl} for request ID ${requestId}:`, parsedEventData);
-                if (parsedEventData.id === requestId && (parsedEventData.result || parsedEventData.error)) {
-                    serverResponse = parsedEventData;
-                    foundInitializeResult = true;
-                }
-            } catch (e) {
-                console.warn(`MCP Initialize: Could not parse final accumulated SSE data as JSON. Data: "${accumulatedData}". Error:`, e);
-            }
-        }
-
-        if (!foundInitializeResult || !serverResponse) {
-            // Fallback: if SSE parsing didn't yield a result, try parsing the whole responseText as a single JSON object
-            // This handles cases where the server might not use SSE for the initialize response despite Accept header.
-            if (!responseText.includes('data:')) { // Only try this if it doesn't look like SSE at all
-                try {
-                    const parsedResponse = JSON.parse(responseText);
-                    if (parsedResponse.id === requestId && (parsedResponse.result || parsedResponse.error)) {
-                        serverResponse = parsedResponse;
-                        foundInitializeResult = true;
-                    }
-                } catch (e) {
-                    console.warn(`MCP Initialize: Failed to parse response as plain JSON after SSE attempt failed for ${mcpServerUrl}. Error:`, e);
-                }
-            }
-        }
-
-        if (!foundInitializeResult || !serverResponse) {
-            console.error(`MCP Initialize: Critical - JSON-RPC response for request ID ${requestId} not found in response from ${mcpServerUrl}. Full response text was logged previously.`);
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: JSON-RPC response for request ID ${requestId} not found.`);
-        }
-
-        if (serverResponse.error) {
-            console.error(`MCP Initialize: Server returned an error for request ID ${requestId}:`, serverResponse.error);
-            throw new Error(`MCP Initialize failed for ${mcpServerUrl}: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
-        }
-
-        if (!serverResponse.result || !serverResponse.result.capabilities || !serverResponse.result.protocolVersion) {
-            console.error(`MCP Initialize: Invalid result structure in response for ID ${requestId} from ${mcpServerUrl}:`, serverResponse.result);
-            throw new Error(`MCP Initialize failed: Invalid result structure from server for request ID ${requestId}.`);
-        }
-
-        if (serverResponse.result.protocolVersion !== initializeParams.protocolVersion) {
-            console.warn(`MCP Protocol version mismatch: Client sent ${initializeParams.protocolVersion}, Server responded with ${serverResponse.result.protocolVersion}. Proceeding.`);
-        }
-
-        const session = {
-            mcpSessionId: mcpSessionId, // Store the extracted session ID
-            serverUrl: mcpServerUrl,
-            serverCapabilities: serverResponse.result.capabilities,
-            protocolVersion: serverResponse.result.protocolVersion,
-            initialized: true,
-            createdAt: Date.now(),
-            lastUsed: Date.now()
-        };
-        mcpSessions[mcpServerUrl] = session; // Cache the session
-        
-        // Start cleanup timer if this is the first session
-        startSessionCleanup();
-
-        // Send "initialized" notification
-        await sendMcpNotification(mcpServerUrl, "initialized", {});
-
-        // Attempt to list tools from the MCP server
-        try {
-            // Note: listMcpTools internally uses sendMcpRequest which relies on the session being in mcpSessions.
-            // This is okay because we've already cached it above.
-            // Passing sessionId explicitly to listMcpTools is not strictly necessary if sendMcpRequest always pulls from mcpSessions,
-            // but it can be kept for clarity or if listMcpTools might be used in contexts where the session isn't yet cached.
-            // For now, sendMcpRequest uses the global mcpSessions, so sessionId in listMcpTools isn't used by sendMcpRequest.
-            const discoveredTools = await listMcpTools(mcpServerUrl, session.mcpSessionId);
-            if (discoveredTools && discoveredTools.length > 0) {
-                session.tools = discoveredTools;
-            } else {
-                session.tools = []; // Ensure session.tools is always an array
-            }
-        } catch (toolError) {
-            console.error(`MCP Initialize: Failed to list tools from ${mcpServerUrl}. Error:`, toolError.message);
-            session.tools = []; // Ensure session.tools is an array even on error
-            // Do not re-throw; session initialization can proceed without tools.
-        }
-
-        return session;
-
-    } catch (error) {
-        console.error(`Error during MCP session initialization for ${mcpServerUrl}:`, error);
-        delete mcpSessions[mcpServerUrl];
-        // Enhanced error message with more details
-        const enhancedError = new Error(`MCP session initialization failed for ${mcpServerUrl}: ${error.message}`);
-        enhancedError.cause = error; // Attach the original error as cause
-        throw enhancedError;
-    }
-    }); // Close circuit breaker execute
-}
-
-async function getMcpSession(mcpServerUrl) {
-    const existingSession = mcpSessions[mcpServerUrl];
-    
-    if (existingSession && isSessionHealthy(existingSession)) {
-        existingSession.lastUsed = Date.now(); // Update last used timestamp
-        return existingSession;
-    }
-    
-    if (existingSession && !isSessionHealthy(existingSession)) {
-        delete mcpSessions[mcpServerUrl];
-    }
-    
-    return await initializeMcpSession(mcpServerUrl);
-}
-
-// New function to list tools from an MCP server
-async function listMcpTools(mcpServerUrl, sessionId) { // sessionId might not be strictly needed if sendMcpRequest uses global session
-    const requestId = `mcp-listtools-${Date.now()}`;
-    const requestPayload = {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "tools/list", // Standard MCP method for listing tools
-        params: {} // Typically no parameters for a list method
-    };
-
-    try {
-        // sendMcpRequest will use the mcpSessionId from the cached session for mcpServerUrl
-        const mcpResponse = await sendMcpRequest(mcpServerUrl, requestPayload);
-
-        if (mcpResponse && mcpResponse.result && Array.isArray(mcpResponse.result.tools)) {
-            return mcpResponse.result.tools; // Expected structure { tools: [...] }
-        } else {
-            console.error(`MCP tools/list: Unexpected response format from ${mcpServerUrl}. Response:`, mcpResponse);
-            return []; // Return empty array on unexpected format
-        }
-    } catch (error) {
-        console.error(`MCP tools/list: Error listing tools from ${mcpServerUrl}: ${error.message}`);
-        // Depending on desired strictness, could throw error or return empty array.
-        // For robustness of session initialization, returning empty array.
-        return [];
-    }
-}
-
-function createMcpToolCallPayload(toolName, toolArguments, requestId) {
-    // Ensure toolArguments is an object, as expected by MCP for structured params.
-    // The LLM often sends arguments as a JSON string, which should be parsed *before* calling this.
-    // If toolArguments is already an object, this is fine. If it's a string,
-    // it indicates it wasn't parsed at the executePromptPaulTool level.
-    // For safety, though this function expects an object:
-    let paramsArguments = toolArguments;
-    // Ensure toolArguments is an object
-    if (typeof toolArguments === 'string') {
-        try {
-            paramsArguments = JSON.parse(toolArguments);
-        } catch (e) {
-            console.error("Tool arguments for MCP call were a string but not valid JSON:", toolArguments, e);
-            throw new Error("Tool arguments must be a valid JSON object or pre-parsed object.");
-        }
-    } else if (typeof toolArguments !== 'object' || toolArguments === null) {
-        console.error("Tool arguments must be an object:", toolArguments);
-        throw new Error("Tool arguments must be an object.");
-    }
-
-    const toolCallParams = {
-        name: toolName,
-        arguments: paramsArguments
-    };
-
-    const requestPayload = {
-        jsonrpc: "2.0",
-        id: requestId, // Caller should generate a unique ID for each request
-        method: "tools/call",
-        params: toolCallParams
-    };
-
-    return requestPayload;
-}
-
-async function sendMcpRequest(mcpServerUrl, requestPayload) {
-    const session = mcpSessions[mcpServerUrl];
-    const headers = {
-        'Content-Type': 'application/json',
-
-        'Accept': 'application/json, text/event-stream'
-    };
-
-    if (session && session.mcpSessionId) {
-        headers['mcp-session-id'] = session.mcpSessionId;
-    } else {
-        // For the 'initialize' method, mcpSessionId is not expected in the request header.
-        // For other methods, its absence is a problem if a session was expected to be established.
-        if (requestPayload.method !== 'initialize') {
-            console.error(`MCP sendMcpRequest: Critical - No mcpSessionId found for ${mcpServerUrl} when sending method '${requestPayload.method}'. This will likely cause the request to fail.`);
-            // Optionally, could throw an error here if a session was strictly required:
-            // throw new Error(`MCP sendMcpRequest: mcpSessionId is missing for server ${mcpServerUrl} during method ${requestPayload.method}.`);
-        } else {
-        }
-    }
-
-    try {
-        const response = await retryWithBackoff(async () => {
-            return await fetchWithTimeout(mcpServerUrl, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(requestPayload)
-            });
-        });
-
-        if (!response.ok) {
-            let errorMsg = `MCP Request HTTP error! Status: ${response.status}`;
-            try {
-                const errorBody = await response.text(); // Use text() for more robust error body reading
-                errorMsg += `, Body: ${errorBody}`;
-            } catch (e) { /* ignore if body isn't text */ }
-            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: HTTP status ${response.status}. Body: ${errorBody}`);
-        }
-
-        const responseText = await response.text();
-        console.debug(`MCP sendMcpRequest: Raw response text from ${mcpServerUrl} for method '${requestPayload.method}', ID ${requestPayload.id}:\n${responseText}`);
-        let serverResponse = null;
-        let foundResponse = false;
-
-        // Attempt to parse as SSE if response looks like it might be SSE
-        if (responseText.includes('data:')) { // A simple heuristic for SSE
-            console.debug(`MCP sendMcpRequest: Attempting to parse response from ${mcpServerUrl} (method '${requestPayload.method}', ID ${requestPayload.id}) as SSE.`);
-            const lines = responseText.split('\n');
-            let accumulatedData = '';
-
-            for (const line of lines) {
-                if (line.startsWith('data:')) {
-                    accumulatedData += line.substring(5).trim();
-                } else if (line.trim() === '' && accumulatedData) { // End of an SSE message
-                    try {
-                        const parsedEventData = JSON.parse(accumulatedData);
-                        console.debug(`MCP sendMcpRequest: Parsed SSE data event for ID ${requestPayload.id}:`, parsedEventData);
-                        if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
-                            serverResponse = parsedEventData;
-                            foundResponse = true;
-                            break;
-                        }
-                    } catch (e) {
-                        console.warn(`MCP sendMcpRequest: Could not parse accumulated SSE data for ID ${requestPayload.id} as JSON. Data: "${accumulatedData}". Error:`, e);
-                    }
-                    accumulatedData = ''; // Reset for next message
-                }
-            }
-            // Process any remaining accumulated data if the stream didn't end with a blank line
-            if (accumulatedData && !foundResponse) {
-                try {
-                    const parsedEventData = JSON.parse(accumulatedData);
-                    console.debug(`MCP sendMcpRequest: Parsed final accumulated SSE data for ID ${requestPayload.id}:`, parsedEventData);
-                    if (parsedEventData.id === requestPayload.id && (parsedEventData.result !== undefined || parsedEventData.error !== undefined)) {
-                        serverResponse = parsedEventData;
-                        foundResponse = true;
-                    }
-                } catch (e) {
-                    console.warn(`MCP sendMcpRequest: Could not parse final accumulated SSE data for ID ${requestPayload.id} as JSON. Data: "${accumulatedData}". Error:`, e);
-                }
-            }
-        }
-
-        // If not found via SSE parsing, or if it didn't look like SSE, try parsing as plain JSON
-        if (!foundResponse) {
-            console.debug(`MCP sendMcpRequest: SSE parsing did not yield response for ID ${requestPayload.id} (method '${requestPayload.method}'). Attempting plain JSON parse.`);
-            try {
-                const parsedJson = JSON.parse(responseText);
-                if (parsedJson.id === requestPayload.id && (parsedJson.result !== undefined || parsedJson.error !== undefined)) {
-                    serverResponse = parsedJson;
-                    foundResponse = true;
-                } else {
-                     console.warn(`MCP sendMcpRequest: Parsed plain JSON, but ID mismatch or missing result/error. Expected ID ${requestPayload.id}, got:`, parsedJson.id);
-                }
-            } catch (e) {
-                console.warn(`MCP sendMcpRequest: Failed to parse response as plain JSON for ID ${requestPayload.id} (method '${requestPayload.method}'). Error:`, e);
-            }
-        }
-
-        if (!foundResponse || !serverResponse) {
-            console.error(`MCP sendMcpRequest: Critical - JSON-RPC response for request ID ${requestPayload.id} (method '${requestPayload.method}') not found in response from ${mcpServerUrl}. Full response text was logged previously.`);
-            throw new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} (ID: ${requestPayload.id}) failed: Pertinent JSON-RPC response not found in server's output.`);
-        }
-
-        if (serverResponse.error) {
-            console.error(`MCP sendMcpRequest: Server returned an error for request ID ${requestPayload.id} (method '${requestPayload.method}'):`, serverResponse.error);
-            const mcpError = new Error(`MCP Request '${requestPayload.method}' to ${mcpServerUrl} failed: Server error ${serverResponse.error.code} - ${serverResponse.error.message}`);
-            mcpError.details = serverResponse.error; // Attach full error object
-            throw mcpError;
-        }
-
-        return serverResponse; // This will be the full JSON-RPC response {jsonrpc, id, result}
-
-    } catch (error) {
-        console.error(`Error sending MCP request '${requestPayload.method}' to ${mcpServerUrl}:`, error);
-        throw new Error(`MCP request '${requestPayload.method}' to ${mcpServerUrl} encountered an error: ${error.message}`);
-    }
-}
 
 // Enable the side panel on all pages
 chrome.sidePanel
@@ -1136,13 +581,13 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 // Optimized context menu click handler
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Skip media analysis menu items - they're handled by the new multimodal handler above
-  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" || 
-      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" || 
-      info.menuItemId.startsWith("imageCustom_") || 
+  if (info.menuItemId === "analyzeImage" || info.menuItemId === "analyzeVideo" || info.menuItemId === "analyzeAudio" ||
+      info.menuItemId === "summarizeImage" || info.menuItemId === "explainImage" ||
+      info.menuItemId.startsWith("imageCustom_") ||
       info.menuItemId === "imageAnalysis" || info.menuItemId === "videoAnalysis" || info.menuItemId === "audioAnalysis") {
     return; // Let the new handler above handle these
   }
-  
+
   await chrome.sidePanel.open({ tabId: tab.id });
 
   let originalSelectionText = info.selectionText;
@@ -1190,11 +635,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         promptContent = originalSelectionText; // Fallback
     }
   }
-  
+
   // Handle image context (only for non-multimodal menu items)
   // This should be applied *after* potentially fetching tab content if selection was empty
   // Skip this for our new multimodal menu items since they're handled separately
-  if (info.mediaType === 'image' && info.srcUrl && 
+  if (info.mediaType === 'image' && info.srcUrl &&
       !info.menuItemId.includes("Image") && !info.menuItemId.includes("Video") && !info.menuItemId.includes("Audio")) {
     // If promptContent is from tab summary, prepend image URL. Otherwise, it's selection text.
     promptContent = `Image URL: ${info.srcUrl}\n${promptContent}`.trim();
@@ -1241,7 +686,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const instructionId = info.menuItemId.replace('custom_', '');
     const { instructions } = await chrome.storage.local.get(['instructions']);
     const instruction = instructions.find(i => i.id === instructionId);
-    
+
     if (instruction) {
       // Track custom instruction usage
       try {
@@ -1289,7 +734,7 @@ async function validateConfig() {
   const result = await new Promise(resolve =>
     chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
   );
-  
+
   const profiles = result.profiles || [];
   const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
   const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
@@ -1323,7 +768,7 @@ async function validateConfig() {
   // Handle errors
   const hasEndpoint = defaultLlmEndpoint && isValidURL(defaultLlmEndpoint);
   const hasValidProfile = selectedProfile || defaultProfile;
-  
+
   if (!hasEndpoint) {
     throw new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
   } else if (!hasValidProfile) {
@@ -1334,32 +779,10 @@ async function validateConfig() {
 }
 
 // Helper function to process API response and send messages to chat.js (for NON-STREAMING responses)
-async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext, usingAnthropicMcp) {
+async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext) {
     const sendMessageDelay = isStartChatContext ? 300 : 200;
 
-    if (usingAnthropicMcp) {
-        // This branch handles non-streaming responses when the Anthropic MCP Connector was used.
-        // Anthropic's response (responseMessage) will be an object where responseMessage.content is an array of blocks
-        // (e.g., text, mcp_tool_use, mcp_tool_result).
-        setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    apiResponse: responseMessage, // Send whole Anthropic message object
-                    isAnthropicMcp: true, // Flag for chat.js to identify this response type
-                    prompt: prompt,
-                    tabId: tabId,
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn('Background: setApiResponse (Anthropic MCP) message failed:', chrome.runtime.lastError.message);
-                    }
-                });
-            } catch (error) {
-                console.error('Background: Exception sending setApiResponse (Anthropic MCP):', error.message);
-            }
-        }, sendMessageDelay);
-
-    } else if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
         // This is the OpenAI-style tool call
         setTimeout(() => {
             try {
@@ -1385,7 +808,6 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
                 chrome.runtime.sendMessage({
                     action: 'setApiResponse',
                     apiResponse: latestResponse,
-                    isAnthropicMcp: false, // Explicitly false
                     prompt: prompt,
                     tabId: tabId,
                 }, (response) => {
@@ -1398,13 +820,12 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
             }
         }, sendMessageDelay);
     } else {
-        console.error("Background: API response message has neither standard content nor tool_calls (OpenAI/Anthropic MCP):", responseMessage);
+        console.error("Background: API response message has neither standard content nor tool_calls:", responseMessage);
         setTimeout(() => {
             try {
                 chrome.runtime.sendMessage({
                     action: 'setApiResponse',
                     apiResponse: "Error: Received an empty or invalid response from the AI.",
-                    isAnthropicMcp: false, // Explicitly false
                     prompt: prompt,
                     tabId: tabId,
                 }, (response) => {
@@ -1421,7 +842,7 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
 
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
-    let config, tools, enableStreaming, usingAnthropicMcpConnectorGlobal = false; // Keep track of connector usage
+    let config, tools, enableStreaming;
     try {
         // Step 1: Validate configuration and get tool definitions
         try {
@@ -1547,7 +968,6 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
         const apiRequestBody = {
             model: config.modelName,
             messages: messages,
-            // toolChoicePayload will be spread later after checking for Anthropic MCP
         };
 
         const fetchHeaders = {
@@ -1555,54 +975,10 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
             'Authorization': `Bearer ${config.apiKey}`,
         };
 
-        // --- Anthropic MCP Connector Logic ---
-        // This section implements the "Managed MCP Approach (Anthropic-style)".
-        // If the configured LLM endpoint is identified as an Anthropic API endpoint
-        // and there are tools configured with an "mcpServerUrl", this logic will:
-        // 1. Add the 'anthropic-beta: mcp-client-2025-04-04' header.
-        // 2. Construct an 'mcp_servers' array in the API request body, listing the MCP servers.
-        // 3. Anthropic's backend will then manage the discovery and execution of tools from these servers.
-        // 4. The OpenAI-style 'tools' and 'tool_choice' parameters are omitted in this case.
-        // The response from Anthropic will include specific content blocks like 'mcp_tool_use' and 'mcp_tool_result'.
+        // Use standard OpenAI-style tool definition
+        Object.assign(apiRequestBody, toolChoicePayload);
 
-        // Simple check for Anthropic endpoint, can be made more robust
-        const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
-        let usingAnthropicMcpConnector = false; // This flag will be passed down to response handlers
-
-        if (isAnthropicEndpoint) {
-            const mcpConfiguredTools = allAvailableToolsRaw.filter(tool => tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "");
-
-            if (mcpConfiguredTools.length > 0) {
-                usingAnthropicMcpConnector = true;
-                usingAnthropicMcpConnectorGlobal = true; // Fix: Set global variable for streaming
-                fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header
-
-                apiRequestBody.mcp_servers = mcpConfiguredTools.map(tool => {
-                    const serverEntry = {
-                        type: "url",
-                        url: tool.mcpServerUrl, // This should be the direct URL to the MCP server
-                        name: tool.name, // Tool name used as server identifier for Anthropic
-                        // tool_configuration: { enabled: true } // by default all tools on server are enabled
-                    };
-                    return serverEntry;
-                });
-                // When using Anthropic MCP Connector, we don't send OpenAI-style 'tools' or 'tool_choice'
-                // The 'tools' are implicitly discovered by Anthropic from the mcp_servers.
-            } else {
-                // Spread OpenAI-style toolChoicePayload if not using Anthropic MCP connector
-                Object.assign(apiRequestBody, toolChoicePayload);
-            }
-        } else {
-            // Not an Anthropic endpoint, use standard OpenAI-style tool definition
-            Object.assign(apiRequestBody, toolChoicePayload);
-        }
-        // --- End Anthropic MCP Connector Logic ---
-        
-        if (enableStreaming && !usingAnthropicMcpConnector) { // Anthropic might handle streaming differently with MCP, or this might need adjustment
-            apiRequestBody.stream = true;
-        } else if (enableStreaming && usingAnthropicMcpConnector) {
-            // Anthropic Messages API with mcp_servers supports streaming for the main content.
-            // The tool_use and tool_result blocks appear as discrete messages in the stream.
+        if (enableStreaming) {
             apiRequestBody.stream = true;
         }
 
@@ -1685,81 +1061,27 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                         // Proceed to parse only if currentPayload is not empty and looks like JSON
                         if (currentPayload && currentPayload.length > 0 && (currentPayload.startsWith('{') || currentPayload.startsWith('['))) {
                             try {
-                                const parsed = JSON.parse(currentPayload);
+                                // Standard OpenAI-style streaming
+                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                    const contentChunk = parsed.choices[0].delta.content;
+                                    const toolCallChunk = parsed.choices[0].delta.tool_calls;
 
-                                // Check if we are using Anthropic MCP Connector for this request (Managed Approach)
-                                if (usingAnthropicMcpConnectorGlobal) {
-                                    // Handle Anthropic's specific streaming events.
-                                    // These events include message_start, content_block_start, content_block_delta,
-                                    // content_block_stop, message_delta, and message_stop.
-                                    // The extension forwards relevant parts to chat.js for rendering.
-                                    // Tool execution is handled by Anthropic's backend.
-
-                                    if (parsed.type === 'content_block_delta' && parsed.delta && parsed.delta.type === 'text_delta') {
-                                        // Stream text chunks as they arrive.
-                                        try {
-                                            chrome.runtime.sendMessage({
-                                                action: 'streamApiResponseChunk',
-                                                chunk: parsed.delta.text,
-                                                tabId: tabId,
-                                                prompt: promptContent
-                                            }, (response) => {
-                                                if (chrome.runtime.lastError) {
-                                                    console.warn('Background: streamApiResponseChunk message failed:', chrome.runtime.lastError.message);
-                                                }
-                                            });
-                                        } catch (error) {
-                                            console.error('Background: Exception sending streamApiResponseChunk:', error.message);
-                                        }
-                                    } else if (parsed.type === 'content_block_start' && parsed.content_block) {
-                                        // A new content block has started (e.g., text block or mcp_tool_use).
-                                        // Send the initial content_block to chat.js.
-                                        // chat.js will use this to display "Using tool..." for mcp_tool_use blocks.
+                                    if (contentChunk) {
                                         chrome.runtime.sendMessage({
-                                            action: 'streamApiAnthropicContentBlockStart',
-                                            contentBlock: parsed.content_block, // Contains type ('text' or 'mcp_tool_use'), name, input etc. for tools
+                                            action: 'streamApiResponseChunk',
+                                            chunk: contentChunk,
                                             tabId: tabId,
                                             prompt: promptContent
                                         });
-                                    } else if (parsed.type === 'message_delta' && parsed.delta && parsed.delta.stop_reason) {
-                                        // Log message_delta, especially if it contains stop_reason or usage data.
-                                    } else if (parsed.type === 'message_stop') {
-                                        // This event signals the end of the message from Anthropic.
-                                        // It often contains the complete final message object including all content blocks.
-                                        if (parsed.message) { // The 'message' field holds the final assistant message.
-                                             chrome.runtime.sendMessage({
-                                                action: 'streamApiAnthropicMessageStop',
-                                                anthropicMessage: parsed.message,
-                                                tabId: tabId,
-                                                prompt: promptContent
-                                            });
-                                        }
                                     }
-                                    // Other events like 'message_start', 'content_block_stop' are logged but not specifically actioned to chat.js unless needed.
-                                } else {
-                                    // Standard OpenAI-style streaming (Client-Managed tools if any, or text)
-                                    // This path is taken if not using Anthropic or if Anthropic endpoint but no MCP tools were configured for it.
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-                                        const contentChunk = parsed.choices[0].delta.content;
-                                        const toolCallChunk = parsed.choices[0].delta.tool_calls;
 
-                                        if (contentChunk) {
-                                            chrome.runtime.sendMessage({
-                                                action: 'streamApiResponseChunk',
-                                                chunk: contentChunk,
-                                                tabId: tabId,
-                                                prompt: promptContent
-                                            });
-                                        }
-
-                                        if (toolCallChunk) {
-                                            chrome.runtime.sendMessage({
-                                                action: 'streamApiToolCallChunk', // This tells chat.js to expect OpenAI tool_call
-                                                toolCallChunk: toolCallChunk,
-                                                tabId: tabId,
-                                                prompt: promptContent
-                                            });
-                                        }
+                                    if (toolCallChunk) {
+                                        chrome.runtime.sendMessage({
+                                            action: 'streamApiToolCallChunk',
+                                            toolCallChunk: toolCallChunk,
+                                            tabId: tabId,
+                                            prompt: promptContent
+                                        });
                                     }
                                 }
                             } catch (e) {
@@ -1772,15 +1094,13 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
             }
         } else { // Non-streaming path
             const responseData = await apiResponse.json();
-            // For Anthropic MCP non-streaming, responseData.content will be an array of blocks.
-            // For OpenAI, responseData.choices[0].message is the object to check.
-            const messageObject = usingAnthropicMcpConnectorGlobal ? responseData : (responseData.choices && responseData.choices[0] ? responseData.choices[0].message : null);
+            // Extract the message object from the response
+            const messageObject = responseData.choices && responseData.choices[0] ? responseData.choices[0].message : null;
 
             if (!messageObject) {
                  throw new Error('Invalid response format from API: Missing message structure.');
             }
-            // Pass usingAnthropicMcpConnectorGlobal to _handleApiResponseAndSendMessage
-            await _handleApiResponseAndSendMessage(messageObject, promptContent, tabId, isStartChat, usingAnthropicMcpConnectorGlobal);
+            await _handleApiResponseAndSendMessage(messageObject, promptContent, tabId, isStartChat, false);
         }
 
     } catch (error) {
@@ -1851,7 +1171,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     contexts: ['selection', 'image'],
     parentId: 'prompt_paul'
   });
-    
+
   chrome.contextMenus.create({
     id: 'shorten',
     title: '✂️ Shorten',
@@ -1934,14 +1254,14 @@ if (namespace === 'local' && changes.instructions) {
 
   // Get updated instructions
   const { instructions } = await chrome.storage.local.get(['instructions']);
-  
+
   // Recreate custom instructions menu
   chrome.contextMenus.create({
     id: 'customInstructions',
     title: 'Custom Instructions',
     contexts: ['selection', 'image'], // Add 'image' context here
   });
-  
+
   if (instructions && instructions.length > 0) {
     instructions.forEach(instruction => {
       chrome.contextMenus.create({
@@ -2000,46 +1320,30 @@ async function getToolDefinition(name) {
 }
 
 // Generic function to call a user-defined endpoint
-async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, originalToolName = null, mcpProxyUrlBase = null) { // Added userDefinedMethod parameter
+async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'GET') {
     try {
         let finalEndpointUrl = endpointUrl;
-        let finalFetchOptions = { // Initialize with common headers
+        let finalFetchOptions = {
             headers: {
-                'Accept': 'application/json' // Always accept JSON response
+                'Accept': 'application/json'
             }
         };
         let finalArgs = args;
 
-        if (mcpProxyUrlBase && isValidURL(mcpProxyUrlBase)) {
-            try {
-                finalEndpointUrl = new URL(endpointUrl, mcpProxyUrlBase).href;
-                // For MCP proxy, always POST a JSON payload with tool name and args
-                finalFetchOptions.method = 'POST'; // Override method to POST for MCP proxy
-                finalFetchOptions.headers['Content-Type'] = 'application/json';
-                finalArgs = { tool_name: originalToolName, arguments: args }; // Structure payload for MCP proxy
-                finalFetchOptions.body = JSON.stringify(finalArgs);
-            } catch (e) {
-                console.error(`Background: Error constructing MCP proxy URL from base '${mcpProxyUrlBase}' and path '${endpointUrl}':`, e);
-                throw new Error(`Invalid MCP Proxy URL configuration: ${e.message}`);
-            }
-        } else {
-            // Existing logic for non-MCP tools (handling GET/POST based on args and userDefinedMethod)
-            const isEmptyArgs = !args || Object.keys(args).length === 0;
-            let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
-            method = method.toUpperCase();
-            finalFetchOptions.method = method;
+        const isEmptyArgs = !args || Object.keys(args).length === 0;
+        let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
+        method = method.toUpperCase();
+        finalFetchOptions.method = method;
 
-            if (method === 'GET' && !isEmptyArgs) {
-                const queryParams = new URLSearchParams(finalArgs).toString();
-                finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
-            } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
-                finalFetchOptions.headers['Content-Type'] = 'application/json';
-                finalFetchOptions.body = JSON.stringify(finalArgs);
-            }
+        if (method === 'GET' && !isEmptyArgs) {
+            const queryParams = new URLSearchParams(finalArgs).toString();
+            finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
+        } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
+            finalFetchOptions.headers['Content-Type'] = 'application/json';
+            finalFetchOptions.body = JSON.stringify(finalArgs);
         }
-        // For DELETE, args might be used in the URL path (not handled here) or ignored, body is typically empty.
-        // If args are needed for DELETE, the user should construct the endpointUrl accordingly in the tool definition.
-        
+        // For DELETE, args might be used in the URL path or ignored
+
 
         const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
 
@@ -2055,14 +1359,14 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod, ori
 
         // Attempt to parse response as JSON, fall back to text if not JSON
         const contentType = response.headers.get('content-type');
-        
+
         let result;
         if (contentType && contentType.includes('application/json')) {
             result = await response.json();
         } else {
             result = await response.text();
         }
-        
+
         return result;
 
     } catch (error) {
@@ -2109,100 +1413,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
     };
 
-    // --- MCP Management API (Phase 1, config-first: no default servers) ---
-    if (request.action === 'mcp.addServer') {
-        (async () => {
-            try {
-                const cfg = await mcpRegistry.addServer(request.config);
-                sendResponse({ success: true, config: cfg });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.updateServer') {
-        (async () => {
-            try {
-                const cfg = await mcpRegistry.updateServer(request.config);
-                sendResponse({ success: true, config: cfg });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.removeServer') {
-        (async () => {
-            try {
-                await mcpRegistry.removeServer(request.serverId);
-                sendResponse({ success: true });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.listServers') {
-        (async () => {
-            try {
-                const servers = await mcpRegistry.listServers();
-                sendResponse({ success: true, servers });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.testConnect') {
-        (async () => {
-            try {
-                const res = await mcpRegistry.testConnect(request.serverId);
-                sendResponse({ success: res.ok, ...res });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.listTools') {
-        (async () => {
-            try {
-                const tools = await mcpRegistry.listTools(request.serverId);
-                sendResponse({ success: true, tools });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.callTool') {
-        (async () => {
-            try {
-                const result = await mcpRegistry.callTool(request.serverId, request.toolName, request.params || {});
-                sendResponse({ success: true, result });
-            } catch (e) {
-                sendResponse({ success: false, error: String(e.message || e) });
-            }
-        })();
-        return true;
-    } else if (request.action === 'mcp.getLogs') {
-        const limit = typeof request.limit === 'number' ? request.limit : 200;
-        const slice = mcpLogsBuffer.slice(-limit);
-        sendResponse({ success: true, logs: slice });
-        return true;
-    } else if (request.action === 'mcp.getState') {
-        try {
-            const st = mcpRegistry.getState(request.serverId);
-            sendResponse({ success: true, state: st });
-        } catch (e) {
-            sendResponse({ success: false, error: String(e.message || e) });
-        }
-        return true;
-    }
 
     if (request.action === 'getLoadContent') {
         if (tabContentCallback) {
             sendResponse({ action: 'loadContentResponse', success: false, error: 'Another content extraction is already in progress' });
             return true;
         }
-        
+
         tabContentCallback = sendResponse;
-        
+
         const timeoutId = setTimeout(() => {
             if (tabContentCallback) {
                 console.error('Background: getLoadContent timed out.');
@@ -2265,9 +1484,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ action: 'tabContentResponse', success: false, error: 'Another content extraction is already in progress' });
             return true;
         }
-        
+
         tabContentCallback = sendResponse;
-        
+
         const timeoutId = setTimeout(() => {
             if (tabContentCallback) {
                 console.error('Background: getTabContent timed out.');
@@ -2350,9 +1569,9 @@ chrome.scripting.executeScript({
             sendResponse({ action: 'pinnedActionTabContentResponse', success: false, content: 'Another content extraction is already in progress' });
             return true;
         }
-        
+
         pinnedActionTabContentCallback = sendResponse;
-        
+
         const timeoutId = setTimeout(() => {
             if (pinnedActionTabContentCallback) {
                 console.error('Background: getPinnedActionTabContent timed out.');
@@ -2360,7 +1579,7 @@ chrome.scripting.executeScript({
                 pinnedActionTabContentCallback = null;
             }
         }, 30000); // 30 seconds timeout
-        
+
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs && tabs[0] && tabs[0].id) {
                 const activeTabId = tabs[0].id;
@@ -2480,7 +1699,7 @@ chrome.scripting.executeScript({
         if (activeToolExecutions.has(executionKey)) {
             return true;
         }
-        
+
         activeToolExecutions.add(executionKey);
 
         (async () => {
@@ -2499,87 +1718,25 @@ chrome.scripting.executeScript({
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }
 
-                // === NEW MCP LOGIC STARTS HERE ===
-                if (toolDefinition.mcpServerUrl && toolDefinition.mcpServerUrl.trim() !== "") {
-                    try {
-                        const session = await getMcpSession(toolDefinition.mcpServerUrl);
-                        if (!session || !session.initialized) {
-                            throw new Error("MCP session could not be initialized.");
-                        }
-                        
-                        // Update session last used timestamp
-                        session.lastUsed = Date.now();
-                        
-                        // Add debug logging for MCP tool execution
-                        console.debug(`MCP Tool Execution: ${name} with args:`, argsObject);
-                        
-                        // Validate that the server supports this tool
-                        // Check if tools exists and is an array before using .some()
-                        const serverTools = session.tools;
-                        if (!Array.isArray(serverTools) || !serverTools.some(t => t.name === name)) {
-                            console.warn(`Tool '${name}' not found in server capabilities or serverCapabilities.tools is not an array. Server tools:`, serverTools);
-                            throw new Error(`MCP server at ${toolDefinition.mcpServerUrl} does not list tool '${name}' among its capabilities.`);
-                        }
-
-                        const requestId = `mcp-tc-${Date.now()}`;
-                        const mcpPayload = createMcpToolCallPayload(toolDefinition.name, argsObject, requestId);
-
-                        // Execute MCP request with circuit breaker protection
-                        const circuitBreaker = getCircuitBreaker(toolDefinition.mcpServerUrl);
-                        const mcpResponse = await circuitBreaker.execute(async () => {
-                            return await sendMcpRequest(toolDefinition.mcpServerUrl, mcpPayload);
-                        });
-
-                        // MCP's tools/call result is expected to be CallToolResult, which has a 'content' field.
-                        // The actual data might be in mcpResponse.result.content or just mcpResponse.result
-                        // For now, sending mcpResponse.result as per the generic structure.
-                        // The structure of 'result' from 'tools/call' should be: { content: "...", isError: false/true }
-                        // So, mcpResponse.result should be this object.
-                        try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
-                        sendResponse({ result: mcpResponse.result });
-
-                    } catch (mcpError) {
-                        console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details); // Log details if present
-                        // Enhanced error logging for TypeErrors
-                        // The existing mcpError.details logging seems correct as per the requirement.
-                        // The requirement states: "ensure the console.error in the catch (mcpError) block ... correctly logs mcpError.details if it exists, which it already seems to do."
-                        // The existing line is: console.error(`Background: Error executing MCP tool '${name}':`, mcpError, mcpError.details);
-                        // This already logs mcpError.details if it exists.
-                        if (mcpError instanceof TypeError) {
-                            // This debug info is helpful for TypeErrors which was the original problem.
-                            console.error('MCP Capabilities Debug Info during TypeError:', {
-                                serverCapabilities: session?.serverCapabilities, // Use optional chaining for session as well
-                                tools: session?.serverCapabilities?.tools
-                            });
-                        }
-                        let userFriendlyMessage;
-                        if (mcpError.details && mcpError.details.message) { // Check if mcpError.details and its message exist
-                            userFriendlyMessage = `MCP Tool '${name}' Error: ${mcpError.details.message} (Code: ${mcpError.details.code || 'N/A'})`;
-                        } else {
-                            userFriendlyMessage = `Failed to execute MCP tool '${name}': ${mcpError.message || 'An unknown error occurred during MCP tool execution.'}`;
-                        }
-                        try { await trackErrorEvent('tool_error', name); } catch (_) {}
-                        sendResponse({ error: userFriendlyMessage });
-                    }
-                } else if (toolDefinition.endpointUrl) { // Existing non-MCP tool logic
+                if (toolDefinition.endpointUrl) {
+                    // User-defined endpoint tool
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
                     try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
                     sendResponse({ result: result });
-                } else { // Existing built-in tool logic (if any)
+                } else {
+                    // Built-in tool implementation
                     const builtInFunction = toolImplementations[name];
                     if (builtInFunction) {
                         const result = await builtInFunction(argsObject);
                         try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
                         sendResponse({ result: result });
                     } else {
-                        throw new Error(`Tool '${name}' is not properly configured: It has no mcpServerUrl, no endpointUrl, and no built-in implementation.`);
+                        throw new Error(`Tool '${name}' is not properly configured: It has no endpointUrl and no built-in implementation.`);
                     }
                 }
-                // === MCP LOGIC ENDS HERE ===
 
             } catch (error) { // General error catch for executePromptPaulTool
                 console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
-                // Provide more detailed error message for MCP tools
                 let errorMessage = error.message || 'Tool processing failed';
                 if (error.details) {
                     errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
@@ -2591,61 +1748,6 @@ chrome.scripting.executeScript({
             }
         })();
         return true; // Crucial for async sendResponse
-    } else if (request.action === 'getDiscoveredMcpToolSchema') {
-        (async () => {
-            const { mcpServerUrl, toolName } = request;
-            if (!mcpServerUrl || !toolName) {
-                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request.' });
-                return;
-            }
-
-            const session = mcpSessions[mcpServerUrl];
-            if (session && session.tools && Array.isArray(session.tools)) {
-                const discoveredTool = session.tools.find(t => t.name === toolName);
-                if (discoveredTool) {
-                    // The discoveredTool object should contain name, description, and inputSchema (or similar)
-                    sendResponse({ success: true, toolSchema: discoveredTool });
-                } else {
-                    sendResponse({ success: false, error: `Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}.` });
-                }
-            } else {
-                sendResponse({ success: false, error: `MCP session for ${mcpServerUrl} not active or tools not listed.` });
-            }
-        })();
-        return true; // Indicates asynchronous response
-    } else if (request.action === 'fetchMcpToolDetailsFromServer') {
-        (async () => {
-            const { mcpServerUrl, toolName } = request;
-            if (!mcpServerUrl || !toolName) {
-                sendResponse({ success: false, error: 'Missing mcpServerUrl or toolName in request for fetchMcpToolDetailsFromServer.' });
-                return;
-            }
-            try {
-                // Ensure session is initialized and tools are listed
-                const session = await getMcpSession(mcpServerUrl); // This initializes and calls listMcpTools internally
-                if (!session || !session.initialized) {
-                    throw new Error(`MCP session could not be initialized for ${mcpServerUrl}.`);
-                }
-
-                if (session.tools && Array.isArray(session.tools)) {
-                    const discoveredTool = session.tools.find(t => t.name === toolName);
-                    if (discoveredTool) {
-                        // Send back the full tool schema as discovered from the server
-                        sendResponse({ success: true, toolSchema: discoveredTool });
-                    } else {
-                        console.warn(`Background: fetchMcpToolDetailsFromServer - Tool '${toolName}' not found in discovered tools for ${mcpServerUrl}. Available tools:`, session.tools.map(t => t.name));
-                        sendResponse({ success: false, error: `Tool '${toolName}' not found among tools listed by ${mcpServerUrl}.` });
-                    }
-                } else {
-                    console.error(`Background: fetchMcpToolDetailsFromServer - MCP session for ${mcpServerUrl} does not have a valid 'tools' array. Session state:`, session);
-                    sendResponse({ success: false, error: `Failed to list or retrieve tools from ${mcpServerUrl}. Session 'tools' array is invalid or missing.` });
-                }
-            } catch (error) {
-                console.error(`Background: fetchMcpToolDetailsFromServer - Error fetching tool details for '${toolName}' from ${mcpServerUrl}:`, error);
-                sendResponse({ success: false, error: `Error initializing session or fetching tool details: ${error.message}` });
-            }
-        })();
-        return true; // Indicates asynchronous response
     } else if (request.action === 'executeLlmApiRequest') {
         const { prompt, tool_choice } = request;
         (async () => {
@@ -2655,50 +1757,3 @@ chrome.scripting.executeScript({
     }
     // Handle other actions if any
 });
-
-// Cleanup function for extension shutdown
-function cleanupMcpSessions() {
-    
-    // Clear session cleanup timer
-    if (sessionCleanupTimer) {
-        clearInterval(sessionCleanupTimer);
-        sessionCleanupTimer = null;
-    }
-    
-    // Clear all sessions
-    const sessionCount = Object.keys(mcpSessions).length;
-    mcpSessions = {};
-    
-    // Clear circuit breakers
-    const breakerCount = Object.keys(mcpCircuitBreakers).length;
-    for (const url in mcpCircuitBreakers) {
-        delete mcpCircuitBreakers[url];
-    }
-    
-}
-
-// Handle extension lifecycle events
-chrome.runtime.onSuspend?.addListener(() => {
-    cleanupMcpSessions();
-});
-
-// Add periodic health check for sessions
-function performSessionHealthCheck() {
-    const now = Date.now();
-    let healthyCount = 0;
-    let unhealthyCount = 0;
-    
-    for (const [url, session] of Object.entries(mcpSessions)) {
-        if (isSessionHealthy(session)) {
-            healthyCount++;
-        } else {
-            unhealthyCount++;
-        }
-    }
-    
-    if (healthyCount > 0 || unhealthyCount > 0) {
-    }
-}
-
-// Run health check every 2 minutes
-setInterval(performSessionHealthCheck, 120000);

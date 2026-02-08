@@ -25,15 +25,15 @@ export function applyDarkTheme(isDark) {
   }
 
   // Update copy icons based on theme
-  const copyMarkdownIcons = document.querySelectorAll('img[src*="copy markdown.png"]');
-  const copyFormattedIcons = document.querySelectorAll('img[src*="copy formatted.png"]');
+  const copyMarkdownIcons = document.querySelectorAll('img[src*="copy-markdown.png"]');
+  const copyFormattedIcons = document.querySelectorAll('img[src*="copy-formatted.png"]');
 
   copyMarkdownIcons.forEach(icon => {
-    icon.src = isDark ? 'icons/light_copy markdown.png' : 'icons/copy markdown.png';
+    icon.src = isDark ? 'icons/light-copy-markdown.png' : 'icons/copy-markdown.png';
   });
 
   copyFormattedIcons.forEach(icon => {
-    icon.src = isDark ? 'icons/light_copy formatted.png' : 'icons/copy formatted.png';
+    icon.src = isDark ? 'icons/light-copy-formatted.png' : 'icons/copy-formatted.png';
   });
   
   // Dispatch theme change event for other components

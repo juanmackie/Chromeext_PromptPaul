@@ -668,3 +668,118 @@ body.sidebar-open #chat-area {
 .ext-border { border-color: var(--ext-border); }
 .ext-rounded { border-radius: var(--ext-radius); }
 .ext-shadow { box-shadow: var(--ext-shadow); }
+
+/* Styles moved from inline chat.html */
+
+/* Main content area */
+.main-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* Chat main area and one-off instruction area */
+#chat-main-area, #oneoff-instruction-area {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    position: relative;
+}
+
+/* One-off instruction area padding */
+#oneoff-instruction-area {
+    padding: 1rem;
+}
+
+/* Selected text display */
+#selectedText {
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 0.5rem;
+    border: 1px solid var(--ext-border);
+    border-radius: 0px;
+    background-color: var(--ext-muted);
+    color: var(--ext-foreground);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    box-shadow: var(--ext-shadow-sm);
+}
+
+/* Instruction input - additional styles */
+#instructionInput {
+    width: 95%;
+    min-height: 100px;
+    padding: 0.5rem;
+    border: 2px solid var(--ext-border);
+    margin-bottom: 1rem;
+    resize: vertical;
+    background-color: var(--ext-input);
+    color: var(--ext-foreground);
+    font-family: var(--ext-font-family);
+}
+
+/* Responsive table styles */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+th, td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid var(--ext-border);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Column width classes */
+.property-col {
+    width: 40%;
+}
+
+.ref-col {
+    width: 20%;
+}
+
+.task-col {
+    width: 40%;
+}
+
+/* Row divider */
+.row-divider {
+    height: 1px;
+    background-color: var(--ext-border);
+    width: 100%;
+    margin: 4px 0;
+}
+
+/* Media queries for responsive design */
+@media (max-width: 300px) {
+    .message {
+        padding: 0.4rem;
+    }
+    
+    #input-area {
+        padding: 0.3rem;
+    }
+    
+    #user-input {
+        padding: 0.4rem 0.6rem;
+    }
+    
+    button {
+        padding: 0.4rem 0.8rem;
+    }
+    
+    th, td {
+        padding: 4px;
+        font-size: 0.9em;
+    }
+}
