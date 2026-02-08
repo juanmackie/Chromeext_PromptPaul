@@ -353,6 +353,12 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 
 // Unified context menu click handler for all modalities
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  // Validate tab exists and has a valid ID (tab.id is -1 for side panel, devtools, chrome:// URLs)
+  if (!tab || tab.id === -1 || tab.id === undefined) {
+    console.warn('Context menu invoked from invalid tab context - ignoring');
+    return;
+  }
+
   try {
     await chrome.sidePanel.open({ tabId: tab.id });
 
@@ -426,11 +432,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         };
       }
 
-      // Send media to chat
-      await sendMediaAnalysisMessage(tab.id, {
-        ...mediaData,
-        loading: false
-      });
+      // Send media to chat (but NOT for oneoff_instruction - it handles media separately)
+      if (info.menuItemId !== 'oneoff_instruction') {
+        await sendMediaAnalysisMessage(tab.id, {
+          ...mediaData,
+          loading: false
+        });
+      }
     }
 
     // Handle special menu items
