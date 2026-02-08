@@ -303,15 +303,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (request.action === 'setSelectedText') {
             selectedText = request.selectedText || '';
             tabId = request.tabId;
-            
+
             // Handle media data from context menu
             if (request.mediaData) {
                 currentMediaData = request.mediaData;
-                
+
                 // Show chat area with media preview
                 chatMainArea.style.display = 'block';
                 oneoffInstructionArea.style.display = 'none';
-                
+
                 if (currentMediaData.error) {
                     addMessage('System', `❌ Error loading ${currentMediaData.type}: ${currentMediaData.error}`);
                 } else if (currentMediaData.base64) {
@@ -1498,20 +1498,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         try {
             const config = await getApiConfig();
-            
+
             // Build prompt based on available content (text or media)
             let prompt;
             let contentSummary = '';
-            
+
             if (currentMediaData && currentMediaData.base64) {
                 // Have media loaded - include compatibility mode info
                 const mediaInfo = `[${currentMediaData.type.toUpperCase()} loaded: ${currentMediaData.mimeType}, URL: ${currentMediaData.url || 'embedded'}]`;
                 contentSummary = mediaInfo;
                 prompt = instruction + '\n\n' + contentSummary;
-                
+
                 // Add user message with media context
                 addMessage('User', `${instruction}\n\n[${contentSummary}]`);
-                
+
                 // Use media API call
                 const allAvailableTools = await getTools();
                 const formattedTools = allAvailableTools.map(tool => {
@@ -1540,7 +1540,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Prepare messages
                 let messageContent = [{ type: 'text', text: prompt }];
-                
+
                 // For images, attach as multimodal content
                 if (currentMediaData.type === 'image' && currentMediaData.base64) {
                     messageContent.push({
@@ -1715,6 +1715,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (selectedText && selectedText.trim()) {
                 // Text-only one-off - use shared makeApiCall
                 prompt = instruction + '\n\n' + selectedText;
+                // Show chat area and hide one-off instruction area before adding message
+                oneoffInstructionArea.style.display = 'none';
+                chatMainArea.style.display = 'block';
                 addMessage('User', `${instruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`);
                 await makeApiCall(prompt, 'auto');
                 instructionInput.value = '';

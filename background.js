@@ -479,7 +479,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         }, SIDE_PANEL_READY_DELAY_MS);
       } else {
         // For text, just open composer
-        setTimeout(() => sendMessage('setSelectedText'), 100);
+        setTimeout(() => sendMessage('setSelectedText'), SIDE_PANEL_READY_DELAY_MS);
       }
       return;
     }
@@ -903,6 +903,7 @@ ${config.systemPrompt}`;        }        messages.push({ role: 'system', content
                         // Proceed to parse only if currentPayload is not empty and looks like JSON
                         if (currentPayload && currentPayload.length > 0 && (currentPayload.startsWith('{') || currentPayload.startsWith('['))) {
                             try {
+                                const parsed = JSON.parse(currentPayload);
                                 // Standard OpenAI-style streaming
                                 if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
                                     const contentChunk = parsed.choices[0].delta.content;
