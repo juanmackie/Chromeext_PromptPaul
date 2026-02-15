@@ -1122,12 +1122,16 @@ async function getToolDefinition(name) {
 
 // Generic function to call a user-defined endpoint
 async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'GET') {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 1-minute timeout
+
     try {
         let finalEndpointUrl = endpointUrl;
         let finalFetchOptions = {
             headers: {
                 'Accept': 'application/json'
-            }
+            },
+            signal: controller.signal
         };
         let finalArgs = args;
 
@@ -1147,6 +1151,7 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 
 
         const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             let errorBody = '';
@@ -1171,6 +1176,11 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
         return result;
 
     } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.error(`Background: Tool call to ${endpointUrl} timed out after 60 seconds.`);
+            throw new Error(`Tool call to ${endpointUrl} timed out after 60 seconds.`);
+        }
         console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
         // Rethrow a more specific error message
         throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);

@@ -1113,12 +1113,14 @@ function setupToolHandlers() {
 
       if (!toolName || !toolDescription) {
         showStatus('Tool name and description are required.', true);
+        loadingManager.setButtonLoading(saveToolBtn, false);
         return;
       }
 
 
       if (toolParameters && !isValidJson(toolParameters)) {
         showStatus('Parameters must be valid JSON.', true);
+        loadingManager.setButtonLoading(saveToolBtn, false);
         return;
       }
 

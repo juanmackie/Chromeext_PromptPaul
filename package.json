@@ -1,6 +1,6 @@
 {
   "name": "chrome-helpinghand",
-  "version": "1.0.0",
+  "version": "6.0.0",
   "description": "Chrome extension for custom instructions",
   "main": "background.js",
   "scripts": {},
