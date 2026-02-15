@@ -359,6 +359,10 @@ document.addEventListener('DOMContentLoaded', () => {
             micPermissionStatus.textContent = '✗ Denied';
             micPermissionStatus.style.color = 'var(--ext-destructive)';
             showStatus('Microphone access denied. Click lock icon 🔒 in your browser address bar to allow microphone access.', true, true);
+          } else if (event.error === 'no-speech') {
+            micPermissionStatus.textContent = '! No speech';
+            micPermissionStatus.style.color = 'var(--ext-warning)';
+            showStatus('No speech detected. Please try properly speaking into the microphone.', true, true);
           } else {
             micPermissionStatus.textContent = 'Unknown error';
             micPermissionStatus.style.color = 'var(--ext-warning)';
@@ -434,6 +438,9 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
   });
 });
   setupToolHandlers(); // Add call to setup tool handlers
+  setupSkillHandlers(); // Add call to setup skill handlers
+  setupBackupHandlers(); // Add call to setup backup handlers
+
 
   // Add event listener for the Revert button
   const revertButton = document.getElementById('revertDefaultsButton');
@@ -1254,4 +1261,310 @@ function setupToolHandlers() {
 
   // Initial load of tools
   loadTools();
+}
+
+// Setup skill management handlers
+function setupSkillHandlers() {
+  const saveSkillBtn = document.getElementById('saveSkill');
+  const clearSkillFormBtn = document.getElementById('clearSkillForm');
+
+  // Load and display skills
+  function loadSkills() {
+    // Load built-in skills first
+    const builtInSkillsPromise = fetch(chrome.runtime.getURL('skills/skills.json'))
+      .then(response => response.json())
+      .catch((e) => {
+        console.warn('Failed to load built-in skills:', e);
+        return [];
+      });
+
+    // Load custom skills
+    const customSkillsPromise = new Promise(resolve => {
+        chrome.storage.local.get(['customSkills'], (result) => {
+            resolve(result.customSkills || []);
+        });
+    });
+
+    Promise.all([builtInSkillsPromise, customSkillsPromise]).then(([builtIn, custom]) => {
+      const skillsMap = new Map();
+      // Built-in first
+      builtIn.forEach(s => skillsMap.set(s.name, { ...s, source: 'Built-in' }));
+      // Custom overrides built-in (or adds new)
+      custom.forEach(s => skillsMap.set(s.name, { ...s, source: 'Custom' }));
+
+      const skills = Array.from(skillsMap.values());
+      const tableBody = document.querySelector('#skillsTable tbody');
+      if (tableBody) {
+          tableBody.innerHTML = '';
+
+          skills.forEach(skill => {
+            const row = document.createElement('tr');
+            const isCustom = skill.source === 'Custom';
+            const actions = isCustom ?
+                `<button class="edit-skill-btn" data-name="${skill.name}">Edit</button>
+                 <button class="delete-skill-btn" data-name="${skill.name}">Delete</button>` :
+                `<span class="text-muted" style="color: grey; font-style: italic;">Built-in (Read-only)</span>`;
+
+            row.innerHTML = `
+              <td data-label="Name">${skill.name}</td>
+              <td data-label="Description">${skill.description}</td>
+              <td data-label="Source">${skill.source}</td>
+              <td data-label="Actions">${actions}</td>
+            `;
+            tableBody.appendChild(row);
+          });
+      }
+
+      // Add edit/delete handlers
+      document.querySelectorAll('.edit-skill-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const skillName = e.target.dataset.name;
+            const skill = custom.find(s => s.name === skillName);
+            if (skill) {
+                document.getElementById('skillName').value = skill.name;
+                document.getElementById('skillDescription').value = skill.description;
+                document.getElementById('skillContent').value = skill.content;
+                document.getElementById('skillName').disabled = true; // Cannot change ID of existing skill to avoid duplication issues easily
+            }
+        });
+      });
+
+      document.querySelectorAll('.delete-skill-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const skillName = e.target.dataset.name;
+            if (confirm(`Delete skill '${skillName}'?`)) {
+                chrome.storage.local.get(['customSkills'], (result) => {
+                    let customSkills = result.customSkills || [];
+                    customSkills = customSkills.filter(s => s.name !== skillName);
+                    chrome.storage.local.set({ customSkills }, () => {
+                        showStatus('Skill deleted.');
+                        loadSkills();
+                        clearSkillForm();
+                    });
+                });
+            }
+        });
+      });
+    });
+  }
+
+  // Save skill handler
+  if (saveSkillBtn) {
+    saveSkillBtn.addEventListener('click', () => {
+      const nameInput = document.getElementById('skillName');
+      const name = nameInput.value.trim();
+      const description = document.getElementById('skillDescription').value.trim();
+      const content = document.getElementById('skillContent').value.trim();
+
+      if (!name || !description || !content) {
+        showStatus('All fields are required.', true);
+        return;
+      }
+
+      // Simple validation for name (slug-like)
+      if (!/^[a-z0-9-]+$/.test(name)) {
+        showStatus('Skill Name must be lowercase letters, numbers, and hyphens only.', true);
+        return;
+      }
+
+      chrome.storage.local.get(['customSkills'], (result) => {
+        let customSkills = result.customSkills || [];
+        // Check if updating
+        const existingIndex = customSkills.findIndex(s => s.name === name);
+        const newSkill = { name, description, content, lastUpdated: new Date().toISOString() };
+
+        if (existingIndex > -1) {
+            // If name is disabled, we are editing. If enabled, we might be overwriting or creating new.
+            // Since we use name as ID, it's effectively an overwrite if it exists.
+            customSkills[existingIndex] = newSkill;
+            showStatus('Skill updated.');
+        } else {
+            customSkills.push(newSkill);
+            showStatus('Skill added.');
+        }
+
+        chrome.storage.local.set({ customSkills }, () => {
+            loadSkills();
+            clearSkillForm();
+        });
+      });
+    });
+  }
+
+  // Clear skill form handler
+  if (clearSkillFormBtn) {
+    clearSkillFormBtn.addEventListener('click', clearSkillForm);
+  }
+
+  function clearSkillForm() {
+    const nameInput = document.getElementById('skillName');
+    if (nameInput) {
+        nameInput.value = '';
+        nameInput.disabled = false;
+    }
+    const descInput = document.getElementById('skillDescription');
+    if (descInput) descInput.value = '';
+    const contentInput = document.getElementById('skillContent');
+    if (contentInput) contentInput.value = '';
+
+    showStatus('Skill form cleared.');
+  }
+
+  // Export skills handler
+  const exportBtn = document.getElementById('exportSkills');
+  if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        chrome.storage.local.get(['customSkills'], (result) => {
+            const customSkills = result.customSkills || [];
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(customSkills, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "prompt_paul_skills.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+      });
+  }
+
+  // Import skills handler
+  const importBtn = document.getElementById('importSkills');
+  if (importBtn) {
+      importBtn.addEventListener('click', () => {
+        document.getElementById('importSkillsFile').click();
+      });
+  }
+
+  const importFile = document.getElementById('importSkillsFile');
+  if (importFile) {
+      importFile.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const imported = JSON.parse(e.target.result);
+                if (Array.isArray(imported)) {
+                    chrome.storage.local.get(['customSkills'], (result) => {
+                        let customSkills = result.customSkills || [];
+                        imported.forEach(newSkill => {
+                            if (newSkill.name && newSkill.description && newSkill.content) {
+                                const idx = customSkills.findIndex(s => s.name === newSkill.name);
+                                if (idx > -1) customSkills[idx] = newSkill;
+                                else customSkills.push(newSkill);
+                            }
+                        });
+                        chrome.storage.local.set({ customSkills }, () => {
+                            showStatus('Skills imported successfully.');
+                            loadSkills();
+                        });
+                    });
+                } else {
+                    showStatus('Invalid skill file format. Expected JSON array.', true);
+                }
+            } catch (err) {
+                console.error(err);
+                showStatus('Error parsing skill file.', true);
+            }
+        };
+        reader.readAsText(file);
+      });
+  }
+
+  // Initial load
+  loadSkills();
+}
+
+/**
+ * Setup handlers for the Full Backup & Restore system.
+ */
+function setupBackupHandlers() {
+    const exportAllBtn = document.getElementById('exportAllData');
+    const importAllBtn = document.getElementById('importAllDataBtn');
+    const importAllFile = document.getElementById('importAllFile');
+
+    if (exportAllBtn) {
+        exportAllBtn.addEventListener('click', async () => {
+            try {
+                showStatus('Preparing full backup...', false, true);
+
+                const localData = await new Promise(resolve => chrome.storage.local.get(null, resolve));
+                const syncData = await new Promise(resolve => chrome.storage.sync.get(null, resolve));
+
+                const fullBackup = {
+                    version: '1.0',
+                    timestamp: new Date().toISOString(),
+                    local: localData,
+                    sync: syncData
+                };
+
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fullBackup, null, 2));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                const filename = `prompt-paul-backup-${new Date().toISOString().split('T')[0]}.json`;
+                downloadAnchorNode.setAttribute("download", filename);
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+
+                showStatus('Full backup exported successfully!', false, true);
+            } catch (error) {
+                console.error('Export error:', error);
+                showStatus('Failed to export backup: ' + error.message, true, true);
+            }
+        });
+    }
+
+    if (importAllBtn) {
+        importAllBtn.addEventListener('click', () => {
+            importAllFile.click();
+        });
+    }
+
+    if (importAllFile) {
+        importAllFile.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!confirm('Are you sure you want to restore from this backup? This will overwrite ALL your current settings, profiles, skills, and tools.')) {
+                importAllFile.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const backup = JSON.parse(e.target.result);
+
+                    if (!backup.local && !backup.sync) {
+                        throw new Error('Invalid backup format: missing storage data.');
+                    }
+
+                    showStatus('Restoring data...', false, true);
+
+                    // Restore local data
+                    if (backup.local) {
+                        await new Promise(resolve => chrome.storage.local.set(backup.local, resolve));
+                    }
+
+                    // Restore sync data
+                    if (backup.sync) {
+                        await new Promise(resolve => chrome.storage.sync.set(backup.sync, resolve));
+                    }
+
+                    showStatus('Restore complete! Reloading...', false, true);
+
+                    // Reload the page to reflect all changes
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+
+                } catch (err) {
+                    console.error('Import error:', err);
+                    showStatus('Failed to import backup: ' + err.message, true, true);
+                }
+            };
+            reader.readAsText(file);
+        });
+    }
 }

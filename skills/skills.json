@@ -1,0 +1,8 @@
+[
+  {
+    "id": "weather_guide",
+    "name": "weather-guide",
+    "description": "A guide for understanding weather reports and terminology.",
+    "path": "skills/weather_guide/SKILL.md"
+  }
+]

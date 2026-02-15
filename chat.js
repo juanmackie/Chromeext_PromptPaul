@@ -960,6 +960,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (config.systemPrompt && config.systemPrompt.trim() !== '') {
                 systemPromptContent += `\n\n${config.systemPrompt}`;
             }
+            // Inject AVAILABLE SKILLS into system prompt
+            const skillsResp = await new Promise(resolve => {
+                chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+                    if (chrome.runtime.lastError) resolve({ skills: [] });
+                    else resolve(response || { skills: [] });
+                });
+            });
+            const chatSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
+            if (chatSkills.length > 0) {
+                const skillsDescription = chatSkills.map(s => `- ${s.name}: ${s.description}`).join('\n');
+                systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+            }
+
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
 
             // Use existing tool preparation logic
@@ -1030,6 +1043,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!apiResponse.ok) {
+                if (apiResponse.status === 429) {
+                     throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
+                }
                 const errorText = await apiResponse.text();
                 let errorDetail = errorText;
                 try {
@@ -1118,6 +1134,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 source: source // Add the source for debugging/info
             });
         }
+
+        // Inject load_skill tool if skills are available
+        const { skills = [] } = await new Promise(resolve => {
+            chrome.runtime.sendMessage({ action: 'getSkills' }, resolve);
+        });
+
+        if (skills.length > 0) {
+            processedTools.push({
+                name: 'load_skill',
+                description: 'Loads the instructions for a specific skill. Use this when the user asks for a task that matches one of the Available Skills in your system prompt.',
+                parametersForLlm: {
+                    type: 'object',
+                    properties: {
+                        name: { type: 'string', description: 'The name of the skill to load' }
+                    },
+                    required: ['name']
+                },
+                source: 'built-in'
+            });
+        }
+
         return processedTools;
     }
 
@@ -1161,6 +1198,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (config.systemPrompt && config.systemPrompt.trim() !== '') {
                 systemPromptContent += `\n\n${config.systemPrompt}`;
             }
+            // Inject AVAILABLE SKILLS into system prompt
+            const skillsRespMain = await new Promise(resolve => {
+                chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+                    if (chrome.runtime.lastError) resolve({ skills: [] });
+                    else resolve(response || { skills: [] });
+                });
+            });
+            const chatSkillsMain = (skillsRespMain && skillsRespMain.skills) ? skillsRespMain.skills : [];
+            if (chatSkillsMain.length > 0) {
+                const skillsDescription = chatSkillsMain.map(s => `- ${s.name}: ${s.description}`).join('\n');
+                systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+            }
+
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
 
             // START SHARED API REQUEST PREP LOGIC
@@ -1241,6 +1291,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
+            const hasToolMessage = Array.isArray(conversationHistory) && conversationHistory.some(msg => msg.role === 'tool');
             let effectiveEnableStreaming = enableStreaming;
             // For now, keeping the existing logic for disabling streaming if a 'tool' role message is in history.
             if (hasToolMessage && enableStreaming) {
@@ -1279,6 +1330,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadingManager.showConnectionStatus('#chat-area', 'connected');
 
                 if (!apiResponse.ok) {
+                    if (apiResponse.status === 429) {
+                         const error = new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
+                         loadingManager.showToast('API Rate Limit Exceeded', 'error');
+                         loadingManager.showConnectionStatus('#chat-area', 'disconnected');
+                         throw error;
+                    }
                     const errorText = await apiResponse.text();
                     let errorDetail = errorText;
                     try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
@@ -1367,6 +1424,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (!apiResponse.ok) {
+                    if (apiResponse.status === 429) {
+                         throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
+                    }
                     const errorText = await apiResponse.text();
                     let errorDetail = errorText;
                      try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
@@ -1406,7 +1466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 userInput.focus();
                              } else {
                                 addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response) });
                                 makeApiCall();
                              }
                         });
@@ -1501,6 +1561,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     systemPromptContent += `\n\n${config.systemPrompt}`;
                 }
 
+                // Inject AVAILABLE SKILLS into system prompt
+                const skillsResp = await new Promise(resolve => {
+                    chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+                        if (chrome.runtime.lastError) resolve({ skills: [] });
+                        else resolve(response || { skills: [] });
+                    });
+                });
+                const chatSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
+                if (chatSkills.length > 0) {
+                    const skillsDescription = chatSkills.map(s => `- ${s.name}: ${s.description}`).join('\n');
+                    systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+                }
+
                 // Prepare messages
                 let messageContent = [{ type: 'text', text: prompt }];
 
@@ -1545,7 +1618,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
                 let effectiveEnableStreaming = enableStreaming;
-                const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
+                const hasToolMessage = Array.isArray(conversationHistory) && conversationHistory.some(msg => msg.role === 'tool');
 
                 if (hasToolMessage && enableStreaming) {
                     effectiveEnableStreaming = false;
@@ -1580,6 +1653,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         signal,
                     });
                     if (!apiResponse.ok) {
+                        if (apiResponse.status === 429) {
+                             throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
+                        }
                         const errorText = await apiResponse.text();
                         let errorDetail = errorText;
                         try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
@@ -1647,6 +1723,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         signal,
                     });
                     if (!apiResponse.ok) {
+                        if (apiResponse.status === 429) {
+                             throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
+                        }
                         const errorText = await apiResponse.text();
                         let errorDetail = errorText;
                         try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
@@ -1929,11 +2008,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         loadingManager.showToast('Microphone access denied', 'error');
                     }
+                    stopVoiceInput();
+                } else if (event.error === 'no-speech') {
+                    // Ignore no-speech error to allow auto-restart in onend
+                    console.warn('Speech recognition: No speech detected (will restart)');
                 } else {
                     loadingManager.showToast('Voice error: ' + event.error, 'error');
+                    stopVoiceInput();
                 }
-
-                stopVoiceInput();
             };
 
             speechRecognition.onend = function() {

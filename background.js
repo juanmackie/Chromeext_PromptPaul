@@ -658,6 +658,89 @@ async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, 
     }
 }
 
+// ===== Skill Manager =====
+class SkillManager {
+  constructor() {
+    this.skills = new Map();
+    this.initialized = false;
+  }
+
+  async init() {
+    if (this.initialized) return;
+    await this.loadSkills();
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.customSkills) {
+        this.loadSkills();
+      }
+    });
+    this.initialized = true;
+  }
+
+  async loadSkills() {
+    this.skills.clear();
+
+    // 1. Load built-in skills from manifest
+    try {
+      const url = chrome.runtime.getURL('skills/skills.json');
+      const response = await fetch(url);
+      if (response.ok) {
+        const builtIn = await response.json();
+        builtIn.forEach(skill => {
+            this.skills.set(skill.name, { ...skill, type: 'built-in' });
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load built-in skills (skills/skills.json might be missing):', e);
+    }
+
+    // 2. Load user-defined skills from storage
+    try {
+      const result = await chrome.storage.local.get(['customSkills']);
+      const customSkills = result.customSkills || [];
+      customSkills.forEach(skill => {
+        // User skills override built-in if names collide
+        this.skills.set(skill.name, { ...skill, type: 'custom' });
+      });
+    } catch (e) {
+      console.error('Failed to load custom skills:', e);
+    }
+
+    console.log('SkillManager: Loaded skills:', Array.from(this.skills.keys()));
+  }
+
+  getSkillsList() {
+    return Array.from(this.skills.values()).map(s => ({
+      name: s.name,
+      description: s.description
+    }));
+  }
+
+  async getSkillContent(name) {
+    const skill = this.skills.get(name);
+    if (!skill) return null;
+
+    if (skill.type === 'custom') {
+      return skill.content;
+    } else {
+      // Built-in: fetch from file
+      try {
+        const url = chrome.runtime.getURL(skill.path);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.text();
+      } catch (e) {
+        console.error(`Failed to load skill content for ${name}:`, e);
+        return `Error loading skill content: ${e.message}`;
+      }
+    }
+  }
+}
+
+const skillManager = new SkillManager();
+// Initialize on startup
+skillManager.init();
+
+
 // Refactored function to make LLM API calls
 async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
     let config, tools, enableStreaming;
@@ -688,6 +771,19 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             throw error;
         }
 
+        // Inject load_skill tool to make it available
+        tools.push({
+            name: 'load_skill',
+            description: 'Loads the instructions for a specific skill. Use this when the user asks for a task that matches one of the Available Skills in your system prompt.',
+            parameters: JSON.stringify({
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'The name of the skill to load' }
+                },
+                required: ['name']
+            })
+        });
+
         const formattedTools = tools.map(tool => {
             try {
                 return {
@@ -706,7 +802,16 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
         const messages = [];        const now = new Date();        const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;        let systemPromptContent = dateTimeString;        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            systemPromptContent += `
 
-${config.systemPrompt}`;        }        messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
+${config.systemPrompt}`;        }
+
+        const skillsList = skillManager.getSkillsList();
+        if (skillsList.length > 0) {
+           const skillsDescription = skillsList.map(s => `- ${s.name}: ${s.description}`).join('\n');
+           systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+        }
+
+        messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
+
 
         // START SHARED API REQUEST PREP LOGIC (manual sync with chat.js)
         // Note: 'tools' variable here is 'allAvailableTools' in chat.js
@@ -1191,6 +1296,13 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 // Registry for *built-in* tool implementations (developer adds specific functions here)
 // User-defined endpoints will be handled separately.
 const toolImplementations = {
+    'load_skill': async ({ name }) => {
+        const content = await skillManager.getSkillContent(name);
+        if (!content) {
+            return { error: `Skill '${name}' not found.` };
+        }
+        return { content };
+    },
     // Example built-in tool (if any are needed):
     /*
     'getCurrentTime': async (args) => {
@@ -1332,6 +1444,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             } else {
                 sendResponse({ action: 'pinnedActionTabContentResponse', success: false, error: 'No active tab found' });
             }
+        });
+        return true;
+    }
+
+    if (request.action === 'getSkills') {
+        const skillsList = skillManager.getSkillsList();
+        sendResponse({ skills: skillsList });
+        return true;
+    }
+
+    if (request.action === 'getSkillContent') {
+        skillManager.getSkillContent(request.name).then(content => {
+            sendResponse({ content });
+        }).catch(error => {
+            sendResponse({ error: error.message });
         });
         return true;
     }
