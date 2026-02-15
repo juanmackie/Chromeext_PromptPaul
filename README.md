@@ -11,7 +11,6 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
 - **Multi-Modal Support**: Analyze images, videos, and audio content
 - **Profile Management**: Configure multiple API profiles with different endpoints and models
 - **Dark/Light Theme**: Toggle between themes for comfortable viewing
-- **MCP (Model Context Protocol) Support**: Connect to MCP servers for extended capabilities
 - **Privacy-First Analytics**: Optional, anonymized usage analytics with easy opt-out
 
 ## Installation
@@ -123,8 +122,6 @@ prompt-paul/
 ├── src/
 │   └── utils/
 │       └── validation.js   # Input validation utilities
-├── mcp/                    # MCP (Model Context Protocol) integration
-│   └── registry.js         # MCP server registry
 ├── icons/                  # Extension icons
 │   ├── icon16.png
 │   ├── icon48.png
@@ -152,7 +149,6 @@ prompt-paul/
   - Profile management
   - Custom instructions
   - API settings
-  - MCP server configuration
 - **[`content_script_unified.js`](content_script_unified.js)**: Content extraction from web pages
 
 ### Building

@@ -5,7 +5,6 @@
  * - API endpoint and key configuration
  * - Profile management (multiple API configurations)
  * - Custom instructions management
- * - MCP server configuration
  * - Analytics consent settings
  *
  * @module options

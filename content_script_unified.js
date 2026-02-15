@@ -1,315 +1,335 @@
 // content_script_unified.js - Consolidated content extraction script
-// Wrap in IIFE to prevent variable conflicts with page scripts
+// Includes: Readability, Turndown, YouTube Transcript extraction, and Message Listening
+
 (function() {
-// Module-scoped variables for extraction result
-let content = "";
-let success = false;
-let errorMessage = "";
+    // --- 1. SETUP & UTILS ---
 
-/**
- * Comprehensive list of noise selectors to remove from content extraction
- */
-const NOISE_SELECTORS = [
-    // Scripts and technical elements - HIGHEST PRIORITY
-    'script', 'style', 'noscript', 'link[rel="stylesheet"]',
-    'meta', 'title', 'base', 'template',
-    
-    // Analytics and tracking
-    '[class*="analytics"]', '[id*="analytics"]', '[class*="tracking"]',
-    '[class*="gtm"]', '[class*="google"]', '[id*="google"]',
-    '[class*="facebook"]', '[class*="twitter"]', '[class*="linkedin"]',
-    '[class*="vitally"]', '[id*="vitally"]', '[class*="intercom"]',
-    '[id*="intercom"]', '[class*="hotjar"]', '[class*="mixpanel"]',
-    
-    // Navigation and structure
-    'nav', 'header', 'footer', '.navigation', '.nav', '.navbar',
-    '.sidebar', '.menu', '.breadcrumb', '.breadcrumbs',
-    
-    // Ads and promotional content
-    '.ads', '.advertisement', '.ad-banner', '.promo', '.promotion',
-    '.sponsored', '.affiliate', '[class*="ad-"]', '[id*="ad-"]',
-    
-    // UI elements and overlays
-    '.popup', '.modal', '.overlay', '.tooltip', '.dropdown',
-    '.cookie-banner', '.cookie-notice', '.gdpr-banner',
-    '.notification', '.alert', '.banner', '.notice',
-    '.warning', '.error-message', '.success-message',
-    
-    // Social and sharing
-    '.social', '.share', '.sharing', '.follow', '.subscribe',
-    '.newsletter', '.signup', '.login', '.register',
-    
-    // Comments and metadata
-    '.comments', '.comment-section', '.metadata', '.tags',
-    '.author-info', '.byline', '.published-date',
-    
-    // Related content
-    '.related', '.recommended', '.suggestions', '.more-articles',
-    '.trending', '.popular', '.recent',
-    
-    // Forms and inputs (unless specifically needed)
-    '.search-form', '.contact-form', '.newsletter-form',
-    
-    // Skip links and accessibility
-    '.skip-link', '.screen-reader-only', '.sr-only', '.visually-hidden',
-    
-    // Common warning/notice patterns
-    '[class*="warning"]', '[class*="alert"]', '[class*="notice"]',
-    '[class*="banner"]', '[class*="notification"]',
-    '[id*="warning"]', '[id*="alert"]', '[id*="notice"]',
-    
-    // Specific common elements
-    '.back-to-top', '.scroll-to-top', '.page-nav', '.pagination',
-    
-    // Code and technical content
-    'code', 'pre', '.code', '.highlight', '.syntax',
-    '.code-block', '.code-snippet'
-];
+    // Prevent multiple registrations
+    if (window.PROMPT_PAUL_LOADED) {
+        console.log("PromptPaul: Content script already loaded, skipping registration.");
+        return;
+    }
+    window.PROMPT_PAUL_LOADED = true;
 
-/**
- * Priority order for content extraction from cleaned document
- */
-const CONTENT_SELECTORS = [
-    'main',
-    'article', 
-    '[role="main"]',
-    '.content',
-    '#content',
-    '.post-content',
-    '.entry-content',
-    '.article-content',
-    '.page-content',
-    '.main-content'
-];
+    let turndownService = null;
+    if (typeof TurndownService !== 'undefined') {
+        turndownService = new TurndownService({
+             headingStyle: 'atx',
+             codeBlockStyle: 'fenced'
+        });
+        turndownService.remove(['script', 'style', 'noscript', 'head', 'img', 'picture', 'video', 'audio', 'iframe', 'svg', 'canvas', 'map', 'object', 'embed']);
+    }
 
-/**
- * Warning patterns to remove from extracted text
- */
-const WARNING_PATTERNS = [
-    /^(warning|alert|notice|error|info):\s*/gmi,
-    /^(please note|important|attention):\s*/gmi,
-    /^(cookie|privacy) (notice|policy|warning)/gmi,
-    /^this (site|website) uses cookies/gmi,
-    /^by continuing to use/gmi,
-    /^accept (all )?cookies/gmi
-];
+    // --- 2. STRATEGY: YOUTUBE ---
 
-/**
- * Minimum content length threshold
- */
-const MIN_CONTENT_LENGTH = 50;
-
-/**
- * Remove noise elements from a document clone
- * @param {Document} workingDoc - Cloned document to clean
- */
-function removeNoiseElements(workingDoc) {
-    NOISE_SELECTORS.forEach(selector => {
+    async function extractYouTube() {
         try {
-            const noiseElements = workingDoc.querySelectorAll(selector);
-            noiseElements.forEach(el => el.remove());
+            const url = window.location.href;
+            if (!url.includes('youtube.com/watch') && !url.includes('youtube.com/live')) {
+                return null;
+            }
+
+            console.log("PromptPaul: Starting YouTube extraction for", url);
+
+            let playerResponse = null;
+
+            // Method A: Check script tags for ytInitialPlayerResponse
+            const scripts = document.querySelectorAll('script');
+            for (const script of scripts) {
+                const text = script.textContent;
+                if (text && text.includes('ytInitialPlayerResponse')) {
+                    // More flexible regex to handle var/window prefixes and potential minification
+                    const match = text.match(/ytInitialPlayerResponse\s*=\s*({.+?});/) ||
+                                  text.match(/var\s+ytInitialPlayerResponse\s*=\s*({.+?});/);
+
+                    if (match && match[1]) {
+                        try {
+                            playerResponse = JSON.parse(match[1]);
+                            console.log("PromptPaul: Found playerResponse in script tag.");
+                            break;
+                        } catch (e) {
+                            console.warn("PromptPaul: Failed to parse playerResponse JSON", e);
+                        }
+                    }
+                }
+            }
+
+            // Method B: Try to find in window (often accessible if injected correctly, though content scripts have restricted window access)
+            // As a fallback, try to find ytInitialData which sometimes contains parts of the response
+            if (!playerResponse) {
+                for (const script of scripts) {
+                    const text = script.textContent;
+                    if (text && text.includes('ytInitialData')) {
+                        const match = text.match(/ytInitialData\s*=\s*({.+?});/) ||
+                                      text.match(/var\s+ytInitialData\s*=\s*({.+?});/);
+                        if (match && match[1]) {
+                             console.log("PromptPaul: Found ytInitialData fallback.");
+                             // ytInitialData is different but might help us identify if the page is just taking time to load
+                        }
+                    }
+                }
+            }
+
+            if (!playerResponse) {
+                console.warn("PromptPaul: ytInitialPlayerResponse not found. Page might be loading or layout changed.");
+                return {
+                    type: 'youtube-error',
+                    title: document.title,
+                    siteName: "YouTube",
+                    data: "Transcript extraction failed: Could not find video data on page. YouTube might have updated its layout or the page is still loading. Try refreshing or waiting a moment."
+                };
+            }
+
+            // --- Metadata Extraction ---
+            const videoDetails = playerResponse.videoDetails || {};
+            const microformat = playerResponse.microformat?.playerMicroformatRenderer || {};
+
+            const metadata = {
+                title: videoDetails.title || document.title,
+                siteName: "YouTube",
+                byline: videoDetails.author || "", // Channel name
+                viewCount: videoDetails.viewCount ? parseInt(videoDetails.viewCount).toLocaleString() : "",
+                uploadDate: microformat.publishDate || "",
+                description: videoDetails.shortDescription || ""
+            };
+
+            // --- Caption Extraction ---
+            // Check multiple potential paths for caption tracks
+            const captions = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks ||
+                             playerResponse?.captions?.captionsRenderer?.captionTracks;
+
+            if (!captions || captions.length === 0) {
+                console.warn("PromptPaul: No caption tracks found in playerResponse.");
+
+                // Fallback: If we have no captions but have metadata, still return what we have
+                // but mark it as a partial success/error
+                return {
+                    ...metadata,
+                    type: 'youtube-error',
+                    data: `## Video: ${metadata.title}\n\n**Note: No transcript available (captions are disabled or not found).**\n\n**Description:**\n${metadata.description || "No description available."}`
+                };
+            }
+
+            // Pick Best Track (English preference)
+            captions.sort((a, b) => {
+                const aLang = a.languageCode;
+                const bLang = b.languageCode;
+                if (aLang === 'en') return -1;
+                if (bLang === 'en') return 1;
+                return 0;
+            });
+            const track = captions[0];
+            const baseUrl = track.baseUrl;
+
+            // Fetch XML
+            const response = await fetch(baseUrl);
+            const xmlText = await response.text();
+
+            // Parse XML with Timestamps
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+            const textNodes = xmlDoc.getElementsByTagName("text");
+
+            let transcriptLines = [];
+            for (let i = 0; i < textNodes.length; i++) {
+                const node = textNodes[i];
+                const text = node.textContent.replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+                const startSec = parseFloat(node.getAttribute('start') || "0");
+
+                // Format: [MM:SS]
+                const minutes = Math.floor(startSec / 60);
+                const seconds = Math.floor(startSec % 60);
+                const timeStr = `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
+
+                transcriptLines.push(`${timeStr} ${text}`);
+            }
+
+            // Structured Formatting
+            let formattedContent = `## Video: ${metadata.title}\n`;
+            formattedContent += `**Channel:** ${metadata.byline}  \n`;
+            if (metadata.uploadDate) formattedContent += `**Published:** ${metadata.uploadDate}  \n`;
+            if (metadata.viewCount) formattedContent += `**Views:** ${metadata.viewCount}  \n\n`;
+
+            formattedContent += `### Transcript\n\n${transcriptLines.join('\n')}`;
+
+            return {
+                ...metadata,
+                type: 'youtube-transcript',
+                data: formattedContent
+            };
+
         } catch (e) {
-            // Ignore selector errors and continue
+            console.error("PromptPaul: YouTube extraction error:", e);
+            return null; // Fallback
+        }
+    }
+
+    async function extractUniversalVideo() {
+        // Fallback for other video sites (Vimeo, Loom, etc.)
+        const videoTag = document.querySelector('video');
+        if (!videoTag) return null;
+
+        console.log("PromptPaul: Video tag detected, extracting metadata...");
+
+        // Try to get structured data (OpenGraph/JSON-LD)
+        const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
+        const ogSiteName = document.querySelector('meta[property="og:site_name"]')?.content;
+        const ogDescription = document.querySelector('meta[property="og:description"]')?.content;
+        const author = document.querySelector('meta[name="author"]')?.content || document.querySelector('[itemprop="author"]')?.textContent;
+
+        const siteName = ogSiteName || window.location.hostname.replace('www.', '');
+
+        return {
+            type: 'universal-video',
+            title: ogTitle || document.title,
+            siteName: siteName,
+            byline: author || "",
+            excerpt: ogDescription || "",
+            data: `## Video found on ${siteName}\n\n**Title:** ${ogTitle || document.title}\n**Description:** ${ogDescription || "No description available."}\n\n*Note: Transcript extraction is only supported for YouTube. This is a metadata-only fallback.*`
+        };
+    }
+
+    // --- 3. STRATEGY: READABILITY (From Phase 1) ---
+
+    function extractReadability() {
+        if (typeof Readability === 'undefined') return null;
+        try {
+            const documentClone = document.cloneNode(true);
+            const reader = new Readability(documentClone);
+            const article = reader.parse();
+            if (article && article.content) {
+                const result = {
+                    title: article.title,
+                    siteName: article.siteName || "",
+                    byline: article.byline || "",
+                    excerpt: article.excerpt || "",
+                    lang: article.lang || ""
+                };
+
+                if (turndownService) {
+                    const markdown = turndownService.turndown(article.content);
+                    if (markdown.length > 50) {
+                        return { ...result, type: 'readability-markdown', data: markdown };
+                    }
+                }
+                if (article.textContent.length > 50) {
+                    return { ...result, type: 'readability-text', data: article.textContent.trim() };
+                }
+            }
+        } catch (e) { console.warn("PromptPaul: Readability failed", e); }
+        return null;
+    }
+
+    // --- 4. STRATEGY: LEGACY FALLBACK ---
+
+    function extractLegacy() {
+        // [Existing legacy logic condensed]
+        const NOISE = ['script', 'style', 'nav', 'header', 'footer', '.ads', '.comments'];
+        const doc = document.cloneNode(true);
+        NOISE.forEach(s => doc.querySelectorAll(s).forEach(e => e.remove()));
+
+        let text = "";
+        ['main', 'article', '#content'].some(sel => {
+            const el = doc.querySelector(sel);
+            if (el && el.innerText.trim()) { text = el.innerText.trim(); return true; }
+        });
+
+        if (!text && doc.body) text = doc.body.innerText;
+
+        return { type: 'legacy', data: (text || "").replace(/\n{3,}/g, '\n\n').trim(), title: document.title };
+    }
+
+    // --- 5. MAIN ROUTER ---
+
+    async function getUnifiedContent() {
+        let result = await extractYouTube();
+        if (result) return result;
+
+        result = await extractUniversalVideo();
+        if (result) return result;
+
+        result = extractReadability();
+        if (result) return result;
+
+        return extractLegacy();
+    }
+
+    async function captureVideoFrame() {
+        const video = document.querySelector('video');
+        if (!video) return null;
+
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Limit resolution to avoid massive messages
+            const MAX_WIDTH = 1280;
+            if (canvas.width > MAX_WIDTH) {
+                const scale = MAX_WIDTH / canvas.width;
+                const lowResCanvas = document.createElement('canvas');
+                lowResCanvas.width = MAX_WIDTH;
+                lowResCanvas.height = canvas.height * scale;
+                const lowResCtx = lowResCanvas.getContext('2d');
+                lowResCtx.drawImage(canvas, 0, 0, lowResCanvas.width, lowResCanvas.height);
+                return lowResCanvas.toDataURL('image/jpeg', 0.7);
+            }
+
+            return canvas.toDataURL('image/jpeg', 0.8);
+        } catch (e) {
+            console.warn("PromptPaul: Failed to capture video frame", e);
+            return null;
+        }
+    }
+
+    // --- 6. MESSAGE LISTENER (CRITICAL FIX) ---
+
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        if (request.action === 'captureVideoFrames') {
+            const video = document.querySelector('video');
+            if (!video) {
+                sendResponse({ success: false, error: "No video element found" });
+                return;
+            }
+
+            // Capture initial frame immediately
+            captureVideoFrame().then(frame => {
+                sendResponse({ success: true, frame: frame });
+            }).catch(e => {
+                sendResponse({ success: false, error: e.toString() });
+            });
+            return true;
+        }
+
+        if (request.action === 'getTabContent' || request.action === 'getLoadContent') {
+            console.log(`PromptPaul Content Script: Received ${request.action} request.`);
+
+            getUnifiedContent().then(result => {
+                const response = {
+                    success: !!(result && result.data),
+                    content: result ? result.data : "",
+                    data: result ? result.data : "", // Keep for backward compatibility
+                    title: result ? result.title : document.title,
+                    siteName: result ? result.siteName : "",
+                    byline: result ? result.byline : "",
+                    excerpt: result ? result.excerpt : "",
+                    lang: result ? result.lang : "",
+                    url: window.location.href,
+                    error: result ? null : "Extraction failed"
+                };
+                console.log("PromptPaul Content Script: Sending response:", response.success);
+                sendResponse(response);
+            }).catch(e => {
+                console.error("PromptPaul Content Script: Error in handler:", e);
+                sendResponse({ success: false, error: e.toString() });
+            });
+
+            return true; // Keep channel open for async response
         }
     });
-}
 
-/**
- * Try to extract content using semantic selectors
- * @param {Document} workingDoc - Cleaned document to extract from
- * @returns {string|null} Extracted content or null if not found
- */
-function extractWithSemanticSelectors(workingDoc) {
-    for (const selector of CONTENT_SELECTORS) {
-        try {
-            const element = workingDoc.querySelector(selector);
-            if (element && element.innerText && element.innerText.trim()) {
-                return element.innerText.trim();
-            }
-        } catch (e) {
-            // Continue to next selector if this one fails
-        }
-    }
-    return null;
-}
+    console.log("PromptPaul: Unified content script (v2) loaded.");
 
-/**
- * Extract content from document body as fallback
- * @param {Document} workingDoc - Document to extract from
- * @returns {string|null} Extracted content or null if not found
- */
-function extractFromBody(workingDoc) {
-    if (workingDoc.body) {
-        const bodyText = workingDoc.body.innerText || workingDoc.body.textContent || "";
-        if (bodyText.trim()) {
-            return bodyText.trim();
-        }
-    }
-    return null;
-}
-
-/**
- * Last resort extraction from original document with basic filtering
- * @returns {string} Extracted and cleaned text
- */
-function extractFromOriginalDocument() {
-    if (!document.body) {
-        return "";
-    }
-    
-    // Create a clone and remove script/style elements
-    const bodyClone = document.body.cloneNode(true);
-    const technicalElements = bodyClone.querySelectorAll('script, style, noscript, link, meta');
-    technicalElements.forEach(el => el.remove());
-    
-    let text = bodyClone.innerText || bodyClone.textContent || "";
-    
-    // Remove warning patterns from text
-    WARNING_PATTERNS.forEach(pattern => {
-        text = text.replace(pattern, '');
-    });
-    
-    return text.trim();
-}
-
-/**
- * Clean up extracted content by removing technical patterns and normalizing whitespace
- * @param {string} rawContent - Raw extracted content
- * @returns {string} Cleaned content
- */
-function cleanupContent(rawContent) {
-    return rawContent
-        // Remove JavaScript and technical content patterns
-        .replace(/JavaScript Function \([^)]*\).*$/gmi, '')
-        .replace(/Additional Code:.*$/gmi, '')
-        .replace(/function\s+\w+\s*\([^)]*\)\s*\{[^}]*\}/gmi, '')
-        .replace(/var\s+\w+\s*=.*$/gmi, '')
-        .replace(/const\s+\w+\s*=.*$/gmi, '')
-        .replace(/let\s+\w+\s*=.*$/gmi, '')
-        .replace(/\w+\s*:\s*function\s*\([^)]*\)/gmi, '')
-        .replace(/\w+\(\s*[^)]*\s*\)\s*;?/gmi, '')
-        
-        // Remove analytics and tracking mentions
-        .replace(/There's a \w+ script for.*$/gmi, '')
-        .replace(/.*tracking and analytics.*$/gmi, '')
-        .replace(/.*initialized with.*encoded key.*$/gmi, '')
-        .replace(/.*Vitally.*script.*$/gmi, '')
-        .replace(/.*Intercom.*messenger.*$/gmi, '')
-        .replace(/.*CSS styles.*included.*$/gmi, '')
-        .replace(/.*modal states.*$/gmi, '')
-        
-        // Remove common UI text
-        .replace(/^(skip to|jump to) (main )?content$/gmi, '')
-        .replace(/^(back to top|scroll to top)$/gmi, '')
-        .replace(/^(share|follow|subscribe|newsletter)$/gmi, '')
-        .replace(/^(related articles?|more articles?|trending|popular)$/gmi, '')
-        
-        // Remove code-like patterns
-        .replace(/\{[^}]*\}/gmi, '') // Remove CSS/JS object notation
-        .replace(/\[[^\]]*\]/gmi, '') // Remove array notation
-        .replace(/\w+\.\w+\([^)]*\)/gmi, '') // Remove method calls
-        .replace(/\/\*.*?\*\//gmi, '') // Remove CSS/JS comments
-        .replace(/\/\/.*$/gmi, '') // Remove single-line comments
-        
-        // Clean up whitespace
-        .replace(/\n{3,}/g, '\n\n') // Replace 3+ newlines with 2
-        .replace(/\t+/g, ' ') // Replace tabs with spaces
-        .replace(/[ ]{2,}/g, ' ') // Replace multiple spaces with single space
-        .replace(/^\s*[\r\n]/gm, '') // Remove empty lines
-        .trim();
-}
-
-/**
- * Check if content is valid and meaningful
- * @param {string} contentToValidate - Content to validate
- * @returns {boolean} True if content is valid
- */
-function isValidContent(contentToValidate) {
-    if (!contentToValidate || contentToValidate.length < MIN_CONTENT_LENGTH) {
-        return false;
-    }
-    
-    // Check if content is just navigation or UI text
-    if (/^(home|menu|search|login|register|contact|about|privacy|terms)$/i.test(contentToValidate)) {
-        return false;
-    }
-    
-    if (/^(loading|please wait|error|not found|404)$/i.test(contentToValidate)) {
-        return false;
-    }
-    
-    return true;
-}
-
-/**
- * Main content extraction function with comprehensive noise filtering
- * @returns {string} Extracted content
- */
-function extractContent() {
-    // Create a working copy of the document
-    const workingDoc = document.cloneNode(true);
-    
-    // Remove all noise elements from the working copy
-    removeNoiseElements(workingDoc);
-
-    // Try semantic selectors first on cleaned document
-    const semanticContent = extractWithSemanticSelectors(workingDoc);
-    if (semanticContent) {
-        return semanticContent;
-    }
-
-    // Fallback to body content from cleaned document
-    const bodyContent = extractFromBody(workingDoc);
-    if (bodyContent) {
-        return bodyContent;
-    }
-
-    // Last resort: try original document with basic filtering
-    return extractFromOriginalDocument();
-}
-
-/**
- * Main execution - Extract content and return result
- * This replaces the IIFE pattern with explicit function calls
- * @returns {Object} Extraction result object
- */
-function main() {
-    try {
-        content = extractContent();
-        
-        if (content) {
-            success = true;
-            content = cleanupContent(content);
-            
-            // Final check - if content is too short or seems like just UI text, mark as empty
-            if (!isValidContent(content)) {
-                content = "";
-                errorMessage = "Page appears to contain only navigation or UI elements.";
-            }
-        } else {
-            errorMessage = "Page appears to have no extractable textual content.";
-            success = true; // Still successful extraction, just empty content
-        }
-
-    } catch (e) {
-        console.error("PromptPaul Extension: content_script_unified.js - Error extracting content:", e);
-        errorMessage = "Error during content extraction: " + e.message;
-        success = false;
-    }
-
-    // Return the extraction result
-    return { 
-        success: success, 
-        data: content, 
-        error: errorMessage,
-        url: window.location.href,
-        title: document.title || "",
-        timestamp: Date.now()
-    };
-}
-
-// Execute main and expose result for chrome.scripting.executeScript
-// This pattern allows the script to be injected and return a result
-const extractionResult = main();
-return extractionResult;
 })();

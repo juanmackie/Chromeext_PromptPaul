@@ -30,7 +30,114 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quick Actions Sidebar Elements
     const loadContentButton = document.getElementById('load-content-button');
     const summarizeTabButton = document.getElementById('summarize-tab-button');
+    const tldrPresetButton = document.getElementById('tldr-preset-button');
+    const techPresetButton = document.getElementById('tech-preset-button');
+    const execPresetButton = document.getElementById('exec-preset-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
+
+    // --- specialized prompt map ---
+    const SMART_PROMPTS = {
+        summarize: {
+            generic: "Please summarize the following content into a bullet list of key points.",
+            article: "Summarize this article. Focus on the main facts, key people, important dates, and the final outcome or conclusion.",
+            youtube: "Summarize this video. Focus on the main topics discussed, the speaker's key arguments, and any important timestamps or sections.",
+            code: "Summarize this code/repository. Explain its purpose, key components, dependencies, and provide a brief usage example if possible."
+        },
+        tldr: {
+            generic: "Provide a very brief TL;DR (3-4 sentences) of this content.",
+            article: "TL;DR this article: what is the single most important takeaway?",
+            youtube: "TL;DR this video: what is the main message in 2 sentences?",
+            code: "TL;DR: What does this code do and why should I care?"
+        },
+        technical: {
+            generic: "Provide a technical deep dive of this content.",
+            article: "Analyze this article from a technical perspective. What are the underlying mechanisms or systems discussed?",
+            youtube: "Technical breakdown: What tools, technologies, or methodologies are mentioned in this video?",
+            code: "Deep dive into this code: Analyze the architecture, design patterns, and potential optimizations."
+        },
+        executive: {
+            generic: "Provide an executive summary of this content.",
+            article: "Executive Summary: What are the strategic implications and key decision points in this article?",
+            youtube: "Executive Summary: What are the high-level takeaways and business value discussed in this video?",
+            code: "Executive Summary: What problem does this codebase solve and what is its business or functional impact?"
+        }
+    };
+
+    /**
+     * Helper to determine content type from response
+     */
+    function determineContentType(response) {
+        if (!response) return 'generic';
+        if (response.url && response.url.includes('youtube.com/watch')) return 'youtube';
+        if (response.type === 'youtube-transcript' || response.type === 'youtube-error') return 'youtube';
+        // Generic heuristics for code-like pages (Github, Gists, etc.)
+        if (response.url && (response.url.includes('github.com') || response.url.includes('gitlab.com'))) return 'code';
+        // If it's a blog or news site
+        if (response.siteName && (response.siteName.toLowerCase().includes('news') || response.siteName.toLowerCase().includes('blog'))) return 'article';
+
+        return 'generic';
+    }
+
+    /**
+     * Helper to execute a summarization preset.
+     */
+    async function executePreset(presetKey, loadingText, successText) {
+        try {
+            loadingManager.showToast(loadingText, 'info');
+            const response = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ action: 'getTabContent' }, (res) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(res);
+                    }
+                });
+            });
+
+            if (response && response.action === 'tabContentResponse') {
+                if (response.content) {
+                    const contentType = determineContentType(response);
+                    const promptPrefix = SMART_PROMPTS[presetKey]?.[contentType] || SMART_PROMPTS[presetKey]?.generic || "Summarize this:";
+
+                    let sourceContext = "";
+                    if (response.title) sourceContext += `Title: ${response.title}\n`;
+                    if (response.siteName) sourceContext += `Source: ${response.siteName}\n`;
+                    if (response.byline) sourceContext += `Author: ${response.byline}\n`;
+
+                    const prompt = `${promptPrefix}\n\n${sourceContext}\nContent:\n${response.content}`;
+                    chatMainArea.style.display = 'block';
+                    oneoffInstructionArea.style.display = 'none';
+                    makeApiCall(prompt);
+                    loadingManager.showToast(successText, 'success');
+
+                    // --- YouTube Visual Enhancement ---
+                    if (contentType === 'youtube') {
+                        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                            if (tabs[0]) {
+                                chrome.tabs.sendMessage(tabs[0].id, { action: 'captureVideoFrames' }, (frameRes) => {
+                                    if (frameRes && frameRes.success && frameRes.frame) {
+                                        addMessage('System', "📸 Visual context captured from video:");
+                                        addMediaPreview({
+                                            type: 'image',
+                                            mimeType: 'image/jpeg',
+                                            base64: frameRes.frame.split(',')[1]
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    }
+                } else {
+                    loadingManager.showToast('No content received from tab.', 'error');
+                }
+            } else {
+                loadingManager.showToast('Failed to get tab content.', 'error');
+            }
+        } catch (error) {
+            console.error("Chat.js: Execute preset error:", error.message);
+            loadingManager.showToast(`Error: ${error.message}`, 'error');
+        }
+    }
 
     // Add event listeners for quick action buttons
     if (loadContentButton) {
@@ -53,13 +160,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         const previewLength = 500;
                         const preview = response.content.substring(0, previewLength) + (response.content.length > previewLength ? '...' : '');
 
+                        let sourceInfo = response.title;
+                        if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
+                        if (response.byline) sourceInfo += ` by ${response.byline}`;
+
                         // Show system message
-                        addMessage('System', `📄 **Content loaded from:** ${response.title}\n\n**Preview:**\n${preview}`);
+                        addMessage('System', `📄 **Content loaded from:** ${sourceInfo}\n\n**Preview:**\n${preview}`);
 
                         // Add to history as user message so LLM sees it in context
                         conversationHistory.push({
                             role: 'user',
-                            content: `I have loaded the content from the page "${response.title}" (${response.url}). Here is the content:\n\n${response.content}`
+                            content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\n\nHere is the content:\n\n${response.content}`
                         });
 
                         chatMainArea.style.display = 'block';
@@ -81,8 +192,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // summarizeTabButton listener moved to lines 878-905 to consolidate logic
-    // and prevent duplicate message sending.
+    if (summarizeTabButton) {
+        summarizeTabButton.addEventListener('click', () => {
+            executePreset('summarize', 'Generating smart summary...', 'Smart summary started');
+        });
+    }
+
+    if (tldrPresetButton) {
+        tldrPresetButton.addEventListener('click', () => {
+            executePreset('tldr', 'Generating TL;DR...', 'TL;DR started');
+        });
+    }
+
+    if (techPresetButton) {
+        techPresetButton.addEventListener('click', () => {
+            executePreset('technical', 'Generating technical deep dive...', 'Technical dive started');
+        });
+    }
+
+    if (execPresetButton) {
+        execPresetButton.addEventListener('click', () => {
+            executePreset('executive', 'Generating executive summary...', 'Executive summary started');
+        });
+    }
     const explainBtn = document.getElementById('explain-button');
     if (explainBtn) {
         explainBtn.addEventListener('click', async () => {
@@ -402,50 +534,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (request.isAnthropicMcp && typeof request.apiResponse === 'object' && request.apiResponse.content && Array.isArray(request.apiResponse.content)) {
-                // This branch handles a non-streaming response from an Anthropic endpoint where the MCP Connector was used.
-                // `request.apiResponse` is the full message object from Anthropic,
-                // and `request.apiResponse.content` is an array of content blocks (text, mcp_tool_use, mcp_tool_result).
-                let accumulatedTextForDisplay = ""; // Accumulate text for a single LLM message bubble if desired
-
-                request.apiResponse.content.forEach(block => {
-                    if (block.type === 'text') {
-                        accumulatedTextForDisplay += block.text;
-                    } else if (block.type === 'mcp_tool_use') {
-                        // If there was preceding text, display it first.
-                        if (accumulatedTextForDisplay) {
-                            addMessage('LLM', accumulatedTextForDisplay);
-                            accumulatedTextForDisplay = ""; // Reset
-                        }
-                        addMessage('System', `⚙️ LLM is using MCP tool (Anthropic): **${block.name}** (Server: ${block.server_name}). Input: ${JSON.stringify(block.input)}`);
-                    } else if (block.type === 'mcp_tool_result') {
-                        if (accumulatedTextForDisplay) {
-                            addMessage('LLM', accumulatedTextForDisplay);
-                            accumulatedTextForDisplay = ""; // Reset
-                        }
-                        let contentDisplay = "Tool result content not directly displayable.";
-                        if (block.content && Array.isArray(block.content) && block.content.length > 0 && block.content[0].type === 'text') {
-                            contentDisplay = block.content[0].text; // Display first text block of the result
-                        } else if (typeof block.content === 'string') { // Some simple results might be a string
-                            contentDisplay = block.content;
-                        } else if (block.is_error) {
-                            contentDisplay = "Error in tool execution.";
-                        }
-                        addMessage('System', `✅ MCP Tool Result (Anthropic) for ID ${block.tool_use_id} from server ${request.apiResponse.server_name || block.server_name || 'unknown'}: ${block.is_error ? 'Error: ' : ''}${contentDisplay}`);
-                    }
-                });
-
-                // Add any remaining accumulated text as a final LLM message.
-                if (accumulatedTextForDisplay) {
-                    addMessage('LLM', accumulatedTextForDisplay);
-                }
-
-                // The full Anthropic message object (request.apiResponse) is added to history.
-                // This object contains the 'role': 'assistant' and the 'content' array with all blocks.
-                conversationHistory.push(request.apiResponse);
-
-            } else if (request.apiResponse && typeof request.apiResponse === 'string') {
-                // Standard text response (OpenAI, or Anthropic without MCP blocks, or error string)
+            if (request.apiResponse && typeof request.apiResponse === 'string') {
+                // Standard text response (OpenAI, or Anthropic, or error string)
                 addMessage('LLM', request.apiResponse);
                 const lastAssistantMessage = conversationHistory.length > 0 && conversationHistory[conversationHistory.length - 1].role === 'assistant' ? conversationHistory[conversationHistory.length - 1].content : null;
                 if (lastAssistantMessage !== request.apiResponse) {
@@ -647,19 +737,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // accumulatedStreamedText = ""; // Preserve accumulated text
                 currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
 
-                // Asynchronously fetch tool definition to update UI for MCP tool
-                (async () => {
-                    const allToolsStream = await getTools();
-                    const currentToolDefStream = allToolsStream.find(t => t.name === toolCall.function.name);
-                    if (currentStreamingContentElement) { // Check if element still exists
-                        if (currentToolDefStream && currentToolDefStream.mcpServerUrl) {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using MCP tool: **${toolCall.function.name}**`);
-                        } else {
-                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
-                        }
-                        // chatArea.scrollTop = chatArea.scrollHeight; // Already present after this block
-                    }
-                })();
+                if (currentStreamingContentElement) {
+                    currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
+                }
 
                 // Potentially, actual arguments could be streamed. For now, just the name.
                 // If toolCall.function.arguments is a string of streamed arguments, append it:
@@ -670,17 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (request.action === 'streamApiAnthropicContentBlockStart') {
             if (currentStreamingContentElement && request.contentBlock) {
                 const block = request.contentBlock;
-                if (block.type === 'mcp_tool_use') {
-                    // Display tool usage. For streaming, we might just show the intent to use the tool.
-                    // The actual result will come in a separate 'mcp_tool_result' block or event.
-                    // accumulatedStreamedText might need to be cleared or handled carefully here if text was streaming before this block.
-                    // For now, append this system message.
-                    const toolUseMessage = `⚙️ Using MCP tool (Anthropic): **${block.name}** (Server: ${block.server_name})`;
-                    // Add this as a system message for now, or integrate into the current LLM bubble if desired
-                    addMessage('System', toolUseMessage);
-                    // We don't set activeStreamingToolCall here because Anthropic handles the execution.
-                    // History for this 'mcp_tool_use' block will be part of the assistant's message content.
-                } else if (block.type === 'text') {
+                if (block.type === 'text') {
                     // If a text block starts, we can append its initial content if any.
                     // However, 'content_block_delta' for text is usually handled by 'streamApiResponseChunk'.
                     // This handler is more for non-text blocks or initial setup of a text block if needed.
@@ -719,7 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentStreamingContentElement = null;
             currentStreamingUniqueId = null;
             accumulatedStreamedText = "";
-            activeStreamingToolCall = null; // Should be null for Anthropic MCP anyway
+            activeStreamingToolCall = null;
 
             // Set a flag to prevent streamApiEnd from duplicating actions
             window.anthropicStreamFinalizedByStopEvent = true;
@@ -744,16 +814,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 const toolCall = responseMessage.tool_calls[0];
-                // Fetch tool definition to check if it's an MCP tool
-                (async () => {
-                    const allToolsNonStream = await getTools(); // Already async
-                    const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
-
-                    if (toolDefinitionNonStream && toolDefinitionNonStream.mcpProxyUrl) {
-                        addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
-                    } else {
-                        addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
-                    }
+                    addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
                     chrome.runtime.sendMessage({
                         action: 'executePromptPaulTool',
                         toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
@@ -770,7 +831,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             makeApiCall();
                         }
                     });
-                })();
             } else {
                  addMessage('System', "Error: Tool call instruction received without tool_calls.");
             }
@@ -1042,68 +1102,13 @@ document.addEventListener('DOMContentLoaded', () => {
             let parametersForLlm = {};
             let source = 'manual'; // Default source
 
-            if (tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "") {
+            if (tool.parameters) {
                 try {
-                    const response = await new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage(
-                            { action: 'getDiscoveredMcpToolSchema', mcpServerUrl: tool.mcpServerUrl, toolName: tool.name },
-                            (res) => {
-                                if (chrome.runtime.lastError) {
-                                    console.error(`Chat: getTools - Error sending 'getDiscoveredMcpToolSchema' message for MCP tool ${tool.name}:`, chrome.runtime.lastError.message);
-                                    resolve({ success: false, error: `Message sending failed: ${chrome.runtime.lastError.message}` });
-                                    return;
-                                }
-                                if (!res) {
-                                    console.error(`Chat: getTools - No response received from 'getDiscoveredMcpToolSchema' for MCP tool ${tool.name}. This might indicate an issue in background.js or the MCP server connection.`);
-                                    resolve({ success: false, error: 'No response from background script.' });
-                                    return;
-                                }
-                                resolve(res);
-                            }
-                        );
-                    });
-
-                    if (response && response.success && response.toolSchema) {
-                        // MCP standard is that response.toolSchema IS the tool definition, including name, description, inputSchema
-                        parametersForLlm = response.toolSchema.inputSchema || {}; // Ensure it's an object
-                        // Optionally, update tool.description if the live one is preferred, though current plan uses stored one as primary.
-                        // tool.description = response.toolSchema.description || tool.description;
-                        source = 'mcp_discovered';
-                    } else {
-                        console.warn(`Chat: getTools - Failed to get dynamic schema for MCP tool ${tool.name}. Response success: ${response ? response.success : 'N/A'}, Error: ${response ? response.error : 'Response object itself was null/undefined'}. Falling back to manually configured parameters for tool '${tool.name}'.`);
-                        source = 'manual_fallback_mcp';
-                        if (tool.parameters) {
-                            try {
-                                parametersForLlm = JSON.parse(tool.parameters);
-                            } catch (e) {
-                                console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name}:`, e);
-                                addMessage('System', `Error: Invalid JSON Schema (fallback) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                                parametersForLlm = {}; // Keep it an empty object if parsing fails
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Chat: getTools - Exception while fetching schema for MCP tool ${tool.name}:`, error);
-                    source = 'manual_fallback_mcp_exception';
-                    if (tool.parameters) {
-                        try {
-                            parametersForLlm = JSON.parse(tool.parameters);
-                        } catch (e) {
-                            console.error(`Chat: getTools - Error parsing manual parameters for fallback MCP tool ${tool.name} after exception:`, e);
-                             addMessage('System', `Error: Invalid JSON Schema (fallback after exception) for MCP tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                            parametersForLlm = {};
-                        }
-                    }
-                }
-            } else { // Not an MCP tool, use manual parameters
-                if (tool.parameters) {
-                    try {
-                        parametersForLlm = JSON.parse(tool.parameters);
-                    } catch (e) {
-                        console.error(`Chat: getTools - Error parsing parameters for manual tool ${tool.name}:`, e);
-                        addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                        parametersForLlm = {}; // Keep it an empty object if parsing fails
-                    }
+                    parametersForLlm = JSON.parse(tool.parameters);
+                } catch (e) {
+                    console.error(`Chat: getTools - Error parsing parameters for manual tool ${tool.name}:`, e);
+                    addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'. Tool will be excluded or have empty schema.`);
+                    parametersForLlm = {}; // Keep it an empty object if parsing fails
                 }
             }
 
@@ -1229,53 +1234,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // --- Anthropic MCP Connector Logic for chat.js ---
-            // This section mirrors the logic in background.js's makeLlmApiRequest.
-            // If the endpoint is Anthropic and MCP tools are defined with mcpServerUrl,
-            // it prepares the request for Anthropic's Managed MCP approach.
-            let usingAnthropicMcpConnector = false;
-
-            if (isAnthropicEndpoint) {
-                // allAvailableTools is already fetched and processed by getTools()
-                const mcpConfiguredTools = allAvailableTools.filter(tool => tool.mcpServerUrl && tool.mcpServerUrl.trim() !== "");
-
-                if (mcpConfiguredTools.length > 0) {
-                    usingAnthropicMcpConnector = true;
-                    fetchHeaders['anthropic-beta'] = 'mcp-client-2025-04-04'; // Required header for Anthropic MCP
-
-                    requestBody.mcp_servers = mcpConfiguredTools.map(tool => {
-                        const serverEntry = {
-                            type: "url",
-                            url: tool.mcpServerUrl,
-                            name: tool.name, // Use tool's defined name as the server name for Anthropic
-                        };
-                        return serverEntry;
-                    });
-                    // When using Anthropic MCP Connector, OpenAI-style 'tools' and 'tool_choice' are not sent.
-                } else {
-                    Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
-                }
-            } else {
-                // Not an Anthropic endpoint, use standard OpenAI-style tool definition
-                Object.assign(requestBody, toolChoicePayload); // Apply OpenAI-style tool choice
-            }
-            // --- End Anthropic MCP Connector Logic ---
+            // Apply tool choice
+            Object.assign(requestBody, toolChoicePayload);
 
 
 
             const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
 
             let effectiveEnableStreaming = enableStreaming;
-            // For Anthropic MCP, tool results are part of the stream, so this check might not be needed or behave differently.
             // For now, keeping the existing logic for disabling streaming if a 'tool' role message is in history.
-            const hasToolMessage = conversationHistory.some(msg => msg.role === 'tool');
-
-            if (hasToolMessage && enableStreaming && !usingAnthropicMcpConnector) { // Only disable for non-Anthropic MCP if tool in history
+            if (hasToolMessage && enableStreaming) {
                 effectiveEnableStreaming = false;
             }
 
 
-            if (effectiveEnableStreaming) { // This includes Anthropic MCP streaming
+            if (effectiveEnableStreaming) { // This includes streaming
                 requestBody.stream = true;
                 userInput.disabled = true;
                 sendButton.disabled = true;
@@ -1408,16 +1381,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                     const toolCall = responseMessage.tool_calls[0];
-                    // Fetch tool definition to check if it's an MCP tool
-                    (async () => {
-                        const allToolsNonStream = await getTools(); // Already async
-                        const toolDefinitionNonStream = allToolsNonStream.find(t => t.name === toolCall.function.name);
-
-                        if (toolDefinitionNonStream && toolDefinitionNonStream.mcpServerUrl) {
-                            addMessage('System', `⚙️ Requesting execution for MCP tool: **${toolCall.function.name}**...`);
-                        } else {
-                            addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
-                        }
+                        addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
                         const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
                         chrome.runtime.sendMessage({
                             action: 'executePromptPaulTool',
@@ -1446,7 +1410,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 makeApiCall();
                              }
                         });
-                    })();
                 } else if (responseMessage.content) {
                     addMessage('LLM', responseMessage.content);
                     userInput.disabled = false;
@@ -1747,30 +1710,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Summarize Tab Button Functionality ---
     if (summarizeTabButton) {
         summarizeTabButton.addEventListener('click', () => {
-            loadingManager.showToast('Requesting tab content for summary...', 'info');
-            chrome.runtime.sendMessage({ action: 'getTabContent' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.error("Error sending getTabContent message:", chrome.runtime.lastError.message);
-                    loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
-                    return;
-                }
-                if (response && response.action === 'tabContentResponse') {
-                    if (response.content) {
-                        const prompt = "Summarize the following text:\n\n" + response.content;
-                        // Ensure chat area is visible
-                        chatMainArea.style.display = 'block';
-                        oneoffInstructionArea.style.display = 'none';
-                        makeApiCall(prompt);
-                        loadingManager.showToast('Tab content received, summarizing...', 'success');
-                    } else {
-                        loadingManager.showToast('No content received from tab.', 'error');
-                    }
-                } else if (response && response.action === 'error') {
-                    loadingManager.showToast(`Error getting tab content: ${response.message}`, 'error');
-                } else {
-                    loadingManager.showToast('Failed to get tab content. Unknown response.', 'error');
-                }
-            });
+            executePreset('Requesting tab content for summary...', 'Tab content received, summarizing...', 'Summarize the following text:');
+        });
+    }
+
+    // --- Phase 3: Summary Presets ---
+    if (tldrPresetButton) {
+        tldrPresetButton.addEventListener('click', () => {
+            executePreset('Generating TL;DR...', 'Content received, generating TL;DR...', 'Provide a 1-sentence TL;DR of the following content:');
+        });
+    }
+
+    if (techPresetButton) {
+        techPresetButton.addEventListener('click', () => {
+            executePreset('Generating Technical Analysis...', 'Content received, analyzing technically...', 'Analyze the following content from a technical perspective. Focus on architecture, code, and implementation details:');
+        });
+    }
+
+    if (execPresetButton) {
+        execPresetButton.addEventListener('click', () => {
+            executePreset('Generating Executive Summary...', 'Content received, generating report...', 'Provide an executive summary of the following content. Focus on high-level takeaways, business impact, and action items:');
         });
     }
 

@@ -35,7 +35,11 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content_script_unified.js"],
+      "js": [
+        "libs/readability.js",
+        "libs/turndown.js",
+        "content_script_unified.js"
+      ],
       "all_frames": false
     }
   ]
