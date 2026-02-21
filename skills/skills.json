@@ -3,6 +3,12 @@
     "id": "weather_guide",
     "name": "weather-guide",
     "description": "A guide for understanding weather reports and terminology.",
-    "path": "skills/weather_guide/SKILL.md"
+    "path": "skills/weather-guide/SKILL.md"
+  },
+  {
+    "id": "humanizer",
+    "name": "humanizer",
+    "description": "Transforms AI-generated text to sound more natural and human.",
+    "path": "skills/humanizer/SKILL.md"
   }
 ]

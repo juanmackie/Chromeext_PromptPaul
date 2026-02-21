@@ -16,6 +16,7 @@
 
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
+import { buildToolChoicePayload, formatToolsForLlm } from './src/utils/toolChoiceBuilder.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     const chatArea = document.getElementById('chat-area');
@@ -35,47 +36,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const execPresetButton = document.getElementById('exec-preset-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
 
-    // --- specialized prompt map ---
-    const SMART_PROMPTS = {
-        summarize: {
-            generic: "Please summarize the following content into a bullet list of key points.",
-            article: "Summarize this article. Focus on the main facts, key people, important dates, and the final outcome or conclusion.",
-            youtube: "Summarize this video. Focus on the main topics discussed, the speaker's key arguments, and any important timestamps or sections.",
-            code: "Summarize this code/repository. Explain its purpose, key components, dependencies, and provide a brief usage example if possible."
-        },
-        tldr: {
-            generic: "Provide a very brief TL;DR (3-4 sentences) of this content.",
-            article: "TL;DR this article: what is the single most important takeaway?",
-            youtube: "TL;DR this video: what is the main message in 2 sentences?",
-            code: "TL;DR: What does this code do and why should I care?"
-        },
-        technical: {
-            generic: "Provide a technical deep dive of this content.",
-            article: "Analyze this article from a technical perspective. What are the underlying mechanisms or systems discussed?",
-            youtube: "Technical breakdown: What tools, technologies, or methodologies are mentioned in this video?",
-            code: "Deep dive into this code: Analyze the architecture, design patterns, and potential optimizations."
-        },
-        executive: {
-            generic: "Provide an executive summary of this content.",
-            article: "Executive Summary: What are the strategic implications and key decision points in this article?",
-            youtube: "Executive Summary: What are the high-level takeaways and business value discussed in this video?",
-            code: "Executive Summary: What problem does this codebase solve and what is its business or functional impact?"
-        }
+    // --- Base prompts for smart actions ---
+    const BASE_PROMPTS = {
+        summarize: "Please summarize the following content into a bullet list of key points.",
+        tldr: "Provide a very brief TL;DR (3-4 sentences) of this content.",
+        technical: "Provide a technical deep dive of this content.",
+        executive: "Provide an executive summary of this content."
     };
 
     /**
-     * Helper to determine content type from response
+     * Builds a smart prompt with dynamic context injection based on content type.
      */
-    function determineContentType(response) {
-        if (!response) return 'generic';
-        if (response.url && response.url.includes('youtube.com/watch')) return 'youtube';
-        if (response.type === 'youtube-transcript' || response.type === 'youtube-error') return 'youtube';
-        // Generic heuristics for code-like pages (Github, Gists, etc.)
-        if (response.url && (response.url.includes('github.com') || response.url.includes('gitlab.com'))) return 'code';
-        // If it's a blog or news site
-        if (response.siteName && (response.siteName.toLowerCase().includes('news') || response.siteName.toLowerCase().includes('blog'))) return 'article';
+    function buildSmartPrompt(presetKey, content, metadata) {
+        let prompt = BASE_PROMPTS[presetKey] || BASE_PROMPTS.summarize;
 
-        return 'generic';
+        if (metadata.siteName === 'YouTube' || metadata.type?.includes('youtube')) {
+            prompt += `\n\nThis is a video titled "${metadata.title}" from channel "${metadata.byline}".`;
+        } else if (metadata.url?.includes('github.com') || metadata.url?.includes('gitlab.com')) {
+            prompt += `\n\nThis is code from "${metadata.title}".`;
+        } else if (metadata.byline) {
+            prompt += `\n\nThis is an article titled "${metadata.title}" by ${metadata.byline}.`;
+        }
+
+        return prompt + `\n\nContent:\n${content}`;
     }
 
     /**
@@ -96,22 +79,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (response && response.action === 'tabContentResponse') {
                 if (response.content) {
-                    const contentType = determineContentType(response);
-                    const promptPrefix = SMART_PROMPTS[presetKey]?.[contentType] || SMART_PROMPTS[presetKey]?.generic || "Summarize this:";
+                    const metadata = {
+                        title: response.title,
+                        siteName: response.siteName,
+                        byline: response.byline,
+                        url: response.url,
+                        type: response.type
+                    };
+                    const prompt = buildSmartPrompt(presetKey, response.content, metadata);
 
-                    let sourceContext = "";
-                    if (response.title) sourceContext += `Title: ${response.title}\n`;
-                    if (response.siteName) sourceContext += `Source: ${response.siteName}\n`;
-                    if (response.byline) sourceContext += `Author: ${response.byline}\n`;
-
-                    const prompt = `${promptPrefix}\n\n${sourceContext}\nContent:\n${response.content}`;
                     chatMainArea.style.display = 'block';
                     oneoffInstructionArea.style.display = 'none';
                     makeApiCall(prompt);
                     loadingManager.showToast(successText, 'success');
 
-                    // --- YouTube Visual Enhancement ---
-                    if (contentType === 'youtube') {
+                    if (metadata.siteName === 'YouTube' || response.type?.includes('youtube')) {
                         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                             if (tabs[0]) {
                                 chrome.tabs.sendMessage(tabs[0].id, { action: 'captureVideoFrames' }, (frameRes) => {
@@ -157,15 +139,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (response && response.action === 'loadContentResponse') {
                     if (response.success && response.content) {
-                        const previewLength = 500;
-                        const preview = response.content.substring(0, previewLength) + (response.content.length > previewLength ? '...' : '');
-
                         let sourceInfo = response.title;
                         if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
                         if (response.byline) sourceInfo += ` by ${response.byline}`;
 
-                        // Show system message
-                        addMessage('System', `📄 **Content loaded from:** ${sourceInfo}\n\n**Preview:**\n${preview}`);
+                        // Show expandable system message with full content
+                        addLoadedContentMessage(sourceInfo, response.content);
 
                         // Add to history as user message so LLM sees it in context
                         conversationHistory.push({
@@ -431,6 +410,100 @@ document.addEventListener('DOMContentLoaded', () => {
     return { messageDiv, contentElement, uniqueIdString };
 }
 
+    /**
+     * Creates an expandable message for loaded tab content.
+     * @param {string} sourceInfo - Formatted source information (title, site, author)
+     * @param {string} fullContent - The complete extracted content
+     * @returns {HTMLElement} The created container element
+     */
+    function addLoadedContentMessage(sourceInfo, fullContent) {
+        const container = document.createElement('div');
+        container.className = 'message system-message loaded-content-container';
+        
+        const header = document.createElement('div');
+        header.className = 'loaded-content-header';
+        header.innerHTML = `
+            <div class="loaded-content-info">
+                📄 <strong>Content loaded from:</strong> ${sourceInfo}
+            </div>
+            <div class="loaded-content-actions">
+                <button class="copy-content-btn" title="Copy full content">
+                    <span class="material-icons" style="font-size: 14px;">content_copy</span>
+                    <span class="copy-label">Copy</span>
+                </button>
+                <button class="expand-toggle-btn">
+                    <span class="material-icons" style="font-size: 16px;">expand_more</span>
+                    <span class="expand-label">Expand</span>
+                </button>
+            </div>
+        `;
+        
+        const bodyDiv = document.createElement('div');
+        bodyDiv.className = 'loaded-content-body';
+        bodyDiv.textContent = fullContent;
+        
+        container.appendChild(header);
+        container.appendChild(bodyDiv);
+        
+        const expandBtn = header.querySelector('.expand-toggle-btn');
+        const expandLabel = expandBtn.querySelector('.expand-label');
+        const expandIcon = expandBtn.querySelector('.material-icons');
+        
+        let isExpanded = false;
+        
+        expandBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isExpanded = !isExpanded;
+            
+            if (isExpanded) {
+                bodyDiv.classList.add('expanded');
+                expandLabel.textContent = 'Collapse';
+                expandIcon.textContent = 'expand_less';
+            } else {
+                bodyDiv.classList.remove('expanded');
+                expandLabel.textContent = 'Expand';
+                expandIcon.textContent = 'expand_more';
+            }
+            
+            setTimeout(() => {
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }, 10);
+        });
+        
+        const copyBtn = header.querySelector('.copy-content-btn');
+        const copyLabel = copyBtn.querySelector('.copy-label');
+        
+        copyBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(fullContent).then(() => {
+                copyBtn.classList.add('copied');
+                copyLabel.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.classList.remove('copied');
+                    copyLabel.textContent = 'Copy';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                copyLabel.textContent = 'Error';
+                setTimeout(() => {
+                    copyLabel.textContent = 'Copy';
+                }, 2000);
+            });
+        });
+        
+        header.addEventListener('click', () => {
+            expandBtn.click();
+        });
+        
+        chatArea.appendChild(container);
+        
+        setTimeout(() => {
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }, 10);
+        
+        return container;
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'setSelectedText') {
             selectedText = request.selectedText || '';
@@ -489,14 +562,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     chrome.storage.local.get(['instructions'], (result) => {
                         const instructions = result.instructions || [];
                         const instruction = instructions.find(i => i.id === mediaData.instructionId);
+                        let instructionToolChoice = 'auto';
                         if (instruction) {
                             analysisPrompt = instruction.content;
+                            instructionToolChoice = instruction.tool_choice || 'auto';
                             addMessage('System', `🎯 Using custom instruction: "${instruction.name}"`);
                         } else {
                             analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
                         }
 
-                        makeApiCallWithMedia(analysisPrompt, currentMediaData);
+                        makeApiCallWithMedia(analysisPrompt, currentMediaData, instructionToolChoice);
                     });
                     return; // Exit early for async custom instruction handling
                 } else if (mediaData.actionType === "summarize") {
@@ -659,6 +734,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         userInput.focus();
                     } else {
                         addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        // Add traceability for skill usage in streaming
+                        if (toolCall.function.name === 'load_skill') {
+                            try {
+                                const args = JSON.parse(toolCall.function.arguments);
+                                const skillContent = JSON.stringify(response.result);
+                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                // Show preview of skill content
+                                const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                                addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                            } catch (e) {
+                                console.warn('Could not parse load_skill arguments for traceability in streaming');
+                            }
+                        }
                         conversationHistory.push({
                             role: 'tool',
                             tool_call_id: toolCall.id,
@@ -801,39 +889,54 @@ document.addEventListener('DOMContentLoaded', () => {
             userInput.disabled = false;
             sendButton.disabled = false;
             const { responseMessage, prompt: originalPrompt } = request;
-            if (sendResponse) sendResponse({ success: true });
-            return true;
 
             // For context menu tool calls, history is usually fresh or should be reset
-             if (conversationHistory.length === 0 && originalPrompt) {
-                 addMessage('User', originalPrompt.split('\n')[0]);
-                 conversationHistory.push({ role: 'user', content: originalPrompt });
-            } // If continuing a chat, user prompt might already be in history.
+            if (conversationHistory.length === 0 && originalPrompt) {
+                addMessage('User', originalPrompt.split('\n')[0]);
+                conversationHistory.push({ role: 'user', content: originalPrompt });
+            }
 
             conversationHistory.push(responseMessage);
 
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 const toolCall = responseMessage.tool_calls[0];
-                    addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
-                    chrome.runtime.sendMessage({
-                        action: 'executePromptPaulTool',
-                        toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-                    }, (response) => {
-                        if (chrome.runtime.lastError) {
-                             addMessage('System', `Error: ${chrome.runtime.lastError.message}`); return;
+                addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
+                chrome.runtime.sendMessage({
+                    action: 'executePromptPaulTool',
+                    toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
+                        if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
+                        return;
+                    }
+                    if (response.error) {
+                        addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
+                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                    } else {
+                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        // Add traceability for skill usage
+                        if (toolCall.function.name === 'load_skill') {
+                            try {
+                                const args = JSON.parse(toolCall.function.arguments);
+                                const skillContent = JSON.stringify(response.result);
+                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                                addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                            } catch (e) {
+                                console.warn('Could not parse load_skill arguments for traceability');
+                            }
                         }
-                        if (response.error) {
-                            addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                            conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
-                        } else {
-                            addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                            conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                            makeApiCall();
-                        }
-                    });
+                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                        makeApiCall();
+                    }
+                    if (sendResponse) sendResponse({ success: true });
+                });
             } else {
-                 addMessage('System', "Error: Tool call instruction received without tool_calls.");
+                addMessage('System', "Error: Tool call instruction received without tool_calls.");
+                if (sendResponse) sendResponse({ success: false, error: 'No tool_calls in response' });
             }
+            return true;
         }
     });
 
@@ -913,17 +1016,25 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.scrollTop = chatArea.scrollHeight;
     }
 
-    /**
+     /**
      * Makes an API call with media content (images, video, audio).
      * @param {string} userMessage - The user's message/prompt.
      * @param {Object} mediaData - The media data object containing base64, mimeType, etc.
-     * @param {string} [tool_choice='none'] - The tool choice strategy ('none', 'auto', or specific tool name).
+     * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
+     * @param {string|null} [requestedSkill=null] - Name of skill to force-load via load_skill tool.
      * @returns {Promise<void>}
      */
-    async function makeApiCallWithMedia(userMessage, mediaData, tool_choice = 'none') {
+    async function makeApiCallWithMedia(userMessage, mediaData, tool_choice = 'auto', requestedSkill = null) {
         try {
             const config = await getApiConfig();
             const allAvailableTools = await getTools();
+
+            // If a specific skill is requested, force tool mode
+            const requestedToolChoice = requestedSkill ? 'load_skill' : tool_choice;
+            const effectiveToolChoice =
+                requestedToolChoice === undefined || requestedToolChoice === null || requestedToolChoice === ''
+                    ? 'auto'
+                    : requestedToolChoice;
 
             if (userMessage) {
                 addMessage('User', userMessage);
@@ -975,23 +1086,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
 
-            // Use existing tool preparation logic
-            const formattedTools = allAvailableTools.map(tool => {
-                return {
-                    type: 'function',
-                    function: {
-                        name: tool.name,
-                        description: tool.description,
-                        parameters: tool.parametersForLlm
-                    }
-                };
-            }).filter(tool => tool !== null);
+            const formattedTools = formatToolsForLlm(allAvailableTools);
 
-            let toolChoicePayload = {};
-            if (tool_choice === 'none' || formattedTools.length === 0) {
-                toolChoicePayload = {};
-            } else if (tool_choice === 'auto') {
-                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
+            const toolChoicePayload = buildToolChoicePayload({
+                formattedTools,
+                toolChoice: effectiveToolChoice
+            });
+
+            if (typeof effectiveToolChoice === 'string' && effectiveToolChoice !== 'auto' && effectiveToolChoice !== 'none') {
+                const specificTool = formattedTools.find(t => t.function.name === effectiveToolChoice);
+                if (requestedSkill && specificTool) {
+                    addMessage('System', `🔧 Forcing tool: **${effectiveToolChoice}** to load skill: **${requestedSkill}**`);
+                } else if (!specificTool) {
+                    addMessage('System', `Warning: Specified tool "${effectiveToolChoice}" not found. Falling back to auto tool routing.`);
+                }
             }
 
             const requestBody = {
@@ -1063,15 +1171,61 @@ document.addEventListener('DOMContentLoaded', () => {
             const responseMessage = responseData.choices[0].message;
             conversationHistory.push(responseMessage);
 
-            if (responseMessage.content) {
+            if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+                // Handle tool calls in media context
+                const toolCall = responseMessage.tool_calls[0];
+                addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
+                chrome.runtime.sendMessage({
+                    action: 'executePromptPaulTool',
+                    toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
+                        userInput.disabled = false;
+                        sendButton.disabled = false;
+                        clearButton.textContent = 'Clear';
+                        currentAbortController = null;
+                        userInput.focus();
+                        return;
+                    }
+                    if (response.error) {
+                        addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
+                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                        userInput.disabled = false;
+                        sendButton.disabled = false;
+                        clearButton.textContent = 'Clear';
+                        currentAbortController = null;
+                        userInput.focus();
+                    } else {
+                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                        // Add traceability for skill usage
+                        if (toolCall.function.name === 'load_skill') {
+                            try {
+                                const args = JSON.parse(toolCall.function.arguments);
+                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                            } catch (e) {
+                                console.warn('Could not parse load_skill arguments for traceability');
+                            }
+                        }
+                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
+                        // Continue conversation without re-forcing the same skill load
+                        makeApiCallWithMedia(null, mediaData, 'auto', null);
+                    }
+                });
+            } else if (responseMessage.content) {
                 addMessage('LLM', responseMessage.content);
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                clearButton.textContent = 'Clear';
+                currentAbortController = null;
+                userInput.focus();
+            } else {
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                clearButton.textContent = 'Clear';
+                currentAbortController = null;
+                userInput.focus();
             }
-
-            userInput.disabled = false;
-            sendButton.disabled = false;
-            clearButton.textContent = 'Clear';
-            currentAbortController = null;
-            userInput.focus();
 
         } catch (error) {
             if (error.name === 'AbortError') {
@@ -1093,15 +1247,67 @@ document.addEventListener('DOMContentLoaded', () => {
     // Removed handleExplainButtonClick as its logic is now consolidated
     // in the event listener for explainBtn (lines 24-40 approx).
     // The new listener directly sends 'getExplainContent'.
-    function sendMessage() {
+
+    /**
+     * Detects if user wants to use a specific skill.
+     * Patterns: "use <skill> skill", "apply <skill> skill", "with <skill> skill"
+     * @param {string} message - User message
+     * @param {Array} availableSkills - List of available skills
+     * @returns {string|null} - Skill name if detected, null otherwise
+     */
+    function detectSkillIntent(message, availableSkills) {
+        if (!availableSkills || availableSkills.length === 0) return null;
+
+        const lowerMessage = message.toLowerCase();
+
+        // Pattern: "use <skill> skill", "apply <skill> skill", "with <skill> skill"
+        const skillPatterns = [
+            /(?:use|apply|with)\s+(\w[\w-]*)\s+skill/i,
+            /(?:using|applying)\s+(\w[\w-]*)\s+skill/i
+        ];
+
+        for (const pattern of skillPatterns) {
+            const match = lowerMessage.match(pattern);
+            if (match) {
+                const requestedSkill = match[1].toLowerCase();
+                // Check if requested skill exists in available skills
+                const foundSkill = availableSkills.find(s =>
+                    s.name.toLowerCase() === requestedSkill ||
+                    s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
+                );
+                if (foundSkill) {
+                    console.log(`Chat: Detected skill intent for '${foundSkill.name}'`);
+                    return foundSkill.name;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    async function sendMessage() {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
+            // Check for skill intent
+            const skillsResp = await new Promise(resolve => {
+                chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+                    if (chrome.runtime.lastError) resolve({ skills: [] });
+                    else resolve(response || { skills: [] });
+                });
+            });
+            const availableSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
+            const requestedSkill = detectSkillIntent(message, availableSkills);
+
+            if (requestedSkill) {
+                addMessage('System', `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`);
+            }
+
             if (currentMediaData) {
-                makeApiCallWithMedia(message, currentMediaData);
+                makeApiCallWithMedia(message, currentMediaData, 'auto', requestedSkill);
                 currentMediaData = null; // Clear media after use
             } else {
-                makeApiCall(message);
+                makeApiCall(message, 'auto', requestedSkill);
             }
             userInput.value = '';
         }
@@ -1115,6 +1321,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const processedTools = [];
 
         for (const tool of definedTools) {
+            if (tool.name === 'load_skill') {
+                console.warn("Chat: Skipping user-defined tool named 'load_skill' because it is reserved.");
+                continue;
+            }
+
             let parametersForLlm = {};
             let source = 'manual'; // Default source
 
@@ -1136,9 +1347,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Inject load_skill tool if skills are available
-        const { skills = [] } = await new Promise(resolve => {
-            chrome.runtime.sendMessage({ action: 'getSkills' }, resolve);
+        const skillsResponse = await new Promise(resolve => {
+            chrome.runtime.sendMessage({ action: 'getSkills' }, response => {
+                if (chrome.runtime.lastError || !response) {
+                    resolve({ skills: [] });
+                    return;
+                }
+                resolve(response);
+            });
         });
+
+        const skills = Array.isArray(skillsResponse.skills) ? skillsResponse.skills : [];
 
         if (skills.length > 0) {
             processedTools.push({
@@ -1161,13 +1380,21 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Makes an API call to the LLM endpoint.
      * @param {string|null} [userMessage=null] - The user's message/prompt.
-     * @param {string} [tool_choice='none'] - The tool choice strategy ('none', 'auto', or specific tool name).
+     * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
+     * @param {string|null} [requestedSkill=null] - Name of skill to force-load via load_skill tool.
      * @returns {Promise<void>}
      */
-    async function makeApiCall(userMessage = null, tool_choice = 'none') { // Added tool_choice, default to 'none'
+    async function makeApiCall(userMessage = null, tool_choice = 'auto', requestedSkill = null) { // Added tool_choice, default to 'auto'
         try {
             const config = await getApiConfig();
             const allAvailableTools = await getTools();
+
+            // If a specific skill is requested, force tool mode and disable streaming
+            const requestedToolChoice = requestedSkill ? 'load_skill' : tool_choice;
+            const effectiveToolChoice =
+                requestedToolChoice === undefined || requestedToolChoice === null || requestedToolChoice === ''
+                    ? 'auto'
+                    : requestedToolChoice;
 
             if (userMessage) {
                 addMessage('User', userMessage);
@@ -1213,41 +1440,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
 
-            // START SHARED API REQUEST PREP LOGIC
-            // Now uses parametersForLlm from getTools()
-            const formattedTools = allAvailableTools.map(tool => {
-                // parametersForLlm should already be a valid JSON object or an empty object {}
-                // as processed by getTools()
-                return {
-                    type: 'function',
-                    function: {
-                        name: tool.name,
-                        description: tool.description,
-                        parameters: tool.parametersForLlm // Directly use the pre-processed parameters
-                    }
-                };
-            }).filter(tool => tool !== null); // filter might not be strictly necessary if getTools ensures valid entries or empty schemas
+            const formattedTools = formatToolsForLlm(allAvailableTools);
 
-            let toolChoicePayload = {};
-            const current_tool_choice_option = tool_choice; // Parameter to this function
+            const toolChoicePayload = buildToolChoicePayload({
+                formattedTools,
+                toolChoice: effectiveToolChoice
+            });
 
-            if (current_tool_choice_option === 'none' || formattedTools.length === 0) {
-                toolChoicePayload = {};
-                if (formattedTools.length === 0 && current_tool_choice_option !== 'none') {
-                } else {
-                }
-            } else if (current_tool_choice_option === 'auto') {
-                toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
-            } else if (typeof current_tool_choice_option === 'string') { // Specific tool name
-                const specificTool = formattedTools.find(t => t.function.name === current_tool_choice_option);
-                if (specificTool) {
-                    toolChoicePayload = { tools: [specificTool], tool_choice: { type: "function", function: { name: current_tool_choice_option } } };
-                } else {
-                    addMessage('System', `Warning: Specified tool "${current_tool_choice_option}" not found. No tools will be sent.`); // Context-specific error
-                    toolChoicePayload = {};
+            if (typeof effectiveToolChoice === 'string' && effectiveToolChoice !== 'auto' && effectiveToolChoice !== 'none') {
+                const specificTool = formattedTools.find(t => t.function.name === effectiveToolChoice);
+                if (requestedSkill && specificTool) {
+                    addMessage('System', `🔧 Forcing tool: **${effectiveToolChoice}** to load skill: **${requestedSkill}**`);
+                } else if (!specificTool) {
+                    addMessage('System', `Warning: Specified tool "${effectiveToolChoice}" not found. Falling back to auto tool routing.`);
                 }
             }
-            // END SHARED API REQUEST PREP LOGIC
 
             const requestBody = {
                 model: config.modelName,
@@ -1293,9 +1500,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const hasToolMessage = Array.isArray(conversationHistory) && conversationHistory.some(msg => msg.role === 'tool');
             let effectiveEnableStreaming = enableStreaming;
-            // For now, keeping the existing logic for disabling streaming if a 'tool' role message is in history.
-            if (hasToolMessage && enableStreaming) {
+            // Disable streaming if a 'tool' role message is in history OR if a skill is requested
+            // (Tool calls require non-streaming for proper handling)
+            if ((hasToolMessage || requestedSkill) && enableStreaming) {
                 effectiveEnableStreaming = false;
+                if (requestedSkill) {
+                    console.log(`Chat: Disabling streaming for skill request: ${requestedSkill}`);
+                }
             }
 
 
@@ -1394,12 +1605,46 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (jsonData) {
                                 try {
                                     const parsed = JSON.parse(jsonData);
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                        accumulatedStreamedText += parsed.choices[0].delta.content;
-                                        if(currentStreamingContentElement) {
-                                            currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                    // Handle content chunks
+                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
+                                        const delta = parsed.choices[0].delta;
+
+                                        // Handle text content
+                                        if (delta.content) {
+                                            accumulatedStreamedText += delta.content;
+                                            if(currentStreamingContentElement) {
+                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                                            }
+                                            chatArea.scrollTop = chatArea.scrollHeight;
                                         }
-                                        chatArea.scrollTop = chatArea.scrollHeight;
+
+                                        // Handle tool call chunks (streaming tool calls)
+                                        if (delta.tool_calls && delta.tool_calls.length > 0) {
+                                            const toolCallChunk = delta.tool_calls[0];
+                                            if (!activeStreamingToolCall) {
+                                                // First chunk of tool call - initialize
+                                                activeStreamingToolCall = {
+                                                    id: toolCallChunk.id,
+                                                    type: 'function',
+                                                    function: {
+                                                        name: toolCallChunk.function?.name || '',
+                                                        arguments: toolCallChunk.function?.arguments || ''
+                                                    }
+                                                };
+                                                // Show tool call in UI
+                                                if (currentStreamingContentElement) {
+                                                    currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${activeStreamingToolCall.function.name}**`);
+                                                }
+                                            } else {
+                                                // Accumulate tool call arguments
+                                                if (toolCallChunk.function?.arguments) {
+                                                    activeStreamingToolCall.function.arguments += toolCallChunk.function.arguments;
+                                                }
+                                                if (toolCallChunk.function?.name) {
+                                                    activeStreamingToolCall.function.name = toolCallChunk.function.name;
+                                                }
+                                            }
+                                        }
                                     }
                                 } catch (e) {
                                     // Log benignly, as some chunks might not be full JSON objects if stream is interrupted or malformed.
@@ -1465,10 +1710,23 @@ document.addEventListener('DOMContentLoaded', () => {
                                 currentAbortController = null;
                                 userInput.focus();
                              } else {
-                                addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response) });
-                                makeApiCall();
-                             }
+                                 addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
+                                 // Add traceability for skill usage
+                                 if (toolCall.function.name === 'load_skill') {
+                                     try {
+                                         const args = JSON.parse(toolCall.function.arguments);
+                                         const skillContent = typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response);
+                                         addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                         // Show preview of skill content
+                                         const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                                         addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                                     } catch (e) {
+                                         console.warn('Could not parse load_skill arguments for traceability');
+                                     }
+                                 }
+                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response) });
+                                 makeApiCall(null, 'auto', null);
+                              }
                         });
                 } else if (responseMessage.content) {
                     addMessage('LLM', responseMessage.content);
@@ -1535,23 +1793,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Add user message with media context
                 addMessage('User', `${instruction}\n\n[${contentSummary}]`);
 
-                // Use media API call
                 const allAvailableTools = await getTools();
-                const formattedTools = allAvailableTools.map(tool => {
-                    return {
-                        type: 'function',
-                        function: {
-                            name: tool.name,
-                            description: tool.description,
-                            parameters: tool.parametersForLlm
-                        }
-                    };
-                }).filter(tool => tool !== null);
-
-                let toolChoicePayload = {};
-                if (formattedTools.length > 0) {
-                    toolChoicePayload = { tools: formattedTools, tool_choice: "auto" };
-                }
+                const formattedTools = formatToolsForLlm(allAvailableTools);
+                const toolChoicePayload = buildToolChoicePayload({
+                    formattedTools,
+                    toolChoice: 'auto'
+                });
 
                 // Build system prompt
                 const now = new Date();

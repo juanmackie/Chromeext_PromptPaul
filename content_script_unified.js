@@ -20,32 +20,42 @@
         turndownService.remove(['script', 'style', 'noscript', 'head', 'img', 'picture', 'video', 'audio', 'iframe', 'svg', 'canvas', 'map', 'object', 'embed']);
     }
 
-    // --- 2. STRATEGY: YOUTUBE ---
+    // --- 2. VIDEO DETECTION ---
 
-    async function extractYouTube() {
+    function isVideoSite(url) {
+        return /^(https?:\/\/)?(www\.)?(youtube|vimeo|loom|wistia)\.com/.test(url);
+    }
+
+    // --- 3. STRATEGY: VIDEO (UNIFIED) ---
+
+    async function extractVideo() {
+        const url = window.location.href;
+
+        // YouTube: Full transcript extraction
+        if (url.includes('youtube.com/watch') || url.includes('youtube.com/live')) {
+            return extractYouTubeTranscript();
+        }
+
+        // Universal video: Metadata-only fallback
+        return extractVideoMetadata();
+    }
+
+    async function extractYouTubeTranscript() {
         try {
-            const url = window.location.href;
-            if (!url.includes('youtube.com/watch') && !url.includes('youtube.com/live')) {
-                return null;
-            }
-
-            console.log("PromptPaul: Starting YouTube extraction for", url);
+            console.log("PromptPaul: Starting YouTube extraction for", window.location.href);
 
             let playerResponse = null;
-
-            // Method A: Check script tags for ytInitialPlayerResponse
             const scripts = document.querySelectorAll('script');
+
             for (const script of scripts) {
                 const text = script.textContent;
                 if (text && text.includes('ytInitialPlayerResponse')) {
-                    // More flexible regex to handle var/window prefixes and potential minification
                     const match = text.match(/ytInitialPlayerResponse\s*=\s*({.+?});/) ||
                                   text.match(/var\s+ytInitialPlayerResponse\s*=\s*({.+?});/);
 
                     if (match && match[1]) {
                         try {
                             playerResponse = JSON.parse(match[1]);
-                            console.log("PromptPaul: Found playerResponse in script tag.");
                             break;
                         } catch (e) {
                             console.warn("PromptPaul: Failed to parse playerResponse JSON", e);
@@ -54,55 +64,32 @@
                 }
             }
 
-            // Method B: Try to find in window (often accessible if injected correctly, though content scripts have restricted window access)
-            // As a fallback, try to find ytInitialData which sometimes contains parts of the response
             if (!playerResponse) {
-                for (const script of scripts) {
-                    const text = script.textContent;
-                    if (text && text.includes('ytInitialData')) {
-                        const match = text.match(/ytInitialData\s*=\s*({.+?});/) ||
-                                      text.match(/var\s+ytInitialData\s*=\s*({.+?});/);
-                        if (match && match[1]) {
-                             console.log("PromptPaul: Found ytInitialData fallback.");
-                             // ytInitialData is different but might help us identify if the page is just taking time to load
-                        }
-                    }
-                }
-            }
-
-            if (!playerResponse) {
-                console.warn("PromptPaul: ytInitialPlayerResponse not found. Page might be loading or layout changed.");
+                console.warn("PromptPaul: ytInitialPlayerResponse not found.");
                 return {
                     type: 'youtube-error',
                     title: document.title,
                     siteName: "YouTube",
-                    data: "Transcript extraction failed: Could not find video data on page. YouTube might have updated its layout or the page is still loading. Try refreshing or waiting a moment."
+                    data: "Transcript extraction failed: Could not find video data on page. YouTube might have updated its layout or the page is still loading."
                 };
             }
 
-            // --- Metadata Extraction ---
             const videoDetails = playerResponse.videoDetails || {};
             const microformat = playerResponse.microformat?.playerMicroformatRenderer || {};
 
             const metadata = {
                 title: videoDetails.title || document.title,
                 siteName: "YouTube",
-                byline: videoDetails.author || "", // Channel name
+                byline: videoDetails.author || "",
                 viewCount: videoDetails.viewCount ? parseInt(videoDetails.viewCount).toLocaleString() : "",
                 uploadDate: microformat.publishDate || "",
                 description: videoDetails.shortDescription || ""
             };
 
-            // --- Caption Extraction ---
-            // Check multiple potential paths for caption tracks
             const captions = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks ||
                              playerResponse?.captions?.captionsRenderer?.captionTracks;
 
             if (!captions || captions.length === 0) {
-                console.warn("PromptPaul: No caption tracks found in playerResponse.");
-
-                // Fallback: If we have no captions but have metadata, still return what we have
-                // but mark it as a partial success/error
                 return {
                     ...metadata,
                     type: 'youtube-error',
@@ -110,73 +97,53 @@
                 };
             }
 
-            // Pick Best Track (English preference)
             captions.sort((a, b) => {
-                const aLang = a.languageCode;
-                const bLang = b.languageCode;
-                if (aLang === 'en') return -1;
-                if (bLang === 'en') return 1;
+                if (a.languageCode === 'en') return -1;
+                if (b.languageCode === 'en') return 1;
                 return 0;
             });
-            const track = captions[0];
-            const baseUrl = track.baseUrl;
 
-            // Fetch XML
-            const response = await fetch(baseUrl);
+            const track = captions[0];
+            const response = await fetch(track.baseUrl);
             const xmlText = await response.text();
 
-            // Parse XML with Timestamps
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, "text/xml");
             const textNodes = xmlDoc.getElementsByTagName("text");
 
-            let transcriptLines = [];
+            const transcriptLines = [];
             for (let i = 0; i < textNodes.length; i++) {
                 const node = textNodes[i];
                 const text = node.textContent.replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
                 const startSec = parseFloat(node.getAttribute('start') || "0");
-
-                // Format: [MM:SS]
                 const minutes = Math.floor(startSec / 60);
                 const seconds = Math.floor(startSec % 60);
-                const timeStr = `[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}]`;
-
-                transcriptLines.push(`${timeStr} ${text}`);
+                transcriptLines.push(`[${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}] ${text}`);
             }
 
-            // Structured Formatting
-            let formattedContent = `## Video: ${metadata.title}\n`;
-            formattedContent += `**Channel:** ${metadata.byline}  \n`;
+            let formattedContent = `## Video: ${metadata.title}\n**Channel:** ${metadata.byline}  \n`;
             if (metadata.uploadDate) formattedContent += `**Published:** ${metadata.uploadDate}  \n`;
             if (metadata.viewCount) formattedContent += `**Views:** ${metadata.viewCount}  \n\n`;
-
             formattedContent += `### Transcript\n\n${transcriptLines.join('\n')}`;
 
-            return {
-                ...metadata,
-                type: 'youtube-transcript',
-                data: formattedContent
-            };
+            return { ...metadata, type: 'youtube-transcript', data: formattedContent };
 
         } catch (e) {
             console.error("PromptPaul: YouTube extraction error:", e);
-            return null; // Fallback
+            return null;
         }
     }
 
-    async function extractUniversalVideo() {
-        // Fallback for other video sites (Vimeo, Loom, etc.)
+    function extractVideoMetadata() {
         const videoTag = document.querySelector('video');
         if (!videoTag) return null;
 
         console.log("PromptPaul: Video tag detected, extracting metadata...");
 
-        // Try to get structured data (OpenGraph/JSON-LD)
         const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
         const ogSiteName = document.querySelector('meta[property="og:site_name"]')?.content;
         const ogDescription = document.querySelector('meta[property="og:description"]')?.content;
         const author = document.querySelector('meta[name="author"]')?.content || document.querySelector('[itemprop="author"]')?.textContent;
-
         const siteName = ogSiteName || window.location.hostname.replace('www.', '');
 
         return {
@@ -185,11 +152,11 @@
             siteName: siteName,
             byline: author || "",
             excerpt: ogDescription || "",
-            data: `## Video found on ${siteName}\n\n**Title:** ${ogTitle || document.title}\n**Description:** ${ogDescription || "No description available."}\n\n*Note: Transcript extraction is only supported for YouTube. This is a metadata-only fallback.*`
+            data: `## Video found on ${siteName}\n\n**Title:** ${ogTitle || document.title}\n**Description:** ${ogDescription || "No description available."}\n\n*Note: Transcript extraction is only supported for YouTube.*`
         };
     }
 
-    // --- 3. STRATEGY: READABILITY (From Phase 1) ---
+    // --- 4. STRATEGY: READABILITY ---
 
     function extractReadability() {
         if (typeof Readability === 'undefined') return null;
@@ -220,38 +187,71 @@
         return null;
     }
 
-    // --- 4. STRATEGY: LEGACY FALLBACK ---
+    // --- 4a. STRATEGY: FALLBACK (web2md-style) ---
 
-    function extractLegacy() {
-        // [Existing legacy logic condensed]
-        const NOISE = ['script', 'style', 'nav', 'header', 'footer', '.ads', '.comments'];
-        const doc = document.cloneNode(true);
-        NOISE.forEach(s => doc.querySelectorAll(s).forEach(e => e.remove()));
+    function extractFallback() {
+        if (typeof TurndownService === 'undefined') return null;
 
-        let text = "";
-        ['main', 'article', '#content'].some(sel => {
-            const el = doc.querySelector(sel);
-            if (el && el.innerText.trim()) { text = el.innerText.trim(); return true; }
-        });
+        try {
+            const clone = document.body.cloneNode(true);
 
-        if (!text && doc.body) text = doc.body.innerText;
+            const NOISE = 'script, style, noscript, nav, header, footer, aside, ' +
+                          '.sidebar, .side, .ads, .advertisement, .social, .share, ' +
+                          '#header, #footer, #sidebar';
+            clone.querySelectorAll(NOISE).forEach(el => el.remove());
 
-        return { type: 'legacy', data: (text || "").replace(/\n{3,}/g, '\n\n').trim(), title: document.title };
+            const markdown = turndownService.turndown(clone.innerHTML);
+
+            if (markdown.length > 100) {
+                return {
+                    type: 'fallback-markdown',
+                    title: document.title,
+                    siteName: window.location.hostname.replace('www.', ''),
+                    data: markdown
+                };
+            }
+        } catch (e) {
+            console.warn("PromptPaul: Fallback extraction failed", e);
+        }
+        return null;
     }
 
-    // --- 5. MAIN ROUTER ---
+    // --- 5. MAIN ROUTER (TWO-PASS COMPARISON) ---
 
     async function getUnifiedContent() {
-        let result = await extractYouTube();
-        if (result) return result;
+        // 1. Video sites get special handling
+        if (isVideoSite(window.location.href)) {
+            const videoResult = await extractVideo();
+            if (videoResult) return videoResult;
+        }
 
-        result = await extractUniversalVideo();
-        if (result) return result;
+        // 2. Run BOTH extractors for comparison
+        const readabilityResult = extractReadability();
+        const fallbackResult = extractFallback();
 
-        result = extractReadability();
-        if (result) return result;
+        // 3. Handle edge cases where one fails
+        if (!readabilityResult && !fallbackResult) {
+            return null;
+        }
+        if (!readabilityResult) {
+            return fallbackResult;
+        }
+        if (!fallbackResult) {
+            return readabilityResult;
+        }
 
-        return extractLegacy();
+        // 4. Compare outputs - if fallback has 2x+ more content, use it (forum pattern)
+        const readLen = readabilityResult.data?.length || 0;
+        const fallLen = fallbackResult.data?.length || 0;
+
+        if (fallLen > readLen * 2) {
+            console.log(`PromptPaul: Using fallback (${fallLen} vs ${readLen} chars) - forum-like content detected`);
+            return fallbackResult;
+        }
+
+        // 5. Otherwise prefer Readability (cleaner for articles)
+        console.log(`PromptPaul: Using Readability (${readLen} vs ${fallLen} chars) - article-like content`);
+        return readabilityResult;
     }
 
     async function captureVideoFrame() {

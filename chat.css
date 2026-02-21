@@ -783,3 +783,112 @@ th, td {
         font-size: 0.9em;
     }
 }
+
+/* Expandable loaded content */
+.loaded-content-container {
+    margin: 8px 0;
+    border: 1px solid var(--ext-sidebar-border);
+    border-radius: 4px;
+    overflow: hidden;
+    background-color: var(--ext-card);
+}
+
+.loaded-content-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background-color: var(--ext-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.loaded-content-header:hover {
+    background-color: var(--ext-sidebar-accent);
+}
+
+.loaded-content-info {
+    font-size: 0.9em;
+}
+
+.loaded-content-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.expand-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8em;
+    color: var(--ext-primary);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+}
+
+.expand-toggle-btn:hover {
+    background-color: var(--ext-sidebar-primary);
+}
+
+.copy-content-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8em;
+    color: var(--ext-muted-foreground);
+    cursor: pointer;
+    background: none;
+    border: 1px solid var(--ext-sidebar-border);
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.copy-content-btn:hover {
+    color: var(--ext-primary);
+    border-color: var(--ext-primary);
+}
+
+.copy-content-btn.copied {
+    color: #22c55e;
+    border-color: #22c55e;
+}
+
+.loaded-content-body {
+    display: none;
+    padding: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-top: 1px solid var(--ext-sidebar-border);
+    line-height: 1.5;
+}
+
+.loaded-content-body.expanded {
+    display: block;
+}
+
+.loaded-content-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.loaded-content-body::-webkit-scrollbar-track {
+    background: var(--ext-muted);
+    border-radius: 4px;
+}
+
+.loaded-content-body::-webkit-scrollbar-thumb {
+    background: var(--ext-sidebar-border);
+    border-radius: 4px;
+}
+
+.loaded-content-body::-webkit-scrollbar-thumb:hover {
+    background: var(--ext-muted-foreground);
+}

@@ -12,15 +12,14 @@
  */
 
 import { isValidURL } from './src/utils/validation.js';
+import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
+import { buildToolChoicePayload, formatToolsForLlm } from './src/utils/toolChoiceBuilder.js';
 
 // ===== Named Constants =====
 // Time constants
 const THIRTY_DAYS_IN_MS = 30 * 24 * 60 * 60 * 1000;
 const ONE_SECOND_IN_MS = 1000;
-const MESSAGE_RETRY_DELAY_MS = 500;
-const SIDE_PANEL_READY_DELAY_MS = 1000;
 
-// Content extraction constants
 const MIN_CONTENT_LENGTH = 50;
 const CONTENT_PREVIEW_LENGTH = 500;
 
@@ -441,21 +440,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     };
 
-    // One-off instruction - open composer with optional media
     if (info.menuItemId === 'oneoff_instruction') {
       if (isMediaContext) {
-        // For media, load it first, then open one-off with media attached
-        setTimeout(() => {
-          chrome.runtime.sendMessage({
-            action: 'setSelectedText',
-            selectedText: '',
-            tabId: tab.id,
-            mediaData: mediaData
-          });
-        }, SIDE_PANEL_READY_DELAY_MS);
+        chrome.runtime.sendMessage({
+          action: 'setSelectedText',
+          selectedText: '',
+          tabId: tab.id,
+          mediaData: mediaData
+        });
       } else {
-        // For text, just open composer
-        setTimeout(() => sendMessage('setSelectedText'), SIDE_PANEL_READY_DELAY_MS);
+        sendMessage('setSelectedText');
       }
       return;
     }
@@ -598,71 +592,63 @@ async function validateConfig() {
 
 // Helper function to process API response and send messages to chat.js (for NON-STREAMING responses)
 async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext) {
-    const sendMessageDelay = isStartChatContext ? 300 : 200;
-
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        // This is the OpenAI-style tool call
-        setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'handleToolCallResponse', // chat.js handles this by calling executePromptPaulTool
-                    responseMessage: responseMessage,
-                    prompt: prompt,
-                    tabId: tabId,
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn('Background: handleToolCallResponse message failed:', chrome.runtime.lastError.message);
-                    }
-                });
-            } catch (error) {
-                console.error('Background: Exception sending handleToolCallResponse:', error.message);
-            }
-        }, sendMessageDelay);
-
-    } else if (responseMessage.content) { // Standard text response
+        try {
+            chrome.runtime.sendMessage({
+                action: 'handleToolCallResponse',
+                responseMessage: responseMessage,
+                prompt: prompt,
+                tabId: tabId,
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('Background: handleToolCallResponse message failed:', chrome.runtime.lastError.message);
+                }
+            });
+        } catch (error) {
+            console.error('Background: Exception sending handleToolCallResponse:', error.message);
+        }
+    } else if (responseMessage.content) {
         const latestResponse = typeof responseMessage.content === 'string' ? responseMessage.content : JSON.stringify(responseMessage.content);
-        setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    apiResponse: latestResponse,
-                    prompt: prompt,
-                    tabId: tabId,
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn('Background: setApiResponse (standard) message failed:', chrome.runtime.lastError.message);
-                    }
-                });
-            } catch (error) {
-                console.error('Background: Exception sending setApiResponse (standard):', error.message);
-            }
-        }, sendMessageDelay);
+        try {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: latestResponse,
+                prompt: prompt,
+                tabId: tabId,
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('Background: setApiResponse message failed:', chrome.runtime.lastError.message);
+                }
+            });
+        } catch (error) {
+            console.error('Background: Exception sending setApiResponse:', error.message);
+        }
     } else {
         console.error("Background: API response message has neither standard content nor tool_calls:", responseMessage);
-        setTimeout(() => {
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'setApiResponse',
-                    apiResponse: "Error: Received an empty or invalid response from the AI.",
-                    prompt: prompt,
-                    tabId: tabId,
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn('Background: setApiResponse (error) message failed:', chrome.runtime.lastError.message);
-                    }
-                });
-            } catch (error) {
-                console.error('Background: Exception sending setApiResponse (error):', error.message);
-            }
-        }, sendMessageDelay);
+        try {
+            chrome.runtime.sendMessage({
+                action: 'setApiResponse',
+                apiResponse: "Error: Received an empty or invalid response from the AI.",
+                prompt: prompt,
+                tabId: tabId,
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn('Background: setApiResponse (error) message failed:', chrome.runtime.lastError.message);
+                }
+            });
+        } catch (error) {
+            console.error('Background: Exception sending setApiResponse (error):', error.message);
+        }
     }
 }
 
-// ===== Skill Manager =====
+// ===== Skill Manager (Agent Skills Spec Compliant) =====
 class SkillManager {
   constructor() {
     this.skills = new Map();
     this.initialized = false;
+    this._metadataCache = null;
+    this._cacheExpiry = 0;
   }
 
   async init() {
@@ -678,61 +664,121 @@ class SkillManager {
 
   async loadSkills() {
     this.skills.clear();
-
-    // 1. Load built-in skills from manifest
-    try {
-      const url = chrome.runtime.getURL('skills/skills.json');
-      const response = await fetch(url);
-      if (response.ok) {
-        const builtIn = await response.json();
-        builtIn.forEach(skill => {
-            this.skills.set(skill.name, { ...skill, type: 'built-in' });
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to load built-in skills (skills/skills.json might be missing):', e);
-    }
-
-    // 2. Load user-defined skills from storage
-    try {
-      const result = await chrome.storage.local.get(['customSkills']);
-      const customSkills = result.customSkills || [];
-      customSkills.forEach(skill => {
-        // User skills override built-in if names collide
-        this.skills.set(skill.name, { ...skill, type: 'custom' });
-      });
-    } catch (e) {
-      console.error('Failed to load custom skills:', e);
-    }
-
+    this._invalidateCache();
+    await Promise.all([
+      this._loadBuiltInSkills(),
+      this._loadCustomSkills()
+    ]);
     console.log('SkillManager: Loaded skills:', Array.from(this.skills.keys()));
   }
 
+  async _loadBuiltInSkills() {
+    try {
+      const url = chrome.runtime.getURL('skills/skills.json');
+      const response = await fetch(url);
+      if (!response.ok) return;
+      
+      const builtIn = await response.json();
+      for (const skill of builtIn) {
+        try {
+          const skillUrl = chrome.runtime.getURL(skill.path);
+          const skillResponse = await fetch(skillUrl);
+          if (!skillResponse.ok) continue;
+          
+          const markdown = await skillResponse.text();
+          const expectedDirectoryName = String(skill.path || '').split('/').slice(-2, -1)[0];
+          const parsed = parseSkillMarkdown(markdown, { expectedDirectoryName });
+          
+          if (parsed.valid) {
+            this.skills.set(parsed.metadata.name, {
+              metadata: parsed.metadata,
+              parsed: parsed,
+              raw: markdown,
+              type: 'built-in',
+              path: skill.path
+            });
+          } else {
+            console.warn(`Built-in skill '${skill.name}' parse error:`, parsed.error);
+          }
+        } catch (e) {
+          console.warn(`Failed to load built-in skill '${skill.name}':`, e);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load built-in skills:', e);
+    }
+  }
+
+  async _loadCustomSkills() {
+    try {
+      const result = await chrome.storage.local.get(['customSkills']);
+      const customSkills = result.customSkills || [];
+      
+      for (const skill of customSkills) {
+        try {
+          const skillMd = skill.skillMd || migrateLegacySkill(skill).skillMd;
+          const parsed = parseSkillMarkdown(skillMd);
+          
+          if (parsed.valid) {
+            this.skills.set(parsed.metadata.name, {
+              metadata: parsed.metadata,
+              parsed: parsed,
+              raw: skillMd,
+              type: 'custom',
+              lastUpdated: skill.lastUpdated,
+              legacy: !skill.skillMd
+            });
+          } else {
+            console.warn(`Custom skill '${skill.name}' parse error:`, parsed.error);
+          }
+        } catch (e) {
+          console.error(`Failed to load custom skill '${skill.name}':`, e);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load custom skills:', e);
+    }
+  }
+
+  _invalidateCache() {
+    this._metadataCache = null;
+    this._cacheExpiry = 0;
+  }
+
   getSkillsList() {
-    return Array.from(this.skills.values()).map(s => ({
-      name: s.name,
-      description: s.description
+    const now = Date.now();
+    if (this._metadataCache && now < this._cacheExpiry) {
+      return this._metadataCache;
+    }
+    
+    this._metadataCache = Array.from(this.skills.values()).map(s => ({
+      name: s.metadata.name,
+      description: s.metadata.description,
+      compatibility: s.metadata.compatibility,
+      license: s.metadata.license,
+      allowedTools: s.metadata['allowed-tools'],
+      metadata: s.metadata.metadata,
+      type: s.type
     }));
+    this._cacheExpiry = now + 60000;
+    return this._metadataCache;
   }
 
   async getSkillContent(name) {
     const skill = this.skills.get(name);
-    if (!skill) return null;
+    if (!skill || !skill.parsed?.valid) return null;
 
-    if (skill.type === 'custom') {
-      return skill.content;
-    } else {
-      // Built-in: fetch from file
-      try {
-        const url = chrome.runtime.getURL(skill.path);
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.text();
-      } catch (e) {
-        console.error(`Failed to load skill content for ${name}:`, e);
-        return `Error loading skill content: ${e.message}`;
-      }
-    }
+    return {
+      name: skill.parsed.metadata.name,
+      description: skill.parsed.metadata.description,
+      license: skill.parsed.metadata.license,
+      compatibility: skill.parsed.metadata.compatibility,
+      allowedTools: skill.parsed.metadata['allowed-tools'],
+      metadata: skill.parsed.metadata.metadata,
+      instructions: skill.parsed.instructions,
+      rawMarkdown: skill.raw,
+      type: skill.type
+    };
   }
 }
 
@@ -742,7 +788,7 @@ skillManager.init();
 
 
 // Refactored function to make LLM API calls
-async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'none' } = {}) {
+async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'auto' } = {}) {
     let config, tools, enableStreaming;
     try {
         // Step 1: Validate configuration and get tool definitions
@@ -771,6 +817,9 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             throw error;
         }
 
+        // Ensure reserved built-in tool name is not duplicated.
+        tools = tools.filter(tool => tool.name !== 'load_skill');
+
         // Inject load_skill tool to make it available
         tools.push({
             name: 'load_skill',
@@ -784,21 +833,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
             })
         });
 
-        const formattedTools = tools.map(tool => {
-            try {
-                return {
-                    type: 'function',
-                    function: {
-                        name: tool.name,
-                        description: tool.description,
-                        parameters: JSON.parse(tool.parameters || '{}')
-                    }
-                };
-            } catch (e) {
-                console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e);
-                return null;
-            }
-        }).filter(tool => tool !== null);
+        const formattedTools = formatToolsForLlm(tools);
 
         const messages = [];        const now = new Date();        const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;        let systemPromptContent = dateTimeString;        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            systemPromptContent += `
 
@@ -812,81 +847,11 @@ ${config.systemPrompt}`;        }
 
         messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
 
-
-        // START SHARED API REQUEST PREP LOGIC (manual sync with chat.js)
-        // Note: 'tools' variable here is 'allAvailableTools' in chat.js
-        // 'customInstructionToolChoice' is 'tool_choice' in chat.js makeApiCall signature
-        const allAvailableToolsRaw = tools; // Alias for clarity within this block
-        const current_tool_choice_option = customInstructionToolChoice; // Parameter to this function
-
-        const formattedToolsForRequest = allAvailableToolsRaw.map(tool => {
-            try {
-                return {
-                    type: 'function',
-                    function: { name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters || '{}') }
-                };
-            } catch (e) {
-                console.error(`Background: Error parsing parameters for tool ${tool.name}:`, e); // Context-specific error
-                return null;
-            }
-        }).filter(tool => tool !== null);
-
-        let toolChoicePayload = {};
-
-        if (current_tool_choice_option === 'none' || formattedToolsForRequest.length === 0) {
-            toolChoicePayload = {};
-            if (formattedToolsForRequest.length === 0 && current_tool_choice_option !== 'none') {
-                 console.warn("Background: makeLlmApiRequest - No tools available, though choice was not 'none'. Sending request without tools.");
-            } else {
-            }
-        } else if (current_tool_choice_option === 'auto') {
-            toolChoicePayload = { tools: formattedToolsForRequest, tool_choice: "auto" };
-        } else if (typeof current_tool_choice_option === 'string') { // Specific tool name
-            const specificTool = formattedToolsForRequest.find(t => t.function.name === current_tool_choice_option);
-            if (specificTool) {
-                toolChoicePayload = { tools: [specificTool], tool_choice: { type: "function", function: { name: current_tool_choice_option } } };
-            } else {
-                console.warn(`Background: Specified tool "${current_tool_choice_option}" not found. No tools will be sent.`); // Context-specific error
-                toolChoicePayload = {};
-            }
-        } else if (Array.isArray(current_tool_choice_option) && current_tool_choice_option.length > 0) {
-            // This part is still specific to background.js as chat.js doesn't handle array of tool names yet.
-            // If it needs to be fully harmonized, chat.js would need this logic too, or it's removed from here.
-            // For now, keeping it as per current background.js capability.
-            const selectedTools = formattedToolsForRequest.filter(tool =>
-                current_tool_choice_option.includes(tool.function.name)
-            );
-            if (selectedTools.length > 0) {
-                const tcObject = selectedTools.length === 1
-                    ? { type: 'function', function: { name: selectedTools[0].function.name } }
-                    // The API spec for tool_choice array seems to expect specific objects if not 'auto' or 'none'
-                    // Forcing a specific tool with an array of names might require multiple {type: "function", function: {name: "X"}} objects
-                    // or it might imply 'any' of these. Let's assume for now it means "the LLM must call one of these tools".
-                    // The most robust way if the API supports it would be just to list the tools and let the LLM pick.
-                    // However, to be explicit for "tool_choice" when it's a list:
-                    // OpenAI docs are a bit sparse on this exact format for an array of *required* tools.
-                    // Typically, 'tool_choice' is one specific tool or 'auto'/'none'.
-                    // If the intention is to make a *subset* of tools available, that's done by filtering the `tools` array.
-                    // If the intention for an array in `customInstructionToolChoice` was to *force one from a list*,
-                    // the API usually expects a single tool object for `tool_choice`.
-                    // Given this, the most direct interpretation matching the previous logic for an array:
-                    // This implies the model *must* choose one of the functions in this list.
-                    // The `tools` parameter should list these, and `tool_choice` could be "auto" over this subset,
-                    // or if the API supports it, a list of functions.
-                    // Let's simplify: if an array is passed, we'll make *only those tools available* and set choice to "auto".
-                    // This aligns better with typical API usage.
-                    : "auto"; // If multiple tools in the array, let the model choose from them.
-
-                toolChoicePayload = { tools: selectedTools, tool_choice: tcObject };
-            } else {
-                 console.warn(`Background: Specified tools in array "${current_tool_choice_option}" not found. No tools will be sent.`);
-                 toolChoicePayload = {};
-            }
-        } else {
-            console.warn(`Background: Invalid tool choice format: ${current_tool_choice_option}. Defaulting to no tools.`);
-            toolChoicePayload = {};
-        }
-        // END SHARED API REQUEST PREP LOGIC
+        const effectiveToolChoice = customInstructionToolChoice || 'auto';
+        const toolChoicePayload = buildToolChoicePayload({
+            formattedTools,
+            toolChoice: effectiveToolChoice
+        });
 
         const apiRequestBody = {
             model: config.modelName,
@@ -1028,173 +993,191 @@ ${config.systemPrompt}`;        }
         }
 
     } catch (error) {
-        // This is the generic catch block for any other errors that occur in makeLlmApiRequest
         console.error('Error in makeLlmApiRequest (generic catch):', error);
         try {
           const cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
           const code = (error?.message || 'error').slice(0, 64);
           await trackErrorEvent(cat, code);
         } catch (_) {}
-        const errorDelay = isStartChat ? 300 : 200;
-        setTimeout(() => {
-            chrome.runtime.sendMessage({
-                action: 'setApiResponse',
-                apiResponse: `Error: ${error.message}`, // Standard error reporting
-                prompt: promptContent,
-                tabId: tabId,
-            }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
-        }, errorDelay);
+        chrome.runtime.sendMessage({
+            action: 'setApiResponse',
+            apiResponse: `Error: ${error.message}`,
+            prompt: promptContent,
+            tabId: tabId,
+        }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
     }
 }
 
-// Unified context menu creation for all modalities
-async function createUnifiedMenus() {
+// ===== Menu System (Serialized Rebuild Queue) =====
+
+// Menu rebuild queue - prevents concurrent rebuilds that could cause duplicate IDs
+let menuRebuildQueue = Promise.resolve();
+
+/**
+ * Queues a menu rebuild operation to run serially.
+ * All menu rebuild requests go through this queue to avoid race conditions.
+ * @param {string} reason - Reason for the rebuild (for logging)
+ * @returns {Promise<void>}
+ */
+async function queueMenuRebuild(reason = 'unknown') {
+  menuRebuildQueue = menuRebuildQueue
+    .then(() => rebuildUnifiedMenus())
+    .then(() => console.log(`Menu rebuilt: ${reason}`))
+    .catch(err => console.error(`Menu rebuild failed (${reason}):`, err));
+  return menuRebuildQueue;
+}
+
+/**
+ * Removes all context menus atomically.
+ * @returns {Promise<void>}
+ */
+function removeAllMenus() {
+  return new Promise((resolve) => {
+    chrome.contextMenus.removeAll(() => {
+      // Ignore errors - removeAll is idempotent
+      resolve();
+    });
+  });
+}
+
+/**
+ * Creates a single menu item with error handling.
+ * @param {Object} menuConfig - Chrome context menu configuration
+ * @returns {Promise<void>}
+ */
+function createMenu(menuConfig) {
+  return new Promise((resolve) => {
+    chrome.contextMenus.create(menuConfig, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        console.warn(`Menu creation error for '${menuConfig.id}':`, error.message);
+      }
+      resolve();
+    });
+  });
+}
+
+/**
+ * Creates all context menu items in a deterministic order.
+ * Assumes menus have already been cleared.
+ * @param {Array<Object>} instructions - Custom instructions from storage
+ */
+async function createAllMenus(instructions = []) {
   const modalities = ['selection', 'image', 'video', 'audio'];
 
-  // Create one-off instruction menu item (always at top)
-  chrome.contextMenus.create({
+  // 1. Static top-level items
+  await createMenu({
     id: 'oneoff_instruction',
     title: '✨ One-off Instruction',
     contexts: modalities,
   });
 
-  // Create start chat menu item
-  chrome.contextMenus.create({
+  await createMenu({
     id: 'start_chat',
     title: '💬 Start Chat',
     contexts: modalities,
   });
 
-  // Create parent menu for Prompt Paul
-  chrome.contextMenus.create({
+  // 2. Parent menu
+  await createMenu({
     id: 'prompt_paul',
     title: 'Query Prompt Paul',
     contexts: modalities,
   });
 
-  // Create predefined menu items under Prompt Paul
-  chrome.contextMenus.create({
-    id: 'summarize',
-    title: '📝 Summarize',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
-  chrome.contextMenus.create({
-    id: 'analyze',
-    title: '🔍 Analyze',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
-  chrome.contextMenus.create({
-    id: 'explain',
-    title: '❓ Explain',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
-  chrome.contextMenus.create({
-    id: 'polish',
-    title: '🪄 Polish',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
+  // 3. Prompt Paul submenu items
+  const promptPaulChildren = [
+    { id: 'summarize', title: '📝 Summarize' },
+    { id: 'analyze', title: '🔍 Analyze' },
+    { id: 'explain', title: '❓ Explain' },
+    { id: 'polish', title: '🪄 Polish' },
+    { id: 'shorten', title: '✂️ Shorten' },
+    { id: 'formal', title: '💼 Formal' },
+    { id: 'casual', title: '🤙 Casual' },
+  ];
 
-  chrome.contextMenus.create({
-    id: 'shorten',
-    title: '✂️ Shorten',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
+  for (const child of promptPaulChildren) {
+    await createMenu({
+      id: child.id,
+      title: child.title,
+      contexts: modalities,
+      parentId: 'prompt_paul',
+    });
+  }
 
-  chrome.contextMenus.create({
-    id: 'formal',
-    title: '💼 Formal',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
-  chrome.contextMenus.create({
-    id: 'casual',
-    title: '🤙 Casual',
-    contexts: modalities,
-    parentId: 'prompt_paul'
-  });
-
-  // Create custom instructions menu items
-  chrome.contextMenus.create({
+  // 4. Custom Instructions parent
+  await createMenu({
     id: 'customInstructions',
     title: 'Custom Instructions',
     contexts: modalities,
   });
 
-  const { instructions } = await chrome.storage.local.get(['instructions']);
+  // 5. Custom instruction items (with deduplication check)
+  const seenIds = new Set();
   if (instructions && instructions.length > 0) {
-    instructions.forEach(instruction => {
-      chrome.contextMenus.create({
-        id: `custom_${instruction.id}`,
+    for (const instruction of instructions) {
+      const menuId = `custom_${instruction.id}`;
+      if (seenIds.has(menuId)) {
+        console.warn(`Skipping duplicate instruction ID: ${menuId}`);
+        continue;
+      }
+      seenIds.add(menuId);
+
+      await createMenu({
+        id: menuId,
         parentId: 'customInstructions',
         title: `✨ ${instruction.name}`,
         contexts: modalities,
       });
-    });
+    }
   }
 
-  // Add a separator and manage instructions at the end
-  setTimeout(() => {
-    chrome.contextMenus.create({
-      id: 'separator',
-      type: 'separator',
-      contexts: modalities,
-    });
+  // 6. Separator and manage option
+  await createMenu({
+    id: 'separator',
+    type: 'separator',
+    contexts: modalities,
+  });
 
-    chrome.contextMenus.create({
-      id: 'manageInstructions',
-      title: 'Manage Custom Instructions',
-      contexts: modalities,
-    });
-  }, 100);
+  await createMenu({
+    id: 'manageInstructions',
+    title: 'Manage Custom Instructions',
+    contexts: modalities,
+  });
 }
+
+/**
+ * Atomically rebuilds all context menus from scratch.
+ * Clears all existing menus and recreates them deterministically.
+ */
+async function rebuildUnifiedMenus() {
+  // Fetch instructions before clearing menus (minimize time between clear and recreate)
+  const { instructions } = await chrome.storage.local.get(['instructions']);
+
+  // Remove all menus atomically
+  await removeAllMenus();
+
+  // Recreate all menus in deterministic order
+  await createAllMenus(instructions);
+}
+
+// ===== Event Listeners =====
 
 // Create context menu items on install
 chrome.runtime.onInstalled.addListener(async () => {
-  await createUnifiedMenus();
+  await queueMenuRebuild('onInstalled');
+});
+
+// Also rebuild on browser startup (service worker may restart)
+chrome.runtime.onStartup.addListener(async () => {
+  await queueMenuRebuild('onStartup');
 });
 
 // Update context menus when instructions change
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
   if (namespace === 'local' && changes.instructions) {
-    // Remove all unified menu items and recreate
-    const menuIdsToRemove = [
-      'oneoff_instruction',
-      'start_chat',
-      'prompt_paul',
-      'summarize',
-      'analyze',
-      'explain',
-      'polish',
-      'shorten',
-      'formal',
-      'casual',
-      'customInstructions',
-      'separator',
-      'manageInstructions'
-    ];
-
-    // Remove existing custom instruction menu items
-    if (changes.instructions.oldValue) {
-      changes.instructions.oldValue.forEach(instruction => {
-        menuIdsToRemove.push(`custom_${instruction.id}`);
-      });
-    }
-
-    menuIdsToRemove.forEach(id => {
-      chrome.contextMenus.remove(id, () => {
-        if (chrome.runtime.lastError) {
-          // Ignore errors if menu doesn't exist
-        }
-      });
-    });
-
-    // Recreate all menus
-    await createUnifiedMenus();
+    // Use the queue to prevent race conditions
+    await queueMenuRebuild('instructions-changed');
   }
 });
 
@@ -1297,11 +1280,34 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 // User-defined endpoints will be handled separately.
 const toolImplementations = {
     'load_skill': async ({ name }) => {
-        const content = await skillManager.getSkillContent(name);
-        if (!content) {
-            return { error: `Skill '${name}' not found.` };
+        console.log(`Background: load_skill tool called for '${name}'`);
+        const skillData = await skillManager.getSkillContent(name);
+        if (!skillData) {
+            return { 
+                success: false,
+                error: `Skill '${name}' not found.`,
+                availableSkills: skillManager.getSkillsList().map(s => s.name)
+            };
         }
-        return { content };
+        
+        // Return standardized Agent Skills spec format
+        return {
+            success: true,
+            skill: {
+                name: skillData.name,
+                description: skillData.description,
+                license: skillData.license,
+                compatibility: skillData.compatibility,
+                allowedTools: skillData.allowedTools,
+                metadata: skillData.metadata,
+                instructions: skillData.instructions
+            },
+            metadata: {
+                loaded: true,
+                type: skillData.type,
+                timestamp: new Date().toISOString()
+            }
+        };
     },
     // Example built-in tool (if any are needed):
     /*
@@ -1498,13 +1504,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         (async () => {
             try {
-                const allTools = await getAllToolDefinitions();
-                const toolDefinition = allTools.find(t => t.name === name);
-
-                if (!toolDefinition) {
-                    throw new Error(`Tool definition for '${name}' not found in storage.`);
-                }
-
                 let argsObject;
                 try {
                     argsObject = JSON.parse(argsString || '{}');
@@ -1512,21 +1511,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
                 }
 
+                // Check for built-in tool implementation FIRST (e.g., load_skill)
+                const builtInFunction = toolImplementations[name];
+                if (builtInFunction) {
+                    console.log(`Background: Executing built-in tool '${name}'`);
+                    const result = await builtInFunction(argsObject);
+                    try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
+                    sendResponse({ result: result });
+                    return;
+                }
+
+                // If not built-in, check storage for user-defined tools
+                const allTools = await getAllToolDefinitions();
+                const toolDefinition = allTools.find(t => t.name === name);
+
+                if (!toolDefinition) {
+                    throw new Error(`Tool '${name}' not found. It is not a built-in tool and has no user-defined configuration.`);
+                }
+
                 if (toolDefinition.endpointUrl) {
                     // User-defined endpoint tool
+                    console.log(`Background: Executing user-defined tool '${name}' via endpoint`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
                     try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
                     sendResponse({ result: result });
                 } else {
-                    // Built-in tool implementation
-                    const builtInFunction = toolImplementations[name];
-                    if (builtInFunction) {
-                        const result = await builtInFunction(argsObject);
-                        try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
-                        sendResponse({ result: result });
-                    } else {
-                        throw new Error(`Tool '${name}' is not properly configured: It has no endpointUrl and no built-in implementation.`);
-                    }
+                    throw new Error(`Tool '${name}' is not properly configured: It has no endpointUrl and no built-in implementation.`);
                 }
 
             } catch (error) { // General error catch for executePromptPaulTool

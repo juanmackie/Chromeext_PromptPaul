@@ -14,6 +14,7 @@
 
 import { loadingManager } from './loadingManager.js';
 import { isValidURL } from './src/utils/validation.js';
+import { generateSkillMarkdown, parseSkillMarkdown, validateMetadata } from './src/utils/skillParser.js';
 
 /**
  * Displays a status message to the user.
@@ -1124,6 +1125,12 @@ function setupToolHandlers() {
         return;
       }
 
+      if (toolName === 'load_skill') {
+        showStatus("Tool name 'load_skill' is reserved by Prompt Paul.", true);
+        loadingManager.setButtonLoading(saveToolBtn, false);
+        return;
+      }
+
 
       if (toolParameters && !isValidJson(toolParameters)) {
         showStatus('Parameters must be valid JSON.', true);
@@ -1290,7 +1297,20 @@ function setupSkillHandlers() {
       // Built-in first
       builtIn.forEach(s => skillsMap.set(s.name, { ...s, source: 'Built-in' }));
       // Custom overrides built-in (or adds new)
-      custom.forEach(s => skillsMap.set(s.name, { ...s, source: 'Custom' }));
+      custom.forEach(s => {
+        let description = s.description || '';
+
+        if (typeof s.skillMd === 'string') {
+          const parsed = parseSkillMarkdown(s.skillMd);
+          if (parsed.valid) {
+            description = parsed.metadata.description;
+          } else if (!description) {
+            description = `Invalid SKILL.md (${parsed.error})`;
+          }
+        }
+
+        skillsMap.set(s.name, { ...s, description, source: 'Custom' });
+      });
 
       const skills = Array.from(skillsMap.values());
       const tableBody = document.querySelector('#skillsTable tbody');
@@ -1322,9 +1342,45 @@ function setupSkillHandlers() {
             const skill = custom.find(s => s.name === skillName);
             if (skill) {
                 document.getElementById('skillName').value = skill.name;
-                document.getElementById('skillDescription').value = skill.description;
-                document.getElementById('skillContent').value = skill.content;
-                document.getElementById('skillName').disabled = true; // Cannot change ID of existing skill to avoid duplication issues easily
+                document.getElementById('skillName').disabled = true; // Cannot change ID of existing skill
+                
+                // Parse canonical SKILL.md format if available, else use legacy fields
+                if (skill.skillMd) {
+                    const parsed = parseSkillMarkdown(skill.skillMd);
+                    if (parsed.valid) {
+                        document.getElementById('skillDescription').value = parsed.metadata.description;
+                        document.getElementById('skillContent').value = parsed.instructions;
+                        
+                        // Optional fields
+                        const versionInput = document.getElementById('skillVersion');
+                        const triggersInput = document.getElementById('skillTriggers');
+                        const tagsInput = document.getElementById('skillTags');
+                        const licenseInput = document.getElementById('skillLicense');
+                        const compatibilityInput = document.getElementById('skillCompatibility');
+                        const allowedToolsInput = document.getElementById('skillAllowedTools');
+                        const metadataInput = document.getElementById('skillMetadata');
+                        
+                        if (versionInput) versionInput.value = parsed.metadata.version || '1.0.0';
+                        if (triggersInput) triggersInput.value = (parsed.metadata.triggers || []).join(', ');
+                        if (tagsInput) tagsInput.value = (parsed.metadata.tags || []).join(', ');
+                        if (licenseInput) licenseInput.value = parsed.metadata.license || '';
+                        if (compatibilityInput) compatibilityInput.value = parsed.metadata.compatibility || '';
+                        if (allowedToolsInput) allowedToolsInput.value = parsed.metadata['allowed-tools'] || '';
+                        if (metadataInput) {
+                            metadataInput.value = parsed.metadata.metadata
+                                ? JSON.stringify(parsed.metadata.metadata, null, 2)
+                                : '';
+                        }
+                    } else {
+                        // Fallback if parsing fails
+                        document.getElementById('skillDescription').value = skill.description || '';
+                        document.getElementById('skillContent').value = skill.content || '';
+                    }
+                } else {
+                    // Legacy format
+                    document.getElementById('skillDescription').value = skill.description || '';
+                    document.getElementById('skillContent').value = skill.content || '';
+                }
             }
         });
       });
@@ -1348,34 +1404,84 @@ function setupSkillHandlers() {
     });
   }
 
-  // Save skill handler
+  // Save skill handler - generates canonical SKILL.md format
   if (saveSkillBtn) {
     saveSkillBtn.addEventListener('click', () => {
       const nameInput = document.getElementById('skillName');
       const name = nameInput.value.trim();
       const description = document.getElementById('skillDescription').value.trim();
       const content = document.getElementById('skillContent').value.trim();
+      
+      // Optional fields (Agent Skills spec)
+      const licenseInput = document.getElementById('skillLicense');
+      const compatibilityInput = document.getElementById('skillCompatibility');
+      const allowedToolsInput = document.getElementById('skillAllowedTools');
+
+      const license = licenseInput ? licenseInput.value.trim() : '';
+      const compatibility = compatibilityInput ? compatibilityInput.value.trim() : '';
+      const allowedTools = allowedToolsInput ? allowedToolsInput.value.trim() : '';
+
+      let customMetadata = null;
+      const metadataInput = document.getElementById('skillMetadata');
+      if (metadataInput && metadataInput.value.trim()) {
+        if (!isValidJson(metadataInput.value.trim())) {
+          showStatus('Metadata must be valid JSON object.', true);
+          return;
+        }
+
+        const parsedMetadata = JSON.parse(metadataInput.value.trim());
+        if (!parsedMetadata || typeof parsedMetadata !== 'object' || Array.isArray(parsedMetadata)) {
+          showStatus('Metadata must be a JSON object.', true);
+          return;
+        }
+        customMetadata = parsedMetadata;
+      }
 
       if (!name || !description || !content) {
         showStatus('All fields are required.', true);
         return;
       }
 
-      // Simple validation for name (slug-like)
-      if (!/^[a-z0-9-]+$/.test(name)) {
-        showStatus('Skill Name must be lowercase letters, numbers, and hyphens only.', true);
+      const validation = validateMetadata({
+        name,
+        description,
+        ...(license ? { license } : {}),
+        ...(compatibility ? { compatibility } : {}),
+        ...(allowedTools ? { 'allowed-tools': allowedTools } : {}),
+        ...(customMetadata ? { metadata: customMetadata } : {})
+      });
+
+      if (!validation.valid) {
+        showStatus(validation.error, true);
         return;
       }
+
+      // Generate canonical SKILL.md content
+      const skillMd = generateSkillMarkdown({
+        name,
+        description,
+        instructions: content,
+        options: {
+          ...(license ? { license } : {}),
+          ...(compatibility ? { compatibility } : {}),
+          ...(allowedTools ? { allowedTools } : {}),
+          ...(customMetadata ? { metadata: customMetadata } : {})
+        }
+      });
 
       chrome.storage.local.get(['customSkills'], (result) => {
         let customSkills = result.customSkills || [];
         // Check if updating
         const existingIndex = customSkills.findIndex(s => s.name === name);
-        const newSkill = { name, description, content, lastUpdated: new Date().toISOString() };
+        
+        // Store in canonical format with skillMd field
+        const newSkill = { 
+          name, 
+          skillMd,
+          lastUpdated: new Date().toISOString() 
+        };
 
         if (existingIndex > -1) {
-            // If name is disabled, we are editing. If enabled, we might be overwriting or creating new.
-            // Since we use name as ID, it's effectively an overwrite if it exists.
             customSkills[existingIndex] = newSkill;
             showStatus('Skill updated.');
         } else {
@@ -1407,16 +1513,37 @@ function setupSkillHandlers() {
     const contentInput = document.getElementById('skillContent');
     if (contentInput) contentInput.value = '';
 
+    const optionalInputs = [
+      'skillVersion',
+      'skillTriggers',
+      'skillTags',
+      'skillLicense',
+      'skillCompatibility',
+      'skillAllowedTools',
+      'skillMetadata'
+    ];
+    optionalInputs.forEach(id => {
+      const input = document.getElementById(id);
+      if (input) input.value = '';
+    });
+
     showStatus('Skill form cleared.');
   }
 
-  // Export skills handler
+  // Export skills handler - v2 format with canonical SKILL.md
   const exportBtn = document.getElementById('exportSkills');
   if (exportBtn) {
       exportBtn.addEventListener('click', () => {
         chrome.storage.local.get(['customSkills'], (result) => {
             const customSkills = result.customSkills || [];
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(customSkills, null, 2));
+            // v2 format with spec version
+            const exportData = {
+                version: '2.0',
+                spec: 'agentskills.io',
+                exportedAt: new Date().toISOString(),
+                skills: customSkills
+            };
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
             const downloadAnchorNode = document.createElement('a');
             downloadAnchorNode.setAttribute("href", dataStr);
             downloadAnchorNode.setAttribute("download", "prompt_paul_skills.json");
@@ -1427,7 +1554,7 @@ function setupSkillHandlers() {
       });
   }
 
-  // Import skills handler
+  // Import skills handler - supports both v1 (legacy) and v2 (canonical) formats
   const importBtn = document.getElementById('importSkills');
   if (importBtn) {
       importBtn.addEventListener('click', () => {
@@ -1444,24 +1571,78 @@ function setupSkillHandlers() {
         reader.onload = (e) => {
             try {
                 const imported = JSON.parse(e.target.result);
-                if (Array.isArray(imported)) {
-                    chrome.storage.local.get(['customSkills'], (result) => {
-                        let customSkills = result.customSkills || [];
-                        imported.forEach(newSkill => {
-                            if (newSkill.name && newSkill.description && newSkill.content) {
-                                const idx = customSkills.findIndex(s => s.name === newSkill.name);
-                                if (idx > -1) customSkills[idx] = newSkill;
-                                else customSkills.push(newSkill);
-                            }
-                        });
-                        chrome.storage.local.set({ customSkills }, () => {
-                            showStatus('Skills imported successfully.');
-                            loadSkills();
-                        });
-                    });
+                let skillsToImport = [];
+                
+                // Detect format version
+                if (imported.version === '2.0' && imported.skills) {
+                    // v2 canonical format
+                    skillsToImport = imported.skills;
+                } else if (Array.isArray(imported)) {
+                    // v1 legacy format (array of skills)
+                    skillsToImport = imported;
                 } else {
-                    showStatus('Invalid skill file format. Expected JSON array.', true);
+                    showStatus('Invalid skill file format. Expected v2 object or v1 array.', true);
+                    return;
                 }
+                
+                chrome.storage.local.get(['customSkills'], (result) => {
+                    let customSkills = result.customSkills || [];
+                    let importCount = 0;
+                    let migrateCount = 0;
+                    
+                    let invalidCount = 0;
+
+                    skillsToImport.forEach(newSkill => {
+                        let canonicalMarkdown = null;
+
+                        if (typeof newSkill.skillMd === 'string' && newSkill.skillMd.trim() !== '') {
+                            canonicalMarkdown = newSkill.skillMd;
+                        } else if (newSkill.name && newSkill.description && (newSkill.content || newSkill.instructions)) {
+                            canonicalMarkdown = generateSkillMarkdown({
+                                name: newSkill.name,
+                                description: newSkill.description,
+                                instructions: newSkill.content || newSkill.instructions,
+                                options: {
+                                    ...(newSkill.license ? { license: newSkill.license } : {}),
+                                    ...(newSkill.compatibility ? { compatibility: newSkill.compatibility } : {}),
+                                    ...(newSkill['allowed-tools'] ? { allowedTools: newSkill['allowed-tools'] } : {}),
+                                    ...(newSkill.metadata ? { metadata: newSkill.metadata } : {})
+                                }
+                            });
+                            migrateCount++;
+                        } else {
+                            invalidCount++;
+                            return;
+                        }
+
+                        const parsed = parseSkillMarkdown(canonicalMarkdown);
+                        if (!parsed.valid) {
+                            invalidCount++;
+                            return;
+                        }
+
+                        const skillToSave = {
+                            name: parsed.metadata.name,
+                            skillMd: canonicalMarkdown,
+                            lastUpdated: newSkill.lastUpdated || new Date().toISOString()
+                        };
+
+                        const idx = customSkills.findIndex(s => s.name === skillToSave.name);
+                        if (idx > -1) {
+                            customSkills[idx] = skillToSave;
+                        } else {
+                            customSkills.push(skillToSave);
+                        }
+                        importCount++;
+                    });
+                    
+                    chrome.storage.local.set({ customSkills }, () => {
+                        const migrateMsg = migrateCount > 0 ? ` (${migrateCount} migrated from legacy)` : '';
+                        const invalidMsg = invalidCount > 0 ? ` (${invalidCount} skipped as invalid)` : '';
+                        showStatus(`Imported ${importCount} skills${migrateMsg}${invalidMsg}.`);
+                        loadSkills();
+                    });
+                });
             } catch (err) {
                 console.error(err);
                 showStatus('Error parsing skill file.', true);

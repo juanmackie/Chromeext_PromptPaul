@@ -1,0 +1,632 @@
+/**
+ * @fileoverview SKILL.md Parser - Agent Skills specification aligned
+ *
+ * Implements parsing, normalization, and validation for Agent Skills
+ * frontmatter used by Prompt Paul.
+ *
+ * @module skillParser
+ */
+
+const ALLOWED_FRONTMATTER_FIELDS = new Set([
+  'name',
+  'description',
+  'license',
+  'compatibility',
+  'metadata',
+  'allowed-tools'
+]);
+
+const LEGACY_EXTENSION_FIELDS = ['version', 'triggers', 'tags', 'examples'];
+const MAX_NAME_LENGTH = 64;
+const MAX_DESCRIPTION_LENGTH = 1024;
+const MAX_COMPATIBILITY_LENGTH = 500;
+
+/**
+ * Parses SKILL.md frontmatter and body according to Agent Skills conventions.
+ * @param {string} markdown - Full SKILL.md content
+ * @param {Object} [options] - Parse options
+ * @param {string} [options.expectedDirectoryName] - Optional expected parent directory name
+ * @returns {Object} Parsed skill with metadata and instructions
+ */
+export function parseSkillMarkdown(markdown, options = {}) {
+  if (!markdown || typeof markdown !== 'string') {
+    return {
+      valid: false,
+      error: 'Empty or invalid markdown content',
+      metadata: null,
+      instructions: null
+    };
+  }
+
+  const normalized = normalizeLineEndings(markdown).replace(/^\uFEFF/, '');
+  const frontmatterParts = extractFrontmatter(normalized);
+
+  if (!frontmatterParts.hasFrontmatter) {
+    const trimmedLegacy = normalized.trim();
+    return {
+      valid: true,
+      legacy: true,
+      metadata: {
+        name: 'unknown',
+        description: 'Legacy skill (no frontmatter)',
+        license: 'MIT',
+        metadata: {}
+      },
+      instructions: trimmedLegacy,
+      raw: markdown
+    };
+  }
+
+  if (!frontmatterParts.valid) {
+    return {
+      valid: false,
+      error: frontmatterParts.error,
+      metadata: null,
+      instructions: null
+    };
+  }
+
+  let metadata;
+  try {
+    metadata = parseFrontmatter(frontmatterParts.frontmatterText);
+  } catch (error) {
+    return {
+      valid: false,
+      error: error.message,
+      metadata: null,
+      instructions: null
+    };
+  }
+
+  const normalizedMetadata = normalizeMetadataForValidation(metadata);
+  const validation = validateMetadata(normalizedMetadata, {
+    expectedDirectoryName: options.expectedDirectoryName
+  });
+
+  if (!validation.valid) {
+    return {
+      valid: false,
+      error: validation.error,
+      metadata: null,
+      instructions: null
+    };
+  }
+
+  return {
+    valid: true,
+    legacy: false,
+    metadata: validation.metadata,
+    instructions: frontmatterParts.body,
+    raw: markdown
+  };
+}
+
+/**
+ * Extracts YAML frontmatter from markdown content.
+ * @param {string} markdown - Full markdown content
+ * @returns {{hasFrontmatter:boolean, valid:boolean, error?:string, frontmatterText?:string, body?:string}}
+ */
+function extractFrontmatter(markdown) {
+  const lines = markdown.split('\n');
+  if (lines.length === 0) {
+    return { hasFrontmatter: false, valid: true };
+  }
+
+  if (lines[0].trim() !== '---') {
+    return { hasFrontmatter: false, valid: true };
+  }
+
+  let closingIndex = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === '---') {
+      closingIndex = i;
+      break;
+    }
+  }
+
+  if (closingIndex === -1) {
+    return {
+      hasFrontmatter: true,
+      valid: false,
+      error: 'Invalid frontmatter: missing closing ---'
+    };
+  }
+
+  const frontmatterText = lines.slice(1, closingIndex).join('\n');
+  const body = lines.slice(closingIndex + 1).join('\n').trim();
+  return {
+    hasFrontmatter: true,
+    valid: true,
+    frontmatterText,
+    body
+  };
+}
+
+/**
+ * Parses frontmatter with a lightweight YAML subset parser.
+ * Supports top-level scalars, inline arrays, block arrays, and metadata maps.
+ * @param {string} text - YAML frontmatter content without delimiters
+ * @returns {Object} Parsed frontmatter object
+ */
+export function parseFrontmatter(text) {
+  const result = {};
+  const lines = normalizeLineEndings(text).split('\n');
+
+  let index = 0;
+  while (index < lines.length) {
+    const rawLine = lines[index];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed || trimmed.startsWith('#')) {
+      index += 1;
+      continue;
+    }
+
+    if (countIndent(rawLine) !== 0) {
+      throw new Error(`Invalid frontmatter at line ${index + 1}: unexpected indentation`);
+    }
+
+    const fieldMatch = rawLine.match(/^([A-Za-z0-9][A-Za-z0-9_-]*):(?:\s*(.*))?$/);
+    if (!fieldMatch) {
+      throw new Error(`Invalid frontmatter at line ${index + 1}: expected 'key: value'`);
+    }
+
+    const key = fieldMatch[1];
+    const rawValue = typeof fieldMatch[2] === 'string' ? fieldMatch[2] : '';
+
+    if (rawValue === '') {
+      const nested = readIndentedBlock(lines, index + 1);
+
+      if (key === 'metadata') {
+        result[key] = parseMetadataBlock(nested.lines, index + 1);
+      } else if (nested.lines.length > 0 && nested.lines.every(line => line.trim().startsWith('- '))) {
+        result[key] = nested.lines.map(line => parseScalar(line.trim().slice(2)));
+      } else if (nested.lines.length > 0) {
+        result[key] = nested.lines.map(line => line.trim()).join('\n').trim();
+      } else {
+        result[key] = '';
+      }
+
+      index = nested.nextIndex;
+      continue;
+    }
+
+    result[key] = parseValue(rawValue);
+    index += 1;
+  }
+
+  return result;
+}
+
+/**
+ * Validates skill metadata for Agent Skills compatibility.
+ * @param {Object} metadata - Parsed metadata
+ * @param {Object} [options] - Validation options
+ * @param {string} [options.expectedDirectoryName] - Optional expected parent directory name
+ * @returns {{valid: boolean, error?: string, metadata?: Object}}
+ */
+export function validateMetadata(metadata, options = {}) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { valid: false, error: 'Frontmatter must be a YAML mapping' };
+  }
+
+  const normalized = { ...metadata };
+  const unknownFields = Object.keys(normalized).filter(key => !ALLOWED_FRONTMATTER_FIELDS.has(key));
+  if (unknownFields.length > 0) {
+    return {
+      valid: false,
+      error: `Unexpected frontmatter field(s): ${unknownFields.join(', ')}`
+    };
+  }
+
+  if (typeof normalized.name !== 'string' || normalized.name.trim() === '') {
+    return { valid: false, error: 'Missing required field: name' };
+  }
+
+  const normalizedName = normalized.name.normalize('NFKC').trim();
+  if (normalizedName.length > MAX_NAME_LENGTH) {
+    return { valid: false, error: `Skill name exceeds ${MAX_NAME_LENGTH} characters` };
+  }
+  if (normalizedName !== normalizedName.toLocaleLowerCase()) {
+    return { valid: false, error: 'Skill name must be lowercase' };
+  }
+  if (normalizedName.startsWith('-') || normalizedName.endsWith('-')) {
+    return { valid: false, error: 'Skill name must not start or end with a hyphen' };
+  }
+  if (normalizedName.includes('--')) {
+    return { valid: false, error: 'Skill name must not contain consecutive hyphens' };
+  }
+  if (!/^[\p{Ll}\p{Nd}-]+$/u.test(normalizedName)) {
+    return { valid: false, error: 'Skill name contains invalid characters' };
+  }
+
+  if (typeof normalized.description !== 'string' || normalized.description.trim() === '') {
+    return { valid: false, error: 'Missing required field: description' };
+  }
+  const normalizedDescription = normalized.description.trim();
+  if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
+    return {
+      valid: false,
+      error: `Description exceeds ${MAX_DESCRIPTION_LENGTH} characters`
+    };
+  }
+
+  if (normalized.license !== undefined) {
+    if (typeof normalized.license !== 'string' || normalized.license.trim() === '') {
+      return { valid: false, error: "Field 'license' must be a non-empty string" };
+    }
+    normalized.license = normalized.license.trim();
+  }
+
+  if (normalized.compatibility !== undefined) {
+    if (typeof normalized.compatibility !== 'string') {
+      return { valid: false, error: "Field 'compatibility' must be a string" };
+    }
+    const compatibility = normalized.compatibility.trim();
+    if (compatibility.length === 0 || compatibility.length > MAX_COMPATIBILITY_LENGTH) {
+      return {
+        valid: false,
+        error: `Field 'compatibility' must be 1-${MAX_COMPATIBILITY_LENGTH} characters`
+      };
+    }
+    normalized.compatibility = compatibility;
+  }
+
+  if (normalized['allowed-tools'] !== undefined) {
+    if (typeof normalized['allowed-tools'] !== 'string' || normalized['allowed-tools'].trim() === '') {
+      return { valid: false, error: "Field 'allowed-tools' must be a non-empty string" };
+    }
+    normalized['allowed-tools'] = normalized['allowed-tools'].trim();
+  }
+
+  if (normalized.metadata !== undefined) {
+    if (!normalized.metadata || typeof normalized.metadata !== 'object' || Array.isArray(normalized.metadata)) {
+      return { valid: false, error: "Field 'metadata' must be a key-value mapping" };
+    }
+
+    const metadataMap = {};
+    for (const [key, value] of Object.entries(normalized.metadata)) {
+      const metadataKey = String(key).trim();
+      if (!metadataKey) {
+        return { valid: false, error: "Field 'metadata' contains an empty key" };
+      }
+      metadataMap[metadataKey] = String(value ?? '');
+    }
+    normalized.metadata = metadataMap;
+  }
+
+  if (typeof options.expectedDirectoryName === 'string' && options.expectedDirectoryName.trim() !== '') {
+    const expected = options.expectedDirectoryName.normalize('NFKC').trim();
+    if (expected !== normalizedName) {
+      return {
+        valid: false,
+        error: `Skill name '${normalizedName}' must match directory '${expected}'`
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    metadata: {
+      name: normalizedName,
+      description: normalizedDescription,
+      ...(normalized.license !== undefined ? { license: normalized.license } : {}),
+      ...(normalized.compatibility !== undefined ? { compatibility: normalized.compatibility } : {}),
+      ...(normalized['allowed-tools'] !== undefined ? { 'allowed-tools': normalized['allowed-tools'] } : {}),
+      ...(normalized.metadata !== undefined ? { metadata: normalized.metadata } : {})
+    }
+  };
+}
+
+/**
+ * Generates canonical SKILL.md from components.
+ * @param {Object} skill - Skill data
+ * @param {string} skill.name - Skill name
+ * @param {string} skill.description - Skill description
+ * @param {string} skill.instructions - Markdown instructions body
+ * @param {Object} [skill.options] - Optional metadata
+ * @returns {string} Canonical SKILL.md content
+ */
+export function generateSkillMarkdown({ name, description, instructions, options = {} }) {
+  const frontmatterLines = [
+    '---',
+    `name: ${formatYamlString(name || '')}`,
+    `description: ${formatYamlString(description || '')}`
+  ];
+
+  if (typeof options.license === 'string' && options.license.trim() !== '') {
+    frontmatterLines.push(`license: ${formatYamlString(options.license.trim())}`);
+  }
+
+  if (typeof options.compatibility === 'string' && options.compatibility.trim() !== '') {
+    frontmatterLines.push(`compatibility: ${formatYamlString(options.compatibility.trim())}`);
+  }
+
+  const allowedTools = options.allowedTools ?? options['allowed-tools'];
+  if (typeof allowedTools === 'string' && allowedTools.trim() !== '') {
+    frontmatterLines.push(`allowed-tools: ${formatYamlString(allowedTools.trim())}`);
+  }
+
+  const metadata = options.metadata;
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length > 0) {
+    frontmatterLines.push('metadata:');
+    const sortedEntries = Object.entries(metadata).sort(([a], [b]) => a.localeCompare(b));
+    for (const [key, value] of sortedEntries) {
+      const safeKey = String(key).trim();
+      if (!safeKey) {
+        continue;
+      }
+      frontmatterLines.push(`  ${safeKey}: ${formatYamlString(String(value ?? ''))}`);
+    }
+  }
+
+  frontmatterLines.push('---');
+
+  const body = typeof instructions === 'string' ? instructions.trim() : '';
+  if (!body) {
+    return `${frontmatterLines.join('\n')}\n`;
+  }
+
+  return `${frontmatterLines.join('\n')}\n\n${body}\n`;
+}
+
+/**
+ * Extracts skill metadata for listing (progressive disclosure).
+ * @param {Object} parsedSkill - Result from parseSkillMarkdown
+ * @returns {Object|null} Metadata for skill discovery
+ */
+export function extractSkillMetadata(parsedSkill) {
+  if (!parsedSkill || !parsedSkill.valid) {
+    return null;
+  }
+
+  return {
+    name: parsedSkill.metadata.name,
+    description: parsedSkill.metadata.description,
+    ...(parsedSkill.metadata.license ? { license: parsedSkill.metadata.license } : {}),
+    ...(parsedSkill.metadata.compatibility ? { compatibility: parsedSkill.metadata.compatibility } : {}),
+    ...(parsedSkill.metadata['allowed-tools'] ? { 'allowed-tools': parsedSkill.metadata['allowed-tools'] } : {}),
+    ...(parsedSkill.metadata.metadata ? { metadata: parsedSkill.metadata.metadata } : {})
+  };
+}
+
+/**
+ * Converts legacy skill format to canonical SKILL.md.
+ * @param {Object} legacySkill - Legacy skill object
+ * @returns {Object} Canonical skill with skillMd field
+ */
+export function migrateLegacySkill(legacySkill) {
+  const metadataExtensions = {};
+
+  if (legacySkill.version !== undefined) {
+    metadataExtensions['prompt-paul-version'] = String(legacySkill.version);
+  }
+  if (legacySkill.triggers !== undefined) {
+    metadataExtensions['prompt-paul-triggers'] = Array.isArray(legacySkill.triggers)
+      ? JSON.stringify(legacySkill.triggers)
+      : String(legacySkill.triggers);
+  }
+  if (legacySkill.tags !== undefined) {
+    metadataExtensions['prompt-paul-tags'] = Array.isArray(legacySkill.tags)
+      ? JSON.stringify(legacySkill.tags)
+      : String(legacySkill.tags);
+  }
+  if (legacySkill.examples !== undefined) {
+    metadataExtensions['prompt-paul-examples'] = Array.isArray(legacySkill.examples)
+      ? JSON.stringify(legacySkill.examples)
+      : String(legacySkill.examples);
+  }
+
+  const skillMd = generateSkillMarkdown({
+    name: legacySkill.name,
+    description: legacySkill.description,
+    instructions: legacySkill.content || legacySkill.instructions,
+    options: {
+      ...(legacySkill.license ? { license: legacySkill.license } : {}),
+      ...(legacySkill.compatibility ? { compatibility: legacySkill.compatibility } : {}),
+      ...(Object.keys(metadataExtensions).length > 0 ? { metadata: metadataExtensions } : {})
+    }
+  });
+
+  return {
+    name: legacySkill.name,
+    skillMd,
+    lastUpdated: legacySkill.lastUpdated || new Date().toISOString()
+  };
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function normalizeMetadataForValidation(metadata) {
+  const normalized = { ...metadata };
+
+  if (normalized.allowedTools !== undefined && normalized['allowed-tools'] === undefined) {
+    normalized['allowed-tools'] = normalized.allowedTools;
+    delete normalized.allowedTools;
+  }
+
+  if (normalized.allowed_tools !== undefined && normalized['allowed-tools'] === undefined) {
+    normalized['allowed-tools'] = normalized.allowed_tools;
+    delete normalized.allowed_tools;
+  }
+
+  const metadataMap =
+    normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+      ? { ...normalized.metadata }
+      : {};
+
+  for (const legacyField of LEGACY_EXTENSION_FIELDS) {
+    if (normalized[legacyField] !== undefined) {
+      const key = `prompt-paul-${legacyField}`;
+      const value = normalized[legacyField];
+      metadataMap[key] = Array.isArray(value) ? JSON.stringify(value) : String(value);
+      delete normalized[legacyField];
+    }
+  }
+
+  if (Object.keys(metadataMap).length > 0) {
+    normalized.metadata = metadataMap;
+  }
+
+  if (Array.isArray(normalized['allowed-tools'])) {
+    normalized['allowed-tools'] = normalized['allowed-tools'].join(' ').trim();
+  }
+
+  return normalized;
+}
+
+function parseValue(rawValue) {
+  const trimmed = rawValue.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return parseInlineArray(trimmed);
+  }
+  return parseScalar(trimmed);
+}
+
+function parseInlineArray(value) {
+  const inner = value.slice(1, -1).trim();
+  if (!inner) {
+    return [];
+  }
+
+  const items = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (const char of inner) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaped = true;
+      current += char;
+      continue;
+    }
+
+    if ((char === '"' || char === "'") && !quote) {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (quote && char === quote) {
+      quote = null;
+      current += char;
+      continue;
+    }
+
+    if (!quote && char === ',') {
+      items.push(parseScalar(current));
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.trim() !== '') {
+    items.push(parseScalar(current));
+  }
+
+  return items;
+}
+
+function parseScalar(rawValue) {
+  const trimmed = rawValue.trim();
+
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    const quote = trimmed[0];
+    let value = trimmed.slice(1, -1);
+    if (quote === '"') {
+      value = value
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\\/g, '\\');
+    } else {
+      value = value.replace(/''/g, "'");
+    }
+    return value;
+  }
+
+  return trimmed;
+}
+
+function parseMetadataBlock(lines, baseLineNumber) {
+  const metadata = {};
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const match = trimmed.match(/^([^:#][^:]*):\s*(.*)$/);
+    if (!match) {
+      throw new Error(`Invalid metadata entry at line ${baseLineNumber + i + 1}`);
+    }
+
+    const key = match[1];
+    const value = parseScalar(match[2]);
+    metadata[key] = String(value);
+  }
+
+  return metadata;
+}
+
+function readIndentedBlock(lines, startIndex) {
+  const collected = [];
+  let index = startIndex;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      collected.push(line);
+      index += 1;
+      continue;
+    }
+
+    if (countIndent(line) < 2) {
+      break;
+    }
+
+    collected.push(line.slice(2));
+    index += 1;
+  }
+
+  return {
+    lines: collected,
+    nextIndex: index
+  };
+}
+
+function countIndent(line) {
+  let count = 0;
+  while (count < line.length && line[count] === ' ') {
+    count += 1;
+  }
+  return count;
+}
+
+function formatYamlString(value) {
+  const escaped = String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  return `"${escaped}"`;
+}
