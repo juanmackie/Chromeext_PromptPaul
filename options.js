@@ -122,7 +122,6 @@ function saveOptions(e) {
   }
   const modelNameValue = modelName.value.trim();
 
-
   const systemPrompt = document.getElementById('systemPrompt');
   if (!systemPrompt) {
     console.error('systemPrompt element is missing in the DOM.');
@@ -145,11 +144,9 @@ function saveOptions(e) {
     let profileToUpdate = profiles.find(p => p.id === selectedProfileId);
 
     if (!profileToUpdate) {
-      // This case should ideally not happen if dropdown is managed well,
-      // but as a fallback, or if it's 'default' and somehow missing.
       profileToUpdate = {
-        id: selectedProfileId, // Could be 'default'
-        name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(), // Basic name
+        id: selectedProfileId,
+        name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(),
         llmEndpoint: llmEndpointValue,
         apiKey: apiKeyValue,
         modelName: modelNameValue,
@@ -163,7 +160,6 @@ function saveOptions(e) {
       profileToUpdate.modelName = modelNameValue;
       profileToUpdate.systemPrompt = systemPromptValue;
       profileToUpdate.lastUpdated = new Date().toLocaleString();
-      // profileToUpdate.name is handled during creation or if user edits it (future feature)
     }
 
     chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: selectedProfileId }, () => {
@@ -195,13 +191,14 @@ function loadProfileSettings(profileId) {
       document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
       document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
+      
       updateCurrentConfig(
         selectedProfile.llmEndpoint,
         selectedProfile.apiKey,
         selectedProfile.modelName,
         selectedProfile.lastUpdated || new Date().toLocaleString(),
         selectedProfile.systemPrompt,
-        selectedProfile.name // Pass profile name to updateCurrentConfig
+        selectedProfile.name
       );
     } else {
       // Fallback to sync storage if profile not found (e.g. initial load or error)
