@@ -892,3 +892,39 @@ th, td {
 .loaded-content-body::-webkit-scrollbar-thumb:hover {
     background: var(--ext-muted-foreground);
 }
+
+/* Preset dropdown menu */
+#preset-menu {
+    position: absolute;
+    background: var(--ext-card);
+    border: 1px solid var(--ext-border);
+    border-radius: 4px;
+    padding: 4px 0;
+    z-index: 1000;
+    min-width: 140px;
+    box-shadow: var(--ext-shadow-hover);
+}
+
+#preset-menu .preset-menu-item {
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--ext-foreground);
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--ext-font-family);
+}
+
+#preset-menu .preset-menu-item:hover {
+    background: var(--ext-primary);
+    color: var(--ext-primary-foreground);
+}
+
+#preset-menu .material-icons {
+    font-size: 18px;
+}

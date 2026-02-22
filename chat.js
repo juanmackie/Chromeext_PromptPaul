@@ -29,40 +29,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
 
     // Quick Actions Sidebar Elements
-    const loadContentButton = document.getElementById('load-content-button');
-    const summarizeTabButton = document.getElementById('summarize-tab-button');
-    const tldrPresetButton = document.getElementById('tldr-preset-button');
-    const techPresetButton = document.getElementById('tech-preset-button');
-    const execPresetButton = document.getElementById('exec-preset-button');
+    const addPageButton = document.getElementById('add-page-button');
+    const analyzeButton = document.getElementById('analyze-button');
+    const analyzeDropdown = document.getElementById('analyze-dropdown');
+    const explainButton = document.getElementById('explain-button');
     const pinnedActionsContainer = document.getElementById('pinned-actions-container');
 
-    // --- Base prompts for smart actions ---
-    const BASE_PROMPTS = {
-        summarize: "Please summarize the following content into a bullet list of key points.",
-        tldr: "Provide a very brief TL;DR (3-4 sentences) of this content.",
-        technical: "Provide a technical deep dive of this content.",
-        executive: "Provide an executive summary of this content."
+    // Preset registry for analysis modes
+    const PRESET_MODES = {
+        summary: {
+            key: 'summary',
+            label: 'Summary',
+            icon: 'auto_awesome',
+            prompt: 'Please summarize the following content into a bullet list of key points.'
+        },
+        tldr: {
+            key: 'tldr',
+            label: 'TL;DR',
+            icon: 'short_text',
+            prompt: 'Provide a very brief TL;DR (3-4 sentences) of this content.'
+        },
+        technical: {
+            key: 'technical',
+            label: 'Technical',
+            icon: 'code',
+            prompt: 'Provide a technical deep dive of this content.'
+        },
+        executive: {
+            key: 'executive',
+            label: 'Executive',
+            icon: 'assignment',
+            prompt: 'Provide an executive summary of this content.'
+        }
     };
 
-    /**
-     * Builds a smart prompt with dynamic context injection based on content type.
-     */
-    function buildSmartPrompt(presetKey, content, metadata) {
-        let prompt = BASE_PROMPTS[presetKey] || BASE_PROMPTS.summarize;
-
-        if (metadata.siteName === 'YouTube' || metadata.type?.includes('youtube')) {
-            prompt += `\n\nThis is a video titled "${metadata.title}" from channel "${metadata.byline}".`;
-        } else if (metadata.url?.includes('github.com') || metadata.url?.includes('gitlab.com')) {
-            prompt += `\n\nThis is code from "${metadata.title}".`;
-        } else if (metadata.byline) {
-            prompt += `\n\nThis is an article titled "${metadata.title}" by ${metadata.byline}.`;
-        }
-
-        return prompt + `\n\nContent:\n${content}`;
-    }
+    let lastUsedPreset = 'summary'; // Default preset mode
 
     /**
-     * Helper to execute a summarization preset.
+     * Helper to execute a preset analysis.
      */
     async function executePreset(presetKey, loadingText, successText) {
         try {
@@ -113,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadingManager.showToast('No content received from tab.', 'error');
                 }
             } else {
-                loadingManager.showToast('Failed to get tab content.', 'error');
+                loadingManager.showToast('Unexpected response from background script', 'error');
             }
         } catch (error) {
             console.error("Chat.js: Execute preset error:", error.message);
@@ -121,9 +125,40 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Helper to execute a specific preset mode.
+     */
+    async function executePresetMode(modeKey) {
+        const preset = PRESET_MODES[modeKey];
+        if (!preset) {
+            console.warn('Unknown preset mode:', modeKey);
+            return;
+        }
+        lastUsedPreset = modeKey;
+        executePreset(modeKey, `Generating ${preset.label}...`, `${preset.label} started`);
+    }
+
+    /**
+     * Builds a smart prompt with dynamic context injection based on content type.
+     */
+    function buildSmartPrompt(presetKey, content, metadata) {
+        const preset = PRESET_MODES[presetKey] || PRESET_MODES.summary;
+        let prompt = preset.prompt;
+
+        if (metadata.siteName === 'YouTube' || metadata.type?.includes('youtube')) {
+            prompt += `\n\nThis is a video titled "${metadata.title}" from channel "${metadata.byline}".`;
+        } else if (metadata.url?.includes('github.com') || metadata.url?.includes('gitlab.com')) {
+            prompt += `\n\nThis is code from "${metadata.title}".`;
+        } else if (metadata.byline) {
+            prompt += `\n\nThis is an article titled "${metadata.title}" by ${metadata.byline}.`;
+        }
+
+        return prompt + `\n\nContent:\n${content}`;
+    }
+
     // Add event listeners for quick action buttons
-    if (loadContentButton) {
-        loadContentButton.addEventListener('click', async () => {
+    if (addPageButton) {
+        addPageButton.addEventListener('click', async () => {
             try {
                 loadingManager.showToast('Loading tab content...', 'info');
 
@@ -143,10 +178,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
                         if (response.byline) sourceInfo += ` by ${response.byline}`;
 
-                        // Show expandable system message with full content
                         addLoadedContentMessage(sourceInfo, response.content);
 
-                        // Add to history as user message so LLM sees it in context
                         conversationHistory.push({
                             role: 'user',
                             content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\n\nHere is the content:\n\n${response.content}`
@@ -158,45 +191,91 @@ document.addEventListener('DOMContentLoaded', () => {
                         loadingManager.showToast('Content loaded! You can now ask questions about it.', 'success');
                     } else {
                         const errorMsg = response.error || 'Content not available';
-                        console.error("Chat.js: Load content button - Failed:", errorMsg);
+                        console.error("Chat.js: Add page button - Failed:", errorMsg);
                         loadingManager.showToast('No content received: ' + errorMsg, 'error');
                     }
                 } else {
                     loadingManager.showToast('Unexpected response from background script', 'error');
                 }
             } catch (error) {
-                console.error("Chat.js: Load content button - Error:", error.message);
+                console.error("Chat.js: Add page button - Error:", error.message);
                 loadingManager.showToast(`Error: ${error.message}`, 'error');
             }
         });
     }
 
-    if (summarizeTabButton) {
-        summarizeTabButton.addEventListener('click', () => {
-            executePreset('summarize', 'Generating smart summary...', 'Smart summary started');
+    // Analyze button - runs last used preset mode
+    if (analyzeButton) {
+        analyzeButton.addEventListener('click', () => {
+            executePresetMode(lastUsedPreset);
         });
     }
 
-    if (tldrPresetButton) {
-        tldrPresetButton.addEventListener('click', () => {
-            executePreset('tldr', 'Generating TL;DR...', 'TL;DR started');
+    // Analyze dropdown - shows preset menu
+    let presetMenuVisible = false;
+    let presetMenu = null;
+
+    function createPresetMenu() {
+        if (presetMenu) return presetMenu;
+        
+        presetMenu = document.createElement('div');
+        presetMenu.id = 'preset-menu';
+
+        Object.values(PRESET_MODES).forEach(preset => {
+            const item = document.createElement('button');
+            item.className = 'preset-menu-item';
+            item.dataset.mode = preset.key;
+            item.innerHTML = `<span class="material-icons">${preset.icon}</span>${preset.label}`;
+            
+            item.addEventListener('click', () => {
+                lastUsedPreset = preset.key;
+                hidePresetMenu();
+                executePresetMode(preset.key);
+            });
+
+            presetMenu.appendChild(item);
+        });
+
+        document.body.appendChild(presetMenu);
+        return presetMenu;
+    }
+
+    function showPresetMenu() {
+        const menu = createPresetMenu();
+        const btn = analyzeDropdown.getBoundingClientRect();
+        menu.style.left = `${btn.left}px`;
+        menu.style.top = `${btn.bottom + 4}px`;
+        menu.style.display = 'block';
+        presetMenuVisible = true;
+    }
+
+    function hidePresetMenu() {
+        if (presetMenu) {
+            presetMenu.style.display = 'none';
+        }
+        presetMenuVisible = false;
+    }
+
+    if (analyzeDropdown) {
+        analyzeDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (presetMenuVisible) {
+                hidePresetMenu();
+            } else {
+                showPresetMenu();
+            }
         });
     }
 
-    if (techPresetButton) {
-        techPresetButton.addEventListener('click', () => {
-            executePreset('technical', 'Generating technical deep dive...', 'Technical dive started');
-        });
-    }
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+        if (presetMenuVisible && !presetMenu?.contains(e.target)) {
+            hidePresetMenu();
+        }
+    });
 
-    if (execPresetButton) {
-        execPresetButton.addEventListener('click', () => {
-            executePreset('executive', 'Generating executive summary...', 'Executive summary started');
-        });
-    }
-    const explainBtn = document.getElementById('explain-button');
-    if (explainBtn) {
-        explainBtn.addEventListener('click', async () => {
+    if (explainButton) {
+        explainButton.addEventListener('click', async () => {
             try {
                 loadingManager.showToast('Requesting tab content for explanation...', 'info');
 
@@ -2032,34 +2111,6 @@ document.addEventListener('DOMContentLoaded', () => {
             currentAbortController = null;
         }
     });
-
-    // --- Summarize Tab Button Functionality ---
-    if (summarizeTabButton) {
-        summarizeTabButton.addEventListener('click', () => {
-            executePreset('Requesting tab content for summary...', 'Tab content received, summarizing...', 'Summarize the following text:');
-        });
-    }
-
-    // --- Phase 3: Summary Presets ---
-    if (tldrPresetButton) {
-        tldrPresetButton.addEventListener('click', () => {
-            executePreset('Generating TL;DR...', 'Content received, generating TL;DR...', 'Provide a 1-sentence TL;DR of the following content:');
-        });
-    }
-
-    if (techPresetButton) {
-        techPresetButton.addEventListener('click', () => {
-            executePreset('Generating Technical Analysis...', 'Content received, analyzing technically...', 'Analyze the following content from a technical perspective. Focus on architecture, code, and implementation details:');
-        });
-    }
-
-    if (execPresetButton) {
-        execPresetButton.addEventListener('click', () => {
-            executePreset('Generating Executive Summary...', 'Content received, generating report...', 'Provide an executive summary of the following content. Focus on high-level takeaways, business impact, and action items:');
-        });
-    }
-
-    // --- Explain Tab Button Functionality --- (duplicate declaration removed)
 
     // --- Pinned Instructions Functionality ---
     async function renderPinnedActions() {

@@ -11,30 +11,22 @@
 </head>
 <body>
     <div id="quick-actions-sidebar">
-        <!-- Preset "Load Tab Content" button -->
-        <button id="load-content-button" class="quick-action-button" title="Load tab content for discussion">
+        <!-- Static actions -->
+        <button id="add-page-button" class="quick-action-button" title="Add page content to chat">
             <span class="material-icons">article</span>
         </button>
-        <!-- Preset "Summarize this tab" button -->
-        <button id="summarize-tab-button" class="quick-action-button" title="Smart Summarize">
+        <button id="analyze-button" class="quick-action-button" title="Analyze this tab">
             <span class="material-icons">auto_awesome</span>
         </button>
         <button id="explain-button" class="quick-action-button" title="Explain this tab">
             <span class="material-icons">help_outline</span>
         </button>
-        <!-- Phase 4: Smart Summary Presets -->
-        <button id="tldr-preset-button" class="quick-action-button preset-button" title="Smart TL;DR">
-            <span class="material-icons">short_text</span>
-        </button>
-        <button id="tech-preset-button" class="quick-action-button preset-button" title="Smart Technical Analysis">
-            <span class="material-icons">code</span>
-        </button>
-        <button id="exec-preset-button" class="quick-action-button preset-button" title="Executive summary">
-            <span class="material-icons">assignment</span>
+        <!-- Preset menu (dropdown) -->
+        <button id="analyze-dropdown" class="quick-action-button preset-button" title="Analysis modes">
+            <span class="material-icons">expand_more</span>
         </button>
         <!-- Pinned instructions will be added here by chat.js -->
         <div id="pinned-actions-container"></div>
-        <!-- Manage Pinned Actions button removed as pinning is now handled in options.html -->
     </div>
     <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
       <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center;">
