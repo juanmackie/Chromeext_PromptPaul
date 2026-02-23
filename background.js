@@ -44,6 +44,7 @@ const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
 const ANALYTICS_ROTATE_MS = THIRTY_DAYS_IN_MS;
 const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
 const DENYLIST = ['email', 'token', 'key', 'password', 'secret', 'auth', 'cookie', 'session', 'ssid'];
+const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
 
 /**
  * Generates a UUID v4 compliant unique identifier.
@@ -422,41 +423,75 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     }
 
-    // Common message sending function
-    const sendMessage = (action, extra = {}) => {
+    // Store panel actions when chat.js is not ready yet.
+    const queuePendingPanelAction = async (payload) => {
+      if (!chrome.storage?.session) {
+        return false;
+      }
+
       try {
-        chrome.runtime.sendMessage({
-          action,
-          selectedText: promptContent || '',
-          tabId: tab.id,
-          ...extra
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.warn(`Background: sendMessage (${action}) failed:`, chrome.runtime.lastError.message);
+        await chrome.storage.session.set({
+          [PENDING_PANEL_ACTION_KEY]: {
+            ...payload,
+            queuedAt: Date.now()
           }
         });
+        return true;
       } catch (error) {
-        console.error(`Background: Exception sending message (${action}):`, error.message);
+        console.error('Background: Failed to queue pending side panel action:', error.message);
+        return false;
       }
+    };
+
+    // Common message sending function with fallback queue.
+    const sendMessage = (action, extra = {}) => {
+      const payload = {
+        action,
+        selectedText: promptContent || '',
+        tabId: tab.id,
+        actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        ...extra
+      };
+
+      return new Promise((resolve) => {
+        try {
+          chrome.runtime.sendMessage(payload, (response) => {
+            if (chrome.runtime.lastError) {
+              const lastErrorMessage = chrome.runtime.lastError.message;
+              queuePendingPanelAction(payload).then((queued) => {
+                if (!queued) {
+                  console.warn(`Background: sendMessage (${action}) failed and queue fallback failed:`, lastErrorMessage);
+                }
+                resolve({ queuedFallback: queued, response: null });
+              });
+              return;
+            }
+
+            resolve({ queuedFallback: false, response });
+          });
+        } catch (error) {
+          queuePendingPanelAction(payload).then((queued) => {
+            if (!queued) {
+              console.error(`Background: Exception sending message (${action}):`, error.message);
+            }
+            resolve({ queuedFallback: queued, response: null });
+          });
+        }
+      });
     };
 
     if (info.menuItemId === 'oneoff_instruction') {
       if (isMediaContext) {
-        chrome.runtime.sendMessage({
-          action: 'setSelectedText',
-          selectedText: '',
-          tabId: tab.id,
-          mediaData: mediaData
-        });
+        await sendMessage('setSelectedText', { selectedText: '', mediaData });
       } else {
-        sendMessage('setSelectedText');
+        await sendMessage('setSelectedText');
       }
       return;
     }
 
     // Start chat
     if (info.menuItemId === 'start_chat') {
-      sendMessage('setSelectedText', { fromStartChat: true, mediaData });
+      await sendMessage('setSelectedText', { fromStartChat: true, mediaData });
       if (isMediaContext) {
         // Media will be handled in chat.js via currentMediaData
         return;

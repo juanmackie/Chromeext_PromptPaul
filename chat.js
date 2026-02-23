@@ -323,6 +323,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
+
     let selectedText = null;
     let tabId = null;
     let currentStreamingMessageDiv = null;
@@ -332,6 +334,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeStreamingToolCall = null;
     let currentAbortController = null;
     let currentMediaData = null; // Store media data for analysis
+    let conversationHistory = [];
+    let lastProcessedPanelActionId = null;
 
     /**
      * Stops the current API request by aborting the AbortController.
@@ -583,33 +587,90 @@ document.addEventListener('DOMContentLoaded', () => {
         return container;
     }
 
+    function applySetSelectedTextAction(request) {
+        if (request.actionId && request.actionId === lastProcessedPanelActionId) {
+            return;
+        }
+
+        if (request.actionId) {
+            lastProcessedPanelActionId = request.actionId;
+        }
+
+        selectedText = request.selectedText || '';
+        tabId = request.tabId;
+
+        // Handle media data from context menu
+        if (request.mediaData) {
+            currentMediaData = request.mediaData;
+
+            // Show chat area with media preview
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+
+            if (currentMediaData.error) {
+                addMessage('System', `❌ Error loading ${currentMediaData.type}: ${currentMediaData.error}`);
+            } else if (currentMediaData.base64) {
+                addMediaPreview(currentMediaData);
+            }
+        } else if (request.fromStartChat) {
+            chatMainArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'none';
+            conversationHistory = [];
+        } else {
+            selectedTextDiv.textContent = selectedText;
+            chatMainArea.style.display = 'none';
+            oneoffInstructionArea.style.display = 'block';
+        }
+    }
+
+    function consumePendingPanelAction(pendingAction) {
+        if (!pendingAction || pendingAction.action !== 'setSelectedText') {
+            return;
+        }
+
+        applySetSelectedTextAction(pendingAction);
+
+        if (!chrome.storage?.session) {
+            return;
+        }
+
+        chrome.storage.session.get([PENDING_PANEL_ACTION_KEY], (result) => {
+            const storedAction = result?.[PENDING_PANEL_ACTION_KEY];
+            if (!storedAction) {
+                return;
+            }
+
+            if (!pendingAction.actionId || !storedAction.actionId || storedAction.actionId === pendingAction.actionId) {
+                chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
+            }
+        });
+    }
+
+    function consumePendingPanelActionOnLoad() {
+        if (!chrome.storage?.session) {
+            return;
+        }
+
+        chrome.storage.session.get([PENDING_PANEL_ACTION_KEY], (result) => {
+            const pendingAction = result?.[PENDING_PANEL_ACTION_KEY];
+            consumePendingPanelAction(pendingAction);
+        });
+    }
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'session') {
+            return;
+        }
+
+        const pendingActionChange = changes[PENDING_PANEL_ACTION_KEY];
+        if (pendingActionChange?.newValue) {
+            consumePendingPanelAction(pendingActionChange.newValue);
+        }
+    });
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'setSelectedText') {
-            selectedText = request.selectedText || '';
-            tabId = request.tabId;
-
-            // Handle media data from context menu
-            if (request.mediaData) {
-                currentMediaData = request.mediaData;
-
-                // Show chat area with media preview
-                chatMainArea.style.display = 'block';
-                oneoffInstructionArea.style.display = 'none';
-
-                if (currentMediaData.error) {
-                    addMessage('System', `❌ Error loading ${currentMediaData.type}: ${currentMediaData.error}`);
-                } else if (currentMediaData.base64) {
-                    addMediaPreview(currentMediaData);
-                }
-            } else if (request.fromStartChat) {
-                chatMainArea.style.display = 'block';
-                oneoffInstructionArea.style.display = 'none';
-                conversationHistory = [];
-            } else {
-                selectedTextDiv.textContent = selectedText;
-                chatMainArea.style.display = 'none';
-                oneoffInstructionArea.style.display = 'block';
-            }
+            applySetSelectedTextAction(request);
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'setMediaForAnalysis') {
@@ -1035,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    let conversationHistory = [];
+    consumePendingPanelActionOnLoad();
 
     function clearChat() {
             chatArea.innerHTML = '';
