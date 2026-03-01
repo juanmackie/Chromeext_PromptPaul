@@ -368,6 +368,29 @@
         </div>
       </div>
 
+      <!-- Import from skills.sh -->
+      <div class="skills-sh-import" style="margin-top: 1.5rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
+        <h3>
+          <span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 8px;">cloud_download</span>
+          Import from skills.sh
+        </h3>
+        <p style="margin-bottom: 1rem; color: var(--ext-muted-foreground); font-size: 14px;">
+          Paste a skills.sh URL to import a skill directly.
+          <a href="https://skills.sh" target="_blank" style="color: var(--ext-primary);">Browse skills.sh</a>
+        </p>
+        <div class="import-row" style="display: flex; gap: 8px; margin-bottom: 0.75rem;">
+          <input type="text" id="skillsShUrl" class="shadcn-input" style="flex: 1;" placeholder="https://skills.sh/owner/repo/skill-name">
+          <button type="button" id="importSkillsShBtn" class="btn-primary" style="white-space: nowrap;">
+            <span class="material-symbols-outlined">add</span> Import
+          </button>
+        </div>
+        <div id="skillsShStatus" class="skills-sh-status" style="font-size: 13px; min-height: 20px;"></div>
+        <button type="button" id="findSkillsShBtn" class="btn-secondary" style="margin-top: 0.5rem; width: 100%;">
+          <span class="material-symbols-outlined" style="vertical-align: middle;">travel_explore</span>
+          Find Skills on skills.sh
+        </button>
+      </div>
+
       <div class="skill-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
         <h3>Add/Edit Skill</h3>
         <div class="form-group">

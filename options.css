@@ -119,7 +119,7 @@ body.dark-theme .save-button,
 body.dark-theme .save-instruction-button {
   background-color: var(--ext-secondary) !important; /* Example: using secondary for these buttons */
   color: var(--ext-secondary-foreground) !important;
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 body.dark-theme .clear-form-button {
@@ -439,7 +439,7 @@ button:disabled {
   color: var(--ext-primary-foreground); /* Adjusted */
   width: 192.93px;
   height: 47.81px;
-  border-radius: 1.5rem;
+  border-radius: 4px;
   border: none;
   cursor: pointer;
   font-size: 0.875rem;
@@ -449,12 +449,12 @@ button:disabled {
 .save-button {
   background-color: var(--ext-secondary); /* Adjusted */
   color: var(--ext-secondary-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 /* Custom styles for Save Settings button */
 #save {
-  border-radius: 1.5rem !important;
+  border-radius: 4px !important;
   background-color: var(--ext-primary); /* Adjusted */
   color: var(--ext-primary-foreground); /* Adjusted */
 }
@@ -462,25 +462,25 @@ button:disabled {
 .save-instruction-button {
   background-color: var(--ext-secondary); /* Adjusted */
   color: var(--ext-secondary-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 .clear-form-button {
   background-color: var(--ext-accent); /* Adjusted */
   color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 .export-button {
   background-color: var(--ext-accent); /* Adjusted */
   color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 .import-button {
   background-color: var(--ext-accent); /* Adjusted */
   color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 .delete-tool-btn {
@@ -488,7 +488,7 @@ button:disabled {
  margin-top: 0.5rem;
  margin-bottom: 0.5rem;
  color: var(--ext-destructive-foreground); /* Adjusted */
- border-radius: 1.5rem;
+ border-radius: 4px;
 }
 
 .edit-btn {
@@ -497,10 +497,10 @@ button:disabled {
   margin-top: 0.5rem;
   background-color: var(--ext-accent); /* Adjusted to match button-pin */
   color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 .edit-tool-btn {
-  border-radius: 1.5rem;
+  border-radius: 4px;
   background-color: var(--ext-accent); /* Adjusted to match button-pin */
   color: var(--ext-accent-foreground); /* Adjusted */
 }
@@ -508,14 +508,14 @@ button:disabled {
 .delete-btn {
   background-color: var(--ext-destructive); /* Softer red */
   color: var(--ext-destructive-foreground); /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 /* Custom styles for Delete Profile button */
 #deleteProfileButton {
   background-color: var(--ext-destructive) !important; /* Adjusted */
   color: var(--ext-destructive-foreground) !important; /* Adjusted */
-  border-radius: 1.5rem;
+  border-radius: 4px;
   margin-top: 0.5rem;
 }
 
@@ -524,7 +524,7 @@ button:disabled {
   color: var(--ext-destructive-foreground); /* Adjusted */
   width: 192.93px;
   height: 47.81px;
-  border-radius: 1.5rem;
+  border-radius: 4px;
   border: none;
   cursor: pointer;
   font-size: 0.875rem;
@@ -536,7 +536,7 @@ button:disabled {
   color: var(--ext-primary-foreground); /* Adjusted */
   width: 192.93px;
   height: 47.81px;
-  border-radius: 1.5rem;
+  border-radius: 4px;
   border: none;
   cursor: pointer;
   font-size: 0.875rem;
@@ -919,7 +919,7 @@ footer a:hover {
   background-size: 800%;
   animation: rainbow 10s linear infinite;
   color: #FFFFFF; /* Ensure text is readable on rainbow background */
-  border-radius: 1.5rem;
+  border-radius: 4px;
 }
 
 @keyframes rainbow {
@@ -1274,7 +1274,7 @@ footer a:hover {
   color: var(--ext-primary-foreground);
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
+  border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1295,7 +1295,7 @@ footer a:hover {
   color: var(--ext-destructive-foreground);
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
+  border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1550,7 +1550,7 @@ footer a:hover {
   color: var(--ext-secondary-foreground);
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 0.5rem;
+  border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;

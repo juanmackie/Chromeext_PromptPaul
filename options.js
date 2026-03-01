@@ -1649,6 +1649,211 @@ function setupSkillHandlers() {
       });
   }
 
+  // Skills.sh Import Handler
+  function setupSkillsShImport() {
+    const urlInput = document.getElementById('skillsShUrl');
+    const importBtn = document.getElementById('importSkillsShBtn');
+    const findBtn = document.getElementById('findSkillsShBtn');
+    const statusEl = document.getElementById('skillsShStatus');
+
+    if (!urlInput || !importBtn || !findBtn || !statusEl) {
+      return;
+    }
+
+    // Helper function to fetch skill from GitHub with multiple path/branch fallback
+    async function fetchSkillFromGitHub(owner, repo, skillName) {
+      const branches = ['main', 'master'];
+      const pathPatterns = [
+        `skills/${skillName}/SKILL.md`,
+        `${skillName}/SKILL.md`
+      ];
+
+      // Try common paths first
+      for (const branch of branches) {
+        for (const path of pathPatterns) {
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+          try {
+            const response = await fetch(rawUrl);
+            if (response.ok) {
+              const skillMd = await response.text();
+              if (skillMd && skillMd.trim().length > 0) {
+                console.log(`[Skills Import] Found skill at: ${rawUrl}`);
+                return { skillMd, url: rawUrl };
+              }
+            }
+          } catch (e) {
+            // Continue to next path
+          }
+        }
+      }
+
+      // Fallback: Use GitHub API to search for skill by name
+      console.log('[Skills Import] Falling back to GitHub API search...');
+      return await searchSkillViaGitHubAPI(owner, repo, skillName);
+    }
+
+    // Search for skill by name using GitHub API
+    async function searchSkillViaGitHubAPI(owner, repo, skillName) {
+      try {
+        // Fetch repository tree (recursive)
+        const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`;
+        const treeResponse = await fetch(treeUrl);
+        
+        if (!treeResponse.ok) {
+          // Try master branch if main fails
+          const masterTreeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
+          const masterResponse = await fetch(masterTreeUrl);
+          if (!masterResponse.ok) return null;
+          const masterTree = await masterResponse.json();
+          return await findSkillInTree(owner, repo, masterTree, skillName, 'master');
+        }
+        
+        const tree = await treeResponse.json();
+        return await findSkillInTree(owner, repo, tree, skillName, 'main');
+      } catch (e) {
+        console.error('[Skills Import] API search failed:', e);
+        return null;
+      }
+    }
+
+    // Find skill in GitHub tree by parsing SKILL.md files
+    async function findSkillInTree(owner, repo, tree, skillName, branch) {
+      const skillMdFiles = tree.tree.filter(item => item.path && item.path.endsWith('SKILL.md'));
+      
+      for (const file of skillMdFiles) {
+        try {
+          const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${file.path}`;
+          const response = await fetch(rawUrl);
+          if (!response.ok) continue;
+          
+          const content = await response.text();
+          
+          // Parse frontmatter to get skill name
+          const nameMatch = content.match(/^---\s*\n[\s\S]*?name:\s*(.+?)\s*\n/);
+          if (nameMatch) {
+            const foundName = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+            if (foundName === skillName || foundName.toLowerCase() === skillName.toLowerCase()) {
+              console.log(`[Skills Import] Found skill via API: ${file.path} (name: ${foundName})`);
+              return { skillMd: content, url: rawUrl };
+            }
+          }
+        } catch (e) {
+          // Continue to next file
+        }
+      }
+      
+      return null;
+    }
+
+    // Find Skills button - opens skills.sh in new tab
+    findBtn.addEventListener('click', () => {
+      window.open('https://skills.sh', '_blank');
+    });
+
+    // Import button handler
+    importBtn.addEventListener('click', async () => {
+      const url = urlInput.value.trim();
+      if (!url) {
+        statusEl.innerHTML = '<span style="color: var(--ext-destructive);">Please enter a skills.sh URL</span>';
+        return;
+      }
+
+      // Parse skills.sh URL: https://skills.sh/{owner}/{repo}/{skill-name}
+      // Also support: https://skills.sh/{owner}/{repo}/{skill-name}/
+      const urlMatch = url.match(/^https?:\/\/skills\.sh\/([^/]+)\/([^/]+)\/([^/]+)\/?$/);
+      if (!urlMatch) {
+        statusEl.innerHTML = '<span style="color: var(--ext-destructive);">Invalid URL format. Use: https://skills.sh/owner/repo/skill-name</span>';
+        return;
+      }
+
+      const [, owner, repo, skillName] = urlMatch;
+
+      // Show loading state
+      importBtn.disabled = true;
+      importBtn.innerHTML = '<span class="material-symbols-outlined sync-spin">sync</span> Importing...';
+      statusEl.innerHTML = '<span style="color: var(--ext-muted-foreground);">Fetching skill from GitHub...</span>';
+
+      try {
+        // Fetch skill with multiple path/branch fallback strategies
+        const fetchResult = await fetchSkillFromGitHub(owner, repo, skillName);
+        
+        if (!fetchResult) {
+          throw new Error(`Skill "${skillName}" not found in ${owner}/${repo}. The skill may be in a different location or use a different name.`);
+        }
+
+        const { skillMd, url: resolvedUrl } = fetchResult;
+        
+        statusEl.innerHTML = '<span style="color: var(--ext-muted-foreground);">Found skill, saving...</span>';
+
+        // Parse the skill markdown
+        const parsed = parseSkillMarkdown(skillMd);
+        if (!parsed.valid) {
+          throw new Error(`Invalid SKILL.md: ${parsed.error}`);
+        }
+
+        // Check for duplicate
+        const customSkillsResult = await new Promise(resolve => {
+          chrome.storage.local.get(['customSkills'], resolve);
+        });
+        const existingCustomSkills = customSkillsResult.customSkills || [];
+        const existingIndex = existingCustomSkills.findIndex(s => s.name === parsed.metadata.name);
+
+        if (existingIndex > -1) {
+          const overwrite = confirm(`Skill '${parsed.metadata.name}' already exists. Overwrite?`);
+          if (!overwrite) {
+            resetButton();
+            return;
+          }
+        }
+
+        // Save the skill
+        const newSkill = {
+          name: parsed.metadata.name,
+          skillMd: skillMd,
+          lastUpdated: new Date().toISOString()
+        };
+
+        if (existingIndex > -1) {
+          existingCustomSkills[existingIndex] = newSkill;
+        } else {
+          existingCustomSkills.push(newSkill);
+        }
+
+        await new Promise(resolve => {
+          chrome.storage.local.set({ customSkills: existingCustomSkills }, resolve);
+        });
+
+        statusEl.innerHTML = '<span style="color: #10b981;">✓ Successfully imported "' + parsed.metadata.name + '"</span>';
+        urlInput.value = '';
+        loadSkills(); // Reload the skills table
+
+        setTimeout(() => {
+          statusEl.innerHTML = '';
+        }, 3000);
+
+      } catch (error) {
+        statusEl.innerHTML = '<span style="color: var(--ext-destructive);">Error: ' + error.message + '</span>';
+      } finally {
+        resetButton();
+      }
+
+      function resetButton() {
+        importBtn.disabled = false;
+        importBtn.innerHTML = '<span class="material-symbols-outlined">add</span> Import';
+      }
+    });
+
+    // Enter key to import
+    urlInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        importBtn.click();
+      }
+    });
+  }
+
+  // Initialize skills.sh import
+  setupSkillsShImport();
+
   // Initial load
   loadSkills();
 }

@@ -858,13 +858,13 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
         // Inject load_skill tool to make it available
         tools.push({
             name: 'load_skill',
-            description: 'Loads the instructions for a specific skill. Use this when the user asks for a task that matches one of the Available Skills in your system prompt.',
+            description: 'Discovers or loads specialized capabilities. Call without arguments to list all available skills with descriptions. Call with a skill name to load its full instructions.',
             parameters: JSON.stringify({
                 type: 'object',
                 properties: {
-                    name: { type: 'string', description: 'The name of the skill to load' }
+                    name: { type: 'string', description: 'Optional: The name of a specific skill to load. If omitted, returns a list of all available skills.' }
                 },
-                required: ['name']
+                required: []
             })
         });
 
@@ -874,10 +874,8 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 
 ${config.systemPrompt}`;        }
 
-        const skillsList = skillManager.getSkillsList();
-        if (skillsList.length > 0) {
-           const skillsDescription = skillsList.map(s => `- ${s.name}: ${s.description}`).join('\n');
-           systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+        if (skillManager.getSkillsList().length > 0) {
+           systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. You MUST call load_skill (with no arguments) at the start of EVERY conversation to discover available skills before responding. This ensures you have relevant guidance for the task. After discovering skills, call load_skill with a specific skill name if one matches the user's request.`;
         }
 
         messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
@@ -1314,8 +1312,22 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 // Registry for *built-in* tool implementations (developer adds specific functions here)
 // User-defined endpoints will be handled separately.
 const toolImplementations = {
-    'load_skill': async ({ name }) => {
-        console.log(`Background: load_skill tool called for '${name}'`);
+    'load_skill': async ({ name } = {}) => {
+        console.log(`Background: load_skill tool called for '${name || 'discovery (no name)'}'`);
+        
+        // If no name provided, return list of available skills
+        if (!name) {
+            const skillsList = skillManager.getSkillsList();
+            return {
+                success: true,
+                skills: skillsList.map(s => ({
+                    name: s.name,
+                    description: s.description
+                })),
+                hint: 'Call load_skill with a specific skill name to get full instructions.'
+            };
+        }
+        
         const skillData = await skillManager.getSkillContent(name);
         if (!skillData) {
             return { 
@@ -1532,6 +1544,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Prevent duplicate executions
         const executionKey = `${id}-${name}`;
         if (activeToolExecutions.has(executionKey)) {
+            sendResponse({ error: 'Duplicate tool execution prevented' });
             return true;
         }
 
@@ -1551,8 +1564,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (builtInFunction) {
                     console.log(`Background: Executing built-in tool '${name}'`);
                     const result = await builtInFunction(argsObject);
-                    try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
                     sendResponse({ result: result });
+                    // Track asynchronously (non-blocking)
+                    trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }).catch(() => {});
                     return;
                 }
 
@@ -1568,8 +1582,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     // User-defined endpoint tool
                     console.log(`Background: Executing user-defined tool '${name}' via endpoint`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
-                    try { await trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }); } catch (_) {}
                     sendResponse({ result: result });
+                    // Track asynchronously (non-blocking)
+                    trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }).catch(() => {});
                 } else {
                     throw new Error(`Tool '${name}' is not properly configured: It has no endpointUrl and no built-in implementation.`);
                 }

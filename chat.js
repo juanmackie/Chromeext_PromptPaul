@@ -1211,7 +1211,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (config.systemPrompt && config.systemPrompt.trim() !== '') {
                 systemPromptContent += `\n\n${config.systemPrompt}`;
             }
-            // Inject AVAILABLE SKILLS into system prompt
+            // Inject skill guidance into system prompt
             const skillsResp = await new Promise(resolve => {
                 chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
                     if (chrome.runtime.lastError) resolve({ skills: [] });
@@ -1220,8 +1220,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const chatSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
             if (chatSkills.length > 0) {
-                const skillsDescription = chatSkills.map(s => `- ${s.name}: ${s.description}`).join('\n');
-                systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+                systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. You MUST call load_skill (with no arguments) at the start of EVERY conversation to discover available skills before responding. This ensures you have relevant guidance for the task. After discovering skills, call load_skill with a specific skill name if one matches the user's request.`;
             }
 
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
@@ -1502,13 +1501,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (skills.length > 0) {
             processedTools.push({
                 name: 'load_skill',
-                description: 'Loads the instructions for a specific skill. Use this when the user asks for a task that matches one of the Available Skills in your system prompt.',
+                description: 'Discovers or loads specialized capabilities. Call without arguments to list all available skills with descriptions. Call with a skill name to load its full instructions.',
                 parametersForLlm: {
                     type: 'object',
                     properties: {
-                        name: { type: 'string', description: 'The name of the skill to load' }
+                        name: { type: 'string', description: 'Optional: The name of a specific skill to load. If omitted, returns a list of all available skills.' }
                     },
-                    required: ['name']
+                    required: []
                 },
                 source: 'built-in'
             });
@@ -1565,7 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (config.systemPrompt && config.systemPrompt.trim() !== '') {
                 systemPromptContent += `\n\n${config.systemPrompt}`;
             }
-            // Inject AVAILABLE SKILLS into system prompt
+            // Inject skill guidance into system prompt
             const skillsRespMain = await new Promise(resolve => {
                 chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
                     if (chrome.runtime.lastError) resolve({ skills: [] });
@@ -1574,8 +1573,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const chatSkillsMain = (skillsRespMain && skillsRespMain.skills) ? skillsRespMain.skills : [];
             if (chatSkillsMain.length > 0) {
-                const skillsDescription = chatSkillsMain.map(s => `- ${s.name}: ${s.description}`).join('\n');
-                systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+                systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. Proactively call load_skill (with no arguments to discover available skills, or with a skill name to load specific instructions) since all tasks could benefit from specialized guidance. Don't hesitate to explore skills before attempting complex tasks.`;
             }
 
             const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
@@ -1948,7 +1946,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     systemPromptContent += `\n\n${config.systemPrompt}`;
                 }
 
-                // Inject AVAILABLE SKILLS into system prompt
+                // Inject skill guidance into system prompt
                 const skillsResp = await new Promise(resolve => {
                     chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
                         if (chrome.runtime.lastError) resolve({ skills: [] });
@@ -1957,8 +1955,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const chatSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
                 if (chatSkills.length > 0) {
-                    const skillsDescription = chatSkills.map(s => `- ${s.name}: ${s.description}`).join('\n');
-                    systemPromptContent += `\n\nAVAILABLE SKILLS:\nYou have access to the following skills. Use the 'load_skill' tool to retrieve their instructions if needed:\n${skillsDescription}`;
+                    systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. Proactively call load_skill (with no arguments to discover available skills, or with a skill name to load specific instructions) since all tasks could benefit from specialized guidance. Don't hesitate to explore skills before attempting complex tasks.`;
                 }
 
                 // Prepare messages
