@@ -19,6 +19,10 @@ yarn-error.log*
 # Ignore Claude AI
 .claude/
 
+# Ignore OpenCode
+.opencode/
+~
+
 # Ignore backup and temporary files
 *.bak
 *.tmp
