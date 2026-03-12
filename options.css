@@ -79,88 +79,34 @@
 
 /* Removed the redundant :root and .dark variable declarations as they are already defined with --ext- prefix */
 
-/* Dark Theme Overrides */
-body.dark-theme {
-  background-color: var(--ext-background) !important;
-  color: var(--ext-foreground) !important;
+/* Dark Theme - Now handled by theme.css variables */
+
+/* Remove remaining dark theme specific overrides */
+body.dark-theme select#profileSelect,
+body.dark-theme select#instructionToolChoice,
+body.dark-theme select#instructionToolChoice option,
+body.dark-theme select#instructionToolChoice option:checked,
+body.dark-theme #instructionsTable tbody tr:nth-child(even),
+body.dark-theme #instructionsTable tbody tr:hover,
+body.dark-theme #toolsTable,
+body.dark-theme #toolsTable tbody tr:nth-child(even),
+body.dark-theme #toolsTable tbody tr:hover {
+  /* Handled by theme.css */
 }
 
-body.dark-theme .container,
-body.dark-theme .card,
-body.dark-theme .instruction-form.card,
-body.dark-theme .import-export.card,
-body.dark-theme .tools-card,
-body.dark-theme .config-card {
-  background: var(--ext-card) !important;
-  color: var(--ext-card-foreground) !important;
-  border-color: var(--ext-border) !important;
-}
-
-body.dark-theme h1,
-body.dark-theme h2,
-body.dark-theme h3,
-body.dark-theme label {
-  color: var(--ext-foreground) !important;
-}
-
-body.dark-theme input,
-body.dark-theme textarea {
-  background-color: var(--ext-input) !important;
-  color: var(--ext-foreground) !important;
-  border-color: var(--ext-border) !important;
-}
-
-body.dark-theme button {
-  background-color: var(--ext-primary) !important;
-  color: var(--ext-primary-foreground) !important;
-}
-
-body.dark-theme .save-button,
-body.dark-theme .save-instruction-button {
-  background-color: var(--ext-secondary) !important; /* Example: using secondary for these buttons */
-  color: var(--ext-secondary-foreground) !important;
-  border-radius: 4px;
-}
-
-body.dark-theme .clear-form-button {
-  background-color: var(--ext-destructive) !important; /* Example: using destructive */
-  color: var(--ext-destructive-foreground) !important;
-}
-
-body.dark-theme .export-button,
-body.dark-theme .import-button {
-  background-color: var(--ext-accent) !important; /* Example: using accent */
-  color: var(--ext-accent-foreground) !important;
-}
-
-body.dark-theme .delete-tool-btn,
-body.dark-theme .delete-btn {
-  background-color: var(--ext-destructive) !important;
-  color: var(--ext-destructive-foreground) !important;
-}
-
-body.dark-theme .status {
-  background-color: var(--ext-popover) !important;
-  color: var(--ext-popover-foreground) !important;
-  border-color: var(--ext-border) !important;
-}
-
-body.dark-theme #instructionsTable thead {
-  background-color: var(--ext-secondary) !important; /* Example: using secondary */
-}
-
-body.dark-theme ::selection {
-  background: var(--ext-primary); /* Example: using primary for selection */
-  color: var(--ext-primary-foreground);
+/* Remove other dark theme overrides */
+body.dark-theme .improve-btn {
+  /* Remove rainbow gradient - use theme colors */
 }
 
 body {
   padding: 0;
-  font-family: var(--font-family);
+  font-family: var(--ext-font-family);
   background-color: var(--ext-background);
   color: var(--ext-foreground);
   line-height: 1.6;
   transition: background-color 0.3s ease;
+  font-size: var(--ext-font-size-base);
 }
 
 .container {
@@ -404,23 +350,25 @@ body.dark-theme select#instructionToolChoice option:checked {
 button {
   background-color: var(--ext-primary);
   color: var(--ext-primary-foreground);
-  padding: 0.8rem 1.6rem;
-  border: 1px solid var(--ext-primary-deep);
-  border-radius: 4px;
+  padding: 0.75rem 1.25rem;
+  border: 2px solid var(--ext-primary-deep);
+  border-radius: var(--ext-radius);
   cursor: pointer;
-  font-weight: 500;
-  font-size: 1rem;
+  font-weight: 600;
+  font-size: var(--ext-font-size-sm);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   transition: var(--ext-transition-fast);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  box-shadow: var(--ext-shadow);
+  box-shadow: var(--ext-shadow-md);
   font-family: var(--ext-font-family);
 }
 
 button:hover {
   transform: translate(-2px, -2px);
-  box-shadow: var(--ext-shadow-hover);
+  box-shadow: var(--ext-shadow-lg);
   background-color: var(--ext-primary-bright);
 }
 
@@ -429,9 +377,16 @@ button:active {
   box-shadow: var(--ext-shadow-active);
 }
 
+button:focus-visible {
+  outline: 2px solid var(--ext-primary-bright);
+  outline-offset: 2px;
+}
+
 button:disabled {
-  opacity: 0.7;
+  opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: var(--ext-shadow-sm);
 }
 
 .ko-fi-button { /*Coffee */
@@ -454,93 +409,108 @@ button:disabled {
 
 /* Custom styles for Save Settings button */
 #save {
-  border-radius: 4px !important;
-  background-color: var(--ext-primary); /* Adjusted */
-  color: var(--ext-primary-foreground); /* Adjusted */
+  border: 2px solid var(--ext-primary-deep) !important;
+  border-left: 6px solid var(--ext-primary-deep) !important;
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
 }
 
 .save-instruction-button {
-  background-color: var(--ext-secondary); /* Adjusted */
-  color: var(--ext-secondary-foreground); /* Adjusted */
-  border-radius: 4px;
+  background-color: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
+  border: 2px solid var(--ext-primary-deep);
+  border-left: 6px solid var(--ext-primary-deep);
 }
 
 .clear-form-button {
-  background-color: var(--ext-accent); /* Adjusted */
-  color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 4px;
+  background-color: var(--ext-card);
+  color: var(--ext-foreground);
+  border: 2px solid var(--ext-muted-foreground);
+}
+
+.clear-form-button:hover {
+  background-color: var(--ext-muted);
+  color: var(--ext-foreground);
 }
 
 .export-button {
-  background-color: var(--ext-accent); /* Adjusted */
-  color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 4px;
+  background-color: var(--ext-card);
+  color: var(--ext-foreground);
+  border: 2px solid var(--ext-primary);
 }
 
 .import-button {
-  background-color: var(--ext-accent); /* Adjusted */
-  color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 4px;
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+  border: 2px solid var(--ext-primary-deep);
 }
 
-.delete-tool-btn {
- background-color: var(--ext-destructive); /* Adjusted */
- margin-top: 0.5rem;
- margin-bottom: 0.5rem;
- color: var(--ext-destructive-foreground); /* Adjusted */
- border-radius: 4px;
-}
-
-.edit-btn {
-  margin-right: 0.5rem;
-  margin-bottom: 0.5rem;
-  margin-top: 0.5rem;
-  background-color: var(--ext-accent); /* Adjusted to match button-pin */
-  color: var(--ext-accent-foreground); /* Adjusted */
-  border-radius: 4px;
-}
-.edit-tool-btn {
-  border-radius: 4px;
-  background-color: var(--ext-accent); /* Adjusted to match button-pin */
-  color: var(--ext-accent-foreground); /* Adjusted */
-}
-
+.delete-tool-btn,
 .delete-btn {
-  background-color: var(--ext-destructive); /* Softer red */
-  color: var(--ext-destructive-foreground); /* Adjusted */
-  border-radius: 4px;
+  background-color: var(--ext-card);
+  color: var(--ext-destructive);
+  border: 2px solid var(--ext-destructive);
+  border-right: 6px solid var(--ext-destructive);
 }
 
-/* Custom styles for Delete Profile button */
+.delete-tool-btn:hover,
+.delete-btn:hover {
+  background-color: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+}
+
+.edit-btn,
+.edit-tool-btn {
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+  border: 2px solid var(--ext-primary-deep);
+}
+
+/* Delete Profile button */
 #deleteProfileButton {
-  background-color: var(--ext-destructive) !important; /* Adjusted */
-  color: var(--ext-destructive-foreground) !important; /* Adjusted */
-  border-radius: 4px;
+  background-color: var(--ext-card) !important;
+  color: var(--ext-destructive) !important;
+  border: 2px solid var(--ext-destructive) !important;
+  border-right: 6px solid var(--ext-destructive) !important;
   margin-top: 0.5rem;
+}
+
+#deleteProfileButton:hover {
+  background-color: var(--ext-destructive) !important;
+  color: var(--ext-destructive-foreground) !important;
 }
 
 .revert-button {
-  background-color: var(--ext-destructive); /* Red */
-  color: var(--ext-destructive-foreground); /* Adjusted */
-  width: 192.93px;
-  height: 47.81px;
-  border-radius: 4px;
-  border: none;
+  background-color: var(--ext-card);
+  color: var(--ext-destructive);
+  border: 2px solid var(--ext-destructive);
+  border-right: 6px solid var(--ext-destructive);
+  width: auto;
+  height: auto;
   cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: var(--ext-font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.revert-button:hover {
+  background-color: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
 }
 
 .feedback-button {
-  background-color: var(--ext-primary); /* Adjusted */
-  color: var(--ext-primary-foreground); /* Adjusted */
-  width: 192.93px;
-  height: 47.81px;
-  border-radius: 4px;
-  border: none;
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+  border: 2px solid var(--ext-primary-deep);
+  border-left: 6px solid var(--ext-primary-deep);
+  width: auto;
+  height: auto;
   cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: var(--ext-font-size-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 
@@ -645,22 +615,11 @@ button:disabled {
 }
 
 #instructionsTable tbody tr:nth-child(even) {
-  background-color: #ECF3F8B3; /* Example: Lighter card color */
-}
-body.dark-theme #instructionsTable tbody tr:nth-child(even) {
-  background: var(--ext-card) !important; /* Adjusted */
-}
-
-body.dark-theme #toolsTable {
-  color: var(--ext-foreground) !important; /* Use the dark theme text color variable */
+  background-color: var(--ext-muted);
 }
 
 #instructionsTable tbody tr:hover {
-  background-color: #ECF3F8CC; /* Light theme hover color */
-}
-
-body.dark-theme #instructionsTable tbody tr:hover {
-  background-color: #1a3a4a !important; /* Dark theme hover color - lighter blue-gray */
+  background-color: var(--ext-input);
 }
 
 /* Collapsible section styles */

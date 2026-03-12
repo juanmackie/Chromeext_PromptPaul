@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                     const prompt = buildSmartPrompt(presetKey, response.content, metadata);
 
-                    chatMainArea.style.display = 'block';
+                    chatMainArea.style.display = 'flex';
                     oneoffInstructionArea.style.display = 'none';
                     makeApiCall(prompt);
                     loadingManager.showToast(successText, 'success');
@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\n\nHere is the content:\n\n${response.content}`
                         });
 
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
                         userInput.focus();
                         loadingManager.showToast('Content loaded! You can now ask questions about it.', 'success');
@@ -292,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (response && response.action === 'explainContentResponse') {
                     if (response.success && response.content) {
                         const prompt = "Explain the following text:\n\n" + response.content;
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
                         makeApiCall(prompt);
                         loadingManager.showToast('Tab content received, explaining...', 'success');
@@ -435,8 +435,13 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {void}
      */
     function addMessage(sender, message) {
+    const messageWrapper = document.createElement('div');
+    messageWrapper.classList.add('message-wrapper');
+    
     const messageDiv = document.createElement('div');
     messageDiv.classList.add('message');
+    messageWrapper.appendChild(messageDiv);
+    
     let contentElement = messageDiv;
     let uniqueIdString = '';
 
@@ -449,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (sender === 'LLM') {
         messageDiv.classList.add('llm-message');
         const llmContentSpan = document.createElement('span');
-        llmContentSpan.classList.add('llm-content-area');
+        llmContentSpan.classList.add('llm-content-area', 'message-content');
         // Ensure marked.parse is available or handle potential errors
         if (typeof marked !== 'undefined') {
             llmContentSpan.innerHTML = marked.parse(message || "");
@@ -466,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Replaced base64 string with a file path
         copyIcon.src = document.body.classList.contains('dark-theme') ? 'icons/light-copy-markdown.png' : 'icons/copy-markdown.png';
         copyIcon.alt = "Copy Raw";
-        copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;";
+        copyIcon.style.cssText = "cursor: pointer; vertical-align: middle; margin-left: : 16px; height: 5px; width16px;";
         messageDiv.appendChild(copyIcon);
 
         // --- Icon for copying formatted text ---
@@ -485,7 +490,12 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         messageDiv.textContent = message; // Should not happen if sender is always User, System, or LLM
     }
-    chatArea.appendChild(messageDiv);
+    chatArea.appendChild(messageWrapper);
+
+    // Trigger animation
+    requestAnimationFrame(() => {
+        messageWrapper.classList.add('message-visible');
+    });
 
     setTimeout(() => {
         chatArea.scrollTop = chatArea.scrollHeight;
@@ -604,7 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMediaData = request.mediaData;
 
             // Show chat area with media preview
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
 
             if (currentMediaData.error) {
@@ -613,13 +623,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 addMediaPreview(currentMediaData);
             }
         } else if (request.fromStartChat) {
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             conversationHistory = [];
         } else {
             selectedTextDiv.textContent = selectedText;
             chatMainArea.style.display = 'none';
-            oneoffInstructionArea.style.display = 'block';
+            oneoffInstructionArea.style.display = 'flex';
         }
     }
 
@@ -679,7 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tabId = request.tabId;
 
             // Show chat area
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
 
             if (mediaData.loading) {
@@ -731,7 +741,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'setApiResponse') {
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -764,7 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'streamApiStart') {
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = true;
             sendButton.disabled = true;
@@ -878,11 +888,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (toolCall.function.name === 'load_skill') {
                             try {
                                 const args = JSON.parse(toolCall.function.arguments);
-                                const skillContent = JSON.stringify(response.result);
-                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                                // Show preview of skill content
-                                const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                                addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                                if (args.name) {
+                                    const skillContent = JSON.stringify(response.result);
+                                    addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                    const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                                    addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                                } else if (response.result && response.result.skills) {
+                                    const skillNames = response.result.skills.map(s => s.name).join(', ');
+                                    addMessage('System', `📚 Discovered ${response.result.skills.length} available skills: ${skillNames}`);
+                                }
                             } catch (e) {
                                 console.warn('Could not parse load_skill arguments for traceability in streaming');
                             }
@@ -1024,7 +1038,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return true;
 
         } else if (request.action === 'handleToolCallResponse') { // This handles OpenAI-style non-streaming tool calls
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
@@ -1102,7 +1116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatArea.innerHTML = '';
             conversationHistory = [];
             currentMediaData = null; // Clear media data
-            chatMainArea.style.display = 'block';
+            chatMainArea.style.display = 'flex';
             oneoffInstructionArea.style.display = 'none';
             loadingManager.showToast('Chat history cleared', 'info');
     }
@@ -1341,7 +1355,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (toolCall.function.name === 'load_skill') {
                             try {
                                 const args = JSON.parse(toolCall.function.arguments);
-                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                if (args.name) {
+                                    addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                } else if (response.result && response.result.skills) {
+                                    const skillNames = response.result.skills.map(s => s.name).join(', ');
+                                    addMessage('System', `📚 Discovered ${response.result.skills.length} available skills: ${skillNames}`);
+                                }
                             } catch (e) {
                                 console.warn('Could not parse load_skill arguments for traceability');
                             }
@@ -1851,16 +1870,20 @@ document.addEventListener('DOMContentLoaded', () => {
                                  addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
                                  // Add traceability for skill usage
                                  if (toolCall.function.name === 'load_skill') {
-                                     try {
-                                         const args = JSON.parse(toolCall.function.arguments);
-                                         const skillContent = typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response);
-                                         addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                                         // Show preview of skill content
-                                         const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                                         addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
-                                     } catch (e) {
-                                         console.warn('Could not parse load_skill arguments for traceability');
-                                     }
+                                      try {
+                                          const args = JSON.parse(toolCall.function.arguments);
+                                          const skillContent = typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response);
+                                          if (args.name) {
+                                              addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                              const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                                              addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                                          } else if (response.result && response.result.skills) {
+                                              const skillNames = response.result.skills.map(s => s.name).join(', ');
+                                              addMessage('System', `📚 Discovered ${response.result.skills.length} available skills: ${skillNames}`);
+                                          }
+                                      } catch (e) {
+                                          console.warn('Could not parse load_skill arguments for traceability');
+                                      }
                                  }
                                  conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response) });
                                  makeApiCall(null, 'auto', null);
@@ -2016,7 +2039,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (effectiveEnableStreaming) {
                     requestBody.stream = true;
                     oneoffInstructionArea.style.display = 'none';
-                    chatMainArea.style.display = 'block';
+                    chatMainArea.style.display = 'flex';
                     userInput.disabled = true;
                     sendButton.disabled = true;
                     clearButton.textContent = 'Stop';
@@ -2065,7 +2088,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
                             currentMediaData = null;
                             oneoffInstructionArea.style.display = 'none';
-                            chatMainArea.style.display = 'block';
+                            chatMainArea.style.display = 'flex';
                             userInput.focus();
                             break;
                         }
@@ -2131,7 +2154,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     selectedText = null;
                     currentMediaData = null;
                     oneoffInstructionArea.style.display = 'none';
-                    chatMainArea.style.display = 'block';
+                    chatMainArea.style.display = 'flex';
 
                     userInput.disabled = false;
                     sendButton.disabled = false;
@@ -2143,7 +2166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 prompt = instruction + '\n\n' + selectedText;
                 // Show chat area and hide one-off instruction area before adding message
                 oneoffInstructionArea.style.display = 'none';
-                chatMainArea.style.display = 'block';
+                chatMainArea.style.display = 'flex';
                 addMessage('User', `${instruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`);
                 await makeApiCall(prompt, 'auto');
                 instructionInput.value = '';
@@ -2205,7 +2228,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     button.addEventListener('click', () => {
                         // Ensure chat area is visible
-                        chatMainArea.style.display = 'block';
+                        chatMainArea.style.display = 'flex';
                         oneoffInstructionArea.style.display = 'none';
 
                         // Retrieve the instruction object

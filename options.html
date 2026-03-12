@@ -5,592 +5,617 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Prompt Paul Config</title>
   <link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="bento-motion.css">
   <link rel="stylesheet" href="options.css">
   <link rel="stylesheet" href="loading-states.css">
 </head>
 <body>
   <main class="container">
     <div class="page-header">
-      <h1>&#10024; Prompt Paul</h1>
+      <h1><span class="material-symbols-outlined header-sparkle">auto_awesome</span> Prompt Paul</h1>
       <p class="subtitle">Context aware instant AI Insights, a mouse click away</p>
     </div>
 
-    <!-- Connection Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">link</span>
-          Connection
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-
-      <div class="button-container">
-        <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
-          <button class="ko-fi-button">
-            &#9749; Buy me a coffee
-          </button>
-        </a>
-        <button id="revertDefaultsButton" class="revert-button">Revert to default API</button>
-        <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
-          <button id="feedbackButton" class="feedback-button">Feedback</button>
-        </a>
-      </div>
-      <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
-
-      <form id="optionsForm" class="grid-form">
-        <div class="form-field col-span-12">
-          <label for="llmEndpoint" class="form-label">
-            LLM API Endpoint
-            <button type="button" class="help-tooltip" data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL.">
-              <span class="material-symbols-outlined">help</span>
-            </button>
-          </label>
-          <input type="url" id="llmEndpoint" class="shadcn-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
-          <div class="field-error" id="llmEndpointError"></div>
+    <div class="bento-grid">
+      <!-- Connection Section (2/3 width) -->
+      <section class="bento-card bento-connection" data-bento>
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined section-icon">link</span>
+            Connection
+            <span class="status-pulse ml-auto">
+              <span class="status-dot" id="connectionStatusDot"></span>
+              <span class="status-text" id="connectionStatusText">Checking</span>
+            </span>
+          </h2>
+          <div class="section-divider"></div>
         </div>
 
-        <div class="form-field col-span-12">
-          <label for="apiKey" class="form-label">
-            API Key
-            <button type="button" class="help-tooltip" data-tooltip="Your API key for authentication. Keep this secure and never share it publicly.">
-              <span class="material-symbols-outlined">help</span>
+        <div class="button-container">
+          <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
+            <button class="ko-fi-button btn-tactile btn-magnetic">
+              <span class="material-symbols-outlined">coffee</span> Support
             </button>
-          </label>
-          <div class="password-input-container">
-            <input type="password" id="apiKey" class="shadcn-input password-input" placeholder="sk-..." required>
-            <button type="button" class="password-toggle" id="apiKeyToggle">
-              <span class="material-symbols-outlined">visibility</span>
-            </button>
-            <button type="button" class="copy-button" id="apiKeyCopy">
-              <span class="material-symbols-outlined">content_copy</span>
-            </button>
+          </a>
+          <button id="revertDefaultsButton" class="revert-button btn-tactile">Revert to default API</button>
+          <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
+            <button id="feedbackButton" class="feedback-button btn-tactile">Feedback</button>
+          </a>
+        </div>
+        <p>We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can modify them as needed. Provided for free by <a href="https://mistral.ai" target="_blank">mistral.ai</a>.</p>
+
+        <form id="optionsForm" class="bento-form-grid">
+          <div class="form-field col-span-12">
+            <label for="llmEndpoint" class="form-label">
+              LLM API Endpoint
+              <button type="button" class="help-tooltip" data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL.">
+                <span class="material-symbols-outlined">help</span>
+              </button>
+            </label>
+            <input type="url" id="llmEndpoint" class="shadcn-input" placeholder="https://api.mistral.ai/v1/chat/completions" required>
+            <div class="field-error" id="llmEndpointError"></div>
           </div>
-          <div class="field-error" id="apiKeyError"></div>
-        </div>
 
-        <!-- Model Configuration Fields -->
-        <div class="form-field col-span-4">
-          <label for="modelName" class="form-label">
-            Model Name
-            <button type="button" class="help-tooltip" data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits.">
-              <span class="material-symbols-outlined">help</span>
-            </button>
-          </label>
-          <div class="model-selector-container">
-            <input type="text" id="modelName" class="shadcn-input" placeholder="Enter model name" required>
+          <div class="form-field col-span-12">
+            <label for="apiKey" class="form-label">
+              API Key
+              <button type="button" class="help-tooltip" data-tooltip="Your API key for authentication. Keep this secure and never share it publicly.">
+                <span class="material-symbols-outlined">help</span>
+              </button>
+            </label>
+            <div class="password-input-container">
+              <input type="password" id="apiKey" class="shadcn-input password-input" placeholder="sk-..." required>
+              <button type="button" class="password-toggle" id="apiKeyToggle">
+                <span class="material-symbols-outlined">visibility</span>
+              </button>
+              <button type="button" class="copy-button" id="apiKeyCopy">
+                <span class="material-symbols-outlined">content_copy</span>
+              </button>
+            </div>
+            <div class="field-error" id="apiKeyError"></div>
           </div>
-          <div class="field-error" id="modelNameError"></div>
-        </div>
 
-        <div class="form-field col-span-12">
-          <label for="systemPrompt" class="form-label">
-            System Prompt (Optional)
-            <button type="button" class="help-tooltip" data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context.">
-              <span class="material-symbols-outlined">help</span>
-            </button>
-          </label>
-          <div class="system-prompt-controls">
-            <select id="promptTemplate" class="template-selector">
-              <option value="">Insert template...</option>
-              <option value="general">General Helper</option>
-              <option value="code">Code Reviewer</option>
-              <option value="summarizer">Summarizer</option>
-              <option value="analyst">Data Analyst</option>
-              <option value="writer">Creative Writer</option>
+          <div class="form-field col-span-4">
+            <label for="modelName" class="form-label">
+              Model Name
+              <button type="button" class="help-tooltip" data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits.">
+                <span class="material-symbols-outlined">help</span>
+              </button>
+            </label>
+            <div class="model-selector-container">
+              <input type="text" id="modelName" class="shadcn-input" placeholder="Enter model name" required>
+            </div>
+            <div class="field-error" id="modelNameError"></div>
+          </div>
+
+          <div class="form-field col-span-12">
+            <label for="systemPrompt" class="form-label">
+              System Prompt (Optional)
+              <button type="button" class="help-tooltip" data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context.">
+                <span class="material-symbols-outlined">help</span>
+              </button>
+            </label>
+            <div class="system-prompt-controls">
+              <select id="promptTemplate" class="template-selector">
+                <option value="">Insert template...</option>
+                <option value="general">General Helper</option>
+                <option value="code">Code Reviewer</option>
+                <option value="summarizer">Summarizer</option>
+                <option value="analyst">Data Analyst</option>
+                <option value="writer">Creative Writer</option>
+              </select>
+            </div>
+            <textarea id="systemPrompt" class="shadcn-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
+            <div class="character-counter">
+              <span id="charCount">0</span> characters
+            </div>
+            <div class="field-error" id="systemPromptError"></div>
+          </div>
+
+          <div class="form-field col-span-6">
+            <label class="form-label">Streaming Responses</label>
+            <div class="setting-toggle">
+              <label class="toggle-label">
+                <input type="checkbox" id="enableStreamingToggle" class="toggle-input">
+                <span class="toggle-slider"></span>
+                <span class="toggle-text">Enable Streaming</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-field col-span-6">
+            <label class="form-label">Theme</label>
+            <div class="setting-toggle">
+              <label class="toggle-label">
+                <input type="checkbox" id="darkThemeToggle" class="toggle-input">
+                <span class="toggle-slider"></span>
+                <span id="darkThemeIcon" class="material-symbols-outlined toggle-icon">brightness_2</span>
+                <span class="toggle-text">Dark Theme</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-field col-span-12">
+            <label for="profileSelect" class="form-label">
+              Current Profile
+              <button type="button" class="help-tooltip" data-tooltip="Profiles save different API configurations. Switch between them for different use cases.">
+                <span class="material-symbols-outlined">help</span>
+              </button>
+            </label>
+            <select id="profileSelect" class="shadcn-input">
             </select>
           </div>
-          <textarea id="systemPrompt" class="shadcn-textarea" placeholder="You are a helpful assistant." rows="4"></textarea>
-          <div class="character-counter">
-            <span id="charCount">0</span> characters
-          </div>
-          <div class="field-error" id="systemPromptError"></div>
-        </div>
-
-        <!-- Behavior Settings -->
-        <div class="form-field col-span-6">
-          <label class="form-label">Streaming Responses</label>
-          <div class="setting-toggle">
-            <label class="toggle-label">
-              <input type="checkbox" id="enableStreamingToggle" class="toggle-input">
-              <span class="toggle-slider"></span>
-              <span class="toggle-text">Enable Streaming</span>
-            </label>
-          </div>
-        </div>
-
-        <div class="form-field col-span-6">
-          <label class="form-label">Theme</label>
-          <div class="setting-toggle">
-            <label class="toggle-label">
-              <input type="checkbox" id="darkThemeToggle" class="toggle-input">
-              <span class="toggle-slider"></span>
-              <span id="darkThemeIcon" class="material-symbols-outlined toggle-icon">brightness_2</span>
-              <span class="toggle-text">Dark Theme</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Profile Management -->
-        <div class="form-field col-span-12">
-          <label for="profileSelect" class="form-label">
-            Current Profile
-            <button type="button" class="help-tooltip" data-tooltip="Profiles save different API configurations. Switch between them for different use cases.">
-              <span class="material-symbols-outlined">help</span>
+          <div class="form-field col-span-6 profile-button-field">
+            <label class="form-label">&nbsp;</label>
+            <button type="button" id="addProfileButton" class="btn-secondary w-full btn-tactile">
+              <span class="material-symbols-outlined">add</span> New Profile
             </button>
-          </label>
-          <select id="profileSelect" class="shadcn-input">
-            <!-- Options will be populated by JavaScript -->
-          </select>
-        </div>
-        <div class="form-field col-span-6 profile-button-field">
-          <label class="form-label">&nbsp;</label>
-          <button type="button" id="addProfileButton" class="btn-secondary w-full">
-            <span class="material-symbols-outlined">add</span> New Profile
-          </button>
-        </div>
-        <div class="form-field col-span-6 profile-button-field">
-          <label class="form-label">&nbsp;</label>
-          <button type="button" id="deleteProfileButton" class="btn-destructive w-full" disabled>
-            <span class="material-symbols-outlined">delete</span> Delete
-          </button>
-        </div>
+          </div>
+          <div class="form-field col-span-6 profile-button-field">
+            <label class="form-label">&nbsp;</label>
+            <button type="button" id="deleteProfileButton" class="btn-destructive w-full btn-tactile" disabled>
+              <span class="material-symbols-outlined">delete</span> Delete
+            </button>
+          </div>
 
+          <div class="form-field col-span-12">
+            <button type="submit" id="save" class="btn-primary btn-tactile btn-magnetic">
+              <span class="material-symbols-outlined mr-2">save</span> Save Settings
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Privacy Section (1/3 width) -->
+      <section class="bento-card bento-privacy" data-bento>
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined section-icon">shield_person</span>
+            Privacy
+          </h2>
+          <div class="section-divider"></div>
+        </div>
         <div class="form-field col-span-12">
-          <button type="submit" id="save" class="btn-primary">
-            <span class="material-symbols-outlined mr-2">save</span> Save Settings
-          </button>
+          <label class="form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
+          <div class="setting-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" checked>
+              <span class="toggle-slider"></span>
+              <div class="toggle-text">
+                Allow anonymous usage analytics
+                <div class="hint">
+                  Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs/titles/content or identifiers. A random instance ID rotates monthly.
+                </div>
+              </div>
+            </label>
+          </div>
         </div>
-      </form>
-    </section>
+        <div class="form-field col-span-12">
+          <label class="form-label">Microphone Access (Voice Input)</label>
+          <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
+            <button type="button" id="testMicPermissionBtn" class="btn-secondary btn-tactile" style="padding: 8px 16px;">
+              <span class="material-symbols-outlined" style="font-size: 1.2em; margin-right: 4px; vertical-align: middle;">mic</span>
+              Test Microphone
+            </button>
+            <span id="micPermissionStatus" style="font-size: 14px; color: var(--ext-muted-foreground);">
+              <span class="breathing-dot" style="display: inline-block; margin-right: 6px;"></span>
+              Not tested
+            </span>
+          </div>
+          <div class="hint" style="margin-top: 8px;">
+            Required for voice input. Click to test. If denied, click lock icon in address bar to enable.
+          </div>
+        </div>
+      </section>
 
-    <!-- Privacy Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">shield_person</span>
-          Privacy
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      <div class="form-field col-span-12">
-        <label class="form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
-        <div class="setting-toggle">
-          <label class="toggle-label">
-            <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" checked>
-            <span class="toggle-slider"></span>
-            <div class="toggle-text">
-              Allow anonymous usage analytics (instructions/models/tools only)
-              <div class="hint">
-                Event-only telemetry via Umami: instruction name, model name, and tool names used. No page URLs/titles/content or identifiers. A random instance ID rotates monthly. You can disable anytime.
+      <!-- Instructions Section (full width) -->
+      <section class="bento-card bento-instructions" data-bento>
+        <div class="section-header">
+          <h2 class="section-title collapsible-header">
+            <span class="material-symbols-outlined section-icon">description</span>
+            Instructions
+            <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+          </h2>
+          <div class="section-divider"></div>
+        </div>
+        <div class="collapsible-content">
+
+        <div id="migrationPrompt" class="migration-prompt" style="display: none; margin-bottom: 1em; padding: 1rem; background: var(--ext-accent); border-radius: 1rem; border: 1px solid var(--ext-border);">
+          <span>
+            <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
+          </span>
+          <div class="button-group" style="margin-top: 0.5em;">
+            <button type="button" id="migrateInstructionsBtn" class="save-instruction-button btn-tactile">
+              <span class="material-symbols-outlined">download</span> Migrate
+            </button>
+            <button type="button" id="dismissMigrationBtn" class="clear-form-button btn-tactile">
+              <span class="material-symbols-outlined">close</span> Dismiss
+            </button>
+          </div>
+        </div>
+
+        <div id="instructions-list">
+          <div class="table-container">
+            <table id="instructionsTable" class="responsive-table">
+              <thead class="sticky-header">
+                <tr>
+                  <th>Name</th>
+                  <th>Content</th>
+                  <th>Tool Choice</th>
+                  <th>Pin</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+              </tbody>
+            </table>
+          </div>
+          <div id="instructions-cards" class="mobile-cards">
+          </div>
+        </div>
+
+        <div class="instruction-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+          <h3>Add/Edit Instruction</h3>
+          <div class="form-group">
+            <label for="instructionName">Instruction Name</label>
+            <input type="text" id="instructionName" placeholder="Enter instruction name">
+          </div>
+          <div class="form-group">
+            <label for="instructionContent">Instruction Content</label>
+            <textarea id="instructionContent" placeholder="Enter instruction content" rows="4"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="instructionToolChoice">Tool Choice</label>
+            <select id="instructionToolChoice" class="shadcn-input">
+              <option value="none">None</option>
+              <option value="auto">Auto</option>
+            </select>
+            <small>Select a tool choice for the instruction.</small>
+          </div>
+
+          <div class="form-group">
+            <label>Available Modalities</label>
+            <div class="modality-checkboxes">
+              <div class="modality-option">
+                <input type="checkbox" id="modalityText" value="text" checked>
+                <label for="modalityText">
+                  <span class="modality-icon material-symbols-outlined">text_fields</span>
+                  <span class="modality-label">Text</span>
+                  <small>Context menus, selected text, page content</small>
+                </label>
+              </div>
+              <div class="modality-option">
+                <input type="checkbox" id="modalityImage" value="image">
+                <label for="modalityImage">
+                  <span class="modality-icon material-symbols-outlined">image</span>
+                  <span class="modality-label">Images</span>
+                  <small>Right-click image analysis</small>
+                </label>
+              </div>
+              <div class="modality-option">
+                <input type="checkbox" id="modalityVideo" value="video">
+                <label for="modalityVideo">
+                  <span class="modality-icon material-symbols-outlined">videocam</span>
+                  <span class="modality-label">Video</span>
+                  <small>Right-click video analysis</small>
+                </label>
+              </div>
+              <div class="modality-option">
+                <input type="checkbox" id="modalityAudio" value="audio">
+                <label for="modalityAudio">
+                  <span class="modality-icon material-symbols-outlined">graphic_eq</span>
+                  <span class="modality-label">Audio</span>
+                </label>
               </div>
             </div>
-          </label>
+            <small>Select which types of content this instruction can be applied to.</small>
+          </div>
+          <input type="hidden" id="instructionId">
+          <div class="button-group">
+            <button type="button" id="saveInstruction" class="save-instruction-button btn-tactile">
+              <span class="material-symbols-outlined">save</span> Save Instruction
+            </button>
+            <button type="button" id="clearForm" class="clear-form-button btn-tactile">
+              <span class="material-symbols-outlined">clear_all</span> Clear Form
+            </button>
+          </div>
         </div>
-      </div>
-      <div class="form-field col-span-12">
-        <label class="form-label">Microphone Access (Voice Input)</label>
-        <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
-          <button type="button" id="testMicPermissionBtn" class="btn-secondary" style="padding: 8px 16px;">
-            <span class="material-symbols-outlined" style="font-size: 1.2em; margin-right: 4px; vertical-align: middle;">mic</span>
-            Test Microphone Access
-          </button>
-          <span id="micPermissionStatus" style="font-size: 14px; color: var(--ext-muted-foreground);">Not tested</span>
-        </div>
-        <div class="hint" style="margin-top: 8px;">
-          Required for voice input feature in side panel. Click to test and request microphone permission. If denied, click lock icon 🔒 in your browser address bar to enable.
+
+        <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+          <h3>Import/Export Instructions</h3>
+          <div class="button-group">
+            <button type="button" id="exportInstructions" class="export-button btn-tactile">
+              <span class="material-symbols-outlined">upload</span> Export
+            </button>
+            <input type="file" id="importFile" accept=".json" style="display: none;">
+            <button type="button" id="importInstructions" class="import-button btn-tactile">
+              <span class="material-symbols-outlined">download</span> Import
+            </button>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Configuration Complete -->
+      <!-- Skills Section (full-width) -->
+      <section class="bento-card full-width bento-skills" data-bento>
+        <div class="section-header">
+          <h2 class="section-title collapsible-header">
+            <span class="material-symbols-outlined section-icon">school</span>
+            Agent Skills
+            <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+          </h2>
+          <div class="section-divider"></div>
+        </div>
+        <div class="collapsible-content">
+          <p>Manage skills the AI can load on demand.</p>
 
-    <!-- Instructions Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title collapsible-header">
-          <span class="material-symbols-outlined section-icon">description</span>
-          Instructions
-          <span class="collapsible-icon material-symbols-outlined">expand_more</span>
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      <div class="collapsible-content">
+        <div id="skills-list">
+          <div class="table-container">
+            <table id="skillsTable" class="responsive-table">
+              <thead class="sticky-header">
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Source</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+              </tbody>
+            </table>
+          </div>
+          <div id="skills-cards" class="mobile-cards">
+          </div>
+        </div>
 
-      <div id="migrationPrompt" class="migration-prompt" style="display: none; margin-bottom: 1em; padding: 1rem; background: var(--ext-accent); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <span>
-          <strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?
-        </span>
-        <div class="button-group" style="margin-top: 0.5em;">
-          <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">&#128190; Migrate</button>
-          <button type="button" id="dismissMigrationBtn" class="clear-form-button">&#10006; Dismiss</button>
+        <div class="skills-sh-import" style="margin-top: 1.5rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+          <h3>
+            <span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 8px;">cloud_download</span>
+            Import from skills.sh
+          </h3>
+          <p style="margin-bottom: 1rem; color: var(--ext-muted-foreground); font-size: 14px;">
+            Paste a skills.sh URL to import a skill.
+            <a href="https://skills.sh" target="_blank" style="color: var(--ext-primary);">Browse skills.sh</a>
+          </p>
+          <div class="import-row" style="display: flex; gap: 8px; margin-bottom: 0.75rem;">
+            <input type="text" id="skillsShUrl" class="shadcn-input" style="flex: 1;" placeholder="https://skills.sh/owner/repo/skill-name">
+            <button type="button" id="importSkillsShBtn" class="btn-primary btn-tactile" style="white-space: nowrap;">
+              <span class="material-symbols-outlined">add</span> Import
+            </button>
+          </div>
+          <div id="skillsShStatus" class="skills-sh-status" style="font-size: 13px; min-height: 20px;"></div>
+          <button type="button" id="findSkillsShBtn" class="btn-secondary btn-tactile" style="margin-top: 0.5rem; width: 100%;">
+            <span class="material-symbols-outlined" style="vertical-align: middle;">travel_explore</span>
+            Find Skills
+          </button>
+        </div>
+
+        <div class="skill-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+          <h3>Add/Edit Skill</h3>
+          <div class="form-group">
+            <label for="skillName">Skill Name (ID)</label>
+            <input type="text" id="skillName" placeholder="e.g., python-coding-guide">
+            <small>Unique identifier (no spaces, lowercase).</small>
+          </div>
+          <div class="form-group">
+            <label for="skillDescription">Description</label>
+            <textarea id="skillDescription" placeholder="e.g., Best practices for Python coding." rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="skillContent">Instructions (Markdown)</label>
+            <textarea id="skillContent" placeholder="# Python Guide..." rows="8"></textarea>
+          </div>
+
+          <input type="hidden" id="skillId">
+          <div class="button-group">
+            <button type="button" id="saveSkill" class="save-button btn-tactile">
+              <span class="material-symbols-outlined">save</span> Save Skill
+            </button>
+            <button type="button" id="clearSkillForm" class="clear-form-button btn-tactile">
+              <span class="material-symbols-outlined">clear_all</span> Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+          <h3>Import/Export Skills</h3>
+          <div class="button-group">
+            <button type="button" id="exportSkills" class="export-button btn-tactile">
+              <span class="material-symbols-outlined">upload</span> Export
+            </button>
+            <input type="file" id="importSkillsFile" accept=".json" style="display: none;">
+            <button type="button" id="importSkills" class="import-button btn-tactile">
+              <span class="material-symbols-outlined">download</span> Import
+            </button>
+          </div>
         </div>
       </div>
+    </section>
 
-      <div id="instructions-list">
-        <div class="table-container">
-          <table id="instructionsTable" class="responsive-table">
-            <thead class="sticky-header">
-              <tr>
-                <th>Name</th>
-                <th>Content</th>
-                <th>Tool Choice</th>
-                <th>Pin</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- Instructions will be populated here by options.js -->
-            </tbody>
-          </table>
+      <!-- Tools Section (full-width horizontal) -->
+      <section class="bento-card full-width bento-tools" data-bento>
+        <div class="section-header">
+          <h2 class="section-title collapsible-header">
+            <span class="material-symbols-outlined section-icon">build</span>
+            Tools
+            <span class="collapsible-icon material-symbols-outlined">expand_more</span>
+          </h2>
+          <div class="section-divider"></div>
         </div>
+        <div class="collapsible-content">
+          <p>Define tools (functions) the AI can call.</p>
 
-        <!-- Mobile card view -->
-        <div id="instructions-cards" class="mobile-cards">
-          <!-- Cards will be populated by JavaScript on mobile -->
-        </div>
-      </div>
-
-      <div class="instruction-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>Add/Edit Instruction</h3>
-        <div class="form-group">
-          <label for="instructionName">Instruction Name</label>
-          <input type="text" id="instructionName" placeholder="Enter instruction name">
-        </div>
-        <div class="form-group">
-          <label for="instructionContent">Instruction Content</label>
-          <textarea id="instructionContent" placeholder="Enter instruction content" rows="4"></textarea>
-        </div>
-        <div class="form-group">
-          <label for="instructionToolChoice">Tool Choice</label>
-          <select id="instructionToolChoice" class="shadcn-input">
-            <option value="none">None</option>
-            <option value="auto">Auto</option>
-            <!-- Tools will be populated here by options.js -->
-          </select>
-          <small>Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</small>
-        </div>
-
-        <div class="form-group">
-          <label>Available Modalities</label>
-          <div class="modality-checkboxes">
-            <div class="modality-option">
-              <input type="checkbox" id="modalityText" value="text" checked>
-              <label for="modalityText">
-                <span class="modality-icon">📝</span>
-                <span class="modality-label">Text</span>
-                <small>Context menus, selected text, page content</small>
-              </label>
+          <div id="tools-list">
+            <div class="table-container">
+              <table id="toolsTable" class="responsive-table">
+                <thead class="sticky-header">
+                  <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                </tbody>
+              </table>
             </div>
-            <div class="modality-option">
-              <input type="checkbox" id="modalityImage" value="image">
-              <label for="modalityImage">
-                <span class="modality-icon">🖼️</span>
-                <span class="modality-label">Images</span>
-                <small>Right-click image analysis</small>
-              </label>
-            </div>
-            <div class="modality-option">
-              <input type="checkbox" id="modalityVideo" value="video">
-              <label for="modalityVideo">
-                <span class="modality-icon">🎥</span>
-                <span class="modality-label">Video</span>
-                <small>Right-click video analysis</small>
-              </label>
-            </div>
-            <div class="modality-option">
-              <input type="checkbox" id="modalityAudio" value="audio">
-              <label for="modalityAudio">
-                <span class="modality-icon">🎵</span>
-                <span class="modality-label">Audio</span>
-              </label>
+            <div id="tools-cards" class="mobile-cards">
             </div>
           </div>
-          <small>Select which types of content this instruction can be applied to. Text is always available for general use.<i>(Ensure your model supports multi modality)</i></small>
-        </div>
-        <input type="hidden" id="instructionId">
-        <div class="button-group">
-          <button type="button" id="saveInstruction" class="save-instruction-button"><span class="material-symbols-outlined">save</span> Save Instruction</button>
-          <button type="button" id="clearForm" class="clear-form-button">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
-          </button>
-        </div>
-      </div>
 
-      <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>Import/Export Instructions</h3>
-        <div class="button-group">
-          <button type="button" id="exportInstructions" class="export-button"><span class="material-symbols-outlined">upload</span> Export Instructions</button>
-          <input type="file" id="importFile" accept=".json" style="display: none;">
-          <button type="button" id="importInstructions" class="import-button"><span class="material-symbols-outlined">download</span> Import Instructions</button>
-        </div>
-      </div>
-    </div>
-  </section>
-
-    <!-- Skills Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title collapsible-header">
-          <span class="material-symbols-outlined section-icon">school</span>
-          Agent Skills
-          <span class="collapsible-icon material-symbols-outlined">expand_more</span>
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      <div class="collapsible-content">
-        <p>Manage skills that the AI can load on demand to perform specialized tasks. You can add your own or use built-in ones.</p>
-
-      <div id="skills-list">
-        <div class="table-container">
-          <table id="skillsTable" class="responsive-table">
-            <thead class="sticky-header">
-              <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Source</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- Skills will be populated here by options.js -->
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Mobile card view -->
-        <div id="skills-cards" class="mobile-cards">
-          <!-- Cards will be populated by JavaScript on mobile -->
-        </div>
-      </div>
-
-      <!-- Import from skills.sh -->
-      <div class="skills-sh-import" style="margin-top: 1.5rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>
-          <span class="material-symbols-outlined" style="vertical-align: middle; margin-right: 8px;">cloud_download</span>
-          Import from skills.sh
-        </h3>
-        <p style="margin-bottom: 1rem; color: var(--ext-muted-foreground); font-size: 14px;">
-          Paste a skills.sh URL to import a skill directly.
-          <a href="https://skills.sh" target="_blank" style="color: var(--ext-primary);">Browse skills.sh</a>
-        </p>
-        <div class="import-row" style="display: flex; gap: 8px; margin-bottom: 0.75rem;">
-          <input type="text" id="skillsShUrl" class="shadcn-input" style="flex: 1;" placeholder="https://skills.sh/owner/repo/skill-name">
-          <button type="button" id="importSkillsShBtn" class="btn-primary" style="white-space: nowrap;">
-            <span class="material-symbols-outlined">add</span> Import
-          </button>
-        </div>
-        <div id="skillsShStatus" class="skills-sh-status" style="font-size: 13px; min-height: 20px;"></div>
-        <button type="button" id="findSkillsShBtn" class="btn-secondary" style="margin-top: 0.5rem; width: 100%;">
-          <span class="material-symbols-outlined" style="vertical-align: middle;">travel_explore</span>
-          Find Skills on skills.sh
-        </button>
-      </div>
-
-      <div class="skill-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>Add/Edit Skill</h3>
-        <div class="form-group">
-          <label for="skillName">Skill Name (ID)</label>
-          <input type="text" id="skillName" placeholder="e.g., python-coding-guide">
-          <small>Unique identifier for the skill (no spaces, lowercase).</small>
-        </div>
-        <div class="form-group">
-          <label for="skillDescription">Description</label>
-          <textarea id="skillDescription" placeholder="e.g., Best practices for Python coding." rows="2"></textarea>
-          <small>Brief description used by the AI to decide when to load this skill.</small>
-        </div>
-        <div class="form-group">
-          <label for="skillContent">Instructions (Markdown)</label>
-          <textarea id="skillContent" placeholder="# Python Guide\n\n..." rows="8"></textarea>
-        </div>
-
-        <input type="hidden" id="skillId">
-        <div class="button-group">
-          <button type="button" id="saveSkill" class="save-button"><span class="material-symbols-outlined">save</span> Save Skill</button>
-          <button type="button" id="clearSkillForm" class="clear-form-button">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
-          </button>
-        </div>
-      </div>
-
-       <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>Import/Export Skills</h3>
-        <div class="button-group">
-          <button type="button" id="exportSkills" class="export-button"><span class="material-symbols-outlined">upload</span> Export Skills</button>
-          <input type="file" id="importSkillsFile" accept=".json" style="display: none;">
-          <button type="button" id="importSkills" class="import-button"><span class="material-symbols-outlined">download</span> Import Skills</button>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-    <!-- Tools Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title collapsible-header">
-          <span class="material-symbols-outlined section-icon">build</span>
-          Tools
-          <span class="collapsible-icon material-symbols-outlined">expand_more</span>
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      <div class="collapsible-content">
-        <p>Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
-
-      <div id="tools-list">
-        <div class="table-container">
-          <table id="toolsTable" class="responsive-table">
-            <thead class="sticky-header">
-              <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- Tools will be populated here -->
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Mobile card view -->
-        <div id="tools-cards" class="mobile-cards">
-          <!-- Cards will be populated by JavaScript on mobile -->
-        </div>
-      </div>
-
-      <div class="tool-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>Add/Edit Tool</h3>
-        <div class="form-group">
-          <label for="toolName">Tool Name</label>
-          <input type="text" id="toolName" placeholder="e.g., getWeather">
-        </div>
-        <div class="form-group">
-          <label for="toolDescription">Tool Description</label>
-          <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
-        </div>
-        <div class="form-group">
-          <label for="toolParameters">Parameters (JSON Schema)</label>
-          <textarea id="toolParameters" placeholder='e.g., {
+          <div class="tool-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+            <h3>Add/Edit Tool</h3>
+            <div class="form-group">
+              <label for="toolName">Tool Name</label>
+              <input type="text" id="toolName" placeholder="e.g., getWeather">
+            </div>
+            <div class="form-group">
+              <label for="toolDescription">Tool Description</label>
+              <textarea id="toolDescription" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="toolParameters">Parameters (JSON Schema)</label>
+              <textarea id="toolParameters" placeholder='{
   "type": "object",
   "properties": {
-    "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
+    "location": { "type": "string" }
   },
   "required": ["location"]
 }' rows="6"></textarea>
-          <small>Define the input parameters for the tool using JSON Schema format.</small>
-        </div>
-        <div class="form-group">
-          <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
-          <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
-          <small>If this tool calls an external API or webhook, enter the URL here.</small>
-        </div>
-        <div class="form-group">
-          <label for="toolHttpMethod">HTTP Method (Optional)</label>
-          <select id="toolHttpMethod">
-            <option value="">Auto (GET if no params, POST if params)</option>
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-            <option value="PUT">PUT</option>
-            <option value="DELETE">DELETE</option>
-            <option value="PATCH">PATCH</option>
-          </select>
-          <small>Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</small>
-        </div>
-        <input type="hidden" id="toolId">
-        <div class="button-group">
-          <button type="button" id="saveTool" class="save-button">
-            <span class="material-symbols-outlined">save</span> Save Tool
-          </button>
-          <button type="button" id="clearToolForm" class="clear-form-button">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
-          </button>
-        </div>
-      </div>
+            </div>
+            <div class="form-group">
+              <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
+              <input type="url" id="toolEndpointUrl" placeholder="e.g., https://api.example.com/webhook">
+            </div>
+            <div class="form-group">
+              <label for="toolHttpMethod">HTTP Method</label>
+              <select id="toolHttpMethod">
+                <option value="">Auto</option>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+                <option value="PATCH">PATCH</option>
+              </select>
+            </div>
+            <input type="hidden" id="toolId">
+            <div class="button-group">
+              <button type="button" id="saveTool" class="save-button btn-tactile">
+                <span class="material-symbols-outlined">save</span> Save Tool
+              </button>
+              <button type="button" id="clearToolForm" class="clear-form-button btn-tactile">
+                <span class="material-symbols-outlined">clear_all</span> Clear
+              </button>
+            </div>
+          </div>
 
-      <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
-        <h3>Import/Export Tools</h3>
-        <div class="button-group">
-          <button type="button" id="exportTools" class="export-button"><span class="material-symbols-outlined">upload</span> Export Tools</button>
-          <input type="file" id="importToolsFile" accept=".json" style="display: none;">
-          <button type="button" id="importTools" class="import-button"><span class="material-symbols-outlined">download</span> Import Tools</button>
+          <div class="import-export" style="margin-top: 1rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 1.5rem; border: 1px solid var(--ext-border);">
+            <h3>Import/Export Tools</h3>
+            <div class="button-group">
+              <button type="button" id="exportTools" class="export-button btn-tactile">
+                <span class="material-symbols-outlined">upload</span> Export
+              </button>
+              <input type="file" id="importToolsFile" accept=".json" style="display: none;">
+              <button type="button" id="importTools" class="import-button btn-tactile">
+                <span class="material-symbols-outlined">download</span> Import
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <!-- About Section (half) -->
+      <section class="bento-card bento-about" data-bento>
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined section-icon">info</span>
+            About
+          </h2>
+          <div class="section-divider"></div>
+        </div>
+        <div class="about-grid">
+          <div class="about-item">
+            <label>API Endpoint</label>
+            <p id="currentEndpoint" class="about-value">Not set</p>
+          </div>
+          <div class="about-item">
+            <label>API Key</label>
+            <p id="currentApiKey" class="about-value masked-value">Not set</p>
+          </div>
+          <div class="about-item">
+            <label>Model Name</label>
+            <p id="currentModelName" class="about-value">Not set</p>
+          </div>
+          <div class="about-item">
+            <label>System Prompt</label>
+            <p id="currentSystemPrompt" class="about-value">Not set</p>
+          </div>
+          <div class="about-item">
+            <label>Selected Profile</label>
+            <p id="currentProfile" class="about-value">Default</p>
+          </div>
+          <div class="about-item">
+            <label>Last Updated</label>
+            <p id="lastUpdated" class="about-value">Never</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Backup Section (half) -->
+      <section class="bento-card bento-backup" data-bento>
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="material-symbols-outlined section-icon">settings_backup_restore</span>
+            Full Backup & Restore
+          </h2>
+          <div class="section-divider"></div>
+        </div>
+        <p>Export or import all extension data in a single file.</p>
+        
+        <div class="backup-stats" style="margin: 1.5rem 0;">
+          <div class="stat-item">
+            <span class="stat-value" id="instructionCount">0</span>
+            <span class="stat-label">Instructions</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="skillCount">0</span>
+            <span class="stat-label">Skills</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="toolCount">0</span>
+            <span class="stat-label">Tools</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" id="profileCount">1</span>
+            <span class="stat-label">Profiles</span>
+          </div>
+        </div>
+
+        <div class="button-group" style="margin-top: 1rem;">
+          <button type="button" id="exportAllData" class="btn-primary btn-tactile btn-magnetic">
+            <span class="material-symbols-outlined">backup</span> Export All Data
+          </button>
+          <button type="button" id="importAllDataBtn" class="btn-secondary btn-tactile">
+            <span class="material-symbols-outlined">restore</span> Import Data
+          </button>
+          <input type="file" id="importAllFile" accept=".json" style="display: none;">
+        </div>
+      </section>
     </div>
-  </section>
-
-    <!-- About Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">info</span>
-          About
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      <div class="form-group">
-        <label>API Endpoint</label>
-        <p id="currentEndpoint">Not set</p>
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <p id="currentApiKey" class="masked-value">Not set</p>
-      </div>
-      <div class="form-group">
-        <label>Model Name</label>
-        <p id="currentModelName">Not set</p>
-      </div>
-      <div class="form-group">
-        <label>System Prompt</label>
-        <p id="currentSystemPrompt">Not set</p>
-      </div>
-      <div class="form-group">
-        <label>Selected Profile</label>
-        <p id="currentProfile">Default</p>
-      </div>
-      <div class="form-group">
-        <label>Last Updated</label>
-        <p id="lastUpdated">Never</p>
-      </div>
-    </section>
-    <!-- Full Backup & Restore Section -->
-    <section class="section-card">
-      <div class="section-header">
-        <h2 class="section-title">
-          <span class="material-symbols-outlined section-icon">settings_backup_restore</span>
-          Full Backup & Restore
-        </h2>
-        <div class="section-divider"></div>
-      </div>
-      <p>Export or import all extension data (profiles, skills, tools, instructions, and settings) in a single file.</p>
-      <div class="button-group" style="margin-top: 1rem;">
-        <button type="button" id="exportAllData" class="btn-primary">
-          <span class="material-symbols-outlined">backup</span> Export All Data
-        </button>
-        <button type="button" id="importAllDataBtn" class="btn-secondary">
-          <span class="material-symbols-outlined">restore</span> Import All Data
-        </button>
-        <input type="file" id="importAllFile" accept=".json" style="display: none;">
-      </div>
-    </section>
 
   </main>
 
   <footer>
-    Made with &#10084; by <a href="https://juanmackie.com/" target="_blank">Juan</a>
+    Made with <span class="material-symbols-outlined footer-heart">favorite</span> by <a href="https://juanmackie.com/" target="_blank">Juan</a>
   </footer>
 
   <div id="status" class="status"></div>
 
   <script src="collapsible.js"></script>
   <script src="input-controls.js"></script>
+  <script src="options-init.js"></script>
   <script type="module" src="options.js"></script>
 </body>
 </html>
