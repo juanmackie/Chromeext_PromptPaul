@@ -71,7 +71,7 @@
 }
 
 .dark-theme .loading-overlay {
-  background: var(--ext-background);
+  background: rgba(10, 10, 26, 0.9);
 }
 
 /* Button Loading States */

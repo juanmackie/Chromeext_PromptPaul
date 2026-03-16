@@ -2,10 +2,10 @@
 <html>
 <head>
     <title>LLM Chat</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="theme.css">
-    <link rel="stylesheet" href="bento-motion.css">
     <link rel="stylesheet" href="chat.css">
     <link rel="stylesheet" href="loading-states.css">
 </head>
@@ -13,17 +13,17 @@
     <div id="quick-actions-sidebar">
         <!-- Static actions -->
         <button id="add-page-button" class="quick-action-button" title="Add page content to chat">
-            <span class="material-symbols-outlined">article</span>
+            <span class="material-icons">article</span>
         </button>
         <button id="analyze-button" class="quick-action-button" title="Analyze this tab">
-            <span class="material-symbols-outlined">auto_awesome</span>
+            <span class="material-icons">auto_awesome</span>
         </button>
         <button id="explain-button" class="quick-action-button" title="Explain this tab">
-            <span class="material-symbols-outlined">help_outline</span>
+            <span class="material-icons">help_outline</span>
         </button>
         <!-- Preset menu (dropdown) -->
         <button id="analyze-dropdown" class="quick-action-button preset-button" title="Analysis modes">
-            <span class="material-symbols-outlined">expand_more</span>
+            <span class="material-icons">expand_more</span>
         </button>
         <!-- Pinned instructions will be added here by chat.js -->
         <div id="pinned-actions-container"></div>
@@ -31,25 +31,22 @@
     <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
       <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center;">
         <input type="checkbox" id="darkThemeToggle">
-        <span id="darkThemeIcon" style="margin-right: 4px; font-size: 1.2em; vertical-align: middle;" class="material-symbols-outlined">brightness_2</span>
+        <span id="darkThemeIcon" style="margin-right: 4px; font-size: 1.2em; vertical-align: middle;" class="material-icons">brightness_2</span>
         Dark/Light Theme
       </label>
     </div>
     <div class="chat-container">
-        <div id="chat-main-area">
+        <div id="chat-main-area" style="display: block;">
             <div id="chat-area"></div>
             <div id="input-area">
                 <div id="input-wrapper">
                     <textarea id="user-input" placeholder="Type your message (or right-click to analyze)" rows="1"></textarea>
                     <button id="voice-toggle-button" title="Voice Input" type="button">
-                        <span class="material-symbols-outlined">mic</span>
+                        <span class="material-icons">mic</span>
                     </button>
                 </div>
-                <button id="send-button" class="send-btn-magnetic">
-                    <span class="material-symbols-outlined btn-icon">send</span>
-                    <span class="btn-text">Send</span>
-                </button>
-                <button id="clear-button" class="btn-tactile">Clear</button>
+                <button id="send-button">Send</button>
+                <button id="clear-button">Clear</button>
             </div>
         </div>
 
@@ -63,11 +60,10 @@
               <p>Enter your instruction:</p>
               <textarea id="instructionInput" placeholder="Enter your instruction here..."></textarea>
             </div>
-            <button id="submitBtn" class="btn-tactile">Process</button>
+            <button id="submitBtn">Process</button>
         </div>
     </div>
     <script src="marked.min.js"></script>
-    <script type="module" src="chat-init.js"></script>
     <script type="module" src="chat.js"></script>
 </body>
 </html>

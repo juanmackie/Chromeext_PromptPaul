@@ -16,9 +16,7 @@ body {
 
 #quick-actions-sidebar {
     width: 60px;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
+    height: 100vh;
     display: flex;
     flex-direction: column;
     background-color: var(--ext-sidebar);
@@ -26,25 +24,6 @@ body {
     align-items: center;
     box-sizing: border-box;
     border-right: 2px solid var(--ext-sidebar-border);
-    scrollbar-width: thin;
-    scrollbar-color: var(--ext-border) transparent;
-}
-
-#quick-actions-sidebar::-webkit-scrollbar {
-    width: 4px;
-}
-
-#quick-actions-sidebar::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-#quick-actions-sidebar::-webkit-scrollbar-thumb {
-    background: var(--ext-border);
-    border-radius: 4px;
-}
-
-#quick-actions-sidebar::-webkit-scrollbar-thumb:hover {
-    background: var(--ext-muted-foreground);
 }
 
 .quick-action-button {
@@ -153,11 +132,12 @@ body {
 }
 
 .chat-container {
-    flex: 1;
-    min-height: 0;
+    flex-grow: 1;
+    height: 100vh;
     display: flex;
     flex-direction: column;
-    background-color: var(--ext-background);
+    overflow: hidden;
+    background-color: var(--ext-background); /* Ensure chat container also uses theme */
 }
 
 /* Dark Theme Overrides */
@@ -307,33 +287,11 @@ body.dark-theme ::selection {
 
 #chat-area {
     position: relative;
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
+    height: calc(100vh - 150px); /* Account for input area height */
+    overflow-y: auto; /* Single scrollable area */
     scroll-behavior: smooth;
     z-index: 50;
-    padding: 10px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--ext-border) transparent;
-}
-
-#chat-area::-webkit-scrollbar {
-    width: 6px;
-}
-
-#chat-area::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-#chat-area::-webkit-scrollbar-thumb {
-    background: var(--ext-border);
-    border-radius: 4px;
-}
-
-#chat-area::-webkit-scrollbar-thumb:hover {
-    background: var(--ext-muted-foreground);
+    padding-bottom: 20px; /* Reduced padding since height is calculated */
 }
 
 #input-area {
@@ -341,10 +299,14 @@ body.dark-theme ::selection {
     padding: 0.5rem;
     padding-bottom: 1rem;
     background-color: var(--ext-card);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
     border-top: 2px solid var(--ext-border);
     box-shadow: 0 -4px 0px 0px var(--ext-shadow-color);
+    z-index: 100;
     pointer-events: auto !important;
-    flex-shrink: 0;
 }
 
 #user-input {
@@ -722,8 +684,8 @@ body.sidebar-open #chat-area {
 #chat-main-area, #oneoff-instruction-area {
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
     position: relative;
 }
 

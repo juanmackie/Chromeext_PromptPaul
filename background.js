@@ -700,10 +700,10 @@ class SkillManager {
   async loadSkills() {
     this.skills.clear();
     this._invalidateCache();
-    // Load built-in skills first
-    await this._loadBuiltInSkills();
-    // Then load custom skills (only if they don't duplicate built-in names)
-    await this._loadCustomSkills();
+    await Promise.all([
+      this._loadBuiltInSkills(),
+      this._loadCustomSkills()
+    ]);
     console.log('SkillManager: Loaded skills:', Array.from(this.skills.keys()));
   }
 
@@ -755,11 +755,6 @@ class SkillManager {
           const parsed = parseSkillMarkdown(skillMd);
           
           if (parsed.valid) {
-            // Skip if a built-in skill with the same name already exists
-            if (this.skills.has(parsed.metadata.name)) {
-              console.log(`Skipping custom skill '${parsed.metadata.name}' - built-in skill with same name exists`);
-              continue;
-            }
             this.skills.set(parsed.metadata.name, {
               metadata: parsed.metadata,
               parsed: parsed,
@@ -880,7 +875,7 @@ async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, cu
 ${config.systemPrompt}`;        }
 
         if (skillManager.getSkillsList().length > 0) {
-           systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. Use it when you need specific guidance for a task. Call load_skill with no arguments to list available skills, or with a specific skill name to load its instructions.`;
+           systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. You MUST call load_skill (with no arguments) at the start of EVERY conversation to discover available skills before responding. This ensures you have relevant guidance for the task. After discovering skills, call load_skill with a specific skill name if one matches the user's request.`;
         }
 
         messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
@@ -911,17 +906,11 @@ ${config.systemPrompt}`;        }
 
 
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2-minute timeout
-        
         const apiResponse = await fetch(config.llmEndpoint, {
             method: 'POST',
             headers: fetchHeaders,
             body: JSON.stringify(apiRequestBody),
-            signal: controller.signal
         });
-        
-        clearTimeout(timeoutId);
 
         if (!apiResponse.ok) {
             const errorData = await apiResponse.json().catch(() => null);
@@ -1039,14 +1028,13 @@ ${config.systemPrompt}`;        }
     } catch (error) {
         console.error('Error in makeLlmApiRequest (generic catch):', error);
         try {
-          let cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
-          if (error.name === 'AbortError') cat = 'timeout';
+          const cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
           const code = (error?.message || 'error').slice(0, 64);
           await trackErrorEvent(cat, code);
         } catch (_) {}
         chrome.runtime.sendMessage({
             action: 'setApiResponse',
-            apiResponse: `Error: ${error.name === 'AbortError' ? 'Request timed out after 2 minutes' : error.message}`,
+            apiResponse: `Error: ${error.message}`,
             prompt: promptContent,
             tabId: tabId,
         }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
@@ -1563,12 +1551,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         activeToolExecutions.add(executionKey);
 
         (async () => {
-            const toolTimeout = setTimeout(() => {
-                console.error(`Tool '${name}' timed out after 30 seconds`);
-                activeToolExecutions.delete(executionKey);
-                sendResponse({ error: `Tool '${name}' timed out after 30 seconds` });
-            }, 30000); // 30 second timeout
-
             try {
                 let argsObject;
                 try {
@@ -1582,7 +1564,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (builtInFunction) {
                     console.log(`Background: Executing built-in tool '${name}'`);
                     const result = await builtInFunction(argsObject);
-                    clearTimeout(toolTimeout);
                     sendResponse({ result: result });
                     // Track asynchronously (non-blocking)
                     trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }).catch(() => {});
@@ -1601,7 +1582,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     // User-defined endpoint tool
                     console.log(`Background: Executing user-defined tool '${name}' via endpoint`);
                     const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
-                    clearTimeout(toolTimeout);
                     sendResponse({ result: result });
                     // Track asynchronously (non-blocking)
                     trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }).catch(() => {});
@@ -1610,7 +1590,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
             } catch (error) { // General error catch for executePromptPaulTool
-                clearTimeout(toolTimeout);
                 console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
                 let errorMessage = error.message || 'Tool processing failed';
                 if (error.details) {
