@@ -1,6 +1,7 @@
 /**
  * @fileoverview Shared utility for building tool_choice payloads for LLM API requests.
- * Eliminates ~170 lines of duplicate code between background.js and chat.js.
+ * Note: Policy decisions (e.g., preserving load_skill in 'none' mode) are now handled
+ * by the orchestrator. This file contains only mechanical formatting functions.
  * @module toolChoiceBuilder
  */
 
@@ -9,31 +10,22 @@
  * @param {Object} options - Configuration options
  * @param {Array} options.formattedTools - Array of tools in OpenAI format: {type: 'function', function: {name, description, parameters}}
  * @param {string} options.toolChoice - Tool choice strategy: 'none', 'auto', or specific tool name
- * @param {string[]} [options.reservedTools=['load_skill']] - Tool names that remain available even when toolChoice='none'
  * @returns {Object} The tool_choice payload to spread into request body: {tools, tool_choice}
  */
 export function buildToolChoicePayload(options) {
-    const { formattedTools, toolChoice, reservedTools = ['load_skill'] } = options;
+    const { formattedTools, toolChoice } = options;
 
-    const loadSkillTool = formattedTools.find(t => t.function.name === 'load_skill');
-    const fallbackAutoPayload = formattedTools.length > 0
-        ? { tools: formattedTools, tool_choice: 'auto' }
-        : {};
-
-    if (toolChoice === 'none') {
-        return loadSkillTool
-            ? { tools: [loadSkillTool], tool_choice: 'auto' }
-            : {};
-    }
-
-    if (formattedTools.length === 0) {
+    // If no tools or none requested, return empty
+    if (formattedTools.length === 0 || toolChoice === 'none') {
         return {};
     }
 
+    // Auto mode - use all available tools
     if (toolChoice === 'auto') {
         return { tools: formattedTools, tool_choice: 'auto' };
     }
 
+    // Specific tool requested
     if (typeof toolChoice === 'string') {
         const specificTool = formattedTools.find(t => t.function.name === toolChoice);
         if (specificTool) {
@@ -44,6 +36,7 @@ export function buildToolChoicePayload(options) {
         }
     }
 
+    // Array of tools selected
     if (Array.isArray(toolChoice) && toolChoice.length > 0) {
         const selectedTools = formattedTools.filter(tool =>
             toolChoice.includes(tool.function.name)
@@ -56,7 +49,8 @@ export function buildToolChoicePayload(options) {
         }
     }
 
-    return fallbackAutoPayload;
+    // Fallback to auto mode
+    return { tools: formattedTools, tool_choice: 'auto' };
 }
 
 /**

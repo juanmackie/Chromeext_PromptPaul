@@ -492,11 +492,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Start chat
     if (info.menuItemId === 'start_chat') {
       await sendMessage('setSelectedText', { fromStartChat: true, mediaData });
-      if (isMediaContext) {
-        // Media will be handled in chat.js via currentMediaData
-        return;
-      }
-      await makeLlmApiRequest(promptContent, tab.id, { isStartChat: true });
+      // Media will be handled in chat.js via currentMediaData
       return;
     }
 
@@ -514,22 +510,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
         const toolChoice = instruction.tool_choice || 'none';
 
-        if (isMediaContext) {
-          // Send media with custom instruction to chat
-          chrome.runtime.sendMessage({
-            action: 'setMediaForAnalysis',
-            mediaData: {
-              ...mediaData,
-              actionType: 'custom',
-              instructionId: instructionId
-            },
-            tabId: tab.id
-          });
-        } else {
-          // Text-only custom instruction
-          const fullPrompt = `${instruction.content}\n\n${promptContent}`;
-          await makeLlmApiRequest(fullPrompt, tab.id, { customInstructionToolChoice: toolChoice });
-        }
+        // Send to chat for processing
+        chrome.runtime.sendMessage({
+          action: 'setMediaForAnalysis',
+          mediaData: {
+            ...mediaData,
+            actionType: 'custom',
+            instructionId: instructionId,
+            textPrompt: isMediaContext ? null : `${instruction.content}\n\n${promptContent}`
+          },
+          tabId: tab.id
+        });
       } else {
         console.error("Custom instruction not found for ID:", instructionId);
       }
@@ -553,23 +544,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         await trackInstructionUsed({ instruction: info.menuItemId, model: cfg?.modelName, tools: [] });
       } catch (_) {}
 
-      if (isMediaContext) {
-        // Send media with predefined instruction
-        const actionType = info.menuItemId;
-        chrome.runtime.sendMessage({
-          action: 'setMediaForAnalysis',
-          mediaData: {
-            ...mediaData,
-            actionType: actionType,
-            instructionId: null
-          },
-          tabId: tab.id
-        });
-      } else {
-        // Text-only predefined instruction
-        const fullPrompt = `${commandMap[info.menuItemId]}:\n\n${promptContent}`;
-        await makeLlmApiRequest(fullPrompt, tab.id);
-      }
+      // Send to chat for processing
+      const actionType = info.menuItemId;
+      chrome.runtime.sendMessage({
+        action: 'setMediaForAnalysis',
+        mediaData: {
+          ...mediaData,
+          actionType: actionType,
+          instructionId: null,
+          textPrompt: isMediaContext ? null : `${commandMap[info.menuItemId]}:\n\n${promptContent}`
+        },
+        tabId: tab.id
+      });
     }
   } catch (error) {
     console.error('Error in context menu click handler:', error);
@@ -682,12 +668,21 @@ class SkillManager {
   constructor() {
     this.skills = new Map();
     this.initialized = false;
+    this.initPromise = null;
     this._metadataCache = null;
     this._cacheExpiry = 0;
+    this._reloadLock = null;
   }
 
   async init() {
     if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
+    
+    this.initPromise = this._doInit();
+    return this.initPromise;
+  }
+  
+  async _doInit() {
     await this.loadSkills();
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.customSkills) {
@@ -697,14 +692,107 @@ class SkillManager {
     this.initialized = true;
   }
 
+  async ready() {
+    await this.init();
+    return this;
+  }
+
   async loadSkills() {
-    this.skills.clear();
-    this._invalidateCache();
+    // Prevent concurrent reloads
+    if (this._reloadLock) {
+      return this._reloadLock;
+    }
+    
+    this._reloadLock = this._doLoadSkills();
+    try {
+      await this._reloadLock;
+    } finally {
+      this._reloadLock = null;
+    }
+  }
+  
+  async _doLoadSkills() {
+    // Build new map before swapping to avoid exposing empty state
+    const newSkills = new Map();
+    
     await Promise.all([
-      this._loadBuiltInSkills(),
-      this._loadCustomSkills()
+      this._loadBuiltInSkillsInto(newSkills),
+      this._loadCustomSkillsInto(newSkills)
     ]);
+    
+    // Atomic swap
+    this.skills = newSkills;
+    this._invalidateCache();
+    
     console.log('SkillManager: Loaded skills:', Array.from(this.skills.keys()));
+  }
+  
+  async _loadBuiltInSkillsInto(targetMap) {
+    try {
+      const url = chrome.runtime.getURL('skills/skills.json');
+      const response = await fetch(url);
+      if (!response.ok) return;
+      
+      const builtIn = await response.json();
+      for (const skill of builtIn) {
+        try {
+          const skillUrl = chrome.runtime.getURL(skill.path);
+          const skillResponse = await fetch(skillUrl);
+          if (!skillResponse.ok) continue;
+          
+          const markdown = await skillResponse.text();
+          const expectedDirectoryName = String(skill.path || '').split('/').slice(-2, -1)[0];
+          const parsed = parseSkillMarkdown(markdown, { expectedDirectoryName });
+          
+          if (parsed.valid) {
+            targetMap.set(parsed.metadata.name, {
+              metadata: parsed.metadata,
+              parsed: parsed,
+              raw: markdown,
+              type: 'built-in',
+              path: skill.path
+            });
+          } else {
+            console.warn(`Built-in skill '${skill.name}' parse error:`, parsed.error);
+          }
+        } catch (e) {
+          console.warn(`Failed to load built-in skill '${skill.name}':`, e);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load built-in skills:', e);
+    }
+  }
+  
+  async _loadCustomSkillsInto(targetMap) {
+    try {
+      const result = await chrome.storage.local.get(['customSkills']);
+      const customSkills = result.customSkills || [];
+      
+      for (const skill of customSkills) {
+        try {
+          const skillMd = skill.skillMd || migrateLegacySkill(skill).skillMd;
+          const parsed = parseSkillMarkdown(skillMd);
+          
+          if (parsed.valid) {
+            targetMap.set(parsed.metadata.name, {
+              metadata: parsed.metadata,
+              parsed: parsed,
+              raw: skillMd,
+              type: 'custom',
+              lastUpdated: skill.lastUpdated,
+              legacy: !skill.skillMd
+            });
+          } else {
+            console.warn(`Custom skill '${skill.name}' parse error:`, parsed.error);
+          }
+        } catch (e) {
+          console.error(`Failed to load custom skill '${skill.name}':`, e);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load custom skills:', e);
+    }
   }
 
   async _loadBuiltInSkills() {
@@ -820,6 +908,10 @@ class SkillManager {
 const skillManager = new SkillManager();
 // Initialize on startup
 skillManager.init();
+
+// Import and initialize orchestrator
+import RunOrchestrator from './src/orchestrator/RunOrchestrator.js';
+const runOrchestrator = new RunOrchestrator(skillManager);
 
 
 // Refactored function to make LLM API calls
@@ -1367,9 +1459,7 @@ const toolImplementations = {
    _callUserDefinedEndpoint: callUserDefinedEndpoint
 };
 
-
-// Track active tool executions to prevent duplicates
-const activeToolExecutions = new Set();
+// NOTE: Tool execution tracking is now handled by RunOrchestrator
 
 // Unified extraction function to avoid circular messaging and redundant injections
 async function executeTabContentExtraction(tabId) {
@@ -1538,75 +1628,76 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
         return true;
     }
- else if (request.action === 'executePromptPaulTool') {
+
+    // ===== Orchestration Handlers =====
+    
+    if (request.action === 'startRun') {
+        const { config } = request;
+        runOrchestrator.startRun(config).then(runId => {
+            sendResponse({ runId });
+        }).catch(error => {
+            sendResponse({ error: error.message });
+        });
+        return true;
+    }
+    
+    if (request.action === 'executeRun') {
+        const { runId, requestConfig } = request;
+        runOrchestrator.execute(runId, requestConfig).then(() => {
+            sendResponse({ success: true });
+        }).catch(error => {
+            sendResponse({ error: error.message });
+        });
+        return true;
+    }
+    
+    if (request.action === 'executeTool') {
+        const { runId, toolCall } = request;
+        runOrchestrator.executeTool(runId, toolCall).then(result => {
+            sendResponse(result);
+        }).catch(error => {
+            sendResponse({ error: error.message });
+        });
+        return true;
+    }
+    
+    if (request.action === 'abortRun') {
+        const { runId } = request;
+        runOrchestrator.abort(runId);
+        sendResponse({ success: true });
+        return true;
+    }
+    
+    if (request.action === 'getTools') {
+        sendResponse({ tools: runOrchestrator.getToolImplementations() });
+        return true;
+    }
+
+    // Legacy handler for backward compatibility
+    if (request.action === 'executePromptPaulTool') {
         const { id, name, arguments: argsString } = request.toolCall;
-
-        // Prevent duplicate executions
-        const executionKey = `${id}-${name}`;
-        if (activeToolExecutions.has(executionKey)) {
-            sendResponse({ error: 'Duplicate tool execution prevented' });
-            return true;
+        
+        try {
+            const argsObject = JSON.parse(argsString || '{}');
+            runOrchestrator.executeTool(null, { id, function: { name, arguments: argsString } })
+                .then(result => sendResponse(result))
+                .catch(error => sendResponse({ error: error.message }));
+        } catch (parseError) {
+            sendResponse({ error: `Invalid arguments format: ${parseError.message}` });
         }
-
-        activeToolExecutions.add(executionKey);
-
-        (async () => {
-            try {
-                let argsObject;
-                try {
-                    argsObject = JSON.parse(argsString || '{}');
-                } catch (parseError) {
-                    throw new Error(`Invalid arguments format for tool '${name}'. Expected JSON. Received: ${argsString}`);
-                }
-
-                // Check for built-in tool implementation FIRST (e.g., load_skill)
-                const builtInFunction = toolImplementations[name];
-                if (builtInFunction) {
-                    console.log(`Background: Executing built-in tool '${name}'`);
-                    const result = await builtInFunction(argsObject);
-                    sendResponse({ result: result });
-                    // Track asynchronously (non-blocking)
-                    trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }).catch(() => {});
-                    return;
-                }
-
-                // If not built-in, check storage for user-defined tools
-                const allTools = await getAllToolDefinitions();
-                const toolDefinition = allTools.find(t => t.name === name);
-
-                if (!toolDefinition) {
-                    throw new Error(`Tool '${name}' not found. It is not a built-in tool and has no user-defined configuration.`);
-                }
-
-                if (toolDefinition.endpointUrl) {
-                    // User-defined endpoint tool
-                    console.log(`Background: Executing user-defined tool '${name}' via endpoint`);
-                    const result = await callUserDefinedEndpoint(toolDefinition.endpointUrl, argsObject, toolDefinition.httpMethod);
-                    sendResponse({ result: result });
-                    // Track asynchronously (non-blocking)
-                    trackInstructionUsed({ instruction: 'tool_invoke', model: (await validateConfig().catch(()=>({})))?.modelName, tools: [name] }).catch(() => {});
-                } else {
-                    throw new Error(`Tool '${name}' is not properly configured: It has no endpointUrl and no built-in implementation.`);
-                }
-
-            } catch (error) { // General error catch for executePromptPaulTool
-                console.error(`Background: Error processing tool '${name}' in executePromptPaulTool:`, error);
-                let errorMessage = error.message || 'Tool processing failed';
-                if (error.details) {
-                    errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
-                }
-                sendResponse({ error: errorMessage });
-            } finally {
-                // Always remove from active executions when done
-                activeToolExecutions.delete(executionKey);
-            }
-        })();
-        return true; // Crucial for async sendResponse
-    } else if (request.action === 'executeLlmApiRequest') {
+        return true;
+    }
+    
+    if (request.action === 'executeLlmApiRequest') {
         const { prompt, tool_choice } = request;
-        (async () => {
-            await makeLlmApiRequest(prompt, null, { customInstructionToolChoice: tool_choice });
-        })();
+        // Use orchestrator instead of legacy makeLlmApiRequest
+        runOrchestrator.startRun({ tool_choice }).then(runId => {
+            return runOrchestrator.execute(runId, { messages: [{ role: 'user', content: prompt }] });
+        }).then(() => {
+            sendResponse({ success: true });
+        }).catch(error => {
+            sendResponse({ error: error.message });
+        });
         return true;
     }
     // Handle other actions if any

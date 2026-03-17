@@ -16,7 +16,6 @@
 
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
-import { buildToolChoicePayload, formatToolsForLlm } from './src/utils/toolChoiceBuilder.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     const chatArea = document.getElementById('chat-area');
@@ -327,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let selectedText = null;
     let tabId = null;
+    let currentRunId = null; // Track active orchestrator run
     let currentStreamingMessageDiv = null;
     let currentStreamingContentElement = null;
     let currentStreamingUniqueId = null;
@@ -338,11 +338,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastProcessedPanelActionId = null;
 
     /**
-     * Stops the current API request by aborting the AbortController.
+     * Stops the current API request by aborting the orchestrator run.
      */
     function stopApiRequest() {
-        if (currentAbortController) {
-            currentAbortController.abort();
+        if (currentRunId) {
+            chrome.runtime.sendMessage({
+                action: 'abortRun',
+                runId: currentRunId
+            });
         }
     }
 
@@ -688,13 +691,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (mediaData.error) {
                 // Show error
                 addMessage('System', `❌ Error loading ${mediaData.type}: ${mediaData.error}`);
-            } else if (mediaData.base64) {
-                // Media loaded successfully
-                currentMediaData = mediaData;
+            } else if (mediaData.base64 || mediaData.textPrompt) {
+                // Media loaded successfully OR text-only from context menu
+                if (mediaData.base64) {
+                    currentMediaData = mediaData;
+                    addMediaPreview(currentMediaData);
+                }
 
-                // Add media preview to chat
-                addMediaPreview(currentMediaData);
-
+                // Use textPrompt if provided (from text-only context menu)
+                const promptText = mediaData.textPrompt || mediaData.prompt;
+                
                 // Generate prompt based on action type
                 let analysisPrompt;
                 if (mediaData.actionType === "custom" && mediaData.instructionId) {
@@ -704,29 +710,37 @@ document.addEventListener('DOMContentLoaded', () => {
                         const instruction = instructions.find(i => i.id === mediaData.instructionId);
                         let instructionToolChoice = 'auto';
                         if (instruction) {
-                            analysisPrompt = instruction.content;
+                            analysisPrompt = mediaData.textPrompt || instruction.content;
                             instructionToolChoice = instruction.tool_choice || 'auto';
                             addMessage('System', `🎯 Using custom instruction: "${instruction.name}"`);
                         } else {
-                            analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
+                            analysisPrompt = mediaData.textPrompt || `Please analyze this ${currentMediaData?.type || 'content'}. Describe what you see and provide any relevant insights.`;
                         }
 
-                        makeApiCallWithMedia(analysisPrompt, currentMediaData, instructionToolChoice);
+                        if (currentMediaData) {
+                            makeApiCallWithMedia(analysisPrompt, currentMediaData, instructionToolChoice);
+                        } else {
+                            makeApiCall(analysisPrompt, instructionToolChoice);
+                        }
                     });
                     return; // Exit early for async custom instruction handling
                 } else if (mediaData.actionType === "summarize") {
-                    analysisPrompt = `Please summarize this ${currentMediaData.type} into a bullet list of key points. Focus on the main elements, text, objects, and overall message or purpose.`;
-                    addMessage('System', `📝 Summarizing ${currentMediaData.type}...`);
+                    analysisPrompt = mediaData.textPrompt || `Please summarize this ${currentMediaData?.type || 'content'} into a bullet list of key points. Focus on the main elements, text, objects, and overall message or purpose.`;
+                    addMessage('System', `📝 Summarizing...`);
                 } else if (mediaData.actionType === "explain") {
-                    analysisPrompt = `Explain this ${currentMediaData.type} to me in a short concise MECE approach. Break down what you see into clear, structured categories.`;
-                    addMessage('System', `💡 Explaining ${currentMediaData.type}...`);
+                    analysisPrompt = mediaData.textPrompt || `Explain this ${currentMediaData?.type || 'content'} to me in a short concise MECE approach. Break down what you see into clear, structured categories.`;
+                    addMessage('System', `💡 Explaining...`);
                 } else {
                     // Default analysis
-                    analysisPrompt = `Please analyze this ${currentMediaData.type}. Describe what you see and provide any relevant insights.`;
-                    addMessage('System', `🔍 Analyzing ${currentMediaData.type}...`);
+                    analysisPrompt = mediaData.textPrompt || `Please analyze this ${currentMediaData?.type || 'content'}. Describe what you see and provide any relevant insights.`;
+                    addMessage('System', `🔍 Analyzing...`);
                 }
 
-                makeApiCallWithMedia(analysisPrompt, currentMediaData);
+                if (currentMediaData) {
+                    makeApiCallWithMedia(analysisPrompt, currentMediaData);
+                } else {
+                    makeApiCall(analysisPrompt);
+                }
             }
             if (sendResponse) sendResponse({ success: true });
             return true;
@@ -789,293 +803,178 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
                 chatArea.scrollTop = chatArea.scrollHeight;
             }
-        } else if (request.action === 'streamApiEnd') {
+        } else if (request.action === 'orchestratorEvent') {
+            // NEW: Handle events from orchestrator
+            const { runId, event } = request;
+            
+            // Ignore events from other runs
+            if (currentRunId && runId !== currentRunId) {
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
+            
+            if (!currentRunId) currentRunId = runId;
+            
+            switch (event.type) {
+                case 'content':
+                    if (currentStreamingContentElement && event.data) {
+                        accumulatedStreamedText += event.data;
+                        currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
+                        chatArea.scrollTop = chatArea.scrollHeight;
+                    }
+                    break;
+                    
+                case 'tool_start':
+                    activeStreamingToolCall = event.toolCall;
+                    if (currentStreamingContentElement) {
+                        currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${event.toolCall.function.name}**`);
+                    }
+                    break;
+                    
+                case 'tool_ready':
+                    addMessage('System', `⚙️ Executing tool: **${event.toolCall.function.name}**...`);
+                    break;
+                    
+                case 'tool_complete':
+                    addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
+                    
+                    // Add traceability for skill usage
+                    if (event.toolCall.function.name === 'load_skill') {
+                        try {
+                            const args = JSON.parse(event.toolCall.function.arguments);
+                            addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                            const skillContent = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
+                            const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                            addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                        } catch (e) {
+                            console.warn('Could not parse load_skill arguments for traceability');
+                        }
+                    }
+                    
+                    // Add tool result to history
+                    conversationHistory.push({
+                        role: 'tool',
+                        tool_call_id: event.toolCall.id,
+                        name: event.toolCall.function.name,
+                        content: typeof event.result === 'string' ? event.result : JSON.stringify(event.result)
+                    });
+                    break;
+                    
+                case 'tool_error':
+                    addMessage('System', `❌ Error executing tool ${event.toolCall.function.name}: ${event.error}`);
+                    conversationHistory.push({
+                        role: 'tool',
+                        tool_call_id: event.toolCall.id,
+                        name: event.toolCall.function.name,
+                        content: `Error: ${event.error}`
+                    });
+                    break;
+                    
+                case 'complete':
+                    // Finalize the existing streaming bubble instead of creating a duplicate
+                    if (currentStreamingContentElement) {
+                        const finalContent = event.content || accumulatedStreamedText || '';
+                        currentStreamingContentElement.innerHTML = marked.parse(finalContent);
+                        
+                        // Attach copy listeners to existing bubble
+                        const copyIcon = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
+                        const copyFormattedIcon = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
+                        if (copyIcon && copyFormattedIcon) {
+                            attachCopyListeners(finalContent, currentStreamingContentElement, copyIcon, copyFormattedIcon);
+                        }
+                    } else {
+                        // Fallback: create new bubble if no streaming element exists
+                        addMessage('LLM', event.content || '');
+                    }
+                    
+                    // Reset UI state
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    clearButton.textContent = 'Clear';
+                    userInput.focus();
+                    
+                    // Reset streaming variables
+                    currentStreamingMessageDiv = null;
+                    currentStreamingContentElement = null;
+                    currentStreamingUniqueId = null;
+                    accumulatedStreamedText = '';
+                    activeStreamingToolCall = null;
+                    currentRunId = null;
+                    break;
+                    
+                case 'error':
+                    addMessage('System', `❌ Error: ${event.error}`);
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    clearButton.textContent = 'Clear';
+                    userInput.focus();
+                    currentRunId = null;
+                    break;
+            }
+            
             if (sendResponse) sendResponse({ success: true });
-            // Check if Anthropic stream was already finalized by 'streamApiAnthropicMessageStop'
-            // This flag is set by the streamApiAnthropicMessageStop handler to prevent this streamApiEnd handler
-            // from duplicating UI resets and history additions for Anthropic streams.
-            if (window.anthropicStreamFinalizedByStopEvent) {
-                window.anthropicStreamFinalizedByStopEvent = false; // Reset flag for the next stream.
-
-                // Perform only minimal, truly shared cleanup if any.
-                // Most UI resets and history additions are handled by streamApiAnthropicMessageStop.
-                // Ensure these are not redundantly called.
+            return true;
+        } else if (request.action === 'streamApiEnd') {
+            // DEPRECATED: This handler is replaced by orchestratorEvent handling
+            // Kept for backward compatibility but does minimal work
+            if (sendResponse) sendResponse({ success: true });
+            
+            // Only reset UI if not already handled by orchestrator
+            if (!currentRunId) {
                 userInput.disabled = false;
                 sendButton.disabled = false;
                 clearButton.textContent = 'Clear';
                 userInput.focus();
-
-                // Reset streaming variables, though streamApiAnthropicMessageStop should also do this.
+                
                 currentStreamingMessageDiv = null;
                 currentStreamingContentElement = null;
                 currentStreamingUniqueId = null;
                 accumulatedStreamedText = "";
                 activeStreamingToolCall = null;
-                return; // Exit early
             }
-
-            let toolCallWasHandledInThisStream = false; // Specific to OpenAI-style tool calls
-
-            // Tool call execution logic (FOR OPENAI-STYLE Client-Managed tools)
-            if (activeStreamingToolCall) { // This implies it's an OpenAI-style tool call
-                toolCallWasHandledInThisStream = true; // Mark that a tool call is being handled in this stream event
-                const toolCall = activeStreamingToolCall; // Clarity
-
-                const assistantMessageWithToolCall = {
-                    role: 'assistant',
-                    content: accumulatedStreamedText.trim(), // Capture pre-tool call text
-                    tool_calls: [toolCall]
-                };
-
-                const lastHistoryMessage = conversationHistory[conversationHistory.length - 1];
-                if (!lastHistoryMessage ||
-                    !(lastHistoryMessage.role === 'assistant' &&
-                      lastHistoryMessage.tool_calls &&
-                      lastHistoryMessage.tool_calls[0] &&
-                      lastHistoryMessage.tool_calls[0].id === toolCall.id
-                     )) {
-                    conversationHistory.push(assistantMessageWithToolCall);
-                }
-
-                chrome.runtime.sendMessage({
-                    action: 'executePromptPaulTool',
-                    toolCall: {
-                        id: toolCall.id,
-                        name: toolCall.function.name,
-                        arguments: toolCall.function.arguments
-                    }
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error("Chat: streamApiEnd - chrome.runtime.lastError in executePromptPaulTool callback:", chrome.runtime.lastError);
-                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
-                        conversationHistory.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            name: toolCall.function.name,
-                            content: `Error: ${chrome.runtime.lastError.message}`
-                        });
-                        userInput.disabled = false;
-                        sendButton.disabled = false;
-                        userInput.focus();
-                        return;
-                    }
-
-                    if (response.error) {
-                        console.error("Chat: streamApiEnd - response.error in executePromptPaulTool callback:", response.error);
-                        addMessage('System', `❌ Error executing tool ${toolCall.function.name}: ${response.error}`);
-                        conversationHistory.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            name: toolCall.function.name,
-                            content: `Error: ${response.error}`
-                        });
-                        userInput.disabled = false;
-                        sendButton.disabled = false;
-                        userInput.focus();
-                    } else {
-                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                        // Add traceability for skill usage in streaming
-                        if (toolCall.function.name === 'load_skill') {
-                            try {
-                                const args = JSON.parse(toolCall.function.arguments);
-                                const skillContent = JSON.stringify(response.result);
-                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                                // Show preview of skill content
-                                const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                                addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
-                            } catch (e) {
-                                console.warn('Could not parse load_skill arguments for traceability in streaming');
-                            }
-                        }
-                        conversationHistory.push({
-                            role: 'tool',
-                            tool_call_id: toolCall.id,
-                            name: toolCall.function.name,
-                            content: JSON.stringify(response.result)
-                        });
-                        makeApiCall();
-                    }
-                });
-
-                activeStreamingToolCall = null; // Reset immediately as it's being processed now
-            } else {
-                // Original path for non-tool-call streaming responses: re-enable inputs
-                userInput.disabled = false;
-                sendButton.disabled = false;
-                userInput.focus();
-            }
-            // Tool call execution logic ENDS HERE
-
-
-            // Finalize the original LLM message bubble based on whether a tool was called
-            if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
-                const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-
-                if (toolCallWasHandledInThisStream) {
-                    // The content of currentStreamingContentElement is "⚙️ Using tool: ..."
-                    // It was set by streamApiToolCallChunk. We just need to attach copy listeners.
-                    if (currentStreamingContentElement.innerHTML && copyIconElem && copyFormattedIconElem) { // Ensure content and icons exist
-                        const toolMessageContent = currentStreamingContentElement.innerText;
-                        attachCopyListeners(toolMessageContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                    }
-                    // History for assistant *requesting* the tool is already added within the toolCallWasHandledInThisStream block.
-                } else {
-                    // This is the original path: finalize with accumulatedStreamedText
-                const finalContent = accumulatedStreamedText;
-                if (finalContent.trim() || currentStreamingContentElement.innerHTML) { // only update if there is new content or it was previously populated
-                    currentStreamingContentElement.innerHTML = marked.parse(finalContent);
-                     if (copyIconElem && copyFormattedIconElem) {
-                        attachCopyListeners(finalContent, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                    }
-                }
-
-                    // Add to history if there's actual content and it wasn't a tool call
-                    if (finalContent.trim()) {
-                        const lastMessage = conversationHistory[conversationHistory.length - 1];
-                        // Check if the last message is not the same text content from the same assistant
-                        if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === finalContent)) {
-                             // Also ensure the last message wasn't an assistant message that just made a tool call (avoid double history)
-                             let lastMessageWasToolCallRequest = false;
-                             if(lastMessage && lastMessage.role === 'assistant' && lastMessage.tool_calls && lastMessage.tool_calls.length > 0){
-                                 lastMessageWasToolCallRequest = true;
-                             }
-                             if(!lastMessageWasToolCallRequest){
-                                conversationHistory.push({ role: 'assistant', content: finalContent });
-                             }
-                        }
-                    }
-                }
-            }
-
-            // Reset global streaming variables
-            currentStreamingMessageDiv = null;
-            currentStreamingContentElement = null;
-            currentStreamingUniqueId = null;
-            accumulatedStreamedText = "";
-            // activeStreamingToolCall is already null if it was processed earlier in this function.
-            // toolCallWasHandledInThisStream is a local var and will be gone.
-
+            return true;
         } else if (request.action === 'streamApiToolCallChunk') {
-            if (currentStreamingMessageDiv && currentStreamingContentElement && request.toolCallChunk && request.toolCallChunk.length > 0) {
-                const toolCall = request.toolCallChunk[0]; // Assuming the chunk contains the full tool call info as sent by background
-                activeStreamingToolCall = toolCall; // Store the active tool call
-
-                // Clear previous accumulated text from display
-                // accumulatedStreamedText = ""; // Preserve accumulated text
-                currentStreamingContentElement.innerHTML = ''; // Clear the display for "Using tool..."
-
-                if (currentStreamingContentElement) {
-                    currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${toolCall.function.name}**`);
-                }
-
-                // Potentially, actual arguments could be streamed. For now, just the name.
-                // If toolCall.function.arguments is a string of streamed arguments, append it:
-                // currentStreamingContentElement.innerHTML += marked.parse("```\n" + toolCall.function.arguments + "\n```");
-
-                chatArea.scrollTop = chatArea.scrollHeight;
-            }
-        } else if (request.action === 'streamApiAnthropicContentBlockStart') {
-            if (currentStreamingContentElement && request.contentBlock) {
-                const block = request.contentBlock;
-                if (block.type === 'text') {
-                    // If a text block starts, we can append its initial content if any.
-                    // However, 'content_block_delta' for text is usually handled by 'streamApiResponseChunk'.
-                    // This handler is more for non-text blocks or initial setup of a text block if needed.
-                }
-                 chatArea.scrollTop = chatArea.scrollHeight;
-            }
-        } else if (request.action === 'streamApiAnthropicMessageStop') {
+            // DEPRECATED: This handler is replaced by orchestratorEvent handling
+            // Kept for backward compatibility
             if (sendResponse) sendResponse({ success: true });
-            // This handler is called when background.js receives a 'message_stop' event from an Anthropic stream,
-            // indicating end of message. request.anthropicMessage contains complete final message object.
-            if (currentStreamingMessageDiv && currentStreamingContentElement && currentStreamingUniqueId) {
-                // The accumulatedStreamedText should reflect the text parts.
-                // The full message from Anthropic (request.anthropicMessage) contains all blocks.
-                // Finalize the display with accumulatedStreamedText (which should be text part)
-                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                if (copyIconElem && copyFormattedIconElem) {
-                    attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                }
-            }
-
-            // Add the complete Anthropic message object to history
-            if (request.anthropicMessage) {
-                conversationHistory.push(request.anthropicMessage); // This is the assistant's message object
-            }
-
-            // Reset UI
-            userInput.disabled = false;
-            sendButton.disabled = false;
-            clearButton.textContent = 'Clear'; // Assuming 'Stop' was set at streamApiStart
-            userInput.focus();
-
-            // Reset streaming variables
-            currentStreamingMessageDiv = null;
-            currentStreamingContentElement = null;
-            currentStreamingUniqueId = null;
-            accumulatedStreamedText = "";
-            activeStreamingToolCall = null;
-
-            // Set a flag to prevent streamApiEnd from duplicating actions
-            window.anthropicStreamFinalizedByStopEvent = true;
+            return true;
+        } else if (request.action === 'streamApiAnthropicContentBlockStart' || request.action === 'streamApiAnthropicMessageStop') {
+            // DEPRECATED: These handlers are replaced by orchestratorEvent handling
+            // Kept for backward compatibility
+            if (sendResponse) sendResponse({ success: true });
             return true;
 
-        } else if (request.action === 'handleToolCallResponse') { // This handles OpenAI-style non-streaming tool calls
+        } else if (request.action === 'handleToolCallResponse') {
+            // DEPRECATED: This handler is replaced by orchestratorEvent handling
+            // Kept for backward compatibility
+            const { responseMessage } = request;
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
             sendButton.disabled = false;
-            const { responseMessage, prompt: originalPrompt } = request;
-
-            // For context menu tool calls, history is usually fresh or should be reset
-            if (conversationHistory.length === 0 && originalPrompt) {
-                addMessage('User', originalPrompt.split('\n')[0]);
-                conversationHistory.push({ role: 'user', content: originalPrompt });
-            }
-
-            conversationHistory.push(responseMessage);
-
+            
+            // If responseMessage contains tool_calls, we need to start a new orchestrator run
             if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                 const toolCall = responseMessage.tool_calls[0];
                 addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
+                
+                // Use orchestrator to execute the tool
                 chrome.runtime.sendMessage({
-                    action: 'executePromptPaulTool',
-                    toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
+                    action: 'executeTool',
+                    runId: currentRunId, // Use current run or null for legacy
+                    toolCall: toolCall
                 }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
-                        if (sendResponse) sendResponse({ success: false, error: chrome.runtime.lastError.message });
-                        return;
-                    }
-                    if (response.error) {
-                        addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
+                    if (response?.error) {
+                        addMessage('System', `❌ Error executing tool ${toolCall.function.name}: ${response.error}`);
                     } else {
                         addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                        // Add traceability for skill usage
-                        if (toolCall.function.name === 'load_skill') {
-                            try {
-                                const args = JSON.parse(toolCall.function.arguments);
-                                const skillContent = JSON.stringify(response.result);
-                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                                const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                                addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
-                            } catch (e) {
-                                console.warn('Could not parse load_skill arguments for traceability');
-                            }
-                        }
-                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                        makeApiCall();
                     }
-                    if (sendResponse) sendResponse({ success: true });
                 });
             } else {
-                addMessage('System', "Error: Tool call instruction received without tool_calls.");
-                if (sendResponse) sendResponse({ success: false, error: 'No tool_calls in response' });
+                conversationHistory.push(responseMessage);
             }
+            
+            if (sendResponse) sendResponse({ success: true });
             return true;
         }
     });
@@ -1167,8 +1066,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function makeApiCallWithMedia(userMessage, mediaData, tool_choice = 'auto', requestedSkill = null) {
         try {
             const config = await getApiConfig();
-            const allAvailableTools = await getTools();
-
+            
             // If a specific skill is requested, force tool mode
             const requestedToolChoice = requestedSkill ? 'load_skill' : tool_choice;
             const effectiveToolChoice =
@@ -1176,26 +1074,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? 'auto'
                     : requestedToolChoice;
 
+            // Store media data for the run
+            currentMediaData = mediaData;
+
+            // Add user message to history if provided
             if (userMessage) {
                 addMessage('User', userMessage);
 
                 // Create message content with media
-                const messageContent = [];
+                const messageContent = [{ type: 'text', text: userMessage }];
 
-                // Add text content
-                messageContent.push({
-                    type: 'text',
-                    text: userMessage
-                });
-
-                // Add media content for vision models (OpenAI format)
+                // Add media content for vision models
                 if (mediaData.type === 'image') {
                     messageContent.push({
                         type: 'image_url',
-                        image_url: {
-                            url: `data:${mediaData.mimeType};base64,${mediaData.base64}`
-                            // Note: "detail" parameter is optional for OpenAI, removed for compatibility
-                        }
+                        image_url: { url: `data:${mediaData.mimeType};base64,${mediaData.base64}` }
                     });
                 }
 
@@ -1205,179 +1098,64 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            const now = new Date();
-            const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
-            let systemPromptContent = dateTimeString;
-            if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-                systemPromptContent += `\n\n${config.systemPrompt}`;
-            }
-            // Inject skill guidance into system prompt
-            const skillsResp = await new Promise(resolve => {
-                chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
-                    if (chrome.runtime.lastError) resolve({ skills: [] });
-                    else resolve(response || { skills: [] });
-                });
-            });
-            const chatSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
-            if (chatSkills.length > 0) {
-                systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. You MUST call load_skill (with no arguments) at the start of EVERY conversation to discover available skills before responding. This ensures you have relevant guidance for the task. After discovering skills, call load_skill with a specific skill name if one matches the user's request.`;
-            }
-
-            const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
-
-            const formattedTools = formatToolsForLlm(allAvailableTools);
-
-            const toolChoicePayload = buildToolChoicePayload({
-                formattedTools,
-                toolChoice: effectiveToolChoice
-            });
-
-            if (typeof effectiveToolChoice === 'string' && effectiveToolChoice !== 'auto' && effectiveToolChoice !== 'none') {
-                const specificTool = formattedTools.find(t => t.function.name === effectiveToolChoice);
-                if (requestedSkill && specificTool) {
-                    addMessage('System', `🔧 Forcing tool: **${effectiveToolChoice}** to load skill: **${requestedSkill}**`);
-                } else if (!specificTool) {
-                    addMessage('System', `Warning: Specified tool "${effectiveToolChoice}" not found. Falling back to auto tool routing.`);
-                }
-            }
-
-            const requestBody = {
-                model: config.modelName,
-                messages: messagesForRequest,
-                ...toolChoicePayload
-            };
-
-            // Check if this is an Anthropic endpoint and format accordingly
-            const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
-            if (isAnthropicEndpoint && mediaData && mediaData.type === 'image') {
-                // Anthropic Claude format for images
-                const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
-                if (lastUserMessage && lastUserMessage.role === 'user' && Array.isArray(lastUserMessage.content)) {
-                    // Convert to Anthropic format
-                    lastUserMessage.content = lastUserMessage.content.map(content => {
-                        if (content.type === 'image_url') {
-                            return {
-                                type: 'image',
-                                source: {
-                                    type: 'base64',
-                                    media_type: mediaData.mimeType,
-                                    data: mediaData.base64
-                                }
-                            };
-                        }
-                        return content;
-                    });
-                }
-            }
-
-            const fetchHeaders = {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + config.apiKey,
-            };
-
-            // Use non-streaming for media analysis to ensure proper handling
+            // Create UI elements for streaming
+            const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
+            currentStreamingMessageDiv = messageDiv;
+            currentStreamingContentElement = contentElement;
+            currentStreamingUniqueId = uniqueIdString;
+            accumulatedStreamedText = '';
             userInput.disabled = true;
             sendButton.disabled = true;
             clearButton.textContent = 'Stop';
-            currentAbortController = new AbortController();
-            const signal = currentAbortController.signal;
 
-            const apiResponse = await fetch(config.llmEndpoint, {
-                method: 'POST',
-                headers: fetchHeaders,
-                body: JSON.stringify(requestBody),
-                signal,
+            // Prepare run configuration with media
+            const runConfig = {
+                llmEndpoint: config.llmEndpoint,
+                apiKey: config.apiKey,
+                modelName: config.modelName,
+                systemPrompt: config.systemPrompt,
+                tool_choice: effectiveToolChoice,
+                tools: await getTools(),
+                mediaData: mediaData
+            };
+
+            // Start orchestrator run
+            const startResponse = await chrome.runtime.sendMessage({
+                action: 'startRun',
+                config: runConfig
             });
 
-            if (!apiResponse.ok) {
-                if (apiResponse.status === 429) {
-                     throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
+            if (startResponse.error) {
+                throw new Error(startResponse.error);
+            }
+
+            currentRunId = startResponse.runId;
+
+            // Execute the run
+            await chrome.runtime.sendMessage({
+                action: 'executeRun',
+                runId: currentRunId,
+                requestConfig: {
+                    messages: conversationHistory
                 }
-                const errorText = await apiResponse.text();
-                let errorDetail = errorText;
-                try {
-                    const errorJson = JSON.parse(errorText);
-                    errorDetail = errorJson.error ? errorJson.error.message : errorText;
-                } catch (e) { /* ignore */ }
-                throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-            }
-
-            const responseData = await apiResponse.json();
-            if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
-                throw new Error('Invalid response format from API (no choices or message)');
-            }
-
-            const responseMessage = responseData.choices[0].message;
-            conversationHistory.push(responseMessage);
-
-            if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-                // Handle tool calls in media context
-                const toolCall = responseMessage.tool_calls[0];
-                addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
-                chrome.runtime.sendMessage({
-                    action: 'executePromptPaulTool',
-                    toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
-                        userInput.disabled = false;
-                        sendButton.disabled = false;
-                        clearButton.textContent = 'Clear';
-                        currentAbortController = null;
-                        userInput.focus();
-                        return;
-                    }
-                    if (response.error) {
-                        addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
-                        userInput.disabled = false;
-                        sendButton.disabled = false;
-                        clearButton.textContent = 'Clear';
-                        currentAbortController = null;
-                        userInput.focus();
-                    } else {
-                        addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                        // Add traceability for skill usage
-                        if (toolCall.function.name === 'load_skill') {
-                            try {
-                                const args = JSON.parse(toolCall.function.arguments);
-                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                            } catch (e) {
-                                console.warn('Could not parse load_skill arguments for traceability');
-                            }
-                        }
-                        conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: JSON.stringify(response.result) });
-                        // Continue conversation without re-forcing the same skill load
-                        makeApiCallWithMedia(null, mediaData, 'auto', null);
-                    }
-                });
-            } else if (responseMessage.content) {
-                addMessage('LLM', responseMessage.content);
-                userInput.disabled = false;
-                sendButton.disabled = false;
-                clearButton.textContent = 'Clear';
-                currentAbortController = null;
-                userInput.focus();
-            } else {
-                userInput.disabled = false;
-                sendButton.disabled = false;
-                clearButton.textContent = 'Clear';
-                currentAbortController = null;
-                userInput.focus();
-            }
+            });
 
         } catch (error) {
-            if (error.name === 'AbortError') {
-                addMessage('System', 'Response stopped');
-            } else {
-                console.error("makeApiCallWithMedia Error:", error);
-                addMessage('System', 'Error: ' + error.message);
-            }
+            console.error('makeApiCallWithMedia Error:', error);
+            addMessage('System', 'Error: ' + error.message);
             userInput.disabled = false;
             sendButton.disabled = false;
             clearButton.textContent = 'Clear';
-            currentAbortController = null;
             userInput.focus();
+            
+            // Reset state
+            currentMediaData = null;
+            currentStreamingMessageDiv = null;
+            currentStreamingContentElement = null;
+            currentStreamingUniqueId = null;
+            accumulatedStreamedText = '';
+            activeStreamingToolCall = null;
+            currentRunId = null;
         }
     }
 
@@ -1452,460 +1230,125 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * Get user-defined tools from storage.
+     * The orchestrator will inject load_skill tool automatically if skills are available.
+     */
     async function getTools() {
         const { promptPaulTools: definedTools = [] } = await new Promise((resolve) => {
             chrome.storage.local.get(['promptPaulTools'], resolve);
         });
 
-        const processedTools = [];
-
-        for (const tool of definedTools) {
+        return definedTools.filter(tool => {
             if (tool.name === 'load_skill') {
                 console.warn("Chat: Skipping user-defined tool named 'load_skill' because it is reserved.");
-                continue;
+                return false;
             }
-
-            let parametersForLlm = {};
-            let source = 'manual'; // Default source
-
-            if (tool.parameters) {
-                try {
-                    parametersForLlm = JSON.parse(tool.parameters);
-                } catch (e) {
-                    console.error(`Chat: getTools - Error parsing parameters for manual tool ${tool.name}:`, e);
-                    addMessage('System', `Error: Invalid JSON Schema for tool '${tool.name}'. Tool will be excluded or have empty schema.`);
-                    parametersForLlm = {}; // Keep it an empty object if parsing fails
-                }
-            }
-
-            processedTools.push({
-                ...tool, // Spread original tool properties
-                parametersForLlm: parametersForLlm, // Add the processed parameters
-                source: source // Add the source for debugging/info
-            });
-        }
-
-        // Inject load_skill tool if skills are available
-        const skillsResponse = await new Promise(resolve => {
-            chrome.runtime.sendMessage({ action: 'getSkills' }, response => {
-                if (chrome.runtime.lastError || !response) {
-                    resolve({ skills: [] });
-                    return;
-                }
-                resolve(response);
-            });
+            return true;
         });
-
-        const skills = Array.isArray(skillsResponse.skills) ? skillsResponse.skills : [];
-
-        if (skills.length > 0) {
-            processedTools.push({
-                name: 'load_skill',
-                description: 'Discovers or loads specialized capabilities. Call without arguments to list all available skills with descriptions. Call with a skill name to load its full instructions.',
-                parametersForLlm: {
-                    type: 'object',
-                    properties: {
-                        name: { type: 'string', description: 'Optional: The name of a specific skill to load. If omitted, returns a list of all available skills.' }
-                    },
-                    required: []
-                },
-                source: 'built-in'
-            });
-        }
-
-        return processedTools;
     }
 
     /**
-     * Makes an API call to the LLM endpoint.
+     * Makes an API call to the LLM endpoint using the orchestrator.
      * @param {string|null} [userMessage=null] - The user's message/prompt.
      * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
      * @param {string|null} [requestedSkill=null] - Name of skill to force-load via load_skill tool.
      * @returns {Promise<void>}
      */
-    async function makeApiCall(userMessage = null, tool_choice = 'auto', requestedSkill = null) { // Added tool_choice, default to 'auto'
+    async function makeApiCall(userMessage = null, tool_choice = 'auto', requestedSkill = null) {
         try {
             const config = await getApiConfig();
-            const allAvailableTools = await getTools();
-
-            // If a specific skill is requested, force tool mode and disable streaming
+            
+            // If a specific skill is requested, force tool mode
             const requestedToolChoice = requestedSkill ? 'load_skill' : tool_choice;
             const effectiveToolChoice =
                 requestedToolChoice === undefined || requestedToolChoice === null || requestedToolChoice === ''
                     ? 'auto'
                     : requestedToolChoice;
 
+            // Add user message to history if provided
             if (userMessage) {
                 addMessage('User', userMessage);
-
-                // Check if we have media data to include
+                
                 if (currentMediaData && currentMediaData.type === 'image') {
                     const messageContent = [
-                        {
-                            type: 'text',
-                            text: userMessage
-                        },
+                        { type: 'text', text: userMessage },
                         {
                             type: 'image_url',
-                            image_url: {
-                                url: `data:${currentMediaData.mimeType};base64,${currentMediaData.base64}`
-                            }
+                            image_url: { url: `data:${currentMediaData.mimeType};base64,${currentMediaData.base64}` }
                         }
                     ];
                     conversationHistory.push({ role: 'user', content: messageContent });
                 } else {
                     conversationHistory.push({ role: 'user', content: userMessage });
                 }
+                
+                currentMediaData = null; // Clear after use
             }
 
-            const now = new Date();
-            const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
-            let systemPromptContent = dateTimeString;
-            if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-                systemPromptContent += `\n\n${config.systemPrompt}`;
-            }
-            // Inject skill guidance into system prompt
-            const skillsRespMain = await new Promise(resolve => {
-                chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
-                    if (chrome.runtime.lastError) resolve({ skills: [] });
-                    else resolve(response || { skills: [] });
-                });
-            });
-            const chatSkillsMain = (skillsRespMain && skillsRespMain.skills) ? skillsRespMain.skills : [];
-            if (chatSkillsMain.length > 0) {
-                systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. Proactively call load_skill (with no arguments to discover available skills, or with a skill name to load specific instructions) since all tasks could benefit from specialized guidance. Don't hesitate to explore skills before attempting complex tasks.`;
-            }
-
-            const messagesForRequest = [{ role: 'system', content: systemPromptContent }, ...conversationHistory];
-
-            const formattedTools = formatToolsForLlm(allAvailableTools);
-
-            const toolChoicePayload = buildToolChoicePayload({
-                formattedTools,
-                toolChoice: effectiveToolChoice
-            });
-
-            if (typeof effectiveToolChoice === 'string' && effectiveToolChoice !== 'auto' && effectiveToolChoice !== 'none') {
-                const specificTool = formattedTools.find(t => t.function.name === effectiveToolChoice);
-                if (requestedSkill && specificTool) {
-                    addMessage('System', `🔧 Forcing tool: **${effectiveToolChoice}** to load skill: **${requestedSkill}**`);
-                } else if (!specificTool) {
-                    addMessage('System', `Warning: Specified tool "${effectiveToolChoice}" not found. Falling back to auto tool routing.`);
-                }
-            }
-
-            const requestBody = {
-                model: config.modelName,
-                messages: messagesForRequest,
-                ...toolChoicePayload
+            // Prepare run configuration
+            const runConfig = {
+                llmEndpoint: config.llmEndpoint,
+                apiKey: config.apiKey,
+                modelName: config.modelName,
+                systemPrompt: config.systemPrompt,
+                tool_choice: effectiveToolChoice,
+                tools: await getTools()
             };
 
-            const fetchHeaders = {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + config.apiKey,
-            };
+            // Create UI elements for streaming
+            const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
+            currentStreamingMessageDiv = messageDiv;
+            currentStreamingContentElement = contentElement;
+            currentStreamingUniqueId = uniqueIdString;
+            accumulatedStreamedText = '';
+            userInput.disabled = true;
+            sendButton.disabled = true;
+            clearButton.textContent = 'Stop';
 
-            // --- Handle media data formatting for different providers ---
-            const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
-            const isOpenAIEndpoint = config.llmEndpoint.includes('api.openai.com') || config.llmEndpoint.includes('openai');
+            // Start orchestrator run
+            const startResponse = await chrome.runtime.sendMessage({
+                action: 'startRun',
+                config: runConfig
+            });
 
-            // Convert image format for Anthropic if needed
-            if (isAnthropicEndpoint && currentMediaData && currentMediaData.type === 'image') {
-                const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
-                if (lastUserMessage && lastUserMessage.role === 'user' && Array.isArray(lastUserMessage.content)) {
-                    lastUserMessage.content = lastUserMessage.content.map(content => {
-                        if (content.type === 'image_url') {
-                            return {
-                                type: 'image',
-                                source: {
-                                    type: 'base64',
-                                    media_type: currentMediaData.mimeType,
-                                    data: currentMediaData.base64
-                                }
-                            };
-                        }
-                        return content;
-                    });
-                }
+            if (startResponse.error) {
+                throw new Error(startResponse.error);
             }
 
-            // Apply tool choice
-            Object.assign(requestBody, toolChoicePayload);
+            currentRunId = startResponse.runId;
 
-
-
-            const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
-
-            const hasToolMessage = Array.isArray(conversationHistory) && conversationHistory.some(msg => msg.role === 'tool');
-            let effectiveEnableStreaming = enableStreaming;
-            // Disable streaming if a 'tool' role message is in history OR if a skill is requested
-            // (Tool calls require non-streaming for proper handling)
-            if ((hasToolMessage || requestedSkill) && enableStreaming) {
-                effectiveEnableStreaming = false;
-                if (requestedSkill) {
-                    console.log(`Chat: Disabling streaming for skill request: ${requestedSkill}`);
+            // Execute the run
+            await chrome.runtime.sendMessage({
+                action: 'executeRun',
+                runId: currentRunId,
+                requestConfig: {
+                    messages: conversationHistory
                 }
-            }
+            });
 
-
-            if (effectiveEnableStreaming) { // This includes streaming
-                requestBody.stream = true;
-                userInput.disabled = true;
-                sendButton.disabled = true;
-                clearButton.textContent = 'Stop';
-
-                const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-                currentStreamingMessageDiv = messageDiv;
-                currentStreamingContentElement = contentElement;
-                currentStreamingUniqueId = uniqueIdString;
-                accumulatedStreamedText = ""; // Reset for this new stream
-
-                currentAbortController = new AbortController();
-                const signal = currentAbortController.signal;
-
-                // Show loading state
-                const loaderId = loadingManager.showLoading('#chat-area', 'Processing your request...');
-                loadingManager.showConnectionStatus('#chat-area', 'connecting');
-
-                const apiResponse = await fetch(config.llmEndpoint, {
-                    method: 'POST',
-                    headers: fetchHeaders, // Use potentially modified headers
-                    body: JSON.stringify(requestBody),
-                    signal,
-                });
-
-                // Hide loading state
-                loadingManager.hideLoading(loaderId);
-                loadingManager.showConnectionStatus('#chat-area', 'connected');
-
-                if (!apiResponse.ok) {
-                    if (apiResponse.status === 429) {
-                         const error = new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
-                         loadingManager.showToast('API Rate Limit Exceeded', 'error');
-                         loadingManager.showConnectionStatus('#chat-area', 'disconnected');
-                         throw error;
-                    }
-                    const errorText = await apiResponse.text();
-                    let errorDetail = errorText;
-                    try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
-                    const error = new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-                    loadingManager.showToast(`API Error: ${apiResponse.status} ${apiResponse.statusText}`, 'error');
-                    loadingManager.showConnectionStatus('#chat-area', 'disconnected');
-                    throw error;
-                }
-
-                const reader = apiResponse.body.getReader();
-                const decoder = new TextDecoder();
-                let sseBuffer = ""; // Buffer for incomplete SSE lines
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        // Final attachment of copy listeners for the fully accumulated message
-                        if (currentStreamingContentElement && currentStreamingUniqueId) {
-                             const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                             const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                             if (copyIconElem && copyFormattedIconElem) { // Ensure icons exist
-                                attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                             }
-                        }
-                        // Add the fully accumulated message to history
-                        if (accumulatedStreamedText.trim()) {
-                           const lastMessage = conversationHistory[conversationHistory.length - 1];
-                           // Avoid adding if it's effectively a duplicate of the last message
-                           if (!lastMessage || !(lastMessage.role === 'assistant' && lastMessage.content === accumulatedStreamedText)) {
-                               conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
-                           }
-                        }
-                        // Reset UI and state
-                        userInput.disabled = false;
-                        sendButton.disabled = false;
-                        clearButton.textContent = 'Clear';
-                        currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
-                        userInput.focus();
-                        break;
-                    }
-                    sseBuffer += decoder.decode(value, { stream: true });
-                    let eolIndex;
-                    // Process all complete lines in the buffer
-                    while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
-                        const line = sseBuffer.substring(0, eolIndex).trim();
-                        sseBuffer = sseBuffer.substring(eolIndex + 1);
-
-                        if (line.startsWith('data:')) {
-                            let jsonData = line.substring(5).trim();
-                            if (jsonData.startsWith('data:')) { // Handle potential double prefix
-                                jsonData = jsonData.substring(5).trim();
-                            }
-                            if (jsonData === '[DONE]') { // OpenAI specific end signal
-                                continue;
-                            }
-                            if (jsonData) {
-                                try {
-                                    const parsed = JSON.parse(jsonData);
-                                    // Handle content chunks
-                                    if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-                                        const delta = parsed.choices[0].delta;
-
-                                        // Handle text content
-                                        if (delta.content) {
-                                            accumulatedStreamedText += delta.content;
-                                            if(currentStreamingContentElement) {
-                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                                            }
-                                            chatArea.scrollTop = chatArea.scrollHeight;
-                                        }
-
-                                        // Handle tool call chunks (streaming tool calls)
-                                        if (delta.tool_calls && delta.tool_calls.length > 0) {
-                                            const toolCallChunk = delta.tool_calls[0];
-                                            if (!activeStreamingToolCall) {
-                                                // First chunk of tool call - initialize
-                                                activeStreamingToolCall = {
-                                                    id: toolCallChunk.id,
-                                                    type: 'function',
-                                                    function: {
-                                                        name: toolCallChunk.function?.name || '',
-                                                        arguments: toolCallChunk.function?.arguments || ''
-                                                    }
-                                                };
-                                                // Show tool call in UI
-                                                if (currentStreamingContentElement) {
-                                                    currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${activeStreamingToolCall.function.name}**`);
-                                                }
-                                            } else {
-                                                // Accumulate tool call arguments
-                                                if (toolCallChunk.function?.arguments) {
-                                                    activeStreamingToolCall.function.arguments += toolCallChunk.function.arguments;
-                                                }
-                                                if (toolCallChunk.function?.name) {
-                                                    activeStreamingToolCall.function.name = toolCallChunk.function.name;
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (e) {
-                                    // Log benignly, as some chunks might not be full JSON objects if stream is interrupted or malformed.
-                                    console.warn("SSE JSON Parse Error in makeApiCall (chat.js):", e, "Problematic JSON string:", jsonData);
-                                }
-                            }
-                        }
-                    }
-                }
-            } else { // Non-streaming for chat input
-                userInput.disabled = true;
-                sendButton.disabled = true;
-                clearButton.textContent = 'Stop';
-                currentAbortController = new AbortController();
-                const signal = currentAbortController.signal;
-
-                const apiResponse = await fetch(config.llmEndpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                    body: JSON.stringify(requestBody),
-                    signal,
-                });
-
-                if (!apiResponse.ok) {
-                    if (apiResponse.status === 429) {
-                         throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
-                    }
-                    const errorText = await apiResponse.text();
-                    let errorDetail = errorText;
-                     try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
-                    throw new Error( `API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-                }
-                const responseData = await apiResponse.json();
-                if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
-                    throw new Error('Invalid response format from API (no choices or message)');
-                }
-                const responseMessage = responseData.choices[0].message;
-                conversationHistory.push(responseMessage);
-
-                if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-                    const toolCall = responseMessage.tool_calls[0];
-                        addMessage('System', `⚙️ Requesting execution for tool: **${toolCall.function.name}**...`);
-                        const toolCallForLog = responseMessage.tool_calls[0]; // This was defined before but not used. Keeping it in case it's for logging.
-                        chrome.runtime.sendMessage({
-                            action: 'executePromptPaulTool',
-                            toolCall: { id: toolCall.id, name: toolCall.function.name, arguments: toolCall.function.arguments }
-                        }, (response) => {
-                             if (chrome.runtime.lastError) {
-                                 addMessage('System', `Error: ${chrome.runtime.lastError.message}`);
-                                 userInput.disabled = false;
-                                 sendButton.disabled = false;
-                                 clearButton.textContent = 'Clear';
-                                 currentAbortController = null;
-                                 userInput.focus();
-                                 return;
-                             }
-                             if (response.error) {
-                                addMessage('System', `Error executing tool ${toolCall.function.name}: ${response.error}`);
-                                conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: `Error: ${response.error}` });
-                                userInput.disabled = false;
-                                sendButton.disabled = false;
-                                clearButton.textContent = 'Clear';
-                                currentAbortController = null;
-                                userInput.focus();
-                             } else {
-                                 addMessage('System', `✅ Tool ${toolCall.function.name} executed.`);
-                                 // Add traceability for skill usage
-                                 if (toolCall.function.name === 'load_skill') {
-                                     try {
-                                         const args = JSON.parse(toolCall.function.arguments);
-                                         const skillContent = typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response);
-                                         addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                                         // Show preview of skill content
-                                         const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                                         addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
-                                     } catch (e) {
-                                         console.warn('Could not parse load_skill arguments for traceability');
-                                     }
-                                 }
-                                 conversationHistory.push({ role: 'tool', tool_call_id: toolCall.id, name: toolCall.function.name, content: typeof response.result === 'string' ? response.result : JSON.stringify(response.result || response) });
-                                 makeApiCall(null, 'auto', null);
-                              }
-                        });
-                } else if (responseMessage.content) {
-                    addMessage('LLM', responseMessage.content);
-                    userInput.disabled = false;
-                    sendButton.disabled = false;
-                    clearButton.textContent = 'Clear';
-                    currentAbortController = null;
-                } else {
-                     addMessage('System', "Received an empty or unexpected response from LLM.");
-                    userInput.disabled = false;
-                    sendButton.disabled = false;
-                    clearButton.textContent = 'Clear';
-                    currentAbortController = null;
-                }
-            }
         } catch (error) {
-            loadingManager.hideLoading('#chat-area');
-            loadingManager.showConnectionStatus('#chat-area', 'disconnected');
-
-            if (error.name === 'AbortError') {
-                addMessage('System', 'Response stopped');
-                loadingManager.showToast('Request stopped by user', 'warning');
-            } else {
-                console.error("makeApiCall Error:", error);
-                addMessage('System', 'Error: ' + error.message);
-
-                // Show user-friendly error with retry option
-                loadingManager.showError('#chat-area', error, {
-                    title: 'API Request Failed',
-                    retry: () => {
-                        // Retry the same request
-                        makeApiCall(userMessage, tool_choice);
-                    }
-                });
-            }
+            console.error('makeApiCall Error:', error);
+            addMessage('System', 'Error: ' + error.message);
             userInput.disabled = false;
             sendButton.disabled = false;
             clearButton.textContent = 'Clear';
-            currentAbortController = null;
             userInput.focus();
+            
+            // Reset streaming state
+            currentStreamingMessageDiv = null;
+            currentStreamingContentElement = null;
+            currentStreamingUniqueId = null;
+            accumulatedStreamedText = '';
+            activeStreamingToolCall = null;
+            currentRunId = null;
         }
+    }
+
+    // Legacy function that mimics old streaming behavior for compatibility
+    async function makeApiCallLegacy(userMessage = null, tool_choice = 'auto', requestedSkill = null) {
+        // This is now handled by makeApiCall with orchestrator
+        return makeApiCall(userMessage, tool_choice, requestedSkill);
     }
 
     submitBtn.addEventListener('click', async () => {
@@ -1915,236 +1358,36 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingManager.showToast('Please enter an instruction', 'warning');
             return;
         }
+        
         try {
-            const config = await getApiConfig();
-
-            // Build prompt based on available content (text or media)
             let prompt;
-            let contentSummary = '';
-
+            
             if (currentMediaData && currentMediaData.base64) {
-                // Have media loaded - include compatibility mode info
-                const mediaInfo = `[${currentMediaData.type.toUpperCase()} loaded: ${currentMediaData.mimeType}, URL: ${currentMediaData.url || 'embedded'}]`;
-                contentSummary = mediaInfo;
-                prompt = instruction + '\n\n' + contentSummary;
-
-                // Add user message with media context
-                addMessage('User', `${instruction}\n\n[${contentSummary}]`);
-
-                const allAvailableTools = await getTools();
-                const formattedTools = formatToolsForLlm(allAvailableTools);
-                const toolChoicePayload = buildToolChoicePayload({
-                    formattedTools,
-                    toolChoice: 'auto'
-                });
-
-                // Build system prompt
-                const now = new Date();
-                const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;
-                let systemPromptContent = dateTimeString;
-                if (config.systemPrompt && config.systemPrompt.trim() !== '') {
-                    systemPromptContent += `\n\n${config.systemPrompt}`;
-                }
-
-                // Inject skill guidance into system prompt
-                const skillsResp = await new Promise(resolve => {
-                    chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
-                        if (chrome.runtime.lastError) resolve({ skills: [] });
-                        else resolve(response || { skills: [] });
-                    });
-                });
-                const chatSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
-                if (chatSkills.length > 0) {
-                    systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. Proactively call load_skill (with no arguments to discover available skills, or with a skill name to load specific instructions) since all tasks could benefit from specialized guidance. Don't hesitate to explore skills before attempting complex tasks.`;
-                }
-
-                // Prepare messages
-                let messageContent = [{ type: 'text', text: prompt }];
-
-                // For images, attach as multimodal content
-                if (currentMediaData.type === 'image' && currentMediaData.base64) {
-                    messageContent.push({
-                        type: 'image_url',
-                        image_url: {
-                            url: `data:${currentMediaData.mimeType};base64,${currentMediaData.base64}`
-                        }
-                    });
-                }
-
-                const messagesForRequest = [{ role: 'system', content: systemPromptContent }, { role: 'user', content: messageContent }];
-
-                const requestBody = {
-                    model: config.modelName,
-                    messages: messagesForRequest,
-                    ...toolChoicePayload
-                };
-
-                // Convert for Anthropic if needed
-                const isAnthropicEndpoint = config.llmEndpoint.includes('api.anthropic.com');
-                if (isAnthropicEndpoint && currentMediaData.type === 'image' && currentMediaData.base64) {
-                    const lastUserMessage = messagesForRequest[messagesForRequest.length - 1];
-                    if (lastUserMessage && lastUserMessage.role === 'user' && Array.isArray(lastUserMessage.content)) {
-                        lastUserMessage.content = lastUserMessage.content.map(content => {
-                            if (content.type === 'image_url') {
-                                return {
-                                    type: 'image',
-                                    source: {
-                                        type: 'base64',
-                                        media_type: currentMediaData.mimeType,
-                                        data: currentMediaData.base64
-                                    }
-                                };
-                            }
-                            return content;
-                        });
-                    }
-                }
-
-                const { enableStreaming } = await new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, resolve));
-                let effectiveEnableStreaming = enableStreaming;
-                const hasToolMessage = Array.isArray(conversationHistory) && conversationHistory.some(msg => msg.role === 'tool');
-
-                if (hasToolMessage && enableStreaming) {
-                    effectiveEnableStreaming = false;
-                }
-
-                // Disable streaming for media in compatibility mode
-                if (currentMediaData && !enableStreaming) {
-                    effectiveEnableStreaming = false;
-                }
-
-                if (effectiveEnableStreaming) {
-                    requestBody.stream = true;
-                    oneoffInstructionArea.style.display = 'none';
-                    chatMainArea.style.display = 'block';
-                    userInput.disabled = true;
-                    sendButton.disabled = true;
-                    clearButton.textContent = 'Stop';
-
-                    const { messageDiv, contentElement, uniqueIdString } = addMessage('LLM', '');
-                    currentStreamingMessageDiv = messageDiv;
-                    currentStreamingContentElement = contentElement;
-                    currentStreamingUniqueId = uniqueIdString;
-                    accumulatedStreamedText = "";
-
-                    currentAbortController = new AbortController();
-                    const signal = currentAbortController.signal;
-
-                    const apiResponse = await fetch(config.llmEndpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                        body: JSON.stringify(requestBody),
-                        signal,
-                    });
-                    if (!apiResponse.ok) {
-                        if (apiResponse.status === 429) {
-                             throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
-                        }
-                        const errorText = await apiResponse.text();
-                        let errorDetail = errorText;
-                        try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText;} catch (e) { /* ignore */ }
-                        throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-                    }
-                    const reader = apiResponse.body.getReader();
-                    const decoder = new TextDecoder();
-                    let sseBuffer = "";
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) {
-                            if (currentStreamingContentElement && currentStreamingUniqueId) {
-                               const copyIconElem = document.getElementById(`copy-icon-${currentStreamingUniqueId}`);
-                               const copyFormattedIconElem = document.getElementById(`copy-formatted-icon-${currentStreamingUniqueId}`);
-                               if (copyIconElem && copyFormattedIconElem) {
-                                 attachCopyListeners(accumulatedStreamedText, currentStreamingContentElement, copyIconElem, copyFormattedIconElem);
-                                }
-                            }
-                            conversationHistory.push({ role: 'assistant', content: accumulatedStreamedText });
-                            currentStreamingMessageDiv = null; currentStreamingContentElement = null; currentStreamingUniqueId = null; accumulatedStreamedText = "";
-                            userInput.disabled = false; sendButton.disabled = false;
-                            clearButton.textContent = 'Clear';
-                            instructionInput.value = ''; selectedTextDiv.textContent = ''; selectedText = null;
-                            currentMediaData = null;
-                            oneoffInstructionArea.style.display = 'none';
-                            chatMainArea.style.display = 'block';
-                            userInput.focus();
-                            break;
-                        }
-                        sseBuffer += decoder.decode(value, { stream: true });
-                        let eolIndex;
-                        while ((eolIndex = sseBuffer.indexOf('\n')) >= 0) {
-                            const line = sseBuffer.substring(0, eolIndex).trim();
-                            sseBuffer = sseBuffer.substring(eolIndex + 1);
-                            if (line.startsWith('data:')) {
-                                let jsonData = line.substring(5).trim();
-                                if (jsonData.startsWith('data:')) { jsonData = jsonData.substring(5).trim(); }
-                                if (jsonData === '[DONE]') continue;
-                                if (jsonData) {
-                                    try {
-                                        const parsed = JSON.parse(jsonData);
-                                        if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                            accumulatedStreamedText += parsed.choices[0].delta.content;
-                                            if(currentStreamingContentElement) {
-                                                currentStreamingContentElement.innerHTML = marked.parse(accumulatedStreamedText);
-                                            }
-                                            chatArea.scrollTop = chatArea.scrollHeight;
-                                        }
-                                    } catch (e) { console.warn("SSE JSON Parse Error (one-off submit):", e, jsonData); }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    userInput.disabled = true;
-                    sendButton.disabled = true;
-                    clearButton.textContent = 'Stop';
-                    currentAbortController = new AbortController();
-                    const signal = currentAbortController.signal;
-
-                    const apiResponse = await fetch(config.llmEndpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.apiKey },
-                        body: JSON.stringify(requestBody),
-                        signal,
-                    });
-                    if (!apiResponse.ok) {
-                        if (apiResponse.status === 429) {
-                             throw new Error('API Rate Limit Exceeded. Please check your provider\'s plan or try again later.');
-                        }
-                        const errorText = await apiResponse.text();
-                        let errorDetail = errorText;
-                        try { const errorJson = JSON.parse(errorText); errorDetail = errorJson.error ? errorJson.error.message : errorText; } catch (e) { /* ignore */ }
-                        throw new Error(`API request failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorDetail}`);
-                    }
-                    const responseData = await apiResponse.json();
-                    if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
-                        throw new Error('Invalid response format from API');
-                    }
-                    const responseMessage = responseData.choices[0].message;
-                    conversationHistory.push(responseMessage);
-
-                    if (responseMessage.content) {
-                        addMessage('LLM', responseMessage.content);
-                    }
-
-                    instructionInput.value = '';
-                    selectedTextDiv.textContent = '';
-                    selectedText = null;
-                    currentMediaData = null;
-                    oneoffInstructionArea.style.display = 'none';
-                    chatMainArea.style.display = 'block';
-
-                    userInput.disabled = false;
-                    sendButton.disabled = false;
-                    clearButton.textContent = 'Clear';
-                    currentAbortController = null;
-                }
+                // Media + instruction
+                const mediaInfo = `[${currentMediaData.type.toUpperCase()} loaded]`;
+                prompt = instruction + '\n\n' + mediaInfo;
+                
+                // Show chat area and hide one-off instruction area
+                oneoffInstructionArea.style.display = 'none';
+                chatMainArea.style.display = 'block';
+                addMessage('User', `${instruction}\n\n[${mediaInfo}]`);
+                
+                // Use orchestrator with media
+                await makeApiCallWithMedia(instruction, currentMediaData);
+                
+                instructionInput.value = '';
+                selectedTextDiv.textContent = '';
+                selectedText = null;
+                currentMediaData = null;
             } else if (selectedText && selectedText.trim()) {
-                // Text-only one-off - use shared makeApiCall
+                // Text-only instruction
                 prompt = instruction + '\n\n' + selectedText;
-                // Show chat area and hide one-off instruction area before adding message
+                
+                // Show chat area and hide one-off instruction area
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
                 addMessage('User', `${instruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`);
+                
                 await makeApiCall(prompt, 'auto');
                 instructionInput.value = '';
                 selectedTextDiv.textContent = '';
