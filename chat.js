@@ -16,6 +16,7 @@
 
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
+import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     const chatArea = document.getElementById('chat-area');
@@ -711,7 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         let instructionToolChoice = 'auto';
                         if (instruction) {
                             analysisPrompt = mediaData.textPrompt || instruction.content;
-                            instructionToolChoice = instruction.tool_choice || 'auto';
+                            instructionToolChoice = normalizeToolChoice(instruction.tool_choice);
                             addMessage('System', `🎯 Using custom instruction: "${instruction.name}"`);
                         } else {
                             analysisPrompt = mediaData.textPrompt || `Please analyze this ${currentMediaData?.type || 'content'}. Describe what you see and provide any relevant insights.`;
@@ -827,7 +828,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'tool_start':
                     activeStreamingToolCall = event.toolCall;
                     if (currentStreamingContentElement) {
-                        currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${event.toolCall.function.name}**`);
+                        if (event.capability === 'skill') {
+                            currentStreamingContentElement.innerHTML = marked.parse(`📚 Loading skill: **${event.toolCall.function.name}**`);
+                        } else {
+                            currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${event.toolCall.function.name}**`);
+                        }
                     }
                     break;
                     
@@ -836,21 +841,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                     
                 case 'tool_complete':
-                    addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
-                    
-                    // Add traceability for skill usage
+                    // Distinguish tool vs skill in the trace
                     if (event.toolCall.function.name === 'load_skill') {
                         try {
                             const args = JSON.parse(event.toolCall.function.arguments);
-                            addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                            const skillContent = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
-                            const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                            addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                            const resultObj = typeof event.result === 'string' ? JSON.parse(event.result) : event.result;
+                            if (resultObj && resultObj.success) {
+                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
+                                const skillContent = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
+                                const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                                addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
+                            } else {
+                                addMessage('System', `⚠️ Skill **${args.name}** not found.`);
+                            }
                         } catch (e) {
                             console.warn('Could not parse load_skill arguments for traceability');
                         }
+                    } else {
+                        addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
                     }
                     
+                    // Add assistant message with tool_calls before tool result
+                    conversationHistory.push({
+                        role: 'assistant',
+                        content: null,
+                        tool_calls: [{
+                            id: event.toolCall.id,
+                            type: 'function',
+                            function: {
+                                name: event.toolCall.function.name,
+                                arguments: event.toolCall.function.arguments
+                            }
+                        }]
+                    });
+
                     // Add tool result to history
                     conversationHistory.push({
                         role: 'tool',
@@ -862,6 +886,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                 case 'tool_error':
                     addMessage('System', `❌ Error executing tool ${event.toolCall.function.name}: ${event.error}`);
+
+                    // Add assistant message with tool_calls before tool error result
+                    conversationHistory.push({
+                        role: 'assistant',
+                        content: null,
+                        tool_calls: [{
+                            id: event.toolCall.id,
+                            type: 'function',
+                            function: {
+                                name: event.toolCall.function.name,
+                                arguments: event.toolCall.function.arguments
+                            }
+                        }]
+                    });
+
                     conversationHistory.push({
                         role: 'tool',
                         tool_call_id: event.toolCall.id,
@@ -887,12 +926,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         addMessage('LLM', event.content || '');
                     }
                     
+                    // Persist final assistant content to conversation history
+                    const completeFinalContent = event.content || accumulatedStreamedText || '';
+                    if (completeFinalContent) {
+                        conversationHistory.push({
+                            role: 'assistant',
+                            content: completeFinalContent
+                        });
+                    }
+
                     // Reset UI state
                     userInput.disabled = false;
                     sendButton.disabled = false;
                     clearButton.textContent = 'Clear';
                     userInput.focus();
-                    
+
                     // Reset streaming variables
                     currentStreamingMessageDiv = null;
                     currentStreamingContentElement = null;
@@ -1060,19 +1108,17 @@ document.addEventListener('DOMContentLoaded', () => {
      * @param {string} userMessage - The user's message/prompt.
      * @param {Object} mediaData - The media data object containing base64, mimeType, etc.
      * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
-     * @param {string|null} [requestedSkill=null] - Name of skill to force-load via load_skill tool.
+     * @param {string|null} [requestedSkill=null] - Name of skill to preload via orchestrator.
      * @returns {Promise<void>}
      */
     async function makeApiCallWithMedia(userMessage, mediaData, tool_choice = 'auto', requestedSkill = null) {
         try {
             const config = await getApiConfig();
-            
-            // If a specific skill is requested, force tool mode
-            const requestedToolChoice = requestedSkill ? 'load_skill' : tool_choice;
+
             const effectiveToolChoice =
-                requestedToolChoice === undefined || requestedToolChoice === null || requestedToolChoice === ''
+                tool_choice === undefined || tool_choice === null || tool_choice === ''
                     ? 'auto'
-                    : requestedToolChoice;
+                    : tool_choice;
 
             // Store media data for the run
             currentMediaData = mediaData;
@@ -1116,7 +1162,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 systemPrompt: config.systemPrompt,
                 tool_choice: effectiveToolChoice,
                 tools: await getTools(),
-                mediaData: mediaData
+                mediaData: mediaData,
+                requestedSkill
             };
 
             // Start orchestrator run
@@ -1166,6 +1213,42 @@ document.addEventListener('DOMContentLoaded', () => {
     // The new listener directly sends 'getExplainContent'.
 
     /**
+     * Parse a potential slash command.
+     * @param {string} message - Raw user input
+     * @param {Array} availableSkills - List of available skills
+     * @returns {{ type: 'skills'|'skill'|null, skillName: string|null, body: string }}
+     */
+    function parseCommand(message, availableSkills) {
+        const trimmed = message.trim();
+        if (!trimmed.startsWith('/')) {
+            return { type: null, skillName: null, body: message };
+        }
+
+        // /skills
+        if (trimmed === '/skills') {
+            return { type: 'skills', skillName: null, body: '' };
+        }
+
+        // /<skill-name> [body]
+        const rest = trimmed.slice(1);
+        const spaceIdx = rest.indexOf(' ');
+        const cmd = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+        const body = spaceIdx === -1 ? '' : rest.slice(spaceIdx + 1);
+
+        const foundSkill = availableSkills.find(s =>
+            s.name.toLowerCase() === cmd.toLowerCase() ||
+            s.name.toLowerCase().replace(/-/g, '') === cmd.toLowerCase().replace(/-/g, '')
+        );
+
+        if (foundSkill) {
+            return { type: 'skill', skillName: foundSkill.name, body: body.trim() };
+        }
+
+        // Unknown slash command — pass through as normal message
+        return { type: null, skillName: null, body: message };
+    }
+
+    /**
      * Detects if user wants to use a specific skill.
      * Patterns: "use <skill> skill", "apply <skill> skill", "with <skill> skill"
      * @param {string} message - User message
@@ -1206,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeStreamingToolCall = null; // Reset active tool call
         const message = userInput.value;
         if (message.trim() && !userInput.disabled) {
-            // Check for skill intent
+            // Fetch available skills
             const skillsResp = await new Promise(resolve => {
                 chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
                     if (chrome.runtime.lastError) resolve({ skills: [] });
@@ -1214,17 +1297,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             const availableSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
-            const requestedSkill = detectSkillIntent(message, availableSkills);
 
-            if (requestedSkill) {
-                addMessage('System', `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`);
+            // Check for slash commands
+            const cmd = parseCommand(message, availableSkills);
+
+            if (cmd.type === 'skills') {
+                addMessage('User', message);
+                if (availableSkills.length === 0) {
+                    addMessage('System', 'No skills installed.');
+                } else {
+                    const list = availableSkills.map(s => `- **${s.name}**: ${s.description}`).join('\n');
+                    addMessage('System', `📚 Available skills:\n${list}`);
+                }
+                userInput.value = '';
+                return;
+            }
+
+            let requestedSkill = null;
+            let effectiveMessage = message;
+
+            if (cmd.type === 'skill') {
+                requestedSkill = cmd.skillName;
+                effectiveMessage = cmd.body || message;
+                addMessage('User', effectiveMessage);
+                addMessage('System', `📚 Loading skill: **${requestedSkill}**`);
+            } else {
+                // Fall back to natural-language intent detection
+                requestedSkill = detectSkillIntent(message, availableSkills);
+                if (requestedSkill) {
+                    addMessage('User', message);
+                    addMessage('System', `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`);
+                }
             }
 
             if (currentMediaData) {
-                makeApiCallWithMedia(message, currentMediaData, 'auto', requestedSkill);
+                makeApiCallWithMedia(effectiveMessage, currentMediaData, 'auto', requestedSkill);
                 currentMediaData = null; // Clear media after use
             } else {
-                makeApiCall(message, 'auto', requestedSkill);
+                makeApiCall(effectiveMessage, 'auto', requestedSkill);
             }
             userInput.value = '';
         }
@@ -1240,8 +1350,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         return definedTools.filter(tool => {
-            if (tool.name === 'load_skill') {
-                console.warn("Chat: Skipping user-defined tool named 'load_skill' because it is reserved.");
+            if (tool.name === 'load_skill' || tool.name === 'skills_list' || tool.name === 'skill_view') {
+                console.warn(`Chat: Skipping user-defined tool named '${tool.name}' because it is reserved.`);
                 return false;
             }
             return true;
@@ -1252,19 +1362,17 @@ document.addEventListener('DOMContentLoaded', () => {
      * Makes an API call to the LLM endpoint using the orchestrator.
      * @param {string|null} [userMessage=null] - The user's message/prompt.
      * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
-     * @param {string|null} [requestedSkill=null] - Name of skill to force-load via load_skill tool.
+     * @param {string|null} [requestedSkill=null] - Name of skill to preload via orchestrator.
      * @returns {Promise<void>}
      */
     async function makeApiCall(userMessage = null, tool_choice = 'auto', requestedSkill = null) {
         try {
             const config = await getApiConfig();
-            
-            // If a specific skill is requested, force tool mode
-            const requestedToolChoice = requestedSkill ? 'load_skill' : tool_choice;
+
             const effectiveToolChoice =
-                requestedToolChoice === undefined || requestedToolChoice === null || requestedToolChoice === ''
+                tool_choice === undefined || tool_choice === null || tool_choice === ''
                     ? 'auto'
-                    : requestedToolChoice;
+                    : tool_choice;
 
             // Add user message to history if provided
             if (userMessage) {
@@ -1293,7 +1401,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 modelName: config.modelName,
                 systemPrompt: config.systemPrompt,
                 tool_choice: effectiveToolChoice,
-                tools: await getTools()
+                tools: await getTools(),
+                requestedSkill
             };
 
             // Create UI elements for streaming
@@ -1466,7 +1575,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     id: instructionToExecute.id, // Keep track of the instruction
                                     name: instructionToExecute.name,
                                     content: instructionToExecute.content,
-                                    tool_choice: instructionToExecute.tool_choice // Assuming tool_choice might be needed later
+                                    tool_choice: normalizeToolChoice(instructionToExecute.tool_choice)
                                 }
                             },
                             (response) => {
@@ -1510,7 +1619,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 chrome.runtime.sendMessage({
                                     action: 'executeLlmApiRequest',
                                     prompt: prompt,
-                                    tool_choice: originalInstruction.tool_choice
+                                    tool_choice: normalizeToolChoice(originalInstruction.tool_choice)
                                 });
                             }
                         );

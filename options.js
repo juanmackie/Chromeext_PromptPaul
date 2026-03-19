@@ -1122,8 +1122,8 @@ function setupToolHandlers() {
         return;
       }
 
-      if (toolName === 'load_skill') {
-        showStatus("Tool name 'load_skill' is reserved by Prompt Paul.", true);
+      if (toolName === 'load_skill' || toolName === 'skills_list' || toolName === 'skill_view') {
+        showStatus("Tool name '${toolName}' is reserved by Prompt Paul.", true);
         loadingManager.setButtonLoading(saveToolBtn, false);
         return;
       }

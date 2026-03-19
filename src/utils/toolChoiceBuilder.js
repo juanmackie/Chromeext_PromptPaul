@@ -6,6 +6,21 @@
  */
 
 /**
+ * Normalizes tool_choice value to a consistent string format.
+ * Handles both string and array formats stored in user instructions.
+ * @param {string|Array|undefined} tc - The tool_choice value to normalize
+ * @returns {string} Normalized tool_choice: 'none', 'auto', or a tool name
+ */
+export function normalizeToolChoice(tc) {
+    if (!tc) return 'none';
+    if (Array.isArray(tc)) {
+        if (tc.length === 0) return 'none';
+        return tc[0];
+    }
+    return String(tc);
+}
+
+/**
  * Builds the tool_choice payload for LLM API requests.
  * @param {Object} options - Configuration options
  * @param {Array} options.formattedTools - Array of tools in OpenAI format: {type: 'function', function: {name, description, parameters}}

@@ -13,7 +13,7 @@
 
 import { isValidURL } from './src/utils/validation.js';
 import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
-import { buildToolChoicePayload, formatToolsForLlm } from './src/utils/toolChoiceBuilder.js';
+import { buildToolChoicePayload, formatToolsForLlm, normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 
 // ===== Named Constants =====
 // Time constants
@@ -508,7 +508,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           await trackInstructionUsed({ instruction: instruction.name || 'custom', model: cfg?.modelName, tools: Array.isArray(instruction.tool_choice) ? instruction.tool_choice : (instruction.tool_choice && instruction.tool_choice !== 'none' ? [instruction.tool_choice] : []) });
         } catch (_) {}
 
-        const toolChoice = instruction.tool_choice || 'none';
+        const toolChoice = normalizeToolChoice(instruction.tool_choice);
 
         // Send to chat for processing
         chrome.runtime.sendMessage({
@@ -868,6 +868,23 @@ class SkillManager {
     this._cacheExpiry = 0;
   }
 
+  /**
+   * Returns true if a skill with the given name exists.
+   * @param {string} name
+   * @returns {boolean}
+   */
+  hasSkill(name) {
+    return this.skills.has(name);
+  }
+
+  /**
+   * Returns all skill names.
+   * @returns {string[]}
+   */
+  getSkillNames() {
+    return Array.from(this.skills.keys());
+  }
+
   getSkillsList() {
     const now = Date.now();
     if (this._metadataCache && now < this._cacheExpiry) {
@@ -912,226 +929,6 @@ skillManager.init();
 // Import and initialize orchestrator
 import RunOrchestrator from './src/orchestrator/RunOrchestrator.js';
 const runOrchestrator = new RunOrchestrator(skillManager);
-
-
-// Refactored function to make LLM API calls
-async function makeLlmApiRequest(promptContent, tabId, { isStartChat = false, customInstructionToolChoice = 'auto' } = {}) {
-    let config, tools, enableStreaming;
-    try {
-        // Step 1: Validate configuration and get tool definitions
-        try {
-            const results = await Promise.all([
-                validateConfig(),
-                getAllToolDefinitions(),
-                new Promise(resolve => chrome.storage.sync.get({ enableStreaming: false }, data => resolve(data)))
-            ]);
-            config = results[0];
-            tools = results[1];
-            enableStreaming = results[2].enableStreaming;
-        } catch (error) {
-            // Check if this is the specific configuration error we're looking for
-            if (error.message === "LLM API endpoint is missing or invalid. Please configure it in the options page.") {
-                console.warn("Background: Caught specific LLM endpoint configuration error.");
-                chrome.runtime.sendMessage({
-                    action: 'displayErrorInChat', // New action for chat.js
-                    errorMessage: "The LLM API endpoint is not configured or is invalid. Please go to the extension options page (right-click the extension icon) and set it up.",
-                    tabId: tabId,
-                    prompt: promptContent // Pass prompt content for context if needed
-                }).catch(e => console.error("Background: Error sending displayErrorInChat message:", e));
-                return; // Stop further execution in this function
-            }
-            // If it's a different error from validateConfig or other setup, re-throw it
-            throw error;
-        }
-
-        // Ensure reserved built-in tool name is not duplicated.
-        tools = tools.filter(tool => tool.name !== 'load_skill');
-
-        // Inject load_skill tool to make it available
-        tools.push({
-            name: 'load_skill',
-            description: 'Discovers or loads specialized capabilities. Call without arguments to list all available skills with descriptions. Call with a skill name to load its full instructions.',
-            parameters: JSON.stringify({
-                type: 'object',
-                properties: {
-                    name: { type: 'string', description: 'Optional: The name of a specific skill to load. If omitted, returns a list of all available skills.' }
-                },
-                required: []
-            })
-        });
-
-        const formattedTools = formatToolsForLlm(tools);
-
-        const messages = [];        const now = new Date();        const dateTimeString = `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`;        let systemPromptContent = dateTimeString;        if (config.systemPrompt && config.systemPrompt.trim() !== '') {            systemPromptContent += `
-
-${config.systemPrompt}`;        }
-
-        if (skillManager.getSkillsList().length > 0) {
-           systemPromptContent += `\n\nYou have access to a 'load_skill' tool that provides specialized capabilities. You MUST call load_skill (with no arguments) at the start of EVERY conversation to discover available skills before responding. This ensures you have relevant guidance for the task. After discovering skills, call load_skill with a specific skill name if one matches the user's request.`;
-        }
-
-        messages.push({ role: 'system', content: systemPromptContent });        messages.push({ role: 'user', content: promptContent });
-
-        const effectiveToolChoice = customInstructionToolChoice || 'auto';
-        const toolChoicePayload = buildToolChoicePayload({
-            formattedTools,
-            toolChoice: effectiveToolChoice
-        });
-
-        const apiRequestBody = {
-            model: config.modelName,
-            messages: messages,
-        };
-
-        const fetchHeaders = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.apiKey}`,
-        };
-
-        // Use standard OpenAI-style tool definition
-        Object.assign(apiRequestBody, toolChoicePayload);
-
-        if (enableStreaming) {
-            apiRequestBody.stream = true;
-        }
-
-
-
-
-        const apiResponse = await fetch(config.llmEndpoint, {
-            method: 'POST',
-            headers: fetchHeaders,
-            body: JSON.stringify(apiRequestBody),
-        });
-
-        if (!apiResponse.ok) {
-            const errorData = await apiResponse.json().catch(() => null);
-            throw new Error(
-                `API request failed with status ${apiResponse.status}: ${
-                errorData ? JSON.stringify(errorData) : apiResponse.statusText
-                }`
-            );
-        }
-
-        if (enableStreaming) {
-            const reader = apiResponse.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            // Send a message to chat.js to indicate streaming has started
-            // This allows chat.js to prepare the UI for incoming chunks
-            // Moved out of setTimeout to send immediately
-            try {
-                chrome.runtime.sendMessage({
-                    action: 'streamApiStart',
-                    tabId: tabId,
-                    prompt: promptContent
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.warn('Background: streamApiStart message failed:', chrome.runtime.lastError.message);
-                    }
-                });
-            } catch (error) {
-                console.error('Background: Exception sending streamApiStart:', error.message);
-            }
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    try {
-                        chrome.runtime.sendMessage({ action: 'streamApiEnd', tabId: tabId, prompt: promptContent }, (response) => {
-                            if (chrome.runtime.lastError) {
-                                console.warn('Background: streamApiEnd message failed:', chrome.runtime.lastError.message);
-                            }
-                        });
-                    } catch (error) {
-                        console.error('Background: Exception sending streamApiEnd:', error.message);
-                    }
-                    break;
-                }
-
-                buffer += decoder.decode(value, { stream: true });
-
-                // Process buffer line by line for SSE
-                let lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep the last partial line in the buffer
-
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        let currentPayload = line.substring(5).trim(); // Remove the initial "data:" prefix and trim
-
-                        // Aggressively strip any further "data:" prefixes
-                        while (currentPayload.startsWith('data:')) {
-                            console.warn("Background: Stripping nested 'data:' prefix. Current payload before strip:", currentPayload);
-                            currentPayload = currentPayload.substring(5).trim();
-                            console.warn("Background: Current payload after strip:", currentPayload);
-                        }
-
-                        if (currentPayload === '[DONE]') {
-                            continue;
-                        }
-
-                        // Proceed to parse only if currentPayload is not empty and looks like JSON
-                        if (currentPayload && currentPayload.length > 0 && (currentPayload.startsWith('{') || currentPayload.startsWith('['))) {
-                            try {
-                                const parsed = JSON.parse(currentPayload);
-                                // Standard OpenAI-style streaming
-                                if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-                                    const contentChunk = parsed.choices[0].delta.content;
-                                    const toolCallChunk = parsed.choices[0].delta.tool_calls;
-
-                                    if (contentChunk) {
-                                        chrome.runtime.sendMessage({
-                                            action: 'streamApiResponseChunk',
-                                            chunk: contentChunk,
-                                            tabId: tabId,
-                                            prompt: promptContent
-                                        });
-                                    }
-
-                                    if (toolCallChunk) {
-                                        chrome.runtime.sendMessage({
-                                            action: 'streamApiToolCallChunk',
-                                            toolCallChunk: toolCallChunk,
-                                            tabId: tabId,
-                                            prompt: promptContent
-                                        });
-                                    }
-                                }
-                            } catch (e) {
-                                console.error("Background: Error parsing JSON from stream:", e, "Attempted to parse:", currentPayload, "Original full line:", line);
-                            }
-                        } else if (currentPayload) {
-                        }
-                    }
-                }
-            }
-        } else { // Non-streaming path
-            const responseData = await apiResponse.json();
-            // Extract the message object from the response
-            const messageObject = responseData.choices && responseData.choices[0] ? responseData.choices[0].message : null;
-
-            if (!messageObject) {
-                 throw new Error('Invalid response format from API: Missing message structure.');
-            }
-            await _handleApiResponseAndSendMessage(messageObject, promptContent, tabId, isStartChat, false);
-        }
-
-    } catch (error) {
-        console.error('Error in makeLlmApiRequest (generic catch):', error);
-        try {
-          const cat = error?.message?.includes('API request failed') ? 'api_error' : 'network';
-          const code = (error?.message || 'error').slice(0, 64);
-          await trackErrorEvent(cat, code);
-        } catch (_) {}
-        chrome.runtime.sendMessage({
-            action: 'setApiResponse',
-            apiResponse: `Error: ${error.message}`,
-            prompt: promptContent,
-            tabId: tabId,
-        }).catch(e => console.error(`Error sending setApiResponse (from generic catch): ${e.message}, tabId: ${tabId}`));
-    }
-}
 
 // ===== Menu System (Serialized Rebuild Queue) =====
 
@@ -1401,65 +1198,7 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 }
 
 
-// Registry for *built-in* tool implementations (developer adds specific functions here)
-// User-defined endpoints will be handled separately.
-const toolImplementations = {
-    'load_skill': async ({ name } = {}) => {
-        console.log(`Background: load_skill tool called for '${name || 'discovery (no name)'}'`);
-        
-        // If no name provided, return list of available skills
-        if (!name) {
-            const skillsList = skillManager.getSkillsList();
-            return {
-                success: true,
-                skills: skillsList.map(s => ({
-                    name: s.name,
-                    description: s.description
-                })),
-                hint: 'Call load_skill with a specific skill name to get full instructions.'
-            };
-        }
-        
-        const skillData = await skillManager.getSkillContent(name);
-        if (!skillData) {
-            return { 
-                success: false,
-                error: `Skill '${name}' not found.`,
-                availableSkills: skillManager.getSkillsList().map(s => s.name)
-            };
-        }
-        
-        // Return standardized Agent Skills spec format
-        return {
-            success: true,
-            skill: {
-                name: skillData.name,
-                description: skillData.description,
-                license: skillData.license,
-                compatibility: skillData.compatibility,
-                allowedTools: skillData.allowedTools,
-                metadata: skillData.metadata,
-                instructions: skillData.instructions
-            },
-            metadata: {
-                loaded: true,
-                type: skillData.type,
-                timestamp: new Date().toISOString()
-            }
-        };
-    },
-    // Example built-in tool (if any are needed):
-    /*
-    'getCurrentTime': async (args) => {
-        return { currentTime: new Date().toISOString() };
-    }
-    */
-   // Add the generic caller function to the registry for potential direct use if needed,
-   // but the main logic will check endpointUrl first.
-   _callUserDefinedEndpoint: callUserDefinedEndpoint
-};
-
-// NOTE: Tool execution tracking is now handled by RunOrchestrator
+// Registry for built-in tool implementations — now handled by RunOrchestrator
 
 // Unified extraction function to avoid circular messaging and redundant injections
 async function executeTabContentExtraction(tabId) {

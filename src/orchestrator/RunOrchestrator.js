@@ -8,6 +8,8 @@
  * - Single source of truth for skill policy
  */
 
+import { normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
+
 class RunOrchestrator {
   constructor(skillManager) {
     this.skillManager = skillManager;
@@ -50,6 +52,18 @@ class RunOrchestrator {
     run.accumulatedText = '';
     run.activeToolCall = null;
 
+    // Sanitize conversation history to strip orphan tool messages
+    run.conversationHistory = this._sanitizeMessages(run.conversationHistory);
+
+    // If the user explicitly requested a skill, inject a system hint
+    // so the model loads it with skill_view instead of hallucinating it as a tool.
+    if (run.config.requestedSkill) {
+      run.conversationHistory.unshift({
+        role: 'system',
+        content: `The user explicitly requested the "${run.config.requestedSkill}" skill. Use the skill_view tool with name: "${run.config.requestedSkill}" to load it, then proceed using your own tools and knowledge. Never emit a skill name as a tool call.`
+      });
+    }
+
     try {
       // Build tools with skill injection
       const tools = await this._buildTools(run);
@@ -81,9 +95,35 @@ class RunOrchestrator {
     this.toolExecutions.add(executionKey);
 
     try {
-      const implementation = this.toolImplementations.get(toolCall.function.name);
+      const { name } = toolCall.function;
+
+      // Classify: is this a registered tool, a known skill, or unknown?
+      const implementation = this.toolImplementations.get(name);
+
       if (!implementation) {
-        throw new Error(`Tool '${toolCall.function.name}' not found`);
+        // Guard: skills are not executable tools
+        if (this.skillManager && this.skillManager.hasSkill(name)) {
+          console.warn(`[Orchestrator] '${name}' is a skill, not an executable tool`);
+          return {
+            success: true,
+            result: {
+              error: 'SKILL_NOT_EXECUTABLE',
+              message: `'${name}' is a skill (reference instructions), not a callable tool. Use skill_view to load it into context, then proceed with your own tools and knowledge.`,
+              hint: `Call skill_view with name: '${name}' to load the skill instructions.`
+            }
+          };
+        }
+
+        console.warn(`[Orchestrator] Unknown tool/skill name: '${name}'`);
+        return {
+          success: true,
+          result: {
+            error: 'UNKNOWN_CAPABILITY',
+            message: `'${name}' is not a registered tool or skill. Check the available tools in the system prompt and the available skills listed there.`,
+            availableTools: Array.from(this.toolImplementations.keys()),
+            availableSkills: this.skillManager ? (await this.skillManager.getSkillNames()).map(String) : []
+          }
+        };
       }
 
       const args = JSON.parse(toolCall.function.arguments || '{}');
@@ -162,18 +202,40 @@ class RunOrchestrator {
       tools.push(...run.config.tools);
     }
 
-    // Inject load_skill if skills available
+    // Inject skill-related tools if skills available
     const skills = await this.skillManager.getSkillsList();
     if (skills.length > 0) {
       tools.push({
         type: 'function',
         function: {
-          name: 'load_skill',
-          description: 'Discovers or loads specialized capabilities. Call without arguments to list all available skills with descriptions. Call with a skill name to load its full instructions.',
+          name: 'skills_list',
+          description: 'List all available skills with names and short descriptions. Skills are reference instructions — never emit a skill name as a tool call.',
+          parameters: { type: 'object', properties: {}, required: [] }
+        }
+      });
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'skill_view',
+          description: 'Load full instructions for a specific skill by name.',
           parameters: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'The name of a specific skill to load' }
+              name: { type: 'string', description: 'The exact name of the skill to load.' }
+            },
+            required: ['name']
+          }
+        }
+      });
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'load_skill',
+          description: '[Compatibility] Loads a skill by name. Prefer skill_view instead.',
+          parameters: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'The name of a specific skill to load.' }
             },
             required: []
           }
@@ -200,11 +262,16 @@ class RunOrchestrator {
       }
     }
 
-    // Add system prompt with skill guidance
+    // Add system prompt with skill catalog
     const skills = await this.skillManager.getSkillsList();
     if (skills.length > 0) {
       const systemMsg = messages.find(m => m.role === 'system');
-      const skillPrompt = 'You have access to a "load_skill" tool that provides specialized capabilities. Proactively call load_skill (with no arguments to discover available skills, or with a skill name to load specific instructions) since all tasks could benefit from specialized guidance.';
+      
+      // Format skill catalog: "name (description)"
+      const skillCatalog = skills.map(s => `${s.name} (${s.description})`).join(', ');
+      
+      const skillPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
+      
       if (systemMsg) {
         systemMsg.content += `\n\n${skillPrompt}`;
       } else {
@@ -218,10 +285,11 @@ class RunOrchestrator {
       stream: true
     };
 
-    // Only include tools if not forcing 'none'
-    if (run.config.tool_choice !== 'none' && tools.length > 0) {
+    // Normalize tool_choice and only include tools if not 'none'
+    const normalizedToolChoice = normalizeToolChoice(run.config.tool_choice);
+    if (normalizedToolChoice !== 'none' && tools.length > 0) {
       body.tools = tools;
-      body.tool_choice = run.config.tool_choice === 'auto' ? 'auto' : { type: 'function', function: { name: run.config.tool_choice } };
+      body.tool_choice = normalizedToolChoice === 'auto' ? 'auto' : { type: 'function', function: { name: normalizedToolChoice } };
     }
 
     const response = await fetch(llmEndpoint, {
@@ -307,11 +375,13 @@ class RunOrchestrator {
       messages: messages.filter(m => m.role !== 'system')
     };
 
-    // Add system prompt with skill guidance
+    // Add system prompt with skill catalog
     const skills = await this.skillManager.getSkillsList();
     let systemPrompt = '';
     if (skills.length > 0) {
-      systemPrompt = 'You have access to specialized capabilities. Use tools as needed.';
+      // Format skill catalog: "name (description)"
+      const skillCatalog = skills.map(s => `${s.name} (${s.description})`).join(', ');
+      systemPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
     }
 
     if (run.config.systemPrompt) {
@@ -322,8 +392,9 @@ class RunOrchestrator {
       body.system = systemPrompt;
     }
 
-    // Add tools if not forcing 'none'
-    if (run.config.tool_choice !== 'none' && tools.length > 0) {
+    // Normalize tool_choice and add tools if not 'none'
+    const normalizedToolChoice = normalizeToolChoice(run.config.tool_choice);
+    if (normalizedToolChoice !== 'none' && tools.length > 0) {
       body.tools = tools.map(t => ({
         name: t.function.name,
         description: t.function.description,
@@ -402,18 +473,24 @@ class RunOrchestrator {
 
       if (!run.activeToolCall) {
         // First chunk of tool call
+        const tcName = tc.function?.name || '';
         run.activeToolCall = {
           id: tc.id,
           type: 'function',
           function: {
-            name: tc.function?.name || '',
+            name: tcName,
             arguments: tc.function?.arguments || ''
           }
         };
 
+        const isTool = tcName ? this.toolImplementations.has(tcName) : false;
+        const isSkill = tcName && this.skillManager ? this.skillManager.hasSkill(tcName) : false;
+        const capability = isSkill && !isTool ? 'skill' : (isTool ? 'tool' : 'unknown');
+
         this._emitEvent(run.id, {
           type: 'tool_start',
-          toolCall: run.activeToolCall
+          toolCall: run.activeToolCall,
+          capability
         });
       } else {
         // Accumulate
@@ -438,18 +515,24 @@ class RunOrchestrator {
       }
     } else if (event.type === 'content_block_start') {
       if (event.content_block.type === 'tool_use') {
+        const tcName = event.content_block.name;
         run.activeToolCall = {
           id: event.content_block.id,
           type: 'function',
           function: {
-            name: event.content_block.name,
+            name: tcName,
             arguments: ''
           }
         };
 
+        const isTool = this.toolImplementations.has(tcName);
+        const isSkill = this.skillManager && this.skillManager.hasSkill(tcName);
+        const capability = isSkill && !isTool ? 'skill' : (isTool ? 'tool' : 'unknown');
+
         this._emitEvent(run.id, {
           type: 'tool_start',
-          toolCall: run.activeToolCall
+          toolCall: run.activeToolCall,
+          capability
         });
       }
     } else if (event.type === 'content_block_stop') {
@@ -532,6 +615,43 @@ class RunOrchestrator {
     });
   }
 
+  /**
+   * Sanitize messages before sending to OpenAI.
+   * - Strips orphan tool messages (tool results without preceding assistant tool_calls)
+   * - Ensures valid role ordering for OpenAI strict mode
+   */
+  _sanitizeMessages(messages) {
+    const out = [];
+    const validToolCallIds = new Set();
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (!msg || typeof msg !== 'object') continue;
+
+      // Track tool_call IDs from assistant messages
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc.id) validToolCallIds.add(tc.id);
+        }
+        out.push(msg);
+        continue;
+      }
+
+      // Strip orphan tool messages
+      if (msg.role === 'tool') {
+        if (msg.tool_call_id && validToolCallIds.has(msg.tool_call_id)) {
+          out.push(msg);
+        }
+        // Drop orphan silently
+        continue;
+      }
+
+      out.push(msg);
+    }
+
+    return out;
+  }
+
   _generateRunId() {
     return `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -541,25 +661,23 @@ class RunOrchestrator {
   }
 
   _registerBuiltInTools() {
-    this.toolImplementations.set('load_skill', async (args) => {
-      if (!args.name) {
-        const skills = await this.skillManager.getSkillsList();
-        return {
-          success: true,
-          skills: skills.map(s => ({ name: s.name, description: s.description })),
-          hint: 'Call with a specific skill name to get full instructions.'
-        };
-      }
-
-      const skillData = await this.skillManager.getSkillContent(args.name);
-      if (!skillData) {
+    // Shared helper for loading a single skill by name
+    const loadSkillByName = async (name) => {
+      if (!name) {
         return {
           success: false,
-          error: `Skill '${args.name}' not found.`,
+          error: 'Missing required parameter "name".',
           availableSkills: (await this.skillManager.getSkillsList()).map(s => s.name)
         };
       }
-
+      const skillData = await this.skillManager.getSkillContent(name);
+      if (!skillData) {
+        return {
+          success: false,
+          error: `Skill '${name}' not found.`,
+          availableSkills: (await this.skillManager.getSkillsList()).map(s => s.name)
+        };
+      }
       return {
         success: true,
         skill: skillData,
@@ -567,8 +685,29 @@ class RunOrchestrator {
           loaded: true,
           type: skillData.type,
           timestamp: new Date().toISOString()
-        }
+        },
+        reminder: 'Skills are reference instructions, not callable tools. Proceed with your own tools and knowledge using this guidance.'
       };
+    };
+
+    // skills_list — discovery only
+    this.toolImplementations.set('skills_list', async () => {
+      const skills = await this.skillManager.getSkillsList();
+      return {
+        success: true,
+        skills: skills.map(s => ({ name: s.name, description: s.description })),
+        hint: 'Use skill_view with a specific skill name to load its full instructions.'
+      };
+    });
+
+    // skill_view — load full content
+    this.toolImplementations.set('skill_view', async (args) => {
+      return loadSkillByName(args?.name);
+    });
+
+    // load_skill — compatibility alias
+    this.toolImplementations.set('load_skill', async (args) => {
+      return loadSkillByName(args?.name);
     });
   }
 }
