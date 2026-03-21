@@ -10,6 +10,7 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
 - **Custom Instructions**: Create and save custom prompts for repeated use
 - **Multi-Modal Support**: Analyze images, videos, and audio content
 - **Profile Management**: Configure multiple API profiles with different endpoints and models
+- **Agent Skills**: OpenClaw-compatible skills system for specialized AI capabilities with slash commands
 - **Dark/Light Theme**: Toggle between themes for comfortable viewing
 - **Privacy-First Analytics**: Optional, anonymized usage analytics with easy opt-out
 
@@ -55,6 +56,64 @@ The extension comes with a demo API key from [Mistral AI](https://mistral.ai) fo
 3. Click **Add New Instruction**
 4. Enter a name and the instruction prompt
 5. Instructions can be pinned to the quick actions sidebar
+
+### Using Agent Skills
+
+Prompt Paul includes an OpenClaw-compatible skills system that allows you to invoke specialized AI capabilities with slash commands.
+
+**Built-in Skills**:
+- **humanizer** - Transforms AI-generated text to sound more natural and human
+- **weather-guide** - A guide for understanding weather reports and terminology
+
+**Invoking Skills**:
+
+1. **Canonical Slash Command** (works for any skill):
+   ```
+   /skill <name> [your input here]
+   ```
+   Example: `/skill humanizer Make this sound more natural: "The implementation will require resources."`
+
+2. **Per-Skill Command** (for user-invocable skills):
+   ```
+   /<skill-name> [your input here]
+   ```
+   Example: `/humanizer Make this sound more natural: "The implementation will require resources."`
+
+3. **Natural Language**:
+   ```
+   use <skill> skill and [your request]
+   ```
+   Example: `use humanizer skill and make this sound more natural`
+
+**Discovering Skills**:
+- Type `/skills` in the chat to see all available skills
+- Skills marked as "user-invocable" will have their own slash commands
+
+### Creating Custom Skills
+
+Skills are defined using the Agent Skills specification with YAML frontmatter:
+
+```markdown
+---
+name: "my-skill"
+description: "What this skill does"
+user-invocable: true              # Creates /name command
+disable-model-invocation: false   # Hide from AI suggestions?
+metadata:
+  {"tags": "coding, help"}
+---
+
+# Skill Instructions
+
+Detailed instructions for the AI on how to use this skill...
+```
+
+**Key Fields**:
+- `name` - Unique identifier (lowercase, hyphens allowed)
+- `description` - Brief description for AI/user discovery
+- `user-invocable` - Whether to expose as `/name` command (default: true)
+- `disable-model-invocation` - Whether to hide from AI suggestions (default: false)
+- `metadata` - Additional metadata (OpenClaw-compatible)
 
 ## Usage
 

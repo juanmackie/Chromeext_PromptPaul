@@ -1215,7 +1215,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Parse a potential slash command.
      * @param {string} message - Raw user input
-     * @param {Array} availableSkills - List of available skills
+     * @param {Array} availableSkills - List of available skills (from getSkills)
      * @returns {{ type: 'skills'|'skill'|null, skillName: string|null, body: string }}
      */
     function parseCommand(message, availableSkills) {
@@ -1229,15 +1229,32 @@ document.addEventListener('DOMContentLoaded', () => {
             return { type: 'skills', skillName: null, body: '' };
         }
 
-        // /<skill-name> [body]
         const rest = trimmed.slice(1);
         const spaceIdx = rest.indexOf(' ');
         const cmd = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
         const body = spaceIdx === -1 ? '' : rest.slice(spaceIdx + 1);
 
+        // /skill <name> [body] (OpenClaw-style canonical path)
+        if (cmd === 'skill' && body) {
+            const bodyParts = body.split(/\s+/);
+            const skillName = bodyParts[0];
+            const remaining = bodyParts.slice(1).join(' ');
+            const foundSkill = availableSkills.find(s =>
+                s.name.toLowerCase() === skillName.toLowerCase() ||
+                s.name.toLowerCase().replace(/-/g, '') === skillName.toLowerCase().replace(/-/g, '')
+            );
+            if (foundSkill) {
+                return { type: 'skill', skillName: foundSkill.name, body: remaining.trim() };
+            }
+            // Unknown skill name — pass through
+            return { type: null, skillName: null, body: message };
+        }
+
+        // /<skill-name> [body] — per-skill command (alias, only for user-invocable skills)
         const foundSkill = availableSkills.find(s =>
-            s.name.toLowerCase() === cmd.toLowerCase() ||
-            s.name.toLowerCase().replace(/-/g, '') === cmd.toLowerCase().replace(/-/g, '')
+            (s.name.toLowerCase() === cmd.toLowerCase() ||
+             s.name.toLowerCase().replace(/-/g, '') === cmd.toLowerCase().replace(/-/g, '')) &&
+            s.userInvocable !== false
         );
 
         if (foundSkill) {
@@ -1250,7 +1267,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Detects if user wants to use a specific skill.
-     * Patterns: "use <skill> skill", "apply <skill> skill", "with <skill> skill"
+     * Patterns: "use <skill> skill", "apply <skill>", "with <skill>", "use /<skill>", etc.
      * @param {string} message - User message
      * @param {Array} availableSkills - List of available skills
      * @returns {string|null} - Skill name if detected, null otherwise
@@ -1260,10 +1277,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const lowerMessage = message.toLowerCase();
 
-        // Pattern: "use <skill> skill", "apply <skill> skill", "with <skill> skill"
+        // Pattern: "use /skillname ...", "apply skillname skill ...", "use /skillname and ..."
+        // The trailing "skill" is optional. The leading "/" is optional.
         const skillPatterns = [
-            /(?:use|apply|with)\s+(\w[\w-]*)\s+skill/i,
-            /(?:using|applying)\s+(\w[\w-]*)\s+skill/i
+            /(?:use|apply|with|invoke|using|applying)\s+\/?(\w[\w-]*)\s+skill/i,
+            /(?:use|apply|with|invoke|using|applying)\s+\/(\w[\w-]*)/i,
         ];
 
         for (const pattern of skillPatterns) {
@@ -1277,6 +1295,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
                 if (foundSkill) {
                     console.log(`Chat: Detected skill intent for '${foundSkill.name}'`);
+                    return foundSkill.name;
+                }
+            }
+        }
+
+        // Also detect any /skillname embedded in text after an intent verb
+        // e.g. "use /humanizer and rewrite", "apply /summarizer to this"
+        const verbSlashPattern = /(?:use|apply|with|invoke|using|applying)\s+\/(\w[\w-]*)/i;
+        const slashMatch = lowerMessage.match(verbSlashPattern);
+        if (slashMatch) {
+            const requestedSkill = slashMatch[1].toLowerCase();
+            const foundSkill = availableSkills.find(s =>
+                s.name.toLowerCase() === requestedSkill ||
+                s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
+            );
+            if (foundSkill) {
+                console.log(`Chat: Detected slash-in-verb intent for '${foundSkill.name}'`);
+                return foundSkill.name;
+            }
+        }
+
+        // Also check for skill names mentioned anywhere after "use" or "apply"
+        // Handles: "please use humanizer to rewrite", "use the summarizer on this"
+        const loosePatterns = [
+            /(?:use|apply|with|invoke)\s+(?:the\s+)?(\w[\w-]*)\s+(?:to|for|on|and|then|in)/i
+        ];
+
+        for (const pattern of loosePatterns) {
+            const match = lowerMessage.match(pattern);
+            if (match) {
+                const requestedSkill = match[1].toLowerCase();
+                const foundSkill = availableSkills.find(s =>
+                    s.name.toLowerCase() === requestedSkill ||
+                    s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
+                );
+                if (foundSkill) {
+                    console.log(`Chat: Detected loose skill intent for '${foundSkill.name}'`);
                     return foundSkill.name;
                 }
             }
@@ -1303,11 +1358,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (cmd.type === 'skills') {
                 addMessage('User', message);
-                if (availableSkills.length === 0) {
+                // Filter to eligible skills (exclude disableModelInvocation)
+                const eligibleSkills = availableSkills.filter(s => !s.disableModelInvocation);
+                if (eligibleSkills.length === 0) {
                     addMessage('System', 'No skills installed.');
                 } else {
-                    const list = availableSkills.map(s => `- **${s.name}**: ${s.description}`).join('\n');
-                    addMessage('System', `📚 Available skills:\n${list}`);
+                    const slashCommands = (skillsResp.slashCommands || []);
+                    let list = eligibleSkills.map(s => `- **${s.name}**: ${s.description}`).join('\n');
+                    let cmdList = '';
+                    if (slashCommands.length > 0) {
+                        cmdList = '\n\n**Commands:**\n' + slashCommands.map(c => `- \`/${c.name}\` — ${c.description}`).join('\n');
+                        cmdList += '\n- `/skill <name> [input]` — invoke any skill by name';
+                    }
+                    addMessage('System', `📚 Available skills:\n${list}${cmdList}`);
                 }
                 userInput.value = '';
                 return;
@@ -1467,22 +1530,46 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingManager.showToast('Please enter an instruction', 'warning');
             return;
         }
-        
+
         try {
+            // Fetch available skills for intent detection
+            const skillsResp = await new Promise(resolve => {
+                chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+                    if (chrome.runtime.lastError) resolve({ skills: [] });
+                    else resolve(response || { skills: [] });
+                });
+            });
+            const availableSkills = (skillsResp && skillsResp.skills) ? skillsResp.skills : [];
+
+            // Detect skill intent from instruction
+            const cmd = parseCommand(instruction, availableSkills);
+            let requestedSkill = null;
+            let effectiveInstruction = instruction;
+
+            if (cmd.type === 'skill') {
+                requestedSkill = cmd.skillName;
+                effectiveInstruction = cmd.body || instruction;
+            } else {
+                requestedSkill = detectSkillIntent(instruction, availableSkills);
+            }
+
             let prompt;
             
             if (currentMediaData && currentMediaData.base64) {
                 // Media + instruction
                 const mediaInfo = `[${currentMediaData.type.toUpperCase()} loaded]`;
-                prompt = instruction + '\n\n' + mediaInfo;
+                prompt = effectiveInstruction + '\n\n' + mediaInfo;
                 
                 // Show chat area and hide one-off instruction area
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
-                addMessage('User', `${instruction}\n\n[${mediaInfo}]`);
+                addMessage('User', `${effectiveInstruction}\n\n[${mediaInfo}]`);
+                if (requestedSkill) {
+                    addMessage('System', `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`);
+                }
                 
-                // Use orchestrator with media
-                await makeApiCallWithMedia(instruction, currentMediaData);
+                // Use orchestrator with media + skill
+                await makeApiCallWithMedia(effectiveInstruction, currentMediaData, 'auto', requestedSkill);
                 
                 instructionInput.value = '';
                 selectedTextDiv.textContent = '';
@@ -1490,14 +1577,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentMediaData = null;
             } else if (selectedText && selectedText.trim()) {
                 // Text-only instruction
-                prompt = instruction + '\n\n' + selectedText;
+                prompt = effectiveInstruction + '\n\n' + selectedText;
                 
                 // Show chat area and hide one-off instruction area
                 oneoffInstructionArea.style.display = 'none';
                 chatMainArea.style.display = 'block';
-                addMessage('User', `${instruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`);
+                addMessage('User', `${effectiveInstruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`);
+                if (requestedSkill) {
+                    addMessage('System', `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`);
+                }
                 
-                await makeApiCall(prompt, 'auto');
+                await makeApiCall(prompt, 'auto', requestedSkill);
                 instructionInput.value = '';
                 selectedTextDiv.textContent = '';
                 selectedText = null;

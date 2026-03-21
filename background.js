@@ -898,7 +898,14 @@ class SkillManager {
       license: s.metadata.license,
       allowedTools: s.metadata['allowed-tools'],
       metadata: s.metadata.metadata,
-      type: s.type
+      type: s.type,
+      // OpenClaw-style fields
+      userInvocable: s.metadata['user-invocable'] !== false,
+      disableModelInvocation: s.metadata['disable-model-invocation'] === true,
+      commandDispatch: s.metadata['command-dispatch'] || null,
+      commandTool: s.metadata['command-tool'] || null,
+      commandArgMode: s.metadata['command-arg-mode'] || null,
+      homepage: s.metadata.homepage || null
     }));
     this._cacheExpiry = now + 60000;
     return this._metadataCache;
@@ -908,17 +915,109 @@ class SkillManager {
     const skill = this.skills.get(name);
     if (!skill || !skill.parsed?.valid) return null;
 
+    const m = skill.parsed.metadata;
+    return {
+      name: m.name,
+      description: m.description,
+      license: m.license,
+      compatibility: m.compatibility,
+      allowedTools: m['allowed-tools'],
+      metadata: m.metadata,
+      instructions: skill.parsed.instructions,
+      rawMarkdown: skill.raw,
+      type: skill.type,
+      // OpenClaw-style fields
+      userInvocable: m['user-invocable'] !== false,
+      disableModelInvocation: m['disable-model-invocation'] === true,
+      commandDispatch: m['command-dispatch'] || null,
+      commandTool: m['command-tool'] || null,
+      commandArgMode: m['command-arg-mode'] || null,
+      homepage: m.homepage || null
+    };
+  }
+
+  // --- OpenClaw-style skill capabilities ---
+
+  /**
+   * Returns eligible skills for prompt injection (filters out disable-model-invocation).
+   * Mirrors OpenClaw's session-level skill snapshot.
+   * @returns {Array<{name:string, description:string}>}
+   */
+  getEligibleSnapshot() {
+    return Array.from(this.skills.values())
+      .filter(s => {
+        if (!s.parsed?.valid) return false;
+        // Skills with disable-model-invocation are hidden from the model
+        if (s.parsed.metadata['disable-model-invocation'] === true) return false;
+        return true;
+      })
+      .map(s => ({
+        name: s.parsed.metadata.name,
+        description: s.parsed.metadata.description,
+        userInvocable: s.parsed.metadata['user-invocable'] !== false,
+        commandDispatch: s.parsed.metadata['command-dispatch'] || null,
+        commandTool: s.parsed.metadata['command-tool'] || null
+      }));
+  }
+
+  /**
+   * Formats eligible skills as a compact text block for system-prompt injection.
+   * Mirrors OpenClaw's formatSkillsForPrompt.
+   * @returns {string}
+   */
+  formatForPrompt() {
+    const skills = this.getEligibleSnapshot();
+    if (skills.length === 0) return '';
+    const lines = skills.map(s => `- **${s.name}**: ${s.description}`);
+    return `Available skills (reference instructions, NOT callable tools):\n${lines.join('\n')}\nUse the \`/skill <name> [input]\` command to activate a skill.`;
+  }
+
+  /**
+   * Resolve a skill by name and return its full instructions for prompt injection.
+   * @param {string} name
+   * @returns {{name:string, description:string, instructions:string, metadata:Object, rawMarkdown:string, type:string}|null}
+   */
+  resolveSkill(name) {
+    const skill = this.skills.get(name);
+    if (!skill || !skill.parsed?.valid) return null;
     return {
       name: skill.parsed.metadata.name,
       description: skill.parsed.metadata.description,
-      license: skill.parsed.metadata.license,
-      compatibility: skill.parsed.metadata.compatibility,
-      allowedTools: skill.parsed.metadata['allowed-tools'],
-      metadata: skill.parsed.metadata.metadata,
       instructions: skill.parsed.instructions,
+      metadata: skill.parsed.metadata,
       rawMarkdown: skill.raw,
       type: skill.type
     };
+  }
+
+  /**
+   * Get per-skill slash commands for user-invocable skills.
+   * @returns {Array<{name:string, description:string, commandDispatch:string|null, commandTool:string|null}>}
+   */
+  getSlashCommands() {
+    return Array.from(this.skills.values())
+      .filter(s => {
+        if (!s.parsed?.valid) return false;
+        // Default user-invocable is true unless explicitly false
+        return s.parsed.metadata['user-invocable'] !== false;
+      })
+      .map(s => ({
+        name: s.parsed.metadata.name,
+        description: s.parsed.metadata.description,
+        commandDispatch: s.parsed.metadata['command-dispatch'] || null,
+        commandTool: s.parsed.metadata['command-tool'] || null
+      }));
+  }
+
+  /**
+   * Check if a skill uses command-dispatch: tool (deterministic dispatch, no model).
+   * @param {string} name
+   * @returns {boolean}
+   */
+  isCommandDispatch(name) {
+    const skill = this.skills.get(name);
+    if (!skill || !skill.parsed?.valid) return false;
+    return skill.parsed.metadata['command-dispatch'] === 'tool';
   }
 }
 
@@ -1332,7 +1431,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (request.action === 'getSkills') {
         const skillsList = skillManager.getSkillsList();
-        sendResponse({ skills: skillsList });
+        const slashCommands = skillManager.getSlashCommands();
+        sendResponse({ skills: skillsList, slashCommands });
         return true;
     }
 
@@ -1342,6 +1442,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }).catch(error => {
             sendResponse({ error: error.message });
         });
+        return true;
+    }
+
+    if (request.action === 'resolveSkill') {
+        const resolved = skillManager.resolveSkill(request.name);
+        sendResponse({ skill: resolved });
+        return true;
+    }
+
+    if (request.action === 'getSkillSnapshot') {
+        const snapshot = skillManager.getEligibleSnapshot();
+        const promptText = skillManager.formatForPrompt();
+        sendResponse({ snapshot, promptText });
         return true;
     }
 

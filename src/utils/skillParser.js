@@ -13,7 +13,13 @@ const ALLOWED_FRONTMATTER_FIELDS = new Set([
   'license',
   'compatibility',
   'metadata',
-  'allowed-tools'
+  'allowed-tools',
+  'user-invocable',
+  'disable-model-invocation',
+  'command-dispatch',
+  'command-tool',
+  'command-arg-mode',
+  'homepage'
 ]);
 
 const LEGACY_EXTENSION_FIELDS = ['version', 'triggers', 'tags', 'examples'];
@@ -178,6 +184,14 @@ export function parseFrontmatter(text) {
       const nested = readIndentedBlock(lines, index + 1);
 
       if (key === 'metadata') {
+        // Try to parse the indented block as inline JSON (OpenClaw-style)
+        const jsonAttempt = tryParseMetadataJson(nested.lines);
+        if (jsonAttempt !== null) {
+          result[key] = jsonAttempt;
+          index = nested.nextIndex;
+          continue;
+        }
+        // Fallback to flat key-value parsing
         result[key] = parseMetadataBlock(nested.lines, index + 1);
       } else if (nested.lines.length > 0 && nested.lines.every(line => line.trim().startsWith('- '))) {
         result[key] = nested.lines.map(line => parseScalar(line.trim().slice(2)));
@@ -211,13 +225,7 @@ export function validateMetadata(metadata, options = {}) {
   }
 
   const normalized = { ...metadata };
-  const unknownFields = Object.keys(normalized).filter(key => !ALLOWED_FRONTMATTER_FIELDS.has(key));
-  if (unknownFields.length > 0) {
-    return {
-      valid: false,
-      error: `Unexpected frontmatter field(s): ${unknownFields.join(', ')}`
-    };
-  }
+  // Pass through unknown fields for forward-compatibility (e.g. OpenClaw extensions)
 
   if (typeof normalized.name !== 'string' || normalized.name.trim() === '') {
     return { valid: false, error: 'Missing required field: name' };
@@ -290,9 +298,42 @@ export function validateMetadata(metadata, options = {}) {
       if (!metadataKey) {
         return { valid: false, error: "Field 'metadata' contains an empty key" };
       }
-      metadataMap[metadataKey] = String(value ?? '');
+      // Preserve nested objects/arrays (OpenClaw-style metadata.openclaw.*)
+      // Only stringify scalars
+      if (value !== null && typeof value === 'object') {
+        metadataMap[metadataKey] = value;
+      } else {
+        metadataMap[metadataKey] = String(value ?? '');
+      }
     }
     normalized.metadata = metadataMap;
+  }
+
+  // Validate OpenClaw-style boolean fields
+  for (const boolField of ['user-invocable', 'disable-model-invocation']) {
+    if (normalized[boolField] !== undefined) {
+      if (typeof normalized[boolField] !== 'boolean') {
+        return { valid: false, error: `Field '${boolField}' must be a boolean` };
+      }
+    }
+  }
+
+  // Validate OpenClaw-style string fields
+  for (const strField of ['command-dispatch', 'command-tool', 'command-arg-mode', 'homepage']) {
+    if (normalized[strField] !== undefined) {
+      if (typeof normalized[strField] !== 'string' || normalized[strField].trim() === '') {
+        return { valid: false, error: `Field '${strField}' must be a non-empty string` };
+      }
+      normalized[strField] = normalized[strField].trim();
+    }
+  }
+
+  // Validate command-dispatch enum
+  if (normalized['command-dispatch'] !== undefined) {
+    const allowed = ['tool'];
+    if (!allowed.includes(normalized['command-dispatch'])) {
+      return { valid: false, error: `Field 'command-dispatch' must be one of: ${allowed.join(', ')}` };
+    }
   }
 
   if (typeof options.expectedDirectoryName === 'string' && options.expectedDirectoryName.trim() !== '') {
@@ -305,16 +346,37 @@ export function validateMetadata(metadata, options = {}) {
     }
   }
 
+  const resultMetadata = {
+    name: normalizedName,
+    description: normalizedDescription,
+    ...(normalized.license !== undefined ? { license: normalized.license } : {}),
+    ...(normalized.compatibility !== undefined ? { compatibility: normalized.compatibility } : {}),
+    ...(normalized['allowed-tools'] !== undefined ? { 'allowed-tools': normalized['allowed-tools'] } : {}),
+    ...(normalized.metadata !== undefined ? { metadata: normalized.metadata } : {}),
+    // OpenClaw-style fields
+    ...(normalized['user-invocable'] !== undefined ? { 'user-invocable': normalized['user-invocable'] } : {}),
+    ...(normalized['disable-model-invocation'] !== undefined ? { 'disable-model-invocation': normalized['disable-model-invocation'] } : {}),
+    ...(normalized['command-dispatch'] !== undefined ? { 'command-dispatch': normalized['command-dispatch'] } : {}),
+    ...(normalized['command-tool'] !== undefined ? { 'command-tool': normalized['command-tool'] } : {}),
+    ...(normalized['command-arg-mode'] !== undefined ? { 'command-arg-mode': normalized['command-arg-mode'] } : {}),
+    ...(normalized.homepage !== undefined ? { homepage: normalized.homepage } : {})
+  };
+
+  // Pass through any other unknown fields for forward-compatibility
+  const knownKeys = new Set([
+    'name', 'description', 'license', 'compatibility', 'allowed-tools', 'metadata',
+    'user-invocable', 'disable-model-invocation',
+    'command-dispatch', 'command-tool', 'command-arg-mode', 'homepage'
+  ]);
+  for (const [key, value] of Object.entries(normalized)) {
+    if (!knownKeys.has(key)) {
+      resultMetadata[key] = value;
+    }
+  }
+
   return {
     valid: true,
-    metadata: {
-      name: normalizedName,
-      description: normalizedDescription,
-      ...(normalized.license !== undefined ? { license: normalized.license } : {}),
-      ...(normalized.compatibility !== undefined ? { compatibility: normalized.compatibility } : {}),
-      ...(normalized['allowed-tools'] !== undefined ? { 'allowed-tools': normalized['allowed-tools'] } : {}),
-      ...(normalized.metadata !== undefined ? { metadata: normalized.metadata } : {})
-    }
+    metadata: resultMetadata
   };
 }
 
@@ -347,6 +409,25 @@ export function generateSkillMarkdown({ name, description, instructions, options
     frontmatterLines.push(`allowed-tools: ${formatYamlString(allowedTools.trim())}`);
   }
 
+  // OpenClaw-style fields
+  for (const [fmKey, optKey] of [
+    ['user-invocable', 'userInvocable'],
+    ['disable-model-invocation', 'disableModelInvocation'],
+    ['command-dispatch', 'commandDispatch'],
+    ['command-tool', 'commandTool'],
+    ['command-arg-mode', 'commandArgMode'],
+    ['homepage', 'homepage']
+  ]) {
+    const val = options[optKey] ?? options[fmKey];
+    if (val !== undefined && val !== null && val !== '') {
+      if (typeof val === 'boolean') {
+        frontmatterLines.push(`${fmKey}: ${val}`);
+      } else {
+        frontmatterLines.push(`${fmKey}: ${formatYamlString(String(val))}`);
+      }
+    }
+  }
+
   const metadata = options.metadata;
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length > 0) {
     frontmatterLines.push('metadata:');
@@ -356,7 +437,12 @@ export function generateSkillMarkdown({ name, description, instructions, options
       if (!safeKey) {
         continue;
       }
-      frontmatterLines.push(`  ${safeKey}: ${formatYamlString(String(value ?? ''))}`);
+      // Serialize nested objects as inline JSON (OpenClaw-style)
+      if (value !== null && typeof value === 'object') {
+        frontmatterLines.push(`  ${safeKey}: ${JSON.stringify(value)}`);
+      } else {
+        frontmatterLines.push(`  ${safeKey}: ${formatYamlString(String(value ?? ''))}`);
+      }
     }
   }
 
@@ -380,13 +466,21 @@ export function extractSkillMetadata(parsedSkill) {
     return null;
   }
 
+  const m = parsedSkill.metadata;
   return {
-    name: parsedSkill.metadata.name,
-    description: parsedSkill.metadata.description,
-    ...(parsedSkill.metadata.license ? { license: parsedSkill.metadata.license } : {}),
-    ...(parsedSkill.metadata.compatibility ? { compatibility: parsedSkill.metadata.compatibility } : {}),
-    ...(parsedSkill.metadata['allowed-tools'] ? { 'allowed-tools': parsedSkill.metadata['allowed-tools'] } : {}),
-    ...(parsedSkill.metadata.metadata ? { metadata: parsedSkill.metadata.metadata } : {})
+    name: m.name,
+    description: m.description,
+    ...(m.license ? { license: m.license } : {}),
+    ...(m.compatibility ? { compatibility: m.compatibility } : {}),
+    ...(m['allowed-tools'] ? { 'allowed-tools': m['allowed-tools'] } : {}),
+    ...(m.metadata ? { metadata: m.metadata } : {}),
+    // OpenClaw-style fields
+    ...(m['user-invocable'] !== undefined ? { 'user-invocable': m['user-invocable'] } : {}),
+    ...(m['disable-model-invocation'] !== undefined ? { 'disable-model-invocation': m['disable-model-invocation'] } : {}),
+    ...(m['command-dispatch'] ? { 'command-dispatch': m['command-dispatch'] } : {}),
+    ...(m['command-tool'] ? { 'command-tool': m['command-tool'] } : {}),
+    ...(m['command-arg-mode'] ? { 'command-arg-mode': m['command-arg-mode'] } : {}),
+    ...(m.homepage ? { homepage: m.homepage } : {})
   };
 }
 
@@ -450,6 +544,15 @@ function normalizeMetadataForValidation(metadata) {
   if (normalized.allowed_tools !== undefined && normalized['allowed-tools'] === undefined) {
     normalized['allowed-tools'] = normalized.allowed_tools;
     delete normalized.allowed_tools;
+  }
+
+  // Normalize OpenClaw boolean fields from YAML strings to actual booleans
+  for (const boolField of ['user-invocable', 'disable-model-invocation']) {
+    if (normalized[boolField] !== undefined && typeof normalized[boolField] === 'string') {
+      const v = normalized[boolField].trim().toLowerCase();
+      if (v === 'true') normalized[boolField] = true;
+      else if (v === 'false') normalized[boolField] = false;
+    }
   }
 
   const metadataMap =
@@ -562,6 +665,29 @@ function parseScalar(rawValue) {
   return trimmed;
 }
 
+/**
+ * Try to parse an indented metadata block as inline JSON.
+ * Returns the parsed object if successful, or null if not JSON.
+ * @param {string[]} lines - Indented lines (leading spaces stripped)
+ * @returns {Object|null}
+ */
+function tryParseMetadataJson(lines) {
+  if (!lines || lines.length === 0) return null;
+
+  const joined = lines.join('\n').trim();
+  if (!joined.startsWith('{')) return null;
+
+  try {
+    const parsed = JSON.parse(joined);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (_) {
+    // not valid JSON
+  }
+  return null;
+}
+
 function parseMetadataBlock(lines, baseLineNumber) {
   const metadata = {};
 
@@ -578,8 +704,19 @@ function parseMetadataBlock(lines, baseLineNumber) {
     }
 
     const key = match[1];
-    const value = parseScalar(match[2]);
-    metadata[key] = String(value);
+    const rawVal = match[2];
+
+    // Try parsing value as JSON first (for nested objects/arrays)
+    if (rawVal && (rawVal.trim().startsWith('{') || rawVal.trim().startsWith('['))) {
+      try {
+        metadata[key] = JSON.parse(rawVal.trim());
+        continue;
+      } catch (_) {
+        // not JSON, fall through to scalar parsing
+      }
+    }
+
+    metadata[key] = parseScalar(rawVal);
   }
 
   return metadata;

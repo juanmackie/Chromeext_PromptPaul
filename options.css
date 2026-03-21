@@ -1802,3 +1802,92 @@ body.dark-theme #toolsTable tbody tr:hover {
   color: #9ca3af;
 }
 
+/* Skill help box styles */
+.skill-help-box {
+  background: var(--ext-muted);
+  border: 1px solid var(--ext-border);
+}
+
+.skill-help-box h3 {
+  color: var(--ext-foreground);
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.skill-help-box h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.skill-help-box ul {
+  margin: 0.5rem 0;
+}
+
+.skill-help-box li {
+  margin-bottom: 0.3rem;
+}
+
+.skill-help-box code {
+  background: var(--ext-background);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.skill-help-box table {
+  margin: 0.5rem 0;
+  width: 100%;
+}
+
+.skill-help-box th,
+.skill-help-box td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ext-border);
+}
+
+.skill-help-box th {
+  font-weight: 600;
+  color: var(--ext-muted-foreground);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.skill-help-box tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Checkbox label styles */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ext-primary);
+}
+
+/* Form row for multi-column layouts */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+[data-theme="dark"] .skill-help-box {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+[data-theme="dark"] .skill-help-box code {
+  background: #111827;
+}
+

@@ -343,7 +343,72 @@
         <div class="section-divider"></div>
       </div>
       <div class="collapsible-content">
-        <p>Manage skills that the AI can load on demand to perform specialized tasks. You can add your own or use built-in ones.</p>
+        <p>Manage skills that provide specialized AI capabilities. Skills are loaded on demand and can be invoked via slash commands.</p>
+        
+        <!-- Skill Help Box -->
+        <div class="skill-help-box" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
+          <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px;">
+            <span class="material-symbols-outlined">help_outline</span>
+            How to Use Skills
+          </h3>
+          
+          <div style="margin-bottom: 1rem;">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--ext-primary);">Slash Commands</h4>
+            <ul style="margin: 0; padding-left: 1.5rem; color: var(--ext-foreground);">
+              <li><code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px;">/skills</code> - List all available skills</li>
+              <li><code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px;">/skill &lt;name&gt; [input]</code> - Invoke any skill (canonical method)</li>
+              <li><code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px;">/&lt;skill-name&gt;</code> - Quick command for user-invocable skills</li>
+            </ul>
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--ext-primary);">Examples</h4>
+            <ul style="margin: 0; padding-left: 1.5rem; color: var(--ext-foreground);">
+              <li><code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px;">/skill humanizer Rewrite this text...</code></li>
+              <li><code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px;">/humanizer Make this sound more natural...</code></li>
+              <li><code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px;">use humanizer skill and rewrite this paragraph</code> (natural language)</li>
+            </ul>
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--ext-primary);">Skill Metadata Fields</h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--ext-border);">
+                  <th style="text-align: left; padding: 8px; color: var(--ext-muted-foreground);">Field</th>
+                  <th style="text-align: left; padding: 8px; color: var(--ext-muted-foreground);">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom: 1px solid var(--ext-border);">
+                  <td style="padding: 8px; font-family: monospace;">user-invocable</td>
+                  <td style="padding: 8px;">Creates a shortcut command <code>/skillname</code> when true (default: true)</td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--ext-border);">
+                  <td style="padding: 8px; font-family: monospace;">disable-model-invocation</td>
+                  <td style="padding: 8px;">Hides skill from AI suggestions but keeps it explicitly invocable</td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--ext-border);">
+                  <td style="padding: 8px; font-family: monospace;">command-dispatch</td>
+                  <td style="padding: 8px;">Set to "tool" for deterministic execution bypassing the AI model</td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--ext-border);">
+                  <td style="padding: 8px; font-family: monospace;">command-tool</td>
+                  <td style="padding: 8px;">Tool name to invoke when command-dispatch is "tool"</td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--ext-border);">
+                  <td style="padding: 8px; font-family: monospace;">metadata</td>
+                  <td style="padding: 8px;">OpenClaw-compatible JSON metadata (e.g., requires, install)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <p style="margin: 0; font-size: 13px; color: var(--ext-muted-foreground);">
+            <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 16px;">info</span>
+            Skills follow the <a href="https://agentskills.io" target="_blank" style="color: var(--ext-primary);">Agent Skills</a> specification and are compatible with OpenClaw-style metadata.
+          </p>
+        </div>
 
       <div id="skills-list">
         <div class="table-container">
@@ -393,15 +458,112 @@
 
       <div class="skill-form" style="margin-top: 2rem; padding: 1.5rem; background: var(--ext-muted); border-radius: 0px; border: 1px solid var(--ext-border);">
         <h3>Add/Edit Skill</h3>
+        
         <div class="form-group">
-          <label for="skillName">Skill Name (ID)</label>
+          <label for="skillName">
+            Skill Name (ID)
+            <button type="button" class="help-tooltip" data-tooltip="Unique identifier for the skill. Lowercase letters, numbers, and hyphens only. No spaces. This becomes the /command-name in chat.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
           <input type="text" id="skillName" placeholder="e.g., python-coding-guide">
-          <small>Unique identifier for the skill (no spaces, lowercase).</small>
+          <small>Unique identifier used for commands (no spaces, lowercase).</small>
         </div>
+        
         <div class="form-group">
-          <label for="skillDescription">Description</label>
-          <textarea id="skillDescription" placeholder="e.g., Best practices for Python coding." rows="2"></textarea>
-          <small>Brief description used by the AI to decide when to load this skill.</small>
+          <label for="skillDescription">
+            Description
+            <button type="button" class="help-tooltip" data-tooltip="Brief description of what the skill does. This is shown to users in /skills list and helps the AI understand when to use this skill.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <textarea id="skillDescription" placeholder="e.g., Best practices for Python coding with type hints and modern patterns." rows="2"></textarea>
+          <small>Brief description used for discovery and AI selection.</small>
+        </div>
+        
+        <div class="form-group">
+          <label for="skillContent">
+            Instructions (Markdown)
+            <button type="button" class="help-tooltip" data-tooltip="Detailed instructions for the AI on how to use this skill. Write in Markdown format. These instructions are injected directly when the skill is invoked.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <textarea id="skillContent" placeholder="# Your Skill Name
+
+## Purpose
+What this skill does and when to use it.
+
+## Guidelines
+1. Step-by-step instructions
+2. Best practices
+3. Output format requirements
+
+## Examples
+**Input:** Example input here
+**Output:** Expected output here" rows="10"></textarea>
+          <small>Detailed Markdown instructions for the AI.</small>
+        </div>
+
+        <!-- OpenClaw-style Fields -->
+        <div class="form-group">
+          <label for="skillMetadata">
+            Metadata (JSON)
+            <button type="button" class="help-tooltip" data-tooltip="OpenClaw-compatible metadata as JSON object. Supports nested objects for requirements, installers, etc. Example: {&quot;prompt-paul-tags&quot;: &quot;coding, python&quot;, &quot;openclaw&quot;: {&quot;requires&quot;: {&quot;bins&quot;: [&quot;python&quot;]}}}.">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+          </label>
+          <textarea id="skillMetadata" placeholder='{"tags": "coding, help"}' rows="3"></textarea>
+          <small>Optional OpenClaw-compatible metadata (JSON format).</small>
+        </div>
+
+        <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+          <div class="form-group">
+            <label for="skillUserInvocable" class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="skillUserInvocable" checked>
+              <span>User Invocable</span>
+              <button type="button" class="help-tooltip" data-tooltip="When checked, creates a shortcut command /skillname for quick access. Disable to only allow invocation via /skill name.">
+                <span class="material-symbols-outlined" style="font-size: 16px;">help</span>
+              </button>
+            </label>
+            <small style="margin-left: 24px;">Creates /name shortcut command</small>
+          </div>
+
+          <div class="form-group">
+            <label for="skillDisableModelInvocation" class="checkbox-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="skillDisableModelInvocation">
+              <span>Disable Model Invocation</span>
+              <button type="button" class="help-tooltip" data-tooltip="When checked, the skill won't be suggested to the AI automatically. It remains available for explicit user invocation via slash commands.">
+                <span class="material-symbols-outlined" style="font-size: 16px;">help</span>
+              </button>
+            </label>
+            <small style="margin-left: 24px;">Hide from AI suggestions</small>
+          </div>
+        </div>
+
+        <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
+          <div class="form-group">
+            <label for="skillLicense">License</label>
+            <input type="text" id="skillLicense" placeholder="MIT">
+            <small>License identifier (e.g., MIT, Apache-2.0)</small>
+          </div>
+
+          <div class="form-group">
+            <label for="skillCompatibility">Compatibility</label>
+            <input type="text" id="skillCompatibility" placeholder="Extension version">
+            <small>Version compatibility info</small>
+          </div>
+        </div>
+
+        <input type="hidden" id="skillId">
+        
+        <div class="button-group" style="margin-top: 1.5rem;">
+          <button type="button" id="saveSkill" class="save-button"><span class="material-symbols-outlined">save</span> Save Skill</button>
+          <button type="button" id="clearSkillForm" class="clear-form-button">
+            <span class="material-symbols-outlined">clear_all</span>
+            Clear Form
+          </button>
+        </div>
+      </div>
         </div>
         <div class="form-group">
           <label for="skillContent">Instructions (Markdown)</label>

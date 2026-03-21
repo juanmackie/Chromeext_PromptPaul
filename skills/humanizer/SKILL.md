@@ -2,8 +2,9 @@
 name: "humanizer"
 description: "Transforms AI-generated text to sound more natural, human, and less robotic. Use this when the user wants text that doesn't sound like it was written by an AI."
 license: "MIT"
+user-invocable: true
 metadata:
-  prompt-paul-tags: "writing, editing, tone, style"
+  {"prompt-paul-tags": "writing, editing, tone, style"}
 ---
 
 # Humanizer Skill

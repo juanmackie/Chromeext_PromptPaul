@@ -55,13 +55,32 @@ class RunOrchestrator {
     // Sanitize conversation history to strip orphan tool messages
     run.conversationHistory = this._sanitizeMessages(run.conversationHistory);
 
-    // If the user explicitly requested a skill, inject a system hint
-    // so the model loads it with skill_view instead of hallucinating it as a tool.
+    // If the user explicitly requested a skill, resolve and inject instructions
+    // directly into conversation — no model tool call needed (mirrors OpenClaw).
     if (run.config.requestedSkill) {
-      run.conversationHistory.unshift({
-        role: 'system',
-        content: `The user explicitly requested the "${run.config.requestedSkill}" skill. Use the skill_view tool with name: "${run.config.requestedSkill}" to load it, then proceed using your own tools and knowledge. Never emit a skill name as a tool call.`
-      });
+      const resolved = this.skillManager.resolveSkill(run.config.requestedSkill);
+      if (resolved) {
+        const skillBlock = [
+          `══════════════════════════════════════════`,
+          `  SKILL: ${resolved.name}`,
+          `  ${resolved.description}`,
+          `══════════════════════════════════════════`,
+          '',
+          resolved.instructions,
+          '',
+          `══════════════════════════════════════════`,
+          `Skill instructions loaded. Follow them for this response.`
+        ].join('\n');
+
+        run.conversationHistory.unshift({
+          role: 'system',
+          content: skillBlock
+        });
+
+        console.log(`[Orchestrator] Injected skill instructions: ${resolved.name}`);
+      } else {
+        console.warn(`[Orchestrator] Requested skill '${run.config.requestedSkill}' not found`);
+      }
     }
 
     try {
@@ -202,9 +221,9 @@ class RunOrchestrator {
       tools.push(...run.config.tools);
     }
 
-    // Inject skill-related tools if skills available
-    const skills = await this.skillManager.getSkillsList();
-    if (skills.length > 0) {
+    // Inject skill-related tools if eligible skills available
+    const eligibleSkills = this.skillManager.getEligibleSnapshot();
+    if (eligibleSkills.length > 0) {
       tools.push({
         type: 'function',
         function: {
@@ -262,13 +281,13 @@ class RunOrchestrator {
       }
     }
 
-    // Add system prompt with skill catalog
-    const skills = await this.skillManager.getSkillsList();
-    if (skills.length > 0) {
+    // Add system prompt with skill catalog (eligible skills only)
+    const eligibleSkills = this.skillManager.getEligibleSnapshot();
+    if (eligibleSkills.length > 0) {
       const systemMsg = messages.find(m => m.role === 'system');
       
       // Format skill catalog: "name (description)"
-      const skillCatalog = skills.map(s => `${s.name} (${s.description})`).join(', ');
+      const skillCatalog = eligibleSkills.map(s => `${s.name} (${s.description})`).join(', ');
       
       const skillPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
       
@@ -375,12 +394,12 @@ class RunOrchestrator {
       messages: messages.filter(m => m.role !== 'system')
     };
 
-    // Add system prompt with skill catalog
-    const skills = await this.skillManager.getSkillsList();
+    // Add system prompt with skill catalog (eligible skills only)
+    const eligibleSkills = this.skillManager.getEligibleSnapshot();
     let systemPrompt = '';
-    if (skills.length > 0) {
+    if (eligibleSkills.length > 0) {
       // Format skill catalog: "name (description)"
-      const skillCatalog = skills.map(s => `${s.name} (${s.description})`).join(', ');
+      const skillCatalog = eligibleSkills.map(s => `${s.name} (${s.description})`).join(', ');
       systemPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
     }
 

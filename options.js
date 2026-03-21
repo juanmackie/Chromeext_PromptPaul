@@ -1413,10 +1413,14 @@ function setupSkillHandlers() {
       const licenseInput = document.getElementById('skillLicense');
       const compatibilityInput = document.getElementById('skillCompatibility');
       const allowedToolsInput = document.getElementById('skillAllowedTools');
+      const userInvocableInput = document.getElementById('skillUserInvocable');
+      const disableModelInvocationInput = document.getElementById('skillDisableModelInvocation');
 
       const license = licenseInput ? licenseInput.value.trim() : '';
       const compatibility = compatibilityInput ? compatibilityInput.value.trim() : '';
       const allowedTools = allowedToolsInput ? allowedToolsInput.value.trim() : '';
+      const userInvocable = userInvocableInput ? userInvocableInput.checked : true;
+      const disableModelInvocation = disableModelInvocationInput ? disableModelInvocationInput.checked : false;
 
       let customMetadata = null;
       const metadataInput = document.getElementById('skillMetadata');
@@ -1445,7 +1449,9 @@ function setupSkillHandlers() {
         ...(license ? { license } : {}),
         ...(compatibility ? { compatibility } : {}),
         ...(allowedTools ? { 'allowed-tools': allowedTools } : {}),
-        ...(customMetadata ? { metadata: customMetadata } : {})
+        ...(customMetadata ? { metadata: customMetadata } : {}),
+        'user-invocable': userInvocable,
+        'disable-model-invocation': disableModelInvocation
       });
 
       if (!validation.valid) {
@@ -1462,7 +1468,9 @@ function setupSkillHandlers() {
           ...(license ? { license } : {}),
           ...(compatibility ? { compatibility } : {}),
           ...(allowedTools ? { allowedTools } : {}),
-          ...(customMetadata ? { metadata: customMetadata } : {})
+          ...(customMetadata ? { metadata: customMetadata } : {}),
+          userInvocable,
+          disableModelInvocation
         }
       });
 
@@ -1523,6 +1531,13 @@ function setupSkillHandlers() {
       const input = document.getElementById(id);
       if (input) input.value = '';
     });
+    
+    // Reset checkbox fields
+    const userInvocableInput = document.getElementById('skillUserInvocable');
+    if (userInvocableInput) userInvocableInput.checked = true;
+    
+    const disableModelInvocationInput = document.getElementById('skillDisableModelInvocation');
+    if (disableModelInvocationInput) disableModelInvocationInput.checked = false;
 
     showStatus('Skill form cleared.');
   }
