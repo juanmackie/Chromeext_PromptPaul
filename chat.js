@@ -1738,30 +1738,169 @@ document.addEventListener('DOMContentLoaded', () => {
     let isListening = false;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const isSpeechRecognitionSupported = !!SpeechRecognition;
+    const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
+    const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
+    const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
     let firstPermissionDenial = true;
+    let voiceInputSettings = {
+        voiceInputEnabled: true,
+        voiceInputPermissionState: 'unknown'
+    };
 
-    function toggleVoiceInput() {
+    function getVoiceInputSettings() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get([
+                VOICE_INPUT_ENABLED_KEY,
+                VOICE_INPUT_PERMISSION_STATE_KEY,
+                VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY
+            ], (result) => {
+                const voiceInputEnabled = Object.prototype.hasOwnProperty.call(result || {}, VOICE_INPUT_ENABLED_KEY)
+                    ? !!result[VOICE_INPUT_ENABLED_KEY]
+                    : true;
+
+                resolve({
+                    voiceInputEnabled,
+                    voiceInputPermissionState: result?.[VOICE_INPUT_PERMISSION_STATE_KEY] || 'unknown',
+                    voiceInputPermissionLastChecked: result?.[VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY] || null
+                });
+            });
+        });
+    }
+
+    function setVoiceInputSettings(updates) {
+        return new Promise((resolve, reject) => {
+            chrome.storage.local.set(updates, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                resolve();
+            });
+        });
+    }
+
+    function isMicrophonePermissionDenied(error) {
+        if (!error) return false;
+
+        const name = typeof error.name === 'string' ? error.name.toLowerCase() : '';
+        const code = typeof error.error === 'string' ? error.error.toLowerCase() : '';
+        const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+
+        return name === 'notallowederror'
+            || name === 'permissiondeniederror'
+            || code === 'not-allowed'
+            || message.includes('permission denied')
+            || message.includes('permission dismissed')
+            || message.includes('not allowed');
+    }
+
+    function getVoiceToggleDisabledReason(settings = voiceInputSettings) {
+        if (!isSpeechRecognitionSupported || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+            return 'unsupported';
+        }
+
+        if (!settings.voiceInputEnabled) {
+            return 'disabled';
+        }
+
+        if (settings.voiceInputPermissionState === 'denied') {
+            return 'denied';
+        }
+
+        return null;
+    }
+
+    function updateVoiceToggleButtonState() {
+        if (!voiceToggleButton) {
+            return;
+        }
+
+        const disabledReason = getVoiceToggleDisabledReason();
+        const shouldDisable = !!disabledReason;
+
+        if (shouldDisable && isListening) {
+            stopVoiceInput();
+        }
+
+        voiceToggleButton.disabled = shouldDisable;
+
+        if (disabledReason === 'unsupported') {
+            voiceToggleButton.title = 'Voice input not supported';
+        } else if (disabledReason === 'disabled') {
+            voiceToggleButton.title = 'Voice input disabled in Settings';
+        } else if (disabledReason === 'denied') {
+            voiceToggleButton.title = 'Microphone permission denied - re-enable in Settings and test again';
+        } else {
+            voiceToggleButton.title = 'Voice Input';
+        }
+    }
+
+    async function syncVoiceInputSettings() {
+        voiceInputSettings = await getVoiceInputSettings();
+        updateVoiceToggleButtonState();
+        return voiceInputSettings;
+    }
+
+    async function persistDeniedVoiceInputState() {
+        await setVoiceInputSettings({
+            [VOICE_INPUT_ENABLED_KEY]: false,
+            [VOICE_INPUT_PERMISSION_STATE_KEY]: 'denied',
+            [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now()
+        });
+        await syncVoiceInputSettings();
+    }
+
+    async function persistGrantedVoiceInputState() {
+        await setVoiceInputSettings({
+            [VOICE_INPUT_ENABLED_KEY]: true,
+            [VOICE_INPUT_PERMISSION_STATE_KEY]: 'granted',
+            [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now()
+        });
+        await syncVoiceInputSettings();
+    }
+
+    async function toggleVoiceInput() {
         if (!isSpeechRecognitionSupported) {
             loadingManager.showToast('Voice input not supported in this browser', 'error');
+            return;
+        }
+
+        const disabledReason = getVoiceToggleDisabledReason();
+        if (disabledReason === 'disabled') {
+            loadingManager.showToast('Voice input is disabled in Settings', 'info');
+            return;
+        }
+
+        if (disabledReason === 'denied') {
+            loadingManager.showToast('Microphone permission denied. Re-enable voice input in Settings and test access again.', 'error');
             return;
         }
 
         if (isListening) {
             stopVoiceInput();
         } else {
-            startVoiceInput();
+            await startVoiceInput();
         }
     }
 
     async function startVoiceInput() {
         try {
-            // Explicitly request permission via getUserMedia to ensure persistence
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop());
-            } catch (e) {
-                console.warn('getUserMedia check failed, falling back to SpeechRecognition:', e);
+            const settings = await syncVoiceInputSettings();
+            const disabledReason = getVoiceToggleDisabledReason(settings);
+
+            if (disabledReason === 'disabled') {
+                loadingManager.showToast('Voice input is disabled in Settings', 'info');
+                return;
             }
+
+            if (disabledReason === 'denied') {
+                loadingManager.showToast('Microphone permission denied. Re-enable voice input in Settings and test access again.', 'error');
+                return;
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+            await persistGrantedVoiceInputState();
 
             speechRecognition = new SpeechRecognition();
             speechRecognition.continuous = true;
@@ -1792,13 +1931,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             };
 
-            speechRecognition.onerror = function(event) {
+            speechRecognition.onerror = async function(event) {
                 console.error('Speech recognition error:', event.error);
 
                 if (event.error === 'not-allowed') {
+                    try {
+                        await persistDeniedVoiceInputState();
+                    } catch (storageError) {
+                        console.error('Failed to persist denied microphone state:', storageError);
+                    }
+
                     if (firstPermissionDenial) {
                         loadingManager.showToast(
-                            'Microphone access required. Click the lock icon 🔒 in your browser address bar and select \'Allow\' next to Microphone to use voice input.',
+                            'Microphone access denied. Re-enable voice input in Settings after updating the browser microphone permission.',
                             'error',
                             8000
                         );
@@ -1826,7 +1971,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Failed to start voice input:', error);
-            loadingManager.showToast('Failed to start voice input', 'error');
+
+            if (isMicrophonePermissionDenied(error)) {
+                try {
+                    await persistDeniedVoiceInputState();
+                } catch (storageError) {
+                    console.error('Failed to persist denied microphone state:', storageError);
+                }
+
+                if (firstPermissionDenial) {
+                    loadingManager.showToast(
+                        'Microphone access denied. Re-enable voice input in Settings after updating the browser microphone permission.',
+                        'error',
+                        8000
+                    );
+                    firstPermissionDenial = false;
+                } else {
+                    loadingManager.showToast('Microphone access denied', 'error');
+                }
+            } else {
+                loadingManager.showToast('Failed to start voice input', 'error');
+            }
+
             stopVoiceInput();
         }
     }
@@ -1851,13 +2017,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') {
+            return;
+        }
+
+        if (changes[VOICE_INPUT_ENABLED_KEY] || changes[VOICE_INPUT_PERMISSION_STATE_KEY]) {
+            syncVoiceInputSettings();
+        }
+    });
+
     // Initialize voice input button
-    if (voiceToggleButton && isSpeechRecognitionSupported) {
+    if (voiceToggleButton) {
         voiceToggleButton.addEventListener('click', toggleVoiceInput);
-        voiceToggleButton.title = 'Voice Input';
-    } else if (voiceToggleButton) {
-        voiceToggleButton.title = 'Voice Input not supported';
-        voiceToggleButton.style.opacity = '0.5';
-        voiceToggleButton.style.cursor = 'not-allowed';
+        voiceToggleButton.disabled = true;
+        voiceToggleButton.title = isSpeechRecognitionSupported ? 'Loading voice input settings...' : 'Voice input not supported';
+        syncVoiceInputSettings();
     }
 });

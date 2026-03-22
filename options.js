@@ -16,6 +16,54 @@ import { loadingManager } from './loadingManager.js';
 import { isValidURL } from './src/utils/validation.js';
 import { generateSkillMarkdown, parseSkillMarkdown, validateMetadata } from './src/utils/skillParser.js';
 
+const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
+const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
+const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
+
+function getStoredVoiceInputSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(
+      [VOICE_INPUT_ENABLED_KEY, VOICE_INPUT_PERMISSION_STATE_KEY, VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY],
+      (result) => {
+        const voiceInputEnabled = Object.prototype.hasOwnProperty.call(result || {}, VOICE_INPUT_ENABLED_KEY)
+          ? !!result[VOICE_INPUT_ENABLED_KEY]
+          : true;
+
+        resolve({
+          voiceInputEnabled,
+          voiceInputPermissionState: result?.[VOICE_INPUT_PERMISSION_STATE_KEY] || 'unknown',
+          voiceInputPermissionLastChecked: result?.[VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY] || null
+        });
+      }
+    );
+  });
+}
+
+function setStoredVoiceInputSettings(updates) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(updates, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function isMicrophonePermissionDenied(error) {
+  if (!error) return false;
+
+  const name = typeof error.name === 'string' ? error.name.toLowerCase() : '';
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+
+  return name === 'notallowederror'
+    || name === 'permissiondeniederror'
+    || message.includes('permission denied')
+    || message.includes('permission dismissed')
+    || message.includes('not allowed');
+}
+
 /**
  * Displays a status message to the user.
  * @param {string} message - The message to display.
@@ -312,75 +360,147 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Microphone Permission Test
+  const voiceInputEnabledToggle = document.getElementById('voiceInputEnabledToggle');
   const testMicPermissionBtn = document.getElementById('testMicPermissionBtn');
   const micPermissionStatus = document.getElementById('micPermissionStatus');
+  const isVoiceInputSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+    && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
-  if (testMicPermissionBtn && micPermissionStatus) {
+  if (voiceInputEnabledToggle && testMicPermissionBtn && micPermissionStatus) {
+    function getMicStatusPresentation(settings) {
+      if (!isVoiceInputSupported) {
+        return {
+          text: 'Not supported in this browser',
+          color: 'var(--ext-destructive)'
+        };
+      }
+
+      if (settings.voiceInputPermissionState === 'denied') {
+        return {
+          text: 'Permission denied',
+          color: 'var(--ext-destructive)'
+        };
+      }
+
+      if (!settings.voiceInputEnabled) {
+        return {
+          text: 'Off',
+          color: 'var(--ext-muted-foreground)'
+        };
+      }
+
+      if (settings.voiceInputPermissionState === 'granted') {
+        return {
+          text: 'Permission granted',
+          color: '#10b981'
+        };
+      }
+
+      return {
+        text: 'Not yet requested',
+        color: 'var(--ext-muted-foreground)'
+      };
+    }
+
+    function renderVoiceInputControls(settings, overrides = {}) {
+      const status = overrides.status || getMicStatusPresentation(settings);
+      const isTesting = !!overrides.isTesting;
+
+      voiceInputEnabledToggle.checked = !!settings.voiceInputEnabled;
+      micPermissionStatus.textContent = status.text;
+      micPermissionStatus.style.color = status.color;
+
+      testMicPermissionBtn.disabled = isTesting || !isVoiceInputSupported || !settings.voiceInputEnabled;
+
+      if (isTesting) {
+        testMicPermissionBtn.title = 'Requesting microphone access...';
+      } else if (!isVoiceInputSupported) {
+        testMicPermissionBtn.title = 'Voice input is not supported in this browser';
+      } else if (!settings.voiceInputEnabled) {
+        testMicPermissionBtn.title = 'Enable voice input to test microphone access';
+      } else {
+        testMicPermissionBtn.title = 'Request or verify microphone access';
+      }
+    }
+
+    async function refreshVoiceInputControls() {
+      const settings = await getStoredVoiceInputSettings();
+      renderVoiceInputControls(settings);
+      return settings;
+    }
+
     async function testMicrophonePermission() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const settings = await getStoredVoiceInputSettings();
 
-      if (!SpeechRecognition) {
-        micPermissionStatus.textContent = 'Not supported in this browser';
-        micPermissionStatus.style.color = 'var(--ext-destructive)';
+      if (!isVoiceInputSupported) {
+        renderVoiceInputControls(settings);
         return;
       }
 
-      micPermissionStatus.textContent = 'Testing...';
-      micPermissionStatus.style.color = 'var(--ext-muted-foreground)';
-      testMicPermissionBtn.disabled = true;
+      if (!settings.voiceInputEnabled) {
+        renderVoiceInputControls(settings);
+        showStatus('Enable voice input before testing microphone access.', true, true);
+        return;
+      }
+
+      renderVoiceInputControls(settings, {
+        status: {
+          text: 'Testing...',
+          color: 'var(--ext-muted-foreground)'
+        },
+        isTesting: true
+      });
 
       try {
-        // Explicitly request permission via getUserMedia to ensure persistence
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            stream.getTracks().forEach(track => track.stop());
-        } catch (e) {
-            console.warn('getUserMedia check failed, falling back to SpeechRecognition:', e);
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+
+        await setStoredVoiceInputSettings({
+          [VOICE_INPUT_ENABLED_KEY]: true,
+          [VOICE_INPUT_PERMISSION_STATE_KEY]: 'granted',
+          [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now()
+        });
+
+        await refreshVoiceInputControls();
+        showStatus('Microphone permission granted!', false, true);
+      } catch (error) {
+        if (isMicrophonePermissionDenied(error)) {
+          await setStoredVoiceInputSettings({
+            [VOICE_INPUT_ENABLED_KEY]: false,
+            [VOICE_INPUT_PERMISSION_STATE_KEY]: 'denied',
+            [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now()
+          });
+
+          await refreshVoiceInputControls();
+          showStatus('Microphone access denied. Re-enable voice input here after updating the browser mic permission to try again.', true, true);
+          return;
         }
 
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'en-US';
-        recognition.maxAlternatives = 1;
-        recognition.continuous = false;
-
-        recognition.onstart = function() {
-          micPermissionStatus.textContent = '✓ Granted';
-          micPermissionStatus.style.color = '#10b981';
-          recognition.stop();
-          showStatus('Microphone permission granted!', false, true);
-        };
-
-        recognition.onerror = function(event) {
-          testMicPermissionBtn.disabled = false;
-
-          if (event.error === 'not-allowed') {
-            micPermissionStatus.textContent = '✗ Denied';
-            micPermissionStatus.style.color = 'var(--ext-destructive)';
-            showStatus('Microphone access denied. Click lock icon 🔒 in your browser address bar to allow microphone access.', true, true);
-          } else if (event.error === 'no-speech') {
-            micPermissionStatus.textContent = '! No speech';
-            micPermissionStatus.style.color = 'var(--ext-warning)';
-            showStatus('No speech detected. Please try properly speaking into the microphone.', true, true);
-          } else {
-            micPermissionStatus.textContent = 'Unknown error';
-            micPermissionStatus.style.color = 'var(--ext-warning)';
-            showStatus('Could not determine microphone status: ' + event.error, true, true);
-          }
-        };
-
-        recognition.onend = function() {
-          testMicPermissionBtn.disabled = false;
-        };
-
-        recognition.start();
-
-      } catch (error) {
-        testMicPermissionBtn.disabled = false;
+        await refreshVoiceInputControls();
         micPermissionStatus.textContent = 'Test failed';
         micPermissionStatus.style.color = 'var(--ext-destructive)';
         showStatus('Failed to test microphone: ' + error.message, true, true);
       }
     }
+
+    refreshVoiceInputControls();
+
+    voiceInputEnabledToggle.addEventListener('change', async () => {
+      try {
+        await setStoredVoiceInputSettings({
+          [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked
+        });
+
+        const settings = await refreshVoiceInputControls();
+        if (settings.voiceInputEnabled) {
+          showStatus('Voice input enabled. Test microphone access if you need to request permission again.', false, true);
+        } else {
+          showStatus('Voice input disabled. The chat mic button will remain visible but inactive.', false, true);
+        }
+      } catch (error) {
+        showStatus('Failed to update voice input setting: ' + error.message, true, true);
+      }
+    });
 
     testMicPermissionBtn.addEventListener('click', testMicrophonePermission);
   }

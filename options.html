@@ -193,6 +193,18 @@
       </div>
       <div class="form-field col-span-12">
         <label class="form-label">Microphone Access (Voice Input)</label>
+        <div class="setting-toggle" style="margin-top: 8px;">
+          <label class="toggle-label">
+            <input type="checkbox" id="voiceInputEnabledToggle" class="toggle-input" checked>
+            <span class="toggle-slider"></span>
+            <div class="toggle-text">
+              Enable voice input
+              <div class="hint">
+                Keeps the mic button visible in chat. Turning this off prevents new microphone requests until you enable it again.
+              </div>
+            </div>
+          </label>
+        </div>
         <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
           <button type="button" id="testMicPermissionBtn" class="btn-secondary" style="padding: 8px 16px;">
             <span class="material-symbols-outlined" style="font-size: 1.2em; margin-right: 4px; vertical-align: middle;">mic</span>
@@ -201,7 +213,7 @@
           <span id="micPermissionStatus" style="font-size: 14px; color: var(--ext-muted-foreground);">Not tested</span>
         </div>
         <div class="hint" style="margin-top: 8px;">
-          Required for voice input feature in side panel. Click to test and request microphone permission. If denied, click lock icon 🔒 in your browser address bar to enable.
+          Required for voice input in the side panel. If browser permission is denied, re-enable voice input here and click the test button to request access again.
         </div>
       </div>
     </section>
@@ -557,21 +569,6 @@ What this skill does and when to use it.
         <input type="hidden" id="skillId">
         
         <div class="button-group" style="margin-top: 1.5rem;">
-          <button type="button" id="saveSkill" class="save-button"><span class="material-symbols-outlined">save</span> Save Skill</button>
-          <button type="button" id="clearSkillForm" class="clear-form-button">
-            <span class="material-symbols-outlined">clear_all</span>
-            Clear Form
-          </button>
-        </div>
-      </div>
-        </div>
-        <div class="form-group">
-          <label for="skillContent">Instructions (Markdown)</label>
-          <textarea id="skillContent" placeholder="# Python Guide\n\n..." rows="8"></textarea>
-        </div>
-
-        <input type="hidden" id="skillId">
-        <div class="button-group">
           <button type="button" id="saveSkill" class="save-button"><span class="material-symbols-outlined">save</span> Save Skill</button>
           <button type="button" id="clearSkillForm" class="clear-form-button">
             <span class="material-symbols-outlined">clear_all</span>
