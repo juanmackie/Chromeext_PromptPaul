@@ -1123,11 +1123,25 @@ function setupToolHandlers() {
       }
 
       if (toolName === 'load_skill' || toolName === 'skills_list' || toolName === 'skill_view') {
-        showStatus("Tool name '${toolName}' is reserved by Prompt Paul.", true);
+        showStatus(`Tool name '${toolName}' is reserved by Prompt Paul.`, true);
         loadingManager.setButtonLoading(saveToolBtn, false);
         return;
       }
 
+
+      if (toolEndpointUrl) {
+        if (!isValidURL(toolEndpointUrl)) {
+          showStatus('Tool endpoint URL must be a valid URL.', true);
+          loadingManager.setButtonLoading(saveToolBtn, false);
+          return;
+        }
+        const protocol = new URL(toolEndpointUrl).protocol;
+        if (protocol !== 'http:' && protocol !== 'https:') {
+          showStatus('Tool endpoint URL must use http or https.', true);
+          loadingManager.setButtonLoading(saveToolBtn, false);
+          return;
+        }
+      }
 
       if (toolParameters && !isValidJson(toolParameters)) {
         showStatus('Parameters must be valid JSON.', true);
