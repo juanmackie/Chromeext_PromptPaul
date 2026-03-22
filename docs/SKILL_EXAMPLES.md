@@ -60,6 +60,18 @@ apply summarizer skill to this article
 invoke weather-guide skill to explain this forecast
 ```
 
+**Supported Skill Intent Patterns**:
+
+| Pattern | Example | Status |
+|---|---|---|
+| `use /<skill>` | `use /humanizer and rewrite` | ✅ NEW |
+| `use <skill> skill` | `use humanizer skill and rewrite` | ✅ kept |
+| `apply /<skill>` | `apply /summarizer to this` | ✅ NEW |
+| `with /<skill>` | `with /humanizer, rewrite this` | ✅ NEW |
+| `invoke /<skill>` | `invoke /weather-guide explain forecast` | ✅ NEW |
+| `use <skill> and/to/for` | `use humanizer and rewrite` | ✅ NEW (loose) |
+| `please use <skill> to` | `please use humanizer to rewrite` | ✅ NEW (loose) |
+
 ---
 
 ## Advanced Skill Usage

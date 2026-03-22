@@ -17,8 +17,21 @@ Prompt Paul implements an OpenClaw-compatible Agent Skills system for specialize
 /skill humanizer Make this sound more natural: "The implementation will require resources."
 /humanizer Rewrite this text to be more conversational
 use humanizer skill and make this paragraph less formal
+/use humanizer and rewrite this
 /skill weather-guide Explain this forecast: "Scattered showers with isolated thunderstorms"
 ```
+
+### Supported Skill Intent Patterns
+
+| Pattern | Example | Status |
+|---|---|---|
+| `use /<skill>` | `use /humanizer and rewrite` | ✅ NEW |
+| `use <skill> skill` | `use humanizer skill and rewrite` | ✅ kept |
+| `apply /<skill>` | `apply /summarizer to this` | ✅ NEW |
+| `with /<skill>` | `with /humanizer, rewrite this` | ✅ NEW |
+| `invoke /<skill>` | `invoke /weather-guide explain forecast` | ✅ NEW |
+| `use <skill> and/to/for` | `use humanizer and rewrite` | ✅ NEW (loose) |
+| `please use <skill> to` | `please use humanizer to rewrite` | ✅ NEW (loose) |
 
 ## Skill Specification
 

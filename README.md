@@ -85,6 +85,18 @@ Prompt Paul includes an OpenClaw-compatible skills system that allows you to inv
    ```
    Example: `use humanizer skill and make this sound more natural`
 
+**Supported Skill Intent Patterns**:
+
+| Pattern | Example | Status |
+|---|---|---|
+| `use /<skill>` | `use /humanizer and rewrite` | ✅ NEW |
+| `use <skill> skill` | `use humanizer skill and rewrite` | ✅ kept |
+| `apply /<skill>` | `apply /summarizer to this` | ✅ NEW |
+| `with /<skill>` | `with /humanizer, rewrite this` | ✅ NEW |
+| `invoke /<skill>` | `invoke /weather-guide explain forecast` | ✅ NEW |
+| `use <skill> and/to/for` | `use humanizer and rewrite` | ✅ NEW (loose) |
+| `please use <skill> to` | `please use humanizer to rewrite` | ✅ NEW (loose) |
+
 **Discovering Skills**:
 - Type `/skills` in the chat to see all available skills
 - Skills marked as "user-invocable" will have their own slash commands
