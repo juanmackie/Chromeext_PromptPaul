@@ -32,6 +32,7 @@ class RunOrchestrator {
       conversationHistory: config.messages || [],
       accumulatedText: '',
       activeToolCall: null,
+      skillInjected: false,
       status: 'ready',
       abortController: new AbortController()
     };
@@ -57,7 +58,7 @@ class RunOrchestrator {
 
     // If the user explicitly requested a skill, resolve and inject instructions
     // directly into conversation — no model tool call needed (mirrors OpenClaw).
-    if (run.config.requestedSkill) {
+    if (run.config.requestedSkill && !run.skillInjected) {
       const resolved = this.skillManager.resolveSkill(run.config.requestedSkill);
       if (resolved) {
         const skillBlock = [
@@ -76,6 +77,8 @@ class RunOrchestrator {
           role: 'system',
           content: skillBlock
         });
+
+        run.skillInjected = true;
 
         console.log(`[Orchestrator] Injected skill instructions: ${resolved.name}`);
       } else {
@@ -223,7 +226,7 @@ class RunOrchestrator {
 
     // Inject skill-related tools if eligible skills available
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
-    if (eligibleSkills.length > 0) {
+    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
       tools.push({
         type: 'function',
         function: {
@@ -283,7 +286,7 @@ class RunOrchestrator {
 
     // Add system prompt with skill catalog (eligible skills only)
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
-    if (eligibleSkills.length > 0) {
+    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
       const systemMsg = messages.find(m => m.role === 'system');
       
       // Format skill catalog: "name (description)"
@@ -397,7 +400,7 @@ class RunOrchestrator {
     // Add system prompt with skill catalog (eligible skills only)
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
     let systemPrompt = '';
-    if (eligibleSkills.length > 0) {
+    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
       // Format skill catalog: "name (description)"
       const skillCatalog = eligibleSkills.map(s => `${s.name} (${s.description})`).join(', ');
       systemPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;

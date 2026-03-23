@@ -1270,12 +1270,17 @@ document.addEventListener('DOMContentLoaded', () => {
      * Patterns: "use <skill> skill", "apply <skill>", "with <skill>", "use /<skill>", etc.
      * @param {string} message - User message
      * @param {Array} availableSkills - List of available skills
-     * @returns {string|null} - Skill name if detected, null otherwise
+     * @returns {{ skillName: string, body: string }|null} - Skill payload if detected, null otherwise
      */
     function detectSkillIntent(message, availableSkills) {
         if (!availableSkills || availableSkills.length === 0) return null;
 
-        const lowerMessage = message.toLowerCase();
+        const trimSkillBody = (body) => {
+            let cleaned = (body || '').trim();
+            cleaned = cleaned.replace(/^[,:;-]+\s*/, '');
+            cleaned = cleaned.replace(/^(?:and|to|for|on|then|in)\b[\s,:;-]*/i, '');
+            return cleaned.trim();
+        };
 
         // Pattern: "use /skillname ...", "apply skillname skill ...", "use /skillname and ..."
         // The trailing "skill" is optional. The leading "/" is optional.
@@ -1285,9 +1290,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
 
         for (const pattern of skillPatterns) {
-            const match = lowerMessage.match(pattern);
+            const match = message.match(pattern);
             if (match) {
                 const requestedSkill = match[1].toLowerCase();
+                const remainder = message.slice((match.index || 0) + match[0].length);
                 // Check if requested skill exists in available skills
                 const foundSkill = availableSkills.find(s =>
                     s.name.toLowerCase() === requestedSkill ||
@@ -1295,7 +1301,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
                 if (foundSkill) {
                     console.log(`Chat: Detected skill intent for '${foundSkill.name}'`);
-                    return foundSkill.name;
+                    return {
+                        skillName: foundSkill.name,
+                        body: trimSkillBody(remainder)
+                    };
                 }
             }
         }
@@ -1303,36 +1312,44 @@ document.addEventListener('DOMContentLoaded', () => {
         // Also detect any /skillname embedded in text after an intent verb
         // e.g. "use /humanizer and rewrite", "apply /summarizer to this"
         const verbSlashPattern = /(?:use|apply|with|invoke|using|applying)\s+\/(\w[\w-]*)/i;
-        const slashMatch = lowerMessage.match(verbSlashPattern);
+        const slashMatch = message.match(verbSlashPattern);
         if (slashMatch) {
             const requestedSkill = slashMatch[1].toLowerCase();
+            const remainder = message.slice((slashMatch.index || 0) + slashMatch[0].length);
             const foundSkill = availableSkills.find(s =>
                 s.name.toLowerCase() === requestedSkill ||
                 s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
             );
             if (foundSkill) {
                 console.log(`Chat: Detected slash-in-verb intent for '${foundSkill.name}'`);
-                return foundSkill.name;
+                return {
+                    skillName: foundSkill.name,
+                    body: trimSkillBody(remainder)
+                };
             }
         }
 
         // Also check for skill names mentioned anywhere after "use" or "apply"
         // Handles: "please use humanizer to rewrite", "use the summarizer on this"
         const loosePatterns = [
-            /(?:use|apply|with|invoke)\s+(?:the\s+)?(\w[\w-]*)\s+(?:to|for|on|and|then|in)/i
+            /(?:use|apply|with|invoke)\s+(?:the\s+)?(\w[\w-]*)\s+(?:to|for|on|and|then|in)\s+(.*)$/i
         ];
 
         for (const pattern of loosePatterns) {
-            const match = lowerMessage.match(pattern);
+            const match = message.match(pattern);
             if (match) {
                 const requestedSkill = match[1].toLowerCase();
+                const remainder = match[2] || '';
                 const foundSkill = availableSkills.find(s =>
                     s.name.toLowerCase() === requestedSkill ||
                     s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
                 );
                 if (foundSkill) {
                     console.log(`Chat: Detected loose skill intent for '${foundSkill.name}'`);
-                    return foundSkill.name;
+                    return {
+                        skillName: foundSkill.name,
+                        body: trimSkillBody(remainder)
+                    };
                 }
             }
         }
@@ -1382,13 +1399,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cmd.type === 'skill') {
                 requestedSkill = cmd.skillName;
                 effectiveMessage = cmd.body || message;
-                addMessage('User', effectiveMessage);
                 addMessage('System', `📚 Loading skill: **${requestedSkill}**`);
             } else {
                 // Fall back to natural-language intent detection
-                requestedSkill = detectSkillIntent(message, availableSkills);
-                if (requestedSkill) {
-                    addMessage('User', message);
+                const detectedSkill = detectSkillIntent(message, availableSkills);
+                if (detectedSkill) {
+                    requestedSkill = detectedSkill.skillName;
+                    effectiveMessage = detectedSkill.body || message;
                     addMessage('System', `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`);
                 }
             }
@@ -1550,7 +1567,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 requestedSkill = cmd.skillName;
                 effectiveInstruction = cmd.body || instruction;
             } else {
-                requestedSkill = detectSkillIntent(instruction, availableSkills);
+                const detectedSkill = detectSkillIntent(instruction, availableSkills);
+                if (detectedSkill) {
+                    requestedSkill = detectedSkill.skillName;
+                    effectiveInstruction = detectedSkill.body || instruction;
+                }
             }
 
             let prompt;
