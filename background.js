@@ -1460,15 +1460,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Legacy handler for backward compatibility
     if (request.action === 'executePromptPaulTool') {
         const { id, name, arguments: argsString } = request.toolCall;
-        
-        try {
-            const argsObject = JSON.parse(argsString || '{}');
-            runOrchestrator.executeTool(null, { id, function: { name, arguments: argsString } })
-                .then(result => sendResponse(result))
-                .catch(error => sendResponse({ error: error.message }));
-        } catch (parseError) {
-            sendResponse({ error: `Invalid arguments format: ${parseError.message}` });
-        }
+
+        const normalizedArgs = typeof argsString === 'string'
+            ? argsString
+            : JSON.stringify(argsString || {});
+
+        runOrchestrator.executeTool(null, { id, function: { name, arguments: normalizedArgs } })
+            .then(result => sendResponse(result))
+            .catch(error => sendResponse({ error: error.message }));
         return true;
     }
     

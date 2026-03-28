@@ -672,6 +672,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function isSkillLoaderTool(toolName) {
+        return toolName === 'load_skill' || toolName === 'skill_view';
+    }
+
+    function tryParseToolPayload(value) {
+        if (value == null || value === '') return {};
+        if (typeof value === 'object') return value;
+
+        const normalized = String(value).trim();
+        if (!normalized) return {};
+
+        try {
+            return JSON.parse(normalized);
+        } catch (error) {
+            for (let i = normalized.length - 1; i >= 0; i--) {
+                const char = normalized[i];
+                if (char !== '{' && char !== '[') continue;
+
+                try {
+                    return JSON.parse(normalized.slice(i));
+                } catch (innerError) {
+                    // Keep scanning for a recoverable trailing JSON payload.
+                }
+            }
+            throw error;
+        }
+    }
+
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'setSelectedText') {
             applySetSelectedTextAction(request);
@@ -828,7 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'tool_start':
                     activeStreamingToolCall = event.toolCall;
                     if (currentStreamingContentElement) {
-                        if (event.capability === 'skill') {
+                        if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
                             currentStreamingContentElement.innerHTML = marked.parse(`📚 Loading skill: **${event.toolCall.function.name}**`);
                         } else {
                             currentStreamingContentElement.innerHTML = marked.parse(`⚙️ Using tool: **${event.toolCall.function.name}**`);
@@ -839,23 +867,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'tool_ready':
                     addMessage('System', `⚙️ Executing tool: **${event.toolCall.function.name}**...`);
                     break;
-                    
+
                 case 'tool_complete':
                     // Distinguish tool vs skill in the trace
-                    if (event.toolCall.function.name === 'load_skill') {
+                    if (isSkillLoaderTool(event.toolCall.function.name)) {
                         try {
-                            const args = JSON.parse(event.toolCall.function.arguments);
-                            const resultObj = typeof event.result === 'string' ? JSON.parse(event.result) : event.result;
-                            if (resultObj && resultObj.success) {
-                                addMessage('System', `📚 Loaded skill: **${args.name}**`);
-                                const skillContent = typeof event.result === 'string' ? event.result : JSON.stringify(event.result);
+                            const args = tryParseToolPayload(event.toolCall.function.arguments);
+                            const resultObj = tryParseToolPayload(event.result);
+                            const skillResult = resultObj?.result || resultObj;
+                            if (skillResult && skillResult.success) {
+                                addMessage('System', `📚 Loaded skill: **${args.name || 'unknown'}**`);
+                                const skillContent = JSON.stringify(skillResult);
                                 const contentPreview = skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
                                 addMessage('System', `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``);
                             } else {
-                                addMessage('System', `⚠️ Skill **${args.name}** not found.`);
+                                addMessage('System', `⚠️ Skill **${args.name || 'unknown'}** not found.`);
                             }
                         } catch (e) {
-                            console.warn('Could not parse load_skill arguments for traceability');
+                            console.warn(`Could not parse ${event.toolCall.function.name} arguments for traceability`);
                         }
                     } else {
                         addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
@@ -1422,7 +1451,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Get user-defined tools from storage.
-     * The orchestrator will inject load_skill tool automatically if skills are available.
+     * The orchestrator will inject reserved skill helper tools automatically if skills are available.
      */
     async function getTools() {
         const { promptPaulTools: definedTools = [] } = await new Promise((resolve) => {

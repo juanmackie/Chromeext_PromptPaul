@@ -148,7 +148,7 @@ class RunOrchestrator {
         };
       }
 
-      const args = JSON.parse(toolCall.function.arguments || '{}');
+      const args = this._parseToolArguments(toolCall.function.arguments);
       const result = await implementation(args);
 
       return { success: true, result };
@@ -501,7 +501,7 @@ class RunOrchestrator {
           type: 'function',
           function: {
             name: tcName,
-            arguments: tc.function?.arguments || ''
+            arguments: this._normalizeToolArguments(tc.function?.arguments)
           }
         };
 
@@ -517,7 +517,10 @@ class RunOrchestrator {
       } else {
         // Accumulate
         if (tc.function?.arguments) {
-          run.activeToolCall.function.arguments += tc.function.arguments;
+          run.activeToolCall.function.arguments = this._mergeToolArguments(
+            run.activeToolCall.function.arguments,
+            tc.function.arguments
+          );
         }
         if (tc.function?.name) {
           run.activeToolCall.function.name = tc.function.name;
@@ -534,6 +537,11 @@ class RunOrchestrator {
       if (event.delta.type === 'text_delta') {
         run.accumulatedText += event.delta.text;
         this._emitEvent(run.id, { type: 'content', data: event.delta.text });
+      } else if (event.delta.type === 'input_json_delta' && run.activeToolCall) {
+        run.activeToolCall.function.arguments = this._mergeToolArguments(
+          run.activeToolCall.function.arguments,
+          event.delta.partial_json
+        );
       }
     } else if (event.type === 'content_block_start') {
       if (event.content_block.type === 'tool_use') {
@@ -543,7 +551,7 @@ class RunOrchestrator {
           type: 'function',
           function: {
             name: tcName,
-            arguments: ''
+            arguments: this._normalizeToolArguments(event.content_block.input)
           }
         };
 
@@ -672,6 +680,84 @@ class RunOrchestrator {
     }
 
     return out;
+  }
+
+  _normalizeToolArguments(args) {
+    if (args == null) return '';
+    return typeof args === 'string' ? args : JSON.stringify(args);
+  }
+
+  _mergeToolArguments(existingArgs, incomingArgs) {
+    const existing = this._normalizeToolArguments(existingArgs);
+    const incoming = this._normalizeToolArguments(incomingArgs);
+
+    if (!existing) return incoming;
+    if (!incoming) return existing;
+    if (incoming === existing) return existing;
+    if (incoming.startsWith(existing)) return incoming;
+    if (existing.endsWith(incoming)) return existing;
+
+    const existingParsed = this._tryParseJson(existing);
+    const incomingParsed = this._tryParseJson(incoming);
+    if (existingParsed.ok && incomingParsed.ok) {
+      return incoming;
+    }
+
+    const overlap = this._getStringOverlap(existing, incoming);
+    if (overlap > 0) {
+      return existing + incoming.slice(overlap);
+    }
+
+    return existing + incoming;
+  }
+
+  _parseToolArguments(rawArgs) {
+    if (rawArgs == null || rawArgs === '') return {};
+    if (typeof rawArgs === 'object') return rawArgs;
+
+    const normalized = String(rawArgs).trim();
+    if (!normalized) return {};
+
+    const parsed = this._tryParseJson(normalized);
+    if (parsed.ok) return parsed.value;
+
+    const recovered = this._recoverTrailingJson(normalized);
+    if (recovered.ok) return recovered.value;
+
+    throw new Error(`Invalid tool arguments format: ${parsed.error?.message || 'Could not parse JSON arguments.'}`);
+  }
+
+  _recoverTrailingJson(value) {
+    for (let i = value.length - 1; i >= 0; i--) {
+      const char = value[i];
+      if (char !== '{' && char !== '[') continue;
+
+      const candidate = value.slice(i).trim();
+      const parsed = this._tryParseJson(candidate);
+      if (parsed.ok) {
+        return parsed;
+      }
+    }
+
+    return { ok: false };
+  }
+
+  _tryParseJson(value) {
+    try {
+      return { ok: true, value: JSON.parse(value) };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+
+  _getStringOverlap(left, right) {
+    const maxLength = Math.min(left.length, right.length);
+    for (let size = maxLength; size > 0; size--) {
+      if (left.slice(-size) === right.slice(0, size)) {
+        return size;
+      }
+    }
+    return 0;
   }
 
   _generateRunId() {
