@@ -2,6 +2,8 @@
 
 This document provides comprehensive examples of using Prompt Paul's Agent Skills system.
 
+For complete skill authoring and specification details, see [AGENTS.md](AGENTS.md).
+
 ## Table of Contents
 
 1. [Basic Skill Invocation](#basic-skill-invocation)
@@ -13,7 +15,7 @@ This document provides comprehensive examples of using Prompt Paul's Agent Skill
 
 ## Basic Skill Invocation
 
-### Method 1: Canonical Slash Command (Always Works)
+### Method 1: Canonical Slash Command
 
 The `/skill` command is the canonical way to invoke any skill.
 
@@ -45,7 +47,7 @@ For skills marked as `user-invocable: true`, you can use a shortcut:
 
 ### Method 3: Natural Language Detection
 
-Prompt Paul can detect skill intent from natural language:
+Prompt Paul detects skill intent from natural language:
 
 ```
 use <skill> skill and [your request]
@@ -60,18 +62,6 @@ apply summarizer skill to this article
 invoke weather-guide skill to explain this forecast
 ```
 
-**Supported Skill Intent Patterns**:
-
-| Pattern | Example | Status |
-|---|---|---|
-| `use /<skill>` | `use /humanizer and rewrite` | ✅ NEW |
-| `use <skill> skill` | `use humanizer skill and rewrite` | ✅ kept |
-| `apply /<skill>` | `apply /summarizer to this` | ✅ NEW |
-| `with /<skill>` | `with /humanizer, rewrite this` | ✅ NEW |
-| `invoke /<skill>` | `invoke /weather-guide explain forecast` | ✅ NEW |
-| `use <skill> and/to/for` | `use humanizer and rewrite` | ✅ NEW (loose) |
-| `please use <skill> to` | `please use humanizer to rewrite` | ✅ NEW (loose) |
-
 ---
 
 ## Advanced Skill Usage
@@ -80,7 +70,7 @@ invoke weather-guide skill to explain this forecast
 
 **With selected text:**
 1. Select text on any webpage
-2. Right-click → "Process with Prompt Paul"
+2. Right-click ? "Process with Prompt Paul"
 3. In the instruction box: `/skill humanizer rewrite the selected text`
 4. Submit
 
@@ -132,8 +122,6 @@ Provide thorough code reviews focusing on correctness, performance, and maintain
 **Issues:** [Critical/High/Medium/Low] - Description and suggested fix
 **Suggestions:** Improvements that enhance code quality
 **Style:** Notes on formatting, naming, and conventions
-**Performance:** Optimization opportunities
-**Security:** Security concerns and mitigations
 ```
 
 **How to use:**
@@ -165,22 +153,6 @@ Create well-structured, professional emails appropriate for business communicati
 3. Use bullet points for multiple items
 4. Include clear call-to-action
 5. End with professional sign-off
-
-## Output Format
-```
-Subject: [Clear, concise subject line]
-
-Dear [Recipient],
-
-[Opening: Context and purpose]
-
-[Body: Details, requests, or information]
-
-[Closing: Next steps and call-to-action]
-
-Best regards,
-[Your name]
-```
 ```
 
 **How to use:**
@@ -189,125 +161,32 @@ Best regards,
 /skill email-writer Draft a meeting request for the project kickoff
 ```
 
-### Example 3: Technical Explainer Skill
-
-```markdown
----
-name: "tech-explainer"
-description: "Explains technical concepts to non-technical audiences"
-license: "MIT"
-user-invocable: true
-metadata:
-  {"tags": "education, technical, communication"}
----
-
-# Technical Explainer
-
-## Purpose
-Translate complex technical concepts into clear, accessible explanations.
-
-## Guidelines
-1. Use analogies and real-world comparisons
-2. Avoid jargon or explain it immediately
-3. Start with the "why" before the "how"
-4. Use concrete examples, not abstract concepts
-5. Structure: Concept → Analogy → Example → Application
-
-## Explanation Framework
-1. **The Big Picture**: Why does this matter?
-2. **The Analogy**: What is it like in everyday life?
-3. **How It Works**: Simple technical explanation
-4. **Real Example**: Concrete use case
-5. **Business Value**: Why stakeholders should care
-```
-
-**How to use:**
-```
-/tech-explainer Explain what blockchain is to my manager
-/skill tech-explainer Explain cloud computing vs on-premise servers
-```
-
 ---
 
 ## Real-World Scenarios
 
 ### Scenario 1: Content Creation Workflow
 
-**User is writing a blog post and needs help:**
-
-1. **Research phase:**
-   ```
-   User: /skill summarizer Summarize these 3 articles about AI trends
-   AI: [Provides condensed summaries]
-   ```
-
-2. **Drafting phase:**
-   ```
-   User: [Writes rough draft]
-   User: /skill humanizer Make this introduction more engaging
-   AI: [Rewrites in conversational tone]
-   ```
-
-3. **Editing phase:**
-   ```
-   User: /skill code-reviewer Check this Python script I embedded in the post
-   AI: [Reviews code and suggests improvements]
-   ```
-
-4. **Final polish:**
-   ```
-   User: /skill summarizer Create a 2-sentence summary for the meta description
-   AI: [Provides concise summary]
-   ```
+1. **Research**: `/skill summarizer Summarize these 3 articles about AI trends`
+2. **Drafting**: `/skill humanizer Make this introduction more engaging`
+3. **Editing**: `/skill code-reviewer Check this Python script I embedded in the post`
+4. **Final polish**: `/skill summarizer Create a 2-sentence summary for the meta description`
 
 ### Scenario 2: Developer Debugging Session
 
-**Developer encounters an error:**
-
-1. **Paste error message:**
-   ```
-   User: I'm getting this error: "TypeError: Cannot read property 'map' of undefined"
-   AI: [General explanation]
-   ```
-
-2. **Add context with code:**
-   ```
-   User: Here's the code: [paste code]
-   User: /skill code-reviewer Identify why this map function is failing
-   AI: [Specific analysis with fix]
-   ```
-
-3. **Get explanation for team:**
-   ```
-   User: /skill tech-explainer Explain this bug and fix to my non-technical PM
-   AI: [Business-friendly explanation]
-   ```
+1. Paste error: `TypeError: Cannot read property 'map' of undefined`
+2. Add context: `/skill code-reviewer Identify why this map function is failing`
+3. Explain to team: `/skill tech-explainer Explain this bug and fix to my non-technical PM`
 
 ### Scenario 3: Business Communication
 
-**Preparing for an important meeting:**
-
-1. **Draft agenda:**
-   ```
-   User: /skill email-writer Write a meeting agenda email for the quarterly review
-   AI: [Professional email with clear agenda]
-   ```
-
-2. **Prepare presentation:**
-   ```
-   User: /skill summarizer Convert these 10 pages of data into 5 key slides
-   AI: [Bullet-point summaries]
-   ```
-
-3. **Practice explanation:**
-   ```
-   User: /skill tech-explainer How do I explain our new API strategy to executives?
-   AI: [Executive-friendly explanation]
-   ```
+1. Draft agenda: `/skill email-writer Write a meeting agenda email for the quarterly review`
+2. Prepare presentation: `/skill summarizer Convert these 10 pages of data into 5 key slides`
+3. Practice explanation: `/skill tech-explainer How do I explain our new API strategy to executives?`
 
 ---
 
-## Quick Reference Card
+## Quick Reference
 
 ### Commands
 ```
@@ -330,4 +209,4 @@ metadata:
 
 ---
 
-*For more information, see [AGENTS.md](AGENTS.md) for complete skill specification.*
+For complete skill specification, see [AGENTS.md](AGENTS.md).

@@ -12,7 +12,7 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
 - **Profile Management**: Configure multiple API profiles with different endpoints and models
 - **Agent Skills**: OpenClaw-compatible skills system for specialized AI capabilities with slash commands
 - **Dark/Light Theme**: Toggle between themes for comfortable viewing
-- **Privacy-First Analytics**: Optional, anonymized usage analytics with easy opt-out
+- **Privacy-First Analytics**: Optional, anonymized usage analytics with opt-out controls
 
 ## Installation
 
@@ -25,11 +25,8 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
    ```
 
 2. Open Chrome and navigate to `chrome://extensions/`
-
 3. Enable **Developer mode** (toggle in the top-right corner)
-
 4. Click **Load unpacked** and select the extension directory
-
 5. The Prompt Paul extension icon should appear in your Chrome toolbar
 
 ## Configuration
@@ -38,94 +35,41 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
 
 1. Click the extension icon or right-click and select **Options**
 2. In the **Connection** section, configure:
-   - **LLM API Endpoint**: Your LLM provider's API URL (e.g., `https://api.mistral.ai/v1/chat/completions`)
+   - **LLM API Endpoint**: Your LLM provider API URL (for example `https://api.mistral.ai/v1/chat/completions`)
    - **API Key**: Your authentication key
-   - **Model Name**: The model to use (e.g., `mistral-small-latest`)
+   - **Model Name**: The model to use (for example `mistral-small-latest`)
    - **System Prompt** (optional): Custom instructions for the AI's behavior
-
 3. Click **Save** to store your settings
 
 ### Default Demo Configuration
 
-The extension comes with a demo API key from [Mistral AI](https://mistral.ai) for quick testing. For production use, configure your own API credentials.
+The extension includes a shipped demo configuration from [Mistral AI](https://mistral.ai) for quick testing. For production use, configure your own credentials and model settings.
 
 ### Creating Custom Instructions
 
 1. Open the **Options** page
 2. Navigate to the **Custom Instructions** section
 3. Click **Add New Instruction**
-4. Enter a name and the instruction prompt
-5. Instructions can be pinned to the quick actions sidebar
+4. Enter a name and prompt text
+5. Optionally pin instructions to the quick actions sidebar
 
 ### Using Agent Skills
 
-Prompt Paul includes an OpenClaw-compatible skills system that allows you to invoke specialized AI capabilities with slash commands.
+Prompt Paul includes an OpenClaw-compatible skills system.
 
-**Built-in Skills**:
+**Built-in skills**:
 - **humanizer** - Transforms AI-generated text to sound more natural and human
-- **weather-guide** - A guide for understanding weather reports and terminology
+- **weather-guide** - Helps explain weather reports and terminology
 
-**Invoking Skills**:
+**Discovering skills**:
+- Type `/skills` in chat to list all available skills
+- Skills marked as user-invocable have their own slash commands
 
-1. **Canonical Slash Command** (works for any skill):
-   ```
-   /skill <name> [your input here]
-   ```
-   Example: `/skill humanizer Make this sound more natural: "The implementation will require resources."`
+For complete usage examples and command patterns, see:
+- [Skill Usage Examples](docs/SKILL_EXAMPLES.md)
 
-2. **Per-Skill Command** (for user-invocable skills):
-   ```
-   /<skill-name> [your input here]
-   ```
-   Example: `/humanizer Make this sound more natural: "The implementation will require resources."`
-
-3. **Natural Language**:
-   ```
-   use <skill> skill and [your request]
-   ```
-   Example: `use humanizer skill and make this sound more natural`
-
-**Supported Skill Intent Patterns**:
-
-| Pattern | Example | Status |
-|---|---|---|
-| `use /<skill>` | `use /humanizer and rewrite` | ✅ NEW |
-| `use <skill> skill` | `use humanizer skill and rewrite` | ✅ kept |
-| `apply /<skill>` | `apply /summarizer to this` | ✅ NEW |
-| `with /<skill>` | `with /humanizer, rewrite this` | ✅ NEW |
-| `invoke /<skill>` | `invoke /weather-guide explain forecast` | ✅ NEW |
-| `use <skill> and/to/for` | `use humanizer and rewrite` | ✅ NEW (loose) |
-| `please use <skill> to` | `please use humanizer to rewrite` | ✅ NEW (loose) |
-
-**Discovering Skills**:
-- Type `/skills` in the chat to see all available skills
-- Skills marked as "user-invocable" will have their own slash commands
-
-### Creating Custom Skills
-
-Skills are defined using the Agent Skills specification with YAML frontmatter:
-
-```markdown
----
-name: "my-skill"
-description: "What this skill does"
-user-invocable: true              # Creates /name command
-disable-model-invocation: false   # Hide from AI suggestions?
-metadata:
-  {"tags": "coding, help"}
----
-
-# Skill Instructions
-
-Detailed instructions for the AI on how to use this skill...
-```
-
-**Key Fields**:
-- `name` - Unique identifier (lowercase, hyphens allowed)
-- `description` - Brief description for AI/user discovery
-- `user-invocable` - Whether to expose as `/name` command (default: true)
-- `disable-model-invocation` - Whether to hide from AI suggestions (default: false)
-- `metadata` - Additional metadata (OpenClaw-compatible)
+For complete skill authoring and metadata specification, see:
+- [Agent Skills Specification](AGENTS.md)
 
 ## Usage
 
@@ -139,7 +83,7 @@ Detailed instructions for the AI on how to use this skill...
 2. **Image Analysis**:
    - Right-click on any image
    - Choose **Analyze Image with Prompt Paul**
-   - Select from: General Analysis, Summarize, Explain, or custom instructions
+   - Select from general analysis, summarize, explain, or custom instructions
 
 3. **Video/Audio Analysis**:
    - Right-click on video or audio elements
@@ -151,86 +95,81 @@ Detailed instructions for the AI on how to use this skill...
 2. Use the chat interface to:
    - Type messages and get AI responses
    - Load page content for discussion
-   - Use quick actions (Summarize, Explain)
+   - Use quick actions (summarize, explain)
    - Access pinned custom instructions
 
 ### Quick Actions Sidebar
 
-- **Load Content** (📄): Load the current page's content into the chat context
-- **Summarize** (S): Quickly summarize the current tab
-- **Explain** (E): Get an explanation of the current tab's content
-- **Pinned Actions**: Your pinned custom instructions appear here
+- **Load Content**: Load the current page content into chat context
+- **Summarize**: Quickly summarize the active tab
+- **Explain**: Explain the active tab content
+- **Pinned Actions**: Run your pinned custom instructions
 
 ## Development Setup
 
 ### Prerequisites
 
-- Node.js (optional, for package management)
+- Node.js (for package management and checks)
 - Chrome browser
 
 ### Project Structure
 
 ```
 prompt-paul/
-├── manifest.json           # Extension configuration
-├── background.js           # Service worker with context menus & API handling
-├── chat.js                 # Side panel chat interface logic
-├── chat.html               # Side panel HTML
-├── chat.css                # Side panel styles
-├── options.js              # Options page logic
-├── options.html            # Options page HTML
-├── options.css             # Options page styles
-├── content_script_unified.js  # Content script for page interaction
-├── pdfContentScript.js     # PDF-specific content extraction
-├── theme.css               # Shared theme variables
-├── themeUtils.js           # Theme toggle utilities
-├── loadingManager.js       # Loading state management
-├── loading-states.css      # Loading animation styles
-├── input-controls.js       # Input field utilities
-├── collapsible.js          # Collapsible UI components
-├── error.html              # Error page
-├── marked.min.js           # Markdown parser library
-├── src/
-│   └── utils/
-│       └── validation.js   # Input validation utilities
-├── icons/                  # Extension icons
-│   ├── icon16.png
-│   ├── icon48.png
-│   ├── icon128.png
-│   ├── copy-formatted.png
-│   ├── copy-markdown.png
-│   └── ...
-└── plans/                  # Development planning documents
+|- manifest.json                # Extension manifest (MV3)
+|- background.js                # Service worker
+|- chat.js                      # Side panel chat logic
+|- chat.html
+|- chat.css
+|- options.js                   # Options page logic
+|- options.html
+|- options.css
+|- content_script_unified.js    # General page extraction
+|- pdfContentScript.js          # PDF extraction
+|- theme.css
+|- themeUtils.js
+|- loadingManager.js
+|- loading-states.css
+|- input-controls.js
+|- collapsible.js
+|- marked.min.js
+|- src/
+|  |- orchestrator/
+|  |  |- RunOrchestrator.js
+|  |- utils/
+|     |- skillParser.js
+|     |- toolChoiceBuilder.js
+|     |- validation.js
+|- skills/
+|  |- skills.json
+|  |- humanizer/SKILL.md
+|  |- weather-guide/SKILL.md
+|- docs/
+|  |- SKILL_EXAMPLES.md
+|- scripts/
+|  |- smoke-check.js
+|- .github/
+|  |- workflows/
+|     |- ci.yml
 ```
-
-### Key Files Explained
-
-- **[`manifest.json`](manifest.json)**: Chrome Extension manifest v3 configuration
-- **[`background.js`](background.js)**: Service worker handling:
-  - Context menu creation and clicks
-  - API communication
-  - Message routing between components
-  - Analytics tracking
-- **[`chat.js`](chat.js)**: Side panel functionality:
-  - Chat message handling
-  - Streaming responses
-  - Quick actions
-  - Copy functionality
-- **[`options.js`](options.js)**: Configuration page:
-  - Profile management
-  - Custom instructions
-  - API settings
-- **[`content_script_unified.js`](content_script_unified.js)**: Content extraction from web pages
 
 ### Building
 
-No build step required - the extension runs directly from source files.
+No build step is required. The extension runs directly from source files.
 
 ### Testing
 
-1. Load the extension in Chrome (see Installation)
-2. Open Chrome DevTools on the extension pages for debugging
-3. Use `chrome://extensions/` to view errors and reload the extension
+1. Run repository smoke checks:
+   ```bash
+   npm run check
+   ```
+2. Load the extension in Chrome (see Installation)
+3. Open Chrome DevTools on extension pages for debugging
+4. Use `chrome://extensions/` to inspect errors and reload
+
+### CI
+
+GitHub Actions runs the same smoke check on pushes to `main` and pull requests.
 
 ## API Compatibility
 
@@ -244,18 +183,23 @@ Prompt Paul is compatible with OpenAI-compatible API endpoints, including:
 
 ## Privacy
 
-- **Analytics**: Optional, anonymized usage analytics via Umami
-- **Data Storage**: API keys and settings stored locally in Chrome storage
-- **No External Tracking**: Only analytics endpoint is contacted (can be disabled)
-- **Your Data**: Page content is only sent to your configured LLM endpoint
+- **Analytics**: Anonymous usage analytics via Umami can be disabled in Options
+- **Data Storage**: API keys and settings are stored in Chrome storage
+- **Remote Assets**: Extension pages currently load Google Fonts in addition to analytics
+- **Your Data**: Page content is sent only to your configured LLM endpoint when you invoke processing
+
+## Permissions
+
+- The extension is designed to work across all pages and uses broad host permissions for that behavior.
+- Content extraction and context-menu workflows rely on this all-pages scope.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Contributions are welcome. Please feel free to submit issues and pull requests.
 
 ## License
 
-This project is licensed under the MIT License - see below for details:
+This project is licensed under the MIT License:
 
 ```
 MIT License
@@ -288,4 +232,4 @@ SOFTWARE.
 
 ---
 
-Made with ✨ by Juan Mackie
+Made with ? by Juan Mackie

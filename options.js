@@ -107,6 +107,18 @@ function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, prof
   }
 }
 
+function syncDeleteProfileButtonState(selectedProfileId = null) {
+  const profileSelectElement = document.getElementById('profileSelect');
+  const deleteProfileButton = document.getElementById('deleteProfileButton');
+
+  if (!profileSelectElement || !deleteProfileButton) {
+    return;
+  }
+
+  const selectedId = selectedProfileId || profileSelectElement.value;
+  deleteProfileButton.disabled = selectedId === 'default' || selectedId === 'add_new_profile';
+}
+
 /**
  * Validates the required API configuration inputs.
  * @param {string} endpoint - The LLM API endpoint URL.
@@ -305,6 +317,7 @@ function loadOptions() {
       });
     }
     profileSelectElement.value = selectedProfileId || 'default';
+    syncDeleteProfileButtonState(profileSelectElement.value);
   }
 
   // Load profiles and the last selected profile ID from storage
@@ -341,6 +354,7 @@ function loadOptions() {
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
+  const addProfileButton = document.getElementById('addProfileButton');
   const deleteProfileButton = document.getElementById('deleteProfileButton');
 
   // Analytics consent toggle (opt-out, default ON)
@@ -582,9 +596,18 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
 
   // Event listener for profile selection change
   const profileSelectElement = document.getElementById('profileSelect');
+  if (addProfileButton && profileSelectElement) {
+    addProfileButton.addEventListener('click', () => {
+      profileSelectElement.value = 'add_new_profile';
+      profileSelectElement.dispatchEvent(new Event('change'));
+    });
+  }
+
   if (profileSelectElement) {
     profileSelectElement.addEventListener('change', (event) => {
       const selectedProfileId = event.target.value;
+      syncDeleteProfileButtonState(selectedProfileId);
+
       if (selectedProfileId === 'add_new_profile') {
         const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
         if (newProfileName && newProfileName.trim() !== '') {
@@ -610,6 +633,7 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
               loadOptions(); // Reload options to correctly populate and select.
               // Explicitly set to new profile ID *after* loadOptions, as loadOptions might reset it.
               profileSelectElement.value = newProfileId;
+              syncDeleteProfileButtonState(newProfileId);
               loadProfileSettings(newProfileId); // Load its settings into the form
               showStatus(`Profile "${newProfile.name}" created. Review and save settings.`, false, true);
             });
@@ -619,6 +643,7 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
           chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
             if (profileSelectElement) {
               profileSelectElement.value = res.lastSelectedProfileId || 'default';
+              syncDeleteProfileButtonState(profileSelectElement.value);
             }
           });
         }

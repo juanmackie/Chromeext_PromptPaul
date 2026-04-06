@@ -67,45 +67,6 @@ document.addEventListener('DOMContentLoaded', function() {
         updateCharacterCount(); // Initial count
     }
     
-    // Profile management
-    const profileSelect = document.getElementById('profileSelect');
-    const deleteProfileButton = document.getElementById('deleteProfileButton');
-    const addProfileButton = document.getElementById('addProfileButton');
-    
-    if (profileSelect && deleteProfileButton) {
-        profileSelect.addEventListener('change', function() {
-            deleteProfileButton.disabled = this.value === 'default';
-        });
-    }
-    
-    if (addProfileButton) {
-        addProfileButton.addEventListener('click', function() {
-            const profileName = prompt('Enter a name for the new profile:');
-            if (profileName && profileName.trim()) {
-                // Profile creation is handled by the main options.js
-                // Dispatch custom event to notify options.js
-                document.dispatchEvent(new CustomEvent('inputControls:createProfile', {
-                    detail: { name: profileName.trim() }
-                }));
-            }
-        });
-    }
-    
-    if (deleteProfileButton) {
-        deleteProfileButton.addEventListener('click', function() {
-            const currentProfile = profileSelect?.value;
-            if (currentProfile && currentProfile !== 'default') {
-                if (confirm(`Are you sure you want to delete the profile "${currentProfile}"? This action cannot be undone.`)) {
-                    // Profile deletion is handled by the main options.js
-                    // Dispatch custom event to notify options.js
-                    document.dispatchEvent(new CustomEvent('inputControls:deleteProfile', {
-                        detail: { profileId: currentProfile }
-                    }));
-                }
-            }
-        });
-    }
-    
     // Validation functions
     function validateURL(url) {
         try {
