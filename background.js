@@ -1473,8 +1473,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     if (request.action === 'executeLlmApiRequest') {
         const { prompt, tool_choice } = request;
+        const sourceTabId = sender.tab?.id || null;
         // Use orchestrator instead of legacy makeLlmApiRequest
-        runOrchestrator.startRun({ tool_choice }).then(runId => {
+        runOrchestrator.startRun({ tool_choice, sourceTabId }).then(runId => {
             return runOrchestrator.execute(runId, { messages: [{ role: 'user', content: prompt }] });
         }).then(() => {
             sendResponse({ success: true });

@@ -10,6 +10,8 @@
 
 import { normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 
+const CORE_INSTRUCTIONS = 'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
+
 class RunOrchestrator {
   constructor(skillManager) {
     this.skillManager = skillManager;
@@ -29,6 +31,7 @@ class RunOrchestrator {
     const runState = {
       id: runId,
       config,
+      sourceTabId: config.sourceTabId || null, // Tab that initiated this run
       conversationHistory: config.messages || [],
       accumulatedText: '',
       activeToolCall: null,
@@ -38,7 +41,7 @@ class RunOrchestrator {
     };
 
     this.activeRuns.set(runId, runState);
-    console.log(`[Orchestrator] Started run ${runId}`);
+    console.log(`[Orchestrator] Started run ${runId}${runState.sourceTabId ? ' from tab ' + runState.sourceTabId : ''}`);
     return runId;
   }
 
@@ -295,9 +298,14 @@ class RunOrchestrator {
       const skillPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
       
       if (systemMsg) {
-        systemMsg.content += `\n\n${skillPrompt}`;
+        systemMsg.content = CORE_INSTRUCTIONS + '\n\n' + systemMsg.content + `\n\n${skillPrompt}`;
       } else {
-        messages.unshift({ role: 'system', content: skillPrompt });
+        messages.unshift({ role: 'system', content: CORE_INSTRUCTIONS + '\n\n' + skillPrompt });
+      }
+    } else {
+      const systemMsg = messages.find(m => m.role === 'system');
+      if (systemMsg) {
+        systemMsg.content = CORE_INSTRUCTIONS + '\n\n' + systemMsg.content;
       }
     }
 
@@ -399,20 +407,18 @@ class RunOrchestrator {
 
     // Add system prompt with skill catalog (eligible skills only)
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
-    let systemPrompt = '';
+    let systemPrompt = CORE_INSTRUCTIONS + '\n\n';
     if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
       // Format skill catalog: "name (description)"
       const skillCatalog = eligibleSkills.map(s => `${s.name} (${s.description})`).join(', ');
-      systemPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
+      systemPrompt += `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
     }
 
     if (run.config.systemPrompt) {
-      systemPrompt = run.config.systemPrompt + '\n\n' + systemPrompt;
+      systemPrompt += run.config.systemPrompt;
     }
 
-    if (systemPrompt) {
-      body.system = systemPrompt;
-    }
+    body.system = systemPrompt.trim();
 
     // Normalize tool_choice and add tools if not 'none'
     const normalizedToolChoice = normalizeToolChoice(run.config.tool_choice);
@@ -636,9 +642,11 @@ class RunOrchestrator {
    * Emit event to chat.js
    */
   _emitEvent(runId, event) {
+    const run = this.activeRuns.get(runId);
     chrome.runtime.sendMessage({
       action: 'orchestratorEvent',
       runId,
+      sourceTabId: run?.sourceTabId || null,
       event
     }).catch(err => {
       // Chat might not be listening

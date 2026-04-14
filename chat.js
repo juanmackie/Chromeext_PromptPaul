@@ -327,7 +327,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let selectedText = null;
     let tabId = null;
+    let panelTabId = null; // Owning tab for this side panel (set from message sender)
     let currentRunId = null; // Track active orchestrator run
+    let currentSourceTabId = null; // Tab that initiated the current run
     let currentStreamingMessageDiv = null;
     let currentStreamingContentElement = null;
     let currentStreamingUniqueId = null;
@@ -632,6 +634,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Filter: only process pending actions for our panel
+        if (pendingAction.tabId && panelTabId && pendingAction.tabId !== panelTabId) {
+            console.log('Chat: Ignoring pending action for other panel');
+            // Clear it anyway to prevent stuck queue
+            if (chrome.storage?.session) {
+                chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
+            }
+            return;
+        }
+
         applySetSelectedTextAction(pendingAction);
 
         if (!chrome.storage?.session) {
@@ -701,11 +713,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        // Capture panel's owning tab on first message (establishes identity)
+        if (sender.tab?.id && panelTabId === null) {
+            panelTabId = sender.tab.id;
+            console.log('Chat: Panel registered with tabId:', panelTabId);
+        }
+
+        // Helper: check if this message belongs to our panel
+        const isPanelAction = request.tabId != null && panelTabId != null && request.tabId !== panelTabId;
+
         if (request.action === 'setSelectedText') {
+            // Filter out messages for other panels
+            if (isPanelAction) {
+                console.log('Chat: Ignoring setSelectedText for other panel', request.tabId, 'vs', panelTabId);
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
             applySetSelectedTextAction(request);
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'setMediaForAnalysis') {
+            // Filter out messages for other panels
+            if (isPanelAction) {
+                console.log('Chat: Ignoring setMediaForAnalysis for other panel', request.tabId, 'vs', panelTabId);
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
+
+            // Dedupe: skip if we've already processed this action
+            if (request.actionId && request.actionId === lastProcessedPanelActionId) {
+                console.log('Chat: Ignoring duplicate setMediaForAnalysis actionId:', request.actionId);
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
+            if (request.actionId) {
+                lastProcessedPanelActionId = request.actionId;
+            }
+
             // Handle media data from context menu
             const mediaData = request.mediaData;
             tabId = request.tabId;
@@ -774,6 +818,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'setApiResponse') {
+            // Filter: ignore if we have an active orchestrator run (deprecated legacy path)
+            if (currentRunId) {
+                console.log('Chat: Ignoring setApiResponse - orchestrator owns the run');
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
+            // Also filter by tabId if provided
+            if (request.tabId && panelTabId && request.tabId !== panelTabId) {
+                console.log('Chat: Ignoring setApiResponse for other tab');
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = false;
@@ -807,6 +863,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'streamApiStart') {
+            // Filter: ignore if we have an active orchestrator run
+            if (currentRunId) {
+                console.log('Chat: Ignoring streamApiStart - orchestrator owns the run');
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
+            // Also filter by tabId
+            if (request.tabId && panelTabId && request.tabId !== panelTabId) {
+                console.log('Chat: Ignoring streamApiStart for other tab');
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.disabled = true;
@@ -826,6 +894,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sendResponse) sendResponse({ success: true });
             return true;
         } else if (request.action === 'streamApiResponseChunk') {
+            // Filter: ignore if we have an active orchestrator run (deprecated legacy path)
+            if (currentRunId) {
+                return;
+            }
             if (activeStreamingToolCall) return; // If a tool call is active, don't process further text chunks for this bubble
             if (currentStreamingContentElement && request.chunk != null) {
                 accumulatedStreamedText += request.chunk;
@@ -834,15 +906,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (request.action === 'orchestratorEvent') {
             // NEW: Handle events from orchestrator
-            const { runId, event } = request;
+            const { runId, sourceTabId, event } = request;
             
-            // Ignore events from other runs
-            if (currentRunId && runId !== currentRunId) {
+            // Filter events: must match our current run AND come from our tab (or have no source)
+            const isOwnedEvent = currentRunId && runId === currentRunId && 
+                (!sourceTabId || sourceTabId === panelTabId || !currentSourceTabId);
+            
+            if (!isOwnedEvent) {
+                console.log('Chat: Ignoring orchestratorEvent for other run/tab', { runId, sourceTabId, panelTabId, currentRunId, currentSourceTabId });
                 if (sendResponse) sendResponse({ success: true, ignored: true });
                 return true;
             }
-            
-            if (!currentRunId) currentRunId = runId;
             
             switch (event.type) {
                 case 'content':
@@ -977,6 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     accumulatedStreamedText = '';
                     activeStreamingToolCall = null;
                     currentRunId = null;
+                    currentSourceTabId = null;
                     break;
                     
                 case 'error':
@@ -986,6 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     clearButton.textContent = 'Clear';
                     userInput.focus();
                     currentRunId = null;
+                    currentSourceTabId = null;
                     break;
             }
             
@@ -1023,6 +1099,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } else if (request.action === 'handleToolCallResponse') {
             // DEPRECATED: This handler is replaced by orchestratorEvent handling
+            // Filter: ignore if we have an active orchestrator run
+            if (currentRunId) {
+                console.log('Chat: Ignoring handleToolCallResponse - orchestrator owns the run');
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
+            // Also filter by tabId
+            if (request.tabId && panelTabId && request.tabId !== panelTabId) {
+                console.log('Chat: Ignoring handleToolCallResponse for other tab');
+                if (sendResponse) sendResponse({ success: true, ignored: true });
+                return true;
+            }
             // Kept for backward compatibility
             const { responseMessage } = request;
             chatMainArea.style.display = 'block';
@@ -1192,7 +1280,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 tool_choice: effectiveToolChoice,
                 tools: await getTools(),
                 mediaData: mediaData,
-                requestedSkill
+                requestedSkill,
+                sourceTabId: panelTabId
             };
 
             // Start orchestrator run
@@ -1206,6 +1295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             currentRunId = startResponse.runId;
+            currentSourceTabId = panelTabId;
 
             // Execute the run
             await chrome.runtime.sendMessage({
@@ -1232,6 +1322,7 @@ document.addEventListener('DOMContentLoaded', () => {
             accumulatedStreamedText = '';
             activeStreamingToolCall = null;
             currentRunId = null;
+            currentSourceTabId = null;
         }
     }
 
@@ -1511,7 +1602,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 systemPrompt: config.systemPrompt,
                 tool_choice: effectiveToolChoice,
                 tools: await getTools(),
-                requestedSkill
+                requestedSkill,
+                sourceTabId: panelTabId
             };
 
             // Create UI elements for streaming
@@ -1535,6 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             currentRunId = startResponse.runId;
+            currentSourceTabId = panelTabId;
 
             // Execute the run
             await chrome.runtime.sendMessage({
@@ -1560,6 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
             accumulatedStreamedText = '';
             activeStreamingToolCall = null;
             currentRunId = null;
+            currentSourceTabId = null;
         }
     }
 
@@ -1755,12 +1849,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 }
 
                                 // Pass the tool_choice from the original instruction
-                                //makeApiCall(prompt, originalInstruction.tool_choice);
-                                chrome.runtime.sendMessage({
-                                    action: 'executeLlmApiRequest',
-                                    prompt: prompt,
-                                    tool_choice: normalizeToolChoice(originalInstruction.tool_choice)
-                                });
+                                // Use makeApiCall for proper run ownership tracking
+                                const toolChoice = normalizeToolChoice(originalInstruction.tool_choice);
+                                makeApiCall(prompt, toolChoice);
                             }
                         );
                     });
