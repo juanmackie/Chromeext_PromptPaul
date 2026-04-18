@@ -1352,10 +1352,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     excerpt: result.excerpt,
                     lang: result.lang,
                     url: result.url,
-                    error: result.error
+                    error: result.error,
+                    instruction: request.instruction
                 });
             } else {
-                sendResponse({ action: 'pinnedActionTabContentResponse', success: false, error: 'No active tab found' });
+                sendResponse({ action: 'pinnedActionTabContentResponse', success: false, error: 'No active tab found', instruction: request.instruction });
             }
         });
         return true;

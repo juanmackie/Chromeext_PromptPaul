@@ -274,6 +274,118 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Custom Prompts Dropdown
+    let customPromptsMenuVisible = false;
+    let customPromptsMenu = null;
+
+    async function createCustomPromptsMenu() {
+        if (customPromptsMenu) return customPromptsMenu;
+        customPromptsMenu = document.createElement('div');
+        customPromptsMenu.id = 'custom-prompts-menu';
+        document.body.appendChild(customPromptsMenu);
+        return customPromptsMenu;
+    }
+
+    async function populateCustomPromptsMenu() {
+        const menu = await createCustomPromptsMenu();
+        menu.innerHTML = '';
+
+        const { instructions, pinnedQuickActions } = await new Promise((resolve) => {
+            chrome.storage.local.get(['instructions', 'pinnedQuickActions'], resolve);
+        });
+
+        const allInstructions = instructions || [];
+        const pinnedIds = new Set(pinnedQuickActions || []);
+
+        if (allInstructions.length === 0) {
+            menu.innerHTML = '<div class="custom-prompt-item" style="color:var(--ext-muted-foreground);font-style:italic;cursor:default;">No custom prompts</div>';
+            return;
+        }
+
+        const sorted = [...allInstructions].sort((a, b) => {
+            const aPinned = pinnedIds.has(a.id);
+            const bPinned = pinnedIds.has(b.id);
+            if (aPinned && !bPinned) return -1;
+            if (!aPinned && bPinned) return 1;
+            return (a.name || '').localeCompare(b.name || '');
+        });
+
+        sorted.forEach(instruction => {
+            const isPinned = pinnedIds.has(instruction.id);
+            const item = document.createElement('button');
+            item.className = 'custom-prompt-item' + (isPinned ? ' pinned' : '');
+            const iconLetter = instruction.name ? instruction.name[0].toUpperCase() : '?';
+            item.innerHTML = `<span class="custom-prompt-icon">${iconLetter}</span>${instruction.name}`;
+            item.addEventListener('click', () => {
+                hideCustomPromptsMenu();
+                executeCustomPrompt(instruction);
+            });
+            menu.appendChild(item);
+        });
+    }
+
+    async function showCustomPromptsMenu() {
+        await populateCustomPromptsMenu();
+        const btn = customPromptsDropdown.getBoundingClientRect();
+        customPromptsMenu.style.left = `${btn.left}px`;
+        customPromptsMenu.style.top = `${btn.bottom + 4}px`;
+        customPromptsMenu.style.display = 'block';
+        customPromptsMenuVisible = true;
+    }
+
+    function hideCustomPromptsMenu() {
+        if (customPromptsMenu) customPromptsMenu.style.display = 'none';
+        customPromptsMenuVisible = false;
+    }
+
+    async function executeCustomPrompt(instruction) {
+        chatMainArea.style.display = 'block';
+        oneoffInstructionArea.style.display = 'none';
+
+        chrome.runtime.sendMessage({
+            action: 'getPinnedActionTabContent',
+            instruction: {
+                id: instruction.id,
+                name: instruction.name,
+                content: instruction.content,
+                tool_choice: normalizeToolChoice(instruction.tool_choice)
+            }
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
+                return;
+            }
+            const orig = response?.instruction;
+            if (!orig) {
+                loadingManager.showToast("Error: Instruction details not returned", 'error');
+                return;
+            }
+
+            let prompt = orig.content;
+            if (response?.success && response.content) {
+                prompt += '\n\nActive Tab Content:\n' + response.content;
+                loadingManager.showToast(`Executing: ${orig.name}...`, 'info');
+            }
+            if (selectedText?.trim()) prompt += '\n\nSelected Text:\n' + selectedText;
+
+            makeApiCall(prompt, normalizeToolChoice(orig.tool_choice));
+        });
+    }
+
+    const customPromptsDropdown = document.getElementById('custom-prompts-dropdown');
+    if (customPromptsDropdown) {
+        customPromptsDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            customPromptsMenuVisible ? hideCustomPromptsMenu() : showCustomPromptsMenu();
+        });
+    }
+
+    document.addEventListener('click', (e) => {
+        if (customPromptsMenuVisible && !customPromptsMenu?.contains(e.target) && !customPromptsDropdown?.contains(e.target)) {
+            hideCustomPromptsMenu();
+        }
+    });
+
     if (explainButton) {
         explainButton.addEventListener('click', async () => {
             try {

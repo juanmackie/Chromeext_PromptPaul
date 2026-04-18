@@ -939,3 +939,57 @@ th, td {
 #preset-menu .material-icons {
     font-size: 18px;
 }
+
+/* Custom prompts dropdown */
+#custom-prompts-menu {
+    position: absolute;
+    background: var(--ext-card);
+    border: 1px solid var(--ext-border);
+    border-radius: 4px;
+    padding: 4px 0;
+    z-index: 1000;
+    min-width: 180px;
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: var(--ext-shadow-hover);
+}
+
+#custom-prompts-menu .custom-prompt-item {
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--ext-foreground);
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--ext-font-family);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-left: 3px solid transparent;
+}
+
+#custom-prompts-menu .custom-prompt-item:hover {
+    background: var(--ext-primary);
+    color: var(--ext-primary-foreground);
+}
+
+#custom-prompts-menu .custom-prompt-item.pinned {
+    border-left-color: var(--ext-primary);
+    background: var(--ext-muted);
+}
+
+#custom-prompts-menu .custom-prompt-item.pinned:hover {
+    background: var(--ext-primary);
+}
+
+#custom-prompts-menu .custom-prompt-icon {
+    font-weight: bold;
+    font-size: 12px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
