@@ -69,9 +69,7 @@
   "prettier.printWidth": 100,
 
   // ESLint settings (if installed)
-  "eslint.validate": [
-    "javascript"
-  ],
+  "eslint.validate": ["javascript"],
 
   // Git settings
   "git.ignoreLimitWarning": true,

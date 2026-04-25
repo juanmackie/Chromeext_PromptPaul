@@ -19,7 +19,7 @@ const ALLOWED_FRONTMATTER_FIELDS = new Set([
   'command-dispatch',
   'command-tool',
   'command-arg-mode',
-  'homepage'
+  'homepage',
 ]);
 
 const LEGACY_EXTENSION_FIELDS = ['version', 'triggers', 'tags', 'examples'];
@@ -40,7 +40,7 @@ export function parseSkillMarkdown(markdown, options = {}) {
       valid: false,
       error: 'Empty or invalid markdown content',
       metadata: null,
-      instructions: null
+      instructions: null,
     };
   }
 
@@ -56,10 +56,10 @@ export function parseSkillMarkdown(markdown, options = {}) {
         name: 'unknown',
         description: 'Legacy skill (no frontmatter)',
         license: 'MIT',
-        metadata: {}
+        metadata: {},
       },
       instructions: trimmedLegacy,
-      raw: markdown
+      raw: markdown,
     };
   }
 
@@ -68,7 +68,7 @@ export function parseSkillMarkdown(markdown, options = {}) {
       valid: false,
       error: frontmatterParts.error,
       metadata: null,
-      instructions: null
+      instructions: null,
     };
   }
 
@@ -80,13 +80,13 @@ export function parseSkillMarkdown(markdown, options = {}) {
       valid: false,
       error: error.message,
       metadata: null,
-      instructions: null
+      instructions: null,
     };
   }
 
   const normalizedMetadata = normalizeMetadataForValidation(metadata);
   const validation = validateMetadata(normalizedMetadata, {
-    expectedDirectoryName: options.expectedDirectoryName
+    expectedDirectoryName: options.expectedDirectoryName,
   });
 
   if (!validation.valid) {
@@ -94,7 +94,7 @@ export function parseSkillMarkdown(markdown, options = {}) {
       valid: false,
       error: validation.error,
       metadata: null,
-      instructions: null
+      instructions: null,
     };
   }
 
@@ -103,7 +103,7 @@ export function parseSkillMarkdown(markdown, options = {}) {
     legacy: false,
     metadata: validation.metadata,
     instructions: frontmatterParts.body,
-    raw: markdown
+    raw: markdown,
   };
 }
 
@@ -134,17 +134,20 @@ function extractFrontmatter(markdown) {
     return {
       hasFrontmatter: true,
       valid: false,
-      error: 'Invalid frontmatter: missing closing ---'
+      error: 'Invalid frontmatter: missing closing ---',
     };
   }
 
   const frontmatterText = lines.slice(1, closingIndex).join('\n');
-  const body = lines.slice(closingIndex + 1).join('\n').trim();
+  const body = lines
+    .slice(closingIndex + 1)
+    .join('\n')
+    .trim();
   return {
     hasFrontmatter: true,
     valid: true,
     frontmatterText,
-    body
+    body,
   };
 }
 
@@ -193,10 +196,16 @@ export function parseFrontmatter(text) {
         }
         // Fallback to flat key-value parsing
         result[key] = parseMetadataBlock(nested.lines, index + 1);
-      } else if (nested.lines.length > 0 && nested.lines.every(line => line.trim().startsWith('- '))) {
-        result[key] = nested.lines.map(line => parseScalar(line.trim().slice(2)));
+      } else if (
+        nested.lines.length > 0 &&
+        nested.lines.every((line) => line.trim().startsWith('- '))
+      ) {
+        result[key] = nested.lines.map((line) => parseScalar(line.trim().slice(2)));
       } else if (nested.lines.length > 0) {
-        result[key] = nested.lines.map(line => line.trim()).join('\n').trim();
+        result[key] = nested.lines
+          .map((line) => line.trim())
+          .join('\n')
+          .trim();
       } else {
         result[key] = '';
       }
@@ -255,7 +264,7 @@ export function validateMetadata(metadata, options = {}) {
   if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
     return {
       valid: false,
-      error: `Description exceeds ${MAX_DESCRIPTION_LENGTH} characters`
+      error: `Description exceeds ${MAX_DESCRIPTION_LENGTH} characters`,
     };
   }
 
@@ -274,21 +283,28 @@ export function validateMetadata(metadata, options = {}) {
     if (compatibility.length === 0 || compatibility.length > MAX_COMPATIBILITY_LENGTH) {
       return {
         valid: false,
-        error: `Field 'compatibility' must be 1-${MAX_COMPATIBILITY_LENGTH} characters`
+        error: `Field 'compatibility' must be 1-${MAX_COMPATIBILITY_LENGTH} characters`,
       };
     }
     normalized.compatibility = compatibility;
   }
 
   if (normalized['allowed-tools'] !== undefined) {
-    if (typeof normalized['allowed-tools'] !== 'string' || normalized['allowed-tools'].trim() === '') {
+    if (
+      typeof normalized['allowed-tools'] !== 'string' ||
+      normalized['allowed-tools'].trim() === ''
+    ) {
       return { valid: false, error: "Field 'allowed-tools' must be a non-empty string" };
     }
     normalized['allowed-tools'] = normalized['allowed-tools'].trim();
   }
 
   if (normalized.metadata !== undefined) {
-    if (!normalized.metadata || typeof normalized.metadata !== 'object' || Array.isArray(normalized.metadata)) {
+    if (
+      !normalized.metadata ||
+      typeof normalized.metadata !== 'object' ||
+      Array.isArray(normalized.metadata)
+    ) {
       return { valid: false, error: "Field 'metadata' must be a key-value mapping" };
     }
 
@@ -332,16 +348,22 @@ export function validateMetadata(metadata, options = {}) {
   if (normalized['command-dispatch'] !== undefined) {
     const allowed = ['tool'];
     if (!allowed.includes(normalized['command-dispatch'])) {
-      return { valid: false, error: `Field 'command-dispatch' must be one of: ${allowed.join(', ')}` };
+      return {
+        valid: false,
+        error: `Field 'command-dispatch' must be one of: ${allowed.join(', ')}`,
+      };
     }
   }
 
-  if (typeof options.expectedDirectoryName === 'string' && options.expectedDirectoryName.trim() !== '') {
+  if (
+    typeof options.expectedDirectoryName === 'string' &&
+    options.expectedDirectoryName.trim() !== ''
+  ) {
     const expected = options.expectedDirectoryName.normalize('NFKC').trim();
     if (expected !== normalizedName) {
       return {
         valid: false,
-        error: `Skill name '${normalizedName}' must match directory '${expected}'`
+        error: `Skill name '${normalizedName}' must match directory '${expected}'`,
       };
     }
   }
@@ -351,22 +373,43 @@ export function validateMetadata(metadata, options = {}) {
     description: normalizedDescription,
     ...(normalized.license !== undefined ? { license: normalized.license } : {}),
     ...(normalized.compatibility !== undefined ? { compatibility: normalized.compatibility } : {}),
-    ...(normalized['allowed-tools'] !== undefined ? { 'allowed-tools': normalized['allowed-tools'] } : {}),
+    ...(normalized['allowed-tools'] !== undefined
+      ? { 'allowed-tools': normalized['allowed-tools'] }
+      : {}),
     ...(normalized.metadata !== undefined ? { metadata: normalized.metadata } : {}),
     // OpenClaw-style fields
-    ...(normalized['user-invocable'] !== undefined ? { 'user-invocable': normalized['user-invocable'] } : {}),
-    ...(normalized['disable-model-invocation'] !== undefined ? { 'disable-model-invocation': normalized['disable-model-invocation'] } : {}),
-    ...(normalized['command-dispatch'] !== undefined ? { 'command-dispatch': normalized['command-dispatch'] } : {}),
-    ...(normalized['command-tool'] !== undefined ? { 'command-tool': normalized['command-tool'] } : {}),
-    ...(normalized['command-arg-mode'] !== undefined ? { 'command-arg-mode': normalized['command-arg-mode'] } : {}),
-    ...(normalized.homepage !== undefined ? { homepage: normalized.homepage } : {})
+    ...(normalized['user-invocable'] !== undefined
+      ? { 'user-invocable': normalized['user-invocable'] }
+      : {}),
+    ...(normalized['disable-model-invocation'] !== undefined
+      ? { 'disable-model-invocation': normalized['disable-model-invocation'] }
+      : {}),
+    ...(normalized['command-dispatch'] !== undefined
+      ? { 'command-dispatch': normalized['command-dispatch'] }
+      : {}),
+    ...(normalized['command-tool'] !== undefined
+      ? { 'command-tool': normalized['command-tool'] }
+      : {}),
+    ...(normalized['command-arg-mode'] !== undefined
+      ? { 'command-arg-mode': normalized['command-arg-mode'] }
+      : {}),
+    ...(normalized.homepage !== undefined ? { homepage: normalized.homepage } : {}),
   };
 
   // Pass through any other unknown fields for forward-compatibility
   const knownKeys = new Set([
-    'name', 'description', 'license', 'compatibility', 'allowed-tools', 'metadata',
-    'user-invocable', 'disable-model-invocation',
-    'command-dispatch', 'command-tool', 'command-arg-mode', 'homepage'
+    'name',
+    'description',
+    'license',
+    'compatibility',
+    'allowed-tools',
+    'metadata',
+    'user-invocable',
+    'disable-model-invocation',
+    'command-dispatch',
+    'command-tool',
+    'command-arg-mode',
+    'homepage',
   ]);
   for (const [key, value] of Object.entries(normalized)) {
     if (!knownKeys.has(key)) {
@@ -376,7 +419,7 @@ export function validateMetadata(metadata, options = {}) {
 
   return {
     valid: true,
-    metadata: resultMetadata
+    metadata: resultMetadata,
   };
 }
 
@@ -393,7 +436,7 @@ export function generateSkillMarkdown({ name, description, instructions, options
   const frontmatterLines = [
     '---',
     `name: ${formatYamlString(name || '')}`,
-    `description: ${formatYamlString(description || '')}`
+    `description: ${formatYamlString(description || '')}`,
   ];
 
   if (typeof options.license === 'string' && options.license.trim() !== '') {
@@ -416,7 +459,7 @@ export function generateSkillMarkdown({ name, description, instructions, options
     ['command-dispatch', 'commandDispatch'],
     ['command-tool', 'commandTool'],
     ['command-arg-mode', 'commandArgMode'],
-    ['homepage', 'homepage']
+    ['homepage', 'homepage'],
   ]) {
     const val = options[optKey] ?? options[fmKey];
     if (val !== undefined && val !== null && val !== '') {
@@ -429,7 +472,12 @@ export function generateSkillMarkdown({ name, description, instructions, options
   }
 
   const metadata = options.metadata;
-  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata) && Object.keys(metadata).length > 0) {
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    Object.keys(metadata).length > 0
+  ) {
     frontmatterLines.push('metadata:');
     const sortedEntries = Object.entries(metadata).sort(([a], [b]) => a.localeCompare(b));
     for (const [key, value] of sortedEntries) {
@@ -476,11 +524,13 @@ export function extractSkillMetadata(parsedSkill) {
     ...(m.metadata ? { metadata: m.metadata } : {}),
     // OpenClaw-style fields
     ...(m['user-invocable'] !== undefined ? { 'user-invocable': m['user-invocable'] } : {}),
-    ...(m['disable-model-invocation'] !== undefined ? { 'disable-model-invocation': m['disable-model-invocation'] } : {}),
+    ...(m['disable-model-invocation'] !== undefined
+      ? { 'disable-model-invocation': m['disable-model-invocation'] }
+      : {}),
     ...(m['command-dispatch'] ? { 'command-dispatch': m['command-dispatch'] } : {}),
     ...(m['command-tool'] ? { 'command-tool': m['command-tool'] } : {}),
     ...(m['command-arg-mode'] ? { 'command-arg-mode': m['command-arg-mode'] } : {}),
-    ...(m.homepage ? { homepage: m.homepage } : {})
+    ...(m.homepage ? { homepage: m.homepage } : {}),
   };
 }
 
@@ -518,14 +568,14 @@ export function migrateLegacySkill(legacySkill) {
     options: {
       ...(legacySkill.license ? { license: legacySkill.license } : {}),
       ...(legacySkill.compatibility ? { compatibility: legacySkill.compatibility } : {}),
-      ...(Object.keys(metadataExtensions).length > 0 ? { metadata: metadataExtensions } : {})
-    }
+      ...(Object.keys(metadataExtensions).length > 0 ? { metadata: metadataExtensions } : {}),
+    },
   });
 
   return {
     name: legacySkill.name,
     skillMd,
-    lastUpdated: legacySkill.lastUpdated || new Date().toISOString()
+    lastUpdated: legacySkill.lastUpdated || new Date().toISOString(),
   };
 }
 
@@ -556,7 +606,9 @@ function normalizeMetadataForValidation(metadata) {
   }
 
   const metadataMap =
-    normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+    normalized.metadata &&
+    typeof normalized.metadata === 'object' &&
+    !Array.isArray(normalized.metadata)
       ? { ...normalized.metadata }
       : {};
 
@@ -584,6 +636,20 @@ function parseValue(rawValue) {
   const trimmed = rawValue.trim();
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
     return parseInlineArray(trimmed);
+  }
+  // Try JSON parsing for inline objects (OpenClaw-style metadata: { ... })
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (_) {
+      // Single-quoted JSON is not valid JSON; try replacing quotes
+      try {
+        const normalized = trimmed.replace(/'/g, '"');
+        return JSON.parse(normalized);
+      } catch (_2) {
+        // Not parseable, fall through
+      }
+    }
   }
   return parseScalar(trimmed);
 }
@@ -746,7 +812,7 @@ function readIndentedBlock(lines, startIndex) {
 
   return {
     lines: collected,
-    nextIndex: index
+    nextIndex: index,
   };
 }
 

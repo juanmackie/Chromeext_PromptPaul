@@ -23,3 +23,15 @@ yarn-error.log*
 *.bak
 *.tmp
 *.log
+
+# Ignore build output
+dist/
+
+# Ignore IDE project files
+.idea/
+*.swp
+*.swo
+
+# Ignore coverage output
+coverage/
+.nyc_output/

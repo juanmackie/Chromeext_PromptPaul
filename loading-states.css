@@ -134,7 +134,7 @@
   gap: 8px;
   font-size: 14px;
   line-height: 1.4;
-  animation: slideIn 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  animation: slideIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
   font-family: var(--ext-font-family);
@@ -304,7 +304,7 @@
 .progress-fill {
   height: 100%;
   background: var(--ext-gradient-header);
-  transition: width 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 0px;
   border-right: 1px solid var(--ext-primary-bright);
 }
@@ -402,7 +402,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

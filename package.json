@@ -1,10 +1,40 @@
 {
-  "name": "chrome-helpinghand",
+  "name": "prompt-paul",
   "version": "6.0.0",
-  "description": "Chrome extension for custom instructions",
+  "description": "Prompt Paul - Chrome extension for AI-powered text processing with context menus and side panel chat interface",
   "main": "background.js",
+  "author": "Juan Mackie",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juanmackie/Chromeext_PromptPaul"
+  },
   "scripts": {
     "smoke": "node scripts/smoke-check.js",
-    "check": "npm run smoke"
-  }
+    "check": "npm run smoke",
+    "lint": "eslint . --ext .js",
+    "test": "node scripts/test-runner.js",
+    "test:unit": "node scripts/test-runner.js --unit",
+    "test:integration": "node scripts/test-runner.js --integration",
+    "test:coverage": "node scripts/test-runner.js --coverage",
+    "build": "node scripts/build.js",
+    "build:dev": "node scripts/build.js --dev",
+    "build:prod": "node scripts/build.js --prod",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "validate": "npm run lint && npm run format:check && npm run test && npm run smoke",
+    "ci": "npm run validate && npm run build:prod"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "prettier": "^3.8.3"
+  },
+  "keywords": [
+    "chrome-extension",
+    "ai",
+    "llm",
+    "chatgpt",
+    "mistral",
+    "productivity"
+  ],
+  "license": "MIT"
 }

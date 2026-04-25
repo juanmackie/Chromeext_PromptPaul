@@ -12,12 +12,12 @@
  * @returns {string} Normalized tool_choice: 'none', 'auto', or a tool name
  */
 export function normalizeToolChoice(tc) {
-    if (!tc) return 'none';
-    if (Array.isArray(tc)) {
-        if (tc.length === 0) return 'none';
-        return tc[0];
-    }
-    return String(tc);
+  if (!tc) return 'none';
+  if (Array.isArray(tc)) {
+    if (tc.length === 0) return 'none';
+    return tc[0];
+  }
+  return String(tc);
 }
 
 /**
@@ -28,44 +28,43 @@ export function normalizeToolChoice(tc) {
  * @returns {Object} The tool_choice payload to spread into request body: {tools, tool_choice}
  */
 export function buildToolChoicePayload(options) {
-    const { formattedTools, toolChoice } = options;
+  const { formattedTools, toolChoice } = options;
 
-    // If no tools or none requested, return empty
-    if (formattedTools.length === 0 || toolChoice === 'none') {
-        return {};
-    }
+  // If no tools or none requested, return empty
+  if (formattedTools.length === 0 || toolChoice === 'none') {
+    return {};
+  }
 
-    // Auto mode - use all available tools
-    if (toolChoice === 'auto') {
-        return { tools: formattedTools, tool_choice: 'auto' };
-    }
-
-    // Specific tool requested
-    if (typeof toolChoice === 'string') {
-        const specificTool = formattedTools.find(t => t.function.name === toolChoice);
-        if (specificTool) {
-            return {
-                tools: [specificTool],
-                tool_choice: { type: 'function', function: { name: toolChoice } }
-            };
-        }
-    }
-
-    // Array of tools selected
-    if (Array.isArray(toolChoice) && toolChoice.length > 0) {
-        const selectedTools = formattedTools.filter(tool =>
-            toolChoice.includes(tool.function.name)
-        );
-        if (selectedTools.length > 0) {
-            const tcObject = selectedTools.length === 1
-                ? { type: 'function', function: { name: selectedTools[0].function.name } }
-                : 'auto';
-            return { tools: selectedTools, tool_choice: tcObject };
-        }
-    }
-
-    // Fallback to auto mode
+  // Auto mode - use all available tools
+  if (toolChoice === 'auto') {
     return { tools: formattedTools, tool_choice: 'auto' };
+  }
+
+  // Specific tool requested
+  if (typeof toolChoice === 'string') {
+    const specificTool = formattedTools.find((t) => t.function.name === toolChoice);
+    if (specificTool) {
+      return {
+        tools: [specificTool],
+        tool_choice: { type: 'function', function: { name: toolChoice } },
+      };
+    }
+  }
+
+  // Array of tools selected
+  if (Array.isArray(toolChoice) && toolChoice.length > 0) {
+    const selectedTools = formattedTools.filter((tool) => toolChoice.includes(tool.function.name));
+    if (selectedTools.length > 0) {
+      const tcObject =
+        selectedTools.length === 1
+          ? { type: 'function', function: { name: selectedTools[0].function.name } }
+          : 'auto';
+      return { tools: selectedTools, tool_choice: tcObject };
+    }
+  }
+
+  // Fallback to auto mode
+  return { tools: formattedTools, tool_choice: 'auto' };
 }
 
 /**
@@ -74,23 +73,26 @@ export function buildToolChoicePayload(options) {
  * @returns {Array} Formatted tools array
  */
 export function formatToolsForLlm(tools) {
-    return tools.map(tool => {
-        try {
-            const parameters = typeof tool.parameters === 'string'
-                ? JSON.parse(tool.parameters)
-                : (tool.parametersForLlm || tool.parameters || {});
+  return tools
+    .map((tool) => {
+      try {
+        const parameters =
+          typeof tool.parameters === 'string'
+            ? JSON.parse(tool.parameters)
+            : tool.parametersForLlm || tool.parameters || {};
 
-            return {
-                type: 'function',
-                function: {
-                    name: tool.name,
-                    description: tool.description,
-                    parameters: parameters
-                }
-            };
-        } catch (e) {
-            console.error(`toolChoiceBuilder: Error parsing parameters for tool ${tool.name}:`, e);
-            return null;
-        }
-    }).filter(tool => tool !== null);
+        return {
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: parameters,
+          },
+        };
+      } catch (e) {
+        console.error(`toolChoiceBuilder: Error parsing parameters for tool ${tool.name}:`, e);
+        return null;
+      }
+    })
+    .filter((tool) => tool !== null);
 }

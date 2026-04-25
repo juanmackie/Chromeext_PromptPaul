@@ -10,7 +10,7 @@ export function applyDarkTheme(isDark) {
   // Apply theme class to document root for better CSS cascade
   const root = document.documentElement;
   const body = document.body;
-  
+
   if (isDark) {
     root.setAttribute('data-theme', 'dark');
     body.classList.add('dark-theme', 'ext-dark');
@@ -28,18 +28,28 @@ export function applyDarkTheme(isDark) {
   const copyMarkdownIcons = document.querySelectorAll('img[src*="copy-markdown.png"]');
   const copyFormattedIcons = document.querySelectorAll('img[src*="copy-formatted.png"]');
 
-  copyMarkdownIcons.forEach(icon => {
+  copyMarkdownIcons.forEach((icon) => {
     icon.src = isDark ? 'icons/light-copy-markdown.png' : 'icons/copy-markdown.png';
   });
 
-  copyFormattedIcons.forEach(icon => {
+  copyFormattedIcons.forEach((icon) => {
     icon.src = isDark ? 'icons/light-copy-formatted.png' : 'icons/copy-formatted.png';
   });
-  
+
+  // Switch highlight.js theme for syntax highlighting
+  const highlightTheme = document.getElementById('highlight-theme');
+  if (highlightTheme) {
+    highlightTheme.href = isDark
+      ? 'libs/highlight-github-dark.min.css'
+      : 'libs/highlight-github.min.css';
+  }
+
   // Dispatch theme change event for other components
-  window.dispatchEvent(new CustomEvent('themeChanged', { 
-    detail: { isDark, theme: isDark ? 'dark' : 'light' } 
-  }));
+  window.dispatchEvent(
+    new CustomEvent('themeChanged', {
+      detail: { isDark, theme: isDark ? 'dark' : 'light' },
+    })
+  );
 }
 
 /**

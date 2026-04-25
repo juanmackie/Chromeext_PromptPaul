@@ -1,46 +1,46 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <title>Error</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      line-height: 1.6;
-      margin: 0;
-      padding: 20px;
-      background-color: #f9f9f9;
-    }
-    h1 {
-      color: #d9534f;
-      font-size: 20px;
-      margin-bottom: 15px;
-    }
-    pre {
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      background-color: #fff;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      padding: 15px;
-      font-size: 14px;
-    }
-  </style>
-</head>
-<body>
-  <h1>Error</h1>
-  <pre id="error-message"></pre>
+  <head>
+    <title>Error</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        padding: 20px;
+        background-color: #f9f9f9;
+      }
+      h1 {
+        color: #d9534f;
+        font-size: 20px;
+        margin-bottom: 15px;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Error</h1>
+    <pre id="error-message"></pre>
 
-  <script>
-    // Get error message from URL parameters and display it
-    const urlParams = new URLSearchParams(window.location.search);
-    const errorMessage = urlParams.get('message');
-    if (errorMessage) {
-      // Decode the error message and display it
-      const decodedErrorMessage = decodeURIComponent(errorMessage);
-      document.getElementById('error-message').textContent = decodedErrorMessage;
-    } else {
-      document.getElementById('error-message').textContent = 'No error message available.';
-    }
-  </script>
-</body>
+    <script>
+      // Get error message from URL parameters and display it
+      const urlParams = new URLSearchParams(window.location.search);
+      const errorMessage = urlParams.get('message');
+      if (errorMessage) {
+        // Decode the error message and display it
+        const decodedErrorMessage = decodeURIComponent(errorMessage);
+        document.getElementById('error-message').textContent = decodedErrorMessage;
+      } else {
+        document.getElementById('error-message').textContent = 'No error message available.';
+      }
+    </script>
+  </body>
 </html>

@@ -13,27 +13,73 @@
 
 import { isValidURL } from './src/utils/validation.js';
 import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
-import { buildToolChoicePayload, formatToolsForLlm, normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
+import {
+  buildToolChoicePayload,
+  formatToolsForLlm,
+  normalizeToolChoice,
+} from './src/utils/toolChoiceBuilder.js';
 
 // ===== Named Constants =====
-// Time constants
-const THIRTY_DAYS_IN_MS = 30 * 24 * 60 * 60 * 1000;
-const ONE_SECOND_IN_MS = 1000;
 
-const MIN_CONTENT_LENGTH = 50;
-const CONTENT_PREVIEW_LENGTH = 500;
+/**
+ * Time constants for analytics and caching
+ * @readonly
+ * @enum {number}
+ */
+const TimeConstants = {
+  /** 30 days in milliseconds - used for analytics instance rotation */
+  THIRTY_DAYS_IN_MS: 30 * 24 * 60 * 60 * 1000,
+  /** 1 second in milliseconds */
+  ONE_SECOND_IN_MS: 1000,
+  /** 15 seconds in milliseconds - content extraction timeout */
+  CONTENT_EXTRACTION_TIMEOUT_MS: 15 * 1000,
+  /** 60 seconds in milliseconds - tool call timeout */
+  TOOL_CALL_TIMEOUT_MS: 60 * 1000,
+  /** 1 minute in milliseconds */
+  ONE_MINUTE_IN_MS: 60 * 1000,
+};
 
-// HTTP status codes
-const HTTP_STATUS_BAD_REQUEST = 400;
-const HTTP_STATUS_UNAUTHORIZED = 401;
-const HTTP_STATUS_FORBIDDEN = 403;
-const HTTP_STATUS_NOT_FOUND = 404;
-const HTTP_STATUS_TOO_MANY_REQUESTS = 429;
-const HTTP_STATUS_INTERNAL_ERROR = 500;
+/**
+ * HTTP status codes used for error handling
+ * @readonly
+ * @enum {number}
+ */
+const HttpStatusCodes = {
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_ERROR: 500,
+};
 
-// API limits
-const MAX_RESPONSE_TOKENS = 4096;
-const MAX_TOOL_CALL_RETRIES = 3;
+/**
+ * API configuration limits
+ * @readonly
+ * @enum {number}
+ */
+const ApiLimits = {
+  /** Maximum tokens in API response */
+  MAX_RESPONSE_TOKENS: 4096,
+  /** Maximum retries for tool calls before giving up */
+  MAX_TOOL_CALL_RETRIES: 3,
+  /** Maximum number of tool results to track in analytics */
+  MAX_TOOL_TRACKING_COUNT: 8,
+  /** Skills cache TTL in milliseconds (60 seconds) */
+  SKILLS_CACHE_TTL_MS: 60000,
+};
+
+// Backward compatibility aliases (deprecated - use ApiLimits instead)
+const THIRTY_DAYS_IN_MS = TimeConstants.THIRTY_DAYS_IN_MS;
+const ONE_SECOND_IN_MS = TimeConstants.ONE_SECOND_IN_MS;
+const HTTP_STATUS_BAD_REQUEST = HttpStatusCodes.BAD_REQUEST;
+const HTTP_STATUS_UNAUTHORIZED = HttpStatusCodes.UNAUTHORIZED;
+const HTTP_STATUS_FORBIDDEN = HttpStatusCodes.FORBIDDEN;
+const HTTP_STATUS_NOT_FOUND = HttpStatusCodes.NOT_FOUND;
+const HTTP_STATUS_TOO_MANY_REQUESTS = HttpStatusCodes.TOO_MANY_REQUESTS;
+const HTTP_STATUS_INTERNAL_ERROR = HttpStatusCodes.INTERNAL_ERROR;
+const MAX_RESPONSE_TOKENS = ApiLimits.MAX_RESPONSE_TOKENS;
+const MAX_TOOL_CALL_RETRIES = ApiLimits.MAX_TOOL_CALL_RETRIES;
 
 // ===== Umami Analytics Module (privacy-first, opt-out) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -43,7 +89,17 @@ const ANALYTICS_INSTANCE_KEY = 'analyticsInstance';
 const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
 const ANALYTICS_ROTATE_MS = THIRTY_DAYS_IN_MS;
 const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
-const DENYLIST = ['email', 'token', 'key', 'password', 'secret', 'auth', 'cookie', 'session', 'ssid'];
+const DENYLIST = [
+  'email',
+  'token',
+  'key',
+  'password',
+  'secret',
+  'auth',
+  'cookie',
+  'session',
+  'ssid',
+];
 const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
 
 /**
@@ -51,10 +107,9 @@ const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
  * @returns {string} A randomly generated UUID string.
  */
 function uuidv4() {
-  return ([1e7]+-1e3+-4e3+-8e3+-1e11)
-    .replace(/[018]/g, c =>
-      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
-    );
+  return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
+    (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
+  );
 }
 
 /**
@@ -85,7 +140,7 @@ function sanitizeLabel(v) {
 async function getEnvInfo() {
   const manifest = chrome.runtime.getManifest();
   const extVersion = manifest?.version || '0.0.0';
-  const platformInfo = await new Promise(resolve => chrome.runtime.getPlatformInfo(resolve));
+  const platformInfo = await new Promise((resolve) => chrome.runtime.getPlatformInfo(resolve));
   let chromeMajor = '0';
   try {
     const ua = navigator.userAgent;
@@ -101,7 +156,8 @@ async function getEnvInfo() {
  * @returns {Promise<boolean>} True if user has consented to analytics.
  */
 async function getConsent() {
-  const { [ANALYTICS_CONSENT_KEY]: consent } = await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
+  const { [ANALYTICS_CONSENT_KEY]: consent } =
+    await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
   // Default ON (opt-out)
   return consent !== false;
 }
@@ -118,7 +174,10 @@ async function getInstanceId() {
   if (!instance || !rotateAt || now >= rotateAt) {
     instance = uuidv4();
     rotateAt = now + ANALYTICS_ROTATE_MS;
-    await chrome.storage.local.set({ [ANALYTICS_INSTANCE_KEY]: instance, [ANALYTICS_ROTATE_AT_KEY]: rotateAt });
+    await chrome.storage.local.set({
+      [ANALYTICS_INSTANCE_KEY]: instance,
+      [ANALYTICS_ROTATE_AT_KEY]: rotateAt,
+    });
   }
   return instance;
 }
@@ -153,9 +212,9 @@ async function sendUmamiEvent(name, data) {
           // Duplicate key fields at top-level-friendly keys for Umami dashboards
           instruction: data?.instruction || 'unknown',
           model: data?.model || 'unknown',
-          tools: Array.isArray(data?.tools) ? data.tools : []
-        }
-      }
+          tools: Array.isArray(data?.tools) ? data.tools : [],
+        },
+      },
     };
     const body = JSON.stringify(payload);
 
@@ -167,7 +226,7 @@ async function sendUmamiEvent(name, data) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
-        keepalive: true
+        keepalive: true,
       });
     }
   } catch (e) {
@@ -214,7 +273,10 @@ async function trackInstructionUsed({ instruction, model, tools }) {
   const instr = sanitizeLabel(instruction) || 'unknown';
   const mdl = sanitizeLabel(model) || 'unknown';
   const toolsSafe = Array.isArray(tools)
-    ? tools.map(t => sanitizeLabel(String(t))).filter(Boolean).slice(0, 8)
+    ? tools
+        .map((t) => sanitizeLabel(String(t)))
+        .filter(Boolean)
+        .slice(0, 8)
     : [];
   // Put the instruction and model into the event "name" context via sendUmamiEvent enhancements above
   await sendUmamiEvent('instruction_used', {
@@ -223,7 +285,7 @@ async function trackInstructionUsed({ instruction, model, tools }) {
     instruction: instr,
     model: mdl,
     tools: toolsSafe,
-    count: 1
+    count: 1,
   });
 }
 
@@ -249,18 +311,24 @@ chrome.storage.onChanged.addListener((changes, area) => {
  * @returns {Promise<Object>} The response from the message handler.
  */
 async function sendMediaAnalysisMessage(tabId, mediaData) {
-    return new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-            action: 'setMediaForAnalysis',
-            mediaData: mediaData,
-            tabId: tabId
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                console.warn('Background: setMediaForAnalysis message failed:', chrome.runtime.lastError.message);
-            }
-            resolve(response);
-        });
-    });
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      {
+        action: 'setMediaForAnalysis',
+        mediaData: mediaData,
+        tabId: tabId,
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          console.warn(
+            'Background: setMediaForAnalysis message failed:',
+            chrome.runtime.lastError.message
+          );
+        }
+        resolve(response);
+      }
+    );
+  });
 }
 
 /**
@@ -269,34 +337,34 @@ async function sendMediaAnalysisMessage(tabId, mediaData) {
  * @returns {string} The MIME type string (defaults to 'image/jpeg' if unknown).
  */
 function getMimeTypeFromUrl(url) {
-    try {
-        // Handle query parameters and fragments
-        const cleanUrl = url.split('?')[0].split('#')[0];
-        const extension = cleanUrl.split('.').pop().toLowerCase();
+  try {
+    // Handle query parameters and fragments
+    const cleanUrl = url.split('?')[0].split('#')[0];
+    const extension = cleanUrl.split('.').pop().toLowerCase();
 
-        const mimeTypes = {
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif',
-            'webp': 'image/webp',
-            'svg': 'image/svg+xml',
-            'bmp': 'image/bmp',
-            'tiff': 'image/tiff',
-            'mp4': 'video/mp4',
-            'webm': 'video/webm',
-            'ogg': 'video/ogg',
-            'mp3': 'audio/mpeg',
-            'wav': 'audio/wav',
-            'flac': 'audio/flac'
-        };
+    const mimeTypes = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      svg: 'image/svg+xml',
+      bmp: 'image/bmp',
+      tiff: 'image/tiff',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      ogg: 'video/ogg',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      flac: 'audio/flac',
+    };
 
-        const mimeType = mimeTypes[extension] || 'image/jpeg';
-        return mimeType;
-    } catch (error) {
-        console.error('Error determining MIME type:', error);
-        return 'image/jpeg';
-    }
+    const mimeType = mimeTypes[extension] || 'image/jpeg';
+    return mimeType;
+  } catch (error) {
+    console.error('Error determining MIME type:', error);
+    return 'image/jpeg';
+  }
 }
 
 /**
@@ -306,47 +374,47 @@ function getMimeTypeFromUrl(url) {
  * @throws {Error} If the fetch fails or the media cannot be read.
  */
 async function fetchMediaAsBase64(url) {
-    try {
-        const response = await fetch(url);
+  try {
+    const response = await fetch(url);
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
-
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const dataUrl = reader.result;
-                const base64 = dataUrl.split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = (error) => {
-                console.error('FileReader error:', error);
-                reject(error);
-            };
-            reader.readAsDataURL(blob);
-        });
-    } catch (error) {
-        console.error('Error fetching media:', error);
-        throw error;
+    if (!response.ok) {
+      throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
     }
+
+    const blob = await response.blob();
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+        reject(error);
+      };
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error fetching media:', error);
+    throw error;
+  }
 }
 
 let messageListenerAdded = false;
 
 // Enable the side panel on all pages
-chrome.sidePanel
-  .setOptions({ path: 'chat.html' })
-  .catch((error) => console.error(error));
+chrome.sidePanel.setOptions({ path: 'chat.html' }).catch((error) => console.error(error));
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  chrome.sidePanel.setOptions({
-    tabId,
-    path: 'chat.html',
-    enabled: true
-  }).catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
+  chrome.sidePanel
+    .setOptions({
+      tabId,
+      path: 'chat.html',
+      enabled: true,
+    })
+    .catch((error) => console.error(`Error setting side panel options for tab ${tabId}:`, error));
 });
 
 // Unified context menu click handler for all modalities
@@ -361,7 +429,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     await chrome.sidePanel.open({ tabId: tab.id });
 
     // Detect media context
-    const isMediaContext = info.mediaType === 'image' || info.mediaType === 'video' || info.mediaType === 'audio';
+    const isMediaContext =
+      info.mediaType === 'image' || info.mediaType === 'video' || info.mediaType === 'audio';
     const mediaUrl = info.srcUrl || '';
     const mediaType = info.mediaType || 'text';
 
@@ -377,7 +446,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           promptContent = tabDataResponse.content || tabDataResponse.data || '';
         }
       } catch (error) {
-        console.error("Background: Exception while fetching tab content:", error.message);
+        console.error('Background: Exception while fetching tab content:', error.message);
         promptContent = '';
       }
     }
@@ -393,18 +462,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           type: mediaType,
           base64: base64Data,
           url: mediaUrl,
-          mimeType: mimeType
+          mimeType: mimeType,
         };
       } catch (error) {
         console.error('Error fetching media:', error);
-        try { await trackErrorEvent('network', `media_${error?.name || 'err'}`); } catch (_) {}
+        try {
+          await trackErrorEvent('network', `media_${error?.name || 'err'}`);
+        } catch (_) {}
 
         mediaData = {
           type: mediaType,
           base64: null,
           url: mediaUrl,
           mimeType: getMimeTypeFromUrl(mediaUrl),
-          error: error.message
+          error: error.message,
         };
       }
 
@@ -412,7 +483,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       if (info.menuItemId !== 'oneoff_instruction') {
         await sendMediaAnalysisMessage(tab.id, {
           ...mediaData,
-          loading: false
+          loading: false,
         });
       }
     }
@@ -433,8 +504,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         await chrome.storage.session.set({
           [PENDING_PANEL_ACTION_KEY]: {
             ...payload,
-            queuedAt: Date.now()
-          }
+            queuedAt: Date.now(),
+          },
         });
         return true;
       } catch (error) {
@@ -450,7 +521,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         selectedText: promptContent || '',
         tabId: tab.id,
         actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        ...extra
+        ...extra,
       };
 
       return new Promise((resolve) => {
@@ -460,7 +531,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
               const lastErrorMessage = chrome.runtime.lastError.message;
               queuePendingPanelAction(payload).then((queued) => {
                 if (!queued) {
-                  console.warn(`Background: sendMessage (${action}) failed and queue fallback failed:`, lastErrorMessage);
+                  console.warn(
+                    `Background: sendMessage (${action}) failed and queue fallback failed:`,
+                    lastErrorMessage
+                  );
                 }
                 resolve({ queuedFallback: queued, response: null });
               });
@@ -500,12 +574,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId.startsWith('custom_')) {
       const instructionId = info.menuItemId.replace('custom_', '');
       const { instructions } = await chrome.storage.local.get(['instructions']);
-      const instruction = instructions.find(i => i.id === instructionId);
+      const instruction = instructions.find((i) => i.id === instructionId);
 
       if (instruction) {
         try {
           const cfg = await validateConfig().catch(() => ({}));
-          await trackInstructionUsed({ instruction: instruction.name || 'custom', model: cfg?.modelName, tools: Array.isArray(instruction.tool_choice) ? instruction.tool_choice : (instruction.tool_choice && instruction.tool_choice !== 'none' ? [instruction.tool_choice] : []) });
+          await trackInstructionUsed({
+            instruction: instruction.name || 'custom',
+            model: cfg?.modelName,
+            tools: Array.isArray(instruction.tool_choice)
+              ? instruction.tool_choice
+              : instruction.tool_choice && instruction.tool_choice !== 'none'
+                ? [instruction.tool_choice]
+                : [],
+          });
         } catch (_) {}
 
         const toolChoice = normalizeToolChoice(instruction.tool_choice);
@@ -517,12 +599,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             ...mediaData,
             actionType: 'custom',
             instructionId: instructionId,
-            textPrompt: isMediaContext ? null : `${instruction.content}\n\n${promptContent}`
+            textPrompt: isMediaContext ? null : `${instruction.content}\n\n${promptContent}`,
           },
-          tabId: tab.id
-        });
+          tabId: tab.id,
+        }).catch(() => {}); // Panel may not be ready yet; queue fallback handles it
       } else {
-        console.error("Custom instruction not found for ID:", instructionId);
+        console.error('Custom instruction not found for ID:', instructionId);
       }
       return;
     }
@@ -530,18 +612,24 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Handle predefined commands (modality-neutral prompts)
     const commandMap = {
       summarize: 'Please summarize the following content into a bullet list of key points',
-      explain: 'Explain the following content to me in a short concise MECE approach. Break down what you see into clear, structured categories.',
+      explain:
+        'Explain the following content to me in a short concise MECE approach. Break down what you see into clear, structured categories.',
       polish: 'Polish the following content with clarity and purpose',
       shorten: 'Shorten the following content without losing its meaning and context',
       formal: 'Make the following content more formal and eloquent',
       casual: 'Make the following content more casual and fun',
-      analyze: 'Please analyze the following content. Describe what you see and provide any relevant insights.'
+      analyze:
+        'Please analyze the following content. Describe what you see and provide any relevant insights.',
     };
 
     if (commandMap[info.menuItemId]) {
       try {
         const cfg = await validateConfig().catch(() => ({}));
-        await trackInstructionUsed({ instruction: info.menuItemId, model: cfg?.modelName, tools: [] });
+        await trackInstructionUsed({
+          instruction: info.menuItemId,
+          model: cfg?.modelName,
+          tools: [],
+        });
       } catch (_) {}
 
       // Send to chat for processing
@@ -552,10 +640,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           ...mediaData,
           actionType: actionType,
           instructionId: null,
-          textPrompt: isMediaContext ? null : `${commandMap[info.menuItemId]}:\n\n${promptContent}`
+          textPrompt: isMediaContext ? null : `${commandMap[info.menuItemId]}:\n\n${promptContent}`,
         },
-        tabId: tab.id
-      });
+        tabId: tab.id,
+      }).catch(() => {}); // Panel may not be ready yet; queue fallback handles it
     }
   } catch (error) {
     console.error('Error in context menu click handler:', error);
@@ -564,7 +652,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // Simplified validateConfig function
 async function validateConfig() {
-  const result = await new Promise(resolve =>
+  const result = await new Promise((resolve) =>
     chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
   );
 
@@ -573,8 +661,8 @@ async function validateConfig() {
   const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
 
   // Find profiles
-  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
-  const defaultProfile = profiles.find(p => p.id === 'default');
+  const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
+  const defaultProfile = profiles.find((p) => p.id === 'default');
 
   // Validate profile with optional endpoint override
   const validateProfile = (profile, endpointOverride = null) => {
@@ -603,64 +691,16 @@ async function validateConfig() {
   const hasValidProfile = selectedProfile || defaultProfile;
 
   if (!hasEndpoint) {
-    throw new Error('LLM API endpoint is missing or invalid. Please configure it in the options page.');
+    throw new Error(
+      'LLM API endpoint is missing or invalid. Please configure it in the options page.'
+    );
   } else if (!hasValidProfile) {
     throw new Error('No valid profiles found. Please create a profile in the options page.');
   } else {
-    throw new Error('Configuration is incomplete. Please set API key and model name in the options page.');
+    throw new Error(
+      'Configuration is incomplete. Please set API key and model name in the options page.'
+    );
   }
-}
-
-// Helper function to process API response and send messages to chat.js (for NON-STREAMING responses)
-async function _handleApiResponseAndSendMessage(responseMessage, prompt, tabId, isStartChatContext) {
-    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-        try {
-            chrome.runtime.sendMessage({
-                action: 'handleToolCallResponse',
-                responseMessage: responseMessage,
-                prompt: prompt,
-                tabId: tabId,
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.warn('Background: handleToolCallResponse message failed:', chrome.runtime.lastError.message);
-                }
-            });
-        } catch (error) {
-            console.error('Background: Exception sending handleToolCallResponse:', error.message);
-        }
-    } else if (responseMessage.content) {
-        const latestResponse = typeof responseMessage.content === 'string' ? responseMessage.content : JSON.stringify(responseMessage.content);
-        try {
-            chrome.runtime.sendMessage({
-                action: 'setApiResponse',
-                apiResponse: latestResponse,
-                prompt: prompt,
-                tabId: tabId,
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.warn('Background: setApiResponse message failed:', chrome.runtime.lastError.message);
-                }
-            });
-        } catch (error) {
-            console.error('Background: Exception sending setApiResponse:', error.message);
-        }
-    } else {
-        console.error("Background: API response message has neither standard content nor tool_calls:", responseMessage);
-        try {
-            chrome.runtime.sendMessage({
-                action: 'setApiResponse',
-                apiResponse: "Error: Received an empty or invalid response from the AI.",
-                prompt: prompt,
-                tabId: tabId,
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.warn('Background: setApiResponse (error) message failed:', chrome.runtime.lastError.message);
-                }
-            });
-        } catch (error) {
-            console.error('Background: Exception sending setApiResponse (error):', error.message);
-        }
-    }
 }
 
 // ===== Skill Manager (Agent Skills Spec Compliant) =====
@@ -677,11 +717,11 @@ class SkillManager {
   async init() {
     if (this.initialized) return;
     if (this.initPromise) return this.initPromise;
-    
+
     this.initPromise = this._doInit();
     return this.initPromise;
   }
-  
+
   async _doInit() {
     await this.loadSkills();
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -702,7 +742,7 @@ class SkillManager {
     if (this._reloadLock) {
       return this._reloadLock;
     }
-    
+
     this._reloadLock = this._doLoadSkills();
     try {
       await this._reloadLock;
@@ -710,47 +750,49 @@ class SkillManager {
       this._reloadLock = null;
     }
   }
-  
+
   async _doLoadSkills() {
     // Build new map before swapping to avoid exposing empty state
     const newSkills = new Map();
-    
+
     await Promise.all([
       this._loadBuiltInSkillsInto(newSkills),
-      this._loadCustomSkillsInto(newSkills)
+      this._loadCustomSkillsInto(newSkills),
     ]);
-    
+
     // Atomic swap
     this.skills = newSkills;
     this._invalidateCache();
-    
+
     console.log('SkillManager: Loaded skills:', Array.from(this.skills.keys()));
   }
-  
+
   async _loadBuiltInSkillsInto(targetMap) {
     try {
       const url = chrome.runtime.getURL('skills/skills.json');
       const response = await fetch(url);
       if (!response.ok) return;
-      
+
       const builtIn = await response.json();
       for (const skill of builtIn) {
         try {
           const skillUrl = chrome.runtime.getURL(skill.path);
           const skillResponse = await fetch(skillUrl);
           if (!skillResponse.ok) continue;
-          
+
           const markdown = await skillResponse.text();
-          const expectedDirectoryName = String(skill.path || '').split('/').slice(-2, -1)[0];
+          const expectedDirectoryName = String(skill.path || '')
+            .split('/')
+            .slice(-2, -1)[0];
           const parsed = parseSkillMarkdown(markdown, { expectedDirectoryName });
-          
+
           if (parsed.valid) {
             targetMap.set(parsed.metadata.name, {
               metadata: parsed.metadata,
               parsed: parsed,
               raw: markdown,
               type: 'built-in',
-              path: skill.path
+              path: skill.path,
             });
           } else {
             console.warn(`Built-in skill '${skill.name}' parse error:`, parsed.error);
@@ -763,17 +805,17 @@ class SkillManager {
       console.warn('Failed to load built-in skills:', e);
     }
   }
-  
+
   async _loadCustomSkillsInto(targetMap) {
     try {
       const result = await chrome.storage.local.get(['customSkills']);
       const customSkills = result.customSkills || [];
-      
+
       for (const skill of customSkills) {
         try {
           const skillMd = skill.skillMd || migrateLegacySkill(skill).skillMd;
           const parsed = parseSkillMarkdown(skillMd);
-          
+
           if (parsed.valid) {
             targetMap.set(parsed.metadata.name, {
               metadata: parsed.metadata,
@@ -781,7 +823,7 @@ class SkillManager {
               raw: skillMd,
               type: 'custom',
               lastUpdated: skill.lastUpdated,
-              legacy: !skill.skillMd
+              legacy: !skill.skillMd,
             });
           } else {
             console.warn(`Custom skill '${skill.name}' parse error:`, parsed.error);
@@ -822,8 +864,8 @@ class SkillManager {
     if (this._metadataCache && now < this._cacheExpiry) {
       return this._metadataCache;
     }
-    
-    this._metadataCache = Array.from(this.skills.values()).map(s => ({
+
+    this._metadataCache = Array.from(this.skills.values()).map((s) => ({
       name: s.metadata.name,
       description: s.metadata.description,
       compatibility: s.metadata.compatibility,
@@ -837,7 +879,7 @@ class SkillManager {
       commandDispatch: s.metadata['command-dispatch'] || null,
       commandTool: s.metadata['command-tool'] || null,
       commandArgMode: s.metadata['command-arg-mode'] || null,
-      homepage: s.metadata.homepage || null
+      homepage: s.metadata.homepage || null,
     }));
     this._cacheExpiry = now + 60000;
     return this._metadataCache;
@@ -864,7 +906,7 @@ class SkillManager {
       commandDispatch: m['command-dispatch'] || null,
       commandTool: m['command-tool'] || null,
       commandArgMode: m['command-arg-mode'] || null,
-      homepage: m.homepage || null
+      homepage: m.homepage || null,
     };
   }
 
@@ -877,18 +919,18 @@ class SkillManager {
    */
   getEligibleSnapshot() {
     return Array.from(this.skills.values())
-      .filter(s => {
+      .filter((s) => {
         if (!s.parsed?.valid) return false;
         // Skills with disable-model-invocation are hidden from the model
         if (s.parsed.metadata['disable-model-invocation'] === true) return false;
         return true;
       })
-      .map(s => ({
+      .map((s) => ({
         name: s.parsed.metadata.name,
         description: s.parsed.metadata.description,
         userInvocable: s.parsed.metadata['user-invocable'] !== false,
         commandDispatch: s.parsed.metadata['command-dispatch'] || null,
-        commandTool: s.parsed.metadata['command-tool'] || null
+        commandTool: s.parsed.metadata['command-tool'] || null,
       }));
   }
 
@@ -900,7 +942,7 @@ class SkillManager {
   formatForPrompt() {
     const skills = this.getEligibleSnapshot();
     if (skills.length === 0) return '';
-    const lines = skills.map(s => `- **${s.name}**: ${s.description}`);
+    const lines = skills.map((s) => `- **${s.name}**: ${s.description}`);
     return `Available skills (reference instructions, NOT callable tools):\n${lines.join('\n')}\nUse the \`/skill <name> [input]\` command to activate a skill.`;
   }
 
@@ -918,7 +960,7 @@ class SkillManager {
       instructions: skill.parsed.instructions,
       metadata: skill.parsed.metadata,
       rawMarkdown: skill.raw,
-      type: skill.type
+      type: skill.type,
     };
   }
 
@@ -928,16 +970,16 @@ class SkillManager {
    */
   getSlashCommands() {
     return Array.from(this.skills.values())
-      .filter(s => {
+      .filter((s) => {
         if (!s.parsed?.valid) return false;
         // Default user-invocable is true unless explicitly false
         return s.parsed.metadata['user-invocable'] !== false;
       })
-      .map(s => ({
+      .map((s) => ({
         name: s.parsed.metadata.name,
         description: s.parsed.metadata.description,
         commandDispatch: s.parsed.metadata['command-dispatch'] || null,
-        commandTool: s.parsed.metadata['command-tool'] || null
+        commandTool: s.parsed.metadata['command-tool'] || null,
       }));
   }
 
@@ -976,7 +1018,7 @@ async function queueMenuRebuild(reason = 'unknown') {
   menuRebuildQueue = menuRebuildQueue
     .then(() => rebuildUnifiedMenus())
     .then(() => console.log(`Menu rebuilt: ${reason}`))
-    .catch(err => console.error(`Menu rebuild failed (${reason}):`, err));
+    .catch((err) => console.error(`Menu rebuild failed (${reason}):`, err));
   return menuRebuildQueue;
 }
 
@@ -1138,23 +1180,23 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 
 // Helper function to get all tool definitions from storage
 async function getAllToolDefinitions() {
-    const localTools = await new Promise((resolve) => {
-        chrome.storage.local.get(['promptPaulTools'], (result) => {
-            resolve(result.promptPaulTools || []);
-        });
+  const localTools = await new Promise((resolve) => {
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
+      resolve(result.promptPaulTools || []);
     });
-    return localTools;
+  });
+  return localTools;
 }
 
 // Function to get a single tool definition by name from storage
 async function getToolDefinition(name) {
-    return new Promise((resolve, reject) => {
-        chrome.storage.local.get(['promptPaulTools'], (result) => {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(['promptPaulTools'], (result) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
       } else {
         const toolsArray = result.promptPaulTools || [];
-        const tool = toolsArray.find(t => t.name === name);
+        const tool = toolsArray.find((t) => t.name === name);
         resolve(tool);
       }
     });
@@ -1163,327 +1205,367 @@ async function getToolDefinition(name) {
 
 // Generic function to call a user-defined endpoint
 async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'GET') {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 1-minute timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 1-minute timeout
 
-    try {
-        let finalEndpointUrl = endpointUrl;
-        let finalFetchOptions = {
-            headers: {
-                'Accept': 'application/json'
-            },
-            signal: controller.signal
-        };
-        let finalArgs = args;
+  try {
+    let finalEndpointUrl = endpointUrl;
+    let finalFetchOptions = {
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    };
+    let finalArgs = args;
 
-        const isEmptyArgs = !args || Object.keys(args).length === 0;
-        let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
-        method = method.toUpperCase();
-        finalFetchOptions.method = method;
+    const isEmptyArgs = !args || Object.keys(args).length === 0;
+    let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
+    method = method.toUpperCase();
+    finalFetchOptions.method = method;
 
-        if (method === 'GET' && !isEmptyArgs) {
-            const queryParams = new URLSearchParams(finalArgs).toString();
-            finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
-        } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
-            finalFetchOptions.headers['Content-Type'] = 'application/json';
-            finalFetchOptions.body = JSON.stringify(finalArgs);
-        }
-        // For DELETE, args might be used in the URL path or ignored
-
-
-        const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            let errorBody = '';
-            try {
-                errorBody = await response.text(); // Try to get error details from response body
-            } catch (_) { /* Ignore if body cannot be read */ }
-            const errorMsg = `HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim();
-            console.error(`Background: HTTP error for ${finalEndpointUrl}:`, errorMsg);
-            throw new Error(errorMsg);
-        }
-
-        // Attempt to parse response as JSON, fall back to text if not JSON
-        const contentType = response.headers.get('content-type');
-
-        let result;
-        if (contentType && contentType.includes('application/json')) {
-            result = await response.json();
-        } else {
-            result = await response.text();
-        }
-
-        return result;
-
-    } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-            console.error(`Background: Tool call to ${endpointUrl} timed out after 60 seconds.`);
-            throw new Error(`Tool call to ${endpointUrl} timed out after 60 seconds.`);
-        }
-        console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
-        // Rethrow a more specific error message
-        throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
+    if (method === 'GET' && !isEmptyArgs) {
+      const queryParams = new URLSearchParams(finalArgs).toString();
+      finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
+    } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
+      finalFetchOptions.headers['Content-Type'] = 'application/json';
+      finalFetchOptions.body = JSON.stringify(finalArgs);
     }
-}
+    // For DELETE, args might be used in the URL path or ignored
 
+    const response = await fetch(finalEndpointUrl, finalFetchOptions); // Use finalEndpointUrl and finalFetchOptions
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      let errorBody = '';
+      try {
+        errorBody = await response.text(); // Try to get error details from response body
+      } catch (_) {
+        /* Ignore if body cannot be read */
+      }
+      const errorMsg = `HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim();
+      console.error(`Background: HTTP error for ${finalEndpointUrl}:`, errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    // Attempt to parse response as JSON, fall back to text if not JSON
+    const contentType = response.headers.get('content-type');
+
+    let result;
+    if (contentType && contentType.includes('application/json')) {
+      result = await response.json();
+    } else {
+      result = await response.text();
+    }
+
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.error(`Background: Tool call to ${endpointUrl} timed out after 60 seconds.`);
+      throw new Error(`Tool call to ${endpointUrl} timed out after 60 seconds.`);
+    }
+    console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
+    // Rethrow a more specific error message
+    throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
+  }
+}
 
 // Registry for built-in tool implementations — now handled by RunOrchestrator
 
 // Unified extraction function to avoid circular messaging and redundant injections
 async function executeTabContentExtraction(tabId) {
-    return new Promise((resolve) => {
-        const timeoutId = setTimeout(() => {
-            resolve({ success: false, error: 'Extraction timed out' });
-        }, 15000);
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      resolve({ success: false, error: 'Extraction timed out' });
+    }, 15000);
 
-        chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (response) => {
-            clearTimeout(timeoutId);
+    chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (response) => {
+      clearTimeout(timeoutId);
+      if (chrome.runtime.lastError) {
+        console.warn(
+          'Background: Tab message failed (script might not be loaded):',
+          chrome.runtime.lastError.message
+        );
+        // Fallback: only inject if needed
+        chrome.scripting.executeScript(
+          {
+            target: { tabId: tabId },
+            files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+          },
+          (results) => {
             if (chrome.runtime.lastError) {
-                console.warn('Background: Tab message failed (script might not be loaded):', chrome.runtime.lastError.message);
-                // Fallback: only inject if needed
-                chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js']
-                }, (results) => {
-                    if (chrome.runtime.lastError) {
-                        resolve({ success: false, error: 'Injection failed: ' + chrome.runtime.lastError.message });
-                    } else {
-                        // Try messaging again after injection
-                        chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
-                            if (chrome.runtime.lastError) {
-                                resolve({ success: false, error: 'Message failed after injection: ' + chrome.runtime.lastError.message });
-                            } else {
-                                resolve(res || { success: false, error: 'Empty response after injection' });
-                            }
-                        });
-                    }
-                });
+              resolve({
+                success: false,
+                error: 'Injection failed: ' + chrome.runtime.lastError.message,
+              });
             } else {
-                resolve(response || { success: false, error: 'Empty response from content script' });
+              // Try messaging again after injection
+              chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
+                if (chrome.runtime.lastError) {
+                  resolve({
+                    success: false,
+                    error: 'Message failed after injection: ' + chrome.runtime.lastError.message,
+                  });
+                } else {
+                  resolve(res || { success: false, error: 'Empty response after injection' });
+                }
+              });
             }
-        });
+          }
+        );
+      } else {
+        resolve(response || { success: false, error: 'Empty response from content script' });
+      }
     });
+  });
 }
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getLoadContent') {
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-            if (tabs && tabs[0] && tabs[0].id) {
-                const result = await executeTabContentExtraction(tabs[0].id);
-                sendResponse({
-                    action: 'loadContentResponse',
-                    success: result.success,
-                    content: result.content || result.data,
-                    title: result.title,
-                    siteName: result.siteName,
-                    byline: result.byline,
-                    excerpt: result.excerpt,
-                    lang: result.lang,
-                    url: result.url,
-                    error: result.error
-                });
-            } else {
-                sendResponse({ action: 'loadContentResponse', success: false, error: 'No active tab found' });
-            }
+  if (request.action === 'getLoadContent') {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (tabs && tabs[0] && tabs[0].id) {
+        const result = await executeTabContentExtraction(tabs[0].id);
+        sendResponse({
+          action: 'loadContentResponse',
+          success: result.success,
+          content: result.content || result.data,
+          title: result.title,
+          siteName: result.siteName,
+          byline: result.byline,
+          excerpt: result.excerpt,
+          lang: result.lang,
+          url: result.url,
+          error: result.error,
         });
-        return true;
-    }
+      } else {
+        sendResponse({
+          action: 'loadContentResponse',
+          success: false,
+          error: 'No active tab found',
+        });
+      }
+    });
+    return true;
+  }
 
-    if (request.action === 'getTabContent') {
-        const tabId = request.tabId || (sender.tab ? sender.tab.id : null);
-        if (tabId) {
-            executeTabContentExtraction(tabId).then(result => {
-                sendResponse({
-                    action: 'tabContentResponse',
-                    success: result.success,
-                    content: result.content || result.data,
-                    title: result.title,
-                    siteName: result.siteName,
-                    byline: result.byline,
-                    excerpt: result.excerpt,
-                    lang: result.lang,
-                    url: result.url,
-                    error: result.error
-                });
-            });
+  if (request.action === 'getTabContent') {
+    const tabId = request.tabId || (sender.tab ? sender.tab.id : null);
+    if (tabId) {
+      executeTabContentExtraction(tabId).then((result) => {
+        sendResponse({
+          action: 'tabContentResponse',
+          success: result.success,
+          content: result.content || result.data,
+          title: result.title,
+          siteName: result.siteName,
+          byline: result.byline,
+          excerpt: result.excerpt,
+          lang: result.lang,
+          url: result.url,
+          error: result.error,
+        });
+      });
+    } else {
+      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        if (tabs && tabs[0] && tabs[0].id) {
+          const result = await executeTabContentExtraction(tabs[0].id);
+          sendResponse({
+            action: 'tabContentResponse',
+            success: result.success,
+            content: result.content || result.data,
+            title: result.title,
+            siteName: result.siteName,
+            byline: result.byline,
+            excerpt: result.excerpt,
+            lang: result.lang,
+            url: result.url,
+            error: result.error,
+          });
         } else {
-            chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-                if (tabs && tabs[0] && tabs[0].id) {
-                    const result = await executeTabContentExtraction(tabs[0].id);
-                    sendResponse({
-                        action: 'tabContentResponse',
-                        success: result.success,
-                        content: result.content || result.data,
-                        title: result.title,
-                        siteName: result.siteName,
-                        byline: result.byline,
-                        excerpt: result.excerpt,
-                        lang: result.lang,
-                        url: result.url,
-                        error: result.error
-                    });
-                } else {
-                    sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
-                }
-            });
+          sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
         }
-        return true;
+      });
     }
+    return true;
+  }
 
-    if (request.action === 'extractedTabContent') {
-        // Legacy support if some other script still uses this
-        return true;
-    }
+  if (request.action === 'extractedTabContent') {
+    // Legacy support if some other script still uses this
+    return true;
+  }
 
-    if (request.action === 'getPinnedActionTabContent') {
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-            if (tabs && tabs[0] && tabs[0].id) {
-                const result = await executeTabContentExtraction(tabs[0].id);
-                sendResponse({
-                    action: 'pinnedActionTabContentResponse',
-                    success: result.success,
-                    content: result.content || result.data,
-                    title: result.title,
-                    siteName: result.siteName,
-                    byline: result.byline,
-                    excerpt: result.excerpt,
-                    lang: result.lang,
-                    url: result.url,
-                    error: result.error,
-                    instruction: request.instruction
-                });
-            } else {
-                sendResponse({ action: 'pinnedActionTabContentResponse', success: false, error: 'No active tab found', instruction: request.instruction });
-            }
+  if (request.action === 'getPinnedActionTabContent') {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (tabs && tabs[0] && tabs[0].id) {
+        const result = await executeTabContentExtraction(tabs[0].id);
+        sendResponse({
+          action: 'pinnedActionTabContentResponse',
+          success: result.success,
+          content: result.content || result.data,
+          title: result.title,
+          siteName: result.siteName,
+          byline: result.byline,
+          excerpt: result.excerpt,
+          lang: result.lang,
+          url: result.url,
+          error: result.error,
+          instruction: request.instruction,
         });
-        return true;
-    }
-
-    if (request.action === 'getSkills') {
-        const skillsList = skillManager.getSkillsList();
-        const slashCommands = skillManager.getSlashCommands();
-        sendResponse({ skills: skillsList, slashCommands });
-        return true;
-    }
-
-    if (request.action === 'getSkillContent') {
-        skillManager.getSkillContent(request.name).then(content => {
-            sendResponse({ content });
-        }).catch(error => {
-            sendResponse({ error: error.message });
+      } else {
+        sendResponse({
+          action: 'pinnedActionTabContentResponse',
+          success: false,
+          error: 'No active tab found',
+          instruction: request.instruction,
         });
-        return true;
-    }
+      }
+    });
+    return true;
+  }
 
-    if (request.action === 'resolveSkill') {
-        const resolved = skillManager.resolveSkill(request.name);
-        sendResponse({ skill: resolved });
-        return true;
-    }
+  if (request.action === 'getSkills') {
+    const skillsList = skillManager.getSkillsList();
+    const slashCommands = skillManager.getSlashCommands();
+    sendResponse({ skills: skillsList, slashCommands });
+    return true;
+  }
 
-    if (request.action === 'getSkillSnapshot') {
-        const snapshot = skillManager.getEligibleSnapshot();
-        const promptText = skillManager.formatForPrompt();
-        sendResponse({ snapshot, promptText });
-        return true;
-    }
+  if (request.action === 'getSkillContent') {
+    skillManager
+      .getSkillContent(request.name)
+      .then((content) => {
+        sendResponse({ content });
+      })
+      .catch((error) => {
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
 
-    if (request.action === 'getExplainContent') {
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-            if (tabs && tabs[0] && tabs[0].id) {
-                const result = await executeTabContentExtraction(tabs[0].id);
-                sendResponse({
-                    action: 'explainContentResponse',
-                    success: result.success,
-                    content: result.content || result.data,
-                    title: result.title,
-                    siteName: result.siteName,
-                    byline: result.byline,
-                    excerpt: result.excerpt,
-                    lang: result.lang,
-                    url: result.url,
-                    error: result.error
-                });
-            } else {
-                sendResponse({ action: 'explainContentResponse', success: false, error: 'No active tab found' });
-            }
-        });
-        return true;
-    }
+  if (request.action === 'resolveSkill') {
+    const resolved = skillManager.resolveSkill(request.name);
+    sendResponse({ skill: resolved });
+    return true;
+  }
 
-    // ===== Orchestration Handlers =====
-    
-    if (request.action === 'startRun') {
-        const { config } = request;
-        runOrchestrator.startRun(config).then(runId => {
-            sendResponse({ runId });
-        }).catch(error => {
-            sendResponse({ error: error.message });
+  if (request.action === 'getSkillSnapshot') {
+    const snapshot = skillManager.getEligibleSnapshot();
+    const promptText = skillManager.formatForPrompt();
+    sendResponse({ snapshot, promptText });
+    return true;
+  }
+
+  if (request.action === 'getExplainContent') {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (tabs && tabs[0] && tabs[0].id) {
+        const result = await executeTabContentExtraction(tabs[0].id);
+        sendResponse({
+          action: 'explainContentResponse',
+          success: result.success,
+          content: result.content || result.data,
+          title: result.title,
+          siteName: result.siteName,
+          byline: result.byline,
+          excerpt: result.excerpt,
+          lang: result.lang,
+          url: result.url,
+          error: result.error,
         });
-        return true;
-    }
-    
-    if (request.action === 'executeRun') {
-        const { runId, requestConfig } = request;
-        runOrchestrator.execute(runId, requestConfig).then(() => {
-            sendResponse({ success: true });
-        }).catch(error => {
-            sendResponse({ error: error.message });
+      } else {
+        sendResponse({
+          action: 'explainContentResponse',
+          success: false,
+          error: 'No active tab found',
         });
-        return true;
-    }
-    
-    if (request.action === 'executeTool') {
-        const { runId, toolCall } = request;
-        runOrchestrator.executeTool(runId, toolCall).then(result => {
-            sendResponse(result);
-        }).catch(error => {
-            sendResponse({ error: error.message });
-        });
-        return true;
-    }
-    
-    if (request.action === 'abortRun') {
-        const { runId } = request;
-        runOrchestrator.abort(runId);
+      }
+    });
+    return true;
+  }
+
+  // ===== Orchestration Handlers =====
+
+  if (request.action === 'startRun') {
+    const { config } = request;
+    runOrchestrator
+      .startRun(config)
+      .then((runId) => {
+        sendResponse({ runId });
+      })
+      .catch((error) => {
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
+
+  if (request.action === 'executeRun') {
+    const { runId, requestConfig } = request;
+    runOrchestrator
+      .execute(runId, requestConfig)
+      .then(() => {
         sendResponse({ success: true });
-        return true;
-    }
-    
-    if (request.action === 'getTools') {
-        sendResponse({ tools: runOrchestrator.getToolImplementations() });
-        return true;
-    }
+      })
+      .catch((error) => {
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
 
-    // Legacy handler for backward compatibility
-    if (request.action === 'executePromptPaulTool') {
-        const { id, name, arguments: argsString } = request.toolCall;
+  if (request.action === 'executeTool') {
+    const { runId, toolCall } = request;
+    runOrchestrator
+      .executeTool(runId, toolCall)
+      .then((result) => {
+        sendResponse(result);
+      })
+      .catch((error) => {
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
 
-        const normalizedArgs = typeof argsString === 'string'
-            ? argsString
-            : JSON.stringify(argsString || {});
+  if (request.action === 'abortRun') {
+    const { runId } = request;
+    runOrchestrator.abort(runId);
+    sendResponse({ success: true });
+    return true;
+  }
 
-        runOrchestrator.executeTool(null, { id, function: { name, arguments: normalizedArgs } })
-            .then(result => sendResponse(result))
-            .catch(error => sendResponse({ error: error.message }));
-        return true;
-    }
-    
-    if (request.action === 'executeLlmApiRequest') {
-        const { prompt, tool_choice } = request;
-        const sourceTabId = sender.tab?.id || null;
-        // Use orchestrator instead of legacy makeLlmApiRequest
-        runOrchestrator.startRun({ tool_choice, sourceTabId }).then(runId => {
-            return runOrchestrator.execute(runId, { messages: [{ role: 'user', content: prompt }] });
-        }).then(() => {
-            sendResponse({ success: true });
-        }).catch(error => {
-            sendResponse({ error: error.message });
-        });
-        return true;
-    }
-    // Handle other actions if any
+  if (request.action === 'getTools') {
+    sendResponse({ tools: runOrchestrator.getToolImplementations() });
+    return true;
+  }
+
+  // Legacy handler for backward compatibility
+  if (request.action === 'executePromptPaulTool') {
+    const { id, name, arguments: argsString } = request.toolCall;
+
+    const normalizedArgs =
+      typeof argsString === 'string' ? argsString : JSON.stringify(argsString || {});
+
+    runOrchestrator
+      .executeTool(null, { id, function: { name, arguments: normalizedArgs } })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'executeLlmApiRequest') {
+    const { prompt, tool_choice } = request;
+    const sourceTabId = sender.tab?.id || null;
+    // Use orchestrator instead of legacy makeLlmApiRequest
+    runOrchestrator
+      .startRun({ tool_choice, sourceTabId })
+      .then((runId) => {
+        return runOrchestrator.execute(runId, { messages: [{ role: 'user', content: prompt }] });
+      })
+      .then(() => {
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        sendResponse({ error: error.message });
+      });
+    return true;
+  }
+  // Handle other actions if any
 });

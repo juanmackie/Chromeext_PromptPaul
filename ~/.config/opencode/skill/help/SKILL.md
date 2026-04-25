@@ -10,9 +10,11 @@ The Ralph Loop plugin provides auto-continuation for complex tasks in opencode.
 ## Available Commands
 
 ### `/ralph-loop <task>`
+
 Start an iterative development loop that automatically continues until the task is complete.
 
 Example:
+
 ```
 /ralph-loop Build a REST API with authentication
 ```
@@ -20,9 +22,11 @@ Example:
 The AI will work on your task and automatically continue until completion.
 
 ### `/cancel-ralph`
+
 Cancel an active Ralph Loop before it completes.
 
 Example:
+
 ```
 /cancel-ralph
 ```

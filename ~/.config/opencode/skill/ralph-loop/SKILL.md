@@ -53,6 +53,7 @@ When you have FULLY completed the task, signal completion by outputting:
 - If you're blocked, explain the blocker and request help instead of falsely completing
 
 The loop can only be stopped by:
+
 1. Truthful completion promise
 2. Max iterations reached
 3. User running `/cancel-ralph`
@@ -60,6 +61,7 @@ The loop can only be stopped by:
 ## Checking Status
 
 Check current iteration:
+
 ```bash
 grep '^iteration:' .opencode/ralph-loop.local.md
 ```

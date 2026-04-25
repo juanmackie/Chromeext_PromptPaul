@@ -1,69 +1,90 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
+  <head>
     <title>LLM Chat</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="stylesheet" href="theme.css">
-    <link rel="stylesheet" href="chat.css">
-    <link rel="stylesheet" href="loading-states.css">
-</head>
-<body>
+    <!-- Material Icons - consider replacing with local SVG icons for privacy -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="chat.css" />
+    <link rel="stylesheet" href="loading-states.css" />
+    <link rel="stylesheet" href="libs/highlight-github.min.css" id="highlight-theme" />
+  </head>
+  <body>
     <div id="quick-actions-sidebar">
-        <!-- Static actions -->
-        <button id="add-page-button" class="quick-action-button" title="Add page content to chat">
-            <span class="material-icons">article</span>
-        </button>
-        <button id="analyze-button" class="quick-action-button" title="Analyze this tab">
-            <span class="material-icons">auto_awesome</span>
-        </button>
-        <button id="explain-button" class="quick-action-button" title="Explain this tab">
-            <span class="material-icons">help_outline</span>
-        </button>
-        <!-- Custom prompts dropdown -->
-        <button id="custom-prompts-dropdown" class="quick-action-button" title="All Custom Prompts">
-            <span class="material-icons">more_horiz</span>
-        </button>
-        <!-- Pinned instructions will be added here by chat.js -->
-        <div id="pinned-actions-container"></div>
+      <!-- Static actions -->
+      <button id="add-page-button" class="quick-action-button" title="Add page content to chat">
+        <span class="material-icons">article</span>
+      </button>
+      <button id="analyze-button" class="quick-action-button" title="Analyze this tab">
+        <span class="material-icons">auto_awesome</span>
+      </button>
+      <button id="analyze-dropdown" class="quick-action-button" title="Choose analysis mode">
+        <span class="material-icons">arrow_drop_down</span>
+      </button>
+      <button id="explain-button" class="quick-action-button" title="Explain this tab">
+        <span class="material-icons">help_outline</span>
+      </button>
+      <!-- Custom prompts dropdown -->
+      <button id="custom-prompts-dropdown" class="quick-action-button" title="All Custom Prompts">
+        <span class="material-icons">more_horiz</span>
+      </button>
+      <!-- Pinned instructions will be added here by chat.js -->
+      <div id="pinned-actions-container"></div>
     </div>
-    <div style="position: absolute; top: 10px; right: 20px; z-index: 200;">
-      <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center;">
-        <input type="checkbox" id="darkThemeToggle">
-        <span id="darkThemeIcon" style="margin-right: 4px; font-size: 1.2em; vertical-align: middle;" class="material-icons">brightness_2</span>
+    <div style="position: absolute; top: 10px; right: 20px; z-index: 200">
+      <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center">
+        <input type="checkbox" id="darkThemeToggle" />
+        <span
+          id="darkThemeIcon"
+          style="margin-right: 4px; font-size: 1.2em; vertical-align: middle"
+          class="material-icons"
+          >brightness_2</span
+        >
         Dark/Light Theme
       </label>
     </div>
-    <div class="chat-container">
-        <div id="chat-main-area" style="display: block;">
-            <div id="chat-area"></div>
-            <div id="input-area">
-                <div id="input-wrapper">
-                    <textarea id="user-input" placeholder="Type your message (or right-click to analyze)" rows="1"></textarea>
-                    <button id="voice-toggle-button" title="Voice Input" type="button">
-                        <span class="material-icons">mic</span>
-                    </button>
-                </div>
-                <button id="send-button">Send</button>
-                <button id="clear-button">Clear</button>
-            </div>
-        </div>
-
-        <div id="oneoff-instruction-area" style="display:none;">
-            <h3>One-off Instruction</h3>
-            <div>
-              <p>Selected text:</p>
-              <div id="selectedText" class="selected-text"></div>
-            </div>
-            <div>
-              <p>Enter your instruction:</p>
-              <textarea id="instructionInput" placeholder="Enter your instruction here..."></textarea>
-            </div>
-            <button id="submitBtn">Process</button>
-        </div>
+    <!-- Drag & Drop overlay -->
+    <div id="drop-overlay" class="drop-overlay" style="display: none">
+      <div class="drop-overlay-content">
+        <span class="material-icons" style="font-size: 48px; margin-bottom: 12px;">cloud_upload</span>
+        <p>Drop images or files here to analyze</p>
+        <p class="drop-overlay-hint">Supports images, videos, and audio files</p>
+      </div>
     </div>
+    <div class="chat-container">
+      <div id="chat-main-area" style="display: block">
+        <div id="chat-area"></div>
+        <div id="input-area">
+          <div id="input-wrapper">
+            <textarea
+              id="user-input"
+              placeholder="Type your message (or right-click to analyze)"
+              rows="1"
+            ></textarea>
+            <button id="voice-toggle-button" title="Voice Input" type="button">
+              <span class="material-icons">mic</span>
+            </button>
+          </div>
+          <button id="send-button">Send</button>
+          <button id="clear-button">Clear</button>
+        </div>
+      </div>
+
+      <div id="oneoff-instruction-area" style="display: none">
+        <h3>One-off Instruction</h3>
+        <div>
+          <p>Selected text:</p>
+          <div id="selectedText" class="selected-text"></div>
+        </div>
+        <div>
+          <p>Enter your instruction:</p>
+          <textarea id="instructionInput" placeholder="Enter your instruction here..."></textarea>
+        </div>
+        <button id="submitBtn">Process</button>
+      </div>
+    </div>
+    <script src="libs/highlight.min.js"></script>
     <script src="marked.min.js"></script>
     <script type="module" src="chat.js"></script>
-</body>
+  </body>
 </html>

@@ -69,15 +69,22 @@ if (pkg) {
   const dependencies = pkg.dependencies || {};
   const hasVendoredReadability = fs.existsSync(path.join(repoRoot, 'libs', 'readability.js'));
   const hasVendoredTurndown = fs.existsSync(path.join(repoRoot, 'libs', 'turndown.js'));
-  const hasNpmReadability = Object.prototype.hasOwnProperty.call(dependencies, '@mozilla/readability');
+  const hasNpmReadability = Object.prototype.hasOwnProperty.call(
+    dependencies,
+    '@mozilla/readability'
+  );
   const hasNpmTurndown = Object.prototype.hasOwnProperty.call(dependencies, 'turndown');
 
   if (hasVendoredReadability && hasNpmReadability) {
-    errors.push('Duplicate dependency source for readability: vendored file and npm dependency are both present');
+    errors.push(
+      'Duplicate dependency source for readability: vendored file and npm dependency are both present'
+    );
   }
 
   if (hasVendoredTurndown && hasNpmTurndown) {
-    errors.push('Duplicate dependency source for turndown: vendored file and npm dependency are both present');
+    errors.push(
+      'Duplicate dependency source for turndown: vendored file and npm dependency are both present'
+    );
   }
 }
 

@@ -19,9 +19,10 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
 ### From Source (Developer Mode)
 
 1. Clone or download this repository:
+
    ```bash
-   git clone https://github.com/yourusername/prompt-paul.git
-   cd prompt-paul
+   git clone https://github.com/juanmackie/Chromeext_PromptPaul.git
+   cd Chromeext_PromptPaul
    ```
 
 2. Open Chrome and navigate to `chrome://extensions/`
@@ -58,17 +59,21 @@ The extension includes a shipped demo configuration from [Mistral AI](https://mi
 Prompt Paul includes an OpenClaw-compatible skills system.
 
 **Built-in skills**:
+
 - **humanizer** - Transforms AI-generated text to sound more natural and human
 - **weather-guide** - Helps explain weather reports and terminology
 
 **Discovering skills**:
+
 - Type `/skills` in chat to list all available skills
 - Skills marked as user-invocable have their own slash commands
 
 For complete usage examples and command patterns, see:
+
 - [Skill Usage Examples](docs/SKILL_EXAMPLES.md)
 
 For complete skill authoring and metadata specification, see:
+
 - [Agent Skills Specification](AGENTS.md)
 
 ## Usage
@@ -155,21 +160,67 @@ prompt-paul/
 
 ### Building
 
-No build step is required. The extension runs directly from source files.
+The extension can be built for development or production:
+
+```bash
+# Development build
+npm run build:dev
+
+# Production build
+npm run build:prod
+
+# Generic build
+npm run build
+```
+
+The built extension will be output to the `dist/` directory.
 
 ### Testing
 
-1. Run repository smoke checks:
-   ```bash
-   npm run check
-   ```
-2. Load the extension in Chrome (see Installation)
-3. Open Chrome DevTools on extension pages for debugging
-4. Use `chrome://extensions/` to inspect errors and reload
+Run the comprehensive test suite:
 
-### CI
+```bash
+# Run all tests
+npm run test
 
-GitHub Actions runs the same smoke check on pushes to `main` and pull requests.
+# Run unit tests only
+npm run test:unit
+
+# Run integration tests only
+npm run test:integration
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run smoke checks (quick validation)
+npm run smoke
+
+# Run full validation (lint, format, tests, build)
+npm run validate
+```
+
+### Code Quality
+
+```bash
+# Lint code with ESLint
+npm run lint
+
+# Format code with Prettier
+npm run format
+
+# Check formatting
+npm run format:check
+```
+
+### CI/CD Pipeline
+
+GitHub Actions runs the full validation and build pipeline on pushes to `main` and pull requests:
+
+1. **Validate Job**: Runs linting, format checks, and unit tests
+2. **Build Job**: Creates production build and uploads artifact
+3. **Test Job**: Runs all tests including coverage
+
+The built extension artifact is available for 7 days after each run.
 
 ## API Compatibility
 

@@ -27,6 +27,7 @@ The AI will work on your task and automatically continue until it outputs `<prom
 ## Cancellation
 
 To stop early:
+
 ```
 /cancel-ralph
 ```

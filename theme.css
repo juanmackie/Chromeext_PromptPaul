@@ -25,14 +25,14 @@
   --ext-input: #e8e6f0;
   --ext-ring: #6366f1;
   --ext-shadow-color: #4f46b8;
-  
+
   /* Chart Colors - Indigo Variations */
   --ext-chart-1: #5046e5;
   --ext-chart-2: #6366f1;
   --ext-chart-3: #818cf8;
   --ext-chart-4: #a5b4fc;
   --ext-chart-5: #c7d2fe;
-  
+
   /* Sidebar Colors */
   --ext-sidebar: #fafafa;
   --ext-sidebar-foreground: #1a1a2e;
@@ -42,7 +42,7 @@
   --ext-sidebar-accent-foreground: #ffffff;
   --ext-sidebar-border: #4338ca;
   --ext-sidebar-ring: #6366f1;
-  
+
   /* Layout & Spacing */
   --ext-radius: 0px;
   --ext-radius-sm: 0px;
@@ -50,7 +50,7 @@
   --ext-radius-lg: 0px;
   --ext-radius-xl: 0px;
   --ext-radius-interactive: 4px;
-  
+
   /* Brutalist Hard Shadows (No Blur) */
   --ext-shadow-sm: 2px 2px 0px 0px var(--ext-shadow-color);
   --ext-shadow: 4px 4px 0px 0px var(--ext-shadow-color);
@@ -59,7 +59,7 @@
   --ext-shadow-xl: 8px 8px 0px 0px var(--ext-shadow-color);
   --ext-shadow-hover: 6px 6px 0px 0px var(--ext-shadow-color);
   --ext-shadow-active: 2px 2px 0px 0px var(--ext-shadow-color);
-  
+
   /* Typography - Geist Mono Dominance */
   --ext-font-family: 'Geist Mono', 'JetBrains Mono', 'SF Mono', 'Monaco', monospace;
   --ext-font-display: 'Playfair Display', Georgia, serif;
@@ -70,24 +70,33 @@
   --ext-font-size-xl: 1.25rem;
   --ext-font-size-2xl: 1.5rem;
   --ext-letter-spacing: 0em;
-  
+
   /* Transitions - Snappy, Technical */
-  --ext-transition: all 200ms cubic-bezier(0.4, 0.0, 0.2, 1);
-  --ext-transition-fast: all 150ms cubic-bezier(0.4, 0.0, 0.2, 1);
-  --ext-transition-slow: all 300ms cubic-bezier(0.4, 0.0, 0.2, 1);
-  
+  --ext-transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ext-transition-fast: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --ext-transition-slow: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
   /* Gradients - Indigo Energy */
-  --ext-gradient-header: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-bright) 100%);
+  --ext-gradient-header: linear-gradient(
+    90deg,
+    var(--ext-primary) 0%,
+    var(--ext-primary-bright) 100%
+  );
   --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
-  --ext-gradient-sharp: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-deep) 60%, transparent 100%);
-  
+  --ext-gradient-sharp: linear-gradient(
+    90deg,
+    var(--ext-primary) 0%,
+    var(--ext-primary-deep) 60%,
+    transparent 100%
+  );
+
   /* Z-Index Scale */
   --ext-z-dropdown: 1000;
   --ext-z-modal: 1050;
   --ext-z-popover: 1060;
   --ext-z-tooltip: 1070;
   --ext-z-toast: 1080;
-  
+
   /* Legacy/Compatibility Variables */
   --background: var(--ext-background);
   --foreground: var(--ext-foreground);
@@ -108,7 +117,7 @@
   --border: var(--ext-border);
   --input: var(--ext-input);
   --ring: var(--ext-ring);
-  
+
   /* Brand Variables (Legacy) */
   --brand-primary: var(--ext-primary);
   --brand-secondary: var(--ext-secondary);
@@ -125,7 +134,7 @@
 }
 
 /* Dark Theme */
-[data-theme="dark"],
+[data-theme='dark'],
 .dark-theme,
 .ext-dark {
   /* Core Colors - Dark Theme - Indigo Monochromatic */
@@ -151,14 +160,14 @@
   --ext-input: #1e1e35;
   --ext-ring: #a5b4fc;
   --ext-shadow-color: #312e81;
-  
+
   /* Chart Colors - Dark Theme - Indigo Variations */
   --ext-chart-1: #818cf8;
   --ext-chart-2: #a5b4fc;
   --ext-chart-3: #c7d2fe;
   --ext-chart-4: #e0e7ff;
   --ext-chart-5: #ffffff;
-  
+
   /* Sidebar Colors - Dark Theme */
   --ext-sidebar: #0a0a1a;
   --ext-sidebar-foreground: #e8e6f0;
@@ -168,16 +177,25 @@
   --ext-sidebar-accent-foreground: #0a0a1a;
   --ext-sidebar-border: #312e81;
   --ext-sidebar-ring: #a5b4fc;
-  
+
   /* Gradients - Dark Theme */
-  --ext-gradient-header: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-bright) 100%);
+  --ext-gradient-header: linear-gradient(
+    90deg,
+    var(--ext-primary) 0%,
+    var(--ext-primary-bright) 100%
+  );
   --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
-  --ext-gradient-sharp: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-deep) 60%, transparent 100%);
+  --ext-gradient-sharp: linear-gradient(
+    90deg,
+    var(--ext-primary) 0%,
+    var(--ext-primary-deep) 60%,
+    transparent 100%
+  );
 }
 
 /* System Preference Detection */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not(.light-theme):not(.ext-light) {
+  :root:not([data-theme='light']):not(.light-theme):not(.ext-light) {
     /* Apply dark theme variables when system prefers dark and no explicit light theme is set */
     --ext-background: #0a0a1a;
     --ext-foreground: #e8e6f0;
@@ -209,9 +227,18 @@
     --ext-sidebar-accent-foreground: #0a0a1a;
     --ext-sidebar-border: #312e81;
     --ext-sidebar-ring: #a5b4fc;
-    --ext-gradient-header: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-bright) 100%);
+    --ext-gradient-header: linear-gradient(
+      90deg,
+      var(--ext-primary) 0%,
+      var(--ext-primary-bright) 100%
+    );
     --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
-    --ext-gradient-sharp: linear-gradient(90deg, var(--ext-primary) 0%, var(--ext-primary-deep) 60%, transparent 100%);
+    --ext-gradient-sharp: linear-gradient(
+      90deg,
+      var(--ext-primary) 0%,
+      var(--ext-primary-deep) 60%,
+      transparent 100%
+    );
   }
 }
 
@@ -231,39 +258,101 @@ body {
 }
 
 /* Utility Classes */
-.ext-bg-background { background-color: var(--ext-background); }
-.ext-bg-card { background-color: var(--ext-card); }
-.ext-bg-primary { background-color: var(--ext-primary); }
-.ext-bg-secondary { background-color: var(--ext-secondary); }
-.ext-bg-muted { background-color: var(--ext-muted); }
-.ext-bg-accent { background-color: var(--ext-accent); }
-.ext-bg-destructive { background-color: var(--ext-destructive); }
+.ext-bg-background {
+  background-color: var(--ext-background);
+}
+.ext-bg-card {
+  background-color: var(--ext-card);
+}
+.ext-bg-primary {
+  background-color: var(--ext-primary);
+}
+.ext-bg-secondary {
+  background-color: var(--ext-secondary);
+}
+.ext-bg-muted {
+  background-color: var(--ext-muted);
+}
+.ext-bg-accent {
+  background-color: var(--ext-accent);
+}
+.ext-bg-destructive {
+  background-color: var(--ext-destructive);
+}
 
-.ext-text-foreground { color: var(--ext-foreground); }
-.ext-text-primary { color: var(--ext-primary); }
-.ext-text-secondary { color: var(--ext-secondary); }
-.ext-text-muted { color: var(--ext-muted-foreground); }
-.ext-text-accent { color: var(--ext-accent); }
-.ext-text-destructive { color: var(--ext-destructive); }
+.ext-text-foreground {
+  color: var(--ext-foreground);
+}
+.ext-text-primary {
+  color: var(--ext-primary);
+}
+.ext-text-secondary {
+  color: var(--ext-secondary);
+}
+.ext-text-muted {
+  color: var(--ext-muted-foreground);
+}
+.ext-text-accent {
+  color: var(--ext-accent);
+}
+.ext-text-destructive {
+  color: var(--ext-destructive);
+}
 
-.ext-border { border: 1px solid var(--ext-border); }
-.ext-border-primary { border: 1px solid var(--ext-primary); }
-.ext-border-secondary { border: 1px solid var(--ext-secondary); }
-.ext-border-muted { border: 1px solid var(--ext-muted); }
-.ext-border-destructive { border: 1px solid var(--ext-destructive); }
+.ext-border {
+  border: 1px solid var(--ext-border);
+}
+.ext-border-primary {
+  border: 1px solid var(--ext-primary);
+}
+.ext-border-secondary {
+  border: 1px solid var(--ext-secondary);
+}
+.ext-border-muted {
+  border: 1px solid var(--ext-muted);
+}
+.ext-border-destructive {
+  border: 1px solid var(--ext-destructive);
+}
 
-.ext-rounded { border-radius: var(--ext-radius); }
-.ext-rounded-sm { border-radius: var(--ext-radius-sm); }
-.ext-rounded-md { border-radius: var(--ext-radius-md); }
-.ext-rounded-lg { border-radius: var(--ext-radius-lg); }
-.ext-rounded-xl { border-radius: var(--ext-radius-xl); }
+.ext-rounded {
+  border-radius: var(--ext-radius);
+}
+.ext-rounded-sm {
+  border-radius: var(--ext-radius-sm);
+}
+.ext-rounded-md {
+  border-radius: var(--ext-radius-md);
+}
+.ext-rounded-lg {
+  border-radius: var(--ext-radius-lg);
+}
+.ext-rounded-xl {
+  border-radius: var(--ext-radius-xl);
+}
 
-.ext-shadow-sm { box-shadow: var(--ext-shadow-sm); }
-.ext-shadow { box-shadow: var(--ext-shadow); }
-.ext-shadow-md { box-shadow: var(--ext-shadow-md); }
-.ext-shadow-lg { box-shadow: var(--ext-shadow-lg); }
-.ext-shadow-xl { box-shadow: var(--ext-shadow-xl); }
+.ext-shadow-sm {
+  box-shadow: var(--ext-shadow-sm);
+}
+.ext-shadow {
+  box-shadow: var(--ext-shadow);
+}
+.ext-shadow-md {
+  box-shadow: var(--ext-shadow-md);
+}
+.ext-shadow-lg {
+  box-shadow: var(--ext-shadow-lg);
+}
+.ext-shadow-xl {
+  box-shadow: var(--ext-shadow-xl);
+}
 
-.ext-transition { transition: var(--ext-transition); }
-.ext-transition-fast { transition: var(--ext-transition-fast); }
-.ext-transition-slow { transition: var(--ext-transition-slow); }
+.ext-transition {
+  transition: var(--ext-transition);
+}
+.ext-transition-fast {
+  transition: var(--ext-transition-fast);
+}
+.ext-transition-slow {
+  transition: var(--ext-transition-slow);
+}

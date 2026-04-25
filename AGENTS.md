@@ -16,15 +16,15 @@ For end-user examples and workflows, see `docs/SKILL_EXAMPLES.md`.
 
 ### Supported Skill Intent Patterns
 
-| Pattern | Example | Status |
-|---|---|---|
-| `use /<skill>` | `use /humanizer and rewrite` | supported |
-| `use <skill> skill` | `use humanizer skill and rewrite` | supported |
-| `apply /<skill>` | `apply /summarizer to this` | supported |
-| `with /<skill>` | `with /humanizer, rewrite this` | supported |
-| `invoke /<skill>` | `invoke /weather-guide explain forecast` | supported |
-| `use <skill> and/to/for` | `use humanizer and rewrite` | supported |
-| `please use <skill> to` | `please use humanizer to rewrite` | supported |
+| Pattern                  | Example                                  | Status    |
+| ------------------------ | ---------------------------------------- | --------- |
+| `use /<skill>`           | `use /humanizer and rewrite`             | supported |
+| `use <skill> skill`      | `use humanizer skill and rewrite`        | supported |
+| `apply /<skill>`         | `apply /summarizer to this`              | supported |
+| `with /<skill>`          | `with /humanizer, rewrite this`          | supported |
+| `invoke /<skill>`        | `invoke /weather-guide explain forecast` | supported |
+| `use <skill> and/to/for` | `use humanizer and rewrite`              | supported |
+| `please use <skill> to`  | `please use humanizer to rewrite`        | supported |
 
 ## Skill Specification
 
@@ -32,44 +32,46 @@ Skills follow the Agent Skills specification with YAML frontmatter.
 
 ```markdown
 ---
-name: "skill-name"
-description: "Brief description of what this skill does"
-license: "MIT"
+name: 'skill-name'
+description: 'Brief description of what this skill does'
+license: 'MIT'
 user-invocable: true
 disable-model-invocation: false
-metadata:
-  {"tags": "category", "version": "1.0.0"}
+metadata: { 'tags': 'category', 'version': '1.0.0' }
 ---
 
 # Skill Name
 
 ## Purpose
+
 Explain when and why to use this skill.
 
 ## Guidelines
+
 1. Step-by-step instructions
 2. Best practices
 3. Expected outputs
 
 ## Examples
+
 **Input:** Example input
 **Output:** Expected output
 ```
 
 ### Frontmatter Fields
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `name` | string | required | Unique identifier (lowercase, hyphens allowed) |
-| `description` | string | required | Brief description for AI and user discovery |
-| `license` | string | optional | License identifier (for example MIT, Apache-2.0) |
-| `user-invocable` | boolean | true | Creates `/<name>` shortcut command when true |
-| `disable-model-invocation` | boolean | false | Hides from model auto-suggestions when true |
-| `command-dispatch` | enum | null | Set to `tool` for deterministic execution |
-| `command-tool` | string | null | Tool name when command-dispatch is `tool` |
-| `command-arg-mode` | string | `raw` | Argument passing mode for tool dispatch |
-| `homepage` | string | null | URL for skill documentation |
-| `metadata` | object | `{}` | OpenClaw-compatible nested metadata |
+| Field                      | Type    | Default  | Description                                      |
+| -------------------------- | ------- | -------- | ------------------------------------------------ |
+| `name`                     | string  | required | Unique identifier (lowercase, hyphens allowed)   |
+| `description`              | string  | required | Brief description for AI and user discovery      |
+| `license`                  | string  | optional | License identifier (for example MIT, Apache-2.0) |
+| `user-invocable`           | boolean | true     | Creates `/<name>` shortcut command when true     |
+| `disable-model-invocation` | boolean | false    | Hides from model auto-suggestions when true      |
+| `command-dispatch`         | enum    | null     | Set to `tool` for deterministic execution        |
+| `command-tool`             | string  | null     | Tool name when command-dispatch is `tool`        |
+| `command-arg-mode`         | string  | `raw`    | Argument passing mode for tool dispatch          |
+| `homepage`                 | string  | null     | URL for skill documentation                      |
+| `metadata`                 | object  | `{}`     | OpenClaw-compatible nested metadata              |
 
 ### Metadata Object
 
@@ -78,17 +80,13 @@ The `metadata` field supports OpenClaw-style nested configuration:
 ```yaml
 metadata:
   {
-    "tags": "coding, python",
-    "version": "1.0.0",
-    "openclaw": {
-      "requires": {
-        "bins": ["python"],
-        "env": ["PYTHON_PATH"]
+    'tags': 'coding, python',
+    'version': '1.0.0',
+    'openclaw':
+      {
+        'requires': { 'bins': ['python'], 'env': ['PYTHON_PATH'] },
+        'install': [{ 'kind': 'brew', 'formula': 'python' }],
       },
-      "install": [
-        {"kind": "brew", "formula": "python"}
-      ]
-    }
   }
 ```
 
@@ -166,7 +164,7 @@ Prompt Paul skills are compatible with the OpenClaw ecosystem:
 ```javascript
 const skills = skillManager.getSkillsList();
 const eligible = skillManager.getEligibleSnapshot();
-const skill = skillManager.resolveSkill("humanizer");
+const skill = skillManager.resolveSkill('humanizer');
 const commands = skillManager.getSlashCommands();
 ```
 

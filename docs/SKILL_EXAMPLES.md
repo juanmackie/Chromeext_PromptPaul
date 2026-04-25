@@ -24,6 +24,7 @@ The `/skill` command is the canonical way to invoke any skill.
 ```
 
 **Examples:**
+
 ```
 /skill humanizer Make this sound more natural: "The implementation will require resources."
 /skill weather-guide Explain what "dew point" means
@@ -39,6 +40,7 @@ For skills marked as `user-invocable: true`, you can use a shortcut:
 ```
 
 **Examples:**
+
 ```
 /humanizer Make this sound more natural
 /weather-guide What does "barometric pressure" mean?
@@ -56,6 +58,7 @@ invoke <skill> skill for [task]
 ```
 
 **Examples:**
+
 ```
 use humanizer skill and make this paragraph less formal
 apply summarizer skill to this article
@@ -69,12 +72,14 @@ invoke weather-guide skill to explain this forecast
 ### Combining Skills with Context
 
 **With selected text:**
+
 1. Select text on any webpage
 2. Right-click ? "Process with Prompt Paul"
 3. In the instruction box: `/skill humanizer rewrite the selected text`
 4. Submit
 
 **With loaded content:**
+
 1. Click "Load Content" in the chat sidebar
 2. The page content is now in context
 3. Type: `/skill summarizer Summarize the loaded content into 3 bullet points`
@@ -98,20 +103,21 @@ AI: [Rewrites summary in natural language]
 
 ```markdown
 ---
-name: "code-reviewer"
-description: "Reviews code for best practices, bugs, and style issues"
-license: "MIT"
+name: 'code-reviewer'
+description: 'Reviews code for best practices, bugs, and style issues'
+license: 'MIT'
 user-invocable: true
-metadata:
-  {"tags": "coding, review", "languages": "javascript, python"}
+metadata: { 'tags': 'coding, review', 'languages': 'javascript, python' }
 ---
 
 # Code Reviewer
 
 ## Purpose
+
 Provide thorough code reviews focusing on correctness, performance, and maintainability.
 
 ## Guidelines
+
 1. Check for syntax errors and runtime exceptions
 2. Identify potential security vulnerabilities
 3. Review error handling and edge cases
@@ -119,12 +125,14 @@ Provide thorough code reviews focusing on correctness, performance, and maintain
 5. Suggest performance optimizations
 
 ## Review Format
+
 **Issues:** [Critical/High/Medium/Low] - Description and suggested fix
 **Suggestions:** Improvements that enhance code quality
 **Style:** Notes on formatting, naming, and conventions
 ```
 
 **How to use:**
+
 ```
 /code-reviewer Review this function: [paste code]
 /skill code-reviewer Check for security issues in: [paste code]
@@ -134,20 +142,21 @@ Provide thorough code reviews focusing on correctness, performance, and maintain
 
 ```markdown
 ---
-name: "email-writer"
-description: "Drafts professional emails with appropriate tone and structure"
-license: "MIT"
+name: 'email-writer'
+description: 'Drafts professional emails with appropriate tone and structure'
+license: 'MIT'
 user-invocable: true
-metadata:
-  {"tags": "writing, email, professional"}
+metadata: { 'tags': 'writing, email, professional' }
 ---
 
 # Email Writer
 
 ## Purpose
+
 Create well-structured, professional emails appropriate for business communication.
 
 ## Guidelines
+
 1. Start with appropriate greeting (Dear, Hello, Hi)
 2. State purpose clearly in opening paragraph
 3. Use bullet points for multiple items
@@ -156,6 +165,7 @@ Create well-structured, professional emails appropriate for business communicati
 ```
 
 **How to use:**
+
 ```
 /email-writer Write a follow-up email to the client about the project delay
 /skill email-writer Draft a meeting request for the project kickoff
@@ -189,6 +199,7 @@ Create well-structured, professional emails appropriate for business communicati
 ## Quick Reference
 
 ### Commands
+
 ```
 /skills                    # List all skills
 /skill <name> [input]     # Invoke any skill (canonical)
@@ -196,14 +207,14 @@ Create well-structured, professional emails appropriate for business communicati
 ```
 
 ### Frontmatter Template
+
 ```markdown
 ---
-name: "your-skill-name"
-description: "What this skill does"
+name: 'your-skill-name'
+description: 'What this skill does'
 user-invocable: true
 disable-model-invocation: false
-metadata:
-  {"tags": "category", "version": "1.0.0"}
+metadata: { 'tags': 'category', 'version': '1.0.0' }
 ---
 ```
 

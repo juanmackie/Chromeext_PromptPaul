@@ -34,6 +34,7 @@ rm -f .opencode/ralph-loop.local.md
 ## When to Use
 
 Use this command when:
+
 - The task requirements have changed
 - You want to restart with different parameters
 - The loop appears stuck and you want manual control

@@ -14,7 +14,12 @@
 
 import { loadingManager } from './loadingManager.js';
 import { isValidURL } from './src/utils/validation.js';
-import { generateSkillMarkdown, parseSkillMarkdown, validateMetadata } from './src/utils/skillParser.js';
+import {
+  generateSkillMarkdown,
+  parseSkillMarkdown,
+  validateMetadata,
+} from './src/utils/skillParser.js';
+import { setupThemeToggle } from './themeUtils.js';
 
 const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
 const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
@@ -23,16 +28,24 @@ const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked
 function getStoredVoiceInputSettings() {
   return new Promise((resolve) => {
     chrome.storage.local.get(
-      [VOICE_INPUT_ENABLED_KEY, VOICE_INPUT_PERMISSION_STATE_KEY, VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY],
+      [
+        VOICE_INPUT_ENABLED_KEY,
+        VOICE_INPUT_PERMISSION_STATE_KEY,
+        VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY,
+      ],
       (result) => {
-        const voiceInputEnabled = Object.prototype.hasOwnProperty.call(result || {}, VOICE_INPUT_ENABLED_KEY)
+        const voiceInputEnabled = Object.prototype.hasOwnProperty.call(
+          result || {},
+          VOICE_INPUT_ENABLED_KEY
+        )
           ? !!result[VOICE_INPUT_ENABLED_KEY]
           : true;
 
         resolve({
           voiceInputEnabled,
           voiceInputPermissionState: result?.[VOICE_INPUT_PERMISSION_STATE_KEY] || 'unknown',
-          voiceInputPermissionLastChecked: result?.[VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY] || null
+          voiceInputPermissionLastChecked:
+            result?.[VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY] || null,
         });
       }
     );
@@ -57,11 +70,13 @@ function isMicrophonePermissionDenied(error) {
   const name = typeof error.name === 'string' ? error.name.toLowerCase() : '';
   const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
 
-  return name === 'notallowederror'
-    || name === 'permissiondeniederror'
-    || message.includes('permission denied')
-    || message.includes('permission dismissed')
-    || message.includes('not allowed');
+  return (
+    name === 'notallowederror' ||
+    name === 'permissiondeniederror' ||
+    message.includes('permission denied') ||
+    message.includes('permission dismissed') ||
+    message.includes('not allowed')
+  );
 }
 
 /**
@@ -86,7 +101,8 @@ function showStatus(message, isError = false, isToast = false) {
     status.style.display = 'block';
 
     let timeoutDuration = 2000; // Default timeout
-    if (!isError) { // Apply timeout for success messages, but not errors
+    if (!isError) {
+      // Apply timeout for success messages, but not errors
       setTimeout(() => {
         status.style.display = 'none';
       }, timeoutDuration);
@@ -94,10 +110,11 @@ function showStatus(message, isError = false, isToast = false) {
   }
 }
 
-
 function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, profile) {
   document.getElementById('currentEndpoint').textContent = endpoint || 'Not set';
-  document.getElementById('currentApiKey').textContent = key ? '********' + key.slice(-4) : 'Not set';
+  document.getElementById('currentApiKey').textContent = key
+    ? '********' + key.slice(-4)
+    : 'Not set';
   document.getElementById('currentModelName').textContent = model || 'Not set';
   document.getElementById('lastUpdated').textContent = timestamp || 'Not set';
   document.getElementById('currentSystemPrompt').textContent = systemPrompt || 'Not set';
@@ -127,19 +144,85 @@ function syncDeleteProfileButtonState(selectedProfileId = null) {
  * @returns {boolean} True if all inputs are valid, false otherwise.
  */
 function validateInputs(endpoint, key, model) {
-  if (!endpoint || !key || !model) {
-    showStatus('API endpoint, API key, and model name are required', true);
-    return false;
+  let isValid = true;
+  const errors = [];
+
+  // Clear previous error states
+  clearFieldErrors();
+
+  // Validate endpoint
+  if (!endpoint) {
+    errors.push('API endpoint is required');
+    setFieldError('llmEndpoint', 'API endpoint is required');
+    isValid = false;
+  } else {
+    try {
+      new URL(endpoint);
+    } catch (e) {
+      errors.push('Please enter a valid URL for the API endpoint');
+      setFieldError('llmEndpoint', 'Invalid URL format');
+      isValid = false;
+    }
   }
 
-  try {
-    new URL(endpoint);
-  } catch (e) {
-    showStatus('Please enter a valid URL for the API endpoint', true);
-    return false;
+  // Validate API key
+  if (!key) {
+    errors.push('API key is required');
+    setFieldError('apiKey', 'API key is required');
+    isValid = false;
   }
 
-  return true;
+  // Validate model name
+  if (!model) {
+    errors.push('Model name is required');
+    setFieldError('modelName', 'Model name is required');
+    isValid = false;
+  }
+
+  if (!isValid) {
+    showStatus(errors.join('. '), true);
+  }
+
+  return isValid;
+}
+
+/**
+ * Sets visual error state on a specific field.
+ * @param {string} fieldId - The ID of the input field.
+ * @param {string} message - The error message to display.
+ */
+function setFieldError(fieldId, message) {
+  const field = document.getElementById(fieldId);
+  if (field) {
+    field.classList.add('error');
+    field.setAttribute('aria-invalid', 'true');
+
+    // Create or update error message element
+    let errorEl = document.getElementById(`${fieldId}Error`);
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+  }
+}
+
+/**
+ * Clears all field error states.
+ */
+function clearFieldErrors() {
+  const fields = ['llmEndpoint', 'apiKey', 'modelName'];
+  fields.forEach((fieldId) => {
+    const field = document.getElementById(fieldId);
+    if (field) {
+      field.classList.remove('error');
+      field.removeAttribute('aria-invalid');
+    }
+    const errorEl = document.getElementById(`${fieldId}Error`);
+    if (errorEl) {
+      errorEl.textContent = '';
+      errorEl.style.display = 'none';
+    }
+  });
 }
 
 /**
@@ -201,7 +284,7 @@ function saveOptions(e) {
   // Save to local storage profiles
   chrome.storage.local.get(['profiles'], (result) => {
     let profiles = result.profiles || [];
-    let profileToUpdate = profiles.find(p => p.id === selectedProfileId);
+    let profileToUpdate = profiles.find((p) => p.id === selectedProfileId);
 
     if (!profileToUpdate) {
       profileToUpdate = {
@@ -211,7 +294,7 @@ function saveOptions(e) {
         apiKey: apiKeyValue,
         modelName: modelNameValue,
         systemPrompt: systemPromptValue,
-        lastUpdated: new Date().toLocaleString()
+        lastUpdated: new Date().toLocaleString(),
       };
       profiles.push(profileToUpdate);
     } else {
@@ -222,17 +305,23 @@ function saveOptions(e) {
       profileToUpdate.lastUpdated = new Date().toLocaleString();
     }
 
-    chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: selectedProfileId }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Options: Error saving profile settings to local storage:', chrome.runtime.lastError);
-        showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
-      } else {
-        showStatus(`Settings for profile '${profileToUpdate.name}' saved!`);
-        // Reload options to reflect changes, especially if it was a new profile or name changed
-        loadOptions();
+    chrome.storage.local.set(
+      { profiles: profiles, lastSelectedProfileId: selectedProfileId },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.error(
+            'Options: Error saving profile settings to local storage:',
+            chrome.runtime.lastError
+          );
+          showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
+        } else {
+          showStatus(`Settings for profile '${profileToUpdate.name}' saved!`);
+          // Reload options to reflect changes, especially if it was a new profile or name changed
+          loadOptions();
+        }
+        saveButton.disabled = false;
       }
-      saveButton.disabled = false;
-    });
+    );
   });
 }
 
@@ -244,14 +333,18 @@ function saveOptions(e) {
 function loadProfileSettings(profileId) {
   chrome.storage.local.get(['profiles'], (result) => {
     const profiles = result.profiles || [];
-    const selectedProfile = profiles.find(p => p.id === profileId) || profiles.find(p => p.id === 'default');
+    const selectedProfile =
+      profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === 'default');
 
     if (selectedProfile) {
-      document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
-      document.getElementById('apiKey').value = selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
-      document.getElementById('modelName').value = selectedProfile.modelName || 'mistral-small-latest';
+      document.getElementById('llmEndpoint').value =
+        selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
+      document.getElementById('apiKey').value =
+        selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
+      document.getElementById('modelName').value =
+        selectedProfile.modelName || 'mistral-small-latest';
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
-      
+
       updateCurrentConfig(
         selectedProfile.llmEndpoint,
         selectedProfile.apiKey,
@@ -269,7 +362,7 @@ function loadProfileSettings(profileId) {
           modelName: 'mistral-small-latest',
           systemPrompt: '',
           lastUpdated: '',
-          profileSelect: 'default'
+          profileSelect: 'default',
         },
         (items) => {
           if (chrome.runtime.lastError) {
@@ -281,7 +374,13 @@ function loadProfileSettings(profileId) {
           document.getElementById('apiKey').value = items.apiKey;
           document.getElementById('modelName').value = items.modelName;
           document.getElementById('systemPrompt').value = items.systemPrompt;
-          updateCurrentConfig(items.llmEndpoint, items.apiKey, items.modelName, items.lastUpdated, items.profileSelect);
+          updateCurrentConfig(
+            items.llmEndpoint,
+            items.apiKey,
+            items.modelName,
+            items.lastUpdated,
+            items.profileSelect
+          );
         }
       );
     }
@@ -308,7 +407,7 @@ function loadOptions() {
     profileSelectElement.appendChild(defaultOption);
 
     if (profiles && profiles.length > 0) {
-      profiles.forEach(profile => {
+      profiles.forEach((profile) => {
         if (profile.id === 'default') return; // Skip default if already added
         const option = document.createElement('option');
         option.value = profile.id;
@@ -326,7 +425,7 @@ function loadOptions() {
     const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
 
     // Ensure default profile exists
-    if (!profiles.find(p => p.id === 'default')) {
+    if (!profiles.find((p) => p.id === 'default')) {
       const defaultProfile = {
         id: 'default',
         name: 'Default',
@@ -334,7 +433,7 @@ function loadOptions() {
         apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
         modelName: 'mistral-small-latest',
         systemPrompt: 'You are a helpful assistant.',
-        lastUpdated: new Date().toLocaleString()
+        lastUpdated: new Date().toLocaleString(),
       };
       profiles.push(defaultProfile);
       chrome.storage.local.set({ profiles: profiles }, () => {
@@ -362,7 +461,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (analyticsConsentToggle) {
     // Initialize from storage (default true when missing)
     chrome.storage.local.get(['analyticsConsent'], (res) => {
-      const consent = (res && Object.prototype.hasOwnProperty.call(res, 'analyticsConsent')) ? !!res.analyticsConsent : true;
+      const consent =
+        res && Object.prototype.hasOwnProperty.call(res, 'analyticsConsent')
+          ? !!res.analyticsConsent
+          : true;
       analyticsConsentToggle.checked = consent;
     });
     // Persist on change
@@ -377,42 +479,43 @@ document.addEventListener('DOMContentLoaded', () => {
   const voiceInputEnabledToggle = document.getElementById('voiceInputEnabledToggle');
   const testMicPermissionBtn = document.getElementById('testMicPermissionBtn');
   const micPermissionStatus = document.getElementById('micPermissionStatus');
-  const isVoiceInputSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
-    && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const isVoiceInputSupported =
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition) &&
+    !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
   if (voiceInputEnabledToggle && testMicPermissionBtn && micPermissionStatus) {
     function getMicStatusPresentation(settings) {
       if (!isVoiceInputSupported) {
         return {
           text: 'Not supported in this browser',
-          color: 'var(--ext-destructive)'
+          color: 'var(--ext-destructive)',
         };
       }
 
       if (settings.voiceInputPermissionState === 'denied') {
         return {
           text: 'Permission denied',
-          color: 'var(--ext-destructive)'
+          color: 'var(--ext-destructive)',
         };
       }
 
       if (!settings.voiceInputEnabled) {
         return {
           text: 'Off',
-          color: 'var(--ext-muted-foreground)'
+          color: 'var(--ext-muted-foreground)',
         };
       }
 
       if (settings.voiceInputPermissionState === 'granted') {
         return {
           text: 'Permission granted',
-          color: '#10b981'
+          color: '#10b981',
         };
       }
 
       return {
         text: 'Not yet requested',
-        color: 'var(--ext-muted-foreground)'
+        color: 'var(--ext-muted-foreground)',
       };
     }
 
@@ -424,7 +527,8 @@ document.addEventListener('DOMContentLoaded', () => {
       micPermissionStatus.textContent = status.text;
       micPermissionStatus.style.color = status.color;
 
-      testMicPermissionBtn.disabled = isTesting || !isVoiceInputSupported || !settings.voiceInputEnabled;
+      testMicPermissionBtn.disabled =
+        isTesting || !isVoiceInputSupported || !settings.voiceInputEnabled;
 
       if (isTesting) {
         testMicPermissionBtn.title = 'Requesting microphone access...';
@@ -460,19 +564,19 @@ document.addEventListener('DOMContentLoaded', () => {
       renderVoiceInputControls(settings, {
         status: {
           text: 'Testing...',
-          color: 'var(--ext-muted-foreground)'
+          color: 'var(--ext-muted-foreground)',
         },
-        isTesting: true
+        isTesting: true,
       });
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
 
         await setStoredVoiceInputSettings({
           [VOICE_INPUT_ENABLED_KEY]: true,
           [VOICE_INPUT_PERMISSION_STATE_KEY]: 'granted',
-          [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now()
+          [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now(),
         });
 
         await refreshVoiceInputControls();
@@ -482,11 +586,15 @@ document.addEventListener('DOMContentLoaded', () => {
           await setStoredVoiceInputSettings({
             [VOICE_INPUT_ENABLED_KEY]: false,
             [VOICE_INPUT_PERMISSION_STATE_KEY]: 'denied',
-            [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now()
+            [VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY]: Date.now(),
           });
 
           await refreshVoiceInputControls();
-          showStatus('Microphone access denied. Re-enable voice input here after updating the browser mic permission to try again.', true, true);
+          showStatus(
+            'Microphone access denied. Re-enable voice input here after updating the browser mic permission to try again.',
+            true,
+            true
+          );
           return;
         }
 
@@ -502,14 +610,22 @@ document.addEventListener('DOMContentLoaded', () => {
     voiceInputEnabledToggle.addEventListener('change', async () => {
       try {
         await setStoredVoiceInputSettings({
-          [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked
+          [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked,
         });
 
         const settings = await refreshVoiceInputControls();
         if (settings.voiceInputEnabled) {
-          showStatus('Voice input enabled. Test microphone access if you need to request permission again.', false, true);
+          showStatus(
+            'Voice input enabled. Test microphone access if you need to request permission again.',
+            false,
+            true
+          );
         } else {
-          showStatus('Voice input disabled. The chat mic button will remain visible but inactive.', false, true);
+          showStatus(
+            'Voice input disabled. The chat mic button will remain visible but inactive.',
+            false,
+            true
+          );
         }
       } catch (error) {
         showStatus('Failed to update voice input setting: ' + error.message, true, true);
@@ -541,38 +657,48 @@ document.addEventListener('DOMContentLoaded', () => {
       // Confirm with the user
       chrome.storage.local.get(['profiles'], (result) => {
         const profiles = result.profiles || [];
-        const profileToDelete = profiles.find(p => p.id === selectedProfileId);
+        const profileToDelete = profiles.find((p) => p.id === selectedProfileId);
         const profileName = profileToDelete ? profileToDelete.name : 'the selected profile';
 
-        if (window.confirm(`Are you sure you want to delete the profile "${profileName}"? This action cannot be undone.`)) {
-          const updatedProfiles = profiles.filter(p => p.id !== selectedProfileId);
-          chrome.storage.local.set({ profiles: updatedProfiles, lastSelectedProfileId: 'default' }, () => {
-            if (chrome.runtime.lastError) {
-              console.error('Error deleting profile:', chrome.runtime.lastError);
-              showStatus('Error deleting profile: ' + chrome.runtime.lastError.message, true);
-            } else {
-              showStatus(`Profile "${profileName}" deleted successfully. Switched to Default profile.`, false, true);
-              loadOptions(); // This will repopulate dropdown and load default profile settings.
+        if (
+          window.confirm(
+            `Are you sure you want to delete the profile "${profileName}"? This action cannot be undone.`
+          )
+        ) {
+          const updatedProfiles = profiles.filter((p) => p.id !== selectedProfileId);
+          chrome.storage.local.set(
+            { profiles: updatedProfiles, lastSelectedProfileId: 'default' },
+            () => {
+              if (chrome.runtime.lastError) {
+                console.error('Error deleting profile:', chrome.runtime.lastError);
+                showStatus('Error deleting profile: ' + chrome.runtime.lastError.message, true);
+              } else {
+                showStatus(
+                  `Profile "${profileName}" deleted successfully. Switched to Default profile.`,
+                  false,
+                  true
+                );
+                loadOptions(); // This will repopulate dropdown and load default profile settings.
+              }
             }
-          });
+          );
         }
       });
     });
   }
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
-// Add event listener for collapsible header
-document.querySelectorAll('.collapsible-header').forEach(header => {
-  header.addEventListener('click', () => {
-    const content = header.nextElementSibling;
-    content.classList.toggle('expanded');
-    header.classList.toggle('expanded');
+  // Add event listener for collapsible header
+  document.querySelectorAll('.collapsible-header').forEach((header) => {
+    header.addEventListener('click', () => {
+      const content = header.nextElementSibling;
+      content.classList.toggle('expanded');
+      header.classList.toggle('expanded');
+    });
   });
-});
   setupToolHandlers(); // Add call to setup tool handlers
   setupSkillHandlers(); // Add call to setup skill handlers
   setupBackupHandlers(); // Add call to setup backup handlers
-
 
   // Add event listener for the Revert button
   const revertButton = document.getElementById('revertDefaultsButton');
@@ -609,34 +735,49 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
       syncDeleteProfileButtonState(selectedProfileId);
 
       if (selectedProfileId === 'add_new_profile') {
-        const newProfileName = prompt('Enter a name for the new profile (e.g., "My OpenAI GPT-4"):');
+        const newProfileName = prompt(
+          'Enter a name for the new profile (e.g., "My OpenAI GPT-4"):'
+        );
         if (newProfileName && newProfileName.trim() !== '') {
           chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
             let profiles = result.profiles || [];
             // Ensure profileSelectElement is available before accessing its value.
             const currentProfileId = profileSelectElement ? profileSelectElement.value : 'default';
-            const currentProfile = profiles.find(p => p.id === currentProfileId) || profiles.find(p => p.id === 'default') || {};
+            const currentProfile =
+              profiles.find((p) => p.id === currentProfileId) ||
+              profiles.find((p) => p.id === 'default') ||
+              {};
 
             const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
             const newProfile = {
               id: newProfileId,
               name: newProfileName.trim(),
-              llmEndpoint: document.getElementById('llmEndpoint').value.trim() || currentProfile.llmEndpoint,
+              llmEndpoint:
+                document.getElementById('llmEndpoint').value.trim() || currentProfile.llmEndpoint,
               apiKey: document.getElementById('apiKey').value.trim() || currentProfile.apiKey,
-              modelName: document.getElementById('modelName').value.trim() || currentProfile.modelName,
-              systemPrompt: document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
-              lastUpdated: new Date().toLocaleString()
+              modelName:
+                document.getElementById('modelName').value.trim() || currentProfile.modelName,
+              systemPrompt:
+                document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
+              lastUpdated: new Date().toLocaleString(),
             };
             profiles.push(newProfile);
-            chrome.storage.local.set({ profiles: profiles, lastSelectedProfileId: newProfileId }, () => {
-              // populateProfileDropdown is called within loadOptions
-              loadOptions(); // Reload options to correctly populate and select.
-              // Explicitly set to new profile ID *after* loadOptions, as loadOptions might reset it.
-              profileSelectElement.value = newProfileId;
-              syncDeleteProfileButtonState(newProfileId);
-              loadProfileSettings(newProfileId); // Load its settings into the form
-              showStatus(`Profile "${newProfile.name}" created. Review and save settings.`, false, true);
-            });
+            chrome.storage.local.set(
+              { profiles: profiles, lastSelectedProfileId: newProfileId },
+              () => {
+                // populateProfileDropdown is called within loadOptions
+                loadOptions(); // Reload options to correctly populate and select.
+                // Explicitly set to new profile ID *after* loadOptions, as loadOptions might reset it.
+                profileSelectElement.value = newProfileId;
+                syncDeleteProfileButtonState(newProfileId);
+                loadProfileSettings(newProfileId); // Load its settings into the form
+                showStatus(
+                  `Profile "${newProfile.name}" created. Review and save settings.`,
+                  false,
+                  true
+                );
+              }
+            );
           });
         } else {
           // User cancelled or entered empty name, revert to last selected
@@ -653,14 +794,11 @@ document.querySelectorAll('.collapsible-header').forEach(header => {
       }
     });
   }
-});
 
-// --- Dark Theme Toggle Logic ---
-// This DOMContentLoaded listener should ideally be merged with the one above,
-// but for now, we'll follow the existing structure.
-import { setupThemeToggle } from './themeUtils.js';
+  // ============================================================
+  // SECTION 2: Streaming & Theme Settings (Sync Storage)
+  // ============================================================
 
-document.addEventListener('DOMContentLoaded', () => {
   // Streaming Toggle
   const enableStreamingToggle = document.getElementById('enableStreamingToggle');
   if (enableStreamingToggle) {
@@ -673,7 +811,11 @@ document.addEventListener('DOMContentLoaded', () => {
     enableStreamingToggle.addEventListener('change', () => {
       const isStreamingEnabled = enableStreamingToggle.checked;
       chrome.storage.sync.set({ enableStreaming: isStreamingEnabled }, () => {
-        showStatus(`Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`, false, true);
+        showStatus(
+          `Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`,
+          false,
+          true
+        );
       });
     });
   }
@@ -731,7 +873,7 @@ document.getElementById('optionsForm').addEventListener('submit', saveOptions);
 async function populateToolDropdown() {
   const toolChoiceSelect = document.getElementById('instructionToolChoice');
   if (!toolChoiceSelect) {
-    console.error("instructionToolChoice dropdown not found!");
+    console.error('instructionToolChoice dropdown not found!');
     return;
   }
 
@@ -753,28 +895,26 @@ async function populateToolDropdown() {
     const tools = result.promptPaulTools || [];
 
     if (tools.length > 0) {
-        // Add a separator only if there are tools
-        const separator = document.createElement('option');
-        separator.disabled = true;
-        separator.textContent = '------ Tools ------';
-        toolChoiceSelect.appendChild(separator);
+      // Add a separator only if there are tools
+      const separator = document.createElement('option');
+      separator.disabled = true;
+      separator.textContent = '------ Tools ------';
+      toolChoiceSelect.appendChild(separator);
 
-        // Add tools to the dropdown
-        tools.forEach(tool => {
-          const option = document.createElement('option');
-          option.value = tool.name; // Use tool name as value
-          option.textContent = tool.name;
-          toolChoiceSelect.appendChild(option);
-        });
+      // Add tools to the dropdown
+      tools.forEach((tool) => {
+        const option = document.createElement('option');
+        option.value = tool.name; // Use tool name as value
+        option.textContent = tool.name;
+        toolChoiceSelect.appendChild(option);
+      });
     }
     // Selection restoration will be handled in the edit handler (loadInstructions)
-
   } catch (error) {
-    console.error("Error loading tools for dropdown:", error);
-    showStatus("Error loading tools for dropdown: " + error.message, true);
+    console.error('Error loading tools for dropdown:', error);
+    showStatus('Error loading tools for dropdown: ' + error.message, true);
   }
 }
-
 
 // Setup instruction management handlers
 function setupInstructionHandlers() {
@@ -789,7 +929,7 @@ function setupInstructionHandlers() {
       const tableBody = document.querySelector('#instructionsTable tbody');
       tableBody.innerHTML = '';
 
-      instructions.forEach(instruction => {
+      instructions.forEach((instruction) => {
         const row = document.createElement('tr');
         // Handle tool_choice display (could be string or array)
         let toolChoiceDisplay = 'None'; // Default display
@@ -802,8 +942,10 @@ function setupInstructionHandlers() {
             } else {
               toolChoiceDisplay = instruction.tool_choice.join(', '); // Join array elements
             }
-          } else { // Handle older string format for backward compatibility
-            toolChoiceDisplay = instruction.tool_choice.charAt(0).toUpperCase() + instruction.tool_choice.slice(1);
+          } else {
+            // Handle older string format for backward compatibility
+            toolChoiceDisplay =
+              instruction.tool_choice.charAt(0).toUpperCase() + instruction.tool_choice.slice(1);
           }
         }
 
@@ -823,23 +965,25 @@ function setupInstructionHandlers() {
         // Asynchronously update the just-added pin button's state
         const currentPinButton = row.querySelector(`.pin-btn[data-id="${instruction.id}"]`);
         if (currentPinButton) {
-            chrome.storage.local.get(['pinnedQuickActions'], (result) => {
-                const pinnedQuickActions = result.pinnedQuickActions || [];
-                if (pinnedQuickActions.includes(instruction.id)) {
-                    currentPinButton.innerHTML = '<span class="material-symbols-outlined">keep_off</span>';
-                    currentPinButton.classList.add('pinned');
-                    currentPinButton.title = 'Unpin from Quick Actions';
-                } else {
-                    currentPinButton.innerHTML = '<span class="material-symbols-outlined">push_pin</span>';
-                    currentPinButton.classList.remove('pinned'); // Ensure it's not there if re-rendering
-                    currentPinButton.title = 'Pin to Quick Actions';
-                }
-            });
+          chrome.storage.local.get(['pinnedQuickActions'], (result) => {
+            const pinnedQuickActions = result.pinnedQuickActions || [];
+            if (pinnedQuickActions.includes(instruction.id)) {
+              currentPinButton.innerHTML =
+                '<span class="material-symbols-outlined">keep_off</span>';
+              currentPinButton.classList.add('pinned');
+              currentPinButton.title = 'Unpin from Quick Actions';
+            } else {
+              currentPinButton.innerHTML =
+                '<span class="material-symbols-outlined">push_pin</span>';
+              currentPinButton.classList.remove('pinned'); // Ensure it's not there if re-rendering
+              currentPinButton.title = 'Pin to Quick Actions';
+            }
+          });
         }
       });
 
       // Add pin/edit/delete handlers (improve-btn is handled separately if it has complex logic)
-      document.querySelectorAll('.pin-btn').forEach(btn => {
+      document.querySelectorAll('.pin-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           const button = e.currentTarget;
           const instructionId = button.dataset.id;
@@ -849,7 +993,7 @@ function setupInstructionHandlers() {
             const isPinned = pinnedQuickActions.includes(instructionId);
 
             if (isPinned) {
-              pinnedQuickActions = pinnedQuickActions.filter(id => id !== instructionId);
+              pinnedQuickActions = pinnedQuickActions.filter((id) => id !== instructionId);
               button.innerHTML = '<span class="material-symbols-outlined">push_pin</span>';
               button.classList.remove('pinned');
               button.title = 'Pin to Quick Actions';
@@ -864,16 +1008,19 @@ function setupInstructionHandlers() {
 
             chrome.storage.local.set({ pinnedQuickActions: pinnedQuickActions }, () => {
               if (chrome.runtime.lastError) {
-                showStatus('Error updating pinned status: ' + chrome.runtime.lastError.message, true);
+                showStatus(
+                  'Error updating pinned status: ' + chrome.runtime.lastError.message,
+                  true
+                );
               }
             });
           });
         });
       });
-      document.querySelectorAll('.edit-btn').forEach(btn => {
+      document.querySelectorAll('.edit-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           const instructionId = e.target.dataset.id;
-          const instruction = instructions.find(i => i.id === instructionId);
+          const instruction = instructions.find((i) => i.id === instructionId);
           if (instruction) {
             document.getElementById('instructionName').value = instruction.name;
             document.getElementById('instructionContent').value = instruction.content;
@@ -901,13 +1048,13 @@ function setupInstructionHandlers() {
         });
       });
 
-      document.querySelectorAll('.delete-btn').forEach(btn => {
+      document.querySelectorAll('.delete-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           const instructionId = e.target.dataset.id;
           if (confirm('Are you sure you want to delete this instruction?')) {
             chrome.storage.local.get(['instructions'], (result) => {
               let instructions = result.instructions || [];
-              instructions = instructions.filter(i => i.id !== instructionId);
+              instructions = instructions.filter((i) => i.id !== instructionId);
               chrome.storage.local.set({ instructions: instructions }, () => {
                 showStatus('Instruction deleted!');
                 loadInstructions(); // Reload the table
@@ -922,10 +1069,10 @@ function setupInstructionHandlers() {
       });
 
       // Add improve handler (calls the API)
-      document.querySelectorAll('.improve-btn').forEach(btn => {
+      document.querySelectorAll('.improve-btn').forEach((btn) => {
         btn.addEventListener('click', async (e) => {
           const instructionId = e.target.dataset.id;
-          const instruction = instructions.find(i => i.id === instructionId);
+          const instruction = instructions.find((i) => i.id === instructionId);
           if (instruction) {
             showStatus('Improving instruction...', false, true); // Show as toast
             try {
@@ -934,11 +1081,18 @@ function setupInstructionHandlers() {
                 chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
                   const profiles = result.profiles || [];
                   const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-                  const selectedProfile = profiles.find(p => p.id === lastSelectedProfileId);
-                  if (selectedProfile && selectedProfile.llmEndpoint && selectedProfile.apiKey && selectedProfile.modelName) {
+                  const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
+                  if (
+                    selectedProfile &&
+                    selectedProfile.llmEndpoint &&
+                    selectedProfile.apiKey &&
+                    selectedProfile.modelName
+                  ) {
                     resolve(selectedProfile);
                   } else {
-                    reject(new Error('API configuration is incomplete. Please set it up in settings.'));
+                    reject(
+                      new Error('API configuration is incomplete. Please set it up in settings.')
+                    );
                   }
                 });
               });
@@ -993,7 +1147,7 @@ function setupInstructionHandlers() {
 
         if (instructionId) {
           // Update existing instruction
-          instructions = instructions.map(inst => {
+          instructions = instructions.map((inst) => {
             if (inst.id === instructionId) {
               return {
                 ...inst,
@@ -1001,7 +1155,7 @@ function setupInstructionHandlers() {
                 content: instructionContent,
                 tool_choice: toolChoiceValue || 'none', // Save as string
                 modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
-                lastUpdated: now
+                lastUpdated: now,
               };
             }
             return inst;
@@ -1016,7 +1170,7 @@ function setupInstructionHandlers() {
             tool_choice: toolChoiceValue || 'none', // Save as string
             modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
             createdAt: now,
-            lastUpdated: now
+            lastUpdated: now,
           };
           instructions.push(newInstruction);
           showStatus('Instruction added!');
@@ -1036,6 +1190,21 @@ function setupInstructionHandlers() {
   }
 
   function clearForm() {
+    // Check if form has any content that would be lost
+    const name = document.getElementById('instructionName').value;
+    const content = document.getElementById('instructionContent').value;
+    const hasContent = name.trim() !== '' || content.trim() !== '';
+
+    // Only confirm if there's actual content to clear
+    if (hasContent) {
+      const confirmed = window.confirm(
+        'Are you sure you want to clear the form? Any unsaved changes will be lost.'
+      );
+      if (!confirmed) {
+        return; // User cancelled
+      }
+    }
+
     document.getElementById('instructionName').value = '';
     document.getElementById('instructionContent').value = '';
     document.getElementById('instructionId').value = '';
@@ -1056,12 +1225,13 @@ function setupInstructionHandlers() {
       const instructions = result.instructions || [];
       const exportData = {
         version: 1, // Versioning for future compatibility
-        instructions: instructions
+        instructions: instructions,
       };
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      const dataStr =
+        'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
       const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", "prompt_paul_instructions.json");
+      downloadAnchorNode.setAttribute('href', dataStr);
+      downloadAnchorNode.setAttribute('download', 'prompt_paul_instructions.json');
       document.body.appendChild(downloadAnchorNode); // Required for Firefox
       downloadAnchorNode.click();
       downloadAnchorNode.remove();
@@ -1088,14 +1258,25 @@ function setupInstructionHandlers() {
             let existingInstructions = result.instructions || [];
             const importedInstructions = importData.instructions;
 
-            importedInstructions.forEach(importedInst => {
-              const existingIndex = existingInstructions.findIndex(inst => inst.id === importedInst.id);
+            importedInstructions.forEach((importedInst) => {
+              const existingIndex = existingInstructions.findIndex(
+                (inst) => inst.id === importedInst.id
+              );
               if (existingIndex > -1) {
                 // Update existing instruction
-                existingInstructions[existingIndex] = { ...existingInstructions[existingIndex], ...importedInst, lastUpdated: new Date().toISOString() };
+                existingInstructions[existingIndex] = {
+                  ...existingInstructions[existingIndex],
+                  ...importedInst,
+                  lastUpdated: new Date().toISOString(),
+                };
               } else {
                 // Add new instruction
-                existingInstructions.push({ ...importedInst, id: importedInst.id || 'inst_' + Date.now(), createdAt: importedInst.createdAt || new Date().toISOString(), lastUpdated: new Date().toISOString() });
+                existingInstructions.push({
+                  ...importedInst,
+                  id: importedInst.id || 'inst_' + Date.now(),
+                  createdAt: importedInst.createdAt || new Date().toISOString(),
+                  lastUpdated: new Date().toISOString(),
+                });
               }
             });
 
@@ -1123,15 +1304,19 @@ function setupInstructionHandlers() {
 // Function to call the API for prompt improvement
 async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
   const messages = [
-    { role: 'system', content: 'You are an expert prompt engineer. Improve the following prompt for a large language model to be clearer, more concise, and more effective. Only return the improved prompt text, nothing else.' },
-    { role: 'user', content: prompt }
+    {
+      role: 'system',
+      content:
+        'You are an expert prompt engineer. Improve the following prompt for a large language model to be clearer, more concise, and more effective. Only return the improved prompt text, nothing else.',
+    },
+    { role: 'user', content: prompt },
   ];
 
   const apiResponse = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: modelName,
@@ -1150,7 +1335,13 @@ async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
   }
 
   const responseData = await apiResponse.json();
-  if (!responseData || !responseData.choices || !responseData.choices[0] || !responseData.choices[0].message || !responseData.choices[0].message.content) {
+  if (
+    !responseData ||
+    !responseData.choices ||
+    !responseData.choices[0] ||
+    !responseData.choices[0].message ||
+    !responseData.choices[0].message.content
+  ) {
     throw new Error('Invalid response format from API: Missing message content.');
   }
 
@@ -1180,7 +1371,7 @@ function setupToolHandlers() {
       const tableBody = document.querySelector('#toolsTable tbody');
       tableBody.innerHTML = '';
 
-      tools.forEach(tool => {
+      tools.forEach((tool) => {
         const row = document.createElement('tr');
         row.innerHTML = `
           <td data-label="Name">${tool.name}</td>
@@ -1194,7 +1385,7 @@ function setupToolHandlers() {
       });
 
       // Add edit/delete handlers
-      document.querySelectorAll('.edit-tool-btn').forEach(btn => {
+      document.querySelectorAll('.edit-tool-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           const toolId = e.target.dataset.id;
           chrome.storage.local.get(['promptPaulTools'], (result) => {
@@ -1204,7 +1395,7 @@ function setupToolHandlers() {
               return;
             }
             const tools = result.promptPaulTools || [];
-            const tool = tools.find(t => t.id === toolId);
+            const tool = tools.find((t) => t.id === toolId);
             if (tool) {
               document.getElementById('toolName').value = tool.name;
               document.getElementById('toolDescription').value = tool.description;
@@ -1217,7 +1408,7 @@ function setupToolHandlers() {
         });
       });
 
-      document.querySelectorAll('.delete-tool-btn').forEach(btn => {
+      document.querySelectorAll('.delete-tool-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           const toolId = e.target.dataset.id;
           if (confirm('Are you sure you want to delete this tool?')) {
@@ -1228,7 +1419,7 @@ function setupToolHandlers() {
                 return;
               }
               let tools = result.promptPaulTools || [];
-              tools = tools.filter(t => t.id !== toolId);
+              tools = tools.filter((t) => t.id !== toolId);
               chrome.storage.local.set({ promptPaulTools: tools }, () => {
                 if (chrome.runtime.lastError) {
                   console.error('Error deleting tool:', chrome.runtime.lastError.message);
@@ -1273,7 +1464,6 @@ function setupToolHandlers() {
         return;
       }
 
-
       if (toolEndpointUrl) {
         if (!isValidURL(toolEndpointUrl)) {
           showStatus('Tool endpoint URL must be a valid URL.', true);
@@ -1300,7 +1490,7 @@ function setupToolHandlers() {
 
         if (toolId) {
           // Update existing tool
-          tools = tools.map(tool => {
+          tools = tools.map((tool) => {
             if (tool.id === toolId) {
               return {
                 ...tool,
@@ -1309,7 +1499,7 @@ function setupToolHandlers() {
                 parameters: toolParameters,
                 endpointUrl: toolEndpointUrl,
                 httpMethod: toolHttpMethod,
-                lastUpdated: now
+                lastUpdated: now,
               };
             }
             return tool;
@@ -1325,7 +1515,7 @@ function setupToolHandlers() {
             endpointUrl: toolEndpointUrl,
             httpMethod: toolHttpMethod,
             createdAt: now,
-            lastUpdated: now
+            lastUpdated: now,
           };
           tools.push(newTool);
           showStatus('Tool added!');
@@ -1362,12 +1552,13 @@ function setupToolHandlers() {
       const tools = result.promptPaulTools || [];
       const exportData = {
         version: 1, // Versioning for future compatibility
-        tools: tools
+        tools: tools,
       };
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      const dataStr =
+        'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
       const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", "prompt_paul_tools.json");
+      downloadAnchorNode.setAttribute('href', dataStr);
+      downloadAnchorNode.setAttribute('download', 'prompt_paul_tools.json');
       document.body.appendChild(downloadAnchorNode); // Required for Firefox
       downloadAnchorNode.click();
       downloadAnchorNode.remove();
@@ -1394,14 +1585,23 @@ function setupToolHandlers() {
             let existingTools = result.promptPaulTools || [];
             const importedTools = importData.tools;
 
-            importedTools.forEach(importedTool => {
-              const existingIndex = existingTools.findIndex(tool => tool.id === importedTool.id);
+            importedTools.forEach((importedTool) => {
+              const existingIndex = existingTools.findIndex((tool) => tool.id === importedTool.id);
               if (existingIndex > -1) {
                 // Update existing tool
-                existingTools[existingIndex] = { ...existingTools[existingIndex], ...importedTool, lastUpdated: new Date().toISOString() };
+                existingTools[existingIndex] = {
+                  ...existingTools[existingIndex],
+                  ...importedTool,
+                  lastUpdated: new Date().toISOString(),
+                };
               } else {
                 // Add new tool
-                existingTools.push({ ...importedTool, id: importedTool.id || 'tool_' + Date.now(), createdAt: importedTool.createdAt || new Date().toISOString(), lastUpdated: new Date().toISOString() });
+                existingTools.push({
+                  ...importedTool,
+                  id: importedTool.id || 'tool_' + Date.now(),
+                  createdAt: importedTool.createdAt || new Date().toISOString(),
+                  lastUpdated: new Date().toISOString(),
+                });
               }
             });
 
@@ -1435,25 +1635,25 @@ function setupSkillHandlers() {
   function loadSkills() {
     // Load built-in skills first
     const builtInSkillsPromise = fetch(chrome.runtime.getURL('skills/skills.json'))
-      .then(response => response.json())
+      .then((response) => response.json())
       .catch((e) => {
         console.warn('Failed to load built-in skills:', e);
         return [];
       });
 
     // Load custom skills
-    const customSkillsPromise = new Promise(resolve => {
-        chrome.storage.local.get(['customSkills'], (result) => {
-            resolve(result.customSkills || []);
-        });
+    const customSkillsPromise = new Promise((resolve) => {
+      chrome.storage.local.get(['customSkills'], (result) => {
+        resolve(result.customSkills || []);
+      });
     });
 
     Promise.all([builtInSkillsPromise, customSkillsPromise]).then(([builtIn, custom]) => {
       const skillsMap = new Map();
       // Built-in first
-      builtIn.forEach(s => skillsMap.set(s.name, { ...s, source: 'Built-in' }));
+      builtIn.forEach((s) => skillsMap.set(s.name, { ...s, source: 'Built-in' }));
       // Custom overrides built-in (or adds new)
-      custom.forEach(s => {
+      custom.forEach((s) => {
         let description = s.description || '';
 
         if (typeof s.skillMd === 'string') {
@@ -1471,90 +1671,93 @@ function setupSkillHandlers() {
       const skills = Array.from(skillsMap.values());
       const tableBody = document.querySelector('#skillsTable tbody');
       if (tableBody) {
-          tableBody.innerHTML = '';
+        tableBody.innerHTML = '';
 
-          skills.forEach(skill => {
-            const row = document.createElement('tr');
-            const isCustom = skill.source === 'Custom';
-            const actions = isCustom ?
-                `<button class="edit-skill-btn" data-name="${skill.name}">Edit</button>
-                 <button class="delete-skill-btn" data-name="${skill.name}">Delete</button>` :
-                `<span class="text-muted" style="color: grey; font-style: italic;">Built-in (Read-only)</span>`;
+        skills.forEach((skill) => {
+          const row = document.createElement('tr');
+          const isCustom = skill.source === 'Custom';
+          const actions = isCustom
+            ? `<button class="edit-skill-btn" data-name="${skill.name}">Edit</button>
+                 <button class="delete-skill-btn" data-name="${skill.name}">Delete</button>`
+            : `<span class="text-muted" style="color: grey; font-style: italic;">Built-in (Read-only)</span>`;
 
-            row.innerHTML = `
+          row.innerHTML = `
               <td data-label="Name">${skill.name}</td>
               <td data-label="Description">${skill.description}</td>
               <td data-label="Source">${skill.source}</td>
               <td data-label="Actions">${actions}</td>
             `;
-            tableBody.appendChild(row);
-          });
+          tableBody.appendChild(row);
+        });
       }
 
       // Add edit/delete handlers
-      document.querySelectorAll('.edit-skill-btn').forEach(btn => {
+      document.querySelectorAll('.edit-skill-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
-            const skillName = e.target.dataset.name;
-            const skill = custom.find(s => s.name === skillName);
-            if (skill) {
-                document.getElementById('skillName').value = skill.name;
-                document.getElementById('skillName').disabled = true; // Cannot change ID of existing skill
-                
-                // Parse canonical SKILL.md format if available, else use legacy fields
-                if (skill.skillMd) {
-                    const parsed = parseSkillMarkdown(skill.skillMd);
-                    if (parsed.valid) {
-                        document.getElementById('skillDescription').value = parsed.metadata.description;
-                        document.getElementById('skillContent').value = parsed.instructions;
-                        
-                        // Optional fields
-                        const versionInput = document.getElementById('skillVersion');
-                        const triggersInput = document.getElementById('skillTriggers');
-                        const tagsInput = document.getElementById('skillTags');
-                        const licenseInput = document.getElementById('skillLicense');
-                        const compatibilityInput = document.getElementById('skillCompatibility');
-                        const allowedToolsInput = document.getElementById('skillAllowedTools');
-                        const metadataInput = document.getElementById('skillMetadata');
-                        
-                        if (versionInput) versionInput.value = parsed.metadata.version || '1.0.0';
-                        if (triggersInput) triggersInput.value = (parsed.metadata.triggers || []).join(', ');
-                        if (tagsInput) tagsInput.value = (parsed.metadata.tags || []).join(', ');
-                        if (licenseInput) licenseInput.value = parsed.metadata.license || '';
-                        if (compatibilityInput) compatibilityInput.value = parsed.metadata.compatibility || '';
-                        if (allowedToolsInput) allowedToolsInput.value = parsed.metadata['allowed-tools'] || '';
-                        if (metadataInput) {
-                            metadataInput.value = parsed.metadata.metadata
-                                ? JSON.stringify(parsed.metadata.metadata, null, 2)
-                                : '';
-                        }
-                    } else {
-                        // Fallback if parsing fails
-                        document.getElementById('skillDescription').value = skill.description || '';
-                        document.getElementById('skillContent').value = skill.content || '';
-                    }
-                } else {
-                    // Legacy format
-                    document.getElementById('skillDescription').value = skill.description || '';
-                    document.getElementById('skillContent').value = skill.content || '';
+          const skillName = e.target.dataset.name;
+          const skill = custom.find((s) => s.name === skillName);
+          if (skill) {
+            document.getElementById('skillName').value = skill.name;
+            document.getElementById('skillName').disabled = true; // Cannot change ID of existing skill
+
+            // Parse canonical SKILL.md format if available, else use legacy fields
+            if (skill.skillMd) {
+              const parsed = parseSkillMarkdown(skill.skillMd);
+              if (parsed.valid) {
+                document.getElementById('skillDescription').value = parsed.metadata.description;
+                document.getElementById('skillContent').value = parsed.instructions;
+
+                // Optional fields
+                const versionInput = document.getElementById('skillVersion');
+                const triggersInput = document.getElementById('skillTriggers');
+                const tagsInput = document.getElementById('skillTags');
+                const licenseInput = document.getElementById('skillLicense');
+                const compatibilityInput = document.getElementById('skillCompatibility');
+                const allowedToolsInput = document.getElementById('skillAllowedTools');
+                const metadataInput = document.getElementById('skillMetadata');
+
+                if (versionInput) versionInput.value = parsed.metadata.version || '1.0.0';
+                if (triggersInput)
+                  triggersInput.value = (parsed.metadata.triggers || []).join(', ');
+                if (tagsInput) tagsInput.value = (parsed.metadata.tags || []).join(', ');
+                if (licenseInput) licenseInput.value = parsed.metadata.license || '';
+                if (compatibilityInput)
+                  compatibilityInput.value = parsed.metadata.compatibility || '';
+                if (allowedToolsInput)
+                  allowedToolsInput.value = parsed.metadata['allowed-tools'] || '';
+                if (metadataInput) {
+                  metadataInput.value = parsed.metadata.metadata
+                    ? JSON.stringify(parsed.metadata.metadata, null, 2)
+                    : '';
                 }
+              } else {
+                // Fallback if parsing fails
+                document.getElementById('skillDescription').value = skill.description || '';
+                document.getElementById('skillContent').value = skill.content || '';
+              }
+            } else {
+              // Legacy format
+              document.getElementById('skillDescription').value = skill.description || '';
+              document.getElementById('skillContent').value = skill.content || '';
             }
+          }
         });
       });
 
-      document.querySelectorAll('.delete-skill-btn').forEach(btn => {
+      document.querySelectorAll('.delete-skill-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
-            const skillName = e.target.dataset.name;
-            if (confirm(`Delete skill '${skillName}'?`)) {
-                chrome.storage.local.get(['customSkills'], (result) => {
-                    let customSkills = result.customSkills || [];
-                    customSkills = customSkills.filter(s => s.name !== skillName);
-                    chrome.storage.local.set({ customSkills }, () => {
-                        showStatus('Skill deleted.');
-                        loadSkills();
-                        clearSkillForm();
-                    });
-                });
-            }
+          const skillName = e.target.dataset.name;
+          if (confirm(`Delete skill '${skillName}'?`)) {
+            chrome.storage.local.get(['customSkills'], (result) => {
+              let customSkills = result.customSkills || [];
+              customSkills = customSkills.filter((s) => s.name !== skillName);
+              chrome.storage.local.set({ customSkills }, () => {
+                showStatus('Skill deleted.');
+                loadSkills();
+                clearSkillForm();
+              });
+            });
+          }
         });
       });
     });
@@ -1567,7 +1770,7 @@ function setupSkillHandlers() {
       const name = nameInput.value.trim();
       const description = document.getElementById('skillDescription').value.trim();
       const content = document.getElementById('skillContent').value.trim();
-      
+
       // Optional fields (Agent Skills spec)
       const licenseInput = document.getElementById('skillLicense');
       const compatibilityInput = document.getElementById('skillCompatibility');
@@ -1579,7 +1782,9 @@ function setupSkillHandlers() {
       const compatibility = compatibilityInput ? compatibilityInput.value.trim() : '';
       const allowedTools = allowedToolsInput ? allowedToolsInput.value.trim() : '';
       const userInvocable = userInvocableInput ? userInvocableInput.checked : true;
-      const disableModelInvocation = disableModelInvocationInput ? disableModelInvocationInput.checked : false;
+      const disableModelInvocation = disableModelInvocationInput
+        ? disableModelInvocationInput.checked
+        : false;
 
       let customMetadata = null;
       const metadataInput = document.getElementById('skillMetadata');
@@ -1590,7 +1795,11 @@ function setupSkillHandlers() {
         }
 
         const parsedMetadata = JSON.parse(metadataInput.value.trim());
-        if (!parsedMetadata || typeof parsedMetadata !== 'object' || Array.isArray(parsedMetadata)) {
+        if (
+          !parsedMetadata ||
+          typeof parsedMetadata !== 'object' ||
+          Array.isArray(parsedMetadata)
+        ) {
           showStatus('Metadata must be a JSON object.', true);
           return;
         }
@@ -1610,7 +1819,7 @@ function setupSkillHandlers() {
         ...(allowedTools ? { 'allowed-tools': allowedTools } : {}),
         ...(customMetadata ? { metadata: customMetadata } : {}),
         'user-invocable': userInvocable,
-        'disable-model-invocation': disableModelInvocation
+        'disable-model-invocation': disableModelInvocation,
       });
 
       if (!validation.valid) {
@@ -1629,33 +1838,33 @@ function setupSkillHandlers() {
           ...(allowedTools ? { allowedTools } : {}),
           ...(customMetadata ? { metadata: customMetadata } : {}),
           userInvocable,
-          disableModelInvocation
-        }
+          disableModelInvocation,
+        },
       });
 
       chrome.storage.local.get(['customSkills'], (result) => {
         let customSkills = result.customSkills || [];
         // Check if updating
-        const existingIndex = customSkills.findIndex(s => s.name === name);
-        
+        const existingIndex = customSkills.findIndex((s) => s.name === name);
+
         // Store in canonical format with skillMd field
-        const newSkill = { 
-          name, 
+        const newSkill = {
+          name,
           skillMd,
-          lastUpdated: new Date().toISOString() 
+          lastUpdated: new Date().toISOString(),
         };
 
         if (existingIndex > -1) {
-            customSkills[existingIndex] = newSkill;
-            showStatus('Skill updated.');
+          customSkills[existingIndex] = newSkill;
+          showStatus('Skill updated.');
         } else {
-            customSkills.push(newSkill);
-            showStatus('Skill added.');
+          customSkills.push(newSkill);
+          showStatus('Skill added.');
         }
 
         chrome.storage.local.set({ customSkills }, () => {
-            loadSkills();
-            clearSkillForm();
+          loadSkills();
+          clearSkillForm();
         });
       });
     });
@@ -1669,8 +1878,8 @@ function setupSkillHandlers() {
   function clearSkillForm() {
     const nameInput = document.getElementById('skillName');
     if (nameInput) {
-        nameInput.value = '';
-        nameInput.disabled = false;
+      nameInput.value = '';
+      nameInput.disabled = false;
     }
     const descInput = document.getElementById('skillDescription');
     if (descInput) descInput.value = '';
@@ -1684,17 +1893,17 @@ function setupSkillHandlers() {
       'skillLicense',
       'skillCompatibility',
       'skillAllowedTools',
-      'skillMetadata'
+      'skillMetadata',
     ];
-    optionalInputs.forEach(id => {
+    optionalInputs.forEach((id) => {
       const input = document.getElementById(id);
       if (input) input.value = '';
     });
-    
+
     // Reset checkbox fields
     const userInvocableInput = document.getElementById('skillUserInvocable');
     if (userInvocableInput) userInvocableInput.checked = true;
-    
+
     const disableModelInvocationInput = document.getElementById('skillDisableModelInvocation');
     if (disableModelInvocationInput) disableModelInvocationInput.checked = false;
 
@@ -1704,123 +1913,130 @@ function setupSkillHandlers() {
   // Export skills handler - v2 format with canonical SKILL.md
   const exportBtn = document.getElementById('exportSkills');
   if (exportBtn) {
-      exportBtn.addEventListener('click', () => {
-        chrome.storage.local.get(['customSkills'], (result) => {
-            const customSkills = result.customSkills || [];
-            // v2 format with spec version
-            const exportData = {
-                version: '2.0',
-                spec: 'agentskills.io',
-                exportedAt: new Date().toISOString(),
-                skills: customSkills
-            };
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", "prompt_paul_skills.json");
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
-        });
+    exportBtn.addEventListener('click', () => {
+      chrome.storage.local.get(['customSkills'], (result) => {
+        const customSkills = result.customSkills || [];
+        // v2 format with spec version
+        const exportData = {
+          version: '2.0',
+          spec: 'agentskills.io',
+          exportedAt: new Date().toISOString(),
+          skills: customSkills,
+        };
+        const dataStr =
+          'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportData, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute('href', dataStr);
+        downloadAnchorNode.setAttribute('download', 'prompt_paul_skills.json');
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
       });
+    });
   }
 
   // Import skills handler - supports both v1 (legacy) and v2 (canonical) formats
   const importBtn = document.getElementById('importSkills');
   if (importBtn) {
-      importBtn.addEventListener('click', () => {
-        document.getElementById('importSkillsFile').click();
-      });
+    importBtn.addEventListener('click', () => {
+      document.getElementById('importSkillsFile').click();
+    });
   }
 
   const importFile = document.getElementById('importSkillsFile');
   if (importFile) {
-      importFile.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const imported = JSON.parse(e.target.result);
-                let skillsToImport = [];
-                
-                // Detect format version
-                if (imported.version === '2.0' && imported.skills) {
-                    // v2 canonical format
-                    skillsToImport = imported.skills;
-                } else if (Array.isArray(imported)) {
-                    // v1 legacy format (array of skills)
-                    skillsToImport = imported;
-                } else {
-                    showStatus('Invalid skill file format. Expected v2 object or v1 array.', true);
-                    return;
-                }
-                
-                chrome.storage.local.get(['customSkills'], (result) => {
-                    let customSkills = result.customSkills || [];
-                    let importCount = 0;
-                    let migrateCount = 0;
-                    
-                    let invalidCount = 0;
+    importFile.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          let skillsToImport = [];
 
-                    skillsToImport.forEach(newSkill => {
-                        let canonicalMarkdown = null;
+          // Detect format version
+          if (imported.version === '2.0' && imported.skills) {
+            // v2 canonical format
+            skillsToImport = imported.skills;
+          } else if (Array.isArray(imported)) {
+            // v1 legacy format (array of skills)
+            skillsToImport = imported;
+          } else {
+            showStatus('Invalid skill file format. Expected v2 object or v1 array.', true);
+            return;
+          }
 
-                        if (typeof newSkill.skillMd === 'string' && newSkill.skillMd.trim() !== '') {
-                            canonicalMarkdown = newSkill.skillMd;
-                        } else if (newSkill.name && newSkill.description && (newSkill.content || newSkill.instructions)) {
-                            canonicalMarkdown = generateSkillMarkdown({
-                                name: newSkill.name,
-                                description: newSkill.description,
-                                instructions: newSkill.content || newSkill.instructions,
-                                options: {
-                                    ...(newSkill.license ? { license: newSkill.license } : {}),
-                                    ...(newSkill.compatibility ? { compatibility: newSkill.compatibility } : {}),
-                                    ...(newSkill['allowed-tools'] ? { allowedTools: newSkill['allowed-tools'] } : {}),
-                                    ...(newSkill.metadata ? { metadata: newSkill.metadata } : {})
-                                }
-                            });
-                            migrateCount++;
-                        } else {
-                            invalidCount++;
-                            return;
-                        }
+          chrome.storage.local.get(['customSkills'], (result) => {
+            let customSkills = result.customSkills || [];
+            let importCount = 0;
+            let migrateCount = 0;
 
-                        const parsed = parseSkillMarkdown(canonicalMarkdown);
-                        if (!parsed.valid) {
-                            invalidCount++;
-                            return;
-                        }
+            let invalidCount = 0;
 
-                        const skillToSave = {
-                            name: parsed.metadata.name,
-                            skillMd: canonicalMarkdown,
-                            lastUpdated: newSkill.lastUpdated || new Date().toISOString()
-                        };
+            skillsToImport.forEach((newSkill) => {
+              let canonicalMarkdown = null;
 
-                        const idx = customSkills.findIndex(s => s.name === skillToSave.name);
-                        if (idx > -1) {
-                            customSkills[idx] = skillToSave;
-                        } else {
-                            customSkills.push(skillToSave);
-                        }
-                        importCount++;
-                    });
-                    
-                    chrome.storage.local.set({ customSkills }, () => {
-                        const migrateMsg = migrateCount > 0 ? ` (${migrateCount} migrated from legacy)` : '';
-                        const invalidMsg = invalidCount > 0 ? ` (${invalidCount} skipped as invalid)` : '';
-                        showStatus(`Imported ${importCount} skills${migrateMsg}${invalidMsg}.`);
-                        loadSkills();
-                    });
+              if (typeof newSkill.skillMd === 'string' && newSkill.skillMd.trim() !== '') {
+                canonicalMarkdown = newSkill.skillMd;
+              } else if (
+                newSkill.name &&
+                newSkill.description &&
+                (newSkill.content || newSkill.instructions)
+              ) {
+                canonicalMarkdown = generateSkillMarkdown({
+                  name: newSkill.name,
+                  description: newSkill.description,
+                  instructions: newSkill.content || newSkill.instructions,
+                  options: {
+                    ...(newSkill.license ? { license: newSkill.license } : {}),
+                    ...(newSkill.compatibility ? { compatibility: newSkill.compatibility } : {}),
+                    ...(newSkill['allowed-tools']
+                      ? { allowedTools: newSkill['allowed-tools'] }
+                      : {}),
+                    ...(newSkill.metadata ? { metadata: newSkill.metadata } : {}),
+                  },
                 });
-            } catch (err) {
-                console.error(err);
-                showStatus('Error parsing skill file.', true);
-            }
-        };
-        reader.readAsText(file);
-      });
+                migrateCount++;
+              } else {
+                invalidCount++;
+                return;
+              }
+
+              const parsed = parseSkillMarkdown(canonicalMarkdown);
+              if (!parsed.valid) {
+                invalidCount++;
+                return;
+              }
+
+              const skillToSave = {
+                name: parsed.metadata.name,
+                skillMd: canonicalMarkdown,
+                lastUpdated: newSkill.lastUpdated || new Date().toISOString(),
+              };
+
+              const idx = customSkills.findIndex((s) => s.name === skillToSave.name);
+              if (idx > -1) {
+                customSkills[idx] = skillToSave;
+              } else {
+                customSkills.push(skillToSave);
+              }
+              importCount++;
+            });
+
+            chrome.storage.local.set({ customSkills }, () => {
+              const migrateMsg = migrateCount > 0 ? ` (${migrateCount} migrated from legacy)` : '';
+              const invalidMsg = invalidCount > 0 ? ` (${invalidCount} skipped as invalid)` : '';
+              showStatus(`Imported ${importCount} skills${migrateMsg}${invalidMsg}.`);
+              loadSkills();
+            });
+          });
+        } catch (err) {
+          console.error(err);
+          showStatus('Error parsing skill file.', true);
+        }
+      };
+      reader.readAsText(file);
+    });
   }
 
   // Skills.sh Import Handler
@@ -1837,10 +2053,7 @@ function setupSkillHandlers() {
     // Helper function to fetch skill from GitHub with multiple path/branch fallback
     async function fetchSkillFromGitHub(owner, repo, skillName) {
       const branches = ['main', 'master'];
-      const pathPatterns = [
-        `skills/${skillName}/SKILL.md`,
-        `${skillName}/SKILL.md`
-      ];
+      const pathPatterns = [`skills/${skillName}/SKILL.md`, `${skillName}/SKILL.md`];
 
       // Try common paths first
       for (const branch of branches) {
@@ -1872,7 +2085,7 @@ function setupSkillHandlers() {
         // Fetch repository tree (recursive)
         const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/main?recursive=1`;
         const treeResponse = await fetch(treeUrl);
-        
+
         if (!treeResponse.ok) {
           // Try master branch if main fails
           const masterTreeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
@@ -1881,7 +2094,7 @@ function setupSkillHandlers() {
           const masterTree = await masterResponse.json();
           return await findSkillInTree(owner, repo, masterTree, skillName, 'master');
         }
-        
+
         const tree = await treeResponse.json();
         return await findSkillInTree(owner, repo, tree, skillName, 'main');
       } catch (e) {
@@ -1892,16 +2105,16 @@ function setupSkillHandlers() {
 
     // Find skill in GitHub tree by parsing SKILL.md files
     async function findSkillInTree(owner, repo, tree, skillName, branch) {
-      const skillMdFiles = tree.tree.filter(item => item.path && item.path.endsWith('SKILL.md'));
-      
+      const skillMdFiles = tree.tree.filter((item) => item.path && item.path.endsWith('SKILL.md'));
+
       for (const file of skillMdFiles) {
         try {
           const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${file.path}`;
           const response = await fetch(rawUrl);
           if (!response.ok) continue;
-          
+
           const content = await response.text();
-          
+
           // Parse frontmatter to get skill name
           const nameMatch = content.match(/^---\s*\n[\s\S]*?name:\s*(.+?)\s*\n/);
           if (nameMatch) {
@@ -1915,7 +2128,7 @@ function setupSkillHandlers() {
           // Continue to next file
         }
       }
-      
+
       return null;
     }
 
@@ -1928,7 +2141,8 @@ function setupSkillHandlers() {
     importBtn.addEventListener('click', async () => {
       const url = urlInput.value.trim();
       if (!url) {
-        statusEl.innerHTML = '<span style="color: var(--ext-destructive);">Please enter a skills.sh URL</span>';
+        statusEl.innerHTML =
+          '<span style="color: var(--ext-destructive);">Please enter a skills.sh URL</span>';
         return;
       }
 
@@ -1936,7 +2150,8 @@ function setupSkillHandlers() {
       // Also support: https://skills.sh/{owner}/{repo}/{skill-name}/
       const urlMatch = url.match(/^https?:\/\/skills\.sh\/([^/]+)\/([^/]+)\/([^/]+)\/?$/);
       if (!urlMatch) {
-        statusEl.innerHTML = '<span style="color: var(--ext-destructive);">Invalid URL format. Use: https://skills.sh/owner/repo/skill-name</span>';
+        statusEl.innerHTML =
+          '<span style="color: var(--ext-destructive);">Invalid URL format. Use: https://skills.sh/owner/repo/skill-name</span>';
         return;
       }
 
@@ -1944,20 +2159,25 @@ function setupSkillHandlers() {
 
       // Show loading state
       importBtn.disabled = true;
-      importBtn.innerHTML = '<span class="material-symbols-outlined sync-spin">sync</span> Importing...';
-      statusEl.innerHTML = '<span style="color: var(--ext-muted-foreground);">Fetching skill from GitHub...</span>';
+      importBtn.innerHTML =
+        '<span class="material-symbols-outlined sync-spin">sync</span> Importing...';
+      statusEl.innerHTML =
+        '<span style="color: var(--ext-muted-foreground);">Fetching skill from GitHub...</span>';
 
       try {
         // Fetch skill with multiple path/branch fallback strategies
         const fetchResult = await fetchSkillFromGitHub(owner, repo, skillName);
-        
+
         if (!fetchResult) {
-          throw new Error(`Skill "${skillName}" not found in ${owner}/${repo}. The skill may be in a different location or use a different name.`);
+          throw new Error(
+            `Skill "${skillName}" not found in ${owner}/${repo}. The skill may be in a different location or use a different name.`
+          );
         }
 
         const { skillMd, url: resolvedUrl } = fetchResult;
-        
-        statusEl.innerHTML = '<span style="color: var(--ext-muted-foreground);">Found skill, saving...</span>';
+
+        statusEl.innerHTML =
+          '<span style="color: var(--ext-muted-foreground);">Found skill, saving...</span>';
 
         // Parse the skill markdown
         const parsed = parseSkillMarkdown(skillMd);
@@ -1966,11 +2186,13 @@ function setupSkillHandlers() {
         }
 
         // Check for duplicate
-        const customSkillsResult = await new Promise(resolve => {
+        const customSkillsResult = await new Promise((resolve) => {
           chrome.storage.local.get(['customSkills'], resolve);
         });
         const existingCustomSkills = customSkillsResult.customSkills || [];
-        const existingIndex = existingCustomSkills.findIndex(s => s.name === parsed.metadata.name);
+        const existingIndex = existingCustomSkills.findIndex(
+          (s) => s.name === parsed.metadata.name
+        );
 
         if (existingIndex > -1) {
           const overwrite = confirm(`Skill '${parsed.metadata.name}' already exists. Overwrite?`);
@@ -1984,7 +2206,7 @@ function setupSkillHandlers() {
         const newSkill = {
           name: parsed.metadata.name,
           skillMd: skillMd,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: new Date().toISOString(),
         };
 
         if (existingIndex > -1) {
@@ -1993,20 +2215,23 @@ function setupSkillHandlers() {
           existingCustomSkills.push(newSkill);
         }
 
-        await new Promise(resolve => {
+        await new Promise((resolve) => {
           chrome.storage.local.set({ customSkills: existingCustomSkills }, resolve);
         });
 
-        statusEl.innerHTML = '<span style="color: #10b981;">✓ Successfully imported "' + parsed.metadata.name + '"</span>';
+        statusEl.innerHTML =
+          '<span style="color: #10b981;">✓ Successfully imported "' +
+          parsed.metadata.name +
+          '"</span>';
         urlInput.value = '';
         loadSkills(); // Reload the skills table
 
         setTimeout(() => {
           statusEl.innerHTML = '';
         }, 3000);
-
       } catch (error) {
-        statusEl.innerHTML = '<span style="color: var(--ext-destructive);">Error: ' + error.message + '</span>';
+        statusEl.innerHTML =
+          '<span style="color: var(--ext-destructive);">Error: ' + error.message + '</span>';
       } finally {
         resetButton();
       }
@@ -2036,92 +2261,96 @@ function setupSkillHandlers() {
  * Setup handlers for the Full Backup & Restore system.
  */
 function setupBackupHandlers() {
-    const exportAllBtn = document.getElementById('exportAllData');
-    const importAllBtn = document.getElementById('importAllDataBtn');
-    const importAllFile = document.getElementById('importAllFile');
+  const exportAllBtn = document.getElementById('exportAllData');
+  const importAllBtn = document.getElementById('importAllDataBtn');
+  const importAllFile = document.getElementById('importAllFile');
 
-    if (exportAllBtn) {
-        exportAllBtn.addEventListener('click', async () => {
-            try {
-                showStatus('Preparing full backup...', false, true);
+  if (exportAllBtn) {
+    exportAllBtn.addEventListener('click', async () => {
+      try {
+        showStatus('Preparing full backup...', false, true);
 
-                const localData = await new Promise(resolve => chrome.storage.local.get(null, resolve));
-                const syncData = await new Promise(resolve => chrome.storage.sync.get(null, resolve));
+        const localData = await new Promise((resolve) => chrome.storage.local.get(null, resolve));
+        const syncData = await new Promise((resolve) => chrome.storage.sync.get(null, resolve));
 
-                const fullBackup = {
-                    version: '1.0',
-                    timestamp: new Date().toISOString(),
-                    local: localData,
-                    sync: syncData
-                };
+        const fullBackup = {
+          version: '1.0',
+          timestamp: new Date().toISOString(),
+          local: localData,
+          sync: syncData,
+        };
 
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(fullBackup, null, 2));
-                const downloadAnchorNode = document.createElement('a');
-                downloadAnchorNode.setAttribute("href", dataStr);
-                const filename = `prompt-paul-backup-${new Date().toISOString().split('T')[0]}.json`;
-                downloadAnchorNode.setAttribute("download", filename);
-                document.body.appendChild(downloadAnchorNode);
-                downloadAnchorNode.click();
-                downloadAnchorNode.remove();
+        const dataStr =
+          'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(fullBackup, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute('href', dataStr);
+        const filename = `prompt-paul-backup-${new Date().toISOString().split('T')[0]}.json`;
+        downloadAnchorNode.setAttribute('download', filename);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
 
-                showStatus('Full backup exported successfully!', false, true);
-            } catch (error) {
-                console.error('Export error:', error);
-                showStatus('Failed to export backup: ' + error.message, true, true);
-            }
-        });
-    }
+        showStatus('Full backup exported successfully!', false, true);
+      } catch (error) {
+        console.error('Export error:', error);
+        showStatus('Failed to export backup: ' + error.message, true, true);
+      }
+    });
+  }
 
-    if (importAllBtn) {
-        importAllBtn.addEventListener('click', () => {
-            importAllFile.click();
-        });
-    }
+  if (importAllBtn) {
+    importAllBtn.addEventListener('click', () => {
+      importAllFile.click();
+    });
+  }
 
-    if (importAllFile) {
-        importAllFile.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
+  if (importAllFile) {
+    importAllFile.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
 
-            if (!confirm('Are you sure you want to restore from this backup? This will overwrite ALL your current settings, profiles, skills, and tools.')) {
-                importAllFile.value = '';
-                return;
-            }
+      if (
+        !confirm(
+          'Are you sure you want to restore from this backup? This will overwrite ALL your current settings, profiles, skills, and tools.'
+        )
+      ) {
+        importAllFile.value = '';
+        return;
+      }
 
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const backup = JSON.parse(e.target.result);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const backup = JSON.parse(e.target.result);
 
-                    if (!backup.local && !backup.sync) {
-                        throw new Error('Invalid backup format: missing storage data.');
-                    }
+          if (!backup.local && !backup.sync) {
+            throw new Error('Invalid backup format: missing storage data.');
+          }
 
-                    showStatus('Restoring data...', false, true);
+          showStatus('Restoring data...', false, true);
 
-                    // Restore local data
-                    if (backup.local) {
-                        await new Promise(resolve => chrome.storage.local.set(backup.local, resolve));
-                    }
+          // Restore local data
+          if (backup.local) {
+            await new Promise((resolve) => chrome.storage.local.set(backup.local, resolve));
+          }
 
-                    // Restore sync data
-                    if (backup.sync) {
-                        await new Promise(resolve => chrome.storage.sync.set(backup.sync, resolve));
-                    }
+          // Restore sync data
+          if (backup.sync) {
+            await new Promise((resolve) => chrome.storage.sync.set(backup.sync, resolve));
+          }
 
-                    showStatus('Restore complete! Reloading...', false, true);
+          showStatus('Restore complete! Reloading...', false, true);
 
-                    // Reload the page to reflect all changes
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-
-                } catch (err) {
-                    console.error('Import error:', err);
-                    showStatus('Failed to import backup: ' + err.message, true, true);
-                }
-            };
-            reader.readAsText(file);
-        });
-    }
+          // Reload the page to reflect all changes
+          setTimeout(() => {
+            window.location.reload();
+          }, 1500);
+        } catch (err) {
+          console.error('Import error:', err);
+          showStatus('Failed to import backup: ' + err.message, true, true);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
 }
