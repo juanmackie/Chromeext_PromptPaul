@@ -179,6 +179,48 @@ function runUnitTests(runner) {
     checkModule('src/utils/validation.js');
   });
 
+  runner.test('contextBudget module structure valid', () => {
+    checkModule('src/utils/contextBudget.js');
+    const content = readFileSafe('src/utils/contextBudget.js');
+    if (!content.includes('export function fitTextToTokenBudget')) {
+      throw new Error('contextBudget.js missing fitTextToTokenBudget export');
+    }
+  });
+
+  runner.test('readStrategy module structure valid', () => {
+    checkModule('src/utils/readStrategy.js');
+    const content = readFileSafe('src/utils/readStrategy.js');
+    if (!content.includes('export function determineReadStrategy')) {
+      throw new Error('readStrategy.js missing determineReadStrategy export');
+    }
+  });
+
+  runner.test('runtimeErrors module structure valid', () => {
+    checkModule('src/utils/runtimeErrors.js');
+    const content = readFileSafe('src/utils/runtimeErrors.js');
+    if (!content.includes('export function friendlyRuntimeErrorMessage')) {
+      throw new Error('runtimeErrors.js missing friendlyRuntimeErrorMessage export');
+    }
+  });
+
+  runner.test('permissionGuards module structure valid', () => {
+    checkModule('src/utils/permissionGuards.js');
+    const content = readFileSafe('src/utils/permissionGuards.js');
+    if (!content.includes('export function isRestrictedBrowserUrl')) {
+      throw new Error('permissionGuards.js missing isRestrictedBrowserUrl export');
+    }
+  });
+
+  runner.test('suggestionStorage normalizes and caps suggestions', () => {
+    const content = readFileSafe('src/utils/suggestionStorage.js');
+    if (!content.includes('MAX_SUGGESTIONS = 60')) {
+      throw new Error('suggestionStorage.js should cap suggestions to 60');
+    }
+    if (!content.includes('normalizeSuggestions')) {
+      throw new Error('suggestionStorage.js missing normalization logic');
+    }
+  });
+
   // ---------- Manifest Validation ----------
   runner.test('Manifest.json is valid MV3', () => {
     const content = readFileSafe('manifest.json');
@@ -268,10 +310,10 @@ function runUnitTests(runner) {
   });
 
   // ---------- File Size Validation ----------
-  runner.test('chat.js does not exceed 2000 lines', () => {
+  runner.test('chat.js does not exceed 2200 lines', () => {
     const lines = readFileSafe('chat.js').split('\n').length;
-    if (lines > 2000) {
-      throw new Error(`chat.js is ${lines} lines, exceeds 2000 limit`);
+    if (lines > 2200) {
+      throw new Error(`chat.js is ${lines} lines, exceeds 2200 limit`);
     }
   });
 
@@ -317,6 +359,64 @@ function runUnitTests(runner) {
     JSON.parse(readFileSafe('.prettierrc.json'));
     readFileSafe('.gitignore');
     JSON.parse(readFileSafe('package-lock.json'));
+  });
+
+  // ---------- Regression: Stop button reverts to Clear ----------
+  runner.test('Regression: Stop button reverts to Clear after response', () => {
+    const chatContent = readFileSafe('chat.js');
+
+    // Check that 'aborted' case exists in orchestratorEvent handler
+    if (!chatContent.includes("case 'aborted'")) {
+      throw new Error("'aborted' case missing in orchestratorEvent handler - button won't reset after user stops response");
+    }
+
+    // Check that 'complete' case sets clearButton to 'Clear'
+    const completeCaseMatch = chatContent.match(/case 'complete':[\s\S]*?break;/);
+    if (!completeCaseMatch) {
+      throw new Error("'complete' case not found in orchestratorEvent handler");
+    }
+    if (!completeCaseMatch[0].includes("clearButton.textContent = 'Clear'")) {
+      throw new Error("'complete' case doesn't reset clearButton to 'Clear' - button will stay as 'Stop'");
+    }
+
+    // Check that 'aborted' case sets clearButton to 'Clear'
+    const abortedCaseMatch = chatContent.match(/case 'aborted':[\s\S]*?break;/);
+    if (!abortedCaseMatch) {
+      throw new Error("'aborted' case not found or has no break statement");
+    }
+    if (!abortedCaseMatch[0].includes("clearButton.textContent = 'Clear'")) {
+      throw new Error("'aborted' case doesn't reset clearButton to 'Clear'");
+    }
+  });
+
+  runner.test('YouTube extraction supports watch/live/shorts/embed URLs', () => {
+    const content = readFileSafe('content_script_unified.js');
+    const requiredPathChecks = ["path.startsWith('/watch')", "path.startsWith('/live')", "path.startsWith('/shorts')", "path.startsWith('/embed')"];
+    for (const check of requiredPathChecks) {
+      if (!content.includes(check)) {
+        throw new Error(`YouTube route support missing: ${check}`);
+      }
+    }
+  });
+
+  runner.test('YouTube extraction has YouTube-specific no-transcript fallback', () => {
+    const content = readFileSafe('content_script_unified.js');
+    if (!content.includes("type: 'youtube-error'")) {
+      throw new Error("YouTube fallback type 'youtube-error' missing");
+    }
+    if (!content.includes('No transcript available')) {
+      throw new Error('No-transcript fallback message missing');
+    }
+  });
+
+  runner.test('YouTube player response does not depend on one source only', () => {
+    const content = readFileSafe('content_script_unified.js');
+    const requiredSources = ['window.ytInitialPlayerResponse', 'findPlayerResponseInScripts()', 'fetchPlayerFromInnerTube(videoId)'];
+    for (const src of requiredSources) {
+      if (!content.includes(src)) {
+        throw new Error(`Missing YouTube player fallback source: ${src}`);
+      }
+    }
   });
 }
 

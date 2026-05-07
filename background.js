@@ -13,6 +13,8 @@
 
 import { isValidURL } from './src/utils/validation.js';
 import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
+import { getCurrentPageSupport } from './src/utils/permissionGuards.js';
+import { classifyRuntimeMessageError, friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
 import {
   buildToolChoicePayload,
   formatToolsForLlm,
@@ -620,6 +622,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       casual: 'Make the following content more casual and fun',
       analyze:
         'Please analyze the following content. Describe what you see and provide any relevant insights.',
+      proofread: 'Proofread the following text for spelling, grammar, punctuation, and clarity issues. Fix all errors and return the corrected text followed by a brief bullet list of changes made.',
     };
 
     if (commandMap[info.menuItemId]) {
@@ -1089,6 +1092,7 @@ async function createAllMenus(instructions = []) {
     { id: 'shorten', title: '✂️ Shorten' },
     { id: 'formal', title: '💼 Formal' },
     { id: 'casual', title: '🤙 Casual' },
+    { id: 'proofread', title: '✅ Proof Read' },
   ];
 
   for (const child of promptPaulChildren) {
@@ -1275,53 +1279,75 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 // Unified extraction function to avoid circular messaging and redundant injections
 async function executeTabContentExtraction(tabId) {
   return new Promise((resolve) => {
-    const timeoutId = setTimeout(() => {
-      resolve({ success: false, error: 'Extraction timed out' });
-    }, 15000);
-
-    chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (response) => {
-      clearTimeout(timeoutId);
-      if (chrome.runtime.lastError) {
-        console.warn(
-          'Background: Tab message failed (script might not be loaded):',
-          chrome.runtime.lastError.message
-        );
-        // Fallback: only inject if needed
-        chrome.scripting.executeScript(
-          {
-            target: { tabId: tabId },
-            files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
-          },
-          (results) => {
-            if (chrome.runtime.lastError) {
-              resolve({
-                success: false,
-                error: 'Injection failed: ' + chrome.runtime.lastError.message,
-              });
-            } else {
-              // Try messaging again after injection
-              chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
-                if (chrome.runtime.lastError) {
-                  resolve({
-                    success: false,
-                    error: 'Message failed after injection: ' + chrome.runtime.lastError.message,
-                  });
-                } else {
-                  resolve(res || { success: false, error: 'Empty response after injection' });
-                }
-              });
-            }
-          }
-        );
-      } else {
-        resolve(response || { success: false, error: 'Empty response from content script' });
+    chrome.tabs.get(tabId, (tab) => {
+      const support = getCurrentPageSupport(tab?.url);
+      if (!support.available) {
+        resolve({ success: false, error: support.blockedReason, readStrategy: 'auto' });
+        return;
       }
+
+      const timeoutId = setTimeout(() => {
+        resolve({ success: false, error: 'Extraction timed out', readStrategy: 'auto' });
+      }, 15000);
+
+      chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (response) => {
+        clearTimeout(timeoutId);
+        if (chrome.runtime.lastError) {
+          const runtimeError = chrome.runtime.lastError.message;
+          const errorKind = classifyRuntimeMessageError(runtimeError);
+          console.warn('Background: Tab message failed (script might not be loaded):', runtimeError);
+          // Fallback: only inject if needed
+          chrome.scripting.executeScript(
+            {
+              target: { tabId: tabId },
+              files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+            },
+            () => {
+              if (chrome.runtime.lastError) {
+                resolve({
+                  success: false,
+                  error: friendlyRuntimeErrorMessage(runtimeError),
+                  errorKind,
+                  readStrategy: 'auto',
+                });
+              } else {
+                // Try messaging again after injection
+                chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
+                  if (chrome.runtime.lastError) {
+                    resolve({
+                      success: false,
+                      error: friendlyRuntimeErrorMessage(chrome.runtime.lastError.message),
+                      errorKind: classifyRuntimeMessageError(chrome.runtime.lastError.message),
+                      readStrategy: 'auto',
+                    });
+                  } else {
+                    resolve(res || { success: false, error: 'Empty response after injection', readStrategy: 'auto' });
+                  }
+                });
+              }
+            }
+          );
+        } else {
+          resolve(response || { success: false, error: 'Empty response from content script', readStrategy: 'auto' });
+        }
+      });
     });
   });
 }
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'captureScreenshot') {
+    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 70 }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ dataUrl });
+      }
+    });
+    return true;
+  }
+
   if (request.action === 'getLoadContent') {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       if (tabs && tabs[0] && tabs[0].id) {
@@ -1336,6 +1362,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           excerpt: result.excerpt,
           lang: result.lang,
           url: result.url,
+          platform: result.platform || null,
+          platformInfo: result.platformInfo || null,
+          readStrategy: result.readStrategy || 'auto',
+          screenshot: result.screenshot || null,
           error: result.error,
         });
       } else {
@@ -1363,6 +1393,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           excerpt: result.excerpt,
           lang: result.lang,
           url: result.url,
+          platform: result.platform || null,
+          platformInfo: result.platformInfo || null,
+          readStrategy: result.readStrategy || 'auto',
+          screenshot: result.screenshot || null,
           error: result.error,
         });
       });
@@ -1380,6 +1414,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             excerpt: result.excerpt,
             lang: result.lang,
             url: result.url,
+            platform: result.platform || null,
+            platformInfo: result.platformInfo || null,
+            readStrategy: result.readStrategy || 'auto',
+            screenshot: result.screenshot || null,
             error: result.error,
           });
         } else {

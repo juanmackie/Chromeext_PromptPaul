@@ -40,7 +40,7 @@ Prompt Paul is a Chrome extension (Manifest V3) that provides AI-powered text pr
 The chat interface has been modularized into focused modules:
 
 ```
-chat.js (1484 lines) - Main entry point
+chat.js (1929 lines) - Main entry point
 ├── State management (selectedText, tabId, etc.)
 ├── Event listeners (submit, clear, etc.)
 ├── Preset management
@@ -52,7 +52,8 @@ src/chat/
 ├── ChatSkills.js  (179 lines) - Skill detection & command parsing
 ├── ChatVoice.js   (367 lines) - Voice input & speech recognition
 ├── ChatMedia.js   (157 lines) - Media data processing & analysis
-└── ChatStream.js  (230 lines) - Streaming state management
+├── ChatStream.js  (230 lines) - Streaming state management
+└── ChatPageActions.js (new) - Preset analysis, action cards, and page quick actions
 ```
 
 ### Module Responsibilities
@@ -108,6 +109,14 @@ src/chat/
 #### Tool Choice Builder (`src/utils/toolChoiceBuilder.js`)
 - Builds `tool_choice` payloads for LLM API requests
 - Supports `auto`, `none`, `required`, and specific tool selection
+
+#### Context and Guard Utilities (`src/utils/*.js`)
+- `contextBudget.js` estimates token budgets and truncates loaded page content to safe context sizes
+- `readStrategy.js` picks `dom`, `vision`, or `hybrid` extraction based on page shape signals
+- `permissionGuards.js` blocks unsupported browser URLs early with clear reasons
+- `runtimeErrors.js` maps Chrome runtime errors to user-friendly messages
+- `actionCards.js` generates platform-aware quick action prompts (for example YouTube, GitHub, Gmail)
+- `suggestionStorage.js` stores site suggestions with normalization and deduplication
 
 ### Data Flow
 
@@ -165,6 +174,7 @@ chat.js
   ├── themeUtils.js
   ├── loadingManager.js
   ├── src/utils/toolChoiceBuilder.js
+  ├── src/chat/ChatPageActions.js
   ├── src/chat/ChatUI.js
   ├── src/chat/ChatAPI.js
   │     └── src/orchestrator/RunOrchestrator.js
@@ -174,6 +184,10 @@ chat.js
   ├── src/chat/ChatVoice.js
   ├── src/chat/ChatMedia.js
   └── src/chat/ChatStream.js
+  ├── src/utils/contextBudget.js
+  ├── src/utils/runtimeErrors.js
+  ├── src/utils/permissionGuards.js
+  └── src/utils/actionCards.js
 ```
 
 ## State Management

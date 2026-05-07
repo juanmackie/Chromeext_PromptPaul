@@ -4,13 +4,15 @@
  * Responsibilities:
  * - Streaming UI state management
  * - API call state tracking
- * - Conversation history management
+ * - Conversation history management (in-memory, per side-panel instance)
  *
  * @module ChatStream
  */
 
 /**
- * Stream state manager - tracks streaming and API call state
+ * Stream state manager - tracks streaming and API call state.
+ * Each side panel instance owns its own in-memory state; Chrome destroys
+ * the panel page on tab switch, so no cross-tab persistence is needed.
  */
 export class StreamStateManager {
   constructor() {
@@ -21,13 +23,54 @@ export class StreamStateManager {
     this.accumulatedStreamedText = '';
     this.activeStreamingToolCall = null;
 
+    // Streaming render buffer — accumulates deltas and flushes at 60fps
+    this._renderBuffer = '';
+    this._renderQueued = false;
+    this._lastScrollTop = 0;
+    this._chatAreaRef = null;
+
     // API call state
     this.currentRunId = null;
     this.currentSourceTabId = null;
     this.currentMediaData = null;
 
-    // Conversation history
     this.conversationHistory = [];
+  }
+
+  /**
+   * Set a reference to the chat area element for scroll handling.
+   * @param {HTMLElement} element
+   */
+  setChatAreaRef(element) {
+    this._chatAreaRef = element;
+  }
+
+  /**
+   * Queue a content delta for batched rendering via requestAnimationFrame.
+   * Multiple deltas within a 16ms frame are coalesced into a single DOM write.
+   * @param {string} delta
+   */
+  queueRenderChunk(delta) {
+    this._renderBuffer += delta;
+    if (!this._renderQueued) {
+      this._renderQueued = true;
+      requestAnimationFrame(() => this._flushRender());
+    }
+  }
+
+  _flushRender() {
+    this._renderQueued = false;
+    const el = this.currentStreamingContentElement;
+    if (!el || !this._renderBuffer) return;
+
+    this.accumulatedStreamedText += this._renderBuffer;
+    this._renderBuffer = '';
+    el.innerHTML = typeof marked !== 'undefined' && marked.parse
+      ? marked.parse(this.accumulatedStreamedText)
+      : this.accumulatedStreamedText;
+    if (this._chatAreaRef) {
+      this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
+    }
   }
 
   /**
@@ -39,6 +82,8 @@ export class StreamStateManager {
     this.currentStreamingUniqueId = null;
     this.accumulatedStreamedText = '';
     this.activeStreamingToolCall = null;
+    this._renderBuffer = '';
+    this._renderQueued = false;
   }
 
   /**
@@ -51,7 +96,7 @@ export class StreamStateManager {
   }
 
   /**
-   * Reset all state
+   * Reset all state.
    */
   resetAll() {
     this.resetStreamingState();
@@ -174,7 +219,7 @@ export class StreamStateManager {
   }
 
   /**
-   * Set current media data
+   * Set current media data.
    * @param {Object} mediaData - Media data object
    */
   setMediaData(mediaData) {
@@ -190,14 +235,14 @@ export class StreamStateManager {
   }
 
   /**
-   * Clear current media data
+   * Clear current media data.
    */
   clearMediaData() {
     this.currentMediaData = null;
   }
 
   /**
-   * Add message to conversation history
+   * Add message to conversation history.
    * @param {Object} message - Message object { role, content }
    */
   addMessageToHistory(message) {
@@ -213,14 +258,14 @@ export class StreamStateManager {
   }
 
   /**
-   * Clear conversation history
+   * Clear conversation history.
    */
   clearHistory() {
     this.conversationHistory = [];
   }
 
   /**
-   * Set conversation history
+   * Set conversation history.
    * @param {Array} history - Conversation history
    */
   setConversationHistory(history) {

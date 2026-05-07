@@ -10,39 +10,38 @@
     <link rel="stylesheet" href="libs/highlight-github.min.css" id="highlight-theme" />
   </head>
   <body>
-    <div id="quick-actions-sidebar">
-      <!-- Static actions -->
-      <button id="add-page-button" class="quick-action-button" title="Add page content to chat">
-        <span class="material-icons">article</span>
-      </button>
-      <button id="analyze-button" class="quick-action-button" title="Analyze this tab">
-        <span class="material-icons">auto_awesome</span>
-      </button>
-      <button id="analyze-dropdown" class="quick-action-button" title="Choose analysis mode">
-        <span class="material-icons">arrow_drop_down</span>
-      </button>
-      <button id="explain-button" class="quick-action-button" title="Explain this tab">
-        <span class="material-icons">help_outline</span>
-      </button>
-      <!-- Custom prompts dropdown -->
-      <button id="custom-prompts-dropdown" class="quick-action-button" title="All Custom Prompts">
-        <span class="material-icons">more_horiz</span>
-      </button>
-      <!-- Pinned instructions will be added here by chat.js -->
-      <div id="pinned-actions-container"></div>
-    </div>
-    <div style="position: absolute; top: 10px; right: 20px; z-index: 200">
-      <label style="font-size: 0.95em; cursor: pointer; display: flex; align-items: center">
-        <input type="checkbox" id="darkThemeToggle" />
-        <span
-          id="darkThemeIcon"
-          style="margin-right: 4px; font-size: 1.2em; vertical-align: middle"
-          class="material-icons"
-          >brightness_2</span
-        >
-        Dark/Light Theme
-      </label>
-    </div>
+<div id="quick-actions-sidebar">
+  <!-- Theme toggle: first in sidebar (top-right area) -->
+  <button id="themeToggleBtn" class="quick-action-button" title="Toggle dark theme">
+    <span class="material-icons" id="darkThemeIcon">brightness_2</span>
+    <span class="sidebar-label">Theme</span>
+  </button>
+  <input type="checkbox" id="darkThemeToggle" style="display: none;" />
+  <!-- Static actions with text labels -->
+  <button id="add-page-button" class="quick-action-button" title="Add page content to chat">
+    <span class="material-icons">article</span>
+    <span class="sidebar-label">Page</span>
+  </button>
+  <button id="analyze-button" class="quick-action-button" title="Analyze this tab">
+    <span class="material-icons">auto_awesome</span>
+    <span class="sidebar-label">Analyze</span>
+  </button>
+  <button id="analyze-dropdown" class="quick-action-button" title="Choose analysis mode">
+    <span class="material-icons">arrow_drop_down</span>
+    <span class="sidebar-label">Mode</span>
+  </button>
+  <button id="explain-button" class="quick-action-button" title="Explain this tab">
+    <span class="material-icons">help_outline</span>
+    <span class="sidebar-label">Explain</span>
+  </button>
+  <!-- Custom prompts dropdown -->
+  <button id="custom-prompts-dropdown" class="quick-action-button" title="All Custom Prompts">
+    <span class="material-icons">more_horiz</span>
+    <span class="sidebar-label">Prompts</span>
+  </button>
+  <!-- Pinned instructions will be added here by chat.js -->
+  <div id="pinned-actions-container"></div>
+</div>
     <!-- Drag & Drop overlay -->
     <div id="drop-overlay" class="drop-overlay" style="display: none">
       <div class="drop-overlay-content">
@@ -86,5 +85,6 @@
     <script src="libs/highlight.min.js"></script>
     <script src="marked.min.js"></script>
     <script type="module" src="chat.js"></script>
+    <script src="theme-toggle.js"></script>
   </body>
 </html>

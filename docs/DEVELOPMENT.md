@@ -48,10 +48,17 @@ prompt-paul/
 │   │   ├── ChatSkills.js      # Skill detection
 │   │   ├── ChatVoice.js       # Voice input
 │   │   ├── ChatMedia.js       # Media processing
-│   │   └── ChatStream.js      # Streaming state
+│   │   ├── ChatStream.js      # Streaming state
+│   │   └── ChatPageActions.js # Preset analysis and page action cards
 │   ├── orchestrator/
 │   │   └── RunOrchestrator.js # LLM API run management
 │   └── utils/
+│       ├── actionCards.js     # Page-aware quick actions
+│       ├── contextBudget.js   # Token budgeting helpers
+│       ├── permissionGuards.js # Restricted page checks
+│       ├── readStrategy.js    # DOM/vision/hybrid selection
+│       ├── runtimeErrors.js    # Chrome/runtime error mapping
+│       ├── suggestionStorage.js # Site suggestion persistence
 │       ├── skillParser.js     # SKILL.md parsing
 │       ├── toolChoiceBuilder.js# Tool choice construction
 │       └── validation.js      # Input validation
@@ -170,6 +177,8 @@ npm run build:dev
 4. Import and use in `chat.js`
 5. Add tests in `scripts/test-runner.js`
 6. Run `npm run validate` to verify
+
+Common extraction targets now include `ChatPageActions.js` for preset and page-card logic, and the `src/utils/` helpers for page routing and guards.
 
 ### Module Template
 

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prompt Paul - Design System</title>
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="chat.css" />
+  <link rel="stylesheet" href="options.css" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=swap" rel="stylesheet" />
+  <style>
+    body { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+    .showcase-section { margin-bottom: 3rem; }
+    .showcase-section h2 { border-bottom: 2px solid var(--ext-border); padding-bottom: 0.5rem; }
+    .color-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+    .color-card { padding: 1.5rem; border: 1px solid var(--ext-border); border-radius: 0px; box-shadow: var(--ext-shadow); }
+    .color-swatch { width: 100%; height: 80px; border-radius: 4px; margin-bottom: 0.5rem; border: 1px solid var(--ext-border); }
+    .font-sample { margin: 1rem 0; padding: 1rem; border: 1px solid var(--ext-border); border-radius: 4px; }
+    .component-row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
+    .shadow-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem; }
+    .shadow-card { padding: 2rem; border: 1px solid var(--ext-border); border-radius: 4px; text-align: center; font-size: 0.85rem; }
+    .theme-toggle-wrapper { position: fixed; top: 1rem; right: 1rem; z-index: 1000; }
+  </style>
+</head>
+<body>
+  <div class="theme-toggle-wrapper">
+    <button id="darkThemeToggle" class="quick-action-button theme-toggle-btn" title="Toggle dark theme" onclick="document.getElementById('darkThemeCheckbox').click()">
+      <span class="material-icons" id="darkThemeIcon">brightness_2</span>
+    </button>
+    <input type="checkbox" id="darkThemeCheckbox" style="display: none;" />
+  </div>
+
+  <h1 style="color: var(--ext-primary);">Prompt Paul · Design System</h1>
+  <p style="color: var(--ext-muted-foreground);">Refined Brutalism — Hard shadows, indigo primary, sharp geometry</p>
+
+  <!-- Color Palette -->
+  <section class="showcase-section">
+    <h2>Color Palette</h2>
+    <div class="color-grid">
+      <div class="color-card">
+        <div class="color-swatch" style="background: var(--ext-background);"></div>
+        <strong>Background</strong><br/>
+        <code>var(--ext-background)</code><br/>
+        <small id="bg-value"></small>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background: var(--ext-card);"></div>
+        <strong>Card</strong><br/>
+        <code>var(--ext-card)</code>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background: var(--ext-primary);"></div>
+        <strong>Primary</strong><br/>
+        <code>var(--ext-primary)</code>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background: var(--ext-muted);"></div>
+        <strong>Muted</strong><br/>
+        <code>var(--ext-muted)</code>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background: var(--ext-destructive);"></div>
+        <strong>Destructive</strong><br/>
+        <code>var(--ext-destructive)</code>
+      </div>
+      <div class="color-card">
+        <div class="color-swatch" style="background: var(--ext-border);"></div>
+        <strong>Border</strong><br/>
+        <code>var(--ext-border)</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- Typography -->
+  <section class="showcase-section">
+    <h2>Typography</h2>
+    <div class="font-sample" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+      <strong>Body Font (Sans-serif)</strong><br/>
+      The quick brown fox jumps over the lazy dog. 1234567890
+    </div>
+    <div class="font-sample" style="font-family: 'Courier New', monospace;">
+      <strong>Mono Font (Code)</strong><br/>
+      <code>The quick brown fox jumps over the lazy dog. 1234567890</code>
+    </div>
+    <div class="font-sample" style="font-size: 2rem; font-weight: 700; color: var(--ext-primary);">
+      <strong>Heading Sample</strong><br/>
+      Prompt Paul — AI Insights at your fingertips
+    </div>
+  </section>
+
+  <!-- Buttons -->
+  <section class="showcase-section">
+    <h2>Buttons</h2>
+    <div class="component-row">
+      <button>Primary Button</button>
+      <button class="btn-secondary" style="background: var(--ext-secondary); color: var(--ext-secondary-foreground);">Secondary</button>
+      <button class="btn-destructive" style="background: var(--ext-destructive); color: var(--ext-destructive-foreground);">Destructive</button>
+      <button style="background: var(--ext-muted); color: var(--ext-muted-foreground);">Muted</button>
+    </div>
+  </section>
+
+  <!-- Inputs -->
+  <section class="showcase-section">
+    <h2>Inputs</h2>
+    <div style="display: grid; gap: 1rem; max-width: 500px;">
+      <input type="text" class="shadcn-input" placeholder="Text input" />
+      <textarea class="shadcn-textarea" placeholder="Textarea input" rows="3"></textarea>
+      <select class="shadcn-input">
+        <option>Select option</option>
+        <option>Option 1</option>
+        <option>Option 2</option>
+      </select>
+    </div>
+  </section>
+
+  <!-- Cards -->
+  <section class="showcase-section">
+    <h2>Cards & Messages</h2>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+      <div class="card" style="flex: 1; min-width: 300px;">
+        <h3>Regular Card</h3>
+        <p>This is a regular card with the refined brutalist style.</p>
+      </div>
+      <div class="llm-message" style="flex: 1; min-width: 300px;">
+        <strong>LLM Message</strong>
+        <p>This is how AI messages will appear — left-aligned, clean card style.</p>
+      </div>
+      <div class="user-message" style="flex: 1; min-width: 300px;">
+        <strong>User Message</strong>
+        <p>User messages appear right-aligned with primary color background.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Shadows -->
+  <section class="showcase-section">
+    <h2>Shadow System</h2>
+    <div class="shadow-grid">
+      <div class="shadow-card" style="box-shadow: var(--ext-shadow-sm);">Shadow SM</div>
+      <div class="shadow-card" style="box-shadow: var(--ext-shadow);">Shadow</div>
+      <div class="shadow-card" style="box-shadow: var(--ext-shadow-md);">Shadow MD</div>
+      <div class="shadow-card" style="box-shadow: var(--ext-shadow-lg);">Shadow LG</div>
+    </div>
+  </section>
+
+  <!-- Toggle -->
+  <section class="showcase-section">
+    <h2>Toggle Switch</h2>
+    <div class="component-row">
+      <label class="toggle-label">
+        <input type="checkbox" class="toggle-input" />
+        <span class="toggle-slider"></span>
+        <span class="toggle-text">Toggle Example</span>
+      </label>
+    </div>
+  </section>
+
+  <!-- Sidebar Buttons -->
+  <section class="showcase-section">
+    <h2>Sidebar Buttons</h2>
+    <div style="display: flex; gap: 0.5rem;">
+      <button class="quick-action-button">
+        <span class="material-icons">article</span>
+        <span class="sidebar-label">Page</span>
+      </button>
+      <button class="quick-action-button">
+        <span class="material-icons">auto_awesome</span>
+        <span class="sidebar-label">Analyze</span>
+      </button>
+      <button class="quick-action-button">
+        <span class="material-icons">help_outline</span>
+        <span class="sidebar-label">Help</span>
+      </button>
+    </div>
+  </section>
+
+  <footer style="text-align: center; margin-top: 3rem; padding: 2rem; color: var(--ext-muted-foreground); font-size: 0.875rem;">
+    Prompt Paul Design System · Refined Brutalism v1.0
+  </footer>
+
+  <script type="module">
+    import { setupThemeToggle, applyDarkTheme } from './themeUtils.js';
+
+    // Initialize theme
+    const toggle = document.getElementById('darkThemeCheckbox');
+    if (toggle) {
+      setupThemeToggle(toggle);
+    }
+
+    // Display background color value
+    const bgValue = document.getElementById('bg-value');
+    if (bgValue) {
+      const style = getComputedStyle(document.body);
+      bgValue.textContent = style.getPropertyValue('--ext-background');
+    }
+  </script>
+</body>
+</html>

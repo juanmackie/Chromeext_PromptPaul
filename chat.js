@@ -18,7 +18,7 @@ import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { chatUI } from './src/chat/ChatUI.js';
-import { getApiConfig, getApiConfigCached, getTools, startRun, executeRun, abortRun } from './src/chat/ChatAPI.js';
+import { getApiConfig, getApiConfigCached, getTools, startRun, executeRun, abortRun, selectOptimalProfile } from './src/chat/ChatAPI.js';
 import {
   MediaType,
   validateMediaData,
@@ -30,6 +30,12 @@ import {
 } from './src/chat/ChatMedia.js';
 import { StreamStateManager } from './src/chat/ChatStream.js';
 import { debounce } from './src/utils/debounce.js';
+import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
+import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
+import {
+  renderSiteSuggestions,
+  executePresetAnalysis,
+} from './src/chat/ChatPageActions.js';
 
 // ── Lazy Module Loaders ───────────────────────────────────────────
 // Non-critical modules are loaded on demand to reduce initial startup cost.
@@ -181,69 +187,24 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   let lastUsedPreset = 'summary'; // Default preset mode
+  let lastLoadedPageContext = null;
 
   /**
    * Helper to execute a preset analysis.
    */
   async function executePreset(presetKey, loadingText, successText) {
-    try {
-      loadingManager.showToast(loadingText, 'info');
-      const response = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({ action: 'getTabContent' }, (res) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(res);
-          }
-        });
-      });
-
-      if (response && response.action === 'tabContentResponse') {
-        if (response.content) {
-          const metadata = {
-            title: response.title,
-            siteName: response.siteName,
-            byline: response.byline,
-            url: response.url,
-            type: response.type,
-          };
-          const prompt = buildSmartPrompt(presetKey, response.content, metadata);
-
-          chatMainArea.style.display = 'block';
-          oneoffInstructionArea.style.display = 'none';
-          makeApiCall(prompt);
-          loadingManager.showToast(successText, 'success');
-
-          if (metadata.siteName === 'YouTube' || response.type?.includes('youtube')) {
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-              if (tabs[0]) {
-                chrome.tabs.sendMessage(
-                  tabs[0].id,
-                  { action: 'captureVideoFrames' },
-                  (frameRes) => {
-                    if (frameRes && frameRes.success && frameRes.frame) {
-                      chatUI.addMessage('System', '📸 Visual context captured from video:');
-                      chatUI.addMediaPreview({
-                        type: 'image',
-                        mimeType: 'image/jpeg',
-                        base64: frameRes.frame.split(',')[1],
-                      });
-                    }
-                  }
-                );
-              }
-            });
-          }
-        } else {
-          loadingManager.showToast('No content received from tab.', 'error');
-        }
-      } else {
-        loadingManager.showToast('Unexpected response from background script', 'error');
-      }
-    } catch (error) {
-      console.error('Chat.js: Execute preset error:', error.message);
-      loadingManager.showToast(`Error: ${error.message}`, 'error');
-    }
+    await executePresetAnalysis({
+      presetKey,
+      loadingText,
+      successText,
+      presetModes: PRESET_MODES,
+      chatMainArea,
+      oneoffInstructionArea,
+      makeApiCall,
+      loadingManager,
+      chatUI,
+      showSiteSuggestions,
+    });
   }
 
   /**
@@ -259,22 +220,16 @@ document.addEventListener('DOMContentLoaded', () => {
     executePreset(modeKey, `Generating ${preset.label}...`, `${preset.label} started`);
   }
 
-  /**
-   * Builds a smart prompt with dynamic context injection based on content type.
-   */
-  function buildSmartPrompt(presetKey, content, metadata) {
-    const preset = PRESET_MODES[presetKey] || PRESET_MODES.summary;
-    let prompt = preset.prompt;
-
-    if (metadata.siteName === 'YouTube' || metadata.type?.includes('youtube')) {
-      prompt += `\n\nThis is a video titled "${metadata.title}" from channel "${metadata.byline}".`;
-    } else if (metadata.url?.includes('github.com') || metadata.url?.includes('gitlab.com')) {
-      prompt += `\n\nThis is code from "${metadata.title}".`;
-    } else if (metadata.byline) {
-      prompt += `\n\nThis is an article titled "${metadata.title}" by ${metadata.byline}.`;
-    }
-
-    return prompt + `\n\nContent:\n${content}`;
+  async function showSiteSuggestions(url, platform = null, platformInfo = null) {
+    await renderSiteSuggestions({
+      url,
+      platform,
+      platformInfo,
+      chatMainArea,
+      oneoffInstructionArea,
+      makeApiCall,
+      chatAreaElement: document.getElementById('chat-area'),
+    });
   }
 
   // Add event listeners for quick action buttons
@@ -286,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const response = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage({ action: 'getLoadContent' }, (res) => {
             if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
+              reject(new Error(friendlyRuntimeErrorMessage(chrome.runtime.lastError.message)));
             } else {
               resolve(res);
             }
@@ -301,9 +256,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
             chatUI.addLoadedContentMessage(sourceInfo, response.content);
 
+            showSiteSuggestions(response.url, response.platform, response.platformInfo);
+
+            lastLoadedPageContext = {
+              url: response.url,
+              platform: response.platform || null,
+              readStrategy: response.readStrategy || 'auto',
+              hasScreenshot: Boolean(response.screenshot),
+              hasMediaContext: Boolean(streamState.getMediaData()),
+            };
+
+            const budget = resolveDomContextBudget({
+              modelId: null,
+              userMessage: '',
+              contextCount: 1,
+              fileAttachmentCount: streamState.getMediaData() ? 1 : 0,
+            });
+            const fitted = fitTextToTokenBudget(response.content, budget.perContextDomTokens);
+            const contextNotes = [];
+            if (lastLoadedPageContext.readStrategy !== 'auto') {
+              contextNotes.push(`Read strategy: ${lastLoadedPageContext.readStrategy}.`);
+            }
+            if (lastLoadedPageContext.hasScreenshot) {
+              contextNotes.push('Visual screenshot context is available.');
+            }
+            if (lastLoadedPageContext.hasMediaContext) {
+              contextNotes.push('Additional media attachment context is active.');
+            }
+
             streamState.getConversationHistory().push({
               role: 'user',
-              content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\n\nHere is the content:\n\n${response.content}`,
+              content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\nPlatform: ${response.platform || 'unknown'}\n${contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : ''}\n\nHere is the content:\n\n${fitted.text}`,
             });
 
             chatMainArea.style.display = 'block';
@@ -313,6 +296,12 @@ document.addEventListener('DOMContentLoaded', () => {
               'Content loaded! You can now ask questions about it.',
               'success'
             );
+            if (fitted.truncated) {
+              loadingManager.showToast(
+                `Loaded content was trimmed to fit context budget (${fitted.includedTokens}/${fitted.originalTokens} estimated tokens).`,
+                'info'
+              );
+            }
           } else {
             const errorMsg = response.error || 'Content not available';
             console.error('Chat.js: Add page button - Failed:', errorMsg);
@@ -323,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (error) {
         console.error('Chat.js: Add page button - Error:', error.message);
-        loadingManager.showToast(`Error: ${error.message}`, 'error');
+        loadingManager.showToast(friendlyRuntimeErrorMessage(error), 'error');
       }
     });
   }
@@ -580,6 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Streaming and API call state manager
   const streamState = new StreamStateManager();
+  streamState.setChatAreaRef(chatArea);
 
   // Convenience aliases for backward compatibility
   const getCurrentRunId = () => streamState.getRunId();
@@ -1004,11 +994,11 @@ document.addEventListener('DOMContentLoaded', () => {
       // NEW: Handle events from orchestrator
       const { runId, sourceTabId, event } = request;
 
-      // Filter events: must match our current run AND come from our tab (or have no source)
+      // Filter events: must match our current run AND come from our tab
       const isOwnedEvent =
         streamState.getRunId() &&
         runId === streamState.getRunId() &&
-        (!sourceTabId || sourceTabId === panelTabId || !streamState.getSourceTabId());
+        sourceTabId === panelTabId;
 
       if (!isOwnedEvent) {
         console.log('Chat: Ignoring orchestratorEvent for other run/tab', {
@@ -1025,11 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
       switch (event.type) {
         case 'content':
           if (streamState.getCurrentStreamingContentElement() && event.data) {
-            streamState.appendStreamedText(event.data);
-            streamState.getCurrentStreamingContentElement().innerHTML = marked.parse(
-              streamState.getStreamedText()
-            );
-            chatArea.scrollTop = chatArea.scrollHeight;
+            streamState.queueRenderChunk(event.data);
           }
           break;
 
@@ -1142,8 +1128,22 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.getCurrentStreamingContentElement().innerHTML = marked.parse(finalContent);
             chatUI.postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
-            // Attach copy listeners to existing bubble
-            // Copy listeners are now handled by ChatUI
+            // Attach copy listeners to existing bubble (fix: icons were created
+            // in addMessage but listeners skipped because message was empty)
+            const msgDiv = streamState.getCurrentStreamingMessageDiv();
+            const uid = streamState.getCurrentStreamingUniqueId();
+            if (msgDiv && uid) {
+              const rawIcon = document.getElementById(`copy-icon-${uid}`);
+              const formattedIcon = document.getElementById(`copy-formatted-icon-${uid}`);
+              if (rawIcon && formattedIcon) {
+                chatUI.attachCopyListeners(
+                  finalContent,
+                  streamState.getCurrentStreamingContentElement(),
+                  rawIcon,
+                  formattedIcon
+                );
+              }
+            }
           } else {
             // Fallback: create new bubble if no streaming element exists
             chatUI.addMessage('LLM', event.content || '');
@@ -1161,6 +1161,35 @@ document.addEventListener('DOMContentLoaded', () => {
           // Reset UI state
           userInput.disabled = false;
           sendButton.disabled = false;
+          clearButton.textContent = 'Clear';
+          break;
+        }
+        case 'aborted': {
+          chatUI.addMessage('System', 'Response stopped');
+          userInput.disabled = false;
+          sendButton.disabled = false;
+          clearButton.textContent = 'Clear';
+
+          // Reset streaming variables
+          streamState.setStreamingElements(
+            null,
+            streamState.getCurrentStreamingContentElement(),
+            streamState.getCurrentStreamingUniqueId()
+          );
+          streamState.setStreamingElements(
+            streamState.getCurrentStreamingMessageDiv(),
+            null,
+            streamState.getCurrentStreamingUniqueId()
+          );
+          streamState.setStreamingElements(
+            streamState.getCurrentStreamingMessageDiv(),
+            streamState.getCurrentStreamingContentElement(),
+            null
+          );
+          streamState.clearStreamedText();
+          streamState.setActiveToolCall(null);
+          streamState.setRunId(null);
+          streamState.setSourceTabId(null);
           break;
         }
         case 'error': {
@@ -1206,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
       stopApiRequest();
     } else {
       chatUI.clearChat();
+      streamState.clearHistory();
     }
   });
   userInput.addEventListener('keydown', (event) => {
@@ -1277,8 +1307,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         chatUI.addMediaPreview(mediaData);
-        currentMediaData = mediaData;
-        streamState.setMediaData(mediaData);
+        setCurrentMediaData(mediaData);
 
         // Auto-analyze with prompt
         const userPrompt = `Analyze this ${mediaModule.getMediaDisplayName(mediaType)}: ${fileData.name}`;
@@ -1479,6 +1508,32 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const config = await getApiConfig();
 
+      // Adaptive model routing: check if media context needs a vision-capable model
+      const mediaData = streamState.getMediaData();
+      let effectiveConfig = config;
+      if (mediaData && (mediaData.type === 'image' || mediaData.type === 'video')) {
+        try {
+          const { profiles } = await new Promise((resolve) => {
+            chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], resolve);
+          });
+          const routingResult = await selectOptimalProfile(
+            profiles || [],
+            config.id || 'default',
+            mediaData
+          );
+          if (routingResult.rerouted && routingResult.config) {
+            effectiveConfig = routingResult.config;
+            console.log(`[Chat] Rerouted to vision-capable model: ${routingResult.config.modelName}`);
+            chatUI.addMessage(
+              'System',
+              `🔄 Auto-switched to **${routingResult.config.modelName}** for image analysis.`
+            );
+          }
+        } catch (e) {
+          // routing failure is non-fatal — fall back to current config
+        }
+      }
+
       const effectiveToolChoice =
         tool_choice === undefined || tool_choice === null || tool_choice === ''
           ? 'auto'
@@ -1488,13 +1543,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (userMessage) {
         chatUI.addMessage('User', userMessage);
 
-        if (streamState.getMediaData() && streamState.getMediaData().type === 'image') {
+        if (mediaData && mediaData.type === 'image') {
           const messageContent = [
             { type: 'text', text: userMessage },
             {
               type: 'image_url',
               image_url: {
-                url: `data:${streamState.getMediaData().mimeType};base64,${streamState.getMediaData().base64}`,
+                url: `data:${mediaData.mimeType};base64,${mediaData.base64}`,
               },
             },
           ];
@@ -1508,10 +1563,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Prepare run configuration
       const runConfig = {
-        llmEndpoint: config.llmEndpoint,
-        apiKey: config.apiKey,
-        modelName: config.modelName,
-        systemPrompt: config.systemPrompt,
+        llmEndpoint: effectiveConfig.llmEndpoint,
+        apiKey: effectiveConfig.apiKey,
+        modelName: effectiveConfig.modelName,
+        systemPrompt: effectiveConfig.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
         requestedSkill,
@@ -1870,3 +1925,5 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 }); // End of DOMContentLoaded
+
+

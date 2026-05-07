@@ -1,16 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Improvements
+
+- Refactored `chat.js` to move page action cards, preset analysis, and site suggestion rendering into `src/chat/ChatPageActions.js`
+- Added page-context helpers for token budgeting, read strategy selection, permission guards, and runtime error normalization
+- Updated docs to match the current module layout and page-aware quick-action flow
+- Expanded content extraction metadata for platform-aware quick actions and YouTube moment prompts
+
 ## [6.0.0] - 2026-04-25
 
 ### Major Changes
 
-- **Modular refactor**: Extracted 6 modules from chat.js (34% reduction in file size)
+- **Modular refactor**: Extracted 7 modules from chat.js and related helpers for page-aware analysis
   - `ChatUI.js` - UI rendering and DOM manipulation
   - `ChatAPI.js` - API orchestration and configuration
   - `ChatSkills.js` - Skill detection and command parsing
   - `ChatVoice.js` - Voice input and speech recognition
   - `ChatMedia.js` - Media data processing and analysis
   - `ChatStream.js` - Streaming state management
+  - `ChatPageActions.js` - Preset analysis and page action cards
 
 - **Build system**: Added comprehensive build infrastructure
   - Production and development builds
@@ -49,6 +59,7 @@
 - Created CHANGELOG.md
 - Created CONTRIBUTING.md
 - Updated README.md with new build/test documentation
+- Updated README.md, ARCHITECTURE.md, and DEVELOPMENT.md for action cards, context budgeting, and restricted-page handling
 
 ## [5.0.0] - 2026-03-22
 

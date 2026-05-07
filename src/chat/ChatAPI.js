@@ -6,12 +6,79 @@
  * - Tool definitions management
  * - LLM API call execution
  * - Orchestrator integration
+ * - Adaptive model routing for vision/media requests
  *
  * @module ChatAPI
  * @requires ../../loadingManager.js
  */
 
 import { loadingManager } from '../../loadingManager.js';
+
+// Model name patterns that indicate vision support
+const VISION_MODEL_PATTERNS = [
+  /vision/i,
+  /gpt-4o/i,
+  /gpt-4\.\d+-turbo/i,
+  /claude-3/i,
+  /claude-4/i,
+  /gemini-pro-vision/i,
+  /gemini-2\.\d+-flash/i,
+  /gemini-2\.\d+-pro/i,
+  /llava/i,
+  /cogvlm/i,
+  /qwen-vl/i,
+  /internlm-xcomposer/i,
+];
+
+/**
+ * Check if a model name supports vision/image inputs.
+ * @param {string} modelName
+ * @returns {boolean}
+ */
+export function modelSupportsVision(modelName) {
+  if (!modelName) return false;
+  return VISION_MODEL_PATTERNS.some((pattern) => pattern.test(modelName));
+}
+
+/**
+ * Select the optimal profile for a request based on media context.
+ * If the current profile's model doesn't support vision but media is attached,
+ * tries to find a vision-capable profile. Returns the selected config and
+ * a flag indicating whether a reroute occurred.
+ * @param {Array} profiles - All available profiles from storage
+ * @param {string} selectedProfileId - Currently selected profile ID
+ * @param {Object|null} mediaData - Current media data (may indicate vision need)
+ * @returns {Promise<{config: Object, rerouted: boolean}>}
+ */
+export async function selectOptimalProfile(profiles, selectedProfileId, mediaData) {
+  const needsVision = mediaData && (mediaData.type === 'image' || mediaData.type === 'video');
+
+  const currentProfile =
+    profiles.find((p) => p.id === selectedProfileId) ||
+    profiles.find((p) => p.id === 'default');
+
+  // If no vision needed or current profile already supports it, use current
+  if (!needsVision || (currentProfile && modelSupportsVision(currentProfile.modelName))) {
+    return { config: currentProfile, rerouted: false };
+  }
+
+  // No media or no profiles — use current
+  if (!profiles.length || !currentProfile) {
+    return { config: currentProfile, rerouted: false };
+  }
+
+  // Try to find a vision-capable profile
+  const visionProfile = profiles.find((p) => modelSupportsVision(p.modelName));
+  if (visionProfile) {
+    console.log(
+      `[ChatAPI] Auto-routing from "${currentProfile.modelName}" to "${visionProfile.modelName}" for vision request.`
+    );
+    return { config: visionProfile, rerouted: true };
+  }
+
+  // No vision-capable profile found — use current and still allow the attempt
+  return { config: currentProfile, rerouted: false };
+}
 
 // ── Config Cache ──────────────────────────────────────────────────
 

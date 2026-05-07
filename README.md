@@ -11,6 +11,8 @@ A Chrome extension for processing selected text using an LLM endpoint. Prompt Pa
 - **Multi-Modal Support**: Analyze images, videos, and audio content
 - **Profile Management**: Configure multiple API profiles with different endpoints and models
 - **Agent Skills**: OpenClaw-compatible skills system for specialized AI capabilities with slash commands
+- **Page-Aware Action Cards**: Platform-specific quick actions for pages like YouTube, GitHub, Gmail, and docs
+- **Context Budgeting**: Loaded page content is trimmed to fit the current model/context budget
 - **Dark/Light Theme**: Toggle between themes for comfortable viewing
 - **Privacy-First Analytics**: Optional, anonymized usage analytics with opt-out controls
 
@@ -100,7 +102,7 @@ For complete skill authoring and metadata specification, see:
 2. Use the chat interface to:
    - Type messages and get AI responses
    - Load page content for discussion
-   - Use quick actions (summarize, explain)
+   - Use quick actions and page-aware action cards
    - Access pinned custom instructions
 
 ### Quick Actions Sidebar
@@ -109,6 +111,7 @@ For complete skill authoring and metadata specification, see:
 - **Summarize**: Quickly summarize the active tab
 - **Explain**: Explain the active tab content
 - **Pinned Actions**: Run your pinned custom instructions
+- **Page Cards**: Use page-aware cards for common workflows on supported sites
 
 ## Development Setup
 
@@ -123,7 +126,7 @@ For complete skill authoring and metadata specification, see:
 prompt-paul/
 |- manifest.json                # Extension manifest (MV3)
 |- background.js                # Service worker
-|- chat.js                      # Side panel chat logic
+|- chat.js                      # Side panel chat entry point
 |- chat.html
 |- chat.css
 |- options.js                   # Options page logic
@@ -141,7 +144,21 @@ prompt-paul/
 |- src/
 |  |- orchestrator/
 |  |  |- RunOrchestrator.js
+|  |- chat/
+|  |  |- ChatUI.js
+|  |  |- ChatAPI.js
+|  |  |- ChatSkills.js
+|  |  |- ChatVoice.js
+|  |  |- ChatMedia.js
+|  |  |- ChatStream.js
+|  |  |- ChatPageActions.js
 |  |- utils/
+|     |- actionCards.js
+|     |- contextBudget.js
+|     |- permissionGuards.js
+|     |- readStrategy.js
+|     |- runtimeErrors.js
+|     |- suggestionStorage.js
 |     |- skillParser.js
 |     |- toolChoiceBuilder.js
 |     |- validation.js
@@ -236,13 +253,16 @@ Prompt Paul is compatible with OpenAI-compatible API endpoints, including:
 
 - **Analytics**: Anonymous usage analytics via Umami can be disabled in Options
 - **Data Storage**: API keys and settings are stored in Chrome storage
+- **No Native Bridge**: Prompt Paul runs fully inside the browser extension runtime and does not use a local native messaging bridge
 - **Remote Assets**: Extension pages currently load Google Fonts in addition to analytics
 - **Your Data**: Page content is sent only to your configured LLM endpoint when you invoke processing
+- **Restricted Pages**: Browser-internal pages and the Chrome Web Store are blocked with a clear explanation before extraction
 
 ## Permissions
 
 - The extension is designed to work across all pages and uses broad host permissions for that behavior.
 - Content extraction and context-menu workflows rely on this all-pages scope.
+- Restricted browser pages (for example `chrome://`, extension pages, and the Chrome Web Store) are detected and reported with user-friendly errors before extraction.
 
 ## Contributing
 

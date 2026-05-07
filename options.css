@@ -114,9 +114,144 @@ input:invalid:not(:placeholder-shown) {
 /* Removed the redundant :root and .dark variable declarations as they are already defined with --ext- prefix */
 
 /* Dark Theme Overrides */
+/* Dark Theme - Unified comprehensive overrides */
 body.dark-theme {
-  background-color: var(--ext-background) !important;
-  color: var(--ext-foreground) !important;
+  background-color: var(--ext-background);
+  color: var(--ext-foreground);
+}
+
+body.dark-theme .container,
+body.dark-theme .card,
+body.dark-theme .instruction-form,
+body.dark-theme .import-export,
+body.dark-theme .tools-card,
+body.dark-theme .config-card {
+  background: var(--ext-card);
+  color: var(--ext-card-foreground);
+  border-color: var(--ext-border);
+}
+
+body.dark-theme h1,
+body.dark-theme h2,
+body.dark-theme h3,
+body.dark-theme label {
+  color: var(--ext-foreground);
+}
+
+body.dark-theme input,
+body.dark-theme textarea {
+  background-color: var(--ext-input);
+  color: var(--ext-foreground);
+  border-color: var(--ext-border);
+}
+
+body.dark-theme button {
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+}
+
+body.dark-theme .save-button,
+body.dark-theme .save-instruction-button {
+  background-color: var(--ext-secondary);
+  color: var(--ext-secondary-foreground);
+}
+
+body.dark-theme .clear-form-button {
+  background-color: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+}
+
+body.dark-theme .export-button,
+body.dark-theme .import-button {
+  background-color: var(--ext-accent);
+  color: var(--ext-accent-foreground);
+}
+
+body.dark-theme .delete-tool-btn,
+body.dark-theme .delete-btn {
+  background-color: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+}
+
+body.dark-theme .status {
+  background-color: var(--ext-popover);
+  color: var(--ext-popover-foreground);
+  border-color: var(--ext-border);
+}
+
+body.dark-theme #instructionsTable thead {
+  background-color: var(--ext-secondary);
+}
+
+body.dark-theme ::selection {
+  background: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+}
+
+body.dark-theme select#profileSelect {
+  background-color: var(--ext-input);
+  color: var(--ext-foreground);
+  border-color: var(--ext-border);
+}
+
+body.dark-theme select#instructionToolChoice {
+  background-color: var(--ext-input);
+  color: var(--ext-foreground);
+  border-color: var(--ext-border);
+}
+
+body.dark-theme select#instructionToolChoice option {
+  background-color: var(--ext-input);
+  color: var(--ext-foreground);
+}
+
+body.dark-theme select#instructionToolChoice option:checked {
+  background-color: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+}
+
+body.dark-theme #instructionsTable tbody tr:nth-child(even) {
+  background: var(--ext-card);
+}
+
+body.dark-theme #toolsTable {
+  color: var(--ext-foreground);
+}
+
+body.dark-theme #toolsTable tbody tr:nth-child(even) {
+  background: var(--ext-card);
+}
+
+body.dark-theme #toolsTable tbody tr:hover {
+  background-color: #062437;
+}
+
+body.dark-theme .modality-option label {
+  background: var(--ext-background);
+  border-color: #374151;
+}
+
+body.dark-theme .modality-option label:hover {
+  background: #1f2937;
+  border-color: var(--ext-primary);
+}
+
+body.dark-theme .modality-option input[type='checkbox']:checked + label {
+  background: #1e3a8a;
+  border-color: var(--ext-primary);
+}
+
+body.dark-theme .modality-option small {
+  color: #9ca3af;
+}
+
+body.dark-theme .skill-help-box {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+body.dark-theme .skill-help-box code {
+  background: #111827;
 }
 
 body.dark-theme .container,
@@ -219,15 +354,17 @@ body {
   transition: var(--ext-transition);
 }
 
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: var(--ext-gradient-header);
-  border-bottom: 1px solid var(--ext-primary-deep);
+.card {
+  background: var(--ext-card);
+  border-radius: 0px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--ext-shadow);
+  border: 1px solid var(--ext-border);
+  border-top: 3px solid var(--ext-primary);
+  position: relative;
+  overflow: hidden;
+  transition: var(--ext-transition);
 }
 
 .page-header {
@@ -395,7 +532,7 @@ select#instructionToolChoice {
   width: calc(90% + 2.5rem); /* Match width of other inputs */
   padding: 0.5rem 1.25rem; /* Reduced padding to prevent text cutoff */
   border: 2px solid var(--ext-border);
-  border-radius: 1.5rem;
+  border-radius: 4px;
   background-color: var(--ext-input);
   transition:
     border-color 0.3s ease,
@@ -959,36 +1096,6 @@ footer a:hover {
 
 .button-container button {
   flex-grow: 1;
-}
-
-.improve-btn {
-  margin-right: 0.1rem;
-  margin-bottom: 0.5rem;
-  background-color: #ff0000; /* Fallback color */
-  background-image: linear-gradient(90deg, red, orange, yellow, green, blue, indigo, violet, red);
-  background-size: 800%;
-  animation: rainbow 10s linear infinite;
-  color: #ffffff; /* Ensure text is readable on rainbow background */
-  border-radius: 4px;
-}
-
-@keyframes rainbow {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 100% 50%;
-  }
-}
-
-#toolHttpMethod {
-  border-radius: 1.5rem;
-}
-
-/* Ensure the specific paragraph with text-center is centered */
-.flex-col p.text-muted-foreground.text-center.mt-2 {
-  text-align: center;
-  width: 100%; /* Ensures the paragraph takes full width of its container to center text within */
 }
 
 /* Styles for Pin Button in Instructions Table */
@@ -1896,26 +2003,7 @@ body.dark-theme #toolsTable tbody tr:hover {
   display: block;
 }
 
-[data-theme='dark'] .modality-option label {
-  background: var(--ext-background);
-  border-color: #374151;
-}
-
-[data-theme='dark'] .modality-option label:hover {
-  background: #1f2937;
-  border-color: var(--ext-primary);
-}
-
-[data-theme='dark'] .modality-option input[type='checkbox']:checked + label {
-  background: #1e3a8a;
-  border-color: var(--ext-primary);
-}
-
-[data-theme='dark'] .modality-option small {
-  color: #9ca3af;
-}
-
-/* Skill help box styles */
+  /* Fixed corruption: Modality Selection Styles */
 .skill-help-box {
   background: var(--ext-muted);
   border: 1px solid var(--ext-border);
@@ -1995,11 +2083,7 @@ body.dark-theme #toolsTable tbody tr:hover {
   margin-top: 1rem;
 }
 
-[data-theme='dark'] .skill-help-box {
-  background: #1f2937;
-  border-color: #374151;
-}
-
-[data-theme='dark'] .skill-help-box code {
-  background: #111827;
+  [data-theme='dark'] .skill-help-box code {
+    background: #111827;
+  }
 }
