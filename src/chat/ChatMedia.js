@@ -194,17 +194,29 @@ export function validateDroppedFile(file) {
  * @param {File} file - File to read
  * @returns {Promise<{ base64: string, mimeType: string, name: string }>}
  */
-export function readFileAsBase64(file) {
+export function readBlobAsBase64(blob, name = 'clipboard-image') {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result; // data:...;base64,...
       const commaIdx = result.indexOf(',');
       const base64 = commaIdx !== -1 ? result.slice(commaIdx + 1) : result;
-      resolve({ base64, mimeType: file.type, name: file.name });
+      resolve({
+        base64,
+        mimeType: blob.type || 'image/png',
+        name: blob.name || name,
+      });
     };
-    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
-    reader.readAsDataURL(file);
+    reader.onerror = () => reject(new Error(`Failed to read file: ${blob.name || name}`));
+    reader.readAsDataURL(blob);
   });
 }
 
+/**
+ * Read a dropped file as base64 data URL.
+ * @param {File} file - File to read
+ * @returns {Promise<{ base64: string, mimeType: string, name: string }>}
+ */
+export function readFileAsBase64(file) {
+  return readBlobAsBase64(file, file.name);
+}

@@ -278,7 +278,7 @@ body.dark-theme ::selection {
 
 #chat-area {
   position: relative;
-  height: calc(100vh - 150px); /* Account for input area height */
+  height: calc(100vh - var(--chat-input-area-height, 150px)); /* Account for input area height */
   overflow-y: auto; /* Single scrollable area */
   scroll-behavior: smooth;
   z-index: 50;
@@ -304,7 +304,10 @@ body.dark-theme ::selection {
 }
 
 #input-area {
+  --attachment-strip-gap: 0.5rem;
   display: flex;
+  flex-direction: column;
+  gap: var(--attachment-strip-gap);
   padding: 0.5rem;
   padding-bottom: 1rem;
   background-color: var(--ext-card);
@@ -316,6 +319,79 @@ body.dark-theme ::selection {
   box-shadow: 0 -4px 0px 0px var(--ext-shadow-color);
   z-index: 100;
   pointer-events: auto !important;
+}
+
+#attachment-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ext-border);
+  border-radius: 8px;
+  background-color: var(--ext-muted);
+  box-shadow: var(--ext-shadow-sm);
+}
+
+#attachment-strip[hidden] {
+  display: none !important;
+}
+
+.attachment-thumbnail {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--ext-border);
+  background-color: var(--ext-card);
+}
+
+.attachment-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.attachment-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ext-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-details {
+  font-size: 0.78rem;
+  color: var(--ext-muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-remove-button {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--ext-sidebar-border);
+  background-color: transparent;
+  color: var(--ext-foreground);
+  box-shadow: none;
+}
+
+.attachment-remove-button:hover {
+  background-color: var(--ext-sidebar-accent);
+  color: var(--ext-sidebar-accent-foreground);
+  transform: translate(-1px, -1px);
+  box-shadow: var(--ext-shadow-sm);
+}
+
+#input-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 #user-input {
@@ -340,6 +416,7 @@ body.dark-theme ::selection {
 #send-button,
 #clear-button {
   pointer-events: auto !important; /* Explicitly enable pointer events */
+  flex: 0 0 auto;
 }
 
 .message {
@@ -733,6 +810,11 @@ td {
 
   #user-input {
     padding: 0.4rem 0.6rem;
+  }
+
+  .attachment-thumbnail {
+    width: 36px;
+    height: 36px;
   }
 
   button {

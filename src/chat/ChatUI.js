@@ -21,6 +21,11 @@ class ChatUI {
     this.chatArea = null;
     this.chatMainArea = null;
     this.oneoffInstructionArea = null;
+    this.attachmentStrip = null;
+    this.attachmentThumbnail = null;
+    this.attachmentTitle = null;
+    this.attachmentDetails = null;
+    this.attachmentRemoveButton = null;
     this.userInput = null;
     this.sendButton = null;
     this.clearButton = null;
@@ -36,6 +41,11 @@ class ChatUI {
     this.chatArea = document.getElementById('chat-area');
     this.chatMainArea = document.getElementById('chat-main-area');
     this.oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
+    this.attachmentStrip = document.getElementById('attachment-strip');
+    this.attachmentThumbnail = document.getElementById('attachment-thumbnail');
+    this.attachmentTitle = document.getElementById('attachment-title');
+    this.attachmentDetails = document.getElementById('attachment-details');
+    this.attachmentRemoveButton = document.getElementById('attachment-remove-button');
     this.userInput = document.getElementById('user-input');
     this.sendButton = document.getElementById('send-button');
     this.clearButton = document.getElementById('clear-button');
@@ -299,6 +309,77 @@ class ChatUI {
     this.chatArea.appendChild(previewDiv);
     this.trimExcessMessages();
     this.chatArea.scrollTop = this.chatArea.scrollHeight;
+  }
+
+  /**
+   * Show a pending attachment preview in the input area.
+   * @param {Object} mediaData - Media data object
+   * @param {Function} onRemove - Remove callback
+   */
+  setAttachmentPreview(mediaData, onRemove) {
+    if (!this.attachmentStrip) {
+      this.attachmentStrip = document.getElementById('attachment-strip');
+      this.attachmentThumbnail = document.getElementById('attachment-thumbnail');
+      this.attachmentTitle = document.getElementById('attachment-title');
+      this.attachmentDetails = document.getElementById('attachment-details');
+      this.attachmentRemoveButton = document.getElementById('attachment-remove-button');
+    }
+
+    if (!this.attachmentStrip) return;
+
+    const label = mediaData?.name || 'Pasted image';
+    const details = 'Add any prompt or question, then press Send';
+    const previewUrl =
+      mediaData?.previewUrl ||
+      (mediaData?.base64 && mediaData?.mimeType
+        ? `data:${mediaData.mimeType};base64,${mediaData.base64}`
+        : '');
+
+    if (this.attachmentThumbnail) {
+      this.attachmentThumbnail.src = previewUrl;
+      this.attachmentThumbnail.alt = label;
+    }
+    if (this.attachmentTitle) {
+      this.attachmentTitle.textContent = label;
+    }
+    if (this.attachmentDetails) {
+      this.attachmentDetails.textContent = details;
+    }
+    if (this.attachmentRemoveButton) {
+      this.attachmentRemoveButton.onclick = typeof onRemove === 'function' ? onRemove : null;
+    }
+
+    this.attachmentStrip.hidden = false;
+  }
+
+  /**
+   * Clear the pending attachment preview from the input area.
+   */
+  clearAttachmentPreview() {
+    if (!this.attachmentStrip) {
+      this.attachmentStrip = document.getElementById('attachment-strip');
+      this.attachmentThumbnail = document.getElementById('attachment-thumbnail');
+      this.attachmentTitle = document.getElementById('attachment-title');
+      this.attachmentDetails = document.getElementById('attachment-details');
+      this.attachmentRemoveButton = document.getElementById('attachment-remove-button');
+    }
+
+    if (!this.attachmentStrip) return;
+
+    this.attachmentStrip.hidden = true;
+    if (this.attachmentThumbnail) {
+      this.attachmentThumbnail.src = '';
+      this.attachmentThumbnail.alt = 'Pasted image preview';
+    }
+    if (this.attachmentTitle) {
+      this.attachmentTitle.textContent = 'Image attached';
+    }
+    if (this.attachmentDetails) {
+      this.attachmentDetails.textContent = 'Ready to send';
+    }
+    if (this.attachmentRemoveButton) {
+      this.attachmentRemoveButton.onclick = null;
+    }
   }
 
   /** Maximum messages kept in the DOM for performance */

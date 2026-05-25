@@ -54,18 +54,30 @@
       <div id="chat-main-area" style="display: block">
         <div id="chat-area"></div>
         <div id="input-area">
-          <div id="input-wrapper">
-            <textarea
-              id="user-input"
-              placeholder="Type your message (or right-click to analyze)"
-              rows="1"
-            ></textarea>
-            <button id="voice-toggle-button" title="Voice Input" type="button">
-              <span class="material-icons">mic</span>
+          <div id="attachment-strip" class="attachment-strip" hidden>
+            <img id="attachment-thumbnail" class="attachment-thumbnail" alt="Pasted image preview" />
+            <div class="attachment-copy">
+              <span id="attachment-title" class="attachment-title">Image attached</span>
+              <span id="attachment-details" class="attachment-details">Add any prompt or question, then press Send</span>
+            </div>
+            <button id="attachment-remove-button" class="attachment-remove-button" type="button">
+              Remove
             </button>
           </div>
-          <button id="send-button">Send</button>
-          <button id="clear-button">Clear</button>
+          <div id="input-controls">
+            <div id="input-wrapper">
+              <textarea
+                id="user-input"
+                placeholder="Type a prompt or paste an image"
+                rows="1"
+              ></textarea>
+              <button id="voice-toggle-button" title="Voice Input" type="button">
+                <span class="material-icons">mic</span>
+              </button>
+            </div>
+            <button id="send-button">Send</button>
+            <button id="clear-button">Clear</button>
+          </div>
         </div>
       </div>
 

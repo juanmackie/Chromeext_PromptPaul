@@ -566,6 +566,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let panelTabId = null; // Owning tab for this side panel (set from message sender)
   let currentAbortController = null;
   let lastProcessedPanelActionId = null;
+  const inputArea = document.getElementById('input-area');
+  let currentAttachmentPreviewUrl = null;
 
   // Streaming and API call state manager
   const streamState = new StreamStateManager();
@@ -577,9 +579,89 @@ document.addEventListener('DOMContentLoaded', () => {
   const getCurrentSourceTabId = () => streamState.getSourceTabId();
   const setCurrentSourceTabId = (id) => streamState.setSourceTabId(id);
   const getCurrentMediaData = () => streamState.getMediaData();
-  const setCurrentMediaData = (data) => streamState.setMediaData(data);
   const getConversationHistory = () => streamState.getConversationHistory();
   const setConversationHistory = (history) => streamState.setConversationHistory(history);
+
+  function syncChatAreaHeight() {
+    if (!inputArea) return;
+    document.documentElement.style.setProperty(
+      '--chat-input-area-height',
+      `${inputArea.offsetHeight}px`
+    );
+  }
+
+  function revokeAttachmentPreviewUrl() {
+    if (currentAttachmentPreviewUrl && currentAttachmentPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(currentAttachmentPreviewUrl);
+    }
+    currentAttachmentPreviewUrl = null;
+  }
+
+  function clearCurrentMediaData() {
+    streamState.clearMediaData();
+    chatUI.clearAttachmentPreview();
+    revokeAttachmentPreviewUrl();
+    syncChatAreaHeight();
+  }
+
+  function handleAttachmentRemove() {
+    clearCurrentMediaData();
+    loadingManager.showToast('Pasted image attachment removed', 'info');
+  }
+
+  function setCurrentMediaData(data) {
+    revokeAttachmentPreviewUrl();
+    streamState.setMediaData(data);
+    currentAttachmentPreviewUrl = data?.previewUrl || null;
+
+    if (data && data.source === 'clipboard') {
+      chatUI.setAttachmentPreview(data, handleAttachmentRemove);
+    } else {
+      chatUI.clearAttachmentPreview();
+    }
+
+    syncChatAreaHeight();
+  }
+
+  async function handleUserInputPaste(event) {
+    const clipboardData = event.clipboardData;
+    if (!clipboardData || userInput.disabled) return;
+
+    const items = Array.from(clipboardData.items || []);
+    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+    const imageFile =
+      imageItem?.getAsFile?.() ||
+      Array.from(clipboardData.files || []).find((file) => file.type.startsWith('image/'));
+
+    if (!imageFile) return;
+
+    event.preventDefault();
+
+    try {
+      const mediaModule = await getChatMedia();
+      const fileData = await mediaModule.readBlobAsBase64(imageFile, 'pasted-image');
+      const fileName = imageFile.name && imageFile.name.trim() ? imageFile.name.trim() : 'Pasted image';
+      const previewUrl = URL.createObjectURL(imageFile);
+
+      setCurrentMediaData({
+        type: MediaType.IMAGE,
+        mimeType: fileData.mimeType || imageFile.type || 'image/png',
+        base64: fileData.base64,
+        name: fileName,
+        previewUrl,
+        source: 'clipboard',
+      });
+
+      loadingManager.showToast('Pasted image attached', 'success');
+    } catch (error) {
+      console.error('Chat: Failed to process pasted image:', error);
+      clearCurrentMediaData();
+      chatUI.addMessage('System', `❌ Failed to attach pasted image: ${error.message}`);
+    }
+  }
+
+  syncChatAreaHeight();
+  window.addEventListener('resize', syncChatAreaHeight);
 
   /**
    * Stops the current API request by aborting the orchestrator run.
@@ -617,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle media data from context menu
     if (request.mediaData) {
-      streamState.setMediaData(request.mediaData);
+      setCurrentMediaData(request.mediaData);
 
       // Show chat area with media preview
       chatMainArea.style.display = 'block';
@@ -635,6 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
       chatMainArea.style.display = 'block';
       oneoffInstructionArea.style.display = 'none';
       streamState.clearHistory();
+      clearCurrentMediaData();
     } else {
       selectedTextDiv.textContent = selectedText;
       chatMainArea.style.display = 'none';
@@ -795,7 +878,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (mediaData.base64 || mediaData.textPrompt) {
         // Media loaded successfully OR text-only from context menu
         if (mediaData.base64) {
-          streamState.setMediaData(mediaData);
+          setCurrentMediaData(mediaData);
           chatUI.addMediaPreview(streamState.getMediaData());
         }
 
@@ -1236,6 +1319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       chatUI.clearChat();
       streamState.clearHistory();
+      clearCurrentMediaData();
     }
   });
   userInput.addEventListener('keydown', (event) => {
@@ -1244,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
       sendMessage();
     }
   });
+  userInput.addEventListener('paste', handleUserInputPaste);
 
   consumePendingPanelActionOnLoad();
 
@@ -1334,6 +1419,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tool_choice = 'auto',
     requestedSkill = null
   ) {
+    clearCurrentMediaData();
     try {
       const config = await getApiConfigCached();
 
@@ -1341,9 +1427,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tool_choice === undefined || tool_choice === null || tool_choice === ''
           ? 'auto'
           : tool_choice;
-
-      // Store media data for the run
-      streamState.setMediaData(mediaData);
 
       // Add user message to history if provided
       if (userMessage) {
@@ -1417,7 +1500,7 @@ document.addEventListener('DOMContentLoaded', () => {
       userInput.focus();
 
       // Reset state
-      streamState.setMediaData(null);
+      clearCurrentMediaData();
       streamState.setStreamingElements(
         null,
         streamState.getCurrentStreamingContentElement(),
@@ -1444,52 +1527,57 @@ document.addEventListener('DOMContentLoaded', () => {
   async function sendMessage() {
     streamState.setActiveToolCall(null); // Reset active tool call
     const message = userInput.value;
-    if (message.trim() && !userInput.disabled) {
-      // Fetch available skills
-      const skillsResp = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
-          if (chrome.runtime.lastError) resolve({ skills: [] });
-          else resolve(response || { skills: [] });
-        });
-      });
-      const availableSkills = skillsResp && skillsResp.skills ? skillsResp.skills : [];
-      const skillsModule = await getChatSkills();
+    const mediaData = streamState.getMediaData();
+    const hasText = message.trim().length > 0;
+    const hasMedia = Boolean(mediaData?.base64);
 
-      // Check for slash commands
-      const cmd = skillsModule.parseCommand(message, availableSkills);
-
-      if (cmd.type === 'skills') {
-        chatUI.addMessage('User', message);
-        const slashCommands = skillsResp.slashCommands || [];
-        const skillsMessage = skillsModule.formatSkillsList(availableSkills, slashCommands);
-        chatUI.addMessage('System', skillsMessage);
-        userInput.value = '';
-        return;
-      }
-
+    if ((hasText || hasMedia) && !userInput.disabled) {
       let requestedSkill = null;
-      let effectiveMessage = message;
+      let effectiveMessage = hasText ? message : `Analyze this ${mediaData?.type || 'image'}`;
 
-      if (cmd.type === 'skill') {
-        requestedSkill = cmd.skillName;
-        effectiveMessage = cmd.body || message;
-        chatUI.addMessage('System', `📚 Loading skill: **${requestedSkill}**`);
-      } else {
-        // Fall back to natural-language intent detection
-        const detectedSkill = skillsModule.detectSkillIntent(message, availableSkills);
-        if (detectedSkill) {
-          requestedSkill = detectedSkill.skillName;
-          effectiveMessage = detectedSkill.body || message;
-          chatUI.addMessage(
-            'System',
-            `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`
-          );
+      if (hasText) {
+        // Fetch available skills
+        const skillsResp = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+            if (chrome.runtime.lastError) resolve({ skills: [] });
+            else resolve(response || { skills: [] });
+          });
+        });
+        const availableSkills = skillsResp && skillsResp.skills ? skillsResp.skills : [];
+        const skillsModule = await getChatSkills();
+
+        // Check for slash commands
+        const cmd = skillsModule.parseCommand(message, availableSkills);
+
+        if (cmd.type === 'skills') {
+          chatUI.addMessage('User', message);
+          const slashCommands = skillsResp.slashCommands || [];
+          const skillsMessage = skillsModule.formatSkillsList(availableSkills, slashCommands);
+          chatUI.addMessage('System', skillsMessage);
+          userInput.value = '';
+          return;
+        }
+
+        if (cmd.type === 'skill') {
+          requestedSkill = cmd.skillName;
+          effectiveMessage = cmd.body || message;
+          chatUI.addMessage('System', `📚 Loading skill: **${requestedSkill}**`);
+        } else {
+          // Fall back to natural-language intent detection
+          const detectedSkill = skillsModule.detectSkillIntent(message, availableSkills);
+          if (detectedSkill) {
+            requestedSkill = detectedSkill.skillName;
+            effectiveMessage = detectedSkill.body || message;
+            chatUI.addMessage(
+              'System',
+              `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`
+            );
+          }
         }
       }
 
-      if (streamState.getMediaData()) {
-        makeApiCallWithMedia(effectiveMessage, streamState.getMediaData(), 'auto', requestedSkill);
-        streamState.setMediaData(null); // Clear media after use
+      if (hasMedia) {
+        makeApiCallWithMedia(effectiveMessage, mediaData, 'auto', requestedSkill);
       } else {
         makeApiCall(effectiveMessage, 'auto', requestedSkill);
       }
@@ -1558,7 +1646,7 @@ document.addEventListener('DOMContentLoaded', () => {
           streamState.addMessageToHistory({ role: 'user', content: userMessage });
         }
 
-        streamState.setMediaData(null); // Clear after use
+        clearCurrentMediaData(); // Clear after use
       }
 
       // Prepare run configuration
@@ -1698,7 +1786,7 @@ document.addEventListener('DOMContentLoaded', () => {
         instructionInput.value = '';
         selectedTextDiv.textContent = '';
         selectedText = null;
-        streamState.setMediaData(null);
+        clearCurrentMediaData();
       } else if (selectedText && selectedText.trim()) {
         // Text-only instruction
         prompt = effectiveInstruction + '\n\n' + selectedText;

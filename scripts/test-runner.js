@@ -151,6 +151,16 @@ function runUnitTests(runner) {
     checkModule('src/chat/ChatMedia.js', ['const MediaType', 'function validateMediaData', 'function getMediaAnalysisPrompt', 'function prepareMediaContent', 'function hasValidMediaData', 'function getMediaDisplayName', 'function supportsVisionAnalysis']);
   });
 
+  runner.test('ChatMedia clipboard helper exists', () => {
+    const content = readFileSafe('src/chat/ChatMedia.js');
+    if (!content.includes('export function readBlobAsBase64')) {
+      throw new Error('ChatMedia.js missing readBlobAsBase64 export');
+    }
+    if (!content.includes('export function readFileAsBase64')) {
+      throw new Error('ChatMedia.js missing readFileAsBase64 export');
+    }
+  });
+
   runner.test('ChatSkills module structure valid', () => {
     checkModule('src/chat/ChatSkills.js', ['function parseCommand', 'function detectSkillIntent', 'function formatSkillsList']);
   });
@@ -353,6 +363,34 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('chat.js supports clipboard image paste attachment flow', () => {
+    const content = readFileSafe('chat.js');
+    const required = [
+      "userInput.addEventListener('paste'",
+      'clipboardData.items',
+      'readBlobAsBase64',
+      "source: 'clipboard'",
+      'setAttachmentPreview',
+      'clearAttachmentPreview',
+      '--chat-input-area-height',
+    ];
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`chat.js missing clipboard attachment token: ${token}`);
+      }
+    }
+  });
+
+  runner.test('ChatUI attachment preview helpers exist', () => {
+    const content = readFileSafe('src/chat/ChatUI.js');
+    const required = ['setAttachmentPreview(', 'clearAttachmentPreview(', 'attachment-strip'];
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`ChatUI.js missing attachment preview token: ${token}`);
+      }
+    }
+  });
+
   // ---------- Config Files ----------
   runner.test('Config files exist and are valid', () => {
     JSON.parse(readFileSafe('.eslintrc.json'));
@@ -458,6 +496,27 @@ function runIntegrationTests(runner) {
       if (!content.includes('</html>')) {
         throw new Error(`${file} missing closing html tag`);
       }
+    }
+  });
+
+  runner.test('Chat input has attachment strip markup', () => {
+    const content = readFileSafe('chat.html');
+    const required = [
+      'attachment-strip',
+      'attachment-thumbnail',
+      'attachment-title',
+      'attachment-details',
+      'attachment-remove-button',
+      'Type a prompt or paste an image',
+    ];
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`chat.html missing attachment input token: ${token}`);
+      }
+    }
+    const css = readFileSafe('chat.css');
+    if (!css.includes('#attachment-strip[hidden]')) {
+      throw new Error('chat.css missing hidden-state override for attachment strip');
     }
   });
 

@@ -362,7 +362,7 @@ export function stopVoiceInput(voiceToggleButton, userInput) {
     voiceToggleButton.classList.remove('active', 'listening');
   }
   if (userInput) {
-    userInput.placeholder = 'Type your message here (or right-click on images/media to analyze)';
+    userInput.placeholder = 'Type a prompt or paste an image';
   }
 }
 
