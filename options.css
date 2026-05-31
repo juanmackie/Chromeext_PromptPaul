@@ -42,6 +42,18 @@ input:invalid:not(:placeholder-shown) {
   border-color: var(--ext-destructive, #dc2626);
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Material Symbols Outlined font styling */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
@@ -112,6 +124,55 @@ input:invalid:not(:placeholder-shown) {
 }
 
 /* Removed the redundant :root and .dark variable declarations as they are already defined with --ext- prefix */
+
+.instructions-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.instructions-search {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.instructions-search .shadcn-input {
+  width: 100%;
+}
+
+.instructions-search-hint {
+  margin-top: 0.35rem;
+  color: var(--ext-muted-foreground);
+  font-size: 0.8rem;
+}
+
+.instructions-count {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ext-muted-foreground);
+  white-space: nowrap;
+}
+
+.instruction-tags-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.instruction-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--ext-accent);
+  color: var(--ext-accent-foreground);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
 
 /* Dark Theme Overrides */
 /* Dark Theme - Unified comprehensive overrides */
@@ -795,29 +856,32 @@ button:disabled {
 
 /* Column width distribution for instructions table */
 #instructionsTable th:nth-child(1) {
-  width: 18%;
+  width: 16%;
 } /* Name */
 #instructionsTable th:nth-child(2) {
-  width: 29%;
-} /* Content - give more space */
+  width: 16%;
+} /* Tags */
 #instructionsTable th:nth-child(3) {
-  width: 15%;
-} /* Tool Choice */
+  width: 22%;
+} /* Content - give more space */
 #instructionsTable th:nth-child(4) {
-  width: 11%;
-} /* Pin */
+  width: 13%;
+} /* Tool Choice */
 #instructionsTable th:nth-child(5) {
-  width: 27%;
+  width: 8%;
+} /* Pin */
+#instructionsTable th:nth-child(6) {
+  width: 25%;
   text-align: right;
 } /* Actions */
 
 /* Right-align the Actions column content */
-#instructionsTable td:nth-child(5) {
+#instructionsTable td:nth-child(6) {
   text-align: right;
 }
 
 /* Specific styling for content column to handle long text */
-#instructionsTable td:nth-child(2) {
+#instructionsTable td:nth-child(3) {
   max-width: 0; /* Forces the cell to respect the width setting */
   overflow: hidden;
   text-overflow: ellipsis;
@@ -825,7 +889,7 @@ button:disabled {
 }
 
 /* Show full content on hover */
-#instructionsTable td:nth-child(2):hover {
+#instructionsTable td:nth-child(3):hover {
   white-space: normal;
   overflow: visible;
   position: relative;
@@ -853,6 +917,11 @@ body.dark-theme #toolsTable {
 
 body.dark-theme #instructionsTable tbody tr:hover {
   background-color: #1a3a4a !important; /* Dark theme hover color - lighter blue-gray */
+}
+
+body.dark-theme .instruction-tag-chip {
+  background: #1f2937;
+  color: #e5e7eb;
 }
 
 /* Collapsible section styles */
@@ -1048,12 +1117,12 @@ footer a:hover {
   }
 
   /* Action buttons in mobile */
-  #instructionsTable td:nth-child(5),
+  #instructionsTable td:nth-child(6),
   #toolsTable td:nth-child(4) {
     padding-left: 6px !important;
   }
 
-  #instructionsTable td:nth-child(5) button,
+  #instructionsTable td:nth-child(6) button,
   #toolsTable td:nth-child(4) button {
     width: auto;
     margin: 0.25rem;

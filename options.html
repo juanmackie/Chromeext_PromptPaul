@@ -331,11 +331,28 @@
           </div>
 
           <div id="instructions-list">
+            <div class="instructions-toolbar">
+              <div class="instructions-search">
+                <label for="instructionSearch" class="sr-only">Search instructions</label>
+                <input
+                  type="search"
+                  id="instructionSearch"
+                  class="shadcn-input"
+                  placeholder="Search instructions by name, content, or tags"
+                  autocomplete="off"
+                />
+                <div class="instructions-search-hint">
+                  Ctrl/Cmd + K to focus search
+                </div>
+              </div>
+              <div class="instructions-count" id="instructionsCount">0 instructions</div>
+            </div>
             <div class="table-container">
               <table id="instructionsTable" class="responsive-table">
                 <thead class="sticky-header">
                   <tr>
                     <th>Name</th>
+                    <th>Tags</th>
                     <th>Content</th>
                     <th>Tool Choice</th>
                     <th>Pin</th>
@@ -376,6 +393,15 @@
                 placeholder="Enter instruction content"
                 rows="4"
               ></textarea>
+            </div>
+            <div class="form-group">
+              <label for="instructionTags">Tags</label>
+              <input
+                type="text"
+                id="instructionTags"
+                placeholder="e.g. research, writing, gmail"
+              />
+              <small>Comma-separated tags for search and organization.</small>
             </div>
             <div class="form-group">
               <label for="instructionToolChoice">Tool Choice</label>

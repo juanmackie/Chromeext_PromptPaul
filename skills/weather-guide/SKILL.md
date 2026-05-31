@@ -1,6 +1,6 @@
 ---
 name: 'weather-guide'
-description: 'A guide for understanding weather reports and terminology. Use this when the user asks about weather data, forecasts, or meteorological concepts.'
+description: 'Explains weather reports, forecasts, and meteorological terminology.'
 license: 'MIT'
 user-invocable: true
 metadata: { 'prompt-paul-tags': 'reference, weather, meteorology' }
@@ -10,60 +10,58 @@ metadata: { 'prompt-paul-tags': 'reference, weather, meteorology' }
 
 ## Purpose
 
-Explain weather terminology, interpret forecasts, and provide context for meteorological conditions.
+Explain weather terminology, interpret forecasts, and give practical context.
 
 ## Terminology
 
-- **Humidity**: The amount of water vapor in the air, expressed as a percentage. High humidity makes temperatures feel warmer.
-- **Precipitation**: Any product of condensed atmospheric water vapor that falls to the ground. Includes rain, snow, sleet, and hail.
-- **Barometric Pressure**: The pressure exerted by the atmosphere. Falling pressure often indicates stormy weather; rising pressure suggests fair weather.
-- **Dew Point**: The temperature at which air becomes saturated with moisture. Higher dew points feel more humid.
-- **Wind Chill**: How cold the air feels on exposed skin due to wind. Lower than actual temperature in cold, windy conditions.
+- **Humidity**: The amount of water vapor in the air, expressed as a percentage.
+- **Precipitation**: Water that falls from the atmosphere, including rain, snow, sleet, and hail.
+- **Barometric Pressure**: The pressure exerted by the atmosphere. Falling pressure often signals storms.
+- **Dew Point**: The temperature at which air becomes saturated with moisture.
+- **Wind Chill**: How cold the air feels on exposed skin because of wind.
 
 ## How to Read a Weather Report
 
-### Basic Elements
-
-1. **Temperature**: Current and forecast highs/lows
-2. **Precipitation**: Chance (percentage) and type
+1. **Temperature**: Current and forecast highs and lows
+2. **Precipitation**: Chance and type
 3. **Wind**: Speed and direction
 4. **Humidity**: Relative humidity percentage
-5. **Pressure**: Barometric pressure in millibars or inches
+5. **Pressure**: Barometric pressure
 
-### Interpreting Forecasts
+## Interpreting Forecasts
 
 **"Scattered showers with isolated thunderstorms"**
 
-- Scattered: Occurring over 30-50% of the area
-- Isolated: Thunderstorms affecting less than 30% of the area
-- Expect intermittent rain, not continuous
+- Scattered means rain is spread across part of the area.
+- Isolated means storms are limited to a small portion of the area.
+- Expect intermittent rain, not continuous rain.
 
 **"Partly cloudy with a 40% chance of rain"**
 
-- Partly cloudy: 3/8 to 5/8 cloud cover
-- 40% chance: Rain likely at some point, but not guaranteed
-- Pack an umbrella just in case
+- Partly cloudy means there will be a mix of sun and cloud cover.
+- A 40% chance means rain is possible, but not certain.
+- Bring an umbrella if you want to be safe.
 
 **"High pressure system bringing clear skies"**
 
-- High pressure: Stable, sinking air
-- Usually means fair weather, light winds
-- Good conditions for outdoor activities
+- High pressure usually means stable air and calmer weather.
+- Clear skies and light winds are common.
+- It is usually a good setup for outdoor plans.
 
 ## Common Weather Questions
 
 **"What does 70% humidity feel like?"**
 
-- Comfortable at moderate temperatures (60-75°F)
-- Can feel sticky/stuffy at warmer temperatures
-- Compare to dew point: 70°F+ dew point feels oppressive
+- Comfortable at moderate temperatures.
+- Can feel sticky or muggy when it is warm.
+- Dew point is often a better guide for how oppressive it feels.
 
 **"Why does it feel colder than the actual temperature?"**
 
-- Wind removes heat from your body faster
-- Wind chill makes it feel colder on exposed skin
-- Dress for the "feels like" temperature, not the actual
+- Wind removes heat from your body faster.
+- Wind chill describes how cold it feels on exposed skin.
+- Dress for the feels-like temperature, not just the thermometer reading.
 
 ## Output Format
 
-Provide clear, practical explanations suitable for general audiences. Include relevant context and practical implications when explaining weather phenomena.
+Provide clear, practical explanations suitable for general audiences.

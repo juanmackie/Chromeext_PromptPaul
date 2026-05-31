@@ -20,6 +20,7 @@ import {
   formatToolsForLlm,
   normalizeToolChoice,
 } from './src/utils/toolChoiceBuilder.js';
+import { resolvePreferredProfile } from './src/utils/profileRouting.js';
 
 // ===== Named Constants =====
 
@@ -666,24 +667,11 @@ async function validateConfig() {
   // Find profiles
   const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
   const defaultProfile = profiles.find((p) => p.id === 'default');
-
-  // Validate profile with optional endpoint override
-  const validateProfile = (profile, endpointOverride = null) => {
-    const endpoint = endpointOverride || profile?.llmEndpoint;
-    return endpoint && isValidURL(endpoint) && profile?.apiKey && profile?.modelName;
-  };
-
-  // Check profiles in priority order
-  let validProfile = null;
-  if (validateProfile(selectedProfile)) {
-    validProfile = selectedProfile;
-  } else if (validateProfile(selectedProfile, defaultLlmEndpoint)) {
-    validProfile = { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
-  } else if (validateProfile(defaultProfile)) {
-    validProfile = defaultProfile;
-  } else if (validateProfile(defaultProfile, defaultLlmEndpoint)) {
-    validProfile = { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
-  }
+  const validProfile = resolvePreferredProfile({
+    selectedProfile,
+    defaultProfile,
+    defaultLlmEndpoint,
+  });
 
   if (validProfile) {
     return validProfile;

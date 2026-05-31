@@ -921,202 +921,317 @@ function setupInstructionHandlers() {
   const saveInstructionBtn = document.getElementById('saveInstruction');
   const clearFormBtn = document.getElementById('clearForm');
   const instructionForm = document.querySelector('.instruction-form');
+  const instructionSearchInput = document.getElementById('instructionSearch');
+  const instructionsCount = document.getElementById('instructionsCount');
 
-  // Load and display instructions
-  function loadInstructions() {
-    chrome.storage.local.get(['instructions'], (result) => {
-      const instructions = result.instructions || [];
-      const tableBody = document.querySelector('#instructionsTable tbody');
-      tableBody.innerHTML = '';
+  let currentInstructions = [];
+  let currentPinnedQuickActions = new Set();
+  let instructionSearchQuery = '';
 
-      instructions.forEach((instruction) => {
-        const row = document.createElement('tr');
-        // Handle tool_choice display (could be string or array)
-        let toolChoiceDisplay = 'None'; // Default display
-        if (instruction.tool_choice) {
-          if (Array.isArray(instruction.tool_choice)) {
-            if (instruction.tool_choice.length === 0 || instruction.tool_choice.includes('none')) {
-              toolChoiceDisplay = 'None';
-            } else if (instruction.tool_choice.includes('auto')) {
-              toolChoiceDisplay = 'Auto';
-            } else {
-              toolChoiceDisplay = instruction.tool_choice.join(', '); // Join array elements
-            }
-          } else {
-            // Handle older string format for backward compatibility
-            toolChoiceDisplay =
-              instruction.tool_choice.charAt(0).toUpperCase() + instruction.tool_choice.slice(1);
-          }
-        }
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
-        row.innerHTML = `
-          <td data-label="Name">${instruction.name}</td>
-          <td data-label="Content">${instruction.content}</td>
-          <td data-label="Tool Choice">${toolChoiceDisplay}</td>
-          <td data-label="Pin"><button class="pin-btn" data-id="${instruction.id}" title="Toggle Pin"><span class="material-symbols-outlined">hourglass_empty</span></button></td>
-          <td data-label="Actions">
-            <button class="edit-btn" data-id="${instruction.id}">Edit</button>
-            <button class="improve-btn" data-id="${instruction.id}">Improve</button>
-            <button class="delete-btn" data-id="${instruction.id}">Delete</button>
-          </td>
-        `;
-        tableBody.appendChild(row);
+  function normalizeInstructionId(value, fallback) {
+    const cleaned = String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+    if (cleaned) return cleaned;
+    return fallback;
+  }
 
-        // Asynchronously update the just-added pin button's state
-        const currentPinButton = row.querySelector(`.pin-btn[data-id="${instruction.id}"]`);
-        if (currentPinButton) {
-          chrome.storage.local.get(['pinnedQuickActions'], (result) => {
-            const pinnedQuickActions = result.pinnedQuickActions || [];
-            if (pinnedQuickActions.includes(instruction.id)) {
-              currentPinButton.innerHTML =
-                '<span class="material-symbols-outlined">keep_off</span>';
-              currentPinButton.classList.add('pinned');
-              currentPinButton.title = 'Unpin from Quick Actions';
-            } else {
-              currentPinButton.innerHTML =
-                '<span class="material-symbols-outlined">push_pin</span>';
-              currentPinButton.classList.remove('pinned'); // Ensure it's not there if re-rendering
-              currentPinButton.title = 'Pin to Quick Actions';
-            }
-          });
-        }
+  function hashString(value) {
+    let hash = 5381;
+    for (const character of String(value || '')) {
+      hash = (hash * 33) ^ character.codePointAt(0);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function parseTags(value) {
+    if (Array.isArray(value)) {
+      return value.map((tag) => String(tag || '').trim()).filter(Boolean);
+    }
+
+    return String(value || '')
+      .split(/[,;\n|]+/g)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+
+  function normalizeInstructionTags(value) {
+    const seen = new Set();
+    const tags = [];
+    for (const tag of parseTags(value)) {
+      const normalized = tag.replace(/\s+/g, ' ');
+      if (!normalized) continue;
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tags.push(normalized.slice(0, 40));
+      if (tags.length >= 12) break;
+    }
+    return tags;
+  }
+
+  function normalizeInstructionRecord(instruction) {
+    if (!instruction || typeof instruction !== 'object') return null;
+    const name = String(instruction.name || '').trim();
+    const content = String(instruction.content || '').trim();
+    if (!name || !content) return null;
+    const tags = normalizeInstructionTags(instruction.tags || []);
+    const modalities = Array.isArray(instruction.modalities) && instruction.modalities.length > 0
+      ? instruction.modalities
+      : ['text'];
+    const createdAt = instruction.createdAt || instruction.lastUpdated || new Date().toISOString();
+    const fallbackId = `inst_${hashString(`${name}\n${content}\n${createdAt}`)}`;
+    return {
+      ...instruction,
+      id: normalizeInstructionId(instruction.id, fallbackId),
+      name,
+      content,
+      tags,
+      tool_choice: instruction.tool_choice || 'none',
+      modalities,
+      createdAt,
+      lastUpdated: instruction.lastUpdated || createdAt,
+    };
+  }
+
+  function formatToolChoiceDisplay(toolChoice) {
+    if (!toolChoice) return 'None';
+    if (Array.isArray(toolChoice)) {
+      if (toolChoice.length === 0 || toolChoice.includes('none')) return 'None';
+      if (toolChoice.includes('auto')) return 'Auto';
+      return toolChoice.join(', ');
+    }
+    return String(toolChoice).charAt(0).toUpperCase() + String(toolChoice).slice(1);
+  }
+
+  function getInstructionSearchTerms(query) {
+    return String(query || '')
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  function matchesInstructionSearch(instruction, queryTerms) {
+    if (queryTerms.length === 0) return true;
+    const haystack = [
+      instruction.name,
+      instruction.content,
+      formatToolChoiceDisplay(instruction.tool_choice),
+      (instruction.tags || []).join(' '),
+    ]
+      .join(' ')
+      .toLowerCase();
+    return queryTerms.every((term) => haystack.includes(term));
+  }
+
+  function renderTagChips(tags) {
+    if (!tags || tags.length === 0) {
+      return '<span class="instruction-tag-chip" style="opacity: 0.72;">No tags</span>';
+    }
+    return tags
+      .map((tag) => `<span class="instruction-tag-chip">${escapeHtml(tag)}</span>`)
+      .join('');
+  }
+
+  function updateInstructionsCount(visibleCount, totalCount) {
+    if (!instructionsCount) return;
+    instructionsCount.textContent =
+      visibleCount === totalCount
+        ? `${totalCount} instruction${totalCount === 1 ? '' : 's'}`
+        : `${visibleCount} of ${totalCount} instructions`;
+  }
+
+  function renderInstructions() {
+    const tableBody = document.querySelector('#instructionsTable tbody');
+    if (!tableBody) return;
+
+    const queryTerms = getInstructionSearchTerms(instructionSearchQuery);
+    const visibleInstructions = currentInstructions
+      .filter((instruction) => matchesInstructionSearch(instruction, queryTerms))
+      .sort((a, b) => {
+        const aPinned = currentPinnedQuickActions.has(a.id);
+        const bPinned = currentPinnedQuickActions.has(b.id);
+        if (aPinned !== bPinned) return aPinned ? -1 : 1;
+        return (a.name || '').localeCompare(b.name || '');
       });
 
-      // Add pin/edit/delete handlers (improve-btn is handled separately if it has complex logic)
-      document.querySelectorAll('.pin-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const button = e.currentTarget;
-          const instructionId = button.dataset.id;
+    tableBody.innerHTML = '';
 
-          chrome.storage.local.get(['pinnedQuickActions'], (result) => {
-            let pinnedQuickActions = result.pinnedQuickActions || [];
-            const isPinned = pinnedQuickActions.includes(instructionId);
+    if (visibleInstructions.length === 0) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.innerHTML = `
+        <td colspan="6" style="text-align:center;color:var(--ext-muted-foreground);padding:1.5rem;">
+          ${currentInstructions.length === 0 ? 'No instructions yet.' : 'No instructions match your search.'}
+        </td>
+      `;
+      tableBody.appendChild(emptyRow);
+      updateInstructionsCount(0, currentInstructions.length);
+      return;
+    }
 
-            if (isPinned) {
-              pinnedQuickActions = pinnedQuickActions.filter((id) => id !== instructionId);
-              button.innerHTML = '<span class="material-symbols-outlined">push_pin</span>';
-              button.classList.remove('pinned');
-              button.title = 'Pin to Quick Actions';
-              showStatus('Instruction unpinned from Quick Actions.');
+    visibleInstructions.forEach((instruction) => {
+      const row = document.createElement('tr');
+      const toolChoiceDisplay = formatToolChoiceDisplay(instruction.tool_choice);
+      const tagsHtml = renderTagChips(instruction.tags || []);
+      row.innerHTML = `
+        <td data-label="Name">${escapeHtml(instruction.name)}</td>
+        <td data-label="Tags"><div class="instruction-tags-cell">${tagsHtml}</div></td>
+        <td data-label="Content">${escapeHtml(instruction.content)}</td>
+        <td data-label="Tool Choice">${escapeHtml(toolChoiceDisplay)}</td>
+        <td data-label="Pin"><button class="pin-btn${currentPinnedQuickActions.has(instruction.id) ? ' pinned' : ''}" data-id="${escapeHtml(instruction.id)}" title="${currentPinnedQuickActions.has(instruction.id) ? 'Unpin from Quick Actions' : 'Pin to Quick Actions'}"><span class="material-symbols-outlined">${currentPinnedQuickActions.has(instruction.id) ? 'keep_off' : 'push_pin'}</span></button></td>
+        <td data-label="Actions">
+          <button class="edit-btn" data-id="${escapeHtml(instruction.id)}">Edit</button>
+          <button class="improve-btn" data-id="${escapeHtml(instruction.id)}">Improve</button>
+          <button class="delete-btn" data-id="${escapeHtml(instruction.id)}">Delete</button>
+        </td>
+      `;
+      tableBody.appendChild(row);
+    });
+
+    updateInstructionsCount(visibleInstructions.length, currentInstructions.length);
+
+    document.querySelectorAll('.pin-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const button = e.currentTarget;
+        const instructionId = button.dataset.id;
+        chrome.storage.local.get(['pinnedQuickActions'], (result) => {
+          let pinnedQuickActions = result.pinnedQuickActions || [];
+          const isPinned = pinnedQuickActions.includes(instructionId);
+
+          if (isPinned) {
+            pinnedQuickActions = pinnedQuickActions.filter((id) => id !== instructionId);
+            showStatus('Instruction unpinned from Quick Actions.');
+          } else {
+            pinnedQuickActions.push(instructionId);
+            showStatus('Instruction pinned to Quick Actions.');
+          }
+
+          chrome.storage.local.set({ pinnedQuickActions }, () => {
+            currentPinnedQuickActions = new Set(pinnedQuickActions);
+            renderInstructions();
+          });
+        });
+      });
+    });
+
+    document.querySelectorAll('.edit-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const instructionId = e.currentTarget.dataset.id;
+        const instruction = currentInstructions.find((item) => item.id === instructionId);
+        if (instruction) {
+          document.getElementById('instructionName').value = instruction.name;
+          document.getElementById('instructionContent').value = instruction.content;
+          document.getElementById('instructionTags').value = (instruction.tags || []).join(', ');
+          document.getElementById('instructionId').value = instruction.id;
+
+          const toolChoiceInput = document.getElementById('instructionToolChoice');
+          if (toolChoiceInput) {
+            if (Array.isArray(instruction.tool_choice)) {
+              toolChoiceInput.value = instruction.tool_choice.join(', ');
+            } else if (instruction.tool_choice) {
+              toolChoiceInput.value = instruction.tool_choice;
             } else {
-              pinnedQuickActions.push(instructionId);
-              button.innerHTML = '<span class="material-symbols-outlined">keep_off</span>';
-              button.classList.add('pinned');
-              button.title = 'Unpin from Quick Actions';
-              showStatus('Instruction pinned to Quick Actions.');
+              toolChoiceInput.value = 'none';
             }
+          }
 
-            chrome.storage.local.set({ pinnedQuickActions: pinnedQuickActions }, () => {
-              if (chrome.runtime.lastError) {
-                showStatus(
-                  'Error updating pinned status: ' + chrome.runtime.lastError.message,
-                  true
-                );
+          const modalities = instruction.modalities || ['text'];
+          document.getElementById('modalityText').checked = modalities.includes('text');
+          document.getElementById('modalityImage').checked = modalities.includes('image');
+          document.getElementById('modalityVideo').checked = modalities.includes('video');
+          document.getElementById('modalityAudio').checked = modalities.includes('audio');
+        }
+      });
+    });
+
+    document.querySelectorAll('.delete-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const instructionId = e.currentTarget.dataset.id;
+        if (confirm('Are you sure you want to delete this instruction?')) {
+          chrome.storage.local.get(['instructions'], (result) => {
+            let instructions = result.instructions || [];
+            instructions = instructions.filter((item) => item.id !== instructionId);
+            chrome.storage.local.set({ instructions }, () => {
+              showStatus('Instruction deleted!');
+              refreshInstructions();
+              if (document.getElementById('instructionId').value === instructionId) {
+                clearForm();
               }
             });
           });
-        });
+        }
       });
-      document.querySelectorAll('.edit-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const instructionId = e.target.dataset.id;
-          const instruction = instructions.find((i) => i.id === instructionId);
-          if (instruction) {
-            document.getElementById('instructionName').value = instruction.name;
-            document.getElementById('instructionContent').value = instruction.content;
-            document.getElementById('instructionId').value = instruction.id;
+    });
 
-            // Set the tool_choice input
-            const toolChoiceInput = document.getElementById('instructionToolChoice');
-            if (toolChoiceInput) {
-              if (Array.isArray(instruction.tool_choice)) {
-                toolChoiceInput.value = instruction.tool_choice.join(', ');
-              } else if (instruction.tool_choice) {
-                toolChoiceInput.value = instruction.tool_choice;
-              } else {
-                toolChoiceInput.value = 'none';
-              }
-            }
-
-            // Set the modality checkboxes
-            const modalities = instruction.modalities || ['text']; // Default to text if not set
-            document.getElementById('modalityText').checked = modalities.includes('text');
-            document.getElementById('modalityImage').checked = modalities.includes('image');
-            document.getElementById('modalityVideo').checked = modalities.includes('video');
-            document.getElementById('modalityAudio').checked = modalities.includes('audio');
-          }
-        });
-      });
-
-      document.querySelectorAll('.delete-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const instructionId = e.target.dataset.id;
-          if (confirm('Are you sure you want to delete this instruction?')) {
-            chrome.storage.local.get(['instructions'], (result) => {
-              let instructions = result.instructions || [];
-              instructions = instructions.filter((i) => i.id !== instructionId);
-              chrome.storage.local.set({ instructions: instructions }, () => {
-                showStatus('Instruction deleted!');
-                loadInstructions(); // Reload the table
-                // Clear the form if the deleted instruction was being edited
-                if (document.getElementById('instructionId').value === instructionId) {
-                  clearForm();
+    document.querySelectorAll('.improve-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        const instructionId = e.currentTarget.dataset.id;
+        const instruction = currentInstructions.find((item) => item.id === instructionId);
+        if (instruction) {
+          showStatus('Improving instruction...', false, true);
+          try {
+            const config = await new Promise((resolve, reject) => {
+              chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+                const profiles = result.profiles || [];
+                const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
+                const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
+                if (
+                  selectedProfile &&
+                  selectedProfile.llmEndpoint &&
+                  selectedProfile.apiKey &&
+                  selectedProfile.modelName
+                ) {
+                  resolve(selectedProfile);
+                } else {
+                  reject(
+                    new Error('API configuration is incomplete. Please set it up in settings.')
+                  );
                 }
               });
             });
+
+            const improvedContent = await improvePromptAPI(
+              config.llmEndpoint,
+              config.apiKey,
+              config.modelName,
+              instruction.content
+            );
+
+            document.getElementById('instructionName').value = instruction.name;
+            document.getElementById('instructionContent').value = improvedContent;
+            document.getElementById('instructionTags').value = (instruction.tags || []).join(', ');
+            document.getElementById('instructionId').value = instruction.id;
+
+            showStatus('Instruction improved! Review and Save.', false, true);
+          } catch (error) {
+            console.error('Error improving instruction:', error);
+            showStatus('Failed to improve instruction: ' + error.message, true);
           }
-        });
+        }
       });
+    });
+  }
 
-      // Add improve handler (calls the API)
-      document.querySelectorAll('.improve-btn').forEach((btn) => {
-        btn.addEventListener('click', async (e) => {
-          const instructionId = e.target.dataset.id;
-          const instruction = instructions.find((i) => i.id === instructionId);
-          if (instruction) {
-            showStatus('Improving instruction...', false, true); // Show as toast
-            try {
-              // Get current API config from the selected profile
-              const config = await new Promise((resolve, reject) => {
-                chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-                  const profiles = result.profiles || [];
-                  const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-                  const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
-                  if (
-                    selectedProfile &&
-                    selectedProfile.llmEndpoint &&
-                    selectedProfile.apiKey &&
-                    selectedProfile.modelName
-                  ) {
-                    resolve(selectedProfile);
-                  } else {
-                    reject(
-                      new Error('API configuration is incomplete. Please set it up in settings.')
-                    );
-                  }
-                });
-              });
-
-              const improvedContent = await improvePromptAPI(
-                config.llmEndpoint,
-                config.apiKey,
-                config.modelName,
-                instruction.content // Pass the instruction content to the API
-              );
-
-              // Update the form with the improved content
-              document.getElementById('instructionName').value = instruction.name; // Keep original name
-              document.getElementById('instructionContent').value = improvedContent;
-              document.getElementById('instructionId').value = instruction.id; // Keep original ID
-
-              showStatus('Instruction improved! Review and Save.', false, true); // Show as toast
-            } catch (error) {
-              console.error('Error improving instruction:', error);
-              showStatus('Failed to improve instruction: ' + error.message, true);
-            }
-          }
-        });
-      });
+  function refreshInstructions() {
+    chrome.storage.local.get(['instructions', 'pinnedQuickActions'], (result) => {
+      currentInstructions = (result.instructions || [])
+        .map(normalizeInstructionRecord)
+        .filter(Boolean);
+      currentPinnedQuickActions = new Set(result.pinnedQuickActions || []);
+      renderInstructions();
     });
   }
 
@@ -1125,9 +1240,11 @@ function setupInstructionHandlers() {
     saveInstructionBtn.addEventListener('click', () => {
       const instructionName = document.getElementById('instructionName').value.trim();
       const instructionContent = document.getElementById('instructionContent').value.trim();
+      const instructionTags = document.getElementById('instructionTags').value.trim();
       const instructionId = document.getElementById('instructionId').value;
       const toolChoiceInput = document.getElementById('instructionToolChoice');
       const toolChoiceValue = toolChoiceInput.value.trim();
+      const tags = normalizeInstructionTags(instructionTags);
 
       // Get selected modalities
       const modalities = [];
@@ -1153,6 +1270,7 @@ function setupInstructionHandlers() {
                 ...inst,
                 name: instructionName,
                 content: instructionContent,
+                tags,
                 tool_choice: toolChoiceValue || 'none', // Save as string
                 modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
                 lastUpdated: now,
@@ -1167,6 +1285,7 @@ function setupInstructionHandlers() {
             id: 'inst_' + Date.now(), // Simple unique ID
             name: instructionName,
             content: instructionContent,
+            tags,
             tool_choice: toolChoiceValue || 'none', // Save as string
             modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
             createdAt: now,
@@ -1177,7 +1296,7 @@ function setupInstructionHandlers() {
         }
 
         chrome.storage.local.set({ instructions: instructions }, () => {
-          loadInstructions(); // Reload the table
+          refreshInstructions(); // Reload the table
           clearForm(); // Clear the form after saving
         });
       });
@@ -1207,6 +1326,7 @@ function setupInstructionHandlers() {
 
     document.getElementById('instructionName').value = '';
     document.getElementById('instructionContent').value = '';
+    document.getElementById('instructionTags').value = '';
     document.getElementById('instructionId').value = '';
     document.getElementById('instructionToolChoice').value = '';
 
@@ -1282,7 +1402,7 @@ function setupInstructionHandlers() {
 
             chrome.storage.local.set({ instructions: existingInstructions }, () => {
               showStatus('Instructions imported successfully!');
-              loadInstructions(); // Reload the table
+              refreshInstructions(); // Reload the table
             });
           });
         } else {
@@ -1297,8 +1417,37 @@ function setupInstructionHandlers() {
   });
 
   // Initial load of instructions and tools
-  loadInstructions();
+  refreshInstructions();
   populateToolDropdown(); // Populate tool dropdown on load
+
+  if (instructionSearchInput) {
+    instructionSearchInput.addEventListener('input', (event) => {
+      instructionSearchQuery = event.target.value || '';
+      renderInstructions();
+    });
+
+    instructionSearchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && instructionSearchInput.value) {
+        instructionSearchInput.value = '';
+        instructionSearchQuery = '';
+        renderInstructions();
+        event.preventDefault();
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    const isSearchShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
+    if (!isSearchShortcut) return;
+    event.preventDefault();
+    if (instructionSearchInput) {
+      instructionSearchInput.focus();
+      instructionSearchInput.select();
+    }
+  });
+
+  window.setupInstructionHandlers = setupInstructionHandlers;
+  window.loadInstructions = refreshInstructions;
 }
 
 // Function to call the API for prompt improvement

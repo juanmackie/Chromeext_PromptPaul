@@ -13,32 +13,7 @@
  */
 
 import { loadingManager } from '../../loadingManager.js';
-
-// Model name patterns that indicate vision support
-const VISION_MODEL_PATTERNS = [
-  /vision/i,
-  /gpt-4o/i,
-  /gpt-4\.\d+-turbo/i,
-  /claude-3/i,
-  /claude-4/i,
-  /gemini-pro-vision/i,
-  /gemini-2\.\d+-flash/i,
-  /gemini-2\.\d+-pro/i,
-  /llava/i,
-  /cogvlm/i,
-  /qwen-vl/i,
-  /internlm-xcomposer/i,
-];
-
-/**
- * Check if a model name supports vision/image inputs.
- * @param {string} modelName
- * @returns {boolean}
- */
-export function modelSupportsVision(modelName) {
-  if (!modelName) return false;
-  return VISION_MODEL_PATTERNS.some((pattern) => pattern.test(modelName));
-}
+import { isProfileUsable, modelSupportsVision } from '../utils/profileRouting.js';
 
 /**
  * Select the optimal profile for a request based on media context.
@@ -148,12 +123,7 @@ export async function getApiConfig() {
         profiles.find((p) => p.id === lastSelectedProfileId) ||
         profiles.find((p) => p.id === 'default');
 
-      if (
-        !selectedProfile ||
-        !selectedProfile.llmEndpoint ||
-        !selectedProfile.apiKey ||
-        !selectedProfile.modelName
-      ) {
+      if (!isProfileUsable(selectedProfile)) {
         console.error('Chat: Configuration is incomplete or missing.');
         const error = new Error(
           'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'

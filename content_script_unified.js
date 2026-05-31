@@ -338,6 +338,8 @@
           byline: article.byline || '',
           excerpt: article.excerpt || '',
           lang: article.lang || '',
+          canonicalUrl: getCanonicalUrl(),
+          publishedTime: getPublishedTime(),
         };
 
         if (turndownService) {
@@ -377,6 +379,7 @@
           type: 'fallback-markdown',
           title: document.title,
           siteName: window.location.hostname.replace('www.', ''),
+          lang: document.documentElement?.lang || '',
           data: markdown,
         };
       }
@@ -469,6 +472,165 @@
     return 'dom';
   }
 
+  function collectPageSignals(url, platformInfo, bodyText) {
+    const text = String(bodyText || '');
+    const platform = platformInfo?.platform || null;
+    const codeBlockCount = document.querySelectorAll('pre, code').length;
+    const tableCount = document.querySelectorAll('table').length;
+    const listItemCount = document.querySelectorAll('li').length;
+    const headingCount = document.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
+    const paragraphCount = document.querySelectorAll('p').length;
+    const linkCount = document.querySelectorAll('a').length;
+    const imageCount = document.images.length;
+    const hasCanvas = document.querySelectorAll('canvas').length > 2;
+    const hasVideo = document.querySelectorAll('video').length > 0;
+    const hasDenseInteractiveUi = document.querySelectorAll('[contenteditable]').length > 5;
+    const adapterMatched = Boolean(platformInfo);
+    const isCodeHeavy =
+      platform === 'github' ||
+      platform === 'gitlab' ||
+      codeBlockCount > 4 ||
+      (linkCount > 80 && codeBlockCount > 1) ||
+      /(code|docs|developer|api|reference)/i.test(url || '');
+    const isTableHeavy = platform === 'google-sheets' || tableCount > 2;
+    const isListHeavy = listItemCount > 20 || (listItemCount > 8 && text.length < 5000);
+    const isArticleLike =
+      platform === 'news' ||
+      platform === 'wikipedia' ||
+      platform === 'arxiv' ||
+      platform === 'pdf' ||
+      (text.length > 1200 && headingCount <= 20 && !isCodeHeavy && !isTableHeavy);
+
+    return {
+      adapterMatched,
+      hasCanvas,
+      hasVideo,
+      hasDenseInteractiveUi,
+      textLength: text.length,
+      imageCount,
+      platform,
+      codeBlockCount,
+      tableCount,
+      listItemCount,
+      headingCount,
+      paragraphCount,
+      linkCount,
+      isCodeHeavy,
+      isTableHeavy,
+      isListHeavy,
+      isArticleLike,
+    };
+  }
+
+  function normalizeExtractionText(text) {
+    return String(text || '')
+      .replace(/\u0000/gu, '')
+      .replace(/\r\n/gu, '\n')
+      .replace(/\n{4,}/gu, '\n\n\n')
+      .trim();
+  }
+
+  function countPatternMatches(text, pattern) {
+    const matches = String(text || '').match(pattern);
+    return matches ? matches.length : 0;
+  }
+
+  function getCanonicalUrl() {
+    return document.querySelector('link[rel="canonical"]')?.href || '';
+  }
+
+  function getPublishedTime() {
+    return (
+      document.querySelector('meta[property="article:published_time"]')?.content?.trim() ||
+      document.querySelector('meta[name="article:published_time"]')?.content?.trim() ||
+      document.querySelector('meta[name="date"]')?.content?.trim() ||
+      document.querySelector('meta[property="og:published_time"]')?.content?.trim() ||
+      ''
+    );
+  }
+
+  function buildExtractionReason(source, signals) {
+    if (source === 'readability') {
+      if (signals.isArticleLike) return 'Article-like page favored Readability.';
+      if (signals.isCodeHeavy || signals.isTableHeavy || signals.isListHeavy) {
+        return 'Readability still produced the cleaner narrative text.';
+      }
+      return 'Readability produced the most coherent text extraction.';
+    }
+
+    if (signals.isCodeHeavy) return 'Fallback kept code and link structure on a code-heavy page.';
+    if (signals.isTableHeavy) return 'Fallback preserved tables and structured content better.';
+    if (signals.isListHeavy) return 'Fallback retained list structure better than Readability.';
+    if (signals.isArticleLike) return 'Fallback won despite the page reading like an article.';
+    return 'Fallback preserved more usable structure.';
+  }
+
+  function scoreExtractionCandidate(candidate, source, signals) {
+    const content = normalizeExtractionText(candidate?.data || '');
+    if (!content) {
+      return {
+        source,
+        score: Number.NEGATIVE_INFINITY,
+        content,
+        contentLength: 0,
+        reason: 'Empty content',
+        candidate,
+      };
+    }
+
+    const headingCount = countPatternMatches(content, /^#{1,6}\s+/gm);
+    const codeFenceCount = countPatternMatches(content, /^```/gm);
+    const tableRowCount = countPatternMatches(content, /^\|.*\|$/gm);
+    const listCount = countPatternMatches(content, /^\s*(?:[-*+]|\d+\.)\s+/gm);
+    const blockquoteCount = countPatternMatches(content, /^\s*>\s+/gm);
+    const codeInlineCount = countPatternMatches(content, /`[^`\n]+`/g);
+    const lineCount = content.split('\n').length;
+
+    let score = content.length;
+    score += headingCount * 180;
+    score += codeFenceCount * 260;
+    score += tableRowCount * 45;
+    score += listCount * 30;
+    score += blockquoteCount * 25;
+    score += codeInlineCount * 8;
+    score += Math.min(lineCount, 200) * 2;
+
+    if (source === 'readability') {
+      score += signals.isArticleLike ? 320 : 80;
+      score += signals.textLength > 2000 ? 120 : 0;
+      score -= signals.isCodeHeavy ? 220 : 0;
+      score -= signals.isTableHeavy ? 120 : 0;
+      score -= signals.isListHeavy && !signals.isArticleLike ? 60 : 0;
+    } else {
+      score += signals.isCodeHeavy ? 320 : 0;
+      score += signals.isTableHeavy ? 220 : 0;
+      score += signals.isListHeavy ? 140 : 0;
+      score -= signals.isArticleLike ? 140 : 0;
+      score += signals.platform === 'github' ? 120 : 0;
+    }
+
+    if (content.length < 120) score -= 500;
+    if (content.length < 400) score -= 150;
+    if (content.length > 15000) score += 60;
+
+    return {
+      source,
+      score,
+      content,
+      contentLength: content.length,
+      reason: buildExtractionReason(source, signals),
+      candidate,
+    };
+  }
+
+  function chooseExtractionResult(readabilityResult, fallbackResult, signals) {
+    const scored = [];
+    if (readabilityResult) scored.push(scoreExtractionCandidate(readabilityResult, 'readability', signals));
+    if (fallbackResult) scored.push(scoreExtractionCandidate(fallbackResult, 'fallback', signals));
+    scored.sort((a, b) => b.score - a.score || b.contentLength - a.contentLength);
+    return scored[0] || null;
+  }
+
   // --- 4c. SCREENSHOT NEED DETECTION ---
 
   function needsScreenshot() {
@@ -486,14 +648,8 @@
     const url = window.location.href;
     const platformInfo = detectPlatform(url);
     const bodyText = document.body?.innerText || '';
-    const readStrategy = determineReadStrategy({
-      adapterMatched: Boolean(platformInfo),
-      hasCanvas: document.querySelectorAll('canvas').length > 2,
-      hasVideo: document.querySelectorAll('video').length > 0,
-      hasDenseInteractiveUi: document.querySelectorAll('[contenteditable]').length > 5,
-      textLength: bodyText.length,
-      imageCount: document.images.length,
-    });
+    const pageSignals = collectPageSignals(url, platformInfo, bodyText);
+    const readStrategy = determineReadStrategy(pageSignals);
     const requestScreenshot = needsScreenshot();
 
     let screenshotData = null;
@@ -512,41 +668,47 @@
     if (isVideoSite(url)) {
       const videoResult = await extractVideo();
       if (videoResult) {
-        return { ...videoResult, platform: platformInfo?.platform || null, platformInfo, readStrategy, screenshot: screenshotData };
+        return {
+          ...videoResult,
+          platform: platformInfo?.platform || null,
+          platformInfo,
+          readStrategy,
+          screenshot: screenshotData,
+          extractionSource: 'video',
+          extractionReason: 'Video pages use transcript or metadata extraction.',
+        };
       }
     }
 
     // 2. Run BOTH extractors for comparison
     const readabilityResult = extractReadability();
     const fallbackResult = extractFallback();
+    const chosen = chooseExtractionResult(readabilityResult, fallbackResult, pageSignals);
 
     // 3. Handle edge cases where one fails
-    if (!readabilityResult && !fallbackResult) {
-      return { success: false, error: 'Extraction failed', platform: null, platformInfo: null, readStrategy, screenshot: null };
+    if (!chosen) {
+      return {
+        success: false,
+        error: 'Extraction failed',
+        platform: null,
+        platformInfo: null,
+        readStrategy,
+        screenshot: null,
+        extractionSource: null,
+      };
     }
-    if (!readabilityResult) {
-      return { ...fallbackResult, platform: platformInfo?.platform || null, platformInfo, readStrategy, screenshot: screenshotData };
-    }
-    if (!fallbackResult) {
-      return { ...readabilityResult, platform: platformInfo?.platform || null, platformInfo, readStrategy, screenshot: screenshotData };
-    }
-
-    // 4. Compare outputs - if fallback has 2x+ more content, use it (forum pattern)
-    const readLen = readabilityResult.data?.length || 0;
-    const fallLen = fallbackResult.data?.length || 0;
-
-    if (fallLen > readLen * 2) {
-      console.log(
-        `PromptPaul: Using fallback (${fallLen} vs ${readLen} chars) - forum-like content detected`
-      );
-      return { ...fallbackResult, platform: platformInfo?.platform || null, platformInfo, readStrategy, screenshot: screenshotData };
-    }
-
-    // 5. Otherwise prefer Readability (cleaner for articles)
     console.log(
-      `PromptPaul: Using Readability (${readLen} vs ${fallLen} chars) - article-like content`
+      `PromptPaul: Using ${chosen.source} (${chosen.contentLength} chars, score ${chosen.score}) - ${chosen.reason}`
     );
-    return { ...readabilityResult, platform: platformInfo?.platform || null, platformInfo, readStrategy, screenshot: screenshotData };
+    return {
+      ...chosen.candidate,
+      platform: platformInfo?.platform || null,
+      platformInfo,
+      readStrategy,
+      screenshot: screenshotData,
+      extractionSource: chosen.source,
+      extractionReason: chosen.reason,
+    };
   }
 
   async function captureVideoFrame() {
@@ -627,6 +789,8 @@
             platformInfo: result ? result.platformInfo || null : null,
             readStrategy: result ? result.readStrategy || 'auto' : 'auto',
             screenshot: result ? result.screenshot || null : null,
+            extractionSource: result ? result.extractionSource || null : null,
+            extractionReason: result ? result.extractionReason || null : null,
             error: result ? null : 'Extraction failed',
           };
           console.log('PromptPaul Content Script: Sending response:', response.success);

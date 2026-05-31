@@ -262,6 +262,8 @@ document.addEventListener('DOMContentLoaded', () => {
               url: response.url,
               platform: response.platform || null,
               readStrategy: response.readStrategy || 'auto',
+              extractionSource: response.extractionSource || 'auto',
+              extractionReason: response.extractionReason || '',
               hasScreenshot: Boolean(response.screenshot),
               hasMediaContext: Boolean(streamState.getMediaData()),
             };
@@ -276,6 +278,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const contextNotes = [];
             if (lastLoadedPageContext.readStrategy !== 'auto') {
               contextNotes.push(`Read strategy: ${lastLoadedPageContext.readStrategy}.`);
+            }
+            if (lastLoadedPageContext.extractionSource && lastLoadedPageContext.extractionSource !== 'auto') {
+              const extractionNote = `Extraction source: ${lastLoadedPageContext.extractionSource}.`;
+              contextNotes.push(
+                lastLoadedPageContext.extractionReason
+                  ? `${extractionNote} ${lastLoadedPageContext.extractionReason}`
+                  : extractionNote
+              );
             }
             if (lastLoadedPageContext.hasScreenshot) {
               contextNotes.push('Visual screenshot context is available.');
