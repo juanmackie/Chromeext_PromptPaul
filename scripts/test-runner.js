@@ -262,6 +262,29 @@ function runUnitTests(runner) {
     });
   });
 
+  runner.test('Manifest scopes Outlook compose adapter to Outlook hosts', () => {
+    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const outlookScript = manifest.content_scripts?.find((entry) =>
+      Array.isArray(entry.matches) &&
+      entry.matches.includes('https://outlook.com/*') &&
+      entry.matches.includes('https://*.outlook.com/*') &&
+      entry.matches.includes('https://outlook.office.com/*') &&
+      entry.matches.includes('https://outlook.office365.com/*') &&
+      entry.matches.includes('https://outlook.live.com/*') &&
+      entry.matches.includes('https://outlook.cloud.microsoft/*')
+    );
+
+    if (!outlookScript) {
+      throw new Error('Manifest is missing the Outlook compose content script entry');
+    }
+    if (!Array.isArray(outlookScript.js) || !outlookScript.js.includes('content_script_outlook_compose.js')) {
+      throw new Error('Outlook compose content script is not referenced in the manifest');
+    }
+    if (outlookScript.all_frames !== true) {
+      throw new Error('Outlook compose adapter should be injected into all frames');
+    }
+  });
+
   // ---------- Package Validation ----------
   runner.test('Package.json has required scripts', () => {
     const pkg = JSON.parse(readFileSafe('package.json'));
@@ -456,6 +479,90 @@ function runUnitTests(runner) {
       }
     }
   });
+
+  runner.test('Outlook compose adapter has the runtime bridge it needs', () => {
+    const content = readFileSafe('content_script_outlook_compose.js');
+    const requiredTokens = [
+      'openPromptPaulFromSelection',
+      'Prompt Paul',
+      'selectionchange',
+      'outlook.com',
+      'outlook.cloud.microsoft',
+      'READ_HINT_SELECTOR',
+      'OUTLOOK_UI_CHROME_SELECTOR',
+      'prompt-paul-outlook-selection-relay',
+      'window.top.postMessage',
+      'showReconnectNotice',
+      'reloadRequired',
+      'extension context invalidated',
+      'getSelectionSurface',
+      'isLikelyReadRoot',
+      "mode: 'read'",
+    ];
+    for (const token of requiredTokens) {
+      if (!content.includes(token)) {
+        throw new Error(`Outlook compose adapter missing token: ${token}`);
+      }
+    }
+
+    const background = readFileSafe('background.js');
+    if (!background.includes("request.action === 'openPromptPaulFromSelection'")) {
+      throw new Error('Background.js missing openPromptPaulFromSelection handler');
+    }
+    if (!background.includes('openPromptPaulForSelection')) {
+      throw new Error('Background.js missing openPromptPaulForSelection helper');
+    }
+  });
+
+  runner.test('Chat sidebar includes a proofread quick action', () => {
+    const html = readFileSafe('chat.html');
+    if (!html.includes('id="proofread-button"')) {
+      throw new Error('chat.html is missing the proofread quick action button');
+    }
+    if (!html.includes('spellcheck')) {
+      throw new Error('chat.html proofread quick action is missing the spellcheck icon');
+    }
+
+    const chatContent = readFileSafe('chat.js');
+    if (!chatContent.includes("key: 'proofread'")) {
+      throw new Error('chat.js is missing the proofread preset mode');
+    }
+    if (!chatContent.includes("proofreadButton.addEventListener('click'")) {
+      throw new Error('chat.js is missing the proofread sidebar button handler');
+    }
+  });
+
+  runner.test('Chat sidebar routes selected-text actions without page extraction', () => {
+    const chatContent = readFileSafe('chat.js');
+    const requiredTokens = [
+      'executePagePresetMode',
+      'executeSelectedTextMode',
+      'executeSelectedTextInstruction',
+      'runSelectedTextPrompt',
+      'getSelectedTextForAction',
+      "executePagePresetMode(lastUsedPreset)",
+      "executeSelectedTextMode('proofread')",
+      'executeSelectedTextInstruction(instructionToExecute)',
+    ];
+
+    for (const token of requiredTokens) {
+      if (!chatContent.includes(token)) {
+        throw new Error(`chat.js is missing selected-text routing token: ${token}`);
+      }
+    }
+
+    const forbiddenTokens = ['getPinnedActionTabContent', 'getExplainContent'];
+    for (const token of forbiddenTokens) {
+      if (chatContent.includes(token)) {
+        throw new Error(`chat.js should not fetch page context for selected-text actions: ${token}`);
+      }
+    }
+
+    const pageActions = readFileSafe('src/chat/ChatPageActions.js');
+    if (!pageActions.includes("chrome.runtime.sendMessage({ action: 'getTabContent' }")) {
+      throw new Error('ChatPageActions.js must keep page-context extraction for Analyze');
+    }
+  });
 }
 
 /**
@@ -473,7 +580,7 @@ function runIntegrationTests(runner) {
       'options.html', 'options.js',
       'collapsible.js', 'input-controls.js',
       'loadingManager.js', 'themeUtils.js',
-      'content_script_unified.js', 'pdfContentScript.js',
+      'content_script_unified.js', 'content_script_outlook_compose.js', 'pdfContentScript.js',
     ];
     for (const file of mainFiles) {
       const content = readFileSafe(file);
@@ -584,7 +691,7 @@ function runIntegrationTests(runner) {
     const knownRootFiles = [
       'background.js', 'chat.js', 'collapsible.js',
       'content_script_unified.js', 'input-controls.js',
-      'loadingManager.js', 'options.js', 'pdfContentScript.js',
+      'content_script_outlook_compose.js', 'loadingManager.js', 'options.js', 'pdfContentScript.js',
       'themeUtils.js', 'marked.js', 'marked.min.js',
     ];
     for (const file of rootFiles) {

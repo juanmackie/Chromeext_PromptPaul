@@ -136,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const addPageButton = document.getElementById('add-page-button');
   const analyzeButton = document.getElementById('analyze-button');
   const analyzeDropdown = document.getElementById('analyze-dropdown');
+  const proofreadButton = document.getElementById('proofread-button');
   const explainButton = document.getElementById('explain-button');
 
   // Configure marked with highlight.js for syntax highlighting
@@ -178,6 +179,13 @@ document.addEventListener('DOMContentLoaded', () => {
       icon: 'code',
       prompt: 'Provide a technical deep dive of this content.',
     },
+    proofread: {
+      key: 'proofread',
+      label: 'Proofread',
+      icon: 'spellcheck',
+      prompt:
+        'Proofread the following content for spelling, grammar, punctuation, and clarity issues. Fix all errors and return the corrected text followed by a brief bullet list of changes made.',
+    },
     executive: {
       key: 'executive',
       label: 'Executive',
@@ -210,13 +218,12 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Helper to execute a specific preset mode.
    */
-  async function executePresetMode(modeKey) {
+  async function executePagePresetMode(modeKey) {
     const preset = PRESET_MODES[modeKey];
     if (!preset) {
       console.warn('Unknown preset mode:', modeKey);
       return;
     }
-    lastUsedPreset = modeKey;
     executePreset(modeKey, `Generating ${preset.label}...`, `${preset.label} started`);
   }
 
@@ -230,6 +237,71 @@ document.addEventListener('DOMContentLoaded', () => {
       makeApiCall,
       chatAreaElement: document.getElementById('chat-area'),
     });
+  }
+
+  function activateSelectedTextActionView() {
+    chatMainArea.style.display = 'block';
+    oneoffInstructionArea.style.display = 'none';
+  }
+
+  function clearSelectedTextState() {
+    selectedText = null;
+    selectedTextDiv.textContent = '';
+  }
+
+  function getSelectedTextForAction(actionLabel) {
+    const text = String(selectedText || '').trim();
+    if (!text) {
+      loadingManager.showToast(`Please select text first to ${actionLabel}.`, 'warning');
+      return null;
+    }
+
+    return text;
+  }
+
+  async function runSelectedTextPrompt(prompt, toolChoice, actionLabel) {
+    const text = getSelectedTextForAction(actionLabel);
+    if (!text) {
+      return false;
+    }
+
+    activateSelectedTextActionView();
+    await makeApiCall(`${prompt}\n\n${text}`, toolChoice);
+    clearSelectedTextState();
+    return true;
+  }
+
+  async function executeSelectedTextMode(modeKey) {
+    const preset = PRESET_MODES[modeKey];
+    if (!preset) {
+      console.warn('Unknown preset mode:', modeKey);
+      return false;
+    }
+
+    const text = getSelectedTextForAction(`run ${preset.label}`);
+    if (!text) {
+      return false;
+    }
+
+    lastUsedPreset = modeKey;
+    activateSelectedTextActionView();
+    await makeApiCall(`${preset.prompt}\n\n${text}`, 'auto');
+    clearSelectedTextState();
+    return true;
+  }
+
+  async function executeSelectedTextInstruction(instruction) {
+    const actionName = instruction.name || 'this prompt';
+    const text = getSelectedTextForAction(`run ${actionName}`);
+    if (!text) {
+      return false;
+    }
+
+    activateSelectedTextActionView();
+    const prompt = `${instruction.content}\n\nSelected Text:\n${text}`;
+    await makeApiCall(prompt, normalizeToolChoice(instruction.tool_choice));
+    clearSelectedTextState();
+    return true;
   }
 
   // Add event listeners for quick action buttons
@@ -327,10 +399,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Analyze button - runs last used preset mode
+  // Analyze button - runs last used preset mode on page content
   if (analyzeButton) {
     analyzeButton.addEventListener('click', () => {
-      executePresetMode(lastUsedPreset);
+      executePagePresetMode(lastUsedPreset);
+    });
+  }
+
+  if (proofreadButton) {
+    proofreadButton.addEventListener('click', () => {
+      executeSelectedTextMode('proofread');
     });
   }
 
@@ -351,9 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
       item.innerHTML = `<span class="material-icons">${preset.icon}</span>${preset.label}`;
 
       item.addEventListener('click', () => {
-        lastUsedPreset = preset.key;
         hidePresetMenu();
-        executePresetMode(preset.key);
+        executeSelectedTextMode(preset.key);
       });
 
       presetMenu.appendChild(item);
@@ -442,7 +519,7 @@ document.addEventListener('DOMContentLoaded', () => {
       item.innerHTML = `<span class="custom-prompt-icon">${iconLetter}</span>${instruction.name}`;
       item.addEventListener('click', () => {
         hideCustomPromptsMenu();
-        executeCustomPrompt(instruction);
+        executeSelectedTextInstruction(instruction);
       });
       menu.appendChild(item);
     });
@@ -460,43 +537,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function hideCustomPromptsMenu() {
     if (customPromptsMenu) customPromptsMenu.style.display = 'none';
     customPromptsMenuVisible = false;
-  }
-
-  async function executeCustomPrompt(instruction) {
-    chatMainArea.style.display = 'block';
-    oneoffInstructionArea.style.display = 'none';
-
-    chrome.runtime.sendMessage(
-      {
-        action: 'getPinnedActionTabContent',
-        instruction: {
-          id: instruction.id,
-          name: instruction.name,
-          content: instruction.content,
-          tool_choice: normalizeToolChoice(instruction.tool_choice),
-        },
-      },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
-          return;
-        }
-        const orig = response?.instruction;
-        if (!orig) {
-          loadingManager.showToast('Error: Instruction details not returned', 'error');
-          return;
-        }
-
-        let prompt = orig.content;
-        if (response?.success && response.content) {
-          prompt += '\n\nActive Tab Content:\n' + response.content;
-          loadingManager.showToast(`Executing: ${orig.name}...`, 'info');
-        }
-        if (selectedText?.trim()) prompt += '\n\nSelected Text:\n' + selectedText;
-
-        makeApiCall(prompt, normalizeToolChoice(orig.tool_choice));
-      }
-    );
   }
 
   const customPromptsDropdown = document.getElementById('custom-prompts-dropdown');
@@ -519,42 +559,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (explainButton) {
     explainButton.addEventListener('click', async () => {
-      try {
-        loadingManager.showToast('Requesting tab content for explanation...', 'info');
-
-        const response = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ action: 'getExplainContent' }, (res) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else {
-              resolve(res);
-            }
-          });
-        });
-
-        if (response && response.action === 'explainContentResponse') {
-          if (response.success && response.content) {
-            const prompt = 'Explain the following text:\n\n' + response.content;
-            chatMainArea.style.display = 'block';
-            oneoffInstructionArea.style.display = 'none';
-            makeApiCall(prompt);
-            loadingManager.showToast('Tab content received, explaining...', 'success');
-          } else {
-            const errorMsg = response.error || 'Content not available';
-            console.error('Chat.js: Explain button - Failed to get content:', errorMsg);
-            loadingManager.showToast('No content received for explanation: ' + errorMsg, 'error');
-          }
-        } else {
-          console.warn('Chat.js: Explain button - Received unexpected response:', response);
-          loadingManager.showToast(
-            'Received an unexpected response for explain action.',
-            'warning'
-          );
-        }
-      } catch (error) {
-        console.error('Chat.js: Explain button - Error:', error.message);
-        loadingManager.showToast(`Error: ${error.message}`, 'error');
-      }
+      await runSelectedTextPrompt(
+        'Explain the following selected text to me in a short concise MECE approach. Break down what you see into clear, structured categories.',
+        'auto',
+        'run Explain'
+      );
     });
   }
 
@@ -1874,10 +1883,6 @@ document.addEventListener('DOMContentLoaded', () => {
           // button.dataset.instructionContent = instruction.content; // Or store full content
 
           button.addEventListener('click', () => {
-            // Ensure chat area is visible
-            chatMainArea.style.display = 'block';
-            oneoffInstructionArea.style.display = 'none';
-
             // Retrieve the instruction object
             const instructionToExecute = allInstructions.find(
               (inst) => inst.id === button.dataset.instructionId
@@ -1886,76 +1891,7 @@ document.addEventListener('DOMContentLoaded', () => {
               loadingManager.showToast('Error: Could not find instruction details.', 'error');
               return;
             }
-
-            // Send a message to background.js to get tab content
-            chrome.runtime.sendMessage(
-              {
-                action: 'getPinnedActionTabContent',
-                instruction: {
-                  // Pass necessary instruction details
-                  id: instructionToExecute.id, // Keep track of the instruction
-                  name: instructionToExecute.name,
-                  content: instructionToExecute.content,
-                  tool_choice: normalizeToolChoice(instructionToExecute.tool_choice),
-                },
-              },
-              (response) => {
-                if (chrome.runtime.lastError) {
-                  console.error(
-                    'Error sending getPinnedActionTabContent message:',
-                    chrome.runtime.lastError.message
-                  );
-                  loadingManager.showToast(`Error: ${chrome.runtime.lastError.message}`, 'error');
-                  // Fallback or error handling: maybe execute with just selected text or show error
-                  // For now, we'll just show an error and not proceed.
-                  return;
-                }
-
-                // response.instruction should contain the instruction object passed back from background.js
-                const originalInstruction = response.instruction;
-                if (!originalInstruction) {
-                  loadingManager.showToast(
-                    'Error: Instruction details not returned from background script.',
-                    'error'
-                  );
-                  return;
-                }
-
-                let tabContent = '';
-                if (response && response.success && response.content) {
-                  tabContent = response.content;
-                  loadingManager.showToast(
-                    `Executing: ${originalInstruction.name} with tab content...`,
-                    'info'
-                  );
-                } else if (response && !response.success) {
-                  loadingManager.showToast(
-                    `Note: Could not get tab content for ${originalInstruction.name}. Error: ${response.content || 'Unknown error'}`,
-                    'warning'
-                  );
-                } else {
-                  loadingManager.showToast(
-                    `Note: No tab content received for ${originalInstruction.name}. Executing without it.`,
-                    'warning'
-                  );
-                }
-
-                let prompt = originalInstruction.content;
-
-                if (tabContent && tabContent.trim() !== '') {
-                  prompt += '\n\nActive Tab Content:\n' + tabContent;
-                }
-
-                if (selectedText && selectedText.trim() !== '') {
-                  prompt += '\n\nSelected Text:\n' + selectedText;
-                }
-
-                // Pass the tool_choice from the original instruction
-                // Use makeApiCall for proper run ownership tracking
-                const toolChoice = normalizeToolChoice(originalInstruction.tool_choice);
-                makeApiCall(prompt, toolChoice);
-              }
-            );
+            executeSelectedTextInstruction(instructionToExecute);
           });
           pinnedActionsContainer.appendChild(button);
         }

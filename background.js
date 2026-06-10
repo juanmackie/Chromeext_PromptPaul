@@ -335,6 +335,66 @@ async function sendMediaAnalysisMessage(tabId, mediaData) {
 }
 
 /**
+ * Queues a side-panel action when the panel is not ready yet.
+ * @param {Object} payload - The action payload to preserve.
+ * @returns {Promise<boolean>} True when the payload was queued.
+ */
+async function queuePendingPanelAction(payload) {
+  if (!chrome.storage?.session) {
+    return false;
+  }
+
+  try {
+    await chrome.storage.session.set({
+      [PENDING_PANEL_ACTION_KEY]: {
+        ...payload,
+        queuedAt: Date.now(),
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error('Background: Failed to queue pending side panel action:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Sends a payload to the side panel, with a session queue fallback if it is not ready.
+ * @param {Object} payload - The runtime message payload.
+ * @returns {Promise<{queuedFallback:boolean, response:any}>}
+ */
+async function sendPanelMessage(payload) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(payload, (response) => {
+        if (chrome.runtime.lastError) {
+          const lastErrorMessage = chrome.runtime.lastError.message;
+          queuePendingPanelAction(payload).then((queued) => {
+            if (!queued) {
+              console.warn(
+                `Background: sendMessage (${payload.action}) failed and queue fallback failed:`,
+                lastErrorMessage
+              );
+            }
+            resolve({ queuedFallback: queued, response: null });
+          });
+          return;
+        }
+
+        resolve({ queuedFallback: false, response });
+      });
+    } catch (error) {
+      queuePendingPanelAction(payload).then((queued) => {
+        if (!queued) {
+          console.error(`Background: Exception sending message (${payload.action}):`, error.message);
+        }
+        resolve({ queuedFallback: queued, response: null });
+      });
+    }
+  });
+}
+
+/**
  * Determines MIME type based on file extension in a URL.
  * @param {string} url - The URL of the media file.
  * @returns {string} The MIME type string (defaults to 'image/jpeg' if unknown).
@@ -497,78 +557,36 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     }
 
-    // Store panel actions when chat.js is not ready yet.
-    const queuePendingPanelAction = async (payload) => {
-      if (!chrome.storage?.session) {
-        return false;
-      }
-
-      try {
-        await chrome.storage.session.set({
-          [PENDING_PANEL_ACTION_KEY]: {
-            ...payload,
-            queuedAt: Date.now(),
-          },
-        });
-        return true;
-      } catch (error) {
-        console.error('Background: Failed to queue pending side panel action:', error.message);
-        return false;
-      }
-    };
-
-    // Common message sending function with fallback queue.
-    const sendMessage = (action, extra = {}) => {
-      const payload = {
-        action,
-        selectedText: promptContent || '',
-        tabId: tab.id,
-        actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-        ...extra,
-      };
-
-      return new Promise((resolve) => {
-        try {
-          chrome.runtime.sendMessage(payload, (response) => {
-            if (chrome.runtime.lastError) {
-              const lastErrorMessage = chrome.runtime.lastError.message;
-              queuePendingPanelAction(payload).then((queued) => {
-                if (!queued) {
-                  console.warn(
-                    `Background: sendMessage (${action}) failed and queue fallback failed:`,
-                    lastErrorMessage
-                  );
-                }
-                resolve({ queuedFallback: queued, response: null });
-              });
-              return;
-            }
-
-            resolve({ queuedFallback: false, response });
-          });
-        } catch (error) {
-          queuePendingPanelAction(payload).then((queued) => {
-            if (!queued) {
-              console.error(`Background: Exception sending message (${action}):`, error.message);
-            }
-            resolve({ queuedFallback: queued, response: null });
-          });
-        }
-      });
-    };
-
     if (info.menuItemId === 'oneoff_instruction') {
       if (isMediaContext) {
-        await sendMessage('setSelectedText', { selectedText: '', mediaData });
+        await sendPanelMessage({
+          action: 'setSelectedText',
+          selectedText: '',
+          mediaData,
+          tabId: tab.id,
+          actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        });
       } else {
-        await sendMessage('setSelectedText');
+        await sendPanelMessage({
+          action: 'setSelectedText',
+          selectedText: promptContent || '',
+          tabId: tab.id,
+          actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        });
       }
       return;
     }
 
     // Start chat
     if (info.menuItemId === 'start_chat') {
-      await sendMessage('setSelectedText', { fromStartChat: true, mediaData });
+      await sendPanelMessage({
+        action: 'setSelectedText',
+        selectedText: promptContent || '',
+        fromStartChat: true,
+        mediaData,
+        tabId: tab.id,
+        actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      });
       // Media will be handled in chat.js via currentMediaData
       return;
     }
@@ -1027,6 +1045,22 @@ function removeAllMenus() {
 }
 
 /**
+ * Opens the side panel for a tab and forwards selected text into it.
+ * @param {number} tabId - Source tab ID.
+ * @param {string} selectedText - Selected text to send.
+ * @returns {Promise<void>}
+ */
+async function openPromptPaulForSelection(tabId, selectedText) {
+  await chrome.sidePanel.open({ tabId });
+  await sendPanelMessage({
+    action: 'setSelectedText',
+    selectedText: selectedText || '',
+    tabId,
+    actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  });
+}
+
+/**
  * Creates a single menu item with error handling.
  * @param {Object} menuConfig - Chrome context menu configuration
  * @returns {Promise<void>}
@@ -1325,6 +1359,28 @@ async function executeTabContentExtraction(tabId) {
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'openPromptPaulFromSelection') {
+    const tabId = request.tabId || sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ success: false, error: 'No tab context' });
+      return false;
+    }
+
+    const selectedText = String(request.selectedText || '').trim();
+    if (!selectedText) {
+      sendResponse({ success: false, error: 'No selected text provided' });
+      return false;
+    }
+
+    openPromptPaulForSelection(tabId, selectedText)
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => {
+        console.error('Background: Failed to open Prompt Paul from selection:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true;
+  }
+
   if (request.action === 'captureScreenshot') {
     chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 70 }, (dataUrl) => {
       if (chrome.runtime.lastError) {

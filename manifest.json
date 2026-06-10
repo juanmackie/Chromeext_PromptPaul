@@ -20,6 +20,18 @@
   },
   "content_scripts": [
     {
+      "matches": [
+        "https://outlook.com/*",
+        "https://*.outlook.com/*",
+        "https://outlook.office.com/*",
+        "https://outlook.office365.com/*",
+        "https://outlook.live.com/*",
+        "https://outlook.cloud.microsoft/*"
+      ],
+      "js": ["content_script_outlook_compose.js"],
+      "all_frames": true
+    },
+    {
       "matches": ["*://*/*.pdf", "file://*/*.pdf"],
       "js": ["pdfContentScript.js"],
       "all_frames": true
