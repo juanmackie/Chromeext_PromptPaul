@@ -9,6 +9,8 @@
  * @module ChatStream
  */
 
+import { renderMarkdown } from '../utils/domSanitizer.js';
+
 /**
  * Stream state manager - tracks streaming and API call state.
  * Each side panel instance owns its own in-memory state; Chrome destroys
@@ -65,9 +67,7 @@ export class StreamStateManager {
 
     this.accumulatedStreamedText += this._renderBuffer;
     this._renderBuffer = '';
-    el.innerHTML = typeof marked !== 'undefined' && marked.parse
-      ? marked.parse(this.accumulatedStreamedText)
-      : this.accumulatedStreamedText;
+    el.innerHTML = renderMarkdown(this.accumulatedStreamedText);
     if (this._chatAreaRef) {
       this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
     }
@@ -114,6 +114,22 @@ export class StreamStateManager {
     this.currentStreamingMessageDiv = messageDiv;
     this.currentStreamingContentElement = contentElement;
     this.currentStreamingUniqueId = uniqueId;
+  }
+
+  /**
+   * Create streaming elements and set them in one call.
+   * @param {HTMLElement} messageDiv
+   * @param {HTMLElement} contentElement
+   * @param {string} uniqueId
+   */
+  initStreamingElements(messageDiv, contentElement, uniqueId) {
+    this.setStreamingElements(messageDiv, contentElement, uniqueId);
+    this.clearStreamedText();
+    this.appendStreamedText('');
+  }
+
+  clearStreamingElements() {
+    this.setStreamingElements(null, null, null);
   }
 
   /**

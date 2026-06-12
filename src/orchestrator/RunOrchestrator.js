@@ -10,14 +10,16 @@
  * @module RunOrchestrator
  */
 
-import { normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
+import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
+const MAX_TOOL_CALL_RETRIES = 3;
 
 class RunOrchestrator {
-  constructor(skillManager) {
+  constructor(skillManager, options = {}) {
     this.skillManager = skillManager;
+    this.userToolExecutor = options.userToolExecutor;
     this.activeRuns = new Map(); // runId -> RunState
     this.toolExecutions = new Set(); // Set of "runId:toolCallId"
     this.toolImplementations = new Map();
@@ -38,12 +40,14 @@ class RunOrchestrator {
       conversationHistory: config.messages || [],
       accumulatedText: '',
       activeToolCall: null,
+      toolCallIterations: 0,
       skillInjected: false,
       status: 'ready',
       abortController: new AbortController(),
     };
 
     this.activeRuns.set(runId, runState);
+    this._registerConfiguredTools(runState);
     console.log(
       `[Orchestrator] Started run ${runId}${runState.sourceTabId ? ' from tab ' + runState.sourceTabId : ''}`
     );
@@ -60,6 +64,7 @@ class RunOrchestrator {
     run.status = 'streaming';
     run.accumulatedText = '';
     run.activeToolCall = null;
+    run.activeToolCalls = null;
 
     // Sanitize conversation history to strip orphan tool messages
     run.conversationHistory = this._sanitizeMessages(run.conversationHistory);
@@ -108,11 +113,14 @@ class RunOrchestrator {
       // Handle abort errors gracefully (intentional cancellations)
       if (error instanceof DOMException && error.name === 'AbortError') {
         console.log(`[Orchestrator] Run ${runId} aborted by user`);
-        this._emitEvent(runId, { type: 'aborted' });
+        if (this.activeRuns.has(runId)) {
+          this._emitEvent(runId, { type: 'aborted' });
+        }
         return;
       }
       console.error(`[Orchestrator] Execute error:`, error.name ? `${error.name}: ${error.message}` : error.message || error);
       this._emitEvent(runId, { type: 'error', error: error.message || String(error) });
+      this.activeRuns.delete(runId);
       throw error;
     }
   }
@@ -203,6 +211,7 @@ class RunOrchestrator {
   abort(runId) {
     const run = this.activeRuns.get(runId);
     if (run) {
+      this._emitEvent(runId, { type: 'aborted' });
       run.abortController.abort();
       this.activeRuns.delete(runId);
     }
@@ -266,6 +275,20 @@ class RunOrchestrator {
     this.toolImplementations.set(name, implementation);
   }
 
+  _registerConfiguredTools(run) {
+    if (!this.userToolExecutor || !Array.isArray(run.config.tools)) return;
+
+    for (const tool of run.config.tools) {
+      if (!tool?.name || !tool?.endpointUrl) continue;
+      if (tool.name === 'skills_list' || tool.name === 'skill_view' || tool.name === 'load_skill') {
+        continue;
+      }
+      this.registerTool(tool.name, async (args) => {
+        return this.userToolExecutor(tool, args);
+      });
+    }
+  }
+
   /**
    * Build tools list with skill injection
    */
@@ -274,7 +297,7 @@ class RunOrchestrator {
 
     // Add user-defined tools from config
     if (run.config.tools && Array.isArray(run.config.tools)) {
-      tools.push(...run.config.tools);
+      tools.push(...formatToolsForLlm(run.config.tools));
     }
 
     // Inject skill-related tools if eligible skills available
@@ -322,43 +345,42 @@ class RunOrchestrator {
     return tools;
   }
 
+  _buildSystemPrompt(run, eligibleSkills) {
+    const parts = [CORE_INSTRUCTIONS];
+    if (run.config.systemPrompt) parts.push(run.config.systemPrompt);
+
+    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
+      const skillCatalog = eligibleSkills.map((s) => `${s.name} (${s.description})`).join(', ');
+      parts.push(
+        `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`
+      );
+    }
+
+    return parts.filter(Boolean).join('\n\n').trim();
+  }
+
   /**
    * Execute OpenAI-style streaming
    */
   async _executeOpenAI(run, requestConfig, tools) {
     const { llmEndpoint, apiKey, modelName } = run.config;
 
-    // Build messages
-    const messages = [...run.conversationHistory];
+    // Add a single system prompt without mutating history objects.
+    const eligibleSkills = this.skillManager.getEligibleSnapshot();
+    const systemPrompt = this._buildSystemPrompt(run, eligibleSkills);
+    const messages = run.conversationHistory
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({ ...m }));
     if (requestConfig.messages) {
-      // Add new user message if provided
+      const newMessages = requestConfig.messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ ...m }));
       const lastMsg = messages[messages.length - 1];
       if (!lastMsg || lastMsg.role !== 'user') {
-        messages.push(...requestConfig.messages);
+        messages.push(...newMessages);
       }
     }
-
-    // Add system prompt with skill catalog (eligible skills only)
-    const eligibleSkills = this.skillManager.getEligibleSnapshot();
-    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
-      const systemMsg = messages.find((m) => m.role === 'system');
-
-      // Format skill catalog: "name (description)"
-      const skillCatalog = eligibleSkills.map((s) => `${s.name} (${s.description})`).join(', ');
-
-      const skillPrompt = `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
-
-      if (systemMsg) {
-        systemMsg.content = CORE_INSTRUCTIONS + '\n\n' + systemMsg.content + `\n\n${skillPrompt}`;
-      } else {
-        messages.unshift({ role: 'system', content: CORE_INSTRUCTIONS + '\n\n' + skillPrompt });
-      }
-    } else {
-      const systemMsg = messages.find((m) => m.role === 'system');
-      if (systemMsg) {
-        systemMsg.content = CORE_INSTRUCTIONS + '\n\n' + systemMsg.content;
-      }
-    }
+    messages.unshift({ role: 'system', content: systemPrompt });
 
     const body = {
       model: modelName,
@@ -395,7 +417,7 @@ class RunOrchestrator {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -419,11 +441,95 @@ class RunOrchestrator {
     }
 
     // Finalize based on what we have
-    if (run.activeToolCall) {
+    if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
     } else if (run.accumulatedText.trim()) {
       await this._finalizeTextResponse(run);
     }
+  }
+
+  _parseJsonArguments(rawArgs) {
+    try {
+      if (rawArgs == null || rawArgs === '') return {};
+      if (typeof rawArgs === 'object') return rawArgs;
+      return JSON.parse(rawArgs);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  _buildAnthropicMessages(run, requestConfig) {
+    const messages = [];
+
+    const pushMessage = (role, content) => {
+      if (!content) return;
+      const last = messages[messages.length - 1];
+      if (last && last.role === role) {
+        last.content = Array.isArray(last.content)
+          ? last.content.concat(content)
+          : `${last.content}\n\n${content}`;
+        return;
+      }
+      messages.push({ role, content });
+    };
+
+    for (const msg of run.conversationHistory) {
+      if (!msg || typeof msg !== 'object') continue;
+
+      if (msg.role === 'tool') {
+        pushMessage('user', [
+          {
+            type: 'tool_result',
+            tool_use_id: msg.tool_call_id,
+            content: msg.content || '',
+          },
+        ]);
+      } else if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+        const content = [];
+        if (msg.content) content.push({ type: 'text', text: msg.content });
+        content.push(
+          ...msg.tool_calls.map((toolCall) => ({
+            type: 'tool_use',
+            id: toolCall.id,
+            name: toolCall.function?.name,
+            input: this._parseJsonArguments(toolCall.function?.arguments),
+          }))
+        );
+        pushMessage('assistant', content);
+      } else {
+        pushMessage(msg.role, msg.content || '');
+      }
+    }
+
+    if (requestConfig.messages) {
+      for (const msg of requestConfig.messages) {
+        if (msg?.role === 'tool') {
+          pushMessage('user', [
+            {
+              type: 'tool_result',
+              tool_use_id: msg.tool_call_id,
+              content: msg.content || '',
+            },
+          ]);
+        } else if (msg?.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+          const content = [];
+          if (msg.content) content.push({ type: 'text', text: msg.content });
+          content.push(
+            ...msg.tool_calls.map((toolCall) => ({
+              type: 'tool_use',
+              id: toolCall.id,
+              name: toolCall.function?.name,
+              input: this._parseJsonArguments(toolCall.function?.arguments),
+            }))
+          );
+          pushMessage('assistant', content);
+        } else {
+          pushMessage(msg.role, msg.content || '');
+        }
+      }
+    }
+
+    return messages.filter((m) => m.role !== 'system');
   }
 
   /**
@@ -432,47 +538,16 @@ class RunOrchestrator {
   async _executeAnthropic(run, requestConfig, tools) {
     const { llmEndpoint, apiKey, modelName } = run.config;
 
-    // Build messages for Anthropic format
-    const messages = [];
-    for (const msg of run.conversationHistory) {
-      if (msg.role === 'tool') {
-        messages.push({
-          role: 'user',
-          content: `Tool ${msg.name} result: ${msg.content}`,
-        });
-      } else {
-        messages.push({
-          role: msg.role,
-          content: msg.content,
-        });
-      }
-    }
-
-    if (requestConfig.messages) {
-      messages.push(...requestConfig.messages);
-    }
-
     const body = {
       model: modelName.replace('anthropic:', ''),
       max_tokens: 4096,
       stream: true,
-      messages: messages.filter((m) => m.role !== 'system'),
+      messages: this._buildAnthropicMessages(run, requestConfig),
     };
 
     // Add system prompt with skill catalog (eligible skills only)
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
-    let systemPrompt = CORE_INSTRUCTIONS + '\n\n';
-    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
-      // Format skill catalog: "name (description)"
-      const skillCatalog = eligibleSkills.map((s) => `${s.name} (${s.description})`).join(', ');
-      systemPrompt += `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`;
-    }
-
-    if (run.config.systemPrompt) {
-      systemPrompt += run.config.systemPrompt;
-    }
-
-    body.system = systemPrompt.trim();
+    body.system = this._buildSystemPrompt(run, eligibleSkills);
 
     // Normalize tool_choice and add tools if not 'none'
     const normalizedToolChoice = normalizeToolChoice(run.config.tool_choice);
@@ -504,7 +579,7 @@ class RunOrchestrator {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -529,7 +604,7 @@ class RunOrchestrator {
     }
 
     // Finalize
-    if (run.activeToolCall) {
+    if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
     } else if (run.accumulatedText.trim()) {
       await this._finalizeTextResponse(run);
@@ -551,39 +626,45 @@ class RunOrchestrator {
 
     // Handle tool calls
     if (delta.tool_calls && delta.tool_calls.length > 0) {
-      const tc = delta.tool_calls[0];
+      if (!run.activeToolCalls) run.activeToolCalls = new Map();
 
-      if (!run.activeToolCall) {
-        // First chunk of tool call
-        const tcName = tc.function?.name || '';
-        run.activeToolCall = {
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: tcName,
-            arguments: this._normalizeToolArguments(tc.function?.arguments),
-          },
-        };
+      for (const tc of delta.tool_calls) {
+        const index = Number(tc.index ?? 0);
+        let toolCall = run.activeToolCalls.get(index);
 
-        const isTool = tcName ? this.toolImplementations.has(tcName) : false;
-        const isSkill = tcName && this.skillManager ? this.skillManager.hasSkill(tcName) : false;
-        const capability = isSkill && !isTool ? 'skill' : isTool ? 'tool' : 'unknown';
+        if (!toolCall) {
+          const tcName = tc.function?.name || '';
+          toolCall = {
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tcName,
+              arguments: this._normalizeToolArguments(tc.function?.arguments),
+            },
+          };
+          run.activeToolCalls.set(index, toolCall);
 
-        this._emitEvent(run.id, {
-          type: 'tool_start',
-          toolCall: run.activeToolCall,
-          capability,
-        });
-      } else {
-        // Accumulate
+          const isTool = tcName ? this.toolImplementations.has(tcName) : false;
+          const isSkill = tcName && this.skillManager ? this.skillManager.hasSkill(tcName) : false;
+          const capability = isSkill && !isTool ? 'skill' : isTool ? 'tool' : 'unknown';
+
+          this._emitEvent(run.id, {
+            type: 'tool_start',
+            toolCall,
+            capability,
+          });
+          continue;
+        }
+
+        if (tc.id) toolCall.id = tc.id;
         if (tc.function?.arguments) {
-          run.activeToolCall.function.arguments = this._mergeToolArguments(
-            run.activeToolCall.function.arguments,
+          toolCall.function.arguments = this._mergeToolArguments(
+            toolCall.function.arguments,
             tc.function.arguments
           );
         }
         if (tc.function?.name) {
-          run.activeToolCall.function.name = tc.function.name;
+          toolCall.function.name = tc.function.name;
         }
       }
     }
@@ -625,14 +706,7 @@ class RunOrchestrator {
           capability,
         });
       }
-    } else if (event.type === 'content_block_stop') {
-      // Tool block complete, arguments should be accumulated
-      if (run.activeToolCall) {
-        this._emitEvent(run.id, {
-          type: 'tool_ready',
-          toolCall: run.activeToolCall,
-        });
-      }
+    } else if (event.type === 'message_stop') {
     }
   }
 
@@ -641,38 +715,67 @@ class RunOrchestrator {
    */
   async _finalizeToolCall(run) {
     run.status = 'executing_tool';
+    run.toolCallIterations += 1;
 
-    // Add assistant message with tool call
+    if (run.toolCallIterations > MAX_TOOL_CALL_RETRIES) {
+      const error = `Maximum tool call retries exceeded (${MAX_TOOL_CALL_RETRIES}).`;
+      this._emitEvent(run.id, { type: 'error', error });
+      throw new Error(error);
+    }
+
+    const toolCalls = run.activeToolCalls
+      ? Array.from(run.activeToolCalls.values())
+      : run.activeToolCall
+        ? [run.activeToolCall]
+        : [];
+    if (toolCalls.length === 0) return;
+
     run.conversationHistory.push({
       role: 'assistant',
       content: run.accumulatedText || null,
-      tool_calls: [run.activeToolCall],
+      tool_calls: toolCalls,
     });
 
     this._emitEvent(run.id, {
       type: 'tool_ready',
-      toolCall: run.activeToolCall,
+      toolCall: toolCalls[0],
     });
 
-    // Execute tool
-    try {
-      const result = await this.executeTool(run.id, run.activeToolCall);
+    for (const toolCall of toolCalls) {
+      try {
+        const result = await this.executeTool(run.id, toolCall);
 
-      this._emitEvent(run.id, {
-        type: 'tool_complete',
-        toolCall: run.activeToolCall,
-        result: result,
-      });
+        this._emitEvent(run.id, {
+          type: 'tool_complete',
+          toolCall,
+          result: result,
+        });
 
-      // Continue conversation
-      await this.continueAfterTool(run.id, run.activeToolCall, result);
-    } catch (error) {
-      this._emitEvent(run.id, {
-        type: 'tool_error',
-        toolCall: run.activeToolCall,
-        error: error.message,
-      });
+        run.conversationHistory.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          name: toolCall.function.name,
+          content: typeof result === 'string' ? result : JSON.stringify(result),
+        });
+      } catch (error) {
+        run.conversationHistory.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          name: toolCall.function.name,
+          content: `Error: ${error.message}`,
+        });
+        this._emitEvent(run.id, {
+          type: 'tool_error',
+          toolCall,
+          error: error.message,
+        });
+      }
     }
+
+    run.status = 'ready';
+    run.activeToolCall = null;
+    run.activeToolCalls?.clear?.();
+    await this.execute(run.id, { continueConversation: true });
   }
 
   /**
@@ -691,8 +794,9 @@ class RunOrchestrator {
       content: run.accumulatedText,
     });
 
-    // Clean up tool executions for this completed run to prevent memory leak
+    // Clean up tool executions and active run state for this completed run to prevent memory leak
     this._cleanupToolExecutions(run.id);
+    this.activeRuns.delete(run.id);
   }
 
   /**

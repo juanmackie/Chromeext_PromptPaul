@@ -122,7 +122,7 @@ function inferModelContextTokens(modelId) {
 
 function normalizeBudgetText(text) {
   return text
-    .replace(/\u0000/gu, '')
+    .replace(/\u0000/gu, '') // eslint-disable-line no-control-regex
     .replace(/\r\n/gu, '\n')
     .replace(/\n{4,}/gu, '\n\n\n')
     .trim();

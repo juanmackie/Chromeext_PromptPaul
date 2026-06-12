@@ -1,0 +1,33 @@
+# Docs DOX
+
+## Purpose
+
+Documentation in this subtree explains Prompt Paul architecture, development workflows, and skill usage examples for users and contributors.
+
+## Ownership
+
+- Owns Markdown files under `docs/`.
+- Root AGENTS.md owns the canonical skill specification and top-level project contracts.
+- README, changelog, and root-level public docs are owned by the root AGENTS.md.
+
+## Local Contracts
+
+- Keep docs aligned with the current extension behavior, available commands, and build/test scripts.
+- Link to root AGENTS.md for the canonical skill specification.
+- Prefer concise operational docs over historical notes.
+
+## Work Guidance
+
+- Update `docs/ARCHITECTURE.md` when module responsibilities or data flow change.
+- Update `docs/DEVELOPMENT.md` when setup, commands, testing, or workflow changes.
+- Update `docs/SKILL_EXAMPLES.md` when skill invocation behavior, supported patterns, or examples change.
+- Keep relative links valid from the document being edited.
+
+## Verification
+
+- For docs-only edits, review rendered Markdown and links.
+- When docs describe commands or runtime behavior, run the referenced command when practical.
+
+## Child DOX Index
+
+- No child AGENTS.md files are currently needed under `docs/`.

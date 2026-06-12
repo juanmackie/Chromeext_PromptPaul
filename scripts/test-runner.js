@@ -213,6 +213,15 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('DOM sanitizer module exists and is referenced by chat surfaces', () => {
+    checkModule('src/utils/domSanitizer.js', ['function escapeHtml', 'function sanitizeHtml', 'function renderMarkdown']);
+    for (const file of ['src/chat/ChatUI.js', 'src/chat/ChatStream.js', 'chat.js', 'options.js']) {
+      if (!readFileSafe(file).includes('domSanitizer')) {
+        throw new Error(`${file} does not reference domSanitizer`);
+      }
+    }
+  });
+
   runner.test('permissionGuards module structure valid', () => {
     checkModule('src/utils/permissionGuards.js');
     const content = readFileSafe('src/utils/permissionGuards.js');
@@ -386,6 +395,23 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('Relative imports in src/chat/*.js resolve to existing files', () => {
+    const moduleFiles = fs.readdirSync(path.join(repoRoot, 'src/chat'))
+      .filter(f => f.endsWith('.js'));
+    const importRe = /from\s+['"](\.[^'"]+\.js)['"]/g;
+    for (const file of moduleFiles) {
+      const content = readFileSafe(`src/chat/${file}`);
+      let match;
+      while ((match = importRe.exec(content)) !== null) {
+        const importPath = match[1];
+        const resolved = path.resolve(repoRoot, 'src/chat', importPath);
+        if (!fs.existsSync(resolved)) {
+          throw new Error(`src/chat/${file} imports '${importPath}' but ${path.relative(repoRoot, resolved)} does not exist`);
+        }
+      }
+    }
+  });
+
   runner.test('chat.js supports clipboard image paste attachment flow', () => {
     const content = readFileSafe('chat.js');
     const required = [
@@ -519,8 +545,8 @@ function runUnitTests(runner) {
     if (!html.includes('id="proofread-button"')) {
       throw new Error('chat.html is missing the proofread quick action button');
     }
-    if (!html.includes('spellcheck')) {
-      throw new Error('chat.html proofread quick action is missing the spellcheck icon');
+    if (!html.includes('Proofread selected text')) {
+      throw new Error('chat.html proofread quick action is missing the selected-text title');
     }
 
     const chatContent = readFileSafe('chat.js');
@@ -683,6 +709,18 @@ function runIntegrationTests(runner) {
   // ---------- Orchestrator ----------
   runner.test('RunOrchestrator module exists and is valid', () => {
     checkModule('src/orchestrator/RunOrchestrator.js');
+    const content = readFileSafe('src/orchestrator/RunOrchestrator.js');
+    for (const token of [
+      'formatToolsForLlm(run.config.tools)',
+      'MAX_TOOL_CALL_RETRIES',
+      'activeToolCalls',
+      '_buildSystemPrompt(run, eligibleSkills)',
+      'this.activeRuns.delete(run.id)',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`RunOrchestrator.js missing regression guard: ${token}`);
+      }
+    }
   });
 
   // ---------- Orphaned File Detection ----------
@@ -692,7 +730,7 @@ function runIntegrationTests(runner) {
       'background.js', 'chat.js', 'collapsible.js',
       'content_script_unified.js', 'input-controls.js',
       'content_script_outlook_compose.js', 'loadingManager.js', 'options.js', 'pdfContentScript.js',
-      'themeUtils.js', 'marked.js', 'marked.min.js',
+      'themeUtils.js', 'marked.min.js',
     ];
     for (const file of rootFiles) {
       if (!knownRootFiles.includes(file) && !file.endsWith('.min.js')) {

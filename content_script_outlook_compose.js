@@ -421,20 +421,39 @@
     }
 
     try {
-      window.top.postMessage(
-        {
-          action: OUTLOOK_SELECTION_RELAY_ACTION,
-          selectedText: trimmedText,
-        },
-        '*'
-      );
+        window.top.postMessage(
+          {
+            action: OUTLOOK_SELECTION_RELAY_ACTION,
+            selectedText: trimmedText,
+          },
+          window.location.origin
+        );
     } catch (error) {
       console.warn('PromptPaul: Failed to relay Outlook selection to top window:', error);
     }
   }
 
+  function isAllowedRelayOrigin(origin) {
+    if (!origin || origin === 'null') return false;
+    try {
+      const url = new URL(origin);
+      if (url.protocol !== 'https:') return false;
+      const host = url.hostname.replace(/^www\./, '').toLowerCase();
+      return (
+        host === 'outlook.com' ||
+        host.endsWith('.outlook.com') ||
+        host === 'outlook.office.com' ||
+        host === 'outlook.office365.com' ||
+        host === 'outlook.live.com' ||
+        host === 'outlook.cloud.microsoft'
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
   function handleRelayMessage(event) {
-    if (event.source === window) {
+    if (event.source === window || !isAllowedRelayOrigin(event.origin)) {
       return;
     }
 

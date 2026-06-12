@@ -12,6 +12,7 @@
  */
 
 import { loadingManager } from '../../loadingManager.js';
+import { escapeHtml, renderMarkdown } from '../utils/domSanitizer.js';
 
 /**
  * ChatUI class - Manages all UI operations for the chat interface
@@ -49,6 +50,10 @@ class ChatUI {
     this.userInput = document.getElementById('user-input');
     this.sendButton = document.getElementById('send-button');
     this.clearButton = document.getElementById('clear-button');
+  }
+
+  renderMarkdown(message) {
+    return renderMarkdown(message);
   }
 
   /**
@@ -98,37 +103,29 @@ class ChatUI {
       messageDiv.classList.add('llm-message');
       const llmContentSpan = document.createElement('span');
       llmContentSpan.classList.add('llm-content-area');
-      // Ensure marked.parse is available or handle potential errors
-      if (typeof marked !== 'undefined') {
-        llmContentSpan.innerHTML = marked.parse(message || '');
-      } else {
-        llmContentSpan.textContent = message || '';
-      }
+      llmContentSpan.innerHTML = this.renderMarkdown(message || '');
       messageDiv.appendChild(llmContentSpan);
       contentElement = llmContentSpan;
       uniqueIdString = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
       // --- Icon for copying raw text ---
-      const copyIcon = document.createElement('img');
+      const copyIcon = document.createElement('button');
       copyIcon.id = `copy-icon-${uniqueIdString}`;
-      copyIcon.src = document.body.classList.contains('dark-theme')
-        ? 'icons/light-copy-markdown.png'
-        : 'icons/copy-markdown.png';
-      copyIcon.alt = 'Copy Raw';
-      copyIcon.style.cssText =
-        'cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;';
+      copyIcon.type = 'button';
+      copyIcon.className = 'copy-action-button';
+      copyIcon.title = 'Copy raw text';
+      copyIcon.setAttribute('aria-label', 'Copy raw text');
+      copyIcon.textContent = 'Copy';
       messageDiv.appendChild(copyIcon);
 
       // --- Icon for copying formatted text ---
-      const copyFormattedIcon = document.createElement('img');
+      const copyFormattedIcon = document.createElement('button');
       copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
-      const formattedIconSrc = document.body.classList.contains('dark-theme')
-        ? 'icons/light-copy-formatted.png'
-        : 'icons/copy-formatted.png';
-      copyFormattedIcon.src = formattedIconSrc;
-      copyFormattedIcon.alt = 'Copy Formatted';
-      copyFormattedIcon.style.cssText =
-        'cursor: pointer; vertical-align: middle; margin-left: 5px; width: 16px; height: 16px;';
+      copyFormattedIcon.type = 'button';
+      copyFormattedIcon.className = 'copy-action-button';
+      copyFormattedIcon.title = 'Copy formatted text';
+      copyFormattedIcon.setAttribute('aria-label', 'Copy formatted text');
+      copyFormattedIcon.textContent = 'Formatted';
       messageDiv.appendChild(copyFormattedIcon);
 
       if (message) {
@@ -165,21 +162,16 @@ class ChatUI {
 
     const header = document.createElement('div');
     header.className = 'loaded-content-header';
-    header.innerHTML = `
-      <div class="loaded-content-info">
-        📄 <strong>Content loaded from:</strong> ${sourceInfo}
-      </div>
-      <div class="loaded-content-actions">
-        <button class="copy-content-btn" title="Copy full content">
-          <span class="material-icons" style="font-size: 14px;">content_copy</span>
-          <span class="copy-label">Copy</span>
-        </button>
-        <button class="expand-toggle-btn">
-          <span class="material-icons" style="font-size: 16px;">expand_more</span>
-          <span class="expand-label">Expand</span>
-        </button>
-      </div>
-    `;
+    const info = document.createElement('div');
+    info.className = 'loaded-content-info';
+    const strong = document.createElement('strong');
+    strong.textContent = 'Content loaded from: ';
+    info.appendChild(strong);
+    info.appendChild(document.createTextNode(sourceInfo));
+    header.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'loaded-content-actions';
 
     const bodyDiv = document.createElement('div');
     bodyDiv.className = 'loaded-content-body';
@@ -188,9 +180,22 @@ class ChatUI {
     container.appendChild(header);
     container.appendChild(bodyDiv);
 
-    const expandBtn = header.querySelector('.expand-toggle-btn');
-    const expandLabel = expandBtn.querySelector('.expand-label');
-    const expandIcon = expandBtn.querySelector('.material-icons');
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'copy-content-btn';
+    copyBtn.title = 'Copy full content';
+    copyBtn.textContent = 'Copy';
+    actions.appendChild(copyBtn);
+
+    const expandBtn = document.createElement('button');
+    expandBtn.type = 'button';
+    expandBtn.className = 'expand-toggle-btn';
+    expandBtn.textContent = 'Expand';
+    actions.appendChild(expandBtn);
+
+    header.appendChild(actions);
+
+    const expandLabel = expandBtn;
 
     let isExpanded = false;
 
@@ -200,12 +205,10 @@ class ChatUI {
 
       if (isExpanded) {
         bodyDiv.classList.add('expanded');
-        expandLabel.textContent = 'Collapse';
-        expandIcon.textContent = 'expand_less';
+        expandBtn.textContent = 'Collapse';
       } else {
         bodyDiv.classList.remove('expanded');
-        expandLabel.textContent = 'Expand';
-        expandIcon.textContent = 'expand_more';
+        expandBtn.textContent = 'Expand';
       }
 
       setTimeout(() => {
@@ -213,8 +216,7 @@ class ChatUI {
       }, 10);
     });
 
-    const copyBtn = header.querySelector('.copy-content-btn');
-    const copyLabel = copyBtn.querySelector('.copy-label');
+    const copyLabel = copyBtn;
 
     copyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -266,45 +268,45 @@ class ChatUI {
     previewDiv.style.cssText =
       'background: var(--ext-muted); border-left: 4px solid var(--ext-primary); margin-bottom: 10px; color: var(--ext-muted-foreground);';
 
+    const row = document.createElement('div');
+    row.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+    const title = document.createElement('strong');
+    const detail = document.createElement('small');
+
     if (mediaData.type === 'image') {
-      previewDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <img src="data:${mediaData.mimeType};base64,${mediaData.base64}"
-               style="max-width: 200px; max-height: 150px; border-radius: 4px;"
-               alt="Image for analysis">
-          <div>
-            <strong>📷 Image Analysis</strong><br>
-            <small>Right-clicked image ready for analysis</small>
-          </div>
-        </div>
-      `;
+      const img = document.createElement('img');
+      img.src = `data:${mediaData.mimeType};base64,${mediaData.base64}`;
+      img.alt = 'Image for analysis';
+      img.style.cssText = 'max-width: 200px; max-height: 150px; border-radius: 4px;';
+      row.appendChild(img);
+      title.textContent = 'Image Analysis';
+      detail.textContent = 'Right-clicked image ready for analysis';
     } else if (mediaData.type === 'video') {
-      previewDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <video src="data:${mediaData.mimeType};base64,${mediaData.base64}"
-                 style="max-width: 200px; max-height: 150px; border-radius: 4px;"
-                 controls>
-          </video>
-          <div>
-            <strong>🎥 Video Analysis</strong><br>
-            <small>Right-clicked video ready for analysis</small>
-          </div>
-        </div>
-      `;
+      const video = document.createElement('video');
+      video.src = `data:${mediaData.mimeType};base64,${mediaData.base64}`;
+      video.alt = 'Video for analysis';
+      video.controls = true;
+      video.style.cssText = 'max-width: 200px; max-height: 150px; border-radius: 4px;';
+      row.appendChild(video);
+      title.textContent = 'Video Analysis';
+      detail.textContent = 'Right-clicked video ready for analysis';
     } else if (mediaData.type === 'audio') {
-      previewDiv.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <audio src="data:${mediaData.mimeType};base64,${mediaData.base64}"
-                 style="width: 200px;"
-                 controls>
-          </audio>
-          <div>
-            <strong>🎵 Audio Analysis</strong><br>
-            <small>Right-clicked audio ready for analysis</small>
-          </div>
-        </div>
-      `;
+      const audio = document.createElement('audio');
+      audio.src = `data:${mediaData.mimeType};base64,${mediaData.base64}`;
+      audio.controls = true;
+      audio.style.cssText = 'width: 200px;';
+      row.appendChild(audio);
+      title.textContent = 'Audio Analysis';
+      detail.textContent = 'Right-clicked audio ready for analysis';
     }
+
+    const copy = document.createElement('div');
+    copy.appendChild(title);
+    copy.appendChild(document.createElement('br'));
+    copy.appendChild(detail);
+    row.appendChild(copy);
+    previewDiv.appendChild(row);
 
     this.chatArea.appendChild(previewDiv);
     this.trimExcessMessages();
@@ -535,59 +537,41 @@ class ChatUI {
    */
   updateStreamingContent(content) {
     if (this.currentStreamingContentElement && content) {
-      this.currentStreamingContentElement.innerHTML = marked.parse(content);
+      this.currentStreamingContentElement.innerHTML = this.renderMarkdown(content);
       this.postProcessRenderedContent(this.currentStreamingContentElement);
       this.chatArea.scrollTop = this.chatArea.scrollHeight;
     }
   }
 
-  /**
-   * Get current streaming content element
-   * @returns {HTMLElement|null}
-   */
+  /** Get current streaming content element */
   getCurrentStreamingElement() {
     return this.currentStreamingContentElement;
   }
 
-  /**
-   * Set current streaming element
-   * @param {HTMLElement} element
-   */
+  /** Set current streaming element */
   setCurrentStreamingElement(element) {
     this.currentStreamingContentElement = element;
   }
 
-  /**
-   * Get current streaming unique ID
-   * @returns {string}
-   */
+  /** Get current streaming unique ID */
   getCurrentStreamingUniqueId() {
     return this.currentStreamingUniqueId;
   }
 
-  /**
-   * Set current streaming unique ID
-   * @param {string} id
-   */
+  /** Set current streaming unique ID */
   setCurrentStreamingUniqueId(id) {
     this.currentStreamingUniqueId = id;
   }
 
-  /**
-   * Get accumulated streamed text
-   * @returns {string}
-   */
+  /** Get accumulated streamed text */
   getAccumulatedText() {
     return this.currentStreamingContentElement?.innerHTML || '';
   }
 
-  /**
-   * Set accumulated streamed text
-   * @param {string} text
-   */
+  /** Set accumulated streamed text */
   setAccumulatedText(text) {
     if (this.currentStreamingContentElement) {
-      this.currentStreamingContentElement.innerHTML = marked.parse(text);
+      this.currentStreamingContentElement.innerHTML = this.renderMarkdown(text);
       this.postProcessRenderedContent(this.currentStreamingContentElement);
     }
   }

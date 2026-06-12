@@ -13,7 +13,15 @@
     "no-unused-vars": "warn",
     "no-console": "off",
     "no-empty": "warn",
-    "no-undef": "off"
+    "no-undef": "error"
   },
-  "ignorePatterns": ["libs/", "marked.js", "marked.min.js", "node_modules/", "dist/"]
+  "globals": {
+    "marked": "readonly",
+    "hljs": "readonly",
+    "chrome": "readonly",
+    "Readability": "readonly",
+    "TurndownService": "readonly",
+    "DOMPurify": "readonly"
+  },
+  "ignorePatterns": ["libs/", "marked.min.js", "node_modules/", "dist/"]
 }

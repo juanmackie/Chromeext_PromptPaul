@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', function () {
     header.style.cursor = 'pointer';
 
     // Load saved state or default to expanded
-    const isExpanded = savedStates.hasOwnProperty(sectionId) ? savedStates[sectionId] : true;
+    const isExpanded = Object.prototype.hasOwnProperty.call(savedStates, sectionId) ? savedStates[sectionId] : true;
     toggleSection(header, isExpanded);
 
     // Click event listener

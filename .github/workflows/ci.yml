@@ -25,11 +25,9 @@ jobs:
 
       - name: Run linting
         run: npm run lint
-        continue-on-error: true
 
       - name: Run format check
         run: npm run format:check
-        continue-on-error: true
 
       - name: Run unit tests
         run: npm run test:unit

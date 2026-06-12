@@ -18,7 +18,7 @@ import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { chatUI } from './src/chat/ChatUI.js';
-import { getApiConfig, getApiConfigCached, getTools, startRun, executeRun, abortRun, selectOptimalProfile } from './src/chat/ChatAPI.js';
+import { getApiConfig, getTools, startRun, executeRun, abortRun, selectOptimalProfile } from './src/chat/ChatAPI.js';
 import {
   MediaType,
   validateMediaData,
@@ -32,6 +32,8 @@ import { StreamStateManager } from './src/chat/ChatStream.js';
 import { debounce } from './src/utils/debounce.js';
 import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
+import { escapeHtml, renderMarkdown } from './src/utils/domSanitizer.js';
+import { buildExplainPrompt, buildSummarizePrompt, PROOFREAD_PROMPT } from './src/prompts.js';
 import {
   renderSiteSuggestions,
   executePresetAnalysis,
@@ -122,6 +124,18 @@ async function handleAsyncError(asyncFn, options = {}) {
   }
 }
 
+function renderMarkdownContent(markdown) {
+  return renderMarkdown(markdown);
+}
+
+function formatUserMessageForDisplay(message) {
+  const text = String(message || '');
+  const firstLine = text.split(/\r?\n/)[0];
+  const maxInlineLength = 240;
+  if (firstLine.length <= maxInlineLength) return firstLine;
+  return `${firstLine.slice(0, maxInlineLength)}…`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const chatArea = document.getElementById('chat-area');
   const userInput = document.getElementById('user-input');
@@ -165,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
       key: 'summary',
       label: 'Summary',
       icon: 'auto_awesome',
-      prompt: 'Please summarize the following content into a bullet list of key points.',
+      prompt: buildSummarizePrompt('content'),
     },
     tldr: {
       key: 'tldr',
@@ -183,8 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
       key: 'proofread',
       label: 'Proofread',
       icon: 'spellcheck',
-      prompt:
-        'Proofread the following content for spelling, grammar, punctuation, and clarity issues. Fix all errors and return the corrected text followed by a brief bullet list of changes made.',
+      prompt: PROOFREAD_PROMPT,
     },
     executive: {
       key: 'executive',
@@ -240,13 +253,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function activateSelectedTextActionView() {
-    chatMainArea.style.display = 'block';
-    oneoffInstructionArea.style.display = 'none';
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
   }
 
   function clearSelectedTextState() {
     selectedText = null;
     selectedTextDiv.textContent = '';
+    refreshSelectedTextActionState();
   }
 
   function getSelectedTextForAction(actionLabel) {
@@ -257,6 +271,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     return text;
+  }
+
+  function updateSelectedTextActionButtons() {
+    const hasSelectedText = Boolean(String(selectedText || '').trim());
+    [analyzeButton, proofreadButton, explainButton, analyzeDropdown, customPromptsDropdown].forEach(
+      (button) => {
+        if (!button) return;
+        button.disabled = !hasSelectedText;
+        button.title = hasSelectedText
+          ? button.dataset.enabledTitle || button.title
+          : 'Select text first to run this action';
+      }
+    );
+  }
+
+  function refreshSelectedTextActionState() {
+    updateSelectedTextActionButtons();
   }
 
   async function runSelectedTextPrompt(prompt, toolChoice, actionLabel) {
@@ -307,8 +338,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Add event listeners for quick action buttons
   if (addPageButton) {
     addPageButton.addEventListener('click', async () => {
+      let loadingToast = null;
       try {
-        loadingManager.showToast('Loading tab content...', 'info');
+        loadingToast = loadingManager.showToast('Loading tab content...', 'info');
 
         const response = await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage({ action: 'getLoadContent' }, (res) => {
@@ -322,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (response && response.action === 'loadContentResponse') {
           if (response.success && response.content) {
+            loadingManager.hideToast(loadingToast);
             let sourceInfo = response.title;
             if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
             if (response.byline) sourceInfo += ` by ${response.byline}`;
@@ -374,25 +407,25 @@ document.addEventListener('DOMContentLoaded', () => {
             chatMainArea.style.display = 'block';
             oneoffInstructionArea.style.display = 'none';
             userInput.focus();
-            loadingManager.showToast(
-              'Content loaded! You can now ask questions about it.',
-              'success'
-            );
+            const statusParts = ['Content loaded.'];
             if (fitted.truncated) {
-              loadingManager.showToast(
-                `Loaded content was trimmed to fit context budget (${fitted.includedTokens}/${fitted.originalTokens} estimated tokens).`,
-                'info'
+              statusParts.push(
+                `Trimmed to fit context budget (${fitted.includedTokens}/${fitted.originalTokens} estimated tokens).`
               );
             }
+            chatUI.addMessage('System', statusParts.join(' '));
           } else {
+            loadingManager.hideToast(loadingToast);
             const errorMsg = response.error || 'Content not available';
             console.error('Chat.js: Add page button - Failed:', errorMsg);
             loadingManager.showToast('No content received: ' + errorMsg, 'error');
           }
         } else {
+          loadingManager.hideToast(loadingToast);
           loadingManager.showToast('Unexpected response from background script', 'error');
         }
       } catch (error) {
+        if (loadingToast) loadingManager.hideToast(loadingToast);
         console.error('Chat.js: Add page button - Error:', error.message);
         loadingManager.showToast(friendlyRuntimeErrorMessage(error), 'error');
       }
@@ -426,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = document.createElement('button');
       item.className = 'preset-menu-item';
       item.dataset.mode = preset.key;
-      item.innerHTML = `<span class="material-icons">${preset.icon}</span>${preset.label}`;
+      item.textContent = preset.label;
 
       item.addEventListener('click', () => {
         hidePresetMenu();
@@ -440,11 +473,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return presetMenu;
   }
 
+  function positionMenu(menu, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.left = `${rect.left}px`;
+    menu.style.top = `${rect.bottom + 4}px`;
+  }
+
   function showPresetMenu() {
     const menu = createPresetMenu();
-    const btn = analyzeDropdown.getBoundingClientRect();
-    menu.style.left = `${btn.left}px`;
-    menu.style.top = `${btn.bottom + 4}px`;
+    positionMenu(menu, analyzeDropdown);
     menu.style.display = 'block';
     presetMenuVisible = true;
   }
@@ -516,7 +553,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = document.createElement('button');
       item.className = 'custom-prompt-item' + (isPinned ? ' pinned' : '');
       const iconLetter = instruction.name ? instruction.name[0].toUpperCase() : '?';
-      item.innerHTML = `<span class="custom-prompt-icon">${iconLetter}</span>${instruction.name}`;
+      const icon = document.createElement('span');
+      icon.className = 'custom-prompt-icon';
+      icon.textContent = iconLetter;
+      item.appendChild(icon);
+      item.appendChild(document.createTextNode(instruction.name || 'Untitled prompt'));
       item.addEventListener('click', () => {
         hideCustomPromptsMenu();
         executeSelectedTextInstruction(instruction);
@@ -527,9 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function showCustomPromptsMenu() {
     await populateCustomPromptsMenu();
-    const btn = customPromptsDropdown.getBoundingClientRect();
-    customPromptsMenu.style.left = `${btn.left}px`;
-    customPromptsMenu.style.top = `${btn.bottom + 4}px`;
+    positionMenu(customPromptsMenu, customPromptsDropdown);
     customPromptsMenu.style.display = 'block';
     customPromptsMenuVisible = true;
   }
@@ -557,10 +596,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  window.addEventListener('scroll', () => {
+    if (presetMenuVisible && presetMenu && analyzeDropdown) positionMenu(presetMenu, analyzeDropdown);
+    if (customPromptsMenuVisible && customPromptsMenu && customPromptsDropdown) {
+      positionMenu(customPromptsMenu, customPromptsDropdown);
+    }
+  }, true);
+  window.addEventListener('resize', () => {
+    if (presetMenuVisible && presetMenu && analyzeDropdown) positionMenu(presetMenu, analyzeDropdown);
+    if (customPromptsMenuVisible && customPromptsMenu && customPromptsDropdown) {
+      positionMenu(customPromptsMenu, customPromptsDropdown);
+    }
+  });
+
   if (explainButton) {
     explainButton.addEventListener('click', async () => {
       await runSelectedTextPrompt(
-        'Explain the following selected text to me in a short concise MECE approach. Break down what you see into clear, structured categories.',
+        buildExplainPrompt('selected text'),
         'auto',
         'run Explain'
       );
@@ -715,6 +767,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectedText = request.selectedText || '';
     tabId = request.tabId;
+    refreshSelectedTextActionState();
 
     // Handle media data from context menu
     if (request.mediaData) {
@@ -739,13 +792,13 @@ document.addEventListener('DOMContentLoaded', () => {
       clearCurrentMediaData();
     } else {
       selectedTextDiv.textContent = selectedText;
-      chatMainArea.style.display = 'none';
-      oneoffInstructionArea.style.display = 'block';
+      chatMainArea.classList.add('hidden');
+      oneoffInstructionArea.classList.remove('hidden');
     }
   }
 
   function consumePendingPanelAction(pendingAction) {
-    if (!pendingAction || pendingAction.action !== 'setSelectedText') {
+    if (!pendingAction || !['setSelectedText', 'setMediaForAnalysis'].includes(pendingAction.action)) {
       return;
     }
 
@@ -759,25 +812,19 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    applySetSelectedTextAction(pendingAction);
-
-    if (!chrome.storage?.session) {
-      return;
+    if (pendingAction.action === 'setSelectedText') {
+      applySetSelectedTextAction(pendingAction);
     }
 
-    chrome.storage.session.get([PENDING_PANEL_ACTION_KEY], (result) => {
-      const storedAction = result?.[PENDING_PANEL_ACTION_KEY];
-      if (!storedAction) {
+    chrome.runtime.sendMessage(pendingAction, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('Chat: Failed to consume pending panel action:', chrome.runtime.lastError.message);
         return;
       }
-
-      if (
-        !pendingAction.actionId ||
-        !storedAction.actionId ||
-        storedAction.actionId === pendingAction.actionId
-      ) {
+      if (chrome.storage?.session) {
         chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
       }
+      console.log('Chat: Consumed pending panel action:', pendingAction.action, response);
     });
   }
 
@@ -890,7 +937,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (mediaData.loading) {
         // Show loading state
-        chatUI.addMessage('System', `📥 Loading ${mediaData.type} for analysis...`);
+        chatUI.addMessage('System', `Loading ${mediaData.type} for analysis...`);
       } else if (mediaData.error) {
         // Show error
         chatUI.addMessage('System', `❌ Error loading ${mediaData.type}: ${mediaData.error}`);
@@ -915,7 +962,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (instruction) {
               analysisPrompt = mediaData.textPrompt || instruction.content;
               instructionToolChoice = normalizeToolChoice(instruction.tool_choice);
-              chatUI.addMessage('System', `🎯 Using custom instruction: "${instruction.name}"`);
+              chatUI.addMessage('System', `Using custom instruction: "${instruction.name}"`);
             } else {
               analysisPrompt =
                 mediaData.textPrompt ||
@@ -936,16 +983,16 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (mediaData.actionType === 'summarize') {
           analysisPrompt =
             mediaData.textPrompt || getMediaAnalysisPrompt('summarize', streamState.getMediaData());
-          chatUI.addMessage('System', `📝 Summarizing...`);
+          chatUI.addMessage('System', `Summarizing...`);
         } else if (mediaData.actionType === 'explain') {
           analysisPrompt =
             mediaData.textPrompt || getMediaAnalysisPrompt('explain', streamState.getMediaData());
-          chatUI.addMessage('System', `💡 Explaining...`);
+          chatUI.addMessage('System', `Explaining...`);
         } else {
           // Default analysis
           analysisPrompt =
             mediaData.textPrompt || getMediaAnalysisPrompt('default', streamState.getMediaData());
-          chatUI.addMessage('System', `🔍 Analyzing...`);
+          chatUI.addMessage('System', `Analyzing...`);
         }
 
         if (streamState.getMediaData()) {
@@ -956,142 +1003,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (sendResponse) sendResponse({ success: true });
       return true;
-    } else if (request.action === 'setApiResponse') {
-      // Filter: ignore if we have an active orchestrator run (deprecated legacy path)
-      if (streamState.getRunId()) {
-        console.log('Chat: Ignoring setApiResponse - orchestrator owns the run');
-        if (sendResponse) sendResponse({ success: true, ignored: true });
-        return true;
-      }
-      // Also filter by tabId if provided
-      if (request.tabId && panelTabId && request.tabId !== panelTabId) {
-        console.log('Chat: Ignoring setApiResponse for other tab');
-        if (sendResponse) sendResponse({ success: true, ignored: true });
-        return true;
-      }
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
-      userInput.disabled = false;
-      sendButton.disabled = false;
-      if (streamState.getCurrentStreamingMessageDiv()) {
-        streamState.setStreamingElements(
-          null,
-          streamState.getCurrentStreamingContentElement(),
-          streamState.getCurrentStreamingUniqueId()
-        );
-        streamState.setStreamingElements(
-          streamState.getCurrentStreamingMessageDiv(),
-          null,
-          streamState.getCurrentStreamingUniqueId()
-        );
-        streamState.setStreamingElements(
-          streamState.getCurrentStreamingMessageDiv(),
-          streamState.getCurrentStreamingContentElement(),
-          null
-        );
-        streamState.clearStreamedText();
-        streamState.appendStreamedText('');
-      }
-      if (request.prompt) {
-        // Add user prompt to history if not already there
-        const lastMessage =
-          streamState.getConversationHistory()[streamState.getConversationHistory().length - 1];
-        if (
-          !lastMessage ||
-          !(lastMessage.role === 'user' && lastMessage.content === request.prompt)
-        ) {
-          chatUI.addMessage('User', request.prompt.split('\n')[0]); // Display shortened prompt
-          streamState.addMessageToHistory({ role: 'user', content: request.prompt });
-        }
-      }
-
-      if (request.apiResponse && typeof request.apiResponse === 'string') {
-        // Standard text response (OpenAI, or Anthropic, or error string)
-        chatUI.addMessage('LLM', request.apiResponse);
-        const lastAssistantMessage =
-          streamState.getConversationHistory().length > 0 &&
-          streamState.getConversationHistory()[streamState.getConversationHistory().length - 1]
-            .role === 'assistant'
-            ? streamState.getConversationHistory()[streamState.getConversationHistory().length - 1]
-                .content
-            : null;
-        if (lastAssistantMessage !== request.apiResponse) {
-          streamState.addMessageToHistory({ role: 'assistant', content: request.apiResponse });
-        }
-      } else if (request.apiResponse) {
-        // Fallback for unexpected structure
-        console.warn(
-          'Chat: setApiResponse received apiResponse in unexpected format:',
-          request.apiResponse
-        );
-        chatUI.addMessage('LLM', JSON.stringify(request.apiResponse));
-        streamState
-          .getConversationHistory()
-          .push({ role: 'assistant', content: JSON.stringify(request.apiResponse) });
-      }
-      if (sendResponse) sendResponse({ success: true });
-      return true;
-    } else if (request.action === 'streamApiStart') {
-      // Filter: ignore if we have an active orchestrator run
-      if (streamState.getRunId()) {
-        console.log('Chat: Ignoring streamApiStart - orchestrator owns the run');
-        if (sendResponse) sendResponse({ success: true, ignored: true });
-        return true;
-      }
-      // Also filter by tabId
-      if (request.tabId && panelTabId && request.tabId !== panelTabId) {
-        console.log('Chat: Ignoring streamApiStart for other tab');
-        if (sendResponse) sendResponse({ success: true, ignored: true });
-        return true;
-      }
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
-      userInput.disabled = true;
-      sendButton.disabled = true;
-      if (request.prompt) {
-        const lastMessage =
-          streamState.getConversationHistory()[streamState.getConversationHistory().length - 1];
-        if (
-          !lastMessage ||
-          !(lastMessage.role === 'user' && lastMessage.content === request.prompt)
-        ) {
-          chatUI.addMessage('User', request.prompt.split('\n')[0]);
-          streamState.addMessageToHistory({ role: 'user', content: request.prompt });
-        }
-      }
-      streamState.clearStreamedText();
-      streamState.appendStreamedText('');
-      const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
-      streamState.setStreamingElements(
-        messageDiv,
-        streamState.getCurrentStreamingContentElement(),
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        contentElement,
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        streamState.getCurrentStreamingContentElement(),
-        uniqueIdString
-      );
-      if (sendResponse) sendResponse({ success: true });
-      return true;
-    } else if (request.action === 'streamApiResponseChunk') {
-      // Filter: ignore if we have an active orchestrator run (deprecated legacy path)
-      if (streamState.getRunId()) {
-        return;
-      }
-      if (streamState.getActiveToolCall()) return; // If a tool call is active, don't process further text chunks for this bubble
-      if (streamState.getCurrentStreamingContentElement() && request.chunk != null) {
-        streamState.appendStreamedText(request.chunk);
-        streamState.getCurrentStreamingContentElement().innerHTML = marked.parse(
-          streamState.getStreamedText()
-        );
-        chatArea.scrollTop = chatArea.scrollHeight;
-      }
     } else if (request.action === 'orchestratorEvent') {
       // NEW: Handle events from orchestrator
       const { runId, sourceTabId, event } = request;
@@ -1125,11 +1036,11 @@ document.addEventListener('DOMContentLoaded', () => {
           streamState.setActiveToolCall(event.toolCall);
           if (streamState.getCurrentStreamingContentElement()) {
             if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
-              streamState.getCurrentStreamingContentElement().innerHTML = marked.parse(
-                `📚 Loading skill: **${event.toolCall.function.name}**`
+              streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+                `Loading skill: **${event.toolCall.function.name}**`
               );
             } else {
-              streamState.getCurrentStreamingContentElement().innerHTML = marked.parse(
+              streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
                 `⚙️ Using tool: **${event.toolCall.function.name}**`
               );
             }
@@ -1148,13 +1059,13 @@ document.addEventListener('DOMContentLoaded', () => {
               const resultObj = tryParseToolPayload(event.result);
               const skillResult = resultObj?.result || resultObj;
               if (skillResult && skillResult.success) {
-                chatUI.addMessage('System', `📚 Loaded skill: **${args.name || 'unknown'}**`);
+                chatUI.addMessage('System', `Loaded skill: **${args.name || 'unknown'}**`);
                 const skillContent = JSON.stringify(skillResult);
                 const contentPreview =
                   skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
                 chatUI.addMessage(
                   'System',
-                  `📝 Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``
+                  `Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``
                 );
               } else {
                 chatUI.addMessage('System', `⚠️ Skill **${args.name || 'unknown'}** not found.`);
@@ -1168,66 +1079,22 @@ document.addEventListener('DOMContentLoaded', () => {
             chatUI.addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
           }
 
-          // Add assistant message with tool_calls before tool result
-          streamState.addMessageToHistory({
-            role: 'assistant',
-            content: null,
-            tool_calls: [
-              {
-                id: event.toolCall.id,
-                type: 'function',
-                function: {
-                  name: event.toolCall.function.name,
-                  arguments: event.toolCall.function.arguments,
-                },
-              },
-            ],
-          });
-
-          // Add tool result to history
-          streamState.getConversationHistory().push({
-            role: 'tool',
-            tool_call_id: event.toolCall.id,
-            name: event.toolCall.function.name,
-            content: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
-          });
           break;
 
         case 'tool_error':
-          addMessage(
+          chatUI.addMessage(
             'System',
             `❌ Error executing tool ${event.toolCall.function.name}: ${event.error}`
           );
 
-          // Add assistant message with tool_calls before tool error result
-          streamState.addMessageToHistory({
-            role: 'assistant',
-            content: null,
-            tool_calls: [
-              {
-                id: event.toolCall.id,
-                type: 'function',
-                function: {
-                  name: event.toolCall.function.name,
-                  arguments: event.toolCall.function.arguments,
-                },
-              },
-            ],
-          });
-
-          streamState.addMessageToHistory({
-            role: 'tool',
-            tool_call_id: event.toolCall.id,
-            name: event.toolCall.function.name,
-            content: `Error: ${event.error}`,
-          });
+          streamState.setActiveToolCall(null);
           break;
 
         case 'complete': {
           // Finalize the existing streaming bubble instead of creating a duplicate
           if (streamState.getCurrentStreamingContentElement()) {
             const finalContent = event.content || streamState.getStreamedText() || '';
-            streamState.getCurrentStreamingContentElement().innerHTML = marked.parse(finalContent);
+            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(finalContent);
             chatUI.postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
             // Attach copy listeners to existing bubble (fix: icons were created
@@ -1273,21 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
           clearButton.textContent = 'Clear';
 
           // Reset streaming variables
-          streamState.setStreamingElements(
-            null,
-            streamState.getCurrentStreamingContentElement(),
-            streamState.getCurrentStreamingUniqueId()
-          );
-          streamState.setStreamingElements(
-            streamState.getCurrentStreamingMessageDiv(),
-            null,
-            streamState.getCurrentStreamingUniqueId()
-          );
-          streamState.setStreamingElements(
-            streamState.getCurrentStreamingMessageDiv(),
-            streamState.getCurrentStreamingContentElement(),
-            null
-          );
+          streamState.clearStreamingElements();
           streamState.clearStreamedText();
           streamState.setActiveToolCall(null);
           streamState.setRunId(null);
@@ -1302,21 +1155,7 @@ document.addEventListener('DOMContentLoaded', () => {
           userInput.focus();
 
           // Reset streaming variables
-          streamState.setStreamingElements(
-            null,
-            streamState.getCurrentStreamingContentElement(),
-            streamState.getCurrentStreamingUniqueId()
-          );
-          streamState.setStreamingElements(
-            streamState.getCurrentStreamingMessageDiv(),
-            null,
-            streamState.getCurrentStreamingUniqueId()
-          );
-          streamState.setStreamingElements(
-            streamState.getCurrentStreamingMessageDiv(),
-            streamState.getCurrentStreamingContentElement(),
-            null
-          );
+          streamState.clearStreamingElements();
           streamState.clearStreamedText();
           streamState.setActiveToolCall(null);
           streamState.setRunId(null);
@@ -1332,11 +1171,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
   sendButton.addEventListener('click', sendMessage);
   const clearButton = document.getElementById('clear-button');
+  const chatEmptyState = document.getElementById('chat-empty-state');
+  const openOptionsFromEmptyState = document.getElementById('openOptionsFromEmptyState');
+
+  function updateEmptyState() {
+    if (!chatEmptyState) return;
+    chatEmptyState.hidden = chatArea.children.length > 0;
+  }
+
+  if (openOptionsFromEmptyState) {
+    openOptionsFromEmptyState.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'openOptionsPage' });
+    });
+  }
+  const originalAddMessage = chatUI.addMessage.bind(chatUI);
+  chatUI.addMessage = (...args) => {
+    const result = originalAddMessage(...args);
+    updateEmptyState();
+    return result;
+  };
+
+  const originalLoadedContentMessage = chatUI.addLoadedContentMessage.bind(chatUI);
+  chatUI.addLoadedContentMessage = (...args) => {
+    const result = originalLoadedContentMessage(...args);
+    updateEmptyState();
+    return result;
+  };
+
+  const originalMediaPreview = chatUI.addMediaPreview.bind(chatUI);
+  chatUI.addMediaPreview = (...args) => {
+    const result = originalMediaPreview(...args);
+    updateEmptyState();
+    return result;
+  };
+
+  // ── First-run consent banner ─────────────────────────────────────
+  const consentBanner = document.getElementById('consent-banner');
+  const consentAccept = document.getElementById('consent-accept');
+  const consentDecline = document.getElementById('consent-decline');
+
+  async function checkConsentBanner() {
+    if (!consentBanner) return;
+    try {
+      const { analyticsConsent } = await chrome.storage.sync.get('analyticsConsent');
+      // Only show banner if consent has never been explicitly set
+      if (analyticsConsent === undefined) {
+        consentBanner.hidden = false;
+      }
+    } catch {
+      // Storage access may fail in some contexts; silently skip
+    }
+  }
+
+  function dismissConsentBanner() {
+    if (consentBanner) consentBanner.hidden = true;
+  }
+
+  if (consentAccept) {
+    consentAccept.addEventListener('click', async () => {
+      await chrome.storage.sync.set({ analyticsConsent: true });
+      dismissConsentBanner();
+    });
+  }
+
+  if (consentDecline) {
+    consentDecline.addEventListener('click', async () => {
+      await chrome.storage.sync.set({ analyticsConsent: false });
+      dismissConsentBanner();
+    });
+  }
+
+  checkConsentBanner();
   clearButton.addEventListener('click', () => {
     if (clearButton.textContent === 'Stop') {
       stopApiRequest();
     } else {
       chatUI.clearChat();
+      updateEmptyState();
       streamState.clearHistory();
       clearCurrentMediaData();
     }
@@ -1356,10 +1267,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const dropOverlay = document.getElementById('drop-overlay');
 
   function showDropOverlay() {
-    if (dropOverlay) dropOverlay.style.display = 'flex';
+    if (dropOverlay) dropOverlay.classList.remove('hidden');
   }
   function hideDropOverlay() {
-    if (dropOverlay) dropOverlay.style.display = 'none';
+    if (dropOverlay) dropOverlay.classList.add('hidden');
   }
 
   document.addEventListener('dragenter', (e) => {
@@ -1385,7 +1296,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
-    chatUI.addMessage('System', `📥 Processing ${files.length} dropped file(s)...`);
+    chatUI.addMessage('System', `Processing ${files.length} dropped file(s)...`);
 
     for (const file of files) {
       try {
@@ -1440,7 +1351,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ) {
     clearCurrentMediaData();
     try {
-      const config = await getApiConfigCached();
+      const config = await getApiConfig();
 
       const effectiveToolChoice =
         tool_choice === undefined || tool_choice === null || tool_choice === ''
@@ -1449,7 +1360,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Add user message to history if provided
       if (userMessage) {
-        chatUI.addMessage('User', userMessage);
+        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage));
 
         // Create message content with media
         const messageContent = [{ type: 'text', text: userMessage }];
@@ -1470,23 +1381,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Create UI elements for streaming
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
-      streamState.setStreamingElements(
-        messageDiv,
-        streamState.getCurrentStreamingContentElement(),
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        contentElement,
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        streamState.getCurrentStreamingContentElement(),
-        uniqueIdString
-      );
-      streamState.clearStreamedText();
-      streamState.appendStreamedText('');
+      streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
       userInput.disabled = true;
       sendButton.disabled = true;
       clearButton.textContent = 'Stop';
@@ -1520,21 +1415,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Reset state
       clearCurrentMediaData();
-      streamState.setStreamingElements(
-        null,
-        streamState.getCurrentStreamingContentElement(),
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        null,
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        streamState.getCurrentStreamingContentElement(),
-        null
-      );
+      streamState.clearStreamingElements();
       streamState.clearStreamedText();
       streamState.appendStreamedText('');
       streamState.setActiveToolCall(null);
@@ -1569,7 +1450,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const cmd = skillsModule.parseCommand(message, availableSkills);
 
         if (cmd.type === 'skills') {
-          chatUI.addMessage('User', message);
+          chatUI.addMessage('User', formatUserMessageForDisplay(message));
           const slashCommands = skillsResp.slashCommands || [];
           const skillsMessage = skillsModule.formatSkillsList(availableSkills, slashCommands);
           chatUI.addMessage('System', skillsMessage);
@@ -1580,7 +1461,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cmd.type === 'skill') {
           requestedSkill = cmd.skillName;
           effectiveMessage = cmd.body || message;
-          chatUI.addMessage('System', `📚 Loading skill: **${requestedSkill}**`);
+          chatUI.addMessage('System',               `Loading skill: **${requestedSkill}**`);
         } else {
           // Fall back to natural-language intent detection
           const detectedSkill = skillsModule.detectSkillIntent(message, availableSkills);
@@ -1589,7 +1470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             effectiveMessage = detectedSkill.body || message;
             chatUI.addMessage(
               'System',
-              `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`
+              `Skill detected: **${requestedSkill}**. Loading skill instructions...`
             );
           }
         }
@@ -1633,7 +1514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log(`[Chat] Rerouted to vision-capable model: ${routingResult.config.modelName}`);
             chatUI.addMessage(
               'System',
-              `🔄 Auto-switched to **${routingResult.config.modelName}** for image analysis.`
+              `Auto-switched to **${routingResult.config.modelName}** for image analysis.`
             );
           }
         } catch (e) {
@@ -1648,7 +1529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Add user message to history if provided
       if (userMessage) {
-        chatUI.addMessage('User', userMessage);
+        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage));
 
         if (mediaData && mediaData.type === 'image') {
           const messageContent = [
@@ -1682,23 +1563,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Create UI elements for streaming
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
-      streamState.setStreamingElements(
-        messageDiv,
-        streamState.getCurrentStreamingContentElement(),
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        contentElement,
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        streamState.getCurrentStreamingContentElement(),
-        uniqueIdString
-      );
-      streamState.clearStreamedText();
-      streamState.appendStreamedText('');
+      streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
       userInput.disabled = true;
       sendButton.disabled = true;
       clearButton.textContent = 'Stop';
@@ -1718,21 +1583,7 @@ document.addEventListener('DOMContentLoaded', () => {
       userInput.focus();
 
       // Reset streaming state
-      streamState.setStreamingElements(
-        null,
-        streamState.getCurrentStreamingContentElement(),
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        null,
-        streamState.getCurrentStreamingUniqueId()
-      );
-      streamState.setStreamingElements(
-        streamState.getCurrentStreamingMessageDiv(),
-        streamState.getCurrentStreamingContentElement(),
-        null
-      );
+      streamState.clearStreamingElements();
       streamState.clearStreamedText();
       streamState.appendStreamedText('');
       streamState.setActiveToolCall(null);

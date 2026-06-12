@@ -20,63 +20,73 @@ import {
   validateMetadata,
 } from './src/utils/skillParser.js';
 import { setupThemeToggle } from './themeUtils.js';
+import { escapeHtml } from './src/utils/domSanitizer.js';
+import {
+  getVoiceInputSettings as getStoredVoiceInputSettings,
+  setVoiceInputSettings as setStoredVoiceInputSettings,
+  isMicrophonePermissionDenied,
+} from './src/chat/ChatVoice.js';
 
 const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
 const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
 const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
 
-function getStoredVoiceInputSettings() {
+function createUniqueId(prefix) {
+  const id =
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${id}`;
+}
+
+/**
+ * Shows a confirmation modal and returns a promise that resolves to true/false.
+ * @param {string} message - The message to display.
+ * @param {string} [title='Confirm'] - The modal title.
+ * @param {string} [confirmText='Confirm'] - The confirm button text.
+ * @returns {Promise<boolean>}
+ */
+function showConfirmModal(message, title = 'Confirm', confirmText = 'Confirm') {
   return new Promise((resolve) => {
-    chrome.storage.local.get(
-      [
-        VOICE_INPUT_ENABLED_KEY,
-        VOICE_INPUT_PERMISSION_STATE_KEY,
-        VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY,
-      ],
-      (result) => {
-        const voiceInputEnabled = Object.prototype.hasOwnProperty.call(
-          result || {},
-          VOICE_INPUT_ENABLED_KEY
-        )
-          ? !!result[VOICE_INPUT_ENABLED_KEY]
-          : true;
+    const overlay = document.getElementById('confirm-modal-overlay');
+    const titleEl = document.getElementById('confirm-modal-title');
+    const messageEl = document.getElementById('confirm-modal-message');
+    const okBtn = document.getElementById('confirm-modal-ok');
+    const cancelBtn = document.getElementById('confirm-modal-cancel');
 
-        resolve({
-          voiceInputEnabled,
-          voiceInputPermissionState: result?.[VOICE_INPUT_PERMISSION_STATE_KEY] || 'unknown',
-          voiceInputPermissionLastChecked:
-            result?.[VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY] || null,
-        });
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    okBtn.textContent = confirmText;
+    overlay.classList.remove('hidden');
+
+    function cleanup() {
+      overlay.classList.add('hidden');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onOverlayClick);
+    }
+
+    function onOk() {
+      cleanup();
+      resolve(true);
+    }
+
+    function onCancel() {
+      cleanup();
+      resolve(false);
+    }
+
+    function onOverlayClick(e) {
+      if (e.target === overlay) {
+        cleanup();
+        resolve(false);
       }
-    );
+    }
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onOverlayClick);
   });
-}
-
-function setStoredVoiceInputSettings(updates) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.set(updates, () => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
-function isMicrophonePermissionDenied(error) {
-  if (!error) return false;
-
-  const name = typeof error.name === 'string' ? error.name.toLowerCase() : '';
-  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-
-  return (
-    name === 'notallowederror' ||
-    name === 'permissiondeniederror' ||
-    message.includes('permission denied') ||
-    message.includes('permission dismissed') ||
-    message.includes('not allowed')
-  );
 }
 
 /**
@@ -134,6 +144,47 @@ function syncDeleteProfileButtonState(selectedProfileId = null) {
 
   const selectedId = selectedProfileId || profileSelectElement.value;
   deleteProfileButton.disabled = selectedId === 'default' || selectedId === 'add_new_profile';
+}
+
+function requestProfileName(defaultName = 'New Profile') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'profile-name-dialog-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'profile-name-dialog';
+    dialog.innerHTML = `
+      <h3>Create Profile</h3>
+      <label for="newProfileNameInput">Profile name</label>
+      <input id="newProfileNameInput" class="shadcn-input" value="${escapeHtml(defaultName)}" />
+      <div class="profile-name-dialog-actions">
+        <button type="button" class="profile-name-cancel">Cancel</button>
+        <button type="button" class="profile-name-confirm">Create</button>
+      </div>
+    `;
+    const input = dialog.querySelector('#newProfileNameInput');
+    const confirm = dialog.querySelector('.profile-name-confirm');
+    const cancel = dialog.querySelector('.profile-name-cancel');
+
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    input.focus();
+    input.select();
+
+    confirm.addEventListener('click', () => finish(input.value));
+    cancel.addEventListener('click', () => finish(''));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') finish(input.value);
+      if (event.key === 'Escape') finish('');
+    });
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) finish('');
+    });
+  });
 }
 
 /**
@@ -315,7 +366,7 @@ function saveOptions(e) {
           );
           showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
         } else {
-          showStatus(`Settings for profile '${profileToUpdate.name}' saved!`);
+          showStatus(`Settings for profile '${profileToUpdate.name}' saved.`);
           // Reload options to reflect changes, especially if it was a new profile or name changed
           loadOptions();
         }
@@ -337,12 +388,10 @@ function loadProfileSettings(profileId) {
       profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === 'default');
 
     if (selectedProfile) {
-      document.getElementById('llmEndpoint').value =
-        selectedProfile.llmEndpoint || 'https://api.mistral.ai/v1/chat/completions';
+      document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || '';
       document.getElementById('apiKey').value =
-        selectedProfile.apiKey || 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
-      document.getElementById('modelName').value =
-        selectedProfile.modelName || 'mistral-small-latest';
+        selectedProfile.apiKey || '';
+      document.getElementById('modelName').value = selectedProfile.modelName || '';
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
 
       updateCurrentConfig(
@@ -357,9 +406,9 @@ function loadProfileSettings(profileId) {
       // Fallback to sync storage if profile not found (e.g. initial load or error)
       chrome.storage.sync.get(
         {
-          llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-          apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-          modelName: 'mistral-small-latest',
+          llmEndpoint: '',
+          apiKey: '',
+          modelName: '',
           systemPrompt: '',
           lastUpdated: '',
           profileSelect: 'default',
@@ -379,6 +428,7 @@ function loadProfileSettings(profileId) {
             items.apiKey,
             items.modelName,
             items.lastUpdated,
+            items.systemPrompt,
             items.profileSelect
           );
         }
@@ -429,10 +479,10 @@ function loadOptions() {
       const defaultProfile = {
         id: 'default',
         name: 'Default',
-        llmEndpoint: 'https://api.mistral.ai/v1/chat/completions',
-        apiKey: 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF',
-        modelName: 'mistral-small-latest',
-        systemPrompt: 'You are a helpful assistant.',
+        llmEndpoint: '',
+        apiKey: '',
+        modelName: '',
+        systemPrompt: '',
         lastUpdated: new Date().toLocaleString(),
       };
       profiles.push(defaultProfile);
@@ -464,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const consent =
         res && Object.prototype.hasOwnProperty.call(res, 'analyticsConsent')
           ? !!res.analyticsConsent
-          : true;
+          : false;
       analyticsConsentToggle.checked = consent;
     });
     // Persist on change
@@ -484,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
     !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 
   if (voiceInputEnabledToggle && testMicPermissionBtn && micPermissionStatus) {
-    function getMicStatusPresentation(settings) {
+    const getMicStatusPresentation = (settings) => {
       if (!isVoiceInputSupported) {
         return {
           text: 'Not supported in this browser',
@@ -509,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (settings.voiceInputPermissionState === 'granted') {
         return {
           text: 'Permission granted',
-          color: '#10b981',
+          color: 'var(--ext-primary)',
         };
       }
 
@@ -519,7 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    function renderVoiceInputControls(settings, overrides = {}) {
+    const renderVoiceInputControls = (settings, overrides = {}) => {
       const status = overrides.status || getMicStatusPresentation(settings);
       const isTesting = !!overrides.isTesting;
 
@@ -541,13 +591,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    async function refreshVoiceInputControls() {
+    const refreshVoiceInputControls = async () => {
       const settings = await getStoredVoiceInputSettings();
       renderVoiceInputControls(settings);
       return settings;
     }
 
-    async function testMicrophonePermission() {
+    const testMicrophonePermission = async () => {
       const settings = await getStoredVoiceInputSettings();
 
       if (!isVoiceInputSupported) {
@@ -580,7 +630,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         await refreshVoiceInputControls();
-        showStatus('Microphone permission granted!', false, true);
+        showStatus('Microphone permission granted.', false, true);
       } catch (error) {
         if (isMicrophonePermissionDenied(error)) {
           await setStoredVoiceInputSettings({
@@ -655,16 +705,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Confirm with the user
-      chrome.storage.local.get(['profiles'], (result) => {
+      chrome.storage.local.get(['profiles'], async (result) => {
         const profiles = result.profiles || [];
         const profileToDelete = profiles.find((p) => p.id === selectedProfileId);
         const profileName = profileToDelete ? profileToDelete.name : 'the selected profile';
 
-        if (
-          window.confirm(
-            `Are you sure you want to delete the profile "${profileName}"? This action cannot be undone.`
-          )
-        ) {
+        const confirmed = await showConfirmModal(
+          `Delete profile "${profileName}"? This cannot be undone.`,
+          'Delete Profile',
+          'Delete'
+        );
+        if (confirmed) {
           const updatedProfiles = profiles.filter((p) => p.id !== selectedProfileId);
           chrome.storage.local.set(
             { profiles: updatedProfiles, lastSelectedProfileId: 'default' },
@@ -705,9 +756,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (revertButton) {
     revertButton.addEventListener('click', () => {
       // Get default values (these are defined in loadOptions)
-      const defaultEndpoint = 'https://api.mistral.ai/v1/chat/completions';
-      const defaultApiKey = 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
-      const defaultModelName = 'mistral-small-latest';
+      const defaultEndpoint = '';
+      const defaultApiKey = '';
+      const defaultModelName = '';
 
       // Set default values in the input fields
       document.getElementById('llmEndpoint').value = defaultEndpoint;
@@ -730,14 +781,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (profileSelectElement) {
-    profileSelectElement.addEventListener('change', (event) => {
+    profileSelectElement.addEventListener('change', async (event) => {
       const selectedProfileId = event.target.value;
       syncDeleteProfileButtonState(selectedProfileId);
 
       if (selectedProfileId === 'add_new_profile') {
-        const newProfileName = prompt(
-          'Enter a name for the new profile (e.g., "My OpenAI GPT-4"):'
-        );
+        const newProfileName = await requestProfileName('New Profile');
         if (newProfileName && newProfileName.trim() !== '') {
           chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
             let profiles = result.profiles || [];
@@ -796,29 +845,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ============================================================
-  // SECTION 2: Streaming & Theme Settings (Sync Storage)
+  // SECTION 2: Theme Settings (Sync Storage)
   // ============================================================
-
-  // Streaming Toggle
-  const enableStreamingToggle = document.getElementById('enableStreamingToggle');
-  if (enableStreamingToggle) {
-    // Load streaming setting
-    chrome.storage.sync.get({ enableStreaming: false }, (result) => {
-      enableStreamingToggle.checked = !!result.enableStreaming;
-    });
-
-    // Save streaming setting on change
-    enableStreamingToggle.addEventListener('change', () => {
-      const isStreamingEnabled = enableStreamingToggle.checked;
-      chrome.storage.sync.set({ enableStreaming: isStreamingEnabled }, () => {
-        showStatus(
-          `Streaming responses ${isStreamingEnabled ? 'enabled' : 'disabled'}.`,
-          false,
-          true
-        );
-      });
-    });
-  }
 
   // Dark Theme Toggle
   const darkThemeToggle = document.getElementById('darkThemeToggle');
@@ -826,11 +854,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setupThemeToggle(darkThemeToggle);
   }
 
-  // Listen for storage changes to sync streaming
+  // Listen for storage changes
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes.enableStreaming && enableStreamingToggle) {
-      enableStreamingToggle.checked = !!changes.enableStreaming.newValue;
-    }
+    // no-op, future hooks for storage sync
   });
 });
 
@@ -843,12 +869,12 @@ function checkAndPromptInstructionMigration() {
       // Show prompt if sync has instructions and local does not
       if (syncInstructions.length > 0 && localInstructions.length === 0) {
         const migrationPrompt = document.getElementById('migrationPrompt');
-        migrationPrompt.style.display = 'block';
+        migrationPrompt.classList.remove('hidden');
         document.getElementById('migrateInstructionsBtn').onclick = () => {
           chrome.storage.local.set({ instructions: syncInstructions }, () => {
             chrome.storage.sync.set({ instructions: [] }, () => {
-              migrationPrompt.style.display = 'none';
-              showStatus('Instructions migrated to this device only!', false, true);
+              migrationPrompt.classList.add('hidden');
+              showStatus('Instructions migrated to this device only.', false, true);
               // Reload instructions table
               if (typeof window.setupInstructionHandlers === 'function') {
                 // If handler is re-entrant, reload
@@ -860,7 +886,7 @@ function checkAndPromptInstructionMigration() {
           });
         };
         document.getElementById('dismissMigrationBtn').onclick = () => {
-          migrationPrompt.style.display = 'none';
+          migrationPrompt.classList.add('hidden');
         };
       }
     });
@@ -1165,7 +1191,7 @@ function setupInstructionHandlers() {
             let instructions = result.instructions || [];
             instructions = instructions.filter((item) => item.id !== instructionId);
             chrome.storage.local.set({ instructions }, () => {
-              showStatus('Instruction deleted!');
+              showStatus('Instruction deleted.');
               refreshInstructions();
               if (document.getElementById('instructionId').value === instructionId) {
                 clearForm();
@@ -1215,7 +1241,7 @@ function setupInstructionHandlers() {
             document.getElementById('instructionTags').value = (instruction.tags || []).join(', ');
             document.getElementById('instructionId').value = instruction.id;
 
-            showStatus('Instruction improved! Review and Save.', false, true);
+              showStatus('Instruction improved. Review and save.', false, true);
           } catch (error) {
             console.error('Error improving instruction:', error);
             showStatus('Failed to improve instruction: ' + error.message, true);
@@ -1278,11 +1304,11 @@ function setupInstructionHandlers() {
             }
             return inst;
           });
-          showStatus('Instruction updated!');
+          showStatus('Instruction updated.');
         } else {
           // Add new instruction
           const newInstruction = {
-            id: 'inst_' + Date.now(), // Simple unique ID
+            id: createUniqueId('inst'),
             name: instructionName,
             content: instructionContent,
             tags,
@@ -1292,7 +1318,7 @@ function setupInstructionHandlers() {
             lastUpdated: now,
           };
           instructions.push(newInstruction);
-          showStatus('Instruction added!');
+          showStatus('Instruction added.');
         }
 
         chrome.storage.local.set({ instructions: instructions }, () => {
@@ -1308,7 +1334,7 @@ function setupInstructionHandlers() {
     clearFormBtn.addEventListener('click', clearForm);
   }
 
-  function clearForm() {
+  async function clearForm() {
     // Check if form has any content that would be lost
     const name = document.getElementById('instructionName').value;
     const content = document.getElementById('instructionContent').value;
@@ -1316,8 +1342,10 @@ function setupInstructionHandlers() {
 
     // Only confirm if there's actual content to clear
     if (hasContent) {
-      const confirmed = window.confirm(
-        'Are you sure you want to clear the form? Any unsaved changes will be lost.'
+      const confirmed = await showConfirmModal(
+        'Clear the form? Unsaved changes will be lost.',
+        'Clear Form',
+        'Clear'
       );
       if (!confirmed) {
         return; // User cancelled
@@ -1393,7 +1421,7 @@ function setupInstructionHandlers() {
                 // Add new instruction
                 existingInstructions.push({
                   ...importedInst,
-                  id: importedInst.id || 'inst_' + Date.now(),
+                  id: importedInst.id || createUniqueId('inst'),
                   createdAt: importedInst.createdAt || new Date().toISOString(),
                   lastUpdated: new Date().toISOString(),
                 });
@@ -1401,7 +1429,7 @@ function setupInstructionHandlers() {
             });
 
             chrome.storage.local.set({ instructions: existingInstructions }, () => {
-              showStatus('Instructions imported successfully!');
+              showStatus('Instructions imported successfully.');
               refreshInstructions(); // Reload the table
             });
           });
@@ -1523,11 +1551,11 @@ function setupToolHandlers() {
       tools.forEach((tool) => {
         const row = document.createElement('tr');
         row.innerHTML = `
-          <td data-label="Name">${tool.name}</td>
-          <td data-label="Description">${tool.description}</td>
+          <td data-label="Name">${escapeHtml(tool.name)}</td>
+          <td data-label="Description">${escapeHtml(tool.description)}</td>
           <td data-label="Actions">
-            <button class="edit-tool-btn" data-id="${tool.id}">Edit</button>
-            <button class="delete-tool-btn" data-id="${tool.id}">Delete</button>
+            <button class="edit-tool-btn" data-id="${escapeHtml(tool.id)}">Edit</button>
+            <button class="delete-tool-btn" data-id="${escapeHtml(tool.id)}">Delete</button>
           </td>
         `;
         tableBody.appendChild(row);
@@ -1575,7 +1603,7 @@ function setupToolHandlers() {
                   showStatus('Error deleting tool.', true);
                   return;
                 }
-                showStatus('Tool deleted!');
+                showStatus('Tool deleted.');
                 loadTools(); // Reload the table
                 populateToolDropdown(); // Update tool dropdown
                 // Clear the form if the deleted tool was being edited
@@ -1653,11 +1681,11 @@ function setupToolHandlers() {
             }
             return tool;
           });
-          showStatus('Tool updated!');
+          showStatus('Tool updated.');
         } else {
           // Add new tool
           const newTool = {
-            id: 'tool_' + Date.now(), // Simple unique ID
+            id: createUniqueId('tool'),
             name: toolName,
             description: toolDescription,
             parameters: toolParameters,
@@ -1667,7 +1695,7 @@ function setupToolHandlers() {
             lastUpdated: now,
           };
           tools.push(newTool);
-          showStatus('Tool added!');
+          showStatus('Tool added.');
         }
 
         chrome.storage.local.set({ promptPaulTools: tools }, () => {
@@ -1747,7 +1775,7 @@ function setupToolHandlers() {
                 // Add new tool
                 existingTools.push({
                   ...importedTool,
-                  id: importedTool.id || 'tool_' + Date.now(),
+                  id: importedTool.id || createUniqueId('tool'),
                   createdAt: importedTool.createdAt || new Date().toISOString(),
                   lastUpdated: new Date().toISOString(),
                 });
@@ -1755,7 +1783,7 @@ function setupToolHandlers() {
             });
 
             chrome.storage.local.set({ promptPaulTools: existingTools }, () => {
-              showStatus('Tools imported successfully!');
+              showStatus('Tools imported successfully.');
               loadTools(); // Reload the table
               populateToolDropdown(); // Update tool dropdown
             });
@@ -1826,14 +1854,14 @@ function setupSkillHandlers() {
           const row = document.createElement('tr');
           const isCustom = skill.source === 'Custom';
           const actions = isCustom
-            ? `<button class="edit-skill-btn" data-name="${skill.name}">Edit</button>
-                 <button class="delete-skill-btn" data-name="${skill.name}">Delete</button>`
+            ? `<button class="edit-skill-btn" data-name="${escapeHtml(skill.name)}">Edit</button>
+                  <button class="delete-skill-btn" data-name="${escapeHtml(skill.name)}">Delete</button>`
             : `<span class="text-muted" style="color: grey; font-style: italic;">Built-in (Read-only)</span>`;
 
           row.innerHTML = `
-              <td data-label="Name">${skill.name}</td>
-              <td data-label="Description">${skill.description}</td>
-              <td data-label="Source">${skill.source}</td>
+              <td data-label="Name">${escapeHtml(skill.name)}</td>
+              <td data-label="Description">${escapeHtml(skill.description)}</td>
+              <td data-label="Source">${escapeHtml(skill.source)}</td>
               <td data-label="Actions">${actions}</td>
             `;
           tableBody.appendChild(row);
@@ -2290,7 +2318,7 @@ function setupSkillHandlers() {
     importBtn.addEventListener('click', async () => {
       const url = urlInput.value.trim();
       if (!url) {
-        statusEl.innerHTML =
+        statusEl.textContent =
           '<span style="color: var(--ext-destructive);">Please enter a skills.sh URL</span>';
         return;
       }
@@ -2299,7 +2327,7 @@ function setupSkillHandlers() {
       // Also support: https://skills.sh/{owner}/{repo}/{skill-name}/
       const urlMatch = url.match(/^https?:\/\/skills\.sh\/([^/]+)\/([^/]+)\/([^/]+)\/?$/);
       if (!urlMatch) {
-        statusEl.innerHTML =
+        statusEl.textContent =
           '<span style="color: var(--ext-destructive);">Invalid URL format. Use: https://skills.sh/owner/repo/skill-name</span>';
         return;
       }
@@ -2310,7 +2338,7 @@ function setupSkillHandlers() {
       importBtn.disabled = true;
       importBtn.innerHTML =
         '<span class="material-symbols-outlined sync-spin">sync</span> Importing...';
-      statusEl.innerHTML =
+      statusEl.textContent =
         '<span style="color: var(--ext-muted-foreground);">Fetching skill from GitHub...</span>';
 
       try {
@@ -2325,7 +2353,7 @@ function setupSkillHandlers() {
 
         const { skillMd, url: resolvedUrl } = fetchResult;
 
-        statusEl.innerHTML =
+        statusEl.textContent =
           '<span style="color: var(--ext-muted-foreground);">Found skill, saving...</span>';
 
         // Parse the skill markdown
@@ -2368,18 +2396,18 @@ function setupSkillHandlers() {
           chrome.storage.local.set({ customSkills: existingCustomSkills }, resolve);
         });
 
-        statusEl.innerHTML =
-          '<span style="color: #10b981;">✓ Successfully imported "' +
-          parsed.metadata.name +
-          '"</span>';
+statusEl.innerHTML =
+            '<span class="ext-text-primary">✓ Successfully imported "' +
+            parsed.metadata.name +
+            '"</span>';
         urlInput.value = '';
         loadSkills(); // Reload the skills table
 
         setTimeout(() => {
-          statusEl.innerHTML = '';
+          statusEl.textContent = '';
         }, 3000);
       } catch (error) {
-        statusEl.innerHTML =
+        statusEl.textContent =
           '<span style="color: var(--ext-destructive);">Error: ' + error.message + '</span>';
       } finally {
         resetButton();
@@ -2439,7 +2467,7 @@ function setupBackupHandlers() {
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
 
-        showStatus('Full backup exported successfully!', false, true);
+         showStatus('Full backup exported successfully.', false, true);
       } catch (error) {
         console.error('Export error:', error);
         showStatus('Failed to export backup: ' + error.message, true, true);
@@ -2488,7 +2516,7 @@ function setupBackupHandlers() {
             await new Promise((resolve) => chrome.storage.sync.set(backup.sync, resolve));
           }
 
-          showStatus('Restore complete! Reloading...', false, true);
+           showStatus('Restore complete. Reloading...', false, true);
 
           // Reload the page to reflect all changes
           setTimeout(() => {

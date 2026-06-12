@@ -24,18 +24,6 @@ export function applyDarkTheme(isDark) {
     if (icon) icon.textContent = 'brightness_2';
   }
 
-  // Update copy icons based on theme
-  const copyMarkdownIcons = document.querySelectorAll('img[src*="copy-markdown.png"]');
-  const copyFormattedIcons = document.querySelectorAll('img[src*="copy-formatted.png"]');
-
-  copyMarkdownIcons.forEach((icon) => {
-    icon.src = isDark ? 'icons/light-copy-markdown.png' : 'icons/copy-markdown.png';
-  });
-
-  copyFormattedIcons.forEach((icon) => {
-    icon.src = isDark ? 'icons/light-copy-formatted.png' : 'icons/copy-formatted.png';
-  });
-
   // Switch highlight.js theme for syntax highlighting
   const highlightTheme = document.getElementById('highlight-theme');
   if (highlightTheme) {

@@ -524,7 +524,7 @@
 
   function normalizeExtractionText(text) {
     return String(text || '')
-      .replace(/\u0000/gu, '')
+      .replace(/\u0000/gu, '') // eslint-disable-line no-control-regex
       .replace(/\r\n/gu, '\n')
       .replace(/\n{4,}/gu, '\n\n\n')
       .trim();
@@ -767,7 +767,8 @@
     if (request.action === 'getTabContent' || request.action === 'getLoadContent') {
       if (_pendingTabContentRequest) {
         console.log(`PromptPaul Content Script: Skipping duplicate ${request.action} request.`);
-        return;
+        sendResponse({ success: false, error: 'Content extraction is already running for this tab.' });
+        return true;
       }
       _pendingTabContentRequest = true;
       console.log(`PromptPaul Content Script: Received ${request.action} request.`);

@@ -15,74 +15,9 @@ import { isValidURL } from './src/utils/validation.js';
 import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
 import { getCurrentPageSupport } from './src/utils/permissionGuards.js';
 import { classifyRuntimeMessageError, friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
-import {
-  buildToolChoicePayload,
-  formatToolsForLlm,
-  normalizeToolChoice,
-} from './src/utils/toolChoiceBuilder.js';
+import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { resolvePreferredProfile } from './src/utils/profileRouting.js';
-
-// ===== Named Constants =====
-
-/**
- * Time constants for analytics and caching
- * @readonly
- * @enum {number}
- */
-const TimeConstants = {
-  /** 30 days in milliseconds - used for analytics instance rotation */
-  THIRTY_DAYS_IN_MS: 30 * 24 * 60 * 60 * 1000,
-  /** 1 second in milliseconds */
-  ONE_SECOND_IN_MS: 1000,
-  /** 15 seconds in milliseconds - content extraction timeout */
-  CONTENT_EXTRACTION_TIMEOUT_MS: 15 * 1000,
-  /** 60 seconds in milliseconds - tool call timeout */
-  TOOL_CALL_TIMEOUT_MS: 60 * 1000,
-  /** 1 minute in milliseconds */
-  ONE_MINUTE_IN_MS: 60 * 1000,
-};
-
-/**
- * HTTP status codes used for error handling
- * @readonly
- * @enum {number}
- */
-const HttpStatusCodes = {
-  BAD_REQUEST: 400,
-  UNAUTHORIZED: 401,
-  FORBIDDEN: 403,
-  NOT_FOUND: 404,
-  TOO_MANY_REQUESTS: 429,
-  INTERNAL_ERROR: 500,
-};
-
-/**
- * API configuration limits
- * @readonly
- * @enum {number}
- */
-const ApiLimits = {
-  /** Maximum tokens in API response */
-  MAX_RESPONSE_TOKENS: 4096,
-  /** Maximum retries for tool calls before giving up */
-  MAX_TOOL_CALL_RETRIES: 3,
-  /** Maximum number of tool results to track in analytics */
-  MAX_TOOL_TRACKING_COUNT: 8,
-  /** Skills cache TTL in milliseconds (60 seconds) */
-  SKILLS_CACHE_TTL_MS: 60000,
-};
-
-// Backward compatibility aliases (deprecated - use ApiLimits instead)
-const THIRTY_DAYS_IN_MS = TimeConstants.THIRTY_DAYS_IN_MS;
-const ONE_SECOND_IN_MS = TimeConstants.ONE_SECOND_IN_MS;
-const HTTP_STATUS_BAD_REQUEST = HttpStatusCodes.BAD_REQUEST;
-const HTTP_STATUS_UNAUTHORIZED = HttpStatusCodes.UNAUTHORIZED;
-const HTTP_STATUS_FORBIDDEN = HttpStatusCodes.FORBIDDEN;
-const HTTP_STATUS_NOT_FOUND = HttpStatusCodes.NOT_FOUND;
-const HTTP_STATUS_TOO_MANY_REQUESTS = HttpStatusCodes.TOO_MANY_REQUESTS;
-const HTTP_STATUS_INTERNAL_ERROR = HttpStatusCodes.INTERNAL_ERROR;
-const MAX_RESPONSE_TOKENS = ApiLimits.MAX_RESPONSE_TOKENS;
-const MAX_TOOL_CALL_RETRIES = ApiLimits.MAX_TOOL_CALL_RETRIES;
+import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 
 // ===== Umami Analytics Module (privacy-first, opt-out) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -90,7 +25,7 @@ const UMAMI_WEBSITE_ID = 'd1b4d7cb-2e57-44ec-a91f-6692fb365a02';
 const ANALYTICS_CONSENT_KEY = 'analyticsConsent';
 const ANALYTICS_INSTANCE_KEY = 'analyticsInstance';
 const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
-const ANALYTICS_ROTATE_MS = THIRTY_DAYS_IN_MS;
+const ANALYTICS_ROTATE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
 const DENYLIST = [
   'email',
@@ -155,14 +90,13 @@ async function getEnvInfo() {
 
 /**
  * Checks if the user has consented to analytics tracking.
- * Default is opt-in (consent = true).
+ * Default is opt-in (consent = false until the user enables it).
  * @returns {Promise<boolean>} True if user has consented to analytics.
  */
 async function getConsent() {
   const { [ANALYTICS_CONSENT_KEY]: consent } =
     await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
-  // Default ON (opt-out)
-  return consent !== false;
+  return consent === true;
 }
 
 /**
@@ -292,47 +226,12 @@ async function trackInstructionUsed({ instruction, model, tools }) {
   });
 }
 
-// Default consent: set to true if not present
-(async () => {
-  const existing = await chrome.storage.local.get(ANALYTICS_CONSENT_KEY);
-  if (!(ANALYTICS_CONSENT_KEY in existing)) {
-    await chrome.storage.local.set({ [ANALYTICS_CONSENT_KEY]: true });
-  }
-})();
-
 // Listen for options page consent changes
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[ANALYTICS_CONSENT_KEY]) {
     // no-op, just acknowledge; future hook if batching is added
   }
 });
-
-/**
- * Sends media analysis data to the side panel for processing.
- * @param {number} tabId - The ID of the tab where media was selected.
- * @param {Object} mediaData - The media data object containing type, base64, URL, etc.
- * @returns {Promise<Object>} The response from the message handler.
- */
-async function sendMediaAnalysisMessage(tabId, mediaData) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      {
-        action: 'setMediaForAnalysis',
-        mediaData: mediaData,
-        tabId: tabId,
-      },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          console.warn(
-            'Background: setMediaForAnalysis message failed:',
-            chrome.runtime.lastError.message
-          );
-        }
-        resolve(response);
-      }
-    );
-  });
-}
 
 /**
  * Queues a side-panel action when the panel is not ready yet.
@@ -422,18 +321,18 @@ function getMimeTypeFromUrl(url) {
       flac: 'audio/flac',
     };
 
-    const mimeType = mimeTypes[extension] || 'image/jpeg';
+    const mimeType = mimeTypes[extension] || null;
     return mimeType;
   } catch (error) {
     console.error('Error determining MIME type:', error);
-    return 'image/jpeg';
+    return null;
   }
 }
 
 /**
  * Fetches media from a URL and converts it to base64 encoding.
  * @param {string} url - The URL of the media to fetch.
- * @returns {Promise<string>} Base64 encoded string of media.
+ * @returns {Promise<{base64:string,mimeType:string}>} Base64 encoded string and MIME type.
  * @throws {Error} If the fetch fails or the media cannot be read.
  */
 async function fetchMediaAsBase64(url) {
@@ -445,13 +344,14 @@ async function fetchMediaAsBase64(url) {
     }
 
     const blob = await response.blob();
+    const mimeType = response.headers.get('content-type') || getMimeTypeFromUrl(url);
 
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result;
         const base64 = dataUrl.split(',')[1];
-        resolve(base64);
+        resolve({ base64, mimeType });
       };
       reader.onerror = (error) => {
         console.error('FileReader error:', error);
@@ -464,8 +364,6 @@ async function fetchMediaAsBase64(url) {
     throw error;
   }
 }
-
-let messageListenerAdded = false;
 
 // Enable the side panel on all pages
 chrome.sidePanel.setOptions({ path: 'chat.html' }).catch((error) => console.error(error));
@@ -518,14 +416,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     let mediaData = null;
     if (isMediaContext && mediaUrl) {
       try {
-        const base64Data = await fetchMediaAsBase64(mediaUrl);
-        const mimeType = getMimeTypeFromUrl(mediaUrl);
+        const media = await fetchMediaAsBase64(mediaUrl);
 
         mediaData = {
           type: mediaType,
-          base64: base64Data,
+          base64: media.base64,
           url: mediaUrl,
-          mimeType: mimeType,
+          mimeType: media.mimeType,
         };
       } catch (error) {
         console.error('Error fetching media:', error);
@@ -542,11 +439,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         };
       }
 
-      // Send media to chat (but NOT for oneoff_instruction - it handles media separately)
       if (info.menuItemId !== 'oneoff_instruction') {
-        await sendMediaAnalysisMessage(tab.id, {
-          ...mediaData,
-          loading: false,
+        await sendPanelMessage({
+          action: 'setSelectedText',
+          selectedText: '',
+          mediaData: {
+            ...mediaData,
+            loading: false,
+          },
+          tabId: tab.id,
+          actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
         });
       }
     }
@@ -594,7 +496,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Handle custom instructions
     if (info.menuItemId.startsWith('custom_')) {
       const instructionId = info.menuItemId.replace('custom_', '');
-      const { instructions } = await chrome.storage.local.get(['instructions']);
+      const { instructions = [] } = await chrome.storage.local.get(['instructions']);
       const instruction = instructions.find((i) => i.id === instructionId);
 
       if (instruction) {
@@ -614,7 +516,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         const toolChoice = normalizeToolChoice(instruction.tool_choice);
 
         // Send to chat for processing
-        chrome.runtime.sendMessage({
+        await sendPanelMessage({
           action: 'setMediaForAnalysis',
           mediaData: {
             ...mediaData,
@@ -623,7 +525,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             textPrompt: isMediaContext ? null : `${instruction.content}\n\n${promptContent}`,
           },
           tabId: tab.id,
-        }).catch(() => {}); // Panel may not be ready yet; queue fallback handles it
+        });
       } else {
         console.error('Custom instruction not found for ID:', instructionId);
       }
@@ -631,18 +533,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     // Handle predefined commands (modality-neutral prompts)
-    const commandMap = {
-      summarize: 'Please summarize the following content into a bullet list of key points',
-      explain:
-        'Explain the following content to me in a short concise MECE approach. Break down what you see into clear, structured categories.',
-      polish: 'Polish the following content with clarity and purpose',
-      shorten: 'Shorten the following content without losing its meaning and context',
-      formal: 'Make the following content more formal and eloquent',
-      casual: 'Make the following content more casual and fun',
-      analyze:
-        'Please analyze the following content. Describe what you see and provide any relevant insights.',
-      proofread: 'Proofread the following text for spelling, grammar, punctuation, and clarity issues. Fix all errors and return the corrected text followed by a brief bullet list of changes made.',
-    };
+    const commandMap = CONTEXT_MENU_PROMPTS;
 
     if (commandMap[info.menuItemId]) {
       try {
@@ -656,7 +547,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
       // Send to chat for processing
       const actionType = info.menuItemId;
-      chrome.runtime.sendMessage({
+      await sendPanelMessage({
         action: 'setMediaForAnalysis',
         mediaData: {
           ...mediaData,
@@ -665,7 +556,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           textPrompt: isMediaContext ? null : `${commandMap[info.menuItemId]}:\n\n${promptContent}`,
         },
         tabId: tab.id,
-      }).catch(() => {}); // Panel may not be ready yet; queue fallback handles it
+      });
     }
   } catch (error) {
     console.error('Error in context menu click handler:', error);
@@ -1010,7 +901,9 @@ skillManager.init();
 
 // Import and initialize orchestrator
 import RunOrchestrator from './src/orchestrator/RunOrchestrator.js';
-const runOrchestrator = new RunOrchestrator(skillManager);
+const runOrchestrator = new RunOrchestrator(skillManager, {
+  userToolExecutor: (tool, args) => callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
+});
 
 // ===== Menu System (Serialized Rebuild Queue) =====
 
@@ -1185,8 +1078,11 @@ async function rebuildUnifiedMenus() {
 // ===== Event Listeners =====
 
 // Create context menu items on install
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   await queueMenuRebuild('onInstalled');
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options.html?firstRun=1') });
+  }
 });
 
 // Also rebuild on browser startup (service worker may restart)
@@ -1203,31 +1099,6 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 });
 
 // --- Tool Execution Logic ---
-
-// Helper function to get all tool definitions from storage
-async function getAllToolDefinitions() {
-  const localTools = await new Promise((resolve) => {
-    chrome.storage.local.get(['promptPaulTools'], (result) => {
-      resolve(result.promptPaulTools || []);
-    });
-  });
-  return localTools;
-}
-
-// Function to get a single tool definition by name from storage
-async function getToolDefinition(name) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get(['promptPaulTools'], (result) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        const toolsArray = result.promptPaulTools || [];
-        const tool = toolsArray.find((t) => t.name === name);
-        resolve(tool);
-      }
-    });
-  });
-}
 
 // Generic function to call a user-defined endpoint
 async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'GET') {
@@ -1381,8 +1252,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'openOptionsPage') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (request.action === 'captureScreenshot') {
-    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 70 }, (dataUrl) => {
+    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
       if (chrome.runtime.lastError) {
         sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
       } else {
@@ -1469,11 +1346,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       });
     }
-    return true;
-  }
-
-  if (request.action === 'extractedTabContent') {
-    // Legacy support if some other script still uses this
     return true;
   }
 

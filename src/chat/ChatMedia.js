@@ -10,6 +10,8 @@
  * @module ChatMedia
  */
 
+import { buildExplainPrompt, buildSummarizePrompt, buildAnalyzePrompt } from '../prompts.js';
+
 /**
  * Media types supported by the extension
  * @enum {string}
@@ -68,10 +70,10 @@ export function getMediaAnalysisPrompt(actionType, mediaData, customInstruction 
 
   switch (actionType) {
     case 'summarize':
-      return `Please summarize this ${mediaType} into a bullet list of key points. Focus on the main elements, text, objects, and overall message or purpose.`;
+      return buildSummarizePrompt(mediaType, true);
 
     case 'explain':
-      return `Explain this ${mediaType} to me in a short concise MECE approach. Break down what you see into clear, structured categories.`;
+      return buildExplainPrompt(mediaType);
 
     case 'custom':
       if (customInstruction) {
@@ -80,7 +82,7 @@ export function getMediaAnalysisPrompt(actionType, mediaData, customInstruction 
     // Fall through to default
 
     default:
-      return `Please analyze this ${mediaType}. Describe what you see and provide any relevant insights.`;
+      return buildAnalyzePrompt(mediaType);
   }
 }
 

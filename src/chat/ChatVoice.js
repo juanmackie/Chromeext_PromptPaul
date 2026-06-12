@@ -259,9 +259,11 @@ export async function startVoiceInput(voiceToggleButton, userInput) {
       isListening = true;
       if (voiceToggleButton) {
         voiceToggleButton.classList.add('active', 'listening');
+        const icon = voiceToggleButton.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = 'stop';
       }
       userInput.placeholder = 'Listening... Speak now';
-      loadingManager.showToast('Listening... Click mic again to stop', 'info');
+      loadingManager.showToast('Listening... Click to stop', 'info');
     };
 
     speechRecognition.onresult = function (event) {
@@ -360,6 +362,8 @@ export function stopVoiceInput(voiceToggleButton, userInput) {
   isListening = false;
   if (voiceToggleButton) {
     voiceToggleButton.classList.remove('active', 'listening');
+    const icon = voiceToggleButton.querySelector('.material-symbols-outlined');
+    if (icon) icon.textContent = 'mic';
   }
   if (userInput) {
     userInput.placeholder = 'Type a prompt or paste an image';

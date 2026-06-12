@@ -4,23 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prompt Paul Config</title>
-    <link
-      href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <link rel="stylesheet" href="theme.css" />
     <link rel="stylesheet" href="options.css" />
     <link rel="stylesheet" href="loading-states.css" />
   </head>
   <body>
+    <a href="#llmEndpoint" class="skip-link">Skip to settings</a>
     <main class="container">
       <div class="page-header">
         <h1>&#10024; Prompt Paul</h1>
@@ -42,16 +32,15 @@
             <button class="ko-fi-button">&#9749; Buy me a coffee</button>
           </a>
           <button id="revertDefaultsButton" class="revert-button">
-            Reset to Demo Configuration
+            Reset Configuration
           </button>
           <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
             <button id="feedbackButton" class="feedback-button">Feedback</button>
           </a>
         </div>
         <p>
-          We've given you a demo API key, endpoint, and model to use PromptPaul quickly. You can
-          modify them as needed. Provided for free by
-          <a href="https://mistral.ai" target="_blank">mistral.ai</a>.
+          Enter your LLM endpoint, API key, and model name to use Prompt Paul. API keys are stored
+          in Chrome storage and sent only when you send a prompt.
         </p>
 
         <form id="optionsForm" class="grid-form">
@@ -70,7 +59,7 @@
               type="url"
               id="llmEndpoint"
               class="shadcn-input"
-              placeholder="https://api.mistral.ai/v1/chat/completions"
+              placeholder="https://your-llm-provider.example/v1/chat/completions"
               required
             />
             <div class="field-error" id="llmEndpointError"></div>
@@ -233,10 +222,10 @@
           <div class="section-divider"></div>
         </div>
         <div class="form-field col-span-12">
-          <label class="form-label" for="analyticsConsentToggle">Anonymous Usage Analytics</label>
+          <label class="form-label" for="analyticsConsentToggle">Opt-in Anonymous Usage Analytics</label>
           <div class="setting-toggle">
             <label class="toggle-label">
-              <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" checked />
+              <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" />
               <span class="toggle-slider"></span>
               <div class="toggle-text">
                 Allow anonymous usage analytics (instructions/models/tools only)
@@ -264,23 +253,21 @@
               </div>
             </label>
           </div>
-          <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px">
+          <div class="mic-test-row">
             <button
               type="button"
               id="testMicPermissionBtn"
-              class="btn-secondary"
-              style="padding: 8px 16px"
+              class="btn-secondary mic-test-btn"
             >
               <span
                 class="material-symbols-outlined"
-                style="font-size: 1.2em; margin-right: 4px; vertical-align: middle"
                 >mic</span
               >
               Test Microphone Access
             </button>
             <span
               id="micPermissionStatus"
-              style="font-size: 14px; color: var(--ext-muted-foreground)"
+              class="mic-permission-status"
               >Not tested</span
             >
           </div>
@@ -307,14 +294,6 @@
           <div
             id="migrationPrompt"
             class="migration-prompt"
-            style="
-              display: none;
-              margin-bottom: 1em;
-              padding: 1rem;
-              background: var(--ext-accent);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <span>
               <strong>Instructions Migration:</strong> Instructions are now stored only on this
@@ -373,13 +352,6 @@
 
           <div
             class="instruction-form"
-            style="
-              margin-top: 2rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>Add/Edit Instruction</h3>
             <div class="form-group">
@@ -470,13 +442,6 @@
 
           <div
             class="import-export"
-            style="
-              margin-top: 1rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>Import/Export Instructions</h3>
             <div class="button-group">
@@ -511,106 +476,83 @@
           <!-- Skill Help Box -->
           <div
             class="skill-help-box"
-            style="
-              margin-bottom: 2rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
-            <h3 style="margin-top: 0; display: flex; align-items: center; gap: 8px">
+            <h3>
               <span class="material-symbols-outlined">help_outline</span>
               How to Use Skills
             </h3>
 
             <div style="margin-bottom: 1rem">
-              <h4 style="margin: 0 0 0.5rem 0; color: var(--ext-primary)">Slash Commands</h4>
-              <ul style="margin: 0; padding-left: 1.5rem; color: var(--ext-foreground)">
+              <h4>Slash Commands</h4>
+              <ul>
                 <li>
-                  <code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px"
-                    >/skills</code
-                  >
+                  <code>/skills</code>
                   - List all available skills
                 </li>
                 <li>
-                  <code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px"
-                    >/skill &lt;name&gt; [input]</code
-                  >
+                  <code>/skill &lt;name&gt; [input]</code>
                   - Invoke any skill (canonical method)
                 </li>
                 <li>
-                  <code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px"
-                    >/&lt;skill-name&gt;</code
-                  >
+                  <code>/&lt;skill-name&gt;</code>
                   - Quick command for user-invocable skills
                 </li>
               </ul>
             </div>
 
             <div style="margin-bottom: 1rem">
-              <h4 style="margin: 0 0 0.5rem 0; color: var(--ext-primary)">Examples</h4>
-              <ul style="margin: 0; padding-left: 1.5rem; color: var(--ext-foreground)">
+              <h4>Examples</h4>
+              <ul>
                 <li>
-                  <code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px"
-                    >/skill humanizer Rewrite this text...</code
-                  >
+                  <code>/skill humanizer Rewrite this text...</code>
                 </li>
                 <li>
-                  <code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px"
-                    >/humanizer Make this sound more natural...</code
-                  >
+                  <code>/humanizer Make this sound more natural...</code>
                 </li>
                 <li>
-                  <code style="background: var(--ext-muted); padding: 2px 6px; border-radius: 4px"
-                    >use humanizer skill and rewrite this paragraph</code
-                  >
+                  <code>use humanizer skill and rewrite this paragraph</code>
                   (natural language)
                 </li>
               </ul>
             </div>
 
             <div style="margin-bottom: 1rem">
-              <h4 style="margin: 0 0 0.5rem 0; color: var(--ext-primary)">Skill Metadata Fields</h4>
-              <table style="width: 100%; border-collapse: collapse; font-size: 14px">
+              <h4>Skill Metadata Fields</h4>
+              <table>
                 <thead>
-                  <tr style="border-bottom: 1px solid var(--ext-border)">
-                    <th style="text-align: left; padding: 8px; color: var(--ext-muted-foreground)">
-                      Field
-                    </th>
-                    <th style="text-align: left; padding: 8px; color: var(--ext-muted-foreground)">
-                      Description
-                    </th>
+                  <tr>
+                    <th>Field</th>
+                    <th>Description</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style="border-bottom: 1px solid var(--ext-border)">
-                    <td style="padding: 8px; font-family: monospace">user-invocable</td>
-                    <td style="padding: 8px">
+                  <tr>
+                    <td>user-invocable</td>
+                    <td>
                       Creates a shortcut command <code>/skillname</code> when true (default: true)
                     </td>
                   </tr>
-                  <tr style="border-bottom: 1px solid var(--ext-border)">
-                    <td style="padding: 8px; font-family: monospace">disable-model-invocation</td>
-                    <td style="padding: 8px">
+                  <tr>
+                    <td>disable-model-invocation</td>
+                    <td>
                       Hides skill from AI suggestions but keeps it explicitly invocable
                     </td>
                   </tr>
-                  <tr style="border-bottom: 1px solid var(--ext-border)">
-                    <td style="padding: 8px; font-family: monospace">command-dispatch</td>
-                    <td style="padding: 8px">
+                  <tr>
+                    <td>command-dispatch</td>
+                    <td>
                       Set to "tool" for deterministic execution bypassing the AI model
                     </td>
                   </tr>
-                  <tr style="border-bottom: 1px solid var(--ext-border)">
-                    <td style="padding: 8px; font-family: monospace">command-tool</td>
-                    <td style="padding: 8px">
+                  <tr>
+                    <td>command-tool</td>
+                    <td>
                       Tool name to invoke when command-dispatch is "tool"
                     </td>
                   </tr>
-                  <tr style="border-bottom: 1px solid var(--ext-border)">
-                    <td style="padding: 8px; font-family: monospace">metadata</td>
-                    <td style="padding: 8px">
+                  <tr>
+                    <td>metadata</td>
+                    <td>
                       OpenClaw-compatible JSON metadata (e.g., requires, install)
                     </td>
                   </tr>
@@ -618,14 +560,13 @@
               </table>
             </div>
 
-            <p style="margin: 0; font-size: 13px; color: var(--ext-muted-foreground)">
+            <p class="skill-help-box-footer">
               <span
                 class="material-symbols-outlined"
-                style="vertical-align: middle; font-size: 16px"
                 >info</span
               >
               Skills follow the
-              <a href="https://agentskills.io" target="_blank" style="color: var(--ext-primary)"
+              <a href="https://agentskills.io" target="_blank"
                 >Agent Skills</a
               >
               specification and are compatible with OpenClaw-style metadata.
@@ -658,41 +599,31 @@
           <!-- Import from skills.sh -->
           <div
             class="skills-sh-import"
-            style="
-              margin-top: 1.5rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>
               <span
                 class="material-symbols-outlined"
-                style="vertical-align: middle; margin-right: 8px"
                 >cloud_download</span
               >
               Import from skills.sh
             </h3>
-            <p style="margin-bottom: 1rem; color: var(--ext-muted-foreground); font-size: 14px">
+            <p>
               Paste a skills.sh URL to import a skill directly.
-              <a href="https://skills.sh" target="_blank" style="color: var(--ext-primary)"
+              <a href="https://skills.sh" target="_blank"
                 >Browse skills.sh</a
               >
             </p>
-            <div class="import-row" style="display: flex; gap: 8px; margin-bottom: 0.75rem">
+            <div class="import-row">
               <input
                 type="text"
                 id="skillsShUrl"
                 class="shadcn-input"
-                style="flex: 1"
                 placeholder="https://skills.sh/owner/repo/skill-name"
               />
               <button
                 type="button"
                 id="importSkillsShBtn"
                 class="btn-primary"
-                style="white-space: nowrap"
               >
                 <span class="material-symbols-outlined">add</span> Import
               </button>
@@ -700,7 +631,6 @@
             <div
               id="skillsShStatus"
               class="skills-sh-status"
-              style="font-size: 13px; min-height: 20px"
             ></div>
             <button
               type="button"
@@ -708,7 +638,7 @@
               class="btn-secondary"
               style="margin-top: 0.5rem; width: 100%"
             >
-              <span class="material-symbols-outlined" style="vertical-align: middle"
+              <span class="material-symbols-outlined"
                 >travel_explore</span
               >
               Find Skills on skills.sh
@@ -717,13 +647,6 @@
 
           <div
             class="skill-form"
-            style="
-              margin-top: 2rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>Add/Edit Skill</h3>
 
@@ -813,18 +736,12 @@ What this skill does and when to use it.
             </div>
 
             <div
-              class="form-row"
-              style="
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 1rem;
-              "
+              class="form-row-2col"
             >
               <div class="form-group">
                 <label
                   for="skillUserInvocable"
-                  class="checkbox-label"
-                  style="display: flex; align-items: center; gap: 8px; cursor: pointer"
+                  class="checkbox-label checkbox-label-inline"
                 >
                   <input type="checkbox" id="skillUserInvocable" checked />
                   <span>User Invocable</span>
@@ -833,17 +750,16 @@ What this skill does and when to use it.
                     class="help-tooltip"
                     data-tooltip="When checked, creates a shortcut command /skillname for quick access. Disable to only allow invocation via /skill name."
                   >
-                    <span class="material-symbols-outlined" style="font-size: 16px">help</span>
+                    <span class="material-symbols-outlined">help</span>
                   </button>
                 </label>
-                <small style="margin-left: 24px">Creates /name shortcut command</small>
+                <small>Creates /name shortcut command</small>
               </div>
 
               <div class="form-group">
                 <label
                   for="skillDisableModelInvocation"
-                  class="checkbox-label"
-                  style="display: flex; align-items: center; gap: 8px; cursor: pointer"
+                  class="checkbox-label checkbox-label-inline"
                 >
                   <input type="checkbox" id="skillDisableModelInvocation" />
                   <span>Disable Model Invocation</span>
@@ -852,21 +768,15 @@ What this skill does and when to use it.
                     class="help-tooltip"
                     data-tooltip="When checked, the skill won't be suggested to the AI automatically. It remains available for explicit user invocation via slash commands."
                   >
-                    <span class="material-symbols-outlined" style="font-size: 16px">help</span>
+                    <span class="material-symbols-outlined">help</span>
                   </button>
                 </label>
-                <small style="margin-left: 24px">Hide from AI suggestions</small>
+                <small>Hide from AI suggestions</small>
               </div>
             </div>
 
             <div
-              class="form-row"
-              style="
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 1rem;
-                margin-top: 1rem;
-              "
+              class="form-row-2col"
             >
               <div class="form-group">
                 <label for="skillLicense">License</label>
@@ -883,7 +793,7 @@ What this skill does and when to use it.
 
             <input type="hidden" id="skillId" />
 
-            <div class="button-group" style="margin-top: 1.5rem">
+            <div class="button-group">
               <button type="button" id="saveSkill" class="save-button">
                 <span class="material-symbols-outlined">save</span> Save Skill
               </button>
@@ -896,13 +806,6 @@ What this skill does and when to use it.
 
           <div
             class="import-export"
-            style="
-              margin-top: 1rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>Import/Export Skills</h3>
             <div class="button-group">
@@ -958,13 +861,6 @@ What this skill does and when to use it.
 
           <div
             class="tool-form"
-            style="
-              margin-top: 2rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>Add/Edit Tool</h3>
             <div class="form-group">
@@ -1032,13 +928,6 @@ What this skill does and when to use it.
 
           <div
             class="import-export"
-            style="
-              margin-top: 1rem;
-              padding: 1.5rem;
-              background: var(--ext-muted);
-              border-radius: 0px;
-              border: 1px solid var(--ext-border);
-            "
           >
             <h3>Import/Export Tools</h3>
             <div class="button-group">
@@ -1101,7 +990,7 @@ What this skill does and when to use it.
           Export or import all extension data (profiles, skills, tools, instructions, and settings)
           in a single file.
         </p>
-        <div class="button-group" style="margin-top: 1rem">
+        <div class="button-group backup-restore">
           <button type="button" id="exportAllData" class="btn-primary">
             <span class="material-symbols-outlined">backup</span> Export All Data
           </button>
@@ -1118,6 +1007,18 @@ What this skill does and when to use it.
     </footer>
 
     <div id="status" class="status"></div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal-overlay" class="profile-name-dialog-overlay hidden">
+      <div class="profile-name-dialog">
+        <h3 id="confirm-modal-title">Confirm</h3>
+        <p id="confirm-modal-message"></p>
+        <div class="profile-name-dialog-actions">
+          <button type="button" id="confirm-modal-cancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="confirm-modal-ok" class="btn-destructive">Confirm</button>
+        </div>
+      </div>
+    </div>
 
     <script src="collapsible.js"></script>
     <script src="input-controls.js"></script>

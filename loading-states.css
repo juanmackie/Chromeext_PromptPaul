@@ -48,7 +48,7 @@
   background: var(--ext-muted);
   border-radius: 0px;
   border: 1px solid var(--ext-border);
-  color: var(--ext-muted-foreground);
+  color: var(--ext-foreground);
   font-size: 14px;
   box-shadow: var(--ext-shadow);
   font-family: var(--ext-font-family);
@@ -65,7 +65,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 0px;
-  z-index: 1000;
+  z-index: var(--ext-z-overlay);
   border: 1px solid var(--ext-border);
   box-shadow: var(--ext-shadow-md);
 }
@@ -117,7 +117,7 @@
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 10000;
+  z-index: var(--ext-z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -141,21 +141,21 @@
 }
 
 .toast.success {
-  background: #10b981;
-  color: white;
-  border-color: #059669;
+  background: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+  border-color: var(--ext-primary-deep);
 }
 
 .toast.error {
   background: var(--ext-destructive);
   color: var(--ext-destructive-foreground);
-  border-color: #991b1b;
+  border-color: var(--ext-destructive);
 }
 
 .toast.warning {
-  background: #f59e0b;
-  color: white;
-  border-color: #d97706;
+  background: var(--ext-primary-bright);
+  color: var(--ext-primary-foreground);
+  border-color: var(--ext-primary);
 }
 
 .toast.info {
@@ -213,7 +213,7 @@
   padding: 16px;
   border: 1px solid var(--ext-destructive);
   border-radius: 0px;
-  background: rgba(241, 0, 59, 0.1);
+  background: var(--ext-muted);
   color: var(--ext-destructive);
   display: flex;
   align-items: flex-start;
@@ -253,7 +253,7 @@
 .error-retry-btn {
   background: var(--ext-destructive);
   color: var(--ext-destructive-foreground);
-  border: 1px solid #991b1b;
+  border: 1px solid var(--ext-destructive);
   padding: 6px 12px;
   border-radius: 4px;
   font-size: 12px;
@@ -286,7 +286,7 @@
 }
 
 .error-dismiss-btn:hover {
-  background: rgba(241, 0, 59, 0.1);
+  background: var(--ext-muted);
   transform: translate(-1px, -1px);
 }
 
@@ -372,21 +372,21 @@
 }
 
 .connection-status.connected {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  border-color: #059669;
+  background: var(--ext-muted);
+  color: var(--ext-primary);
+  border-color: var(--ext-primary);
 }
 
 .connection-status.disconnected {
-  background: rgba(241, 0, 59, 0.1);
+  background: var(--ext-muted);
   color: var(--ext-destructive);
-  border-color: #991b1b;
+  border-color: var(--ext-destructive);
 }
 
 .connection-status.connecting {
-  background: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
-  border-color: #d97706;
+  background: var(--ext-muted);
+  color: var(--ext-primary-bright);
+  border-color: var(--ext-primary-bright);
 }
 
 .status-dot {

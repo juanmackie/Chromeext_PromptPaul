@@ -92,10 +92,14 @@
 
   /* Z-Index Scale */
   --ext-z-dropdown: 1000;
+  --ext-z-overlay: 1040;
   --ext-z-modal: 1050;
   --ext-z-popover: 1060;
   --ext-z-tooltip: 1070;
   --ext-z-toast: 1080;
+
+  /* Focus Ring */
+  --ext-focus-ring: 0 0 0 2px var(--ext-background), 0 0 0 4px var(--ext-primary);
 
   /* Legacy/Compatibility Variables */
   --background: var(--ext-background);
@@ -249,12 +253,24 @@
 
 body {
   font-family: var(--ext-font-family);
+  font-variant-numeric: tabular-nums;
   letter-spacing: var(--ext-letter-spacing);
   background-color: var(--ext-background);
   color: var(--ext-foreground);
   margin: 0;
   padding: 0;
   transition: var(--ext-transition);
+}
+
+/* Global Focus Styles */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ext-focus-ring);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
 }
 
 /* Utility Classes */

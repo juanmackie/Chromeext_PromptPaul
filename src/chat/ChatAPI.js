@@ -179,13 +179,17 @@ export async function startRun(runConfig) {
  * @param {Array} messages - Message history
  */
 export async function executeRun(runId, messages) {
-  await chrome.runtime.sendMessage({
+  const response = await chrome.runtime.sendMessage({
     action: 'executeRun',
     runId: runId,
     requestConfig: {
       messages: messages,
     },
   });
+
+  if (response && response.error) {
+    throw new Error(response.error);
+  }
 }
 
 /**

@@ -1,41 +1,54 @@
 <!doctype html>
 <html>
   <head>
-    <title>Error</title>
+    <title>Error - Prompt Paul</title>
+    <link rel="stylesheet" href="theme.css" />
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        line-height: 1.6;
-        margin: 0;
-        padding: 20px;
-        background-color: #f9f9f9;
+      .error-page {
+        max-width: 600px;
+        margin: 2rem auto;
+        padding: 1.5rem;
       }
-      h1 {
-        color: #d9534f;
-        font-size: 20px;
-        margin-bottom: 15px;
+      .error-page h1 {
+        color: var(--ext-destructive);
+        font-size: 1.5rem;
+        margin: 0 0 1rem 0;
       }
-      pre {
+      .error-page pre {
         white-space: pre-wrap;
         word-wrap: break-word;
-        background-color: #fff;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        padding: 15px;
-        font-size: 14px;
+        background-color: var(--ext-card);
+        border: 1px solid var(--ext-border);
+        border-radius: 0px;
+        padding: 1rem;
+        font-size: 0.875rem;
+        font-family: var(--ext-font-family);
+        color: var(--ext-foreground);
+        box-shadow: var(--ext-shadow-sm);
+      }
+      .error-page .back-link {
+        display: inline-block;
+        margin-top: 1rem;
+        color: var(--ext-primary);
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .error-page .back-link:hover {
+        text-decoration: underline;
       }
     </style>
   </head>
   <body>
-    <h1>Error</h1>
-    <pre id="error-message"></pre>
+    <div class="error-page">
+      <h1>Error</h1>
+      <pre id="error-message"></pre>
+      <a href="javascript:history.back()" class="back-link">Go Back</a>
+    </div>
 
     <script>
-      // Get error message from URL parameters and display it
       const urlParams = new URLSearchParams(window.location.search);
       const errorMessage = urlParams.get('message');
       if (errorMessage) {
-        // Decode the error message and display it
         const decodedErrorMessage = decodeURIComponent(errorMessage);
         document.getElementById('error-message').textContent = decodedErrorMessage;
       } else {

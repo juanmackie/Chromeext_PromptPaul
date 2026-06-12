@@ -10,7 +10,7 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 - Support OpenClaw-compatible Agent Skills
 - Use page-aware action cards for sites like YouTube, GitHub, Gmail, and docs
 - Trim loaded content to stay within context limits
-- Store settings locally with optional anonymous analytics
+- Store settings locally with opt-in anonymous analytics
 
 ## Install
 
@@ -29,11 +29,9 @@ cd Chromeext_PromptPaul
 ## Configure
 
 1. Open the extension Options page
-2. Set your LLM endpoint, API key, and model
+2. Set your LLM endpoint, API key, and model. The extension does not ship with a demo API key.
 3. Optionally set a system prompt and create custom instructions
 4. Save the profile you want to use
-
-The repo ships with a demo configuration for quick testing, but you should replace it for real use.
 
 ## Use
 
@@ -86,7 +84,9 @@ Prompt Paul works with OpenAI-compatible endpoints, including Mistral, OpenAI, a
 ## Privacy
 
 - API keys and settings stay in Chrome storage
-- Anonymous analytics can be turned off
+- Anonymous analytics are opt-in and disabled by default
+- Analytics sends only coarse event labels such as instruction name, model name, and tool names
+- No page URLs, page titles, page content, API keys, or prompt text are sent to analytics
 - Browser-internal pages and the Chrome Web Store are blocked before extraction
 - Page content is only sent when you explicitly invoke processing
 
