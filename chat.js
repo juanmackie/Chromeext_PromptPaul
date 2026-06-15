@@ -1267,46 +1267,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   sendButton.addEventListener('click', sendMessage);
   const clearButton = document.getElementById('clear-button');
-  const chatEmptyState = document.getElementById('chat-empty-state');
-  const openOptionsFromEmptyState = document.getElementById('openOptionsFromEmptyState');
-
-  function updateEmptyState() {
-    if (!chatEmptyState) return;
-    chatEmptyState.hidden = chatArea.children.length > 0;
-  }
-
-  if (openOptionsFromEmptyState) {
-    openOptionsFromEmptyState.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ action: 'openOptionsPage' });
-    });
-  }
-  const originalAddMessage = chatUI.addMessage.bind(chatUI);
-  chatUI.addMessage = (...args) => {
-    const result = originalAddMessage(...args);
-    updateEmptyState();
-    return result;
-  };
-
-  const originalLoadedContentMessage = chatUI.addLoadedContentMessage.bind(chatUI);
-  chatUI.addLoadedContentMessage = (...args) => {
-    const result = originalLoadedContentMessage(...args);
-    updateEmptyState();
-    return result;
-  };
-
-  const originalMediaPreview = chatUI.addMediaPreview.bind(chatUI);
-  chatUI.addMediaPreview = (...args) => {
-    const result = originalMediaPreview(...args);
-    updateEmptyState();
-    return result;
-  };
 
   clearButton.addEventListener('click', () => {
     if (clearButton.textContent === 'Stop') {
       stopApiRequest();
     } else {
       chatUI.clearChat();
-      updateEmptyState();
       streamState.clearHistory();
       clearCurrentMediaData();
       clearSelectedTextState();

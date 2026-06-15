@@ -477,29 +477,6 @@ body.dark-theme ::selection {
   align-items: center;
 }
 
-.chat-empty-state {
-  margin: 2rem auto;
-  max-width: 360px;
-  padding: 1.5rem;
-  text-align: center;
-  border: 1px solid var(--ext-border);
-  background: var(--ext-card);
-  color: var(--ext-card-foreground);
-  box-shadow: var(--ext-shadow-sm);
-}
-
-.chat-empty-state[hidden] {
-  display: none;
-}
-
-.chat-empty-state h2 {
-  margin-top: 0;
-}
-
-.chat-empty-state button {
-  margin-top: 1rem;
-}
-
 .llm-message .copy-icons-container {
   display: inline-flex;
   flex-direction: row;
