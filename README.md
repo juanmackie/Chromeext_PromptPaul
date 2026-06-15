@@ -45,7 +45,11 @@ cd Chromeext_PromptPaul
 
 - Load the current page into chat
 - Ask questions about the page content
-- Use quick actions and pinned instructions
+- **Quick actions and selected text:**
+  - Select text on the page and use Explain, Proofread, Analyze, or custom prompts
+  - Selected text displays as a visible chip in the input area
+  - Remove the chip to run sidebar actions as conversation follow-ups instead
+  - Sidebar action buttons enable when you have selected text or an active conversation
 - Invoke skills with `/skills`, `/skill <name>`, or `/<skill-name>`
 
 ## Skills

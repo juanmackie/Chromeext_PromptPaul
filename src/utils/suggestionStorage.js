@@ -21,7 +21,11 @@ export async function getSuggestionsForSite(siteKey) {
 
 export async function addSuggestion(siteKey, siteLabel, command, prompt) {
   const all = await getAllSuggestions();
-  const normalizedSiteKey = extractSiteKey(siteKey) || String(siteKey || '').trim().toLowerCase();
+  const normalizedSiteKey =
+    extractSiteKey(siteKey) ||
+    String(siteKey || '')
+      .trim()
+      .toLowerCase();
   const normalizedPrompt = normalizePrompt(prompt);
   const normalizedCommand = normalizeCommand(command);
   if (!normalizedSiteKey || !normalizedPrompt || !normalizedCommand) {

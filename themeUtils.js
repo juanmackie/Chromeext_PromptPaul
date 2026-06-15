@@ -7,17 +7,18 @@
  * @param {boolean} isDark - Whether to apply dark theme
  */
 export function applyDarkTheme(isDark) {
-  // Apply theme class to document root for better CSS cascade
   const root = document.documentElement;
   const body = document.body;
 
   if (isDark) {
     root.setAttribute('data-theme', 'dark');
+    root.setAttribute('data-bs-theme', 'dark');
     body.classList.add('dark-theme', 'ext-dark');
     const icon = document.getElementById('darkThemeIcon');
     if (icon) icon.textContent = 'wb_sunny';
   } else {
     root.setAttribute('data-theme', 'light');
+    root.setAttribute('data-bs-theme', 'light');
     body.classList.remove('dark-theme', 'ext-dark');
     body.classList.add('light-theme', 'ext-light');
     const icon = document.getElementById('darkThemeIcon');

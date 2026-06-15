@@ -118,7 +118,10 @@ class RunOrchestrator {
         }
         return;
       }
-      console.error(`[Orchestrator] Execute error:`, error.name ? `${error.name}: ${error.message}` : error.message || error);
+      console.error(
+        `[Orchestrator] Execute error:`,
+        error.name ? `${error.name}: ${error.message}` : error.message || error
+      );
       this._emitEvent(runId, { type: 'error', error: error.message || String(error) });
       this.activeRuns.delete(runId);
       throw error;

@@ -2,8 +2,20 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Fixed "A response is already in progress" error that prevented follow-up messages after initial response completion (run state was not cleared on success)
+- Fixed sidebar quick-action buttons becoming permanently disabled after initial selected-text action
+
 ### Improvements
 
+- **Selected text handling**: Selected text now displays as a visible, dismissible chip in the chat input area instead of hidden state
+  - Chip shows a 2-line preview of selected text and can be removed independently of clearing the chat
+  - Sidebar actions (Explain, Proofread, Analyze, custom prompts) now work as conversation follow-ups when no text is selected
+  - Buttons enable when there's a selection OR existing conversation history
+- **Copy button feedback**: Response copy buttons (raw/formatted) now flash green "Copied!" or red "Copy failed" on interaction with 1.5s auto-revert
+- **Copy button labels**: Updated from "Copy"/"Formatted" to clearer "Copy As Raw text" / "Copy As Formatted Text" with white-space handling
+- Removed first-run analytics consent banner (consent toggle still available in Options)
 - Refactored `chat.js` to move page action cards, preset analysis, and site suggestion rendering into `src/chat/ChatPageActions.js`
 - Added page-context helpers for token budgeting, read strategy selection, permission guards, and runtime error normalization
 - Updated docs to match the current module layout and page-aware quick-action flow
@@ -150,4 +162,4 @@
 
 ---
 
-*Prompt Paul Changelog*
+_Prompt Paul Changelog_

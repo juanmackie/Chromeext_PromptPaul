@@ -113,9 +113,9 @@ class ChatUI {
       copyIcon.id = `copy-icon-${uniqueIdString}`;
       copyIcon.type = 'button';
       copyIcon.className = 'copy-action-button';
-      copyIcon.title = 'Copy raw text';
-      copyIcon.setAttribute('aria-label', 'Copy raw text');
-      copyIcon.textContent = 'Copy';
+      copyIcon.title = 'Copy As Raw text';
+      copyIcon.setAttribute('aria-label', 'Copy As Raw text');
+      copyIcon.textContent = 'Copy As Raw text';
       messageDiv.appendChild(copyIcon);
 
       // --- Icon for copying formatted text ---
@@ -123,9 +123,9 @@ class ChatUI {
       copyFormattedIcon.id = `copy-formatted-icon-${uniqueIdString}`;
       copyFormattedIcon.type = 'button';
       copyFormattedIcon.className = 'copy-action-button';
-      copyFormattedIcon.title = 'Copy formatted text';
-      copyFormattedIcon.setAttribute('aria-label', 'Copy formatted text');
-      copyFormattedIcon.textContent = 'Formatted';
+      copyFormattedIcon.title = 'Copy As Formatted Text';
+      copyFormattedIcon.setAttribute('aria-label', 'Copy As Formatted Text');
+      copyFormattedIcon.textContent = 'Copy As Formatted Text';
       messageDiv.appendChild(copyFormattedIcon);
 
       if (message) {
@@ -429,13 +429,27 @@ class ChatUI {
         copyFormattedIconElement
       );
     }
+    // Briefly flash a confirmation label/state on the clicked button, then revert.
+    const flashButtonState = (button, message, stateClass) => {
+      const originalLabel = (button.dataset.copyLabel ||= button.textContent);
+      if (button._copyResetTimer) clearTimeout(button._copyResetTimer);
+      button.textContent = message;
+      button.classList.add(stateClass);
+      button._copyResetTimer = setTimeout(() => {
+        button.textContent = originalLabel;
+        button.classList.remove('copied', 'copy-error');
+      }, 1500);
+    };
+
     newCopyIcon.addEventListener('click', async function (event) {
       event.stopPropagation();
       try {
         await navigator.clipboard.writeText(rawMessage);
+        flashButtonState(newCopyIcon, 'Copied!', 'copied');
         loadingManager.showToast('Copied raw text to clipboard', 'success');
       } catch (err) {
         console.error('Failed to copy raw text: ', err);
+        flashButtonState(newCopyIcon, 'Copy failed', 'copy-error');
         loadingManager.showToast('Error copying raw text.', 'error');
       }
     });
@@ -449,14 +463,17 @@ class ChatUI {
             'text/plain': new Blob([rawMessage], { type: 'text/plain' }),
           }),
         ]);
+        flashButtonState(newFormattedCopyIcon, 'Copied!', 'copied');
         loadingManager.showToast('Copied formatted text to clipboard', 'success');
       } catch (err) {
         console.error('Failed to copy formatted text: ', err);
         try {
           await navigator.clipboard.writeText(rawMessage);
+          flashButtonState(newFormattedCopyIcon, 'Copied!', 'copied');
           loadingManager.showToast('Copied (plain text fallback) to clipboard', 'success');
         } catch (errFallback) {
           console.error('Failed to copy plain text fallback: ', errFallback);
+          flashButtonState(newFormattedCopyIcon, 'Copy failed', 'copy-error');
           loadingManager.showToast('Error copying text.', 'error');
         }
       }

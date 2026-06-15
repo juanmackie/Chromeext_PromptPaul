@@ -14,7 +14,10 @@
 import { isValidURL } from './src/utils/validation.js';
 import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
 import { getCurrentPageSupport } from './src/utils/permissionGuards.js';
-import { classifyRuntimeMessageError, friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
+import {
+  classifyRuntimeMessageError,
+  friendlyRuntimeErrorMessage,
+} from './src/utils/runtimeErrors.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { resolvePreferredProfile } from './src/utils/profileRouting.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
@@ -285,7 +288,10 @@ async function sendPanelMessage(payload) {
     } catch (error) {
       queuePendingPanelAction(payload).then((queued) => {
         if (!queued) {
-          console.error(`Background: Exception sending message (${payload.action}):`, error.message);
+          console.error(
+            `Background: Exception sending message (${payload.action}):`,
+            error.message
+          );
         }
         resolve({ queuedFallback: queued, response: null });
       });
@@ -902,7 +908,8 @@ skillManager.init();
 // Import and initialize orchestrator
 import RunOrchestrator from './src/orchestrator/RunOrchestrator.js';
 const runOrchestrator = new RunOrchestrator(skillManager, {
-  userToolExecutor: (tool, args) => callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
+  userToolExecutor: (tool, args) =>
+    callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
 });
 
 // ===== Menu System (Serialized Rebuild Queue) =====
@@ -1188,7 +1195,10 @@ async function executeTabContentExtraction(tabId) {
         if (chrome.runtime.lastError) {
           const runtimeError = chrome.runtime.lastError.message;
           const errorKind = classifyRuntimeMessageError(runtimeError);
-          console.warn('Background: Tab message failed (script might not be loaded):', runtimeError);
+          console.warn(
+            'Background: Tab message failed (script might not be loaded):',
+            runtimeError
+          );
           // Fallback: only inject if needed
           chrome.scripting.executeScript(
             {
@@ -1214,14 +1224,26 @@ async function executeTabContentExtraction(tabId) {
                       readStrategy: 'auto',
                     });
                   } else {
-                    resolve(res || { success: false, error: 'Empty response after injection', readStrategy: 'auto' });
+                    resolve(
+                      res || {
+                        success: false,
+                        error: 'Empty response after injection',
+                        readStrategy: 'auto',
+                      }
+                    );
                   }
                 });
               }
             }
           );
         } else {
-          resolve(response || { success: false, error: 'Empty response from content script', readStrategy: 'auto' });
+          resolve(
+            response || {
+              success: false,
+              error: 'Empty response from content script',
+              readStrategy: 'auto',
+            }
+          );
         }
       });
     });

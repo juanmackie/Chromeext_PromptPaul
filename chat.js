@@ -18,7 +18,14 @@ import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { chatUI } from './src/chat/ChatUI.js';
-import { getApiConfig, getTools, startRun, executeRun, abortRun, selectOptimalProfile } from './src/chat/ChatAPI.js';
+import {
+  getApiConfig,
+  getTools,
+  startRun,
+  executeRun,
+  abortRun,
+  selectOptimalProfile,
+} from './src/chat/ChatAPI.js';
 import {
   MediaType,
   validateMediaData,
@@ -34,10 +41,7 @@ import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/conte
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
 import { escapeHtml, renderMarkdown } from './src/utils/domSanitizer.js';
 import { buildExplainPrompt, buildSummarizePrompt, PROOFREAD_PROMPT } from './src/prompts.js';
-import {
-  renderSiteSuggestions,
-  executePresetAnalysis,
-} from './src/chat/ChatPageActions.js';
+import { renderSiteSuggestions, executePresetAnalysis } from './src/chat/ChatPageActions.js';
 
 // ── Lazy Module Loaders ───────────────────────────────────────────
 // Non-critical modules are loaded on demand to reduce initial startup cost.
@@ -141,6 +145,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const userInput = document.getElementById('user-input');
   const sendButton = document.getElementById('send-button');
   const selectedTextDiv = document.getElementById('selectedText');
+  const selectedTextStrip = document.getElementById('selected-text-strip');
+  const selectedTextSnippet = document.getElementById('selected-text-snippet');
+  const selectedTextRemoveButton = document.getElementById('selected-text-remove-button');
   const instructionInput = document.getElementById('instructionInput');
   const submitBtn = document.getElementById('submitBtn');
   const chatMainArea = document.getElementById('chat-main-area');
@@ -158,6 +165,13 @@ document.addEventListener('DOMContentLoaded', () => {
     marked.setOptions({
       highlight: function (code, lang) {
         if (lang && hljs.getLanguage(lang)) {
+          if (isResponseBusy()) {
+            loadingManager.showToast('A response is already in progress', 'warning');
+            return;
+          }
+
+          submitBtn.disabled = true;
+
           try {
             return hljs.highlight(code, { language: lang }).value;
           } catch (_) {
@@ -263,8 +277,12 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshSelectedTextActionState();
   }
 
+  function getSelectedText() {
+    return String(selectedText || '').trim();
+  }
+
   function getSelectedTextForAction(actionLabel) {
-    const text = String(selectedText || '').trim();
+    const text = getSelectedText();
     if (!text) {
       loadingManager.showToast(`Please select text first to ${actionLabel}.`, 'warning');
       return null;
@@ -273,32 +291,72 @@ document.addEventListener('DOMContentLoaded', () => {
     return text;
   }
 
+  function hasConversation() {
+    const history = streamState.getConversationHistory();
+    return Array.isArray(history) && history.length > 0;
+  }
+
   function updateSelectedTextActionButtons() {
-    const hasSelectedText = Boolean(String(selectedText || '').trim());
+    // Sidebar actions run on the sticky selection OR, once a conversation
+    // exists, as a follow-up on the previous response.
+    const canRun = Boolean(getSelectedText()) || hasConversation();
     [analyzeButton, proofreadButton, explainButton, analyzeDropdown, customPromptsDropdown].forEach(
       (button) => {
         if (!button) return;
-        button.disabled = !hasSelectedText;
-        button.title = hasSelectedText
+        button.disabled = !canRun;
+        button.title = canRun
           ? button.dataset.enabledTitle || button.title
           : 'Select text first to run this action';
       }
     );
   }
 
+  // Show/hide the dismissible selected-text chip in the chat input area so the
+  // sticky selection is never hidden state.
+  function updateSelectedTextChip() {
+    if (!selectedTextStrip) return;
+    const text = getSelectedText();
+    if (text) {
+      if (selectedTextSnippet) {
+        selectedTextSnippet.textContent = text.length > 140 ? `${text.slice(0, 140)}…` : text;
+      }
+      selectedTextStrip.hidden = false;
+    } else {
+      selectedTextStrip.hidden = true;
+      if (selectedTextSnippet) selectedTextSnippet.textContent = '';
+    }
+  }
+
   function refreshSelectedTextActionState() {
     updateSelectedTextActionButtons();
+    updateSelectedTextChip();
+  }
+
+  // Compose the prompt for a sidebar action: append the sticky selected text
+  // when present, otherwise fall back to a follow-up on the existing
+  // conversation. Returns null (and warns) when there is neither.
+  function composeActionPrompt(basePrompt, actionLabel, textSeparator = '\n\n') {
+    const text = getSelectedText();
+    if (text) {
+      return `${basePrompt}${textSeparator}${text}`;
+    }
+    if (hasConversation()) {
+      return `${basePrompt}\n\nApply this to your previous response.`;
+    }
+    // Nothing selected and no conversation to build on — emit standard warning.
+    getSelectedTextForAction(actionLabel);
+    return null;
   }
 
   async function runSelectedTextPrompt(prompt, toolChoice, actionLabel) {
-    const text = getSelectedTextForAction(actionLabel);
-    if (!text) {
+    const composed = composeActionPrompt(prompt, actionLabel);
+    if (composed === null) {
       return false;
     }
 
     activateSelectedTextActionView();
-    await makeApiCall(`${prompt}\n\n${text}`, toolChoice);
-    clearSelectedTextState();
+    await makeApiCall(composed, toolChoice);
+    // Keep the selection sticky so further actions can run on the same text.
     return true;
   }
 
@@ -309,29 +367,32 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
 
-    const text = getSelectedTextForAction(`run ${preset.label}`);
-    if (!text) {
+    const composed = composeActionPrompt(preset.prompt, `run ${preset.label}`);
+    if (composed === null) {
       return false;
     }
 
     lastUsedPreset = modeKey;
     activateSelectedTextActionView();
-    await makeApiCall(`${preset.prompt}\n\n${text}`, 'auto');
-    clearSelectedTextState();
+    await makeApiCall(composed, 'auto');
+    // Keep the selection sticky so further actions can run on the same text.
     return true;
   }
 
   async function executeSelectedTextInstruction(instruction) {
     const actionName = instruction.name || 'this prompt';
-    const text = getSelectedTextForAction(`run ${actionName}`);
-    if (!text) {
+    const composed = composeActionPrompt(
+      instruction.content,
+      `run ${actionName}`,
+      '\n\nSelected Text:\n'
+    );
+    if (composed === null) {
       return false;
     }
 
     activateSelectedTextActionView();
-    const prompt = `${instruction.content}\n\nSelected Text:\n${text}`;
-    await makeApiCall(prompt, normalizeToolChoice(instruction.tool_choice));
-    clearSelectedTextState();
+    await makeApiCall(composed, normalizeToolChoice(instruction.tool_choice));
+    // Keep the selection sticky so further actions can run on the same text.
     return true;
   }
 
@@ -384,7 +445,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (lastLoadedPageContext.readStrategy !== 'auto') {
               contextNotes.push(`Read strategy: ${lastLoadedPageContext.readStrategy}.`);
             }
-            if (lastLoadedPageContext.extractionSource && lastLoadedPageContext.extractionSource !== 'auto') {
+            if (
+              lastLoadedPageContext.extractionSource &&
+              lastLoadedPageContext.extractionSource !== 'auto'
+            ) {
               const extractionNote = `Extraction source: ${lastLoadedPageContext.extractionSource}.`;
               contextNotes.push(
                 lastLoadedPageContext.extractionReason
@@ -404,8 +468,8 @@ document.addEventListener('DOMContentLoaded', () => {
               content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\nPlatform: ${response.platform || 'unknown'}\n${contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : ''}\n\nHere is the content:\n\n${fitted.text}`,
             });
 
-            chatMainArea.style.display = 'block';
-            oneoffInstructionArea.style.display = 'none';
+            chatMainArea.classList.remove('hidden');
+            oneoffInstructionArea.classList.add('hidden');
             userInput.focus();
             const statusParts = ['Content loaded.'];
             if (fitted.truncated) {
@@ -596,14 +660,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  window.addEventListener('scroll', () => {
-    if (presetMenuVisible && presetMenu && analyzeDropdown) positionMenu(presetMenu, analyzeDropdown);
-    if (customPromptsMenuVisible && customPromptsMenu && customPromptsDropdown) {
-      positionMenu(customPromptsMenu, customPromptsDropdown);
-    }
-  }, true);
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (presetMenuVisible && presetMenu && analyzeDropdown)
+        positionMenu(presetMenu, analyzeDropdown);
+      if (customPromptsMenuVisible && customPromptsMenu && customPromptsDropdown) {
+        positionMenu(customPromptsMenu, customPromptsDropdown);
+      }
+    },
+    true
+  );
   window.addEventListener('resize', () => {
-    if (presetMenuVisible && presetMenu && analyzeDropdown) positionMenu(presetMenu, analyzeDropdown);
+    if (presetMenuVisible && presetMenu && analyzeDropdown)
+      positionMenu(presetMenu, analyzeDropdown);
     if (customPromptsMenuVisible && customPromptsMenu && customPromptsDropdown) {
       positionMenu(customPromptsMenu, customPromptsDropdown);
     }
@@ -611,10 +681,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (explainButton) {
     explainButton.addEventListener('click', async () => {
-      await runSelectedTextPrompt(
-        buildExplainPrompt('selected text'),
-        'auto',
-        'run Explain'
+      await runSelectedTextPrompt(buildExplainPrompt('selected text'), 'auto', 'run Explain');
+    });
+  }
+
+  if (selectedTextRemoveButton) {
+    selectedTextRemoveButton.addEventListener('click', () => {
+      clearSelectedTextState();
+      loadingManager.showToast(
+        'Selected text detached — actions now continue the conversation',
+        'info'
       );
     });
   }
@@ -637,6 +713,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let panelTabId = null; // Owning tab for this side panel (set from message sender)
   let currentAbortController = null;
   let lastProcessedPanelActionId = null;
+  let isResponseInFlight = false;
   const inputArea = document.getElementById('input-area');
   let currentAttachmentPreviewUrl = null;
 
@@ -652,6 +729,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const getCurrentMediaData = () => streamState.getMediaData();
   const getConversationHistory = () => streamState.getConversationHistory();
   const setConversationHistory = (history) => streamState.setConversationHistory(history);
+
+  function isResponseBusy() {
+    return isResponseInFlight || Boolean(streamState.getRunId());
+  }
+
+  function beginResponseRun() {
+    if (isResponseBusy()) {
+      console.warn('Chat: run start rejected - response already in flight', {
+        currentRunId: streamState.getRunId(),
+        sourceTabId: streamState.getSourceTabId(),
+      });
+      loadingManager.showToast('A response is already in progress', 'warning');
+      return false;
+    }
+
+    isResponseInFlight = true;
+    return true;
+  }
+
+  function endResponseRun() {
+    isResponseInFlight = false;
+  }
 
   function syncChatAreaHeight() {
     if (!inputArea) return;
@@ -711,7 +810,8 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const mediaModule = await getChatMedia();
       const fileData = await mediaModule.readBlobAsBase64(imageFile, 'pasted-image');
-      const fileName = imageFile.name && imageFile.name.trim() ? imageFile.name.trim() : 'Pasted image';
+      const fileName =
+        imageFile.name && imageFile.name.trim() ? imageFile.name.trim() : 'Pasted image';
       const previewUrl = URL.createObjectURL(imageFile);
 
       setCurrentMediaData({
@@ -743,6 +843,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function getRunSourceTabId() {
+    return tabId || panelTabId || null;
+  }
+
   /**
    * Retrieves the API configuration from Chrome storage.
    * @returns {Promise<Object>} The selected profile configuration.
@@ -758,7 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applySetSelectedTextAction(request) {
     if (request.actionId && request.actionId === lastProcessedPanelActionId) {
-      return;
+      return false;
     }
 
     if (request.actionId) {
@@ -774,8 +878,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setCurrentMediaData(request.mediaData);
 
       // Show chat area with media preview
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
+      chatMainArea.classList.remove('hidden');
+      oneoffInstructionArea.classList.add('hidden');
 
       if (streamState.getMediaData().error) {
         chatUI.addMessage(
@@ -786,8 +890,8 @@ document.addEventListener('DOMContentLoaded', () => {
         chatUI.addMediaPreview(streamState.getMediaData());
       }
     } else if (request.fromStartChat) {
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
+      chatMainArea.classList.remove('hidden');
+      oneoffInstructionArea.classList.add('hidden');
       streamState.clearHistory();
       clearCurrentMediaData();
     } else {
@@ -795,10 +899,85 @@ document.addEventListener('DOMContentLoaded', () => {
       chatMainArea.classList.add('hidden');
       oneoffInstructionArea.classList.remove('hidden');
     }
+
+    return true;
+  }
+
+  function applySetMediaForAnalysisAction(request) {
+    if (request.actionId && request.actionId === lastProcessedPanelActionId) {
+      console.log('Chat: Ignoring duplicate setMediaForAnalysis actionId:', request.actionId);
+      return false;
+    }
+
+    if (request.actionId) {
+      lastProcessedPanelActionId = request.actionId;
+    }
+
+    const mediaData = request.mediaData || {};
+    tabId = request.tabId;
+
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+
+    if (mediaData.loading) {
+      chatUI.addMessage('System', `Loading ${mediaData.type} for analysis...`);
+    } else if (mediaData.error) {
+      chatUI.addMessage('System', `Error loading ${mediaData.type}: ${mediaData.error}`);
+    } else if (mediaData.base64 || mediaData.textPrompt) {
+      if (mediaData.base64) {
+        setCurrentMediaData(mediaData);
+        chatUI.addMediaPreview(streamState.getMediaData());
+      }
+
+      let analysisPrompt;
+      if (mediaData.actionType === 'custom' && mediaData.instructionId) {
+        chrome.storage.local.get(['instructions'], (result) => {
+          const instructions = result.instructions || [];
+          const instruction = instructions.find((i) => i.id === mediaData.instructionId);
+          let instructionToolChoice = 'auto';
+          if (instruction) {
+            analysisPrompt = mediaData.textPrompt || instruction.content;
+            instructionToolChoice = normalizeToolChoice(instruction.tool_choice);
+            chatUI.addMessage('System', `Using custom instruction: "${instruction.name}"`);
+          } else {
+            analysisPrompt =
+              mediaData.textPrompt || getMediaAnalysisPrompt('default', streamState.getMediaData());
+          }
+
+          if (streamState.getMediaData()) {
+            makeApiCallWithMedia(analysisPrompt, streamState.getMediaData(), instructionToolChoice);
+          } else {
+            makeApiCall(analysisPrompt, instructionToolChoice);
+          }
+        });
+        return true;
+      } else if (mediaData.actionType === 'summarize') {
+        analysisPrompt =
+          mediaData.textPrompt || getMediaAnalysisPrompt('summarize', streamState.getMediaData());
+        chatUI.addMessage('System', `Summarizing...`);
+      } else if (mediaData.actionType === 'explain') {
+        analysisPrompt =
+          mediaData.textPrompt || getMediaAnalysisPrompt('explain', streamState.getMediaData());
+        chatUI.addMessage('System', `Explaining...`);
+      } else {
+        analysisPrompt =
+          mediaData.textPrompt || getMediaAnalysisPrompt('default', streamState.getMediaData());
+        chatUI.addMessage('System', `Analyzing...`);
+      }
+
+      if (streamState.getMediaData()) {
+        makeApiCallWithMedia(analysisPrompt, streamState.getMediaData());
+      } else {
+        makeApiCall(analysisPrompt);
+      }
+    }
+
+    return true;
   }
 
   function consumePendingPanelAction(pendingAction) {
-    if (!pendingAction || !['setSelectedText', 'setMediaForAnalysis'].includes(pendingAction.action)) {
+    const pendingPanelActions = ['setSelectedText', 'setMediaForAnalysis'];
+    if (!pendingAction || !pendingPanelActions.includes(pendingAction.action)) {
       return;
     }
 
@@ -812,20 +991,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    let consumed = false;
     if (pendingAction.action === 'setSelectedText') {
-      applySetSelectedTextAction(pendingAction);
+      consumed = applySetSelectedTextAction(pendingAction);
+    } else if (pendingAction.action === 'setMediaForAnalysis') {
+      consumed = applySetMediaForAnalysisAction(pendingAction);
     }
 
-    chrome.runtime.sendMessage(pendingAction, (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn('Chat: Failed to consume pending panel action:', chrome.runtime.lastError.message);
-        return;
-      }
-      if (chrome.storage?.session) {
-        chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
-      }
-      console.log('Chat: Consumed pending panel action:', pendingAction.action, response);
-    });
+    if (chrome.storage?.session) {
+      chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
+    }
+    console.log('Chat: Consumed pending panel action:', pendingAction.action, { consumed });
   }
 
   function consumePendingPanelActionOnLoad() {
@@ -838,17 +1014,6 @@ document.addEventListener('DOMContentLoaded', () => {
       consumePendingPanelAction(pendingAction);
     });
   }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'session') {
-      return;
-    }
-
-    const pendingActionChange = changes[PENDING_PANEL_ACTION_KEY];
-    if (pendingActionChange?.newValue) {
-      consumePendingPanelAction(pendingActionChange.newValue);
-    }
-  });
 
   function isSkillLoaderTool(toolName) {
     return toolName === 'load_skill' || toolName === 'skill_view';
@@ -901,8 +1066,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sendResponse) sendResponse({ success: true, ignored: true });
         return true;
       }
-      applySetSelectedTextAction(request);
-      if (sendResponse) sendResponse({ success: true });
+      const consumed = applySetSelectedTextAction(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
       return true;
     } else if (request.action === 'setMediaForAnalysis') {
       // Filter out messages for other panels
@@ -917,109 +1082,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
       }
 
-      // Dedupe: skip if we've already processed this action
-      if (request.actionId && request.actionId === lastProcessedPanelActionId) {
-        console.log('Chat: Ignoring duplicate setMediaForAnalysis actionId:', request.actionId);
-        if (sendResponse) sendResponse({ success: true, ignored: true });
-        return true;
-      }
-      if (request.actionId) {
-        lastProcessedPanelActionId = request.actionId;
-      }
-
-      // Handle media data from context menu
-      const mediaData = request.mediaData;
-      tabId = request.tabId;
-
-      // Show chat area
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
-
-      if (mediaData.loading) {
-        // Show loading state
-        chatUI.addMessage('System', `Loading ${mediaData.type} for analysis...`);
-      } else if (mediaData.error) {
-        // Show error
-        chatUI.addMessage('System', `❌ Error loading ${mediaData.type}: ${mediaData.error}`);
-      } else if (mediaData.base64 || mediaData.textPrompt) {
-        // Media loaded successfully OR text-only from context menu
-        if (mediaData.base64) {
-          setCurrentMediaData(mediaData);
-          chatUI.addMediaPreview(streamState.getMediaData());
-        }
-
-        // Use textPrompt if provided (from text-only context menu)
-        const promptText = mediaData.textPrompt || mediaData.prompt;
-
-        // Generate prompt based on action type
-        let analysisPrompt;
-        if (mediaData.actionType === 'custom' && mediaData.instructionId) {
-          // Handle custom instruction
-          chrome.storage.local.get(['instructions'], (result) => {
-            const instructions = result.instructions || [];
-            const instruction = instructions.find((i) => i.id === mediaData.instructionId);
-            let instructionToolChoice = 'auto';
-            if (instruction) {
-              analysisPrompt = mediaData.textPrompt || instruction.content;
-              instructionToolChoice = normalizeToolChoice(instruction.tool_choice);
-              chatUI.addMessage('System', `Using custom instruction: "${instruction.name}"`);
-            } else {
-              analysisPrompt =
-                mediaData.textPrompt ||
-                getMediaAnalysisPrompt('default', streamState.getMediaData());
-            }
-
-            if (streamState.getMediaData()) {
-              makeApiCallWithMedia(
-                analysisPrompt,
-                streamState.getMediaData(),
-                instructionToolChoice
-              );
-            } else {
-              makeApiCall(analysisPrompt, instructionToolChoice);
-            }
-          });
-          return; // Exit early for async custom instruction handling
-        } else if (mediaData.actionType === 'summarize') {
-          analysisPrompt =
-            mediaData.textPrompt || getMediaAnalysisPrompt('summarize', streamState.getMediaData());
-          chatUI.addMessage('System', `Summarizing...`);
-        } else if (mediaData.actionType === 'explain') {
-          analysisPrompt =
-            mediaData.textPrompt || getMediaAnalysisPrompt('explain', streamState.getMediaData());
-          chatUI.addMessage('System', `Explaining...`);
-        } else {
-          // Default analysis
-          analysisPrompt =
-            mediaData.textPrompt || getMediaAnalysisPrompt('default', streamState.getMediaData());
-          chatUI.addMessage('System', `Analyzing...`);
-        }
-
-        if (streamState.getMediaData()) {
-          makeApiCallWithMedia(analysisPrompt, streamState.getMediaData());
-        } else {
-          makeApiCall(analysisPrompt);
-        }
-      }
-      if (sendResponse) sendResponse({ success: true });
+      const consumed = applySetMediaForAnalysisAction(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
       return true;
     } else if (request.action === 'orchestratorEvent') {
       // NEW: Handle events from orchestrator
       const { runId, sourceTabId, event } = request;
 
-      // Filter events: must match our current run AND come from our tab
-      const isOwnedEvent =
-        streamState.getRunId() &&
-        runId === streamState.getRunId() &&
-        sourceTabId === panelTabId;
+      // Filter events by run ID first; side panels may not receive a tab identity.
+      const currentRunId = streamState.getRunId();
+      const currentSourceTabId = streamState.getSourceTabId();
+      const sourceTabsMatch =
+        sourceTabId == null || currentSourceTabId == null || sourceTabId === currentSourceTabId;
+      const isOwnedEvent = currentRunId && runId === currentRunId && sourceTabsMatch;
 
       if (!isOwnedEvent) {
         console.log('Chat: Ignoring orchestratorEvent for other run/tab', {
           runId,
           sourceTabId,
           panelTabId,
-          currentRunId: streamState.getRunId(),
-          currentSourceTabId: streamState.getSourceTabId(),
+          currentRunId,
+          currentSourceTabId,
         });
         if (sendResponse) sendResponse({ success: true, ignored: true });
         return true;
@@ -1055,6 +1138,7 @@ document.addEventListener('DOMContentLoaded', () => {
           // Distinguish tool vs skill in the trace
           if (isSkillLoaderTool(event.toolCall.function.name)) {
             try {
+              clearCurrentMediaData();
               const args = tryParseToolPayload(event.toolCall.function.arguments);
               const resultObj = tryParseToolPayload(event.result);
               const skillResult = resultObj?.result || resultObj;
@@ -1094,7 +1178,8 @@ document.addEventListener('DOMContentLoaded', () => {
           // Finalize the existing streaming bubble instead of creating a duplicate
           if (streamState.getCurrentStreamingContentElement()) {
             const finalContent = event.content || streamState.getStreamedText() || '';
-            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(finalContent);
+            streamState.getCurrentStreamingContentElement().innerHTML =
+              renderMarkdownContent(finalContent);
             chatUI.postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
             // Attach copy listeners to existing bubble (fix: icons were created
@@ -1131,6 +1216,17 @@ document.addEventListener('DOMContentLoaded', () => {
           userInput.disabled = false;
           sendButton.disabled = false;
           clearButton.textContent = 'Clear';
+
+          // Reset run state so the next message isn't rejected as "in progress".
+          // Without clearing the run id, isResponseBusy() stays true forever.
+          streamState.clearStreamingElements();
+          streamState.clearStreamedText();
+          streamState.setActiveToolCall(null);
+          streamState.setRunId(null);
+          streamState.setSourceTabId(null);
+
+          // A conversation now exists, so sidebar actions can run as follow-ups.
+          refreshSelectedTextActionState();
           break;
         }
         case 'aborted': {
@@ -1205,43 +1301,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return result;
   };
 
-  // ── First-run consent banner ─────────────────────────────────────
-  const consentBanner = document.getElementById('consent-banner');
-  const consentAccept = document.getElementById('consent-accept');
-  const consentDecline = document.getElementById('consent-decline');
-
-  async function checkConsentBanner() {
-    if (!consentBanner) return;
-    try {
-      const { analyticsConsent } = await chrome.storage.sync.get('analyticsConsent');
-      // Only show banner if consent has never been explicitly set
-      if (analyticsConsent === undefined) {
-        consentBanner.hidden = false;
-      }
-    } catch {
-      // Storage access may fail in some contexts; silently skip
-    }
-  }
-
-  function dismissConsentBanner() {
-    if (consentBanner) consentBanner.hidden = true;
-  }
-
-  if (consentAccept) {
-    consentAccept.addEventListener('click', async () => {
-      await chrome.storage.sync.set({ analyticsConsent: true });
-      dismissConsentBanner();
-    });
-  }
-
-  if (consentDecline) {
-    consentDecline.addEventListener('click', async () => {
-      await chrome.storage.sync.set({ analyticsConsent: false });
-      dismissConsentBanner();
-    });
-  }
-
-  checkConsentBanner();
   clearButton.addEventListener('click', () => {
     if (clearButton.textContent === 'Stop') {
       stopApiRequest();
@@ -1250,6 +1309,7 @@ document.addEventListener('DOMContentLoaded', () => {
       updateEmptyState();
       streamState.clearHistory();
       clearCurrentMediaData();
+      clearSelectedTextState();
     }
   });
   userInput.addEventListener('keydown', (event) => {
@@ -1334,7 +1394,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-
   /**
    * Makes an API call with media content (images, video, audio).
    * @param {string} userMessage - The user's message/prompt.
@@ -1349,8 +1408,10 @@ document.addEventListener('DOMContentLoaded', () => {
     tool_choice = 'auto',
     requestedSkill = null
   ) {
-    clearCurrentMediaData();
+    if (!beginResponseRun()) return;
+
     try {
+      clearCurrentMediaData();
       const config = await getApiConfig();
 
       const effectiveToolChoice =
@@ -1396,12 +1457,12 @@ document.addEventListener('DOMContentLoaded', () => {
         tools: await getTools(),
         mediaData: mediaData,
         requestedSkill,
-        sourceTabId: panelTabId,
+        sourceTabId: getRunSourceTabId(),
       };
 
       // Start orchestrator run using ChatAPI module
       streamState.setRunId(await startRun(runConfig));
-      streamState.setSourceTabId(panelTabId);
+      streamState.setSourceTabId(runConfig.sourceTabId);
 
       // Execute the run using ChatAPI module
       await executeRun(streamState.getRunId(), streamState.getConversationHistory());
@@ -1421,6 +1482,8 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.setActiveToolCall(null);
       streamState.setRunId(null);
       streamState.setSourceTabId(null);
+    } finally {
+      endResponseRun();
     }
   }
 
@@ -1461,7 +1524,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cmd.type === 'skill') {
           requestedSkill = cmd.skillName;
           effectiveMessage = cmd.body || message;
-          chatUI.addMessage('System',               `Loading skill: **${requestedSkill}**`);
+          chatUI.addMessage('System', `Loading skill: **${requestedSkill}**`);
         } else {
           // Fall back to natural-language intent detection
           const detectedSkill = skillsModule.detectSkillIntent(message, availableSkills);
@@ -1493,6 +1556,8 @@ document.addEventListener('DOMContentLoaded', () => {
    * @returns {Promise<void>}
    */
   async function makeApiCall(userMessage = null, tool_choice = 'auto', requestedSkill = null) {
+    if (!beginResponseRun()) return;
+
     try {
       const config = await getApiConfig();
 
@@ -1511,7 +1576,9 @@ document.addEventListener('DOMContentLoaded', () => {
           );
           if (routingResult.rerouted && routingResult.config) {
             effectiveConfig = routingResult.config;
-            console.log(`[Chat] Rerouted to vision-capable model: ${routingResult.config.modelName}`);
+            console.log(
+              `[Chat] Rerouted to vision-capable model: ${routingResult.config.modelName}`
+            );
             chatUI.addMessage(
               'System',
               `Auto-switched to **${routingResult.config.modelName}** for image analysis.`
@@ -1558,7 +1625,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
         requestedSkill,
-        sourceTabId: panelTabId,
+        sourceTabId: getRunSourceTabId(),
       };
 
       // Create UI elements for streaming
@@ -1570,7 +1637,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Start orchestrator run using ChatAPI module
       streamState.setRunId(await startRun(runConfig));
-      streamState.setSourceTabId(panelTabId);
+      streamState.setSourceTabId(runConfig.sourceTabId);
 
       // Execute the run using ChatAPI module
       await executeRun(streamState.getRunId(), streamState.getConversationHistory());
@@ -1589,6 +1656,8 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.setActiveToolCall(null);
       streamState.setRunId(null);
       streamState.setSourceTabId(null);
+    } finally {
+      endResponseRun();
     }
   }
 
@@ -1599,6 +1668,13 @@ document.addEventListener('DOMContentLoaded', () => {
       loadingManager.showToast('Please enter an instruction', 'warning');
       return;
     }
+
+    if (isResponseBusy()) {
+      loadingManager.showToast('A response is already in progress', 'warning');
+      return;
+    }
+
+    submitBtn.disabled = true;
 
     try {
       // Fetch available skills for intent detection
@@ -1635,8 +1711,8 @@ document.addEventListener('DOMContentLoaded', () => {
         prompt = effectiveInstruction + '\n\n' + mediaInfo;
 
         // Show chat area and hide one-off instruction area
-        oneoffInstructionArea.style.display = 'none';
-        chatMainArea.style.display = 'block';
+        oneoffInstructionArea.classList.add('hidden');
+        chatMainArea.classList.remove('hidden');
         chatUI.addMessage('User', `${effectiveInstruction}\n\n[${mediaInfo}]`);
         if (requestedSkill) {
           chatUI.addMessage(
@@ -1662,8 +1738,8 @@ document.addEventListener('DOMContentLoaded', () => {
         prompt = effectiveInstruction + '\n\n' + selectedText;
 
         // Show chat area and hide one-off instruction area
-        oneoffInstructionArea.style.display = 'none';
-        chatMainArea.style.display = 'block';
+        oneoffInstructionArea.classList.add('hidden');
+        chatMainArea.classList.remove('hidden');
         chatUI.addMessage(
           'User',
           `${effectiveInstruction}\n\n[Selected text: ${selectedText.substring(0, 50)}${selectedText.length > 50 ? '...' : ''}]`
@@ -1677,8 +1753,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await makeApiCall(prompt, 'auto', requestedSkill);
         instructionInput.value = '';
-        selectedTextDiv.textContent = '';
-        selectedText = null;
+        // Keep the selection sticky so further sidebar prompts can reuse it.
+      } else if (hasConversation()) {
+        // No selection/media, but a conversation exists — run as a follow-up.
+        prompt = effectiveInstruction + '\n\nApply this to your previous response.';
+
+        oneoffInstructionArea.classList.add('hidden');
+        chatMainArea.classList.remove('hidden');
+        chatUI.addMessage('User', effectiveInstruction);
+        if (requestedSkill) {
+          chatUI.addMessage(
+            'System',
+            `🎯 Skill detected: **${requestedSkill}**. Loading skill instructions...`
+          );
+        }
+
+        await makeApiCall(prompt, 'auto', requestedSkill);
+        instructionInput.value = '';
       } else {
         loadingManager.showToast('Please select text or load media first', 'warning');
       }
@@ -1697,6 +1788,8 @@ document.addEventListener('DOMContentLoaded', () => {
       sendButton.disabled = false;
       clearButton.textContent = 'Clear';
       currentAbortController = null;
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 
@@ -1810,5 +1903,3 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 }); // End of DOMContentLoaded
-
-

@@ -155,10 +155,10 @@ function requestProfileName(defaultName = 'New Profile') {
     dialog.innerHTML = `
       <h3>Create Profile</h3>
       <label for="newProfileNameInput">Profile name</label>
-      <input id="newProfileNameInput" class="shadcn-input" value="${escapeHtml(defaultName)}" />
+      <input id="newProfileNameInput" class="form-control" value="${escapeHtml(defaultName)}" />
       <div class="profile-name-dialog-actions">
-        <button type="button" class="profile-name-cancel">Cancel</button>
-        <button type="button" class="profile-name-confirm">Create</button>
+        <button type="button" class="btn btn-outline-secondary profile-name-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary profile-name-confirm">Create</button>
       </div>
     `;
     const input = dialog.querySelector('#newProfileNameInput');
@@ -389,8 +389,7 @@ function loadProfileSettings(profileId) {
 
     if (selectedProfile) {
       document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || '';
-      document.getElementById('apiKey').value =
-        selectedProfile.apiKey || '';
+      document.getElementById('apiKey').value = selectedProfile.apiKey || '';
       document.getElementById('modelName').value = selectedProfile.modelName || '';
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
 
@@ -567,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
         text: 'Not yet requested',
         color: 'var(--ext-muted-foreground)',
       };
-    }
+    };
 
     const renderVoiceInputControls = (settings, overrides = {}) => {
       const status = overrides.status || getMicStatusPresentation(settings);
@@ -589,13 +588,13 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         testMicPermissionBtn.title = 'Request or verify microphone access';
       }
-    }
+    };
 
     const refreshVoiceInputControls = async () => {
       const settings = await getStoredVoiceInputSettings();
       renderVoiceInputControls(settings);
       return settings;
-    }
+    };
 
     const testMicrophonePermission = async () => {
       const settings = await getStoredVoiceInputSettings();
@@ -653,7 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
         micPermissionStatus.style.color = 'var(--ext-destructive)';
         showStatus('Failed to test microphone: ' + error.message, true, true);
       }
-    }
+    };
 
     refreshVoiceInputControls();
 
@@ -739,14 +738,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   checkAndPromptInstructionMigration();
   setupInstructionHandlers();
-  // Add event listener for collapsible header
-  document.querySelectorAll('.collapsible-header').forEach((header) => {
-    header.addEventListener('click', () => {
-      const content = header.nextElementSibling;
-      content.classList.toggle('expanded');
-      header.classList.toggle('expanded');
-    });
-  });
   setupToolHandlers(); // Add call to setup tool handlers
   setupSkillHandlers(); // Add call to setup skill handlers
   setupBackupHandlers(); // Add call to setup backup handlers
@@ -1014,9 +1005,10 @@ function setupInstructionHandlers() {
     const content = String(instruction.content || '').trim();
     if (!name || !content) return null;
     const tags = normalizeInstructionTags(instruction.tags || []);
-    const modalities = Array.isArray(instruction.modalities) && instruction.modalities.length > 0
-      ? instruction.modalities
-      : ['text'];
+    const modalities =
+      Array.isArray(instruction.modalities) && instruction.modalities.length > 0
+        ? instruction.modalities
+        : ['text'];
     const createdAt = instruction.createdAt || instruction.lastUpdated || new Date().toISOString();
     const fallbackId = `inst_${hashString(`${name}\n${content}\n${createdAt}`)}`;
     return {
@@ -1241,7 +1233,7 @@ function setupInstructionHandlers() {
             document.getElementById('instructionTags').value = (instruction.tags || []).join(', ');
             document.getElementById('instructionId').value = instruction.id;
 
-              showStatus('Instruction improved. Review and save.', false, true);
+            showStatus('Instruction improved. Review and save.', false, true);
           } catch (error) {
             console.error('Error improving instruction:', error);
             showStatus('Failed to improve instruction: ' + error.message, true);
@@ -2396,10 +2388,10 @@ function setupSkillHandlers() {
           chrome.storage.local.set({ customSkills: existingCustomSkills }, resolve);
         });
 
-statusEl.innerHTML =
-            '<span class="ext-text-primary">✓ Successfully imported "' +
-            parsed.metadata.name +
-            '"</span>';
+        statusEl.innerHTML =
+          '<span class="ext-text-primary">✓ Successfully imported "' +
+          parsed.metadata.name +
+          '"</span>';
         urlInput.value = '';
         loadSkills(); // Reload the skills table
 
@@ -2467,7 +2459,7 @@ function setupBackupHandlers() {
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
 
-         showStatus('Full backup exported successfully.', false, true);
+        showStatus('Full backup exported successfully.', false, true);
       } catch (error) {
         console.error('Export error:', error);
         showStatus('Failed to export backup: ' + error.message, true, true);
@@ -2516,7 +2508,7 @@ function setupBackupHandlers() {
             await new Promise((resolve) => chrome.storage.sync.set(backup.sync, resolve));
           }
 
-           showStatus('Restore complete. Reloading...', false, true);
+          showStatus('Restore complete. Reloading...', false, true);
 
           // Reload the page to reflect all changes
           setTimeout(() => {

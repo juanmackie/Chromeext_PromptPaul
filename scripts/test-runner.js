@@ -137,7 +137,10 @@ function runUnitTests(runner) {
     const content = readFileSafe('src/chat/ChatAPI.js');
     const requiredFunctions = ['getApiConfig', 'getTools', 'startRun', 'executeRun', 'abortRun'];
     for (const fn of requiredFunctions) {
-      if (!content.includes(`export async function ${fn}`) && !content.includes(`export function ${fn}`)) {
+      if (
+        !content.includes(`export async function ${fn}`) &&
+        !content.includes(`export function ${fn}`)
+      ) {
         throw new Error(`ChatAPI.js missing export: ${fn}`);
       }
     }
@@ -148,7 +151,15 @@ function runUnitTests(runner) {
   });
 
   runner.test('ChatMedia module structure valid', () => {
-    checkModule('src/chat/ChatMedia.js', ['const MediaType', 'function validateMediaData', 'function getMediaAnalysisPrompt', 'function prepareMediaContent', 'function hasValidMediaData', 'function getMediaDisplayName', 'function supportsVisionAnalysis']);
+    checkModule('src/chat/ChatMedia.js', [
+      'const MediaType',
+      'function validateMediaData',
+      'function getMediaAnalysisPrompt',
+      'function prepareMediaContent',
+      'function hasValidMediaData',
+      'function getMediaDisplayName',
+      'function supportsVisionAnalysis',
+    ]);
   });
 
   runner.test('ChatMedia clipboard helper exists', () => {
@@ -162,15 +173,30 @@ function runUnitTests(runner) {
   });
 
   runner.test('ChatSkills module structure valid', () => {
-    checkModule('src/chat/ChatSkills.js', ['function parseCommand', 'function detectSkillIntent', 'function formatSkillsList']);
+    checkModule('src/chat/ChatSkills.js', [
+      'function parseCommand',
+      'function detectSkillIntent',
+      'function formatSkillsList',
+    ]);
   });
 
   runner.test('ChatVoice module structure valid', () => {
     checkModule('src/chat/ChatVoice.js', []);
     const content = readFileSafe('src/chat/ChatVoice.js');
-    const requiredFunctions = ['toggleVoiceInput', 'stopVoiceInput', 'syncVoiceInputSettings', 'updateVoiceToggleButtonState', 'getIsListening', 'getIsSpeechRecognitionSupported'];
+    const requiredFunctions = [
+      'toggleVoiceInput',
+      'stopVoiceInput',
+      'syncVoiceInputSettings',
+      'updateVoiceToggleButtonState',
+      'getIsListening',
+      'getIsSpeechRecognitionSupported',
+    ];
     for (const fn of requiredFunctions) {
-      if (!content.includes(`export function ${fn}`) && !content.includes(`export const ${fn}`) && !content.includes(`export async function ${fn}`)) {
+      if (
+        !content.includes(`export function ${fn}`) &&
+        !content.includes(`export const ${fn}`) &&
+        !content.includes(`export async function ${fn}`)
+      ) {
         throw new Error(`ChatVoice.js missing export: ${fn}`);
       }
     }
@@ -214,7 +240,11 @@ function runUnitTests(runner) {
   });
 
   runner.test('DOM sanitizer module exists and is referenced by chat surfaces', () => {
-    checkModule('src/utils/domSanitizer.js', ['function escapeHtml', 'function sanitizeHtml', 'function renderMarkdown']);
+    checkModule('src/utils/domSanitizer.js', [
+      'function escapeHtml',
+      'function sanitizeHtml',
+      'function renderMarkdown',
+    ]);
     for (const file of ['src/chat/ChatUI.js', 'src/chat/ChatStream.js', 'chat.js', 'options.js']) {
       if (!readFileSafe(file).includes('domSanitizer')) {
         throw new Error(`${file} does not reference domSanitizer`);
@@ -249,7 +279,8 @@ function runUnitTests(runner) {
     }
     if (!manifest.name || !manifest.name.trim()) throw new Error('Manifest missing name');
     if (!manifest.version) throw new Error('Manifest missing version');
-    if (!manifest.background?.service_worker) throw new Error('Manifest missing background service_worker');
+    if (!manifest.background?.service_worker)
+      throw new Error('Manifest missing background service_worker');
   });
 
   runner.test('Manifest references exist', () => {
@@ -257,14 +288,14 @@ function runUnitTests(runner) {
     const filesToCheck = [];
     if (manifest.background?.service_worker) filesToCheck.push(manifest.background.service_worker);
     if (manifest.options_page) filesToCheck.push(manifest.options_page);
-    if (manifest.icons) Object.values(manifest.icons).forEach(p => filesToCheck.push(p));
+    if (manifest.icons) Object.values(manifest.icons).forEach((p) => filesToCheck.push(p));
     if (manifest.content_scripts) {
-      manifest.content_scripts.forEach(cs => {
-        if (cs.js) cs.js.forEach(p => filesToCheck.push(p));
-        if (cs.css) cs.css.forEach(p => filesToCheck.push(p));
+      manifest.content_scripts.forEach((cs) => {
+        if (cs.js) cs.js.forEach((p) => filesToCheck.push(p));
+        if (cs.css) cs.css.forEach((p) => filesToCheck.push(p));
       });
     }
-    filesToCheck.forEach(file => {
+    filesToCheck.forEach((file) => {
       if (!fs.existsSync(path.join(repoRoot, file))) {
         throw new Error(`Manifest references missing file: ${file}`);
       }
@@ -273,20 +304,24 @@ function runUnitTests(runner) {
 
   runner.test('Manifest scopes Outlook compose adapter to Outlook hosts', () => {
     const manifest = JSON.parse(readFileSafe('manifest.json'));
-    const outlookScript = manifest.content_scripts?.find((entry) =>
-      Array.isArray(entry.matches) &&
-      entry.matches.includes('https://outlook.com/*') &&
-      entry.matches.includes('https://*.outlook.com/*') &&
-      entry.matches.includes('https://outlook.office.com/*') &&
-      entry.matches.includes('https://outlook.office365.com/*') &&
-      entry.matches.includes('https://outlook.live.com/*') &&
-      entry.matches.includes('https://outlook.cloud.microsoft/*')
+    const outlookScript = manifest.content_scripts?.find(
+      (entry) =>
+        Array.isArray(entry.matches) &&
+        entry.matches.includes('https://outlook.com/*') &&
+        entry.matches.includes('https://*.outlook.com/*') &&
+        entry.matches.includes('https://outlook.office.com/*') &&
+        entry.matches.includes('https://outlook.office365.com/*') &&
+        entry.matches.includes('https://outlook.live.com/*') &&
+        entry.matches.includes('https://outlook.cloud.microsoft/*')
     );
 
     if (!outlookScript) {
       throw new Error('Manifest is missing the Outlook compose content script entry');
     }
-    if (!Array.isArray(outlookScript.js) || !outlookScript.js.includes('content_script_outlook_compose.js')) {
+    if (
+      !Array.isArray(outlookScript.js) ||
+      !outlookScript.js.includes('content_script_outlook_compose.js')
+    ) {
       throw new Error('Outlook compose content script is not referenced in the manifest');
     }
     if (outlookScript.all_frames !== true) {
@@ -337,13 +372,23 @@ function runUnitTests(runner) {
         throw new Error(`Skill ${skill.name} SKILL.md missing frontmatter`);
       }
       if (!content.includes('name:')) throw new Error(`Skill ${skill.name} SKILL.md missing name`);
-      if (!content.includes('description:')) throw new Error(`Skill ${skill.name} SKILL.md missing description`);
+      if (!content.includes('description:'))
+        throw new Error(`Skill ${skill.name} SKILL.md missing description`);
     });
   });
 
   // ---------- Directory Structure ----------
   runner.test('Required directories exist', () => {
-    const dirs = ['src', 'src/chat', 'src/utils', 'src/orchestrator', 'scripts', 'docs', 'skills', 'libs'];
+    const dirs = [
+      'src',
+      'src/chat',
+      'src/utils',
+      'src/orchestrator',
+      'scripts',
+      'docs',
+      'skills',
+      'libs',
+    ];
     dirs.forEach((dir) => {
       if (!fs.existsSync(path.join(repoRoot, dir))) {
         throw new Error(`Required directory missing: ${dir}`);
@@ -360,7 +405,9 @@ function runUnitTests(runner) {
   });
 
   runner.test('No source module exceeds 600 lines', () => {
-    const moduleFiles = fs.readdirSync(path.join(repoRoot, 'src/chat')).filter(f => f.endsWith('.js'));
+    const moduleFiles = fs
+      .readdirSync(path.join(repoRoot, 'src/chat'))
+      .filter((f) => f.endsWith('.js'));
     for (const file of moduleFiles) {
       const lines = readFileSafe(`src/chat/${file}`).split('\n').length;
       if (lines > 600) {
@@ -373,8 +420,12 @@ function runUnitTests(runner) {
   runner.test('chat.js imports all chat modules', () => {
     const chatContent = readFileSafe('chat.js');
     const expectedImports = [
-      'ChatUI.js', 'ChatAPI.js', 'ChatSkills.js',
-      'ChatVoice.js', 'ChatMedia.js', 'ChatStream.js',
+      'ChatUI.js',
+      'ChatAPI.js',
+      'ChatSkills.js',
+      'ChatVoice.js',
+      'ChatMedia.js',
+      'ChatStream.js',
     ];
     for (const imp of expectedImports) {
       if (!chatContent.includes(imp.replace('.js', ''))) {
@@ -385,8 +436,9 @@ function runUnitTests(runner) {
 
   runner.test('All chat modules are imported in chat.js', () => {
     const chatContent = readFileSafe('chat.js');
-    const moduleFiles = fs.readdirSync(path.join(repoRoot, 'src/chat'))
-      .filter(f => f.endsWith('.js'));
+    const moduleFiles = fs
+      .readdirSync(path.join(repoRoot, 'src/chat'))
+      .filter((f) => f.endsWith('.js'));
     for (const file of moduleFiles) {
       const importRef = `./src/chat/${file.replace('.js', '')}`;
       if (!chatContent.includes(importRef)) {
@@ -396,8 +448,9 @@ function runUnitTests(runner) {
   });
 
   runner.test('Relative imports in src/chat/*.js resolve to existing files', () => {
-    const moduleFiles = fs.readdirSync(path.join(repoRoot, 'src/chat'))
-      .filter(f => f.endsWith('.js'));
+    const moduleFiles = fs
+      .readdirSync(path.join(repoRoot, 'src/chat'))
+      .filter((f) => f.endsWith('.js'));
     const importRe = /from\s+['"](\.[^'"]+\.js)['"]/g;
     for (const file of moduleFiles) {
       const content = readFileSafe(`src/chat/${file}`);
@@ -406,7 +459,9 @@ function runUnitTests(runner) {
         const importPath = match[1];
         const resolved = path.resolve(repoRoot, 'src/chat', importPath);
         if (!fs.existsSync(resolved)) {
-          throw new Error(`src/chat/${file} imports '${importPath}' but ${path.relative(repoRoot, resolved)} does not exist`);
+          throw new Error(
+            `src/chat/${file} imports '${importPath}' but ${path.relative(repoRoot, resolved)} does not exist`
+          );
         }
       }
     }
@@ -426,6 +481,68 @@ function runUnitTests(runner) {
     for (const token of required) {
       if (!content.includes(token)) {
         throw new Error(`chat.js missing clipboard attachment token: ${token}`);
+      }
+    }
+  });
+
+  runner.test('chat.js consumes queued panel actions locally', () => {
+    const content = readFileSafe('chat.js');
+    const required = [
+      'function applySetMediaForAnalysisAction(request)',
+      'consumed = applySetSelectedTextAction(pendingAction)',
+      'consumed = applySetMediaForAnalysisAction(pendingAction)',
+      'chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY])',
+    ];
+
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`chat.js missing pending panel action token: ${token}`);
+      }
+    }
+
+    if (content.includes('chrome.runtime.sendMessage(pendingAction')) {
+      throw new Error('chat.js should consume pending panel actions locally, not resend them');
+    }
+    if (content.includes('pendingActionChange')) {
+      throw new Error('chat.js should not consume queued panel actions from storage change events');
+    }
+  });
+
+  runner.test('chat.js routes side-panel run events by current run ID', () => {
+    const content = readFileSafe('chat.js');
+    const required = [
+      'const currentRunId = streamState.getRunId()',
+      'runId === currentRunId',
+      'sourceTabsMatch',
+      'sourceTabId: getRunSourceTabId()',
+      'streamState.setSourceTabId(runConfig.sourceTabId)',
+    ];
+
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`chat.js missing side-panel event routing token: ${token}`);
+      }
+    }
+
+    if (content.includes('sourceTabId === panelTabId')) {
+      throw new Error('chat.js should not require side-panel events to match panelTabId');
+    }
+  });
+
+  runner.test('chat.js prevents overlapping response submissions', () => {
+    const content = readFileSafe('chat.js');
+    const required = [
+      'let isResponseInFlight = false',
+      'function isResponseBusy()',
+      'function beginResponseRun()',
+      'if (!beginResponseRun()) return;',
+      'submitBtn.disabled = true',
+      'submitBtn.disabled = false',
+    ];
+
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`chat.js missing response guard token: ${token}`);
       }
     }
   });
@@ -454,7 +571,9 @@ function runUnitTests(runner) {
 
     // Check that 'aborted' case exists in orchestratorEvent handler
     if (!chatContent.includes("case 'aborted'")) {
-      throw new Error("'aborted' case missing in orchestratorEvent handler - button won't reset after user stops response");
+      throw new Error(
+        "'aborted' case missing in orchestratorEvent handler - button won't reset after user stops response"
+      );
     }
 
     // Check that 'complete' case sets clearButton to 'Clear'
@@ -463,7 +582,9 @@ function runUnitTests(runner) {
       throw new Error("'complete' case not found in orchestratorEvent handler");
     }
     if (!completeCaseMatch[0].includes("clearButton.textContent = 'Clear'")) {
-      throw new Error("'complete' case doesn't reset clearButton to 'Clear' - button will stay as 'Stop'");
+      throw new Error(
+        "'complete' case doesn't reset clearButton to 'Clear' - button will stay as 'Stop'"
+      );
     }
 
     // Check that 'aborted' case sets clearButton to 'Clear'
@@ -478,7 +599,12 @@ function runUnitTests(runner) {
 
   runner.test('YouTube extraction supports watch/live/shorts/embed URLs', () => {
     const content = readFileSafe('content_script_unified.js');
-    const requiredPathChecks = ["path.startsWith('/watch')", "path.startsWith('/live')", "path.startsWith('/shorts')", "path.startsWith('/embed')"];
+    const requiredPathChecks = [
+      "path.startsWith('/watch')",
+      "path.startsWith('/live')",
+      "path.startsWith('/shorts')",
+      "path.startsWith('/embed')",
+    ];
     for (const check of requiredPathChecks) {
       if (!content.includes(check)) {
         throw new Error(`YouTube route support missing: ${check}`);
@@ -498,7 +624,11 @@ function runUnitTests(runner) {
 
   runner.test('YouTube player response does not depend on one source only', () => {
     const content = readFileSafe('content_script_unified.js');
-    const requiredSources = ['window.ytInitialPlayerResponse', 'findPlayerResponseInScripts()', 'fetchPlayerFromInnerTube(videoId)'];
+    const requiredSources = [
+      'window.ytInitialPlayerResponse',
+      'findPlayerResponseInScripts()',
+      'fetchPlayerFromInnerTube(videoId)',
+    ];
     for (const src of requiredSources) {
       if (!content.includes(src)) {
         throw new Error(`Missing YouTube player fallback source: ${src}`);
@@ -566,7 +696,7 @@ function runUnitTests(runner) {
       'executeSelectedTextInstruction',
       'runSelectedTextPrompt',
       'getSelectedTextForAction',
-      "executePagePresetMode(lastUsedPreset)",
+      'executePagePresetMode(lastUsedPreset)',
       "executeSelectedTextMode('proofread')",
       'executeSelectedTextInstruction(instructionToExecute)',
     ];
@@ -580,7 +710,9 @@ function runUnitTests(runner) {
     const forbiddenTokens = ['getPinnedActionTabContent', 'getExplainContent'];
     for (const token of forbiddenTokens) {
       if (chatContent.includes(token)) {
-        throw new Error(`chat.js should not fetch page context for selected-text actions: ${token}`);
+        throw new Error(
+          `chat.js should not fetch page context for selected-text actions: ${token}`
+        );
       }
     }
 
@@ -602,11 +734,17 @@ function runIntegrationTests(runner) {
   // ---------- Entry Files ----------
   runner.test('All main entry files exist and non-empty', () => {
     const mainFiles = [
-      'background.js', 'chat.html', 'chat.js',
-      'options.html', 'options.js',
-      'collapsible.js', 'input-controls.js',
-      'loadingManager.js', 'themeUtils.js',
-      'content_script_unified.js', 'content_script_outlook_compose.js', 'pdfContentScript.js',
+      'background.js',
+      'chat.html',
+      'chat.js',
+      'options.html',
+      'options.js',
+      'input-controls.js',
+      'loadingManager.js',
+      'themeUtils.js',
+      'content_script_unified.js',
+      'content_script_outlook_compose.js',
+      'pdfContentScript.js',
     ];
     for (const file of mainFiles) {
       const content = readFileSafe(file);
@@ -656,9 +794,10 @@ function runIntegrationTests(runner) {
   // ---------- Skills Consistency ----------
   runner.test('All skill directories are referenced in skills manifest', () => {
     const skills = JSON.parse(readFileSafe('skills/skills.json'));
-    const manifestNames = skills.map(s => s.name);
-    const skillDirs = fs.readdirSync(path.join(repoRoot, 'skills'))
-      .filter(item => fs.statSync(path.join(repoRoot, 'skills', item)).isDirectory());
+    const manifestNames = skills.map((s) => s.name);
+    const skillDirs = fs
+      .readdirSync(path.join(repoRoot, 'skills'))
+      .filter((item) => fs.statSync(path.join(repoRoot, 'skills', item)).isDirectory());
     for (const dir of skillDirs) {
       if (!manifestNames.includes(dir)) {
         throw new Error(`Skill directory '${dir}' has no entry in skills.json`);
@@ -669,7 +808,14 @@ function runIntegrationTests(runner) {
   // ---------- Build Script ----------
   runner.test('Build script has required functions', () => {
     const content = readFileSafe('scripts/build.js');
-    const required = ['function main', 'readJson', 'validateManifest', 'createBuildDir', 'copyFiles', 'generateBuildMetadata'];
+    const required = [
+      'function main',
+      'readJson',
+      'validateManifest',
+      'createBuildDir',
+      'copyFiles',
+      'generateBuildMetadata',
+    ];
     for (const elem of required) {
       if (!content.includes(elem)) {
         throw new Error(`Build script missing: ${elem}`);
@@ -695,8 +841,13 @@ function runIntegrationTests(runner) {
   // ---------- Documentation ----------
   runner.test('All documentation files exist and are non-empty', () => {
     const docFiles = [
-      'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md',
-      'docs/ARCHITECTURE.md', 'docs/DEVELOPMENT.md', 'docs/SKILL_EXAMPLES.md',
+      'README.md',
+      'CHANGELOG.md',
+      'CONTRIBUTING.md',
+      'AGENTS.md',
+      'docs/ARCHITECTURE.md',
+      'docs/DEVELOPMENT.md',
+      'docs/SKILL_EXAMPLES.md',
     ];
     for (const file of docFiles) {
       const content = readFileSafe(file);
@@ -725,12 +876,18 @@ function runIntegrationTests(runner) {
 
   // ---------- Orphaned File Detection ----------
   runner.test('No orphaned .js files in root (except marked)', () => {
-    const rootFiles = fs.readdirSync(repoRoot).filter(f => f.endsWith('.js'));
+    const rootFiles = fs.readdirSync(repoRoot).filter((f) => f.endsWith('.js'));
     const knownRootFiles = [
-      'background.js', 'chat.js', 'collapsible.js',
-      'content_script_unified.js', 'input-controls.js',
-      'content_script_outlook_compose.js', 'loadingManager.js', 'options.js', 'pdfContentScript.js',
-      'themeUtils.js', 'marked.min.js',
+      'background.js',
+      'chat.js',
+      'content_script_unified.js',
+      'input-controls.js',
+      'content_script_outlook_compose.js',
+      'loadingManager.js',
+      'options.js',
+      'pdfContentScript.js',
+      'themeUtils.js',
+      'marked.min.js',
     ];
     for (const file of rootFiles) {
       if (!knownRootFiles.includes(file) && !file.endsWith('.min.js')) {
@@ -766,7 +923,8 @@ function generateCoverageReport() {
       const content = fs.readFileSync(fullPath, 'utf8');
       const lines = content.split('\n').length;
       // Count function definitions
-      const functions = (content.match(/(?:exports+)?(?:asyncs+)?functions+w+|classs+w+/g) || []).length;
+      const functions = (content.match(/(?:exports+)?(?:asyncs+)?functions+w+|classs+w+/g) || [])
+        .length;
       totalLines += lines;
       totalFunctions += functions;
       console.log(`  ${modulePath}:`);

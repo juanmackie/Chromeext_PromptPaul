@@ -21,6 +21,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - Skill intent support must preserve the documented patterns in root AGENTS.md and `docs/SKILL_EXAMPLES.md`.
 - Media handling must route image/video/audio requests through profile selection that supports vision when required.
 - UI state changes that affect buttons, attachments, streaming, or storage sync must stay coordinated with `chat.js`.
+- `ChatStream.js` run ID (`currentRunId`) is the authoritative ownership token for orchestrator events; `chat.js` checks it against `streamState.getRunId()` before processing any event.
 
 ## Work Guidance
 

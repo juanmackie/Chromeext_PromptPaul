@@ -53,24 +53,14 @@ describe('skillParser', () => {
     });
 
     it('rejects skill with uppercase name', () => {
-      const md = [
-        '---',
-        'name: Humanizer',
-        'description: Makes text natural',
-        '---',
-      ].join('\n');
+      const md = ['---', 'name: Humanizer', 'description: Makes text natural', '---'].join('\n');
       const result = parseSkillMarkdown(md);
       expect(result.valid).toBe(false);
       expect(result.error).toMatch(/lowercase/);
     });
 
     it('rejects skill with hyphen-start name', () => {
-      const md = [
-        '---',
-        'name: -bad',
-        'description: test',
-        '---',
-      ].join('\n');
+      const md = ['---', 'name: -bad', 'description: test', '---'].join('\n');
       const result = parseSkillMarkdown(md);
       expect(result.valid).toBe(false);
       expect(result.error).toMatch(/hyphen/);
@@ -92,11 +82,7 @@ describe('skillParser', () => {
     });
 
     it('parses metadata block with nested JSON', () => {
-      const text = [
-        'metadata:',
-        "  tags: 'coding, python'",
-        "  version: '1.0.0'",
-      ].join('\n');
+      const text = ['metadata:', "  tags: 'coding, python'", "  version: '1.0.0'"].join('\n');
       const result = parseFrontmatter(text);
       expect(result.metadata.tags).toBe('coding, python');
       expect(result.metadata.version).toBe('1.0.0');

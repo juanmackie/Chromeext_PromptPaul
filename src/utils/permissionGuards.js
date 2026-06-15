@@ -56,7 +56,10 @@ export function getCurrentPageSupport(url) {
 }
 
 function isRestrictedExtensionGalleryUrl(parsed) {
-  if (!/^https?:$/.test(parsed.protocol) || !RESTRICTED_EXTENSION_GALLERY_HOSTS.has(parsed.hostname)) {
+  if (
+    !/^https?:$/.test(parsed.protocol) ||
+    !RESTRICTED_EXTENSION_GALLERY_HOSTS.has(parsed.hostname)
+  ) {
     return false;
   }
   return parsed.hostname === 'chromewebstore.google.com' || parsed.pathname.startsWith('/webstore');

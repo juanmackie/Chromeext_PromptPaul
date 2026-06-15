@@ -116,7 +116,12 @@
       }
       if (!contextStr && text.includes('INNERTUBE_CONTEXT')) {
         const m = text.match(/INNERTUBE_CONTEXT["']?\s*[,=]\s*({.+?});/);
-        if (m) try { contextStr = JSON.parse(m[1]); } catch (_) { /* ignore */ }
+        if (m)
+          try {
+            contextStr = JSON.parse(m[1]);
+          } catch (_) {
+            /* ignore */
+          }
       }
       if (apiKey && contextStr) break;
     }
@@ -265,7 +270,9 @@
     const microformat = playerResponse?.microformat?.playerMicroformatRenderer || {};
 
     const ogTitle = document.querySelector('meta[property="og:title"]')?.content?.trim();
-    const ogDescription = document.querySelector('meta[property="og:description"]')?.content?.trim();
+    const ogDescription = document
+      .querySelector('meta[property="og:description"]')
+      ?.content?.trim();
     const domTitle =
       document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.textContent?.trim() ||
       document.querySelector('h1.title yt-formatted-string')?.textContent?.trim() ||
@@ -398,7 +405,10 @@
 
     if (
       host === 'youtube.com' &&
-      (path.startsWith('/watch') || path.startsWith('/live') || path.startsWith('/shorts') || path.startsWith('/embed'))
+      (path.startsWith('/watch') ||
+        path.startsWith('/live') ||
+        path.startsWith('/shorts') ||
+        path.startsWith('/embed'))
     ) {
       return {
         platform: 'youtube',
@@ -422,12 +432,20 @@
     }
     if (host === 'docs.google.com') {
       if (path.startsWith('/document/')) return { platform: 'google-docs', label: 'Google Docs' };
-      if (path.startsWith('/spreadsheets/')) return { platform: 'google-sheets', label: 'Google Sheets' };
-      if (path.startsWith('/presentation/')) return { platform: 'google-slides', label: 'Google Slides' };
+      if (path.startsWith('/spreadsheets/'))
+        return { platform: 'google-sheets', label: 'Google Sheets' };
+      if (path.startsWith('/presentation/'))
+        return { platform: 'google-slides', label: 'Google Slides' };
     }
     if (host.endsWith('arxiv.org') && (path.startsWith('/abs/') || path.startsWith('/pdf/'))) {
       const arxivId = path.match(/\/(\d+\.\d+)/)?.[1] || '';
-      return { platform: 'arxiv', label: 'arXiv paper', arxivId, absUrl: `https://arxiv.org/abs/${arxivId}`, pdfUrl: `https://arxiv.org/pdf/${arxivId}` };
+      return {
+        platform: 'arxiv',
+        label: 'arXiv paper',
+        arxivId,
+        absUrl: `https://arxiv.org/abs/${arxivId}`,
+        pdfUrl: `https://arxiv.org/pdf/${arxivId}`,
+      };
     }
     if (path.endsWith('.pdf')) {
       return { platform: 'pdf', label: 'PDF document' };
@@ -435,7 +453,10 @@
     if (host.endsWith('wikipedia.org')) {
       return { platform: 'wikipedia', label: 'Wikipedia article' };
     }
-    if (/^(news|n\.news|m\.news)\./i.test(host) || /\.(reuters|apnews|bbc|cnn|nytimes|washingtonpost|wsj|bloomberg|theguardian)\./i.test(host)) {
+    if (
+      /^(news|n\.news|m\.news)\./i.test(host) ||
+      /\.(reuters|apnews|bbc|cnn|nytimes|washingtonpost|wsj|bloomberg|theguardian)\./i.test(host)
+    ) {
       return { platform: 'news', label: 'News article' };
     }
     if (/(amazon|ebay|walmart|target|bestbuy|etsy)\./i.test(host)) {
@@ -458,7 +479,9 @@
   }
 
   function getYouTubeChapterTitles() {
-    const titles = Array.from(document.querySelectorAll('ytd-macro-markers-list-item-renderer h4, ytd-chapter-renderer h4'))
+    const titles = Array.from(
+      document.querySelectorAll('ytd-macro-markers-list-item-renderer h4, ytd-chapter-renderer h4')
+    )
       .map((el) => (el.textContent || '').trim())
       .filter(Boolean);
     return titles.slice(0, 12);
@@ -625,7 +648,8 @@
 
   function chooseExtractionResult(readabilityResult, fallbackResult, signals) {
     const scored = [];
-    if (readabilityResult) scored.push(scoreExtractionCandidate(readabilityResult, 'readability', signals));
+    if (readabilityResult)
+      scored.push(scoreExtractionCandidate(readabilityResult, 'readability', signals));
     if (fallbackResult) scored.push(scoreExtractionCandidate(fallbackResult, 'fallback', signals));
     scored.sort((a, b) => b.score - a.score || b.contentLength - a.contentLength);
     return scored[0] || null;
@@ -638,7 +662,8 @@
     const hasVideo = document.querySelectorAll('video').length > 0;
     const hasContentEditable = document.querySelectorAll('[contenteditable]').length > 5;
     const bodyText = document.body?.innerText || '';
-    const imageDensity = (bodyText.length > 0) ? (document.images.length / (bodyText.length / 1000)) : 0;
+    const imageDensity =
+      bodyText.length > 0 ? document.images.length / (bodyText.length / 1000) : 0;
     return hasCanvas || hasVideo || hasContentEditable || imageDensity > 5;
   }
 
@@ -767,7 +792,10 @@
     if (request.action === 'getTabContent' || request.action === 'getLoadContent') {
       if (_pendingTabContentRequest) {
         console.log(`PromptPaul Content Script: Skipping duplicate ${request.action} request.`);
-        sendResponse({ success: false, error: 'Content extraction is already running for this tab.' });
+        sendResponse({
+          success: false,
+          error: 'Content extraction is already running for this tab.',
+        });
         return true;
       }
       _pendingTabContentRequest = true;

@@ -300,6 +300,37 @@ body.dark-theme ::selection {
   display: none !important;
 }
 
+#selected-text-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ext-border);
+  border-radius: 8px;
+  background-color: var(--ext-muted);
+  box-shadow: var(--ext-shadow-sm);
+}
+
+#selected-text-strip[hidden] {
+  display: none !important;
+}
+
+.selected-text-strip-icon {
+  flex: 0 0 auto;
+  color: var(--ext-primary);
+  font-size: 22px;
+}
+
+/* Higher specificity than .attachment-details so the 2-line clamp wins. */
+#selected-text-strip .selected-text-snippet {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .attachment-thumbnail {
   width: 44px;
   height: 44px;
@@ -415,6 +446,7 @@ body.dark-theme ::selection {
   font-size: 0.75rem;
   box-shadow: none;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .copy-action-button:hover {
@@ -422,6 +454,21 @@ body.dark-theme ::selection {
   color: var(--ext-primary);
   transform: none;
   box-shadow: none;
+}
+
+/* Click confirmation states (auto-reverts after ~1.5s) */
+.copy-action-button.copied,
+.copy-action-button.copied:hover {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #16a34a;
+}
+
+.copy-action-button.copy-error,
+.copy-action-button.copy-error:hover {
+  background: var(--ext-destructive);
+  color: var(--ext-destructive-foreground);
+  border-color: var(--ext-destructive);
 }
 
 .loaded-content-actions {
@@ -451,63 +498,6 @@ body.dark-theme ::selection {
 
 .chat-empty-state button {
   margin-top: 1rem;
-}
-
-.consent-banner {
-  margin: 1rem auto;
-  max-width: 400px;
-  padding: 1rem 1.25rem;
-  text-align: center;
-  border: 1px solid var(--ext-border);
-  background: var(--ext-card);
-  color: var(--ext-card-foreground);
-  box-shadow: var(--ext-shadow-sm);
-  border-radius: 8px;
-}
-
-.consent-banner[hidden] {
-  display: none;
-}
-
-.consent-banner p {
-  margin: 0 0 0.75rem;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: var(--ext-muted-foreground);
-}
-
-.consent-actions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.consent-btn {
-  padding: 0.4rem 1rem;
-  border: 1px solid var(--ext-border);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
-}
-
-.consent-accept {
-  background: var(--ext-primary);
-  color: var(--ext-primary-foreground);
-  border-color: var(--ext-primary);
-}
-
-.consent-accept:hover {
-  opacity: 0.9;
-}
-
-.consent-decline {
-  background: transparent;
-  color: var(--ext-card-foreground);
-}
-
-.consent-decline:hover {
-  background: var(--ext-muted);
 }
 
 .llm-message .copy-icons-container {
@@ -1118,7 +1108,7 @@ td {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .drop-overlay-icon {
@@ -1143,8 +1133,12 @@ td {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ── Code Block Copy Button ────────────────────────────────────── */
@@ -1173,7 +1167,9 @@ td {
   font-family: inherit;
   color: var(--ext-foreground);
   opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease;
   z-index: 2;
   line-height: 1.4;
 }

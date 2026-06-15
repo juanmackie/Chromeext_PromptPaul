@@ -29,8 +29,7 @@ export async function selectOptimalProfile(profiles, selectedProfileId, mediaDat
   const needsVision = mediaData && (mediaData.type === 'image' || mediaData.type === 'video');
 
   const currentProfile =
-    profiles.find((p) => p.id === selectedProfileId) ||
-    profiles.find((p) => p.id === 'default');
+    profiles.find((p) => p.id === selectedProfileId) || profiles.find((p) => p.id === 'default');
 
   // If no vision needed or current profile already supports it, use current
   if (!needsVision || (currentProfile && modelSupportsVision(currentProfile.modelName))) {

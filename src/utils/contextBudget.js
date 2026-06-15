@@ -113,7 +113,9 @@ export function estimateTextTokens(text) {
 }
 
 function inferModelContextTokens(modelId) {
-  const model = String(modelId || '').trim().toLowerCase();
+  const model = String(modelId || '')
+    .trim()
+    .toLowerCase();
   if (!model) return DEFAULT_MODEL_CONTEXT_TOKENS;
   if (/\b(?:spark|fast|mini)\b/u.test(model)) return 64000;
   if (/\b(?:5\.5|5\.4|5\.2|gpt-5|gpt-4|claude-3|claude-4|pro)\b/u.test(model)) return 128000;

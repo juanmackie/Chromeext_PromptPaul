@@ -1,341 +1,245 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-bs-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prompt Paul Config</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
+    />
+    <link rel="stylesheet" href="libs/bootstrap.min.css" />
     <link rel="stylesheet" href="theme.css" />
     <link rel="stylesheet" href="options.css" />
     <link rel="stylesheet" href="loading-states.css" />
   </head>
   <body>
-    <a href="#llmEndpoint" class="skip-link">Skip to settings</a>
-    <main class="container">
-      <div class="page-header">
-        <h1>&#10024; Prompt Paul</h1>
-        <p class="subtitle">Context aware instant AI Insights, a mouse click away</p>
+    <a href="#llmEndpoint" class="visually-hidden-focusable">Skip to settings</a>
+    <div class="container py-4" style="max-width:960px">
+      <div class="text-center mb-4">
+        <span class="material-symbols-outlined text-primary" style="font-size:2.25rem">auto_awesome</span>
+        <h1 class="fs-2 fw-bold text-primary mt-1 mb-0">Prompt Paul</h1>
+        <p class="text-secondary-emphasis small mt-1">Context aware instant AI Insights, a mouse click away</p>
       </div>
 
       <!-- Connection Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">
-            <span class="material-symbols-outlined section-icon">link</span>
-            Connection
-          </h2>
-          <div class="section-divider"></div>
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">link</span>
+          <h2 class="fs-5 fw-semibold mb-0">Connection</h2>
         </div>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
 
-        <div class="button-container">
-          <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="ko-fi-link">
-            <button class="ko-fi-button">&#9749; Buy me a coffee</button>
-          </a>
-          <button id="revertDefaultsButton" class="revert-button">
-            Reset Configuration
-          </button>
-          <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">
-            <button id="feedbackButton" class="feedback-button">Feedback</button>
-          </a>
+        <div class="d-flex gap-2 flex-wrap mb-3">
+          <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="btn btn-outline-primary btn-sm">&#9749; Buy me a coffee</a>
+          <button id="revertDefaultsButton" class="btn btn-outline-danger btn-sm">Reset Configuration</button>
+          <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank" class="btn btn-outline-primary btn-sm">Feedback</a>
         </div>
-        <p>
+        <p class="text-secondary-emphasis small">
           Enter your LLM endpoint, API key, and model name to use Prompt Paul. API keys are stored
           in Chrome storage and sent only when you send a prompt.
         </p>
 
-        <form id="optionsForm" class="grid-form">
-          <div class="form-field col-span-12">
+        <form id="optionsForm">
+          <div class="mb-3">
             <label for="llmEndpoint" class="form-label">
               LLM API Endpoint
-              <button
-                type="button"
-                class="help-tooltip"
-                data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
-              >
-                <span class="material-symbols-outlined">help</span>
+              <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                      data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
+                      aria-label="Help" tabindex="-1">
+                <span class="material-symbols-outlined" style="font-size:1rem">help</span>
               </button>
             </label>
-            <input
-              type="url"
-              id="llmEndpoint"
-              class="shadcn-input"
-              placeholder="https://your-llm-provider.example/v1/chat/completions"
-              required
-            />
-            <div class="field-error" id="llmEndpointError"></div>
+            <input type="url" id="llmEndpoint" class="form-control"
+                   placeholder="https://your-llm-provider.example/v1/chat/completions" required />
+            <div class="invalid-feedback" id="llmEndpointError"></div>
           </div>
 
-          <div class="form-field col-span-12">
+          <div class="mb-3">
             <label for="apiKey" class="form-label">
               API Key
-              <button
-                type="button"
-                class="help-tooltip"
-                data-tooltip="Your API key for authentication. Keep this secure and never share it publicly."
-              >
-                <span class="material-symbols-outlined">help</span>
+              <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                      data-tooltip="Your API key for authentication. Keep this secure and never share it publicly." aria-label="Help">
+                <span class="material-symbols-outlined" style="font-size:1rem">help</span>
               </button>
             </label>
-            <div class="password-input-container">
-              <input
-                type="password"
-                id="apiKey"
-                class="shadcn-input password-input"
-                placeholder="sk-..."
-                required
-              />
-              <button type="button" class="password-toggle" id="apiKeyToggle">
-                <span class="material-symbols-outlined">visibility</span>
+            <div class="input-group">
+              <input type="password" id="apiKey" class="form-control" placeholder="sk-..." required />
+              <button type="button" class="btn btn-outline-secondary" id="apiKeyToggle">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">visibility</span>
               </button>
-              <button type="button" class="copy-button" id="apiKeyCopy">
-                <span class="material-symbols-outlined">content_copy</span>
+              <button type="button" class="btn btn-outline-secondary" id="apiKeyCopy">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">content_copy</span>
               </button>
             </div>
-            <div class="field-error" id="apiKeyError"></div>
+            <div class="invalid-feedback" id="apiKeyError"></div>
           </div>
 
-          <!-- Model Configuration Fields -->
-          <div class="form-field col-span-4">
-            <label for="modelName" class="form-label">
-              Model Name
-              <button
-                type="button"
-                class="help-tooltip"
-                data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits."
-              >
-                <span class="material-symbols-outlined">help</span>
-              </button>
-            </label>
-            <div class="model-selector-container">
-              <input
-                type="text"
-                id="modelName"
-                class="shadcn-input"
-                placeholder="Enter model name"
-                required
-              />
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label for="modelName" class="form-label">
+                Model Name
+                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                        data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits." aria-label="Help">
+                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                </button>
+              </label>
+              <input type="text" id="modelName" class="form-control" placeholder="Enter model name" required />
+              <div class="invalid-feedback" id="modelNameError"></div>
             </div>
-            <div class="field-error" id="modelNameError"></div>
+            <div class="col-md-4">
+              <label class="form-label">Streaming Responses</label>
+              <div class="form-check form-switch mt-1">
+                <input class="form-check-input" type="checkbox" id="enableStreamingToggle" checked />
+                <label class="form-check-label" for="enableStreamingToggle">Enable Streaming</label>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Theme</label>
+              <div class="form-check form-switch mt-1">
+                <input class="form-check-input" type="checkbox" id="darkThemeToggle" />
+                <label class="form-check-label" for="darkThemeToggle">
+                  <span class="material-symbols-outlined align-middle" style="font-size:1rem" id="darkThemeIcon">brightness_2</span>
+                  Dark Theme
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div class="form-field col-span-12">
+          <div class="mb-3 mt-3">
             <label for="systemPrompt" class="form-label">
               System Prompt (Optional)
-              <button
-                type="button"
-                class="help-tooltip"
-                data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context."
-              >
-                <span class="material-symbols-outlined">help</span>
+              <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                      data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context." aria-label="Help">
+                <span class="material-symbols-outlined" style="font-size:1rem">help</span>
               </button>
             </label>
-            <div class="system-prompt-controls">
-              <select id="promptTemplate" class="template-selector">
-                <option value="">Insert template...</option>
-                <option value="general">General Helper</option>
-                <option value="code">Code Reviewer</option>
-                <option value="summarizer">Summarizer</option>
-                <option value="analyst">Data Analyst</option>
-                <option value="writer">Creative Writer</option>
+            <select id="promptTemplate" class="form-select mb-2">
+              <option value="">Insert template...</option>
+              <option value="general">General Helper</option>
+              <option value="code">Code Reviewer</option>
+              <option value="summarizer">Summarizer</option>
+              <option value="analyst">Data Analyst</option>
+              <option value="writer">Creative Writer</option>
+            </select>
+            <textarea id="systemPrompt" class="form-control" rows="4" placeholder="You are a helpful assistant."></textarea>
+            <div class="form-text text-end"><span id="charCount">0</span> characters</div>
+            <div class="invalid-feedback" id="systemPromptError"></div>
+          </div>
+
+          <div class="row g-3 align-items-end">
+            <div class="col-md-8">
+              <label for="profileSelect" class="form-label">
+                Current Profile
+                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                        data-tooltip="Profiles save different API configurations. Switch between them for different use cases." aria-label="Help">
+                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                </button>
+              </label>
+              <select id="profileSelect" class="form-select">
+                <!-- Options will be populated by JavaScript -->
               </select>
             </div>
-            <textarea
-              id="systemPrompt"
-              class="shadcn-textarea"
-              placeholder="You are a helpful assistant."
-              rows="4"
-            ></textarea>
-            <div class="character-counter"><span id="charCount">0</span> characters</div>
-            <div class="field-error" id="systemPromptError"></div>
-          </div>
-
-          <!-- Behavior Settings -->
-          <div class="form-field col-span-6">
-            <label class="form-label">Streaming Responses</label>
-            <div class="setting-toggle">
-              <label class="toggle-label">
-                <input type="checkbox" id="enableStreamingToggle" class="toggle-input" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-text">Enable Streaming</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="form-field col-span-6">
-            <label class="form-label">Theme</label>
-            <div class="setting-toggle">
-              <label class="toggle-label">
-                <input type="checkbox" id="darkThemeToggle" class="toggle-input" />
-                <span class="toggle-slider"></span>
-                <span id="darkThemeIcon" class="material-symbols-outlined toggle-icon"
-                  >brightness_2</span
-                >
-                <span class="toggle-text">Dark Theme</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Profile Management -->
-          <div class="form-field col-span-12">
-            <label for="profileSelect" class="form-label">
-              Current Profile
-              <button
-                type="button"
-                class="help-tooltip"
-                data-tooltip="Profiles save different API configurations. Switch between them for different use cases."
-              >
-                <span class="material-symbols-outlined">help</span>
+            <div class="col-md-2">
+              <button type="button" id="addProfileButton" class="btn btn-outline-primary w-100">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">add</span> New
               </button>
-            </label>
-            <select id="profileSelect" class="shadcn-input">
-              <!-- Options will be populated by JavaScript -->
-            </select>
-          </div>
-          <div class="form-field col-span-6 profile-button-field">
-            <label class="form-label">&nbsp;</label>
-            <button type="button" id="addProfileButton" class="btn-secondary w-full">
-              <span class="material-symbols-outlined">add</span> New Profile
-            </button>
-          </div>
-          <div class="form-field col-span-6 profile-button-field">
-            <label class="form-label">&nbsp;</label>
-            <button type="button" id="deleteProfileButton" class="btn-destructive w-full" disabled>
-              <span class="material-symbols-outlined">delete</span> Delete
-            </button>
+            </div>
+            <div class="col-md-2">
+              <button type="button" id="deleteProfileButton" class="btn btn-danger w-100" disabled>
+                <span class="material-symbols-outlined" style="font-size:1.25rem">delete</span> Delete
+              </button>
+            </div>
           </div>
 
-          <div class="form-field col-span-12">
-            <button type="submit" id="save" class="btn-primary">
-              <span class="material-symbols-outlined mr-2">save</span> Save Settings
+          <div class="mt-3">
+            <button type="submit" id="save" class="btn btn-primary">
+              <span class="material-symbols-outlined me-1" style="font-size:1.25rem">save</span> Save Settings
             </button>
           </div>
         </form>
       </section>
 
       <!-- Privacy Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">
-            <span class="material-symbols-outlined section-icon">shield_person</span>
-            Privacy
-          </h2>
-          <div class="section-divider"></div>
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">shield_person</span>
+          <h2 class="fs-5 fw-semibold mb-0">Privacy</h2>
         </div>
-        <div class="form-field col-span-12">
-          <label class="form-label" for="analyticsConsentToggle">Opt-in Anonymous Usage Analytics</label>
-          <div class="setting-toggle">
-            <label class="toggle-label">
-              <input type="checkbox" id="analyticsConsentToggle" class="toggle-input" />
-              <span class="toggle-slider"></span>
-              <div class="toggle-text">
-                Allow anonymous usage analytics (instructions/models/tools only)
-                <div class="hint">
-                  Event-only telemetry via Umami: instruction name, model name, and tool names used.
-                  No page URLs/titles/content or identifiers. A random instance ID rotates monthly.
-                  You can disable anytime.
-                </div>
-              </div>
-            </label>
-          </div>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="analyticsConsentToggle" />
+          <label class="form-check-label" for="analyticsConsentToggle">
+            Opt-in Anonymous Usage Analytics
+          </label>
         </div>
-        <div class="form-field col-span-12">
-          <label class="form-label">Microphone Access (Voice Input)</label>
-          <div class="setting-toggle" style="margin-top: 8px">
-            <label class="toggle-label">
-              <input type="checkbox" id="voiceInputEnabledToggle" class="toggle-input" checked />
-              <span class="toggle-slider"></span>
-              <div class="toggle-text">
-                Enable voice input
-                <div class="hint">
-                  Keeps the mic button visible in chat. Turning this off prevents new microphone
-                  requests until you enable it again.
-                </div>
-              </div>
-            </label>
-          </div>
-          <div class="mic-test-row">
-            <button
-              type="button"
-              id="testMicPermissionBtn"
-              class="btn-secondary mic-test-btn"
-            >
-              <span
-                class="material-symbols-outlined"
-                >mic</span
-              >
-              Test Microphone Access
-            </button>
-            <span
-              id="micPermissionStatus"
-              class="mic-permission-status"
-              >Not tested</span
-            >
-          </div>
-          <div class="hint" style="margin-top: 8px">
-            Required for voice input in the side panel. If browser permission is denied, re-enable
-            voice input here and click the test button to request access again.
-          </div>
+        <div class="form-text mt-0 mb-3">
+          Event-only telemetry via Umami: instruction name, model name, and tool names used.
+          No page URLs/titles/content or identifiers. A random instance ID rotates monthly.
+          You can disable anytime.
+        </div>
+
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="voiceInputEnabledToggle" checked />
+          <label class="form-check-label" for="voiceInputEnabledToggle">
+            Enable voice input
+          </label>
+        </div>
+        <div class="form-text mt-0 mb-3">
+          Keeps the mic button visible in chat. Turning this off prevents new microphone
+          requests until you enable it again.
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+          <button type="button" id="testMicPermissionBtn" class="btn btn-outline-primary">
+            <span class="material-symbols-outlined" style="font-size:1.25rem">mic</span>
+            Test Microphone Access
+          </button>
+          <span id="micPermissionStatus" class="text-secondary small">Not tested</span>
+        </div>
+        <div class="form-text">
+          Required for voice input in the side panel. If browser permission is denied, re-enable
+          voice input here and click the test button to request access again.
         </div>
       </section>
 
-      <!-- Configuration Complete -->
-
       <!-- Instructions Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title collapsible-header">
-            <span class="material-symbols-outlined section-icon">description</span>
-            Instructions
-            <span class="collapsible-icon material-symbols-outlined">expand_more</span>
-          </h2>
-          <div class="section-divider"></div>
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-0" data-bs-toggle="collapse" data-bs-target="#instructionsCollapse" role="button" aria-expanded="true">
+          <span class="material-symbols-outlined text-primary">description</span>
+          <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Instructions</h2>
+          <span class="material-symbols-outlined collapsible-icon">expand_less</span>
         </div>
-        <div class="collapsible-content">
-          <div
-            id="migrationPrompt"
-            class="migration-prompt"
-          >
-            <span>
-              <strong>Instructions Migration:</strong> Instructions are now stored only on this
-              device. Would you like to migrate your existing instructions from sync storage?
-            </span>
-            <div class="button-group" style="margin-top: 0.5em">
-              <button type="button" id="migrateInstructionsBtn" class="save-instruction-button">
-                &#128190; Migrate
-              </button>
-              <button type="button" id="dismissMigrationBtn" class="clear-form-button">
-                &#10006; Dismiss
-              </button>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <div class="collapse show" id="instructionsCollapse">
+          <div id="migrationPrompt" class="d-none">
+            <p class="mb-2"><strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?</p>
+            <div class="d-flex gap-2 mb-3">
+              <button type="button" id="migrateInstructionsBtn" class="btn btn-primary btn-sm">&#128190; Migrate</button>
+              <button type="button" id="dismissMigrationBtn" class="btn btn-outline-secondary btn-sm">&#10006; Dismiss</button>
             </div>
           </div>
 
           <div id="instructions-list">
-            <div class="instructions-toolbar">
-              <div class="instructions-search">
-                <label for="instructionSearch" class="sr-only">Search instructions</label>
-                <input
-                  type="search"
-                  id="instructionSearch"
-                  class="shadcn-input"
-                  placeholder="Search instructions by name, content, or tags"
-                  autocomplete="off"
-                />
-                <div class="instructions-search-hint">
-                  Ctrl/Cmd + K to focus search
-                </div>
+            <div class="d-flex justify-content-between align-items-end gap-3 mb-2 flex-wrap">
+              <div class="flex-fill" style="min-width:20rem">
+                <label for="instructionSearch" class="visually-hidden">Search instructions</label>
+                <input type="search" id="instructionSearch" class="form-control" placeholder="Search instructions by name, content, or tags" autocomplete="off" />
+                <div class="form-text">Ctrl/Cmd + K to focus search</div>
               </div>
-              <div class="instructions-count" id="instructionsCount">0 instructions</div>
+              <div class="text-secondary-emphasis small fw-semibold text-nowrap" id="instructionsCount">0 instructions</div>
             </div>
-            <div class="table-container">
-              <table id="instructionsTable" class="responsive-table">
-                <thead class="sticky-header">
+            <div class="table-responsive">
+              <table id="instructionsTable" class="table table-hover align-middle">
+                <thead class="table-secondary">
                   <tr>
-                    <th>Name</th>
-                    <th>Tags</th>
-                    <th>Content</th>
-                    <th>Tool Choice</th>
-                    <th>Pin</th>
-                    <th>Actions</th>
+                    <th style="width:16%">Name</th>
+                    <th style="width:16%">Tags</th>
+                    <th style="width:22%">Content</th>
+                    <th style="width:13%">Tool Choice</th>
+                    <th style="width:8%">Pin</th>
+                    <th style="width:25%" class="text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -343,53 +247,38 @@
                 </tbody>
               </table>
             </div>
-
-            <!-- Mobile card view -->
-            <div id="instructions-cards" class="mobile-cards">
+            <div id="instructions-cards" class="d-block d-md-none">
               <!-- Cards will be populated by JavaScript on mobile -->
             </div>
           </div>
 
-          <div
-            class="instruction-form"
-          >
-            <h3>Add/Edit Instruction</h3>
-            <div class="form-group">
-              <label for="instructionName">Instruction Name</label>
-              <input type="text" id="instructionName" placeholder="Enter instruction name" />
+          <div class="mt-3 pt-3 border-top">
+            <h3 class="fs-6 fw-semibold">Add/Edit Instruction</h3>
+            <div class="mb-3">
+              <label for="instructionName" class="form-label">Instruction Name</label>
+              <input type="text" id="instructionName" class="form-control" placeholder="Enter instruction name" />
             </div>
-            <div class="form-group">
-              <label for="instructionContent">Instruction Content</label>
-              <textarea
-                id="instructionContent"
-                placeholder="Enter instruction content"
-                rows="4"
-              ></textarea>
+            <div class="mb-3">
+              <label for="instructionContent" class="form-label">Instruction Content</label>
+              <textarea id="instructionContent" class="form-control" placeholder="Enter instruction content" rows="4"></textarea>
             </div>
-            <div class="form-group">
-              <label for="instructionTags">Tags</label>
-              <input
-                type="text"
-                id="instructionTags"
-                placeholder="e.g. research, writing, gmail"
-              />
-              <small>Comma-separated tags for search and organization.</small>
+            <div class="mb-3">
+              <label for="instructionTags" class="form-label">Tags</label>
+              <input type="text" id="instructionTags" class="form-control" placeholder="e.g. research, writing, gmail" />
+              <div class="form-text">Comma-separated tags for search and organization.</div>
             </div>
-            <div class="form-group">
-              <label for="instructionToolChoice">Tool Choice</label>
-              <select id="instructionToolChoice" class="shadcn-input">
+            <div class="mb-3">
+              <label for="instructionToolChoice" class="form-label">Tool Choice</label>
+              <select id="instructionToolChoice" class="form-select">
                 <option value="none">None</option>
                 <option value="auto">Auto</option>
                 <!-- Tools will be populated here by options.js -->
               </select>
-              <small
-                >Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows
-                any available tool.</small
-              >
+              <div class="form-text">Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</div>
             </div>
 
-            <div class="form-group">
-              <label>Available Modalities</label>
+            <div class="mb-3">
+              <label class="form-label">Available Modalities</label>
               <div class="modality-checkboxes">
                 <div class="modality-option">
                   <input type="checkbox" id="modalityText" value="text" checked />
@@ -423,34 +312,28 @@
                   </label>
                 </div>
               </div>
-              <small
-                >Select which types of content this instruction can be applied to. Text is always
-                available for general use.<i>(Ensure your model supports multi modality)</i></small
-              >
+              <div class="form-text">Select which types of content this instruction can be applied to. Text is always available for general use. <i>(Ensure your model supports multi modality)</i></div>
             </div>
             <input type="hidden" id="instructionId" />
-            <div class="button-group">
-              <button type="button" id="saveInstruction" class="save-instruction-button">
-                <span class="material-symbols-outlined">save</span> Save Instruction
+            <div class="d-flex gap-2">
+              <button type="button" id="saveInstruction" class="btn btn-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">save</span> Save Instruction
               </button>
-              <button type="button" id="clearForm" class="clear-form-button">
-                <span class="material-symbols-outlined">clear_all</span>
-                Clear Form
+              <button type="button" id="clearForm" class="btn btn-outline-secondary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">clear_all</span> Clear Form
               </button>
             </div>
           </div>
 
-          <div
-            class="import-export"
-          >
-            <h3>Import/Export Instructions</h3>
-            <div class="button-group">
-              <button type="button" id="exportInstructions" class="export-button">
-                <span class="material-symbols-outlined">upload</span> Export Instructions
+          <div class="mt-3 pt-3 border-top">
+            <h3 class="fs-6 fw-semibold">Import/Export Instructions</h3>
+            <div class="d-flex gap-2">
+              <button type="button" id="exportInstructions" class="btn btn-outline-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">upload</span> Export Instructions
               </button>
-              <input type="file" id="importFile" accept=".json" style="display: none" />
-              <button type="button" id="importInstructions" class="import-button">
-                <span class="material-symbols-outlined">download</span> Import Instructions
+              <input type="file" id="importFile" accept=".json" class="d-none" />
+              <button type="button" id="importInstructions" class="btn btn-outline-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">download</span> Import Instructions
               </button>
             </div>
           </div>
@@ -458,125 +341,79 @@
       </section>
 
       <!-- Skills Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title collapsible-header">
-            <span class="material-symbols-outlined section-icon">school</span>
-            Agent Skills
-            <span class="collapsible-icon material-symbols-outlined">expand_more</span>
-          </h2>
-          <div class="section-divider"></div>
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-0" data-bs-toggle="collapse" data-bs-target="#skillsCollapse" role="button" aria-expanded="false">
+          <span class="material-symbols-outlined text-primary">school</span>
+          <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Agent Skills</h2>
+          <span class="material-symbols-outlined collapsible-icon">expand_more</span>
         </div>
-        <div class="collapsible-content">
-          <p>
-            Manage skills that provide specialized AI capabilities. Skills are loaded on demand and
-            can be invoked via slash commands.
-          </p>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <div class="collapse" id="skillsCollapse">
+          <p class="text-secondary-emphasis small">Manage skills that provide specialized AI capabilities. Skills are loaded on demand and can be invoked via slash commands.</p>
 
-          <!-- Skill Help Box -->
-          <div
-            class="skill-help-box"
-          >
-            <h3>
-              <span class="material-symbols-outlined">help_outline</span>
-              How to Use Skills
-            </h3>
-
-            <div style="margin-bottom: 1rem">
-              <h4>Slash Commands</h4>
-              <ul>
-                <li>
-                  <code>/skills</code>
-                  - List all available skills
-                </li>
-                <li>
-                  <code>/skill &lt;name&gt; [input]</code>
-                  - Invoke any skill (canonical method)
-                </li>
-                <li>
-                  <code>/&lt;skill-name&gt;</code>
-                  - Quick command for user-invocable skills
-                </li>
+          <div class="skill-help-box border p-3 mb-3">
+            <h3 class="fs-6 fw-semibold"><span class="material-symbols-outlined align-middle" style="font-size:1.25rem">help_outline</span> How to Use Skills</h3>
+            <div class="mb-3">
+              <h4 class="fs-6 fw-medium">Slash Commands</h4>
+              <ul class="small mb-0">
+                <li><code>/skills</code> - List all available skills</li>
+                <li><code>/skill &lt;name&gt; [input]</code> - Invoke any skill (canonical method)</li>
+                <li><code>/&lt;skill-name&gt;</code> - Quick command for user-invocable skills</li>
               </ul>
             </div>
-
-            <div style="margin-bottom: 1rem">
-              <h4>Examples</h4>
-              <ul>
-                <li>
-                  <code>/skill humanizer Rewrite this text...</code>
-                </li>
-                <li>
-                  <code>/humanizer Make this sound more natural...</code>
-                </li>
-                <li>
-                  <code>use humanizer skill and rewrite this paragraph</code>
-                  (natural language)
-                </li>
+            <div class="mb-3">
+              <h4 class="fs-6 fw-medium">Examples</h4>
+              <ul class="small mb-0">
+                <li><code>/skill humanizer Rewrite this text...</code></li>
+                <li><code>/humanizer Make this sound more natural...</code></li>
+                <li><code>use humanizer skill and rewrite this paragraph</code> (natural language)</li>
               </ul>
             </div>
-
-            <div style="margin-bottom: 1rem">
-              <h4>Skill Metadata Fields</h4>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>user-invocable</td>
-                    <td>
-                      Creates a shortcut command <code>/skillname</code> when true (default: true)
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>disable-model-invocation</td>
-                    <td>
-                      Hides skill from AI suggestions but keeps it explicitly invocable
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>command-dispatch</td>
-                    <td>
-                      Set to "tool" for deterministic execution bypassing the AI model
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>command-tool</td>
-                    <td>
-                      Tool name to invoke when command-dispatch is "tool"
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>metadata</td>
-                    <td>
-                      OpenClaw-compatible JSON metadata (e.g., requires, install)
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="mb-0">
+              <h4 class="fs-6 fw-medium">Skill Metadata Fields</h4>
+              <div class="table-responsive">
+                <table class="table table-sm table-borderless small mb-0">
+                  <thead>
+                    <tr>
+                      <th style="width:30%">Field</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>user-invocable</td>
+                      <td>Creates a shortcut command <code>/skillname</code> when true (default: true)</td>
+                    </tr>
+                    <tr>
+                      <td>disable-model-invocation</td>
+                      <td>Hides skill from AI suggestions but keeps it explicitly invocable</td>
+                    </tr>
+                    <tr>
+                      <td>command-dispatch</td>
+                      <td>Set to "tool" for deterministic execution bypassing the AI model</td>
+                    </tr>
+                    <tr>
+                      <td>command-tool</td>
+                      <td>Tool name to invoke when command-dispatch is "tool"</td>
+                    </tr>
+                    <tr>
+                      <td>metadata</td>
+                      <td>OpenClaw-compatible JSON metadata (e.g., requires, install)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-
-            <p class="skill-help-box-footer">
-              <span
-                class="material-symbols-outlined"
-                >info</span
-              >
-              Skills follow the
-              <a href="https://agentskills.io" target="_blank"
-                >Agent Skills</a
-              >
-              specification and are compatible with OpenClaw-style metadata.
+            <p class="small mt-2 mb-0">
+              <span class="material-symbols-outlined align-middle" style="font-size:1rem">info</span>
+              Skills follow the <a href="https://agentskills.io" target="_blank">Agent Skills</a> specification and are compatible with OpenClaw-style metadata.
             </p>
           </div>
 
-          <div id="skills-list">
-            <div class="table-container">
-              <table id="skillsTable" class="responsive-table">
-                <thead class="sticky-header">
+          <div id="skills-list" class="mb-3">
+            <div class="table-responsive">
+              <table id="skillsTable" class="table table-hover align-middle">
+                <thead class="table-secondary">
                   <tr>
                     <th>Name</th>
                     <th>Description</th>
@@ -589,115 +426,59 @@
                 </tbody>
               </table>
             </div>
-
-            <!-- Mobile card view -->
-            <div id="skills-cards" class="mobile-cards">
+            <div id="skills-cards" class="d-block d-md-none">
               <!-- Cards will be populated by JavaScript on mobile -->
             </div>
           </div>
 
-          <!-- Import from skills.sh -->
-          <div
-            class="skills-sh-import"
-          >
-            <h3>
-              <span
-                class="material-symbols-outlined"
-                >cloud_download</span
-              >
-              Import from skills.sh
-            </h3>
-            <p>
-              Paste a skills.sh URL to import a skill directly.
-              <a href="https://skills.sh" target="_blank"
-                >Browse skills.sh</a
-              >
-            </p>
-            <div class="import-row">
-              <input
-                type="text"
-                id="skillsShUrl"
-                class="shadcn-input"
-                placeholder="https://skills.sh/owner/repo/skill-name"
-              />
-              <button
-                type="button"
-                id="importSkillsShBtn"
-                class="btn-primary"
-              >
-                <span class="material-symbols-outlined">add</span> Import
+          <div class="mb-3">
+            <h3 class="fs-6 fw-semibold"><span class="material-symbols-outlined align-middle" style="font-size:1.25rem">cloud_download</span> Import from skills.sh</h3>
+            <p class="small">Paste a skills.sh URL to import a skill directly. <a href="https://skills.sh" target="_blank">Browse skills.sh</a></p>
+            <div class="input-group mb-2">
+              <input type="text" id="skillsShUrl" class="form-control" placeholder="https://skills.sh/owner/repo/skill-name" />
+              <button type="button" id="importSkillsShBtn" class="btn btn-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">add</span> Import
               </button>
             </div>
-            <div
-              id="skillsShStatus"
-              class="skills-sh-status"
-            ></div>
-            <button
-              type="button"
-              id="findSkillsShBtn"
-              class="btn-secondary"
-              style="margin-top: 0.5rem; width: 100%"
-            >
-              <span class="material-symbols-outlined"
-                >travel_explore</span
-              >
-              Find Skills on skills.sh
+            <div id="skillsShStatus" class="form-text"></div>
+            <button type="button" id="findSkillsShBtn" class="btn btn-outline-primary w-100 mt-2">
+              <span class="material-symbols-outlined" style="font-size:1.25rem">travel_explore</span> Find Skills on skills.sh
             </button>
           </div>
 
-          <div
-            class="skill-form"
-          >
-            <h3>Add/Edit Skill</h3>
-
-            <div class="form-group">
-              <label for="skillName">
+          <div class="mt-3 pt-3 border-top">
+            <h3 class="fs-6 fw-semibold">Add/Edit Skill</h3>
+            <div class="mb-3">
+              <label for="skillName" class="form-label">
                 Skill Name (ID)
-                <button
-                  type="button"
-                  class="help-tooltip"
-                  data-tooltip="Unique identifier for the skill. Lowercase letters, numbers, and hyphens only. No spaces. This becomes the /command-name in chat."
-                >
-                  <span class="material-symbols-outlined">help</span>
+                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                        data-tooltip="Unique identifier for the skill. Lowercase letters, numbers, and hyphens only. No spaces. This becomes the /command-name in chat." aria-label="Help">
+                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
                 </button>
               </label>
-              <input type="text" id="skillName" placeholder="e.g., python-coding-guide" />
-              <small>Unique identifier used for commands (no spaces, lowercase).</small>
+              <input type="text" id="skillName" class="form-control" placeholder="e.g., python-coding-guide" />
+              <div class="form-text">Unique identifier used for commands (no spaces, lowercase).</div>
             </div>
-
-            <div class="form-group">
-              <label for="skillDescription">
+            <div class="mb-3">
+              <label for="skillDescription" class="form-label">
                 Description
-                <button
-                  type="button"
-                  class="help-tooltip"
-                  data-tooltip="Brief description of what the skill does. This is shown to users in /skills list and helps the AI understand when to use this skill."
-                >
-                  <span class="material-symbols-outlined">help</span>
+                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                        data-tooltip="Brief description of what the skill does. This is shown to users in /skills list and helps the AI understand when to use this skill." aria-label="Help">
+                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
                 </button>
               </label>
-              <textarea
-                id="skillDescription"
-                placeholder="e.g., Best practices for Python coding with type hints and modern patterns."
-                rows="2"
-              ></textarea>
-              <small>Brief description used for discovery and AI selection.</small>
+              <textarea id="skillDescription" class="form-control" placeholder="e.g., Best practices for Python coding with type hints and modern patterns." rows="2"></textarea>
+              <div class="form-text">Brief description used for discovery and AI selection.</div>
             </div>
-
-            <div class="form-group">
-              <label for="skillContent">
+            <div class="mb-3">
+              <label for="skillContent" class="form-label">
                 Instructions (Markdown)
-                <button
-                  type="button"
-                  class="help-tooltip"
-                  data-tooltip="Detailed instructions for the AI on how to use this skill. Write in Markdown format. These instructions are injected directly when the skill is invoked."
-                >
-                  <span class="material-symbols-outlined">help</span>
+                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                        data-tooltip="Detailed instructions for the AI on how to use this skill. Write in Markdown format." aria-label="Help">
+                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
                 </button>
               </label>
-              <textarea
-                id="skillContent"
-                placeholder="# Your Skill Name
+              <textarea id="skillContent" class="form-control" rows="10" placeholder="# Your Skill Name
 
 ## Purpose
 What this skill does and when to use it.
@@ -709,112 +490,80 @@ What this skill does and when to use it.
 
 ## Examples
 **Input:** Example input here
-**Output:** Expected output here"
-                rows="10"
-              ></textarea>
-              <small>Detailed Markdown instructions for the AI.</small>
+**Output:** Expected output here"></textarea>
+              <div class="form-text">Detailed Markdown instructions for the AI.</div>
             </div>
-
-            <!-- OpenClaw-style Fields -->
-            <div class="form-group">
-              <label for="skillMetadata">
+            <div class="mb-3">
+              <label for="skillMetadata" class="form-label">
                 Metadata (JSON)
-                <button
-                  type="button"
-                  class="help-tooltip"
-                  data-tooltip='OpenClaw-compatible metadata as JSON object. Supports nested objects for requirements, installers, etc. Example: {"prompt-paul-tags": "coding, python", "openclaw": {"requires": {"bins": ["python"]}}}.'
-                >
-                  <span class="material-symbols-outlined">help</span>
+                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                        data-tooltip='OpenClaw-compatible metadata as JSON object. Example: {"prompt-paul-tags": "coding, python", "openclaw": {"requires": {"bins": ["python"]}}}.' aria-label="Help">
+                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
                 </button>
               </label>
-              <textarea
-                id="skillMetadata"
-                placeholder='{"tags": "coding, help"}'
-                rows="3"
-              ></textarea>
-              <small>Optional OpenClaw-compatible metadata (JSON format).</small>
+              <textarea id="skillMetadata" class="form-control" placeholder='{"tags": "coding, help"}' rows="3"></textarea>
+              <div class="form-text">Optional OpenClaw-compatible metadata (JSON format).</div>
             </div>
-
-            <div
-              class="form-row-2col"
-            >
-              <div class="form-group">
-                <label
-                  for="skillUserInvocable"
-                  class="checkbox-label checkbox-label-inline"
-                >
-                  <input type="checkbox" id="skillUserInvocable" checked />
-                  <span>User Invocable</span>
-                  <button
-                    type="button"
-                    class="help-tooltip"
-                    data-tooltip="When checked, creates a shortcut command /skillname for quick access. Disable to only allow invocation via /skill name."
-                  >
-                    <span class="material-symbols-outlined">help</span>
-                  </button>
-                </label>
-                <small>Creates /name shortcut command</small>
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <div class="form-check">
+                  <input type="checkbox" id="skillUserInvocable" class="form-check-input" checked />
+                  <label for="skillUserInvocable" class="form-check-label">
+                    User Invocable
+                    <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                            data-tooltip="When checked, creates a shortcut command /skillname for quick access." aria-label="Help">
+                      <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                    </button>
+                  </label>
+                </div>
+                <div class="form-text">Creates /name shortcut command</div>
               </div>
-
-              <div class="form-group">
-                <label
-                  for="skillDisableModelInvocation"
-                  class="checkbox-label checkbox-label-inline"
-                >
-                  <input type="checkbox" id="skillDisableModelInvocation" />
-                  <span>Disable Model Invocation</span>
-                  <button
-                    type="button"
-                    class="help-tooltip"
-                    data-tooltip="When checked, the skill won't be suggested to the AI automatically. It remains available for explicit user invocation via slash commands."
-                  >
-                    <span class="material-symbols-outlined">help</span>
-                  </button>
-                </label>
-                <small>Hide from AI suggestions</small>
+              <div class="col-md-6">
+                <div class="form-check">
+                  <input type="checkbox" id="skillDisableModelInvocation" class="form-check-input" />
+                  <label for="skillDisableModelInvocation" class="form-check-label">
+                    Disable Model Invocation
+                    <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                            data-tooltip="When checked, the skill won't be suggested to the AI automatically." aria-label="Help">
+                      <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                    </button>
+                  </label>
+                </div>
+                <div class="form-text">Hide from AI suggestions</div>
               </div>
             </div>
-
-            <div
-              class="form-row-2col"
-            >
-              <div class="form-group">
-                <label for="skillLicense">License</label>
-                <input type="text" id="skillLicense" placeholder="MIT" />
-                <small>License identifier (e.g., MIT, Apache-2.0)</small>
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label for="skillLicense" class="form-label">License</label>
+                <input type="text" id="skillLicense" class="form-control" placeholder="MIT" />
+                <div class="form-text">License identifier (e.g., MIT, Apache-2.0)</div>
               </div>
-
-              <div class="form-group">
-                <label for="skillCompatibility">Compatibility</label>
-                <input type="text" id="skillCompatibility" placeholder="Extension version" />
-                <small>Version compatibility info</small>
+              <div class="col-md-6">
+                <label for="skillCompatibility" class="form-label">Compatibility</label>
+                <input type="text" id="skillCompatibility" class="form-control" placeholder="Extension version" />
+                <div class="form-text">Version compatibility info</div>
               </div>
             </div>
-
             <input type="hidden" id="skillId" />
-
-            <div class="button-group">
-              <button type="button" id="saveSkill" class="save-button">
-                <span class="material-symbols-outlined">save</span> Save Skill
+            <div class="d-flex gap-2">
+              <button type="button" id="saveSkill" class="btn btn-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">save</span> Save Skill
               </button>
-              <button type="button" id="clearSkillForm" class="clear-form-button">
-                <span class="material-symbols-outlined">clear_all</span>
-                Clear Form
+              <button type="button" id="clearSkillForm" class="btn btn-outline-secondary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">clear_all</span> Clear Form
               </button>
             </div>
           </div>
 
-          <div
-            class="import-export"
-          >
-            <h3>Import/Export Skills</h3>
-            <div class="button-group">
-              <button type="button" id="exportSkills" class="export-button">
-                <span class="material-symbols-outlined">upload</span> Export Skills
+          <div class="mt-3 pt-3 border-top">
+            <h3 class="fs-6 fw-semibold">Import/Export Skills</h3>
+            <div class="d-flex gap-2">
+              <button type="button" id="exportSkills" class="btn btn-outline-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">upload</span> Export Skills
               </button>
-              <input type="file" id="importSkillsFile" accept=".json" style="display: none" />
-              <button type="button" id="importSkills" class="import-button">
-                <span class="material-symbols-outlined">download</span> Import Skills
+              <input type="file" id="importSkillsFile" accept=".json" class="d-none" />
+              <button type="button" id="importSkills" class="btn btn-outline-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">download</span> Import Skills
               </button>
             </div>
           </div>
@@ -822,29 +571,25 @@ What this skill does and when to use it.
       </section>
 
       <!-- Tools Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title collapsible-header">
-            <span class="material-symbols-outlined section-icon">build</span>
-            Tools
-            <span class="collapsible-icon material-symbols-outlined">expand_more</span>
-          </h2>
-          <div class="section-divider"></div>
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-0" data-bs-toggle="collapse" data-bs-target="#toolsCollapse" role="button" aria-expanded="false">
+          <span class="material-symbols-outlined text-primary">build</span>
+          <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Tools</h2>
+          <span class="material-symbols-outlined collapsible-icon">expand_more</span>
         </div>
-        <div class="collapsible-content">
-          <p>
-            Define tools (functions) that the AI can call. Parameters should be defined using JSON
-            Schema.
-          </p>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <div class="collapse" id="toolsCollapse">
+          <p class="text-secondary-emphasis small">Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
 
-          <div id="tools-list">
-            <div class="table-container">
-              <table id="toolsTable" class="responsive-table">
-                <thead class="sticky-header">
+          <div id="tools-list" class="mb-3">
+            <div class="table-responsive">
+              <table id="toolsTable" class="table table-hover align-middle">
+                <thead class="table-secondary">
                   <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th>Actions</th>
+                    <th style="width:20%">Name</th>
+                    <th style="width:30%">Description</th>
+                    <th style="width:25%">Endpoint</th>
+                    <th style="width:25%" class="text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -852,56 +597,40 @@ What this skill does and when to use it.
                 </tbody>
               </table>
             </div>
-
-            <!-- Mobile card view -->
-            <div id="tools-cards" class="mobile-cards">
+            <div id="tools-cards" class="d-block d-md-none">
               <!-- Cards will be populated by JavaScript on mobile -->
             </div>
           </div>
 
-          <div
-            class="tool-form"
-          >
-            <h3>Add/Edit Tool</h3>
-            <div class="form-group">
-              <label for="toolName">Tool Name</label>
-              <input type="text" id="toolName" placeholder="e.g., getWeather" />
+          <div class="mt-3 pt-3 border-top">
+            <h3 class="fs-6 fw-semibold">Add/Edit Tool</h3>
+            <div class="mb-3">
+              <label for="toolName" class="form-label">Tool Name</label>
+              <input type="text" id="toolName" class="form-control" placeholder="e.g., getWeather" />
             </div>
-            <div class="form-group">
-              <label for="toolDescription">Tool Description</label>
-              <textarea
-                id="toolDescription"
-                placeholder="e.g., Get the current weather for a location"
-                rows="2"
-              ></textarea>
+            <div class="mb-3">
+              <label for="toolDescription" class="form-label">Tool Description</label>
+              <textarea id="toolDescription" class="form-control" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
             </div>
-            <div class="form-group">
-              <label for="toolParameters">Parameters (JSON Schema)</label>
-              <textarea
-                id="toolParameters"
-                placeholder='e.g., {
+            <div class="mb-3">
+              <label for="toolParameters" class="form-label">Parameters (JSON Schema)</label>
+              <textarea id="toolParameters" class="form-control" rows="6" placeholder='e.g., {
   "type": "object",
   "properties": {
     "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
   },
   "required": ["location"]
-}'
-                rows="6"
-              ></textarea>
-              <small>Define the input parameters for the tool using JSON Schema format.</small>
+}'></textarea>
+              <div class="form-text">Define the input parameters for the tool using JSON Schema format.</div>
             </div>
-            <div class="form-group">
-              <label for="toolEndpointUrl">Endpoint URL (Optional)</label>
-              <input
-                type="url"
-                id="toolEndpointUrl"
-                placeholder="e.g., https://api.example.com/webhook"
-              />
-              <small>If this tool calls an external API or webhook, enter the URL here.</small>
+            <div class="mb-3">
+              <label for="toolEndpointUrl" class="form-label">Endpoint URL (Optional)</label>
+              <input type="url" id="toolEndpointUrl" class="form-control" placeholder="e.g., https://api.example.com/webhook" />
+              <div class="form-text">If this tool calls an external API or webhook, enter the URL here.</div>
             </div>
-            <div class="form-group">
-              <label for="toolHttpMethod">HTTP Method (Optional)</label>
-              <select id="toolHttpMethod">
+            <div class="mb-3">
+              <label for="toolHttpMethod" class="form-label">HTTP Method (Optional)</label>
+              <select id="toolHttpMethod" class="form-select">
                 <option value="">Auto (GET if no params, POST if params)</option>
                 <option value="GET">GET</option>
                 <option value="POST">POST</option>
@@ -909,34 +638,28 @@ What this skill does and when to use it.
                 <option value="DELETE">DELETE</option>
                 <option value="PATCH">PATCH</option>
               </select>
-              <small
-                >Select the HTTP method for the endpoint call. 'Auto' determines based on
-                parameters.</small
-              >
+              <div class="form-text">Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</div>
             </div>
             <input type="hidden" id="toolId" />
-            <div class="button-group">
-              <button type="button" id="saveTool" class="save-button">
-                <span class="material-symbols-outlined">save</span> Save Tool
+            <div class="d-flex gap-2">
+              <button type="button" id="saveTool" class="btn btn-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">save</span> Save Tool
               </button>
-              <button type="button" id="clearToolForm" class="clear-form-button">
-                <span class="material-symbols-outlined">clear_all</span>
-                Clear Form
+              <button type="button" id="clearToolForm" class="btn btn-outline-secondary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">clear_all</span> Clear Form
               </button>
             </div>
           </div>
 
-          <div
-            class="import-export"
-          >
-            <h3>Import/Export Tools</h3>
-            <div class="button-group">
-              <button type="button" id="exportTools" class="export-button">
-                <span class="material-symbols-outlined">upload</span> Export Tools
+          <div class="mt-3 pt-3 border-top">
+            <h3 class="fs-6 fw-semibold">Import/Export Tools</h3>
+            <div class="d-flex gap-2">
+              <button type="button" id="exportTools" class="btn btn-outline-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">upload</span> Export Tools
               </button>
-              <input type="file" id="importToolsFile" accept=".json" style="display: none" />
-              <button type="button" id="importTools" class="import-button">
-                <span class="material-symbols-outlined">download</span> Import Tools
+              <input type="file" id="importToolsFile" accept=".json" class="d-none" />
+              <button type="button" id="importTools" class="btn btn-outline-primary">
+                <span class="material-symbols-outlined" style="font-size:1.25rem">download</span> Import Tools
               </button>
             </div>
           </div>
@@ -944,83 +667,69 @@ What this skill does and when to use it.
       </section>
 
       <!-- About Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">
-            <span class="material-symbols-outlined section-icon">info</span>
-            About
-          </h2>
-          <div class="section-divider"></div>
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">info</span>
+          <h2 class="fs-5 fw-semibold mb-0">About</h2>
         </div>
-        <div class="form-group">
-          <label>API Endpoint</label>
-          <p id="currentEndpoint">Not set</p>
-        </div>
-        <div class="form-group">
-          <label>API Key</label>
-          <p id="currentApiKey" class="masked-value">Not set</p>
-        </div>
-        <div class="form-group">
-          <label>Model Name</label>
-          <p id="currentModelName">Not set</p>
-        </div>
-        <div class="form-group">
-          <label>System Prompt</label>
-          <p id="currentSystemPrompt">Not set</p>
-        </div>
-        <div class="form-group">
-          <label>Selected Profile</label>
-          <p id="currentProfile">Default</p>
-        </div>
-        <div class="form-group">
-          <label>Last Updated</label>
-          <p id="lastUpdated">Never</p>
-        </div>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <div class="mb-2"><strong>API Endpoint:</strong> <span id="currentEndpoint" class="text-secondary">Not set</span></div>
+        <div class="mb-2"><strong>API Key:</strong> <span id="currentApiKey" class="text-secondary font-monospace">Not set</span></div>
+        <div class="mb-2"><strong>Model Name:</strong> <span id="currentModelName" class="text-secondary">Not set</span></div>
+        <div class="mb-2"><strong>System Prompt:</strong> <span id="currentSystemPrompt" class="text-secondary">Not set</span></div>
+        <div class="mb-2"><strong>Selected Profile:</strong> <span id="currentProfile" class="text-secondary">Default</span></div>
+        <div class="mb-0"><strong>Last Updated:</strong> <span id="lastUpdated" class="text-secondary">Never</span></div>
       </section>
-      <!-- Full Backup & Restore Section -->
-      <section class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">
-            <span class="material-symbols-outlined section-icon">settings_backup_restore</span>
-            Full Backup & Restore
-          </h2>
-          <div class="section-divider"></div>
-        </div>
-        <p>
-          Export or import all extension data (profiles, skills, tools, instructions, and settings)
-          in a single file.
-        </p>
-        <div class="button-group backup-restore">
-          <button type="button" id="exportAllData" class="btn-primary">
-            <span class="material-symbols-outlined">backup</span> Export All Data
-          </button>
-          <button type="button" id="importAllDataBtn" class="btn-secondary">
-            <span class="material-symbols-outlined">restore</span> Import All Data
-          </button>
-          <input type="file" id="importAllFile" accept=".json" style="display: none" />
-        </div>
-      </section>
-    </main>
 
-    <footer>
-      Made with &#10084; by <a href="https://juanmackie.com/" target="_blank">Juan</a>
+      <!-- Full Backup & Restore Section -->
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">settings_backup_restore</span>
+          <h2 class="fs-5 fw-semibold mb-0">Full Backup &amp; Restore</h2>
+        </div>
+        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <p class="text-secondary-emphasis small">Export or import all extension data (profiles, skills, tools, instructions, and settings) in a single file.</p>
+        <div class="d-flex gap-2">
+          <button type="button" id="exportAllData" class="btn btn-primary">
+            <span class="material-symbols-outlined" style="font-size:1.25rem">backup</span> Export All Data
+          </button>
+          <button type="button" id="importAllDataBtn" class="btn btn-outline-primary">
+            <span class="material-symbols-outlined" style="font-size:1.25rem">restore</span> Import All Data
+          </button>
+          <input type="file" id="importAllFile" accept=".json" class="d-none" />
+        </div>
+      </section>
+    </div>
+
+    <footer class="text-center text-secondary small py-3">
+      Made with &#10084; by <a href="https://juanmackie.com/" target="_blank" class="text-primary text-decoration-none fw-medium">Juan</a>
     </footer>
 
-    <div id="status" class="status"></div>
+    <!-- Bootstrap Toast (replaces custom .status) -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+      <div id="statusToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-body" id="statusToastMessage"></div>
+      </div>
+    </div>
 
-    <!-- Confirmation Modal -->
-    <div id="confirm-modal-overlay" class="profile-name-dialog-overlay hidden">
-      <div class="profile-name-dialog">
-        <h3 id="confirm-modal-title">Confirm</h3>
-        <p id="confirm-modal-message"></p>
-        <div class="profile-name-dialog-actions">
-          <button type="button" id="confirm-modal-cancel" class="btn-secondary">Cancel</button>
-          <button type="button" id="confirm-modal-ok" class="btn-destructive">Confirm</button>
+    <!-- Confirmation Modal (replaces custom .profile-name-dialog) -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="confirm-modal-title">Confirm</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body" id="confirm-modal-message"></div>
+          <div class="modal-footer">
+            <button type="button" id="confirm-modal-cancel" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" id="confirm-modal-ok" class="btn btn-danger">Confirm</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <script src="collapsible.js"></script>
+    <script src="libs/bootstrap.bundle.min.js"></script>
     <script src="input-controls.js"></script>
     <script type="module" src="options.js"></script>
   </body>

@@ -8,35 +8,79 @@ const MAX_ACTION_CARDS = 6;
 const PROMPTS = {
   youtube: [
     card('youtube-summary', 'Summarize video', 'Summarize this YouTube video with key takeaways.'),
-    card('youtube-moment', 'Explain this moment', 'Explain what is happening at the current timestamp.'),
-    card('youtube-chapters', 'Chapter notes', 'Create chapter-by-chapter study notes for this video.'),
+    card(
+      'youtube-moment',
+      'Explain this moment',
+      'Explain what is happening at the current timestamp.'
+    ),
+    card(
+      'youtube-chapters',
+      'Chapter notes',
+      'Create chapter-by-chapter study notes for this video.'
+    ),
   ],
   github: [
-    card('github-summary', 'Summarize page', 'Summarize this GitHub page with key technical context.'),
+    card(
+      'github-summary',
+      'Summarize page',
+      'Summarize this GitHub page with key technical context.'
+    ),
     card('github-risks', 'Review risks', 'Review likely bugs, regressions, and missing tests.'),
   ],
   gmail: [
     card('gmail-reply', 'Draft reply', 'Draft a practical reply for this email thread.'),
-    card('gmail-summary', 'Summarize thread', 'Summarize this email thread into decisions and action items.'),
+    card(
+      'gmail-summary',
+      'Summarize thread',
+      'Summarize this email thread into decisions and action items.'
+    ),
   ],
   'google-docs': [
-    card('docs-summary', 'Summarize doc', 'Summarize this document with decisions, risks, and action items.'),
+    card(
+      'docs-summary',
+      'Summarize doc',
+      'Summarize this document with decisions, risks, and action items.'
+    ),
   ],
   'google-sheets': [
-    card('sheets-insights', 'Find insights', 'Identify trends, outliers, and questions from this sheet context.'),
+    card(
+      'sheets-insights',
+      'Find insights',
+      'Identify trends, outliers, and questions from this sheet context.'
+    ),
   ],
   news: [
-    card('news-summary', 'Summarize article', 'Summarize this article and separate facts from open questions.'),
+    card(
+      'news-summary',
+      'Summarize article',
+      'Summarize this article and separate facts from open questions.'
+    ),
   ],
   arxiv: [
-    card('arxiv-summary', 'Summarize paper', 'Summarize this paper: problem, method, results, and limits.'),
+    card(
+      'arxiv-summary',
+      'Summarize paper',
+      'Summarize this paper: problem, method, results, and limits.'
+    ),
   ],
   pdf: [
-    card('pdf-summary', 'Summarize PDF', 'Summarize this PDF with key claims, numbers, and action points.'),
+    card(
+      'pdf-summary',
+      'Summarize PDF',
+      'Summarize this PDF with key claims, numbers, and action points.'
+    ),
   ],
   generic: [
-    card('generic-summary', 'Summarize page', 'Summarize the current page with key points and practical takeaways.'),
-    card('generic-research', 'Research brief', 'Turn this page into a concise research brief with next steps.'),
+    card(
+      'generic-summary',
+      'Summarize page',
+      'Summarize the current page with key points and practical takeaways.'
+    ),
+    card(
+      'generic-research',
+      'Research brief',
+      'Turn this page into a concise research brief with next steps.'
+    ),
   ],
 };
 
@@ -93,7 +137,9 @@ function hydratePrompt(id, prompt, input) {
 }
 
 function normalizePlatform(platform) {
-  const value = String(platform || '').trim().toLowerCase();
+  const value = String(platform || '')
+    .trim()
+    .toLowerCase();
   if (!value) return 'generic';
   return value;
 }

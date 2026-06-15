@@ -73,6 +73,7 @@ All exported functions and classes should have JSDoc comments:
 ### Module Structure
 
 Each module should:
+
 1. Start with `@fileoverview` and `@module` JSDoc tags
 2. Import dependencies at the top
 3. Export public functions/classes
@@ -97,6 +98,7 @@ type(scope): description
 ```
 
 Types:
+
 - `feat` - New feature
 - `fix` - Bug fix
 - `docs` - Documentation
@@ -105,6 +107,7 @@ Types:
 - `chore` - Maintenance
 
 Examples:
+
 ```
 feat(chat): add streaming state manager
 fix(ui): resolve duplicate tool call display

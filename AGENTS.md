@@ -94,6 +94,9 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 - Browser-internal pages, extension pages, and Chrome Web Store pages must be blocked or reported before content extraction.
 - Broad host permissions are intentional for page extraction and context-menu workflows.
 - Built-in and custom skills are instructions by default, not executable tools, unless deterministic tool dispatch is explicitly implemented.
+- `chat.js` run entry points (`makeApiCall`, `makeApiCallWithMedia`) require `beginResponseRun()` before any side effects; `endResponseRun()` must run in `finally` blocks. This prevents two orchestrator runs from starting simultaneously and orphaning events.
+- `chat.js` resolves `sourceTabId` for side-panel runs via `getRunSourceTabId()`, not a captured `panelTabId`.
+- Pending panel actions (`setMediaForAnalysis`, `setSelectedText`) are consumed locally in `chat.js` and not re-sent via `chrome.runtime.sendMessage`.
 - Keep privacy-sensitive analytics opt-out and safe-label handling intact.
 
 ## Work Guidance
@@ -127,15 +130,15 @@ This section is the canonical specification reference for Prompt Paul skill form
 
 ### Supported Skill Intent Patterns
 
-| Pattern | Example | Status |
-| --- | --- | --- |
-| `use /<skill>` | `use /humanizer and rewrite` | supported |
-| `use <skill> skill` | `use humanizer skill and rewrite` | supported |
-| `apply /<skill>` | `apply /summarizer to this` | supported |
-| `with /<skill>` | `with /humanizer, rewrite this` | supported |
-| `invoke /<skill>` | `invoke /weather-guide explain forecast` | supported |
-| `use <skill> and/to/for` | `use humanizer and rewrite` | supported |
-| `please use <skill> to` | `please use humanizer to rewrite` | supported |
+| Pattern                  | Example                                  | Status    |
+| ------------------------ | ---------------------------------------- | --------- |
+| `use /<skill>`           | `use /humanizer and rewrite`             | supported |
+| `use <skill> skill`      | `use humanizer skill and rewrite`        | supported |
+| `apply /<skill>`         | `apply /summarizer to this`              | supported |
+| `with /<skill>`          | `with /humanizer, rewrite this`          | supported |
+| `invoke /<skill>`        | `invoke /weather-guide explain forecast` | supported |
+| `use <skill> and/to/for` | `use humanizer and rewrite`              | supported |
+| `please use <skill> to`  | `please use humanizer to rewrite`        | supported |
 
 ### Skill Format
 
@@ -171,18 +174,18 @@ Explain when and why to use this skill.
 
 ### Frontmatter Fields
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `name` | string | required | Unique identifier, lowercase with optional hyphens |
-| `description` | string | required | Brief description for AI and user discovery |
-| `license` | string | optional | License identifier, for example MIT or Apache-2.0 |
-| `user-invocable` | boolean | true | Creates `/<name>` shortcut command when true |
-| `disable-model-invocation` | boolean | false | Hides from model auto-suggestions when true |
-| `command-dispatch` | enum | null | Set to `tool` for deterministic execution |
-| `command-tool` | string | null | Tool name when command-dispatch is `tool` |
-| `command-arg-mode` | string | `raw` | Argument passing mode for tool dispatch |
-| `homepage` | string | null | URL for skill documentation |
-| `metadata` | object | `{}` | OpenClaw-compatible nested metadata |
+| Field                      | Type    | Default  | Description                                        |
+| -------------------------- | ------- | -------- | -------------------------------------------------- |
+| `name`                     | string  | required | Unique identifier, lowercase with optional hyphens |
+| `description`              | string  | required | Brief description for AI and user discovery        |
+| `license`                  | string  | optional | License identifier, for example MIT or Apache-2.0  |
+| `user-invocable`           | boolean | true     | Creates `/<name>` shortcut command when true       |
+| `disable-model-invocation` | boolean | false    | Hides from model auto-suggestions when true        |
+| `command-dispatch`         | enum    | null     | Set to `tool` for deterministic execution          |
+| `command-tool`             | string  | null     | Tool name when command-dispatch is `tool`          |
+| `command-arg-mode`         | string  | `raw`    | Argument passing mode for tool dispatch            |
+| `homepage`                 | string  | null     | URL for skill documentation                        |
+| `metadata`                 | object  | `{}`     | OpenClaw-compatible nested metadata                |
 
 ### Metadata Object
 

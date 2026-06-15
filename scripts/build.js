@@ -141,7 +141,6 @@ function copyFiles(manifest) {
     'chat.js',
     'options.html',
     'options.js',
-    'collapsible.js',
     'input-controls.js',
     'loadingManager.js',
     'themeUtils.js',

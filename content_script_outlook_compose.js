@@ -105,7 +105,9 @@
   }
 
   function normalizeText(value) {
-    return String(value || '').replace(/\s+/gu, ' ').trim();
+    return String(value || '')
+      .replace(/\s+/gu, ' ')
+      .trim();
   }
 
   function buildSignalText(element) {
@@ -126,7 +128,9 @@
   }
 
   function flattenSignalText(element) {
-    return buildSignalText(element).toLowerCase().replace(/[^a-z0-9]+/gu, '');
+    return buildSignalText(element)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, '');
   }
 
   function findMatchingRoot(startNode, predicate) {
@@ -196,14 +200,19 @@
       return true;
     }
 
-    if (root.closest?.('[role="main"], main') && /(?:message|mail|email|conversation|thread|readingpane)/.test(flattened)) {
+    if (
+      root.closest?.('[role="main"], main') &&
+      /(?:message|mail|email|conversation|thread|readingpane)/.test(flattened)
+    ) {
       return true;
     }
 
     if (
       root.closest?.('[role="main"], main') &&
       textLength > 60 &&
-      !root.closest?.('[role="list"], [role="listitem"], [role="navigation"], [role="toolbar"], [role="tablist"]')
+      !root.closest?.(
+        '[role="list"], [role="listitem"], [role="navigation"], [role="toolbar"], [role="tablist"]'
+      )
     ) {
       return true;
     }
@@ -216,7 +225,8 @@
     const focusNode = selection.focusNode;
     const commonAncestor = selection.getRangeAt(0).commonAncestorContainer;
 
-    const composeRoot = getEditableRoot(anchorNode) || getEditableRoot(focusNode) || getEditableRoot(commonAncestor);
+    const composeRoot =
+      getEditableRoot(anchorNode) || getEditableRoot(focusNode) || getEditableRoot(commonAncestor);
 
     if (composeRoot && isLikelyComposeRoot(composeRoot)) {
       return { mode: 'compose', root: composeRoot };
@@ -390,7 +400,10 @@
               return;
             }
 
-            console.warn('PromptPaul: Outlook selection handoff warning:', chrome.runtime.lastError.message);
+            console.warn(
+              'PromptPaul: Outlook selection handoff warning:',
+              chrome.runtime.lastError.message
+            );
           }
         }
       );
@@ -421,13 +434,13 @@
     }
 
     try {
-        window.top.postMessage(
-          {
-            action: OUTLOOK_SELECTION_RELAY_ACTION,
-            selectedText: trimmedText,
-          },
-          window.location.origin
-        );
+      window.top.postMessage(
+        {
+          action: OUTLOOK_SELECTION_RELAY_ACTION,
+          selectedText: trimmedText,
+        },
+        window.location.origin
+      );
     } catch (error) {
       console.warn('PromptPaul: Failed to relay Outlook selection to top window:', error);
     }
@@ -502,7 +515,10 @@
     const aboveTop = rect.top - height - gap;
     const belowTop = rect.bottom + gap;
     const top = aboveTop >= viewportPadding ? aboveTop : belowTop;
-    const clampedTop = Math.max(viewportPadding, Math.min(top, window.innerHeight - height - viewportPadding));
+    const clampedTop = Math.max(
+      viewportPadding,
+      Math.min(top, window.innerHeight - height - viewportPadding)
+    );
     const clampedLeft = Math.max(
       viewportPadding,
       Math.min(rect.left, window.innerWidth - width - viewportPadding)
