@@ -40,7 +40,12 @@ import { debounce } from './src/utils/debounce.js';
 import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
 import { escapeHtml, renderMarkdown } from './src/utils/domSanitizer.js';
-import { buildExplainPrompt, buildSummarizePrompt, PROOFREAD_PROMPT } from './src/prompts.js';
+import {
+  buildExplainPrompt,
+  buildSummarizePrompt,
+  PROOFREAD_PROMPT,
+  composeUserPrompt,
+} from './src/prompts.js';
 import { renderSiteSuggestions, executePresetAnalysis } from './src/chat/ChatPageActions.js';
 
 // ── Lazy Module Loaders ───────────────────────────────────────────
@@ -332,16 +337,27 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSelectedTextChip();
   }
 
-  // Compose the prompt for a sidebar action: append the sticky selected text
-  // when present, otherwise fall back to a follow-up on the existing
-  // conversation. Returns null (and warns) when there is neither.
-  function composeActionPrompt(basePrompt, actionLabel, textSeparator = '\n\n') {
+  // Compose the prompt request for a sidebar action: attach sticky selected text
+  // as structured context when present, otherwise fall back to a follow-up on
+  // the existing conversation. Returns null (and warns) when there is neither.
+  function composeActionPrompt(basePrompt, actionLabel) {
     const text = getSelectedText();
     if (text) {
-      return `${basePrompt}${textSeparator}${text}`;
+      return {
+        instruction: basePrompt,
+        context: {
+          type: 'selected_text',
+          text,
+        },
+      };
     }
     if (hasConversation()) {
-      return `${basePrompt}\n\nApply this to your previous response.`;
+      return {
+        instruction: basePrompt,
+        context: {
+          type: 'previous_response',
+        },
+      };
     }
     // Nothing selected and no conversation to build on — emit standard warning.
     getSelectedTextForAction(actionLabel);
@@ -381,11 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function executeSelectedTextInstruction(instruction) {
     const actionName = instruction.name || 'this prompt';
-    const composed = composeActionPrompt(
-      instruction.content,
-      `run ${actionName}`,
-      '\n\nSelected Text:\n'
-    );
+    const composed = composeActionPrompt(instruction.content, `run ${actionName}`);
     if (composed === null) {
       return false;
     }
@@ -463,9 +475,25 @@ document.addEventListener('DOMContentLoaded', () => {
               contextNotes.push('Additional media attachment context is active.');
             }
 
+            const loadedContextInstruction = [
+              `I have loaded the content from the page "${response.title}" (${response.url}).`,
+              `Source: ${response.siteName || 'Unknown'}`,
+              `Author: ${response.byline || 'Unknown'}`,
+              `Platform: ${response.platform || 'unknown'}`,
+              contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+
             streamState.getConversationHistory().push({
               role: 'user',
-              content: `I have loaded the content from the page "${response.title}" (${response.url}).\nSource: ${response.siteName || 'Unknown'}\nAuthor: ${response.byline || 'Unknown'}\nPlatform: ${response.platform || 'unknown'}\n${contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : ''}\n\nHere is the content:\n\n${fitted.text}`,
+              content: composeUserPrompt({
+                instruction: loadedContextInstruction,
+                context: {
+                  type: 'page_content',
+                  text: fitted.text,
+                },
+              }),
             });
 
             chatMainArea.classList.remove('hidden');
@@ -945,9 +973,26 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           if (streamState.getMediaData()) {
-            makeApiCallWithMedia(analysisPrompt, streamState.getMediaData(), instructionToolChoice);
+            makeApiCallWithMedia(
+              {
+                instruction: analysisPrompt,
+                context: {
+                  type: 'media',
+                },
+              },
+              streamState.getMediaData(),
+              instructionToolChoice
+            );
           } else {
-            makeApiCall(analysisPrompt, instructionToolChoice);
+            makeApiCall(
+              {
+                instruction: analysisPrompt,
+                context: {
+                  type: 'media',
+                },
+              },
+              instructionToolChoice
+            );
           }
         });
         return true;
@@ -966,9 +1011,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (streamState.getMediaData()) {
-        makeApiCallWithMedia(analysisPrompt, streamState.getMediaData());
+        makeApiCallWithMedia(
+          {
+            instruction: analysisPrompt,
+            context: {
+              type: 'media',
+            },
+          },
+          streamState.getMediaData()
+        );
       } else {
-        makeApiCall(analysisPrompt);
+        makeApiCall({
+          instruction: analysisPrompt,
+          context: {
+            type: 'media',
+          },
+        });
       }
     }
 
@@ -1352,7 +1410,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Auto-analyze with prompt
         const userPrompt = `Analyze this ${mediaModule.getMediaDisplayName(mediaType)}: ${fileData.name}`;
-        makeApiCallWithMedia(userPrompt, mediaData);
+        makeApiCallWithMedia(
+          {
+            instruction: userPrompt,
+            context: {
+              type: 'media',
+            },
+          },
+          mediaData
+        );
       } catch (err) {
         console.error('Drop handler error:', err);
         chatUI.addMessage('System', `❌ Error processing ${file.name}: ${err.message}`);
@@ -1362,14 +1428,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /**
    * Makes an API call with media content (images, video, audio).
-   * @param {string} userMessage - The user's message/prompt.
+   * @param {string|Object} promptRequest - The user's prompt request.
    * @param {Object} mediaData - The media data object containing base64, mimeType, etc.
    * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
    * @param {string|null} [requestedSkill=null] - Name of skill to preload via orchestrator.
    * @returns {Promise<void>}
    */
   async function makeApiCallWithMedia(
-    userMessage,
+    promptRequest,
     mediaData,
     tool_choice = 'auto',
     requestedSkill = null
@@ -1379,6 +1445,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       clearCurrentMediaData();
       const config = await getApiConfig();
+      const userMessage = composeUserPrompt(promptRequest);
 
       const effectiveToolChoice =
         tool_choice === undefined || tool_choice === null || tool_choice === ''
@@ -1506,9 +1573,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (hasMedia) {
-        makeApiCallWithMedia(effectiveMessage, mediaData, 'auto', requestedSkill);
+        makeApiCallWithMedia(
+          {
+            instruction: effectiveMessage,
+            context: {
+              type: 'media',
+            },
+          },
+          mediaData,
+          'auto',
+          requestedSkill
+        );
       } else {
-        makeApiCall(effectiveMessage, 'auto', requestedSkill);
+        makeApiCall({ instruction: effectiveMessage }, 'auto', requestedSkill);
       }
       userInput.value = '';
     }
@@ -1516,16 +1593,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /**
    * Makes an API call to the LLM endpoint using the orchestrator.
-   * @param {string|null} [userMessage=null] - The user's message/prompt.
+   * @param {string|Object} promptRequest - The user's prompt request.
    * @param {string} [tool_choice='auto'] - The tool choice strategy ('none', 'auto', or specific tool name).
    * @param {string|null} [requestedSkill=null] - Name of skill to preload via orchestrator.
    * @returns {Promise<void>}
    */
-  async function makeApiCall(userMessage = null, tool_choice = 'auto', requestedSkill = null) {
+  async function makeApiCall(promptRequest = null, tool_choice = 'auto', requestedSkill = null) {
     if (!beginResponseRun()) return;
 
     try {
       const config = await getApiConfig();
+      const userMessage = composeUserPrompt(promptRequest);
 
       // Adaptive model routing: check if media context needs a vision-capable model
       const mediaData = streamState.getMediaData();
@@ -1669,12 +1747,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      let prompt;
-
       if (streamState.getMediaData() && streamState.getMediaData().base64) {
         // Media + instruction
         const mediaInfo = `[${streamState.getMediaData().type.toUpperCase()} loaded]`;
-        prompt = effectiveInstruction + '\n\n' + mediaInfo;
 
         // Show chat area and hide one-off instruction area
         oneoffInstructionArea.classList.add('hidden');
@@ -1689,7 +1764,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Use orchestrator with media + skill
         await makeApiCallWithMedia(
-          effectiveInstruction,
+          {
+            instruction: effectiveInstruction,
+            context: {
+              type: 'media',
+            },
+          },
           streamState.getMediaData(),
           'auto',
           requestedSkill
@@ -1701,7 +1781,13 @@ document.addEventListener('DOMContentLoaded', () => {
         clearCurrentMediaData();
       } else if (selectedText && selectedText.trim()) {
         // Text-only instruction
-        prompt = effectiveInstruction + '\n\n' + selectedText;
+        const promptRequest = {
+          instruction: effectiveInstruction,
+          context: {
+            type: 'selected_text',
+            text: selectedText,
+          },
+        };
 
         // Show chat area and hide one-off instruction area
         oneoffInstructionArea.classList.add('hidden');
@@ -1717,12 +1803,17 @@ document.addEventListener('DOMContentLoaded', () => {
           );
         }
 
-        await makeApiCall(prompt, 'auto', requestedSkill);
+        await makeApiCall(promptRequest, 'auto', requestedSkill);
         instructionInput.value = '';
         // Keep the selection sticky so further sidebar prompts can reuse it.
       } else if (hasConversation()) {
         // No selection/media, but a conversation exists — run as a follow-up.
-        prompt = effectiveInstruction + '\n\nApply this to your previous response.';
+        const promptRequest = {
+          instruction: effectiveInstruction,
+          context: {
+            type: 'previous_response',
+          },
+        };
 
         oneoffInstructionArea.classList.add('hidden');
         chatMainArea.classList.remove('hidden');
@@ -1734,7 +1825,7 @@ document.addEventListener('DOMContentLoaded', () => {
           );
         }
 
-        await makeApiCall(prompt, 'auto', requestedSkill);
+        await makeApiCall(promptRequest, 'auto', requestedSkill);
         instructionInput.value = '';
       } else {
         loadingManager.showToast('Please select text or load media first', 'warning');

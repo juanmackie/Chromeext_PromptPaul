@@ -51,6 +51,13 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 3. The orchestrator resolves the matching skill
 4. The skill instructions are injected into the run context
 
+### Prompt composition
+
+1. All prompt paths return structured `{instruction, context}` request objects
+2. `composeUserPrompt` from `src/prompts.js` combines instruction and context into a single user message
+3. Context boundaries (e.g. `--- Selected text ---`) mark where external content begins and ends
+4. Media payloads are attached separately in `makeApiCallWithMedia`, not inlined in the text prompt
+
 ### Profile routing
 
 1. `ChatAPI.js` reads the selected profile

@@ -13,7 +13,7 @@ import { getSuggestionsForSite, extractSiteKey } from '../utils/suggestionStorag
 import { inferActionCards } from '../utils/actionCards.js';
 import { friendlyRuntimeErrorMessage } from '../utils/runtimeErrors.js';
 
-export function buildSmartPrompt(presetKey, content, metadata, presetModes) {
+export function buildSmartPromptRequest(presetKey, content, metadata, presetModes) {
   const preset = presetModes[presetKey] || presetModes.summary;
   let prompt = preset.prompt;
 
@@ -25,7 +25,14 @@ export function buildSmartPrompt(presetKey, content, metadata, presetModes) {
     prompt += `\n\nThis is an article titled "${metadata.title}" by ${metadata.byline}.`;
   }
 
-  return prompt + `\n\nContent:\n${content}`;
+  return {
+    instruction: prompt,
+    context: {
+      type: 'page_content',
+      text: content,
+      metadata,
+    },
+  };
 }
 
 export async function renderSiteSuggestions(input) {
@@ -115,11 +122,16 @@ export async function executePresetAnalysis(input) {
           url: response.url,
           type: response.type,
         };
-        const prompt = buildSmartPrompt(presetKey, response.content, metadata, presetModes);
+        const promptRequest = buildSmartPromptRequest(
+          presetKey,
+          response.content,
+          metadata,
+          presetModes
+        );
 
         chatMainArea.style.display = 'block';
         oneoffInstructionArea.style.display = 'none';
-        makeApiCall(prompt);
+        makeApiCall(promptRequest);
         loadingManager.showToast(successText, 'success');
 
         showSiteSuggestions(response.url, response.platform, response.platformInfo);

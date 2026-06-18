@@ -24,7 +24,7 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - Prefer clear failure messages that name the missing file, contract, or token.
 - Update package scripts when adding new script entry points.
 - Update tests when adding source modules with durable contracts.
-- Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`) and side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`) live in `test-runner.js`.
+- Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`), side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`), and structured prompt contracts (`composeUserPrompt`, raw concatenation patterns) live in `test-runner.js`.
 
 ## Verification
 

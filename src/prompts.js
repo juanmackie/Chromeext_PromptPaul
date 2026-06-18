@@ -46,6 +46,71 @@ export function buildAnalyzePrompt(contextLabel) {
 }
 
 /**
+ * Context types that can be composed into a final user prompt.
+ * @typedef {'none'|'selected_text'|'page_content'|'media'|'previous_response'} ContextType
+ */
+
+/**
+ * Build a context label for prompt composition.
+ * @param {ContextType} type - Context type.
+ * @returns {string}
+ */
+function getContextLabel(type) {
+  const labels = {
+    none: 'Context',
+    selected_text: 'Selected text',
+    page_content: 'Page content',
+    media: 'Attached media',
+    previous_response: 'Previous response',
+  };
+  return labels[type] || 'Context';
+}
+
+/**
+ * Compose a structured prompt request into the final user message sent to the LLM.
+ * Context-bearing requests are wrapped with explicit boundaries so models can distinguish
+ * user intent from source material.
+ * @param {string|{instruction:string, context?:{type?:ContextType, text?:string, metadata?:Object}}} promptRequest - Prompt request or raw instruction.
+ * @returns {string}
+ */
+export function composeUserPrompt(promptRequest) {
+  const request =
+    typeof promptRequest === 'string' ? { instruction: promptRequest } : promptRequest;
+  const instruction = String(request?.instruction || '').trim();
+  const context = request?.context;
+  const contextType = context?.type || 'none';
+
+  if (contextType === 'none' || !context) {
+    return instruction;
+  }
+
+  if (contextType === 'previous_response') {
+    return [
+      instruction,
+      '',
+      'Context: Apply this task to the previous assistant response in this conversation.',
+    ].join('\n');
+  }
+
+  const text = String(context.text || '').trim();
+  if (!text) {
+    return instruction;
+  }
+
+  const label = getContextLabel(contextType);
+  const parts = [instruction, '', `--- ${label} ---`, text, `--- End ${label} ---`];
+
+  if (contextType === 'selected_text' || contextType === 'page_content') {
+    parts.push(
+      '',
+      'Use the context as source material for the task. Do not continue or imitate the context author or sender. If asked for a reply or response, write from the user perspective.'
+    );
+  }
+
+  return parts.join('\n');
+}
+
+/**
  * Context menu command prompts — maps command IDs to prompt strings.
  * Used by background.js for right-click context menu dispatch.
  */

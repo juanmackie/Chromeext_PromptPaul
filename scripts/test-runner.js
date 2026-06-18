@@ -223,6 +223,42 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('prompts module exposes structured prompt composition', () => {
+    checkModule('src/prompts.js', ['function composeUserPrompt']);
+    const content = readFileSafe('src/prompts.js');
+    for (const token of [
+      'selected_text',
+      'page_content',
+      'previous_response',
+      'Use the context as source material for the task',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`prompts.js missing structured prompt contract token: ${token}`);
+      }
+    }
+  });
+
+  runner.test('prompt context is composed through structured requests', () => {
+    const chatContent = readFileSafe('chat.js');
+    const pageActionsContent = readFileSafe('src/chat/ChatPageActions.js');
+    const forbiddenRawPatterns = [
+      "+ '\\n\\n' + selectedText",
+      "+ '\\n\\n' + text",
+      "'Apply this to your previous response.'",
+      "'Selected Text:\\n'",
+      'Content:\\n${content}',
+    ];
+
+    for (const file of ['chat.js', 'src/chat/ChatPageActions.js']) {
+      const content = file === 'chat.js' ? chatContent : pageActionsContent;
+      for (const pattern of forbiddenRawPatterns) {
+        if (content.includes(pattern)) {
+          throw new Error(`${file} still concatenates context directly: ${pattern}`);
+        }
+      }
+    }
+  });
+
   runner.test('readStrategy module structure valid', () => {
     checkModule('src/utils/readStrategy.js');
     const content = readFileSafe('src/utils/readStrategy.js');

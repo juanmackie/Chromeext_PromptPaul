@@ -15,11 +15,15 @@
   </head>
   <body>
     <a href="#llmEndpoint" class="visually-hidden-focusable">Skip to settings</a>
-    <div class="container py-4" style="max-width:960px">
+    <div class="container py-4" style="max-width: 960px">
       <div class="text-center mb-4">
-        <span class="material-symbols-outlined text-primary" style="font-size:2.25rem">auto_awesome</span>
+        <span class="material-symbols-outlined text-primary" style="font-size: 2.25rem"
+          >auto_awesome</span
+        >
         <h1 class="fs-2 fw-bold text-primary mt-1 mb-0">Prompt Paul</h1>
-        <p class="text-secondary-emphasis small mt-1">Context aware instant AI Insights, a mouse click away</p>
+        <p class="text-secondary-emphasis small mt-1">
+          Context aware instant AI Insights, a mouse click away
+        </p>
       </div>
 
       <!-- Connection Section -->
@@ -28,12 +32,32 @@
           <span class="material-symbols-outlined text-primary">link</span>
           <h2 class="fs-5 fw-semibold mb-0">Connection</h2>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
 
         <div class="d-flex gap-2 flex-wrap mb-3">
-          <a href="https://ko-fi.com/N4N3184MUV" target="_blank" class="btn btn-outline-primary btn-sm">&#9749; Buy me a coffee</a>
-          <button id="revertDefaultsButton" class="btn btn-outline-danger btn-sm">Reset Configuration</button>
-          <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank" class="btn btn-outline-primary btn-sm">Feedback</a>
+          <a
+            href="https://ko-fi.com/N4N3184MUV"
+            target="_blank"
+            class="btn btn-outline-primary btn-sm"
+            >&#9749; Buy me a coffee</a
+          >
+          <button id="revertDefaultsButton" class="btn btn-outline-danger btn-sm">
+            Reset Configuration
+          </button>
+          <a
+            href="https://promptpaul.juanmackie.com/#feedbackform"
+            target="_blank"
+            class="btn btn-outline-primary btn-sm"
+            >Feedback</a
+          >
         </div>
         <p class="text-secondary-emphasis small">
           Enter your LLM endpoint, API key, and model name to use Prompt Paul. API keys are stored
@@ -44,32 +68,53 @@
           <div class="mb-3">
             <label for="llmEndpoint" class="form-label">
               LLM API Endpoint
-              <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                      data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
-                      aria-label="Help" tabindex="-1">
-                <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+              <button
+                type="button"
+                class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
+                aria-label="Help"
+                tabindex="-1"
+              >
+                <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
               </button>
             </label>
-            <input type="url" id="llmEndpoint" class="form-control"
-                   placeholder="https://your-llm-provider.example/v1/chat/completions" required />
+            <input
+              type="url"
+              id="llmEndpoint"
+              class="form-control"
+              placeholder="https://your-llm-provider.example/v1/chat/completions"
+              required
+            />
             <div class="invalid-feedback" id="llmEndpointError"></div>
           </div>
 
           <div class="mb-3">
             <label for="apiKey" class="form-label">
               API Key
-              <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                      data-tooltip="Your API key for authentication. Keep this secure and never share it publicly." aria-label="Help">
-                <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+              <button
+                type="button"
+                class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                data-tooltip="Your API key for authentication. Keep this secure and never share it publicly."
+                aria-label="Help"
+              >
+                <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
               </button>
             </label>
             <div class="input-group">
-              <input type="password" id="apiKey" class="form-control" placeholder="sk-..." required />
+              <input
+                type="password"
+                id="apiKey"
+                class="form-control"
+                placeholder="sk-..."
+                required
+              />
               <button type="button" class="btn btn-outline-secondary" id="apiKeyToggle">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">visibility</span>
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">visibility</span>
               </button>
               <button type="button" class="btn btn-outline-secondary" id="apiKeyCopy">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">content_copy</span>
+                <span class="material-symbols-outlined" style="font-size: 1.25rem"
+                  >content_copy</span
+                >
               </button>
             </div>
             <div class="invalid-feedback" id="apiKeyError"></div>
@@ -79,18 +124,33 @@
             <div class="col-md-4">
               <label for="modelName" class="form-label">
                 Model Name
-                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                        data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits." aria-label="Help">
-                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Choose a model or enter a custom one. Different models have varying capabilities and context limits."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
-              <input type="text" id="modelName" class="form-control" placeholder="Enter model name" required />
+              <input
+                type="text"
+                id="modelName"
+                class="form-control"
+                placeholder="Enter model name"
+                required
+              />
               <div class="invalid-feedback" id="modelNameError"></div>
             </div>
             <div class="col-md-4">
               <label class="form-label">Streaming Responses</label>
               <div class="form-check form-switch mt-1">
-                <input class="form-check-input" type="checkbox" id="enableStreamingToggle" checked />
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  id="enableStreamingToggle"
+                  checked
+                />
                 <label class="form-check-label" for="enableStreamingToggle">Enable Streaming</label>
               </div>
             </div>
@@ -99,7 +159,12 @@
               <div class="form-check form-switch mt-1">
                 <input class="form-check-input" type="checkbox" id="darkThemeToggle" />
                 <label class="form-check-label" for="darkThemeToggle">
-                  <span class="material-symbols-outlined align-middle" style="font-size:1rem" id="darkThemeIcon">brightness_2</span>
+                  <span
+                    class="material-symbols-outlined align-middle"
+                    style="font-size: 1rem"
+                    id="darkThemeIcon"
+                    >brightness_2</span
+                  >
                   Dark Theme
                 </label>
               </div>
@@ -109,9 +174,13 @@
           <div class="mb-3 mt-3">
             <label for="systemPrompt" class="form-label">
               System Prompt (Optional)
-              <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                      data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context." aria-label="Help">
-                <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+              <button
+                type="button"
+                class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context."
+                aria-label="Help"
+              >
+                <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
               </button>
             </label>
             <select id="promptTemplate" class="form-select mb-2">
@@ -122,7 +191,12 @@
               <option value="analyst">Data Analyst</option>
               <option value="writer">Creative Writer</option>
             </select>
-            <textarea id="systemPrompt" class="form-control" rows="4" placeholder="You are a helpful assistant."></textarea>
+            <textarea
+              id="systemPrompt"
+              class="form-control"
+              rows="4"
+              placeholder="You are a helpful assistant."
+            ></textarea>
             <div class="form-text text-end"><span id="charCount">0</span> characters</div>
             <div class="invalid-feedback" id="systemPromptError"></div>
           </div>
@@ -131,9 +205,13 @@
             <div class="col-md-8">
               <label for="profileSelect" class="form-label">
                 Current Profile
-                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                        data-tooltip="Profiles save different API configurations. Switch between them for different use cases." aria-label="Help">
-                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Profiles save different API configurations. Switch between them for different use cases."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
               <select id="profileSelect" class="form-select">
@@ -142,19 +220,21 @@
             </div>
             <div class="col-md-2">
               <button type="button" id="addProfileButton" class="btn btn-outline-primary w-100">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">add</span> New
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">add</span> New
               </button>
             </div>
             <div class="col-md-2">
               <button type="button" id="deleteProfileButton" class="btn btn-danger w-100" disabled>
-                <span class="material-symbols-outlined" style="font-size:1.25rem">delete</span> Delete
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">delete</span>
+                Delete
               </button>
             </div>
           </div>
 
           <div class="mt-3">
             <button type="submit" id="save" class="btn btn-primary">
-              <span class="material-symbols-outlined me-1" style="font-size:1.25rem">save</span> Save Settings
+              <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
+              Save Settings
             </button>
           </div>
         </form>
@@ -166,7 +246,15 @@
           <span class="material-symbols-outlined text-primary">shield_person</span>
           <h2 class="fs-5 fw-semibold mb-0">Privacy</h2>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
 
         <div class="form-check form-switch mb-3">
           <input class="form-check-input" type="checkbox" id="analyticsConsentToggle" />
@@ -175,25 +263,23 @@
           </label>
         </div>
         <div class="form-text mt-0 mb-3">
-          Event-only telemetry via Umami: instruction name, model name, and tool names used.
-          No page URLs/titles/content or identifiers. A random instance ID rotates monthly.
-          You can disable anytime.
+          Event-only telemetry via Umami: instruction name, model name, and tool names used. No page
+          URLs/titles/content or identifiers. A random instance ID rotates monthly. You can disable
+          anytime.
         </div>
 
         <div class="form-check form-switch mb-3">
           <input class="form-check-input" type="checkbox" id="voiceInputEnabledToggle" checked />
-          <label class="form-check-label" for="voiceInputEnabledToggle">
-            Enable voice input
-          </label>
+          <label class="form-check-label" for="voiceInputEnabledToggle"> Enable voice input </label>
         </div>
         <div class="form-text mt-0 mb-3">
-          Keeps the mic button visible in chat. Turning this off prevents new microphone
-          requests until you enable it again.
+          Keeps the mic button visible in chat. Turning this off prevents new microphone requests
+          until you enable it again.
         </div>
 
         <div class="d-flex align-items-center gap-2">
           <button type="button" id="testMicPermissionBtn" class="btn btn-outline-primary">
-            <span class="material-symbols-outlined" style="font-size:1.25rem">mic</span>
+            <span class="material-symbols-outlined" style="font-size: 1.25rem">mic</span>
             Test Microphone Access
           </button>
           <span id="micPermissionStatus" class="text-secondary small">Not tested</span>
@@ -206,40 +292,76 @@
 
       <!-- Instructions Section -->
       <section class="card mb-4 p-4">
-        <div class="d-flex align-items-center gap-2 mb-0" data-bs-toggle="collapse" data-bs-target="#instructionsCollapse" role="button" aria-expanded="true">
+        <div
+          class="d-flex align-items-center gap-2 mb-0"
+          data-bs-toggle="collapse"
+          data-bs-target="#instructionsCollapse"
+          role="button"
+          aria-expanded="true"
+        >
           <span class="material-symbols-outlined text-primary">description</span>
           <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Instructions</h2>
           <span class="material-symbols-outlined collapsible-icon">expand_less</span>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
         <div class="collapse show" id="instructionsCollapse">
           <div id="migrationPrompt" class="d-none">
-            <p class="mb-2"><strong>Instructions Migration:</strong> Instructions are now stored only on this device. Would you like to migrate your existing instructions from sync storage?</p>
+            <p class="mb-2">
+              <strong>Instructions Migration:</strong> Instructions are now stored only on this
+              device. Would you like to migrate your existing instructions from sync storage?
+            </p>
             <div class="d-flex gap-2 mb-3">
-              <button type="button" id="migrateInstructionsBtn" class="btn btn-primary btn-sm">&#128190; Migrate</button>
-              <button type="button" id="dismissMigrationBtn" class="btn btn-outline-secondary btn-sm">&#10006; Dismiss</button>
+              <button type="button" id="migrateInstructionsBtn" class="btn btn-primary btn-sm">
+                &#128190; Migrate
+              </button>
+              <button
+                type="button"
+                id="dismissMigrationBtn"
+                class="btn btn-outline-secondary btn-sm"
+              >
+                &#10006; Dismiss
+              </button>
             </div>
           </div>
 
           <div id="instructions-list">
             <div class="d-flex justify-content-between align-items-end gap-3 mb-2 flex-wrap">
-              <div class="flex-fill" style="min-width:20rem">
+              <div class="flex-fill" style="min-width: 20rem">
                 <label for="instructionSearch" class="visually-hidden">Search instructions</label>
-                <input type="search" id="instructionSearch" class="form-control" placeholder="Search instructions by name, content, or tags" autocomplete="off" />
+                <input
+                  type="search"
+                  id="instructionSearch"
+                  class="form-control"
+                  placeholder="Search instructions by name, content, or tags"
+                  autocomplete="off"
+                />
                 <div class="form-text">Ctrl/Cmd + K to focus search</div>
               </div>
-              <div class="text-secondary-emphasis small fw-semibold text-nowrap" id="instructionsCount">0 instructions</div>
+              <div
+                class="text-secondary-emphasis small fw-semibold text-nowrap"
+                id="instructionsCount"
+              >
+                0 instructions
+              </div>
             </div>
             <div class="table-responsive">
               <table id="instructionsTable" class="table table-hover align-middle">
                 <thead class="table-secondary">
                   <tr>
-                    <th style="width:16%">Name</th>
-                    <th style="width:16%">Tags</th>
-                    <th style="width:22%">Content</th>
-                    <th style="width:13%">Tool Choice</th>
-                    <th style="width:8%">Pin</th>
-                    <th style="width:25%" class="text-end">Actions</th>
+                    <th style="width: 16%">Name</th>
+                    <th style="width: 16%">Tags</th>
+                    <th style="width: 22%">Content</th>
+                    <th style="width: 13%">Tool Choice</th>
+                    <th style="width: 8%">Pin</th>
+                    <th style="width: 25%" class="text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,15 +378,30 @@
             <h3 class="fs-6 fw-semibold">Add/Edit Instruction</h3>
             <div class="mb-3">
               <label for="instructionName" class="form-label">Instruction Name</label>
-              <input type="text" id="instructionName" class="form-control" placeholder="Enter instruction name" />
+              <input
+                type="text"
+                id="instructionName"
+                class="form-control"
+                placeholder="Enter instruction name"
+              />
             </div>
             <div class="mb-3">
               <label for="instructionContent" class="form-label">Instruction Content</label>
-              <textarea id="instructionContent" class="form-control" placeholder="Enter instruction content" rows="4"></textarea>
+              <textarea
+                id="instructionContent"
+                class="form-control"
+                placeholder="Enter instruction content"
+                rows="4"
+              ></textarea>
             </div>
             <div class="mb-3">
               <label for="instructionTags" class="form-label">Tags</label>
-              <input type="text" id="instructionTags" class="form-control" placeholder="e.g. research, writing, gmail" />
+              <input
+                type="text"
+                id="instructionTags"
+                class="form-control"
+                placeholder="e.g. research, writing, gmail"
+              />
               <div class="form-text">Comma-separated tags for search and organization.</div>
             </div>
             <div class="mb-3">
@@ -274,7 +411,10 @@
                 <option value="auto">Auto</option>
                 <!-- Tools will be populated here by options.js -->
               </select>
-              <div class="form-text">Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows any available tool.</div>
+              <div class="form-text">
+                Select a tool choice for the instruction. "None" prevents tool use, "Auto" allows
+                any available tool.
+              </div>
             </div>
 
             <div class="mb-3">
@@ -312,15 +452,20 @@
                   </label>
                 </div>
               </div>
-              <div class="form-text">Select which types of content this instruction can be applied to. Text is always available for general use. <i>(Ensure your model supports multi modality)</i></div>
+              <div class="form-text">
+                Select which types of content this instruction can be applied to. Text is always
+                available for general use. <i>(Ensure your model supports multi modality)</i>
+              </div>
             </div>
             <input type="hidden" id="instructionId" />
             <div class="d-flex gap-2">
               <button type="button" id="saveInstruction" class="btn btn-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">save</span> Save Instruction
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">save</span> Save
+                Instruction
               </button>
               <button type="button" id="clearForm" class="btn btn-outline-secondary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">clear_all</span> Clear Form
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">clear_all</span>
+                Clear Form
               </button>
             </div>
           </div>
@@ -329,11 +474,13 @@
             <h3 class="fs-6 fw-semibold">Import/Export Instructions</h3>
             <div class="d-flex gap-2">
               <button type="button" id="exportInstructions" class="btn btn-outline-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">upload</span> Export Instructions
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">upload</span>
+                Export Instructions
               </button>
               <input type="file" id="importFile" accept=".json" class="d-none" />
               <button type="button" id="importInstructions" class="btn btn-outline-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">download</span> Import Instructions
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">download</span>
+                Import Instructions
               </button>
             </div>
           </div>
@@ -342,22 +489,46 @@
 
       <!-- Skills Section -->
       <section class="card mb-4 p-4">
-        <div class="d-flex align-items-center gap-2 mb-0" data-bs-toggle="collapse" data-bs-target="#skillsCollapse" role="button" aria-expanded="false">
+        <div
+          class="d-flex align-items-center gap-2 mb-0"
+          data-bs-toggle="collapse"
+          data-bs-target="#skillsCollapse"
+          role="button"
+          aria-expanded="false"
+        >
           <span class="material-symbols-outlined text-primary">school</span>
           <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Agent Skills</h2>
           <span class="material-symbols-outlined collapsible-icon">expand_more</span>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
         <div class="collapse" id="skillsCollapse">
-          <p class="text-secondary-emphasis small">Manage skills that provide specialized AI capabilities. Skills are loaded on demand and can be invoked via slash commands.</p>
+          <p class="text-secondary-emphasis small">
+            Manage skills that provide specialized AI capabilities. Skills are loaded on demand and
+            can be invoked via slash commands.
+          </p>
 
           <div class="skill-help-box border p-3 mb-3">
-            <h3 class="fs-6 fw-semibold"><span class="material-symbols-outlined align-middle" style="font-size:1.25rem">help_outline</span> How to Use Skills</h3>
+            <h3 class="fs-6 fw-semibold">
+              <span class="material-symbols-outlined align-middle" style="font-size: 1.25rem"
+                >help_outline</span
+              >
+              How to Use Skills
+            </h3>
             <div class="mb-3">
               <h4 class="fs-6 fw-medium">Slash Commands</h4>
               <ul class="small mb-0">
                 <li><code>/skills</code> - List all available skills</li>
-                <li><code>/skill &lt;name&gt; [input]</code> - Invoke any skill (canonical method)</li>
+                <li>
+                  <code>/skill &lt;name&gt; [input]</code> - Invoke any skill (canonical method)
+                </li>
                 <li><code>/&lt;skill-name&gt;</code> - Quick command for user-invocable skills</li>
               </ul>
             </div>
@@ -366,7 +537,9 @@
               <ul class="small mb-0">
                 <li><code>/skill humanizer Rewrite this text...</code></li>
                 <li><code>/humanizer Make this sound more natural...</code></li>
-                <li><code>use humanizer skill and rewrite this paragraph</code> (natural language)</li>
+                <li>
+                  <code>use humanizer skill and rewrite this paragraph</code> (natural language)
+                </li>
               </ul>
             </div>
             <div class="mb-0">
@@ -375,14 +548,16 @@
                 <table class="table table-sm table-borderless small mb-0">
                   <thead>
                     <tr>
-                      <th style="width:30%">Field</th>
+                      <th style="width: 30%">Field</th>
                       <th>Description</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td>user-invocable</td>
-                      <td>Creates a shortcut command <code>/skillname</code> when true (default: true)</td>
+                      <td>
+                        Creates a shortcut command <code>/skillname</code> when true (default: true)
+                      </td>
                     </tr>
                     <tr>
                       <td>disable-model-invocation</td>
@@ -405,8 +580,12 @@
               </div>
             </div>
             <p class="small mt-2 mb-0">
-              <span class="material-symbols-outlined align-middle" style="font-size:1rem">info</span>
-              Skills follow the <a href="https://agentskills.io" target="_blank">Agent Skills</a> specification and are compatible with OpenClaw-style metadata.
+              <span class="material-symbols-outlined align-middle" style="font-size: 1rem"
+                >info</span
+              >
+              Skills follow the
+              <a href="https://agentskills.io" target="_blank">Agent Skills</a> specification and
+              are compatible with OpenClaw-style metadata.
             </p>
           </div>
 
@@ -432,17 +611,33 @@
           </div>
 
           <div class="mb-3">
-            <h3 class="fs-6 fw-semibold"><span class="material-symbols-outlined align-middle" style="font-size:1.25rem">cloud_download</span> Import from skills.sh</h3>
-            <p class="small">Paste a skills.sh URL to import a skill directly. <a href="https://skills.sh" target="_blank">Browse skills.sh</a></p>
+            <h3 class="fs-6 fw-semibold">
+              <span class="material-symbols-outlined align-middle" style="font-size: 1.25rem"
+                >cloud_download</span
+              >
+              Import from skills.sh
+            </h3>
+            <p class="small">
+              Paste a skills.sh URL to import a skill directly.
+              <a href="https://skills.sh" target="_blank">Browse skills.sh</a>
+            </p>
             <div class="input-group mb-2">
-              <input type="text" id="skillsShUrl" class="form-control" placeholder="https://skills.sh/owner/repo/skill-name" />
+              <input
+                type="text"
+                id="skillsShUrl"
+                class="form-control"
+                placeholder="https://skills.sh/owner/repo/skill-name"
+              />
               <button type="button" id="importSkillsShBtn" class="btn btn-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">add</span> Import
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">add</span> Import
               </button>
             </div>
             <div id="skillsShStatus" class="form-text"></div>
             <button type="button" id="findSkillsShBtn" class="btn btn-outline-primary w-100 mt-2">
-              <span class="material-symbols-outlined" style="font-size:1.25rem">travel_explore</span> Find Skills on skills.sh
+              <span class="material-symbols-outlined" style="font-size: 1.25rem"
+                >travel_explore</span
+              >
+              Find Skills on skills.sh
             </button>
           </div>
 
@@ -451,34 +646,62 @@
             <div class="mb-3">
               <label for="skillName" class="form-label">
                 Skill Name (ID)
-                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                        data-tooltip="Unique identifier for the skill. Lowercase letters, numbers, and hyphens only. No spaces. This becomes the /command-name in chat." aria-label="Help">
-                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Unique identifier for the skill. Lowercase letters, numbers, and hyphens only. No spaces. This becomes the /command-name in chat."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
-              <input type="text" id="skillName" class="form-control" placeholder="e.g., python-coding-guide" />
-              <div class="form-text">Unique identifier used for commands (no spaces, lowercase).</div>
+              <input
+                type="text"
+                id="skillName"
+                class="form-control"
+                placeholder="e.g., python-coding-guide"
+              />
+              <div class="form-text">
+                Unique identifier used for commands (no spaces, lowercase).
+              </div>
             </div>
             <div class="mb-3">
               <label for="skillDescription" class="form-label">
                 Description
-                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                        data-tooltip="Brief description of what the skill does. This is shown to users in /skills list and helps the AI understand when to use this skill." aria-label="Help">
-                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Brief description of what the skill does. This is shown to users in /skills list and helps the AI understand when to use this skill."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
-              <textarea id="skillDescription" class="form-control" placeholder="e.g., Best practices for Python coding with type hints and modern patterns." rows="2"></textarea>
+              <textarea
+                id="skillDescription"
+                class="form-control"
+                placeholder="e.g., Best practices for Python coding with type hints and modern patterns."
+                rows="2"
+              ></textarea>
               <div class="form-text">Brief description used for discovery and AI selection.</div>
             </div>
             <div class="mb-3">
               <label for="skillContent" class="form-label">
                 Instructions (Markdown)
-                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                        data-tooltip="Detailed instructions for the AI on how to use this skill. Write in Markdown format." aria-label="Help">
-                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Detailed instructions for the AI on how to use this skill. Write in Markdown format."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
-              <textarea id="skillContent" class="form-control" rows="10" placeholder="# Your Skill Name
+              <textarea
+                id="skillContent"
+                class="form-control"
+                rows="10"
+                placeholder="# Your Skill Name
 
 ## Purpose
 What this skill does and when to use it.
@@ -490,18 +713,28 @@ What this skill does and when to use it.
 
 ## Examples
 **Input:** Example input here
-**Output:** Expected output here"></textarea>
+**Output:** Expected output here"
+              ></textarea>
               <div class="form-text">Detailed Markdown instructions for the AI.</div>
             </div>
             <div class="mb-3">
               <label for="skillMetadata" class="form-label">
                 Metadata (JSON)
-                <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                        data-tooltip='OpenClaw-compatible metadata as JSON object. Example: {"prompt-paul-tags": "coding, python", "openclaw": {"requires": {"bins": ["python"]}}}.' aria-label="Help">
-                  <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip='OpenClaw-compatible metadata as JSON object. Example: {"prompt-paul-tags": "coding, python", "openclaw": {"requires": {"bins": ["python"]}}}.'
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
-              <textarea id="skillMetadata" class="form-control" placeholder='{"tags": "coding, help"}' rows="3"></textarea>
+              <textarea
+                id="skillMetadata"
+                class="form-control"
+                placeholder='{"tags": "coding, help"}'
+                rows="3"
+              ></textarea>
               <div class="form-text">Optional OpenClaw-compatible metadata (JSON format).</div>
             </div>
             <div class="row g-3 mb-3">
@@ -510,9 +743,13 @@ What this skill does and when to use it.
                   <input type="checkbox" id="skillUserInvocable" class="form-check-input" checked />
                   <label for="skillUserInvocable" class="form-check-label">
                     User Invocable
-                    <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                            data-tooltip="When checked, creates a shortcut command /skillname for quick access." aria-label="Help">
-                      <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                      data-tooltip="When checked, creates a shortcut command /skillname for quick access."
+                      aria-label="Help"
+                    >
+                      <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                     </button>
                   </label>
                 </div>
@@ -520,12 +757,20 @@ What this skill does and when to use it.
               </div>
               <div class="col-md-6">
                 <div class="form-check">
-                  <input type="checkbox" id="skillDisableModelInvocation" class="form-check-input" />
+                  <input
+                    type="checkbox"
+                    id="skillDisableModelInvocation"
+                    class="form-check-input"
+                  />
                   <label for="skillDisableModelInvocation" class="form-check-label">
                     Disable Model Invocation
-                    <button type="button" class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                            data-tooltip="When checked, the skill won't be suggested to the AI automatically." aria-label="Help">
-                      <span class="material-symbols-outlined" style="font-size:1rem">help</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                      data-tooltip="When checked, the skill won't be suggested to the AI automatically."
+                      aria-label="Help"
+                    >
+                      <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                     </button>
                   </label>
                 </div>
@@ -540,17 +785,24 @@ What this skill does and when to use it.
               </div>
               <div class="col-md-6">
                 <label for="skillCompatibility" class="form-label">Compatibility</label>
-                <input type="text" id="skillCompatibility" class="form-control" placeholder="Extension version" />
+                <input
+                  type="text"
+                  id="skillCompatibility"
+                  class="form-control"
+                  placeholder="Extension version"
+                />
                 <div class="form-text">Version compatibility info</div>
               </div>
             </div>
             <input type="hidden" id="skillId" />
             <div class="d-flex gap-2">
               <button type="button" id="saveSkill" class="btn btn-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">save</span> Save Skill
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">save</span> Save
+                Skill
               </button>
               <button type="button" id="clearSkillForm" class="btn btn-outline-secondary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">clear_all</span> Clear Form
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">clear_all</span>
+                Clear Form
               </button>
             </div>
           </div>
@@ -559,11 +811,13 @@ What this skill does and when to use it.
             <h3 class="fs-6 fw-semibold">Import/Export Skills</h3>
             <div class="d-flex gap-2">
               <button type="button" id="exportSkills" class="btn btn-outline-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">upload</span> Export Skills
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">upload</span>
+                Export Skills
               </button>
               <input type="file" id="importSkillsFile" accept=".json" class="d-none" />
               <button type="button" id="importSkills" class="btn btn-outline-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">download</span> Import Skills
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">download</span>
+                Import Skills
               </button>
             </div>
           </div>
@@ -572,24 +826,41 @@ What this skill does and when to use it.
 
       <!-- Tools Section -->
       <section class="card mb-4 p-4">
-        <div class="d-flex align-items-center gap-2 mb-0" data-bs-toggle="collapse" data-bs-target="#toolsCollapse" role="button" aria-expanded="false">
+        <div
+          class="d-flex align-items-center gap-2 mb-0"
+          data-bs-toggle="collapse"
+          data-bs-target="#toolsCollapse"
+          role="button"
+          aria-expanded="false"
+        >
           <span class="material-symbols-outlined text-primary">build</span>
           <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Tools</h2>
           <span class="material-symbols-outlined collapsible-icon">expand_more</span>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
         <div class="collapse" id="toolsCollapse">
-          <p class="text-secondary-emphasis small">Define tools (functions) that the AI can call. Parameters should be defined using JSON Schema.</p>
+          <p class="text-secondary-emphasis small">
+            Define tools (functions) that the AI can call. Parameters should be defined using JSON
+            Schema.
+          </p>
 
           <div id="tools-list" class="mb-3">
             <div class="table-responsive">
               <table id="toolsTable" class="table table-hover align-middle">
                 <thead class="table-secondary">
                   <tr>
-                    <th style="width:20%">Name</th>
-                    <th style="width:30%">Description</th>
-                    <th style="width:25%">Endpoint</th>
-                    <th style="width:25%" class="text-center">Actions</th>
+                    <th style="width: 20%">Name</th>
+                    <th style="width: 30%">Description</th>
+                    <th style="width: 25%">Endpoint</th>
+                    <th style="width: 25%" class="text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -606,27 +877,51 @@ What this skill does and when to use it.
             <h3 class="fs-6 fw-semibold">Add/Edit Tool</h3>
             <div class="mb-3">
               <label for="toolName" class="form-label">Tool Name</label>
-              <input type="text" id="toolName" class="form-control" placeholder="e.g., getWeather" />
+              <input
+                type="text"
+                id="toolName"
+                class="form-control"
+                placeholder="e.g., getWeather"
+              />
             </div>
             <div class="mb-3">
               <label for="toolDescription" class="form-label">Tool Description</label>
-              <textarea id="toolDescription" class="form-control" placeholder="e.g., Get the current weather for a location" rows="2"></textarea>
+              <textarea
+                id="toolDescription"
+                class="form-control"
+                placeholder="e.g., Get the current weather for a location"
+                rows="2"
+              ></textarea>
             </div>
             <div class="mb-3">
               <label for="toolParameters" class="form-label">Parameters (JSON Schema)</label>
-              <textarea id="toolParameters" class="form-control" rows="6" placeholder='e.g., {
+              <textarea
+                id="toolParameters"
+                class="form-control"
+                rows="6"
+                placeholder='e.g., {
   "type": "object",
   "properties": {
     "location": { "type": "string", "description": "City and state, e.g. San Francisco, CA" }
   },
   "required": ["location"]
-}'></textarea>
-              <div class="form-text">Define the input parameters for the tool using JSON Schema format.</div>
+}'
+              ></textarea>
+              <div class="form-text">
+                Define the input parameters for the tool using JSON Schema format.
+              </div>
             </div>
             <div class="mb-3">
               <label for="toolEndpointUrl" class="form-label">Endpoint URL (Optional)</label>
-              <input type="url" id="toolEndpointUrl" class="form-control" placeholder="e.g., https://api.example.com/webhook" />
-              <div class="form-text">If this tool calls an external API or webhook, enter the URL here.</div>
+              <input
+                type="url"
+                id="toolEndpointUrl"
+                class="form-control"
+                placeholder="e.g., https://api.example.com/webhook"
+              />
+              <div class="form-text">
+                If this tool calls an external API or webhook, enter the URL here.
+              </div>
             </div>
             <div class="mb-3">
               <label for="toolHttpMethod" class="form-label">HTTP Method (Optional)</label>
@@ -638,15 +933,19 @@ What this skill does and when to use it.
                 <option value="DELETE">DELETE</option>
                 <option value="PATCH">PATCH</option>
               </select>
-              <div class="form-text">Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.</div>
+              <div class="form-text">
+                Select the HTTP method for the endpoint call. 'Auto' determines based on parameters.
+              </div>
             </div>
             <input type="hidden" id="toolId" />
             <div class="d-flex gap-2">
               <button type="button" id="saveTool" class="btn btn-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">save</span> Save Tool
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">save</span> Save
+                Tool
               </button>
               <button type="button" id="clearToolForm" class="btn btn-outline-secondary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">clear_all</span> Clear Form
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">clear_all</span>
+                Clear Form
               </button>
             </div>
           </div>
@@ -655,11 +954,13 @@ What this skill does and when to use it.
             <h3 class="fs-6 fw-semibold">Import/Export Tools</h3>
             <div class="d-flex gap-2">
               <button type="button" id="exportTools" class="btn btn-outline-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">upload</span> Export Tools
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">upload</span>
+                Export Tools
               </button>
               <input type="file" id="importToolsFile" accept=".json" class="d-none" />
               <button type="button" id="importTools" class="btn btn-outline-primary">
-                <span class="material-symbols-outlined" style="font-size:1.25rem">download</span> Import Tools
+                <span class="material-symbols-outlined" style="font-size: 1.25rem">download</span>
+                Import Tools
               </button>
             </div>
           </div>
@@ -672,13 +973,38 @@ What this skill does and when to use it.
           <span class="material-symbols-outlined text-primary">info</span>
           <h2 class="fs-5 fw-semibold mb-0">About</h2>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
-        <div class="mb-2"><strong>API Endpoint:</strong> <span id="currentEndpoint" class="text-secondary">Not set</span></div>
-        <div class="mb-2"><strong>API Key:</strong> <span id="currentApiKey" class="text-secondary font-monospace">Not set</span></div>
-        <div class="mb-2"><strong>Model Name:</strong> <span id="currentModelName" class="text-secondary">Not set</span></div>
-        <div class="mb-2"><strong>System Prompt:</strong> <span id="currentSystemPrompt" class="text-secondary">Not set</span></div>
-        <div class="mb-2"><strong>Selected Profile:</strong> <span id="currentProfile" class="text-secondary">Default</span></div>
-        <div class="mb-0"><strong>Last Updated:</strong> <span id="lastUpdated" class="text-secondary">Never</span></div>
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
+        <div class="mb-2">
+          <strong>API Endpoint:</strong>
+          <span id="currentEndpoint" class="text-secondary">Not set</span>
+        </div>
+        <div class="mb-2">
+          <strong>API Key:</strong>
+          <span id="currentApiKey" class="text-secondary font-monospace">Not set</span>
+        </div>
+        <div class="mb-2">
+          <strong>Model Name:</strong>
+          <span id="currentModelName" class="text-secondary">Not set</span>
+        </div>
+        <div class="mb-2">
+          <strong>System Prompt:</strong>
+          <span id="currentSystemPrompt" class="text-secondary">Not set</span>
+        </div>
+        <div class="mb-2">
+          <strong>Selected Profile:</strong>
+          <span id="currentProfile" class="text-secondary">Default</span>
+        </div>
+        <div class="mb-0">
+          <strong>Last Updated:</strong> <span id="lastUpdated" class="text-secondary">Never</span>
+        </div>
       </section>
 
       <!-- Full Backup & Restore Section -->
@@ -687,14 +1013,27 @@ What this skill does and when to use it.
           <span class="material-symbols-outlined text-primary">settings_backup_restore</span>
           <h2 class="fs-5 fw-semibold mb-0">Full Backup &amp; Restore</h2>
         </div>
-        <hr class="my-2 mb-3" style="height:2px;background:linear-gradient(90deg,var(--bs-primary),var(--bs-border-color));border:none;opacity:1">
-        <p class="text-secondary-emphasis small">Export or import all extension data (profiles, skills, tools, instructions, and settings) in a single file.</p>
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
+        <p class="text-secondary-emphasis small">
+          Export or import all extension data (profiles, skills, tools, instructions, and settings)
+          in a single file.
+        </p>
         <div class="d-flex gap-2">
           <button type="button" id="exportAllData" class="btn btn-primary">
-            <span class="material-symbols-outlined" style="font-size:1.25rem">backup</span> Export All Data
+            <span class="material-symbols-outlined" style="font-size: 1.25rem">backup</span> Export
+            All Data
           </button>
           <button type="button" id="importAllDataBtn" class="btn btn-outline-primary">
-            <span class="material-symbols-outlined" style="font-size:1.25rem">restore</span> Import All Data
+            <span class="material-symbols-outlined" style="font-size: 1.25rem">restore</span> Import
+            All Data
           </button>
           <input type="file" id="importAllFile" accept=".json" class="d-none" />
         </div>
@@ -702,7 +1041,13 @@ What this skill does and when to use it.
     </div>
 
     <footer class="text-center text-secondary small py-3">
-      Made with &#10084; by <a href="https://juanmackie.com/" target="_blank" class="text-primary text-decoration-none fw-medium">Juan</a>
+      Made with &#10084; by
+      <a
+        href="https://juanmackie.com/"
+        target="_blank"
+        class="text-primary text-decoration-none fw-medium"
+        >Juan</a
+      >
     </footer>
 
     <!-- Bootstrap Toast (replaces custom .status) -->
@@ -718,11 +1063,23 @@ What this skill does and when to use it.
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="confirm-modal-title">Confirm</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
           </div>
           <div class="modal-body" id="confirm-modal-message"></div>
           <div class="modal-footer">
-            <button type="button" id="confirm-modal-cancel" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button
+              type="button"
+              id="confirm-modal-cancel"
+              class="btn btn-outline-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancel
+            </button>
             <button type="button" id="confirm-modal-ok" class="btn btn-danger">Confirm</button>
           </div>
         </div>

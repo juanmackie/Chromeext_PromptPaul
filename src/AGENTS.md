@@ -18,6 +18,7 @@ The `src/` subtree contains ES modules shared by the extension entry points, inc
 - New modules must include `@fileoverview` and `@module` JSDoc.
 - Public APIs should be explicit named exports unless a local pattern requires a default export.
 - Shared prompt strings belong in `src/prompts.js` when they are used by more than one surface.
+- Prompt composition must use structured `{instruction, context}` request objects and `composeUserPrompt` from `src/prompts.js`; never concatenate raw selected text, page content, or media context directly into prompt strings.
 
 ## Work Guidance
 
@@ -25,6 +26,7 @@ The `src/` subtree contains ES modules shared by the extension entry points, inc
 - Update `scripts/test-runner.js` when a core module gains a required contract or regression guard.
 - Avoid Node-only APIs in browser modules.
 - Keep module imports extension-safe with explicit relative paths and `.js` extensions.
+- New prompt paths must return structured request objects; the static guard in `scripts/test-runner.js` blocks raw context concatenation patterns.
 
 ## Verification
 

@@ -95,6 +95,7 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 - Broad host permissions are intentional for page extraction and context-menu workflows.
 - Built-in and custom skills are instructions by default, not executable tools, unless deterministic tool dispatch is explicitly implemented.
 - `chat.js` run entry points (`makeApiCall`, `makeApiCallWithMedia`) require `beginResponseRun()` before any side effects; `endResponseRun()` must run in `finally` blocks. This prevents two orchestrator runs from starting simultaneously and orphaning events.
+- Context-bearing prompts must use structured prompt request objects and `composeUserPrompt`; do not concatenate selected text, page content, media context, or previous-response instructions directly into raw prompt strings.
 - `chat.js` resolves `sourceTabId` for side-panel runs via `getRunSourceTabId()`, not a captured `panelTabId`.
 - Pending panel actions (`setMediaForAnalysis`, `setSelectedText`) are consumed locally in `chat.js` and not re-sent via `chrome.runtime.sendMessage`.
 - Keep privacy-sensitive analytics opt-out and safe-label handling intact.
