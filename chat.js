@@ -758,8 +758,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const getConversationHistory = () => streamState.getConversationHistory();
   const setConversationHistory = (history) => streamState.setConversationHistory(history);
 
+  // A run is only genuinely active while its streaming bubble is still live.
+  // The streaming element is created right before startRun() and cleared on
+  // every terminal event, so a run id with no streaming element means the run
+  // is stranded (its terminal event was never delivered) and must not block
+  // future runs.
+  function hasLiveStreamingRun() {
+    return Boolean(streamState.getRunId()) && Boolean(streamState.getCurrentStreamingContentElement());
+  }
+
   function isResponseBusy() {
-    return isResponseInFlight || Boolean(streamState.getRunId());
+    return isResponseInFlight || hasLiveStreamingRun();
   }
 
   function beginResponseRun() {
@@ -770,6 +779,18 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       loadingManager.showToast('A response is already in progress', 'warning');
       return false;
+    }
+
+    // Recover from a stranded run whose terminal event never arrived so it
+    // doesn't permanently block new runs.
+    if (streamState.getRunId()) {
+      console.warn('Chat: clearing stranded run state before starting a new run', {
+        strandedRunId: streamState.getRunId(),
+        sourceTabId: streamState.getSourceTabId(),
+      });
+      streamState.setActiveToolCall(null);
+      streamState.setRunId(null);
+      streamState.setSourceTabId(null);
     }
 
     isResponseInFlight = true;
