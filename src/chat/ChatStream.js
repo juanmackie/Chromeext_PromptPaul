@@ -31,6 +31,13 @@ export class StreamStateManager {
     this._lastScrollTop = 0;
     this._chatAreaRef = null;
 
+    // Reasoning ("thinking") stream — rendered into a separate panel above the answer
+    this.currentReasoningContentElement = null;
+    this.accumulatedReasoningText = '';
+    this._reasoningBuffer = '';
+    this._reasoningQueued = false;
+    this._reasoningStartTime = null;
+
     // API call state
     this.currentRunId = null;
     this.currentSourceTabId = null;
@@ -74,6 +81,61 @@ export class StreamStateManager {
   }
 
   /**
+   * Queue a reasoning delta for batched rendering into the thinking panel.
+   * @param {string} delta
+   */
+  queueRenderReasoning(delta) {
+    this._reasoningBuffer += delta;
+    if (!this._reasoningQueued) {
+      this._reasoningQueued = true;
+      requestAnimationFrame(() => this._flushReasoningRender());
+    }
+  }
+
+  _flushReasoningRender() {
+    this._reasoningQueued = false;
+    const el = this.currentReasoningContentElement;
+    if (!el || !this._reasoningBuffer) return;
+
+    this.accumulatedReasoningText += this._reasoningBuffer;
+    this._reasoningBuffer = '';
+    el.innerHTML = renderMarkdown(this.accumulatedReasoningText);
+    if (this._chatAreaRef) {
+      this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
+    }
+  }
+
+  /**
+   * Set the element that reasoning tokens render into.
+   * @param {HTMLElement|null} element
+   */
+  setReasoningContentElement(element) {
+    this.currentReasoningContentElement = element;
+  }
+
+  /** @returns {HTMLElement|null} */
+  getReasoningContentElement() {
+    return this.currentReasoningContentElement;
+  }
+
+  /**
+   * Record (once) the moment reasoning began, used to compute elapsed time.
+   */
+  markReasoningStart() {
+    if (this._reasoningStartTime == null) {
+      this._reasoningStartTime = Date.now();
+    }
+  }
+
+  /**
+   * Elapsed reasoning time in ms, or null if reasoning never started.
+   * @returns {number|null}
+   */
+  getReasoningElapsedMs() {
+    return this._reasoningStartTime == null ? null : Date.now() - this._reasoningStartTime;
+  }
+
+  /**
    * Reset all streaming state
    */
   resetStreamingState() {
@@ -84,6 +146,11 @@ export class StreamStateManager {
     this.activeStreamingToolCall = null;
     this._renderBuffer = '';
     this._renderQueued = false;
+    this.currentReasoningContentElement = null;
+    this.accumulatedReasoningText = '';
+    this._reasoningBuffer = '';
+    this._reasoningQueued = false;
+    this._reasoningStartTime = null;
   }
 
   /**
@@ -130,6 +197,11 @@ export class StreamStateManager {
 
   clearStreamingElements() {
     this.setStreamingElements(null, null, null);
+    this.currentReasoningContentElement = null;
+    this.accumulatedReasoningText = '';
+    this._reasoningBuffer = '';
+    this._reasoningQueued = false;
+    this._reasoningStartTime = null;
   }
 
   /**

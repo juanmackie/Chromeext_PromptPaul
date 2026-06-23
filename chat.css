@@ -435,6 +435,54 @@ body.dark-theme ::selection {
   border: 1px solid var(--ext-border);
 }
 
+/* Collapsible reasoning / "thinking" panel above the answer */
+.reasoning-section {
+  margin-bottom: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--ext-muted);
+  border: 1px solid var(--ext-border);
+  border-left: 3px solid var(--ext-primary);
+  border-radius: 4px;
+}
+
+.reasoning-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ext-muted-foreground);
+  user-select: none;
+}
+
+.reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasoning-summary::before {
+  content: '\25B8\00A0';
+  display: inline-block;
+}
+
+.reasoning-section[open] > .reasoning-summary::before {
+  content: '\25BE\00A0';
+}
+
+.reasoning-content {
+  margin-top: 0.4rem;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ext-muted-foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reasoning-content p {
+  margin: 0 0 0.4rem;
+}
+
 .copy-action-button {
   margin-left: 5px;
   padding: 0.1rem 0.35rem;

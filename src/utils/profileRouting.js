@@ -25,6 +25,31 @@ export function modelSupportsVision(modelName) {
   return VISION_MODEL_PATTERNS.some((pattern) => pattern.test(modelName));
 }
 
+const REASONING_MODEL_PATTERNS = [
+  /claude-3-7/i,
+  /claude-(opus|sonnet)-4/i,
+  /claude-.*-4-/i,
+  /o[1-4](-|$)/i,
+  /gpt-5/i,
+  /deepseek-reasoner/i,
+  /deepseek-r1/i,
+  /grok-.*reason/i,
+  /gemini-2\.5/i,
+];
+
+/**
+ * Whether a model is known to emit reasoning/thinking tokens.
+ * Used to request Anthropic extended thinking; OpenAI-compatible endpoints
+ * stream reasoning unconditionally and are parsed regardless.
+ * @param {string} modelName
+ * @returns {boolean}
+ */
+export function modelSupportsReasoning(modelName) {
+  if (!modelName) return false;
+  const normalized = String(modelName).replace(/^anthropic:/, '');
+  return REASONING_MODEL_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 export function isProfileUsable(profile, endpointOverride = null) {
   const endpoint = endpointOverride || profile?.llmEndpoint;
   return Boolean(endpoint && isValidURL(endpoint) && profile?.apiKey && profile?.modelName);

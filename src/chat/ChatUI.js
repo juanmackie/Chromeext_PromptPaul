@@ -146,6 +146,60 @@ class ChatUI {
   }
 
   /**
+   * Lazily create (or return) the collapsible reasoning panel for an LLM bubble.
+   * The panel is prepended inside the bubble, above the `.llm-content-area`.
+   * @param {HTMLElement} messageDiv - The LLM message container
+   * @returns {HTMLElement|null} The `.reasoning-content` element to stream into
+   */
+  ensureReasoningPanel(messageDiv) {
+    if (!messageDiv) return null;
+
+    const existing = messageDiv.querySelector('.reasoning-content');
+    if (existing) return existing;
+
+    const details = document.createElement('details');
+    details.className = 'reasoning-section';
+    details.open = true;
+
+    const summary = document.createElement('summary');
+    summary.className = 'reasoning-summary';
+    summary.textContent = 'Thinking…';
+    details.appendChild(summary);
+
+    const content = document.createElement('div');
+    content.className = 'reasoning-content';
+    details.appendChild(content);
+
+    // Insert above the answer content area (which is the first child for LLM bubbles).
+    messageDiv.insertBefore(details, messageDiv.firstChild);
+    return content;
+  }
+
+  /**
+   * Collapse the reasoning panel and replace its summary with an elapsed-time label.
+   * Idempotent — safe to call multiple times.
+   * @param {HTMLElement} messageDiv
+   * @param {number|null} elapsedMs
+   */
+  finalizeReasoningPanel(messageDiv, elapsedMs) {
+    if (!messageDiv) return;
+    const details = messageDiv.querySelector('.reasoning-section');
+    if (!details || details.dataset.finalized === 'true') return;
+
+    const summary = details.querySelector('.reasoning-summary');
+    if (summary) {
+      if (typeof elapsedMs === 'number' && elapsedMs >= 0) {
+        const seconds = Math.max(1, Math.round(elapsedMs / 1000));
+        summary.textContent = `Thought for ${seconds}s`;
+      } else {
+        summary.textContent = 'Thought process';
+      }
+    }
+    details.open = false;
+    details.dataset.finalized = 'true';
+  }
+
+  /**
    * Creates an expandable message for loaded tab content
    * @param {string} sourceInfo - Formatted source information
    * @param {string} fullContent - The complete extracted content

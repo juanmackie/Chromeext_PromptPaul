@@ -11,6 +11,7 @@
  */
 
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
+import { modelSupportsReasoning } from '../utils/profileRouting.js';
 
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
@@ -65,6 +66,8 @@ class RunOrchestrator {
     run.accumulatedText = '';
     run.activeToolCall = null;
     run.activeToolCalls = null;
+    // Per-turn Anthropic thinking block (text + signature) for tool-call continuity.
+    run.thinkingBlock = null;
 
     // Sanitize conversation history to strip orphan tool messages
     run.conversationHistory = this._sanitizeMessages(run.conversationHistory);
@@ -489,6 +492,13 @@ class RunOrchestrator {
         ]);
       } else if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
         const content = [];
+        if (msg._anthropicThinking?.signature) {
+          content.push({
+            type: 'thinking',
+            thinking: msg._anthropicThinking.thinking,
+            signature: msg._anthropicThinking.signature,
+          });
+        }
         if (msg.content) content.push({ type: 'text', text: msg.content });
         content.push(
           ...msg.tool_calls.map((toolCall) => ({
@@ -516,6 +526,13 @@ class RunOrchestrator {
           ]);
         } else if (msg?.role === 'assistant' && Array.isArray(msg.tool_calls)) {
           const content = [];
+          if (msg._anthropicThinking?.signature) {
+            content.push({
+              type: 'thinking',
+              thinking: msg._anthropicThinking.thinking,
+              signature: msg._anthropicThinking.signature,
+            });
+          }
           if (msg.content) content.push({ type: 'text', text: msg.content });
           content.push(
             ...msg.tool_calls.map((toolCall) => ({
@@ -541,18 +558,29 @@ class RunOrchestrator {
   async _executeAnthropic(run, requestConfig, tools) {
     const { llmEndpoint, apiKey, modelName } = run.config;
 
+    const reasoningEnabled = modelSupportsReasoning(modelName);
+    const THINKING_BUDGET_TOKENS = 2048;
+
     const body = {
       model: modelName.replace('anthropic:', ''),
-      max_tokens: 4096,
+      max_tokens: reasoningEnabled ? 4096 + THINKING_BUDGET_TOKENS : 4096,
       stream: true,
       messages: this._buildAnthropicMessages(run, requestConfig),
     };
+
+    // Enable extended thinking for models that support it. Temperature must be
+    // left unset (Anthropic requirement) — it already is.
+    if (reasoningEnabled) {
+      body.thinking = { type: 'enabled', budget_tokens: THINKING_BUDGET_TOKENS };
+    }
 
     // Add system prompt with skill catalog (eligible skills only)
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
     body.system = this._buildSystemPrompt(run, eligibleSkills);
 
-    // Normalize tool_choice and add tools if not 'none'
+    // Normalize tool_choice and add tools if not 'none'.
+    // Note: Anthropic disallows forced tool_choice while thinking is enabled;
+    // tools are still offered with the default (auto) selection.
     const normalizedToolChoice = normalizeToolChoice(run.config.tool_choice);
     if (normalizedToolChoice !== 'none' && tools.length > 0) {
       body.tools = tools.map((t) => ({
@@ -621,6 +649,13 @@ class RunOrchestrator {
     const delta = parsed.choices?.[0]?.delta;
     if (!delta) return;
 
+    // Handle reasoning tokens (DeepSeek: reasoning_content, OpenRouter: reasoning).
+    // Display-only — not added to accumulatedText or conversation history.
+    const reasoning = delta.reasoning_content ?? delta.reasoning;
+    if (reasoning) {
+      this._emitEvent(run.id, { type: 'reasoning', data: reasoning });
+    }
+
     // Handle content
     if (delta.content) {
       run.accumulatedText += delta.content;
@@ -681,6 +716,13 @@ class RunOrchestrator {
       if (event.delta.type === 'text_delta') {
         run.accumulatedText += event.delta.text;
         this._emitEvent(run.id, { type: 'content', data: event.delta.text });
+      } else if (event.delta.type === 'thinking_delta') {
+        if (!run.thinkingBlock) run.thinkingBlock = { thinking: '', signature: '' };
+        run.thinkingBlock.thinking += event.delta.thinking || '';
+        this._emitEvent(run.id, { type: 'reasoning', data: event.delta.thinking || '' });
+      } else if (event.delta.type === 'signature_delta') {
+        if (!run.thinkingBlock) run.thinkingBlock = { thinking: '', signature: '' };
+        run.thinkingBlock.signature += event.delta.signature || '';
       } else if (event.delta.type === 'input_json_delta' && run.activeToolCall) {
         run.activeToolCall.function.arguments = this._mergeToolArguments(
           run.activeToolCall.function.arguments,
@@ -733,11 +775,17 @@ class RunOrchestrator {
         : [];
     if (toolCalls.length === 0) return;
 
-    run.conversationHistory.push({
+    const assistantMessage = {
       role: 'assistant',
       content: run.accumulatedText || null,
       tool_calls: toolCalls,
-    });
+    };
+    // Preserve Anthropic thinking block (with signature) so it can be replayed
+    // on the follow-up turn — required when extended thinking + tool_use combine.
+    if (run.thinkingBlock?.thinking && run.thinkingBlock?.signature) {
+      assistantMessage._anthropicThinking = run.thinkingBlock;
+    }
+    run.conversationHistory.push(assistantMessage);
 
     this._emitEvent(run.id, {
       type: 'tool_ready',

@@ -1188,13 +1188,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       switch (event.type) {
+        case 'reasoning':
+          if (streamState.getCurrentStreamingMessageDiv() && event.data) {
+            if (!streamState.getReasoningContentElement()) {
+              const reasoningEl = chatUI.ensureReasoningPanel(
+                streamState.getCurrentStreamingMessageDiv()
+              );
+              streamState.setReasoningContentElement(reasoningEl);
+            }
+            streamState.markReasoningStart();
+            streamState.queueRenderReasoning(event.data);
+          }
+          break;
+
         case 'content':
           if (streamState.getCurrentStreamingContentElement() && event.data) {
+            // First answer token after reasoning — collapse the thinking panel.
+            if (streamState.getReasoningContentElement()) {
+              chatUI.finalizeReasoningPanel(
+                streamState.getCurrentStreamingMessageDiv(),
+                streamState.getReasoningElapsedMs()
+              );
+            }
             streamState.queueRenderChunk(event.data);
           }
           break;
 
         case 'tool_start':
+          // Collapse any open thinking panel before the tool trace replaces the bubble.
+          if (streamState.getReasoningContentElement()) {
+            chatUI.finalizeReasoningPanel(
+              streamState.getCurrentStreamingMessageDiv(),
+              streamState.getReasoningElapsedMs()
+            );
+          }
           streamState.setActiveToolCall(event.toolCall);
           if (streamState.getCurrentStreamingContentElement()) {
             if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
@@ -1254,6 +1281,13 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
 
         case 'complete': {
+          // Collapse the thinking panel if it never got collapsed (e.g. reasoning-only turn).
+          if (streamState.getReasoningContentElement()) {
+            chatUI.finalizeReasoningPanel(
+              streamState.getCurrentStreamingMessageDiv(),
+              streamState.getReasoningElapsedMs()
+            );
+          }
           // Finalize the existing streaming bubble instead of creating a duplicate
           if (streamState.getCurrentStreamingContentElement()) {
             const finalContent = event.content || streamState.getStreamedText() || '';
