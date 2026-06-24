@@ -12,6 +12,7 @@
 
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 import { modelSupportsReasoning } from '../utils/profileRouting.js';
+import { createThinkParser } from '../utils/inlineReasoning.js';
 
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
@@ -42,7 +43,6 @@ class RunOrchestrator {
       accumulatedText: '',
       activeToolCall: null,
       toolCallIterations: 0,
-      skillInjected: false,
       status: 'ready',
       abortController: new AbortController(),
     };
@@ -68,39 +68,12 @@ class RunOrchestrator {
     run.activeToolCalls = null;
     // Per-turn Anthropic thinking block (text + signature) for tool-call continuity.
     run.thinkingBlock = null;
+    // Per-turn parser that strips inline <think>…</think> reasoning from the answer
+    // stream (used by the OpenAI-style path; harmless no-op for Anthropic).
+    run.thinkParser = createThinkParser();
 
     // Sanitize conversation history to strip orphan tool messages
     run.conversationHistory = this._sanitizeMessages(run.conversationHistory);
-
-    // If the user explicitly requested a skill, resolve and inject instructions
-    // directly into conversation — no model tool call needed (mirrors OpenClaw).
-    if (run.config.requestedSkill && !run.skillInjected) {
-      const resolved = this.skillManager.resolveSkill(run.config.requestedSkill);
-      if (resolved) {
-        const skillBlock = [
-          `══════════════════════════════════════════`,
-          `  SKILL: ${resolved.name}`,
-          `  ${resolved.description}`,
-          `══════════════════════════════════════════`,
-          '',
-          resolved.instructions,
-          '',
-          `══════════════════════════════════════════`,
-          `Skill instructions loaded. Follow them for this response.`,
-        ].join('\n');
-
-        run.conversationHistory.unshift({
-          role: 'system',
-          content: skillBlock,
-        });
-
-        run.skillInjected = true;
-
-        console.log(`[Orchestrator] Injected skill instructions: ${resolved.name}`);
-      } else {
-        console.warn(`[Orchestrator] Requested skill '${run.config.requestedSkill}' not found`);
-      }
-    }
 
     try {
       // Build tools with skill injection
@@ -351,11 +324,33 @@ class RunOrchestrator {
     return tools;
   }
 
+  _formatSkillBlock(resolved) {
+    return [
+      `══════════════════════════════════════════`,
+      `  SKILL: ${resolved.name}`,
+      `  ${resolved.description}`,
+      `══════════════════════════════════════════`,
+      '',
+      resolved.instructions,
+      '',
+      `══════════════════════════════════════════`,
+      `Skill instructions loaded. Follow them for this response.`,
+    ].join('\n');
+  }
+
   _buildSystemPrompt(run, eligibleSkills) {
     const parts = [CORE_INSTRUCTIONS];
     if (run.config.systemPrompt) parts.push(run.config.systemPrompt);
 
-    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
+    if (run.config.requestedSkill) {
+      const resolved = this.skillManager.resolveSkill(run.config.requestedSkill);
+      if (resolved) {
+        parts.push(this._formatSkillBlock(resolved));
+        console.log(`[Orchestrator] Injected skill instructions: ${resolved.name}`);
+      } else {
+        console.warn(`[Orchestrator] Requested skill '${run.config.requestedSkill}' not found`);
+      }
+    } else if (eligibleSkills.length > 0) {
       const skillCatalog = eligibleSkills.map((s) => `${s.name} (${s.description})`).join(', ');
       parts.push(
         `Available skills (reference instructions, NOT callable tools): ${skillCatalog}. CRITICAL: Skills are documentation only. Never emit a skill name as a tool call. The ONLY callable functions for skills are "skills_list" (discover) and "skill_view" (load full instructions). Load skills using skill_view, then use your own tools and knowledge. Proceed without a skill if none match.`
@@ -446,10 +441,21 @@ class RunOrchestrator {
       }
     }
 
-    // Finalize based on what we have
+    // Drain any tail held back while waiting on a possible inline-think tag.
+    const tail = run.thinkParser.flush();
+    if (tail.reasoning) {
+      this._emitEvent(run.id, { type: 'reasoning', data: tail.reasoning });
+    }
+    if (tail.content) {
+      run.accumulatedText += tail.content;
+      this._emitEvent(run.id, { type: 'content', data: tail.content });
+    }
+
+    // Finalize based on what we have. Finalize even with no answer text when the
+    // model emitted inline reasoning, so the run completes and the UI unlocks.
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
-    } else if (run.accumulatedText.trim()) {
+    } else if (run.accumulatedText.trim() || run.thinkParser.sawThink) {
       await this._finalizeTextResponse(run);
     }
   }
@@ -649,17 +655,27 @@ class RunOrchestrator {
     const delta = parsed.choices?.[0]?.delta;
     if (!delta) return;
 
-    // Handle reasoning tokens (DeepSeek: reasoning_content, OpenRouter: reasoning).
+    if (!run.thinkParser) run.thinkParser = createThinkParser();
+
+    // Handle structured reasoning tokens (DeepSeek: reasoning_content, OpenRouter: reasoning).
     // Display-only — not added to accumulatedText or conversation history.
-    const reasoning = delta.reasoning_content ?? delta.reasoning;
-    if (reasoning) {
-      this._emitEvent(run.id, { type: 'reasoning', data: reasoning });
+    const structuredReasoning = delta.reasoning_content ?? delta.reasoning;
+    if (structuredReasoning) {
+      this._emitEvent(run.id, { type: 'reasoning', data: structuredReasoning });
     }
 
-    // Handle content
+    // Handle content. Some models stream their chain-of-thought inline as
+    // <think>…</think> instead of a separate reasoning field; split it out so
+    // the thinking goes to the reasoning panel and only the answer is kept.
     if (delta.content) {
-      run.accumulatedText += delta.content;
-      this._emitEvent(run.id, { type: 'content', data: delta.content });
+      const { content, reasoning } = run.thinkParser.push(delta.content);
+      if (reasoning) {
+        this._emitEvent(run.id, { type: 'reasoning', data: reasoning });
+      }
+      if (content) {
+        run.accumulatedText += content;
+        this._emitEvent(run.id, { type: 'content', data: content });
+      }
     }
 
     // Handle tool calls
@@ -835,10 +851,14 @@ class RunOrchestrator {
   async _finalizeTextResponse(run) {
     run.status = 'complete';
 
-    run.conversationHistory.push({
-      role: 'assistant',
-      content: run.accumulatedText,
-    });
+    // Don't persist an empty assistant turn (reasoning-only response with no
+    // answer); still emit `complete` below so the UI finalizes and unlocks.
+    if (run.accumulatedText.trim()) {
+      run.conversationHistory.push({
+        role: 'assistant',
+        content: run.accumulatedText,
+      });
+    }
 
     this._emitEvent(run.id, {
       type: 'complete',

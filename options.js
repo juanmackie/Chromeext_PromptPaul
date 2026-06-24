@@ -106,6 +106,12 @@ function showStatus(message, isError = false, isToast = false) {
   } else {
     // Show status div message when isToast is false
     const status = document.getElementById('status');
+    if (!status) {
+      // No inline status element on this page — fall back to a toast so the
+      // message is still surfaced instead of throwing on a null element.
+      loadingManager.showToast(message, isError ? 'error' : 'success');
+      return;
+    }
     status.textContent = message;
     status.className = `status ${isError ? 'error' : 'success'}`;
     status.style.display = 'block';
@@ -502,6 +508,13 @@ function loadOptions() {
 // Add event listeners
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
+
+  // Expose each help tooltip's text to assistive tech (the CSS `content`
+  // tooltip isn't announced), so keyboard + screen-reader users hear the
+  // actual help instead of a generic "Help".
+  document.querySelectorAll('.help-tooltip[data-tooltip]').forEach((el) => {
+    el.setAttribute('aria-label', el.getAttribute('data-tooltip'));
+  });
   const addProfileButton = document.getElementById('addProfileButton');
   const deleteProfileButton = document.getElementById('deleteProfileButton');
 

@@ -1,5 +1,30 @@
 /* Chat-specific styles - Theme variables are now imported from theme.css */
 
+/* Material Symbols Outlined font — bundled locally (no external CDN dependency) */
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('libs/material-symbols-outlined.woff2') format('woff2');
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
 /* Skip Link */
 .skip-link {
   position: absolute;
@@ -1105,6 +1130,62 @@ td {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ── Slash-command typeahead picker ────────────────────────────── */
+
+#slash-command-menu {
+  position: absolute;
+  background: var(--ext-card);
+  border: 1px solid var(--ext-border);
+  border-radius: 4px;
+  padding: 4px 0;
+  z-index: var(--ext-z-dropdown);
+  min-width: 220px;
+  max-width: 360px;
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: var(--ext-shadow-hover);
+}
+
+#slash-command-menu .slash-menu-item {
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--ext-foreground);
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--ext-font-family);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+#slash-command-menu .slash-menu-item:hover,
+#slash-command-menu .slash-menu-item.active {
+  background: var(--ext-primary);
+  color: var(--ext-primary-foreground);
+}
+
+#slash-command-menu .slash-menu-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#slash-command-menu .slash-menu-desc {
+  color: var(--ext-muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#slash-command-menu .slash-menu-item:hover .slash-menu-desc,
+#slash-command-menu .slash-menu-item.active .slash-menu-desc {
+  color: var(--ext-primary-foreground);
+  opacity: 0.8;
 }
 
 /* ── Drag & Drop Overlay ───────────────────────────────────────── */

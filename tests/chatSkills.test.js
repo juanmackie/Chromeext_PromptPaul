@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseCommand, detectSkillIntent, formatSkillsList } from '../src/chat/ChatSkills.js';
+import {
+  parseCommand,
+  detectSkillIntent,
+  formatSkillsList,
+  buildSlashCandidates,
+  filterSlashCandidates,
+} from '../src/chat/ChatSkills.js';
 
 const mockSkills = [
   { name: 'humanizer', description: 'Makes text natural', userInvocable: true },
@@ -151,6 +157,94 @@ describe('ChatSkills', () => {
       const result = formatSkillsList(mockSkills, cmds);
       expect(result).toContain('Commands');
       expect(result).toContain('/humanizer');
+    });
+  });
+
+  describe('buildSlashCandidates', () => {
+    it('always includes /skills as the first builtin candidate', () => {
+      const result = buildSlashCandidates([], []);
+      expect(result[0]).toEqual({
+        name: 'skills',
+        label: '/skills',
+        description: 'List available skills',
+        kind: 'builtin',
+      });
+    });
+
+    it('uses slashCommands when provided', () => {
+      const cmds = [{ name: 'humanizer', description: 'Humanize text' }];
+      const result = buildSlashCandidates(mockSkills, cmds);
+      expect(result).toHaveLength(2);
+      expect(result[1].name).toBe('humanizer');
+      expect(result[1].label).toBe('/humanizer');
+    });
+
+    it('falls back to availableSkills filtered by userInvocable', () => {
+      const result = buildSlashCandidates(mockSkills, []);
+      const names = result.slice(1).map((c) => c.name);
+      expect(names).toContain('humanizer');
+      expect(names).toContain('summarizer');
+      expect(names).not.toContain('weather-guide');
+    });
+
+    it('skips duplicate "skills" entry from slashCommands', () => {
+      const cmds = [
+        { name: 'skills', description: 'List' },
+        { name: 'humanizer', description: 'Humanize' },
+      ];
+      const result = buildSlashCandidates(mockSkills, cmds);
+      const skillEntries = result.filter((c) => c.name === 'skills');
+      expect(skillEntries).toHaveLength(1);
+    });
+  });
+
+  describe('filterSlashCandidates', () => {
+    const candidates = [
+      { name: 'skills', label: '/skills', description: 'List', kind: 'builtin' },
+      { name: 'humanizer', label: '/humanizer', description: 'Humanize', kind: 'skill' },
+      { name: 'summarizer', label: '/summarizer', description: 'Summarize', kind: 'skill' },
+    ];
+
+    it('returns all candidates for empty query', () => {
+      expect(filterSlashCandidates('', candidates)).toEqual(candidates);
+    });
+
+    it('filters by prefix match', () => {
+      const result = filterSlashCandidates('hum', candidates);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('humanizer');
+    });
+
+    it('filters case-insensitively', () => {
+      const result = filterSlashCandidates('HUM', candidates);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('humanizer');
+    });
+
+    it('filters hyphen-insensitively', () => {
+      const hyphenCandidates = [
+        { name: 'weather-guide', label: '/weather-guide', description: 'Weather', kind: 'skill' },
+      ];
+      const result = filterSlashCandidates('weatherguide', hyphenCandidates);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('weather-guide');
+    });
+
+    it('ranks prefix matches before substring matches', () => {
+      const mixedCandidates = [
+        { name: 'skills', label: '/skills', description: 'List', kind: 'builtin' },
+        { name: 'humanizer', label: '/humanizer', description: 'Humanize', kind: 'skill' },
+        { name: 'summarizer', label: '/summarizer', description: 'Summarize', kind: 'skill' },
+        { name: 'some-humility', label: '/some-humility', description: 'Other', kind: 'skill' },
+      ];
+      const result = filterSlashCandidates('hum', mixedCandidates);
+      expect(result[0].name).toBe('humanizer');
+      expect(result[1].name).toBe('some-humility');
+    });
+
+    it('returns empty array for no matches', () => {
+      const result = filterSlashCandidates('zzz', candidates);
+      expect(result).toHaveLength(0);
     });
   });
 });

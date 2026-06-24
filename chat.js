@@ -537,6 +537,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ── Slash-command typeahead picker ────────────────────────────
+  let slashMenuVisible = false;
+  let slashMenu = null;
+  let slashCandidates = [];
+  let slashActiveIndex = 0;
+  let cachedSkills = [];
+  let cachedSlashCommands = [];
+  let slashLoaded = false;
+
   // Analyze dropdown - shows preset menu
   let presetMenuVisible = false;
   let presetMenu = null;
@@ -707,6 +716,131 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── Slash-command typeahead picker functions ─────────────────
+
+  async function refreshSlashCandidates() {
+    try {
+      const resp = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'getSkills' }, (response) => {
+          if (chrome.runtime.lastError) resolve({ skills: [], slashCommands: [] });
+          else resolve(response || { skills: [], slashCommands: [] });
+        });
+      });
+      cachedSkills = resp.skills || [];
+      cachedSlashCommands = resp.slashCommands || [];
+    } catch {
+      cachedSkills = [];
+      cachedSlashCommands = [];
+    }
+  }
+
+  function createSlashMenu() {
+    if (slashMenu) return slashMenu;
+    slashMenu = document.createElement('div');
+    slashMenu.id = 'slash-command-menu';
+    document.body.appendChild(slashMenu);
+    return slashMenu;
+  }
+
+  function positionSlashMenu() {
+    if (!slashMenu) return;
+    const wrapper = document.getElementById('input-wrapper');
+    if (!wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    slashMenu.style.left = `${rect.left}px`;
+    slashMenu.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+    slashMenu.style.top = 'auto';
+  }
+
+  function updateSlashMenu(query) {
+    const menu = createSlashMenu();
+
+    const { buildSlashCandidates: build, filterSlashCandidates: filter } = _chatSkillsModule || {};
+    if (!build || !filter) return;
+
+    const allCandidates = build(cachedSkills, cachedSlashCommands);
+    const filtered = filter(query, allCandidates);
+
+    menu.innerHTML = '';
+    slashActiveIndex = 0;
+
+    if (filtered.length === 0) {
+      menu.style.display = 'none';
+      slashMenuVisible = false;
+      return;
+    }
+
+    filtered.forEach((candidate, idx) => {
+      const item = document.createElement('button');
+      item.className = 'slash-menu-item' + (idx === 0 ? ' active' : '');
+      item.dataset.index = idx;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'slash-menu-name';
+      nameSpan.textContent = candidate.label;
+      item.appendChild(nameSpan);
+
+      if (candidate.description) {
+        const descSpan = document.createElement('span');
+        descSpan.className = 'slash-menu-desc';
+        descSpan.textContent = candidate.description;
+        item.appendChild(descSpan);
+      }
+
+      item.addEventListener('click', () => {
+        acceptSlash(candidate);
+      });
+
+      menu.appendChild(item);
+    });
+
+    slashCandidates = filtered;
+    positionSlashMenu();
+    menu.style.display = 'block';
+    slashMenuVisible = true;
+  }
+
+  function moveSlashActive(delta) {
+    if (!slashMenuVisible || slashCandidates.length === 0) return;
+    const items = slashMenu.querySelectorAll('.slash-menu-item');
+    if (items.length === 0) return;
+
+    items[slashActiveIndex]?.classList.remove('active');
+    slashActiveIndex = (slashActiveIndex + delta + items.length) % items.length;
+    items[slashActiveIndex]?.classList.add('active');
+    items[slashActiveIndex]?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function acceptSlash(candidate) {
+    if (!candidate) return;
+    const input = document.getElementById('user-input');
+    if (!input) return;
+
+    const val = input.value;
+    const slashIdx = val.indexOf('/');
+    if (slashIdx !== -1) {
+      input.value = val.slice(0, slashIdx) + candidate.label + ' ';
+    } else {
+      input.value = candidate.label + ' ';
+    }
+
+    hideSlashMenu();
+    input.focus();
+  }
+
+  function hideSlashMenu() {
+    if (slashMenu) {
+      slashMenu.style.display = 'none';
+    }
+    slashMenuVisible = false;
+    slashActiveIndex = 0;
+    slashLoaded = false;
+  }
+
+  function isSlashMenuVisible() {
+    return slashMenuVisible;
+  }
+
   if (explainButton) {
     explainButton.addEventListener('click', async () => {
       await runSelectedTextPrompt(buildExplainPrompt('selected text'), 'auto', 'run Explain');
@@ -764,7 +898,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // is stranded (its terminal event was never delivered) and must not block
   // future runs.
   function hasLiveStreamingRun() {
-    return Boolean(streamState.getRunId()) && Boolean(streamState.getCurrentStreamingContentElement());
+    return (
+      Boolean(streamState.getRunId()) && Boolean(streamState.getCurrentStreamingContentElement())
+    );
   }
 
   function isResponseBusy() {
@@ -1291,8 +1427,14 @@ document.addEventListener('DOMContentLoaded', () => {
           // Finalize the existing streaming bubble instead of creating a duplicate
           if (streamState.getCurrentStreamingContentElement()) {
             const finalContent = event.content || streamState.getStreamedText() || '';
+            // Reasoning-only turn (model spent its budget thinking, no answer):
+            // show a notice rather than an empty bubble.
+            const displayContent =
+              !finalContent.trim() && streamState.getReasoningContentElement()
+                ? '⚠️ No final answer — the model used its token budget thinking.'
+                : finalContent;
             streamState.getCurrentStreamingContentElement().innerHTML =
-              renderMarkdownContent(finalContent);
+              renderMarkdownContent(displayContent);
             chatUI.postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
             // Attach copy listeners to existing bubble (fix: icons were created
@@ -1392,9 +1534,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   userInput.addEventListener('keydown', (event) => {
+    if (isSlashMenuVisible()) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveSlashActive(1);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveSlashActive(-1);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        acceptSlash(slashCandidates[slashActiveIndex]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        hideSlashMenu();
+        return;
+      }
+    }
     if (event.key === 'Enter' && !event.shiftKey && !userInput.disabled) {
       event.preventDefault();
       sendMessage();
+    }
+  });
+
+  userInput.addEventListener('input', async () => {
+    const val = userInput.value;
+    const match = val.match(/^\/(\S*)$/);
+    if (match) {
+      if (!_chatSkillsModule) {
+        await getChatSkills();
+      }
+      if (!slashLoaded) {
+        await refreshSlashCandidates();
+        slashLoaded = true;
+      }
+      updateSlashMenu(match[1]);
+    } else {
+      hideSlashMenu();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (slashMenuVisible && slashMenu && !slashMenu.contains(e.target) && e.target !== userInput) {
+      hideSlashMenu();
     }
   });
   userInput.addEventListener('paste', handleUserInputPaste);

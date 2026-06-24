@@ -34,6 +34,15 @@ input:invalid:not(:placeholder-shown) {
   border: 0;
 }
 
+/* Material Symbols Outlined font — bundled locally (no external CDN dependency) */
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('libs/material-symbols-outlined.woff2') format('woff2');
+}
+
 /* Material Symbols Outlined font styling */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
@@ -46,6 +55,8 @@ input:invalid:not(:placeholder-shown) {
   display: inline-block;
   white-space: nowrap;
   direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
 }
 
@@ -1259,15 +1270,29 @@ footer a:hover {
 
 /* Help Tooltips */
 .help-tooltip {
+  /* Fixed square so border-radius:50% renders a true circle, not an egg.
+     inline-flex centers the icon glyph regardless of its intrinsic metrics. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
   background: none;
   border: none;
   color: var(--ext-muted-foreground);
   cursor: help;
-  padding: 0.125rem;
+  padding: 0;
   margin-left: 0.5rem;
   border-radius: 50%;
+  line-height: 1;
   transition: all 0.2s ease;
   position: relative;
+}
+
+.help-tooltip .material-symbols-outlined {
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .help-tooltip:hover {
@@ -1297,9 +1322,17 @@ footer a:hover {
   white-space: normal;
 }
 
-.help-tooltip:hover::after {
+.help-tooltip:hover::after,
+.help-tooltip:focus-visible::after {
   opacity: 1;
   visibility: visible;
+}
+
+/* Keyboard focus indicator for the help buttons */
+.help-tooltip:focus-visible {
+  outline: 2px solid var(--ext-primary);
+  outline-offset: 1px;
+  color: var(--ext-primary);
 }
 
 /* Model Selector */

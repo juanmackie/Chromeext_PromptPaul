@@ -160,6 +160,62 @@ export function detectSkillIntent(message, availableSkills) {
 }
 
 /**
+ * Build a list of slash-command candidates for the typeahead picker.
+ * @param {Array} availableSkills - Skills from getSkills response
+ * @param {Array} slashCommands - Slash commands from getSkills response
+ * @returns {Array<{name: string, label: string, description: string, kind: 'builtin'|'skill'}>}
+ */
+export function buildSlashCandidates(availableSkills, slashCommands) {
+  const candidates = [
+    { name: 'skills', label: '/skills', description: 'List available skills', kind: 'builtin' },
+  ];
+
+  const cmds =
+    slashCommands && slashCommands.length > 0
+      ? slashCommands
+      : (availableSkills || []).filter((s) => s.userInvocable !== false);
+
+  for (const cmd of cmds) {
+    if (cmd.name === 'skills') continue;
+    candidates.push({
+      name: cmd.name,
+      label: `/${cmd.name}`,
+      description: cmd.description || '',
+      kind: 'skill',
+    });
+  }
+
+  return candidates;
+}
+
+/**
+ * Filter slash-command candidates by a query prefix (case-insensitive, hyphen-insensitive).
+ * Prefix matches rank before substring matches.
+ * @param {string} query - The typed text after the leading "/"
+ * @param {Array} candidates - Candidate list from buildSlashCandidates
+ * @returns {Array} Filtered and ranked candidates
+ */
+export function filterSlashCandidates(query, candidates) {
+  if (!query) return candidates;
+
+  const q = query.toLowerCase().replace(/-/g, '');
+
+  const prefixMatches = [];
+  const substringMatches = [];
+
+  for (const c of candidates) {
+    const name = c.name.toLowerCase().replace(/-/g, '');
+    if (name.startsWith(q)) {
+      prefixMatches.push(c);
+    } else if (name.includes(q)) {
+      substringMatches.push(c);
+    }
+  }
+
+  return [...prefixMatches, ...substringMatches];
+}
+
+/**
  * Format the list of available skills for display
  * @param {Array} availableSkills - List of available skills
  * @param {Array} slashCommands - List of slash commands

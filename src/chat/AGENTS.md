@@ -8,7 +8,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 
 - `ChatUI.js` owns chat DOM rendering, message controls, and attachment previews.
 - `ChatAPI.js` owns profile/config resolution and run bridge calls to the background worker.
-- `ChatSkills.js` owns `/skills`, `/skill <name>`, per-skill shortcuts, and natural-language skill intent detection.
+- `ChatSkills.js` owns `/skills`, `/skill <name>`, per-skill shortcuts, natural-language skill intent detection, and the pure typeahead picker helpers (`buildSlashCandidates`, `filterSlashCandidates`).
 - `ChatMedia.js` owns media validation, media prompts, base64 conversion, attachment sizing, and vision support checks.
 - `ChatStream.js` owns streaming state tracking.
 - `ChatVoice.js` owns speech recognition state and voice toggle behavior.

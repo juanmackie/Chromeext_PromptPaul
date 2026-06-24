@@ -10,7 +10,7 @@ The `src/orchestrator/` subtree centralizes LLM run execution, tool calls, strea
 
 ## Local Contracts
 
-- Skills are injected as instructions when requested; they are not executable tools unless a deterministic tool dispatch path is implemented.
+- Skills are injected as instructions via the composed system prompt (`_buildSystemPrompt`), not via conversation history unshift. Requested skills are resolved through `resolveSkill` and included even when `disable-model-invocation` hides them from model self-discovery.
 - Tool executions must remain idempotent by `runId` and `toolCallId`.
 - Abort handling should emit a clean aborted event rather than surfacing intentional cancellation as an error.
 - Provider-specific execution must preserve OpenAI-compatible and Anthropic-compatible endpoint behavior.

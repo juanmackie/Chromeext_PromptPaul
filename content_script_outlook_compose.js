@@ -377,12 +377,32 @@
     }, 6000);
   }
 
+  // True only while this content script still has a live connection to the
+  // extension. After the extension is reloaded/updated/disabled, `chrome.runtime`
+  // (and its `id`) become undefined in the already-injected script.
+  function isExtensionContextAvailable() {
+    return Boolean(globalThis.chrome?.runtime?.id);
+  }
+
   function isExtensionContextError(error) {
-    return /extension context invalidated/i.test(String(error?.message || error || ''));
+    const message = String(error?.message || error || '');
+    // Two faces of the same failure: the explicit invalidation message, and the
+    // TypeError thrown when `chrome.runtime` itself has gone undefined.
+    return (
+      /extension context invalidated/i.test(message) ||
+      /reading 'sendMessage'/i.test(message)
+    );
   }
 
   function sendSelectionToExtension(selectedText) {
     if (state.reloadRequired) {
+      showReconnectNotice();
+      return;
+    }
+
+    // Detect a torn-down context up front so we surface the reconnect notice
+    // instead of throwing a raw TypeError on `chrome.runtime.sendMessage`.
+    if (!isExtensionContextAvailable()) {
       showReconnectNotice();
       return;
     }
