@@ -451,11 +451,12 @@ class RunOrchestrator {
       this._emitEvent(run.id, { type: 'content', data: tail.content });
     }
 
-    // Finalize based on what we have. Finalize even with no answer text when the
-    // model emitted inline reasoning, so the run completes and the UI unlocks.
+    // Finalize based on what we have. When there's no tool call we always finalize
+    // the text response — even with empty/whitespace text — so a terminal `complete`
+    // event is emitted and the UI unlocks instead of hanging.
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
-    } else if (run.accumulatedText.trim() || run.thinkParser.sawThink) {
+    } else {
       await this._finalizeTextResponse(run);
     }
   }
@@ -640,10 +641,12 @@ class RunOrchestrator {
       }
     }
 
-    // Finalize
+    // Finalize. When there's no tool call we always finalize the text response —
+    // even with empty/whitespace text (e.g. a thinking-only turn) — so a terminal
+    // `complete` event is emitted and the UI unlocks instead of hanging.
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
-    } else if (run.accumulatedText.trim()) {
+    } else {
       await this._finalizeTextResponse(run);
     }
   }
