@@ -38,6 +38,7 @@ import {
 import { StreamStateManager } from './src/chat/ChatStream.js';
 import { debounce } from './src/utils/debounce.js';
 import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
+import { extractPdfText } from './src/utils/pdfExtractor.js';
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
 import { escapeHtml, renderMarkdown } from './src/utils/domSanitizer.js';
 import {
@@ -408,6 +409,119 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  // Inserts already-extracted page content into the chat context. Shared by the
+  // normal DOM path and the PDF path (which supplies a response-shaped object).
+  function applyLoadedPageContent(response) {
+    let sourceInfo = response.title;
+    if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
+    if (response.byline) sourceInfo += ` by ${response.byline}`;
+
+    chatUI.addLoadedContentMessage(sourceInfo, response.content);
+
+    showSiteSuggestions(response.url, response.platform, response.platformInfo);
+
+    lastLoadedPageContext = {
+      url: response.url,
+      platform: response.platform || null,
+      readStrategy: response.readStrategy || 'auto',
+      extractionSource: response.extractionSource || 'auto',
+      extractionReason: response.extractionReason || '',
+      hasScreenshot: Boolean(response.screenshot),
+      hasMediaContext: Boolean(streamState.getMediaData()),
+    };
+
+    const budget = resolveDomContextBudget({
+      modelId: null,
+      userMessage: '',
+      contextCount: 1,
+      fileAttachmentCount: streamState.getMediaData() ? 1 : 0,
+    });
+    const fitted = fitTextToTokenBudget(response.content, budget.perContextDomTokens);
+    const contextNotes = [];
+    if (lastLoadedPageContext.readStrategy !== 'auto') {
+      contextNotes.push(`Read strategy: ${lastLoadedPageContext.readStrategy}.`);
+    }
+    if (
+      lastLoadedPageContext.extractionSource &&
+      lastLoadedPageContext.extractionSource !== 'auto'
+    ) {
+      const extractionNote = `Extraction source: ${lastLoadedPageContext.extractionSource}.`;
+      contextNotes.push(
+        lastLoadedPageContext.extractionReason
+          ? `${extractionNote} ${lastLoadedPageContext.extractionReason}`
+          : extractionNote
+      );
+    }
+    if (lastLoadedPageContext.hasScreenshot) {
+      contextNotes.push('Visual screenshot context is available.');
+    }
+    if (lastLoadedPageContext.hasMediaContext) {
+      contextNotes.push('Additional media attachment context is active.');
+    }
+
+    const loadedContextInstruction = [
+      `I have loaded the content from the page "${response.title}" (${response.url}).`,
+      `Source: ${response.siteName || 'Unknown'}`,
+      `Author: ${response.byline || 'Unknown'}`,
+      `Platform: ${response.platform || 'unknown'}`,
+      contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    streamState.getConversationHistory().push({
+      role: 'user',
+      content: composeUserPrompt({
+        instruction: loadedContextInstruction,
+        context: {
+          type: 'page_content',
+          text: fitted.text,
+        },
+      }),
+    });
+
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+    userInput.focus();
+    const statusParts = ['Content loaded.'];
+    if (fitted.truncated) {
+      statusParts.push(
+        `Trimmed to fit context budget (${fitted.includedTokens}/${fitted.originalTokens} estimated tokens).`
+      );
+    }
+    chatUI.addMessage('System', statusParts.join(' '));
+  }
+
+  // Reads a PDF in the chat page via pdf.js and feeds the text into the chat.
+  async function loadPdfContent(response, loadingToast) {
+    loadingManager.hideToast(loadingToast);
+    const pdfToast = loadingManager.showToast('Reading PDF…', 'info');
+    try {
+      const { text, title, numPages, truncated } = await extractPdfText(response.pdfUrl);
+      loadingManager.hideToast(pdfToast);
+      applyLoadedPageContent({
+        success: true,
+        content: text,
+        title: title || response.title || 'PDF document',
+        siteName: 'PDF document',
+        url: response.pdfUrl,
+        platform: 'pdf',
+        platformInfo: null,
+        readStrategy: 'auto',
+      });
+      if (truncated) {
+        chatUI.addMessage(
+          'System',
+          `Note: only the first 300 pages were read (PDF has ${numPages} pages).`
+        );
+      }
+    } catch (pdfError) {
+      loadingManager.hideToast(pdfToast);
+      console.error('Chat.js: Add page button - PDF failed:', pdfError.message);
+      loadingManager.showToast(pdfError.message, 'error');
+    }
+  }
+
   // Add event listeners for quick action buttons
   if (addPageButton) {
     addPageButton.addEventListener('click', async () => {
@@ -426,86 +540,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (response && response.action === 'loadContentResponse') {
-          if (response.success && response.content) {
+          if (response.isPdf) {
+            await loadPdfContent(response, loadingToast);
+          } else if (response.success && response.content) {
             loadingManager.hideToast(loadingToast);
-            let sourceInfo = response.title;
-            if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
-            if (response.byline) sourceInfo += ` by ${response.byline}`;
-
-            chatUI.addLoadedContentMessage(sourceInfo, response.content);
-
-            showSiteSuggestions(response.url, response.platform, response.platformInfo);
-
-            lastLoadedPageContext = {
-              url: response.url,
-              platform: response.platform || null,
-              readStrategy: response.readStrategy || 'auto',
-              extractionSource: response.extractionSource || 'auto',
-              extractionReason: response.extractionReason || '',
-              hasScreenshot: Boolean(response.screenshot),
-              hasMediaContext: Boolean(streamState.getMediaData()),
-            };
-
-            const budget = resolveDomContextBudget({
-              modelId: null,
-              userMessage: '',
-              contextCount: 1,
-              fileAttachmentCount: streamState.getMediaData() ? 1 : 0,
-            });
-            const fitted = fitTextToTokenBudget(response.content, budget.perContextDomTokens);
-            const contextNotes = [];
-            if (lastLoadedPageContext.readStrategy !== 'auto') {
-              contextNotes.push(`Read strategy: ${lastLoadedPageContext.readStrategy}.`);
-            }
-            if (
-              lastLoadedPageContext.extractionSource &&
-              lastLoadedPageContext.extractionSource !== 'auto'
-            ) {
-              const extractionNote = `Extraction source: ${lastLoadedPageContext.extractionSource}.`;
-              contextNotes.push(
-                lastLoadedPageContext.extractionReason
-                  ? `${extractionNote} ${lastLoadedPageContext.extractionReason}`
-                  : extractionNote
-              );
-            }
-            if (lastLoadedPageContext.hasScreenshot) {
-              contextNotes.push('Visual screenshot context is available.');
-            }
-            if (lastLoadedPageContext.hasMediaContext) {
-              contextNotes.push('Additional media attachment context is active.');
-            }
-
-            const loadedContextInstruction = [
-              `I have loaded the content from the page "${response.title}" (${response.url}).`,
-              `Source: ${response.siteName || 'Unknown'}`,
-              `Author: ${response.byline || 'Unknown'}`,
-              `Platform: ${response.platform || 'unknown'}`,
-              contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : '',
-            ]
-              .filter(Boolean)
-              .join('\n');
-
-            streamState.getConversationHistory().push({
-              role: 'user',
-              content: composeUserPrompt({
-                instruction: loadedContextInstruction,
-                context: {
-                  type: 'page_content',
-                  text: fitted.text,
-                },
-              }),
-            });
-
-            chatMainArea.classList.remove('hidden');
-            oneoffInstructionArea.classList.add('hidden');
-            userInput.focus();
-            const statusParts = ['Content loaded.'];
-            if (fitted.truncated) {
-              statusParts.push(
-                `Trimmed to fit context budget (${fitted.includedTokens}/${fitted.originalTokens} estimated tokens).`
-              );
-            }
-            chatUI.addMessage('System', statusParts.join(' '));
+            applyLoadedPageContent(response);
           } else {
             loadingManager.hideToast(loadingToast);
             const errorMsg = response.error || 'Content not available';

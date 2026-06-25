@@ -4,7 +4,7 @@
   "version": "6.0.0",
   "description": "A Chrome extension for processing selected text using an LLM endpoint",
   "permissions": ["activeTab", "contextMenus", "storage", "sidePanel", "scripting"],
-  "host_permissions": ["*://*/*", "https://cloud.umami.is/*"],
+  "host_permissions": ["*://*/*", "file:///*", "https://cloud.umami.is/*"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },

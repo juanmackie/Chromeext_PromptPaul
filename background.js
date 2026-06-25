@@ -1176,10 +1176,41 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 
 // Registry for built-in tool implementations — now handled by RunOrchestrator
 
+// True when a URL points at a PDF document (by path extension).
+function isPdfUrl(url) {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
+
 // Unified extraction function to avoid circular messaging and redundant injections
 async function executeTabContentExtraction(tabId) {
   return new Promise((resolve) => {
     chrome.tabs.get(tabId, (tab) => {
+      // PDFs can't be read from the DOM (native viewer is an opaque plugin); the
+      // chat page parses the bytes with pdf.js instead. Route by URL before the
+      // restriction guard so local file:// PDFs aren't blocked as `file:` pages.
+      if (isPdfUrl(tab?.url)) {
+        resolve({ success: false, isPdf: true, pdfUrl: tab.url, title: tab.title || '' });
+        return;
+      }
+
+      // A hidden URL almost always means a local file (e.g. a PDF opened from
+      // disk) without file access, rather than a genuinely missing page.
+      if (!tab?.url) {
+        resolve({
+          success: false,
+          errorKind: 'no-url',
+          error:
+            'Prompt Paul can’t read this tab. If it’s a local file (e.g. a PDF from your ' +
+            'computer), enable "Allow access to file URLs" for Prompt Paul in chrome://extensions.',
+          readStrategy: 'auto',
+        });
+        return;
+      }
+
       const support = getCurrentPageSupport(tab?.url);
       if (!support.available) {
         resolve({ success: false, error: support.blockedReason, readStrategy: 'auto' });
@@ -1298,6 +1329,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({
           action: 'loadContentResponse',
           success: result.success,
+          isPdf: result.isPdf || false,
+          pdfUrl: result.pdfUrl || null,
           content: result.content || result.data,
           title: result.title,
           siteName: result.siteName,

@@ -1,4 +1,7 @@
 // pdf_content_script.js - PDF content extraction
+// NOTE: Superseded by src/utils/pdfExtractor.js, which parses PDF bytes with
+// pdf.js in the chat page. This DOM-scraping script cannot read Chrome's native
+// PDF viewer and has no message listener; kept only for the manifest match.
 (function () {
   let content = '';
   let success = false;
