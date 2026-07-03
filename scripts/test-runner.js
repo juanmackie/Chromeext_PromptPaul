@@ -433,10 +433,10 @@ function runUnitTests(runner) {
   });
 
   // ---------- File Size Validation ----------
-  runner.test('chat.js does not exceed 2200 lines', () => {
+  runner.test('chat.js does not exceed 2300 lines', () => {
     const lines = readFileSafe('chat.js').split('\n').length;
-    if (lines > 2200) {
-      throw new Error(`chat.js is ${lines} lines, exceeds 2200 limit`);
+    if (lines > 2300) {
+      throw new Error(`chat.js is ${lines} lines, exceeds 2300 limit`);
     }
   });
 

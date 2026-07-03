@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseCommand,
   detectSkillIntent,
+  resolveSkillName,
   formatSkillsList,
   buildSlashCandidates,
   filterSlashCandidates,
@@ -73,6 +74,20 @@ describe('ChatSkills', () => {
       expect(result.type).toBe('skill');
       expect(result.skillName).toBe('human-izer');
     });
+
+    it('fuzzy matches /skill command with British spelling', () => {
+      const result = parseCommand('/skill humaniser rewrite this', mockSkills);
+      expect(result.type).toBe('skill');
+      expect(result.skillName).toBe('humanizer');
+      expect(result.body).toBe('rewrite this');
+    });
+
+    it('fuzzy matches /<name> shortcut with typos', () => {
+      const result = parseCommand('/humanizr rewrite this', mockSkills);
+      expect(result.type).toBe('skill');
+      expect(result.skillName).toBe('humanizer');
+      expect(result.body).toBe('rewrite this');
+    });
   });
 
   describe('detectSkillIntent', () => {
@@ -126,6 +141,80 @@ describe('ChatSkills', () => {
       const result = detectSkillIntent('use weatherguide skill', mockSkills);
       expect(result).not.toBeNull();
       expect(result.skillName).toBe('weather-guide');
+    });
+
+    it('fuzzy matches British s→z spelling (humaniser → humanizer)', () => {
+      const result = detectSkillIntent('use humaniser skill to rewrite', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.skillName).toBe('humanizer');
+      expect(result.body).toContain('rewrite');
+    });
+
+    it('fuzzy matches summarise → summarizer via loose pattern', () => {
+      const result = detectSkillIntent('please use summarise to condense this', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.skillName).toBe('summarizer');
+      expect(result.body).toContain('condense');
+    });
+
+    it('fuzzy matches humanizr (dropped letter) via slash-in-verb', () => {
+      const result = detectSkillIntent('use /humanizr and rewrite this', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.skillName).toBe('humanizer');
+      expect(result.body).toContain('rewrite this');
+    });
+  });
+
+  describe('resolveSkillName', () => {
+    it('returns null for empty query or skills', () => {
+      expect(resolveSkillName('', mockSkills)).toBeNull();
+      expect(resolveSkillName('humanizer', [])).toBeNull();
+      expect(resolveSkillName('humanizer', null)).toBeNull();
+    });
+
+    it('returns exact match by name', () => {
+      const result = resolveSkillName('humanizer', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('humanizer');
+    });
+
+    it('matches case-insensitively', () => {
+      const result = resolveSkillName('HUMANIZER', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('humanizer');
+    });
+
+    it('matches hyphen-insensitively', () => {
+      const result = resolveSkillName('weatherguide', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('weather-guide');
+    });
+
+    it('fuzzy matches British s→z spelling (humaniser → humanizer)', () => {
+      const result = resolveSkillName('humaniser', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('humanizer');
+    });
+
+    it('fuzzy matches summarise → summarizer', () => {
+      const result = resolveSkillName('summarise', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('summarizer');
+    });
+
+    it('fuzzy matches single-character typos', () => {
+      const result = resolveSkillName('humanizr', mockSkills);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('humanizer');
+    });
+
+    it('returns null for completely unrelated names', () => {
+      expect(resolveSkillName('editor', mockSkills)).toBeNull();
+      expect(resolveSkillName('translate', mockSkills)).toBeNull();
+    });
+
+    it('returns null for names too distant to fuzzy match', () => {
+      expect(resolveSkillName('summer', mockSkills)).toBeNull();
     });
   });
 

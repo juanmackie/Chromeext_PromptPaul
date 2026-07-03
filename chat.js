@@ -18,6 +18,7 @@ import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { chatUI } from './src/chat/ChatUI.js';
+import { attachCopyListeners, postProcessRenderedContent } from './src/chat/ChatClipboard.js';
 import {
   getApiConfig,
   getTools,
@@ -957,12 +958,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Recover from a stranded run whose terminal event never arrived so it
-    // doesn't permanently block new runs.
+    // doesn't permanently block new runs. Also clear the streaming elements
+    // so any permanent "Loading…" or "Using tool:…" bubble is removed.
     if (streamState.getRunId()) {
       console.warn('Chat: clearing stranded run state before starting a new run', {
         strandedRunId: streamState.getRunId(),
         sourceTabId: streamState.getSourceTabId(),
       });
+      streamState.clearStreamingElements();
+      streamState.clearStreamedText();
       streamState.setActiveToolCall(null);
       streamState.setRunId(null);
       streamState.setSourceTabId(null);
@@ -1351,6 +1355,46 @@ document.addEventListener('DOMContentLoaded', () => {
       const isOwnedEvent = currentRunId && runId === currentRunId && sourceTabsMatch;
 
       if (!isOwnedEvent) {
+        // Terminal-event safety net: when the event is terminal and there is a
+        // live streaming element but isOwnedEvent failed (runId mismatch, or
+        // sourceTabId hasn't registered yet), finalize the bubble and unlock
+        // instead of silently dropping. Prevents permanently "Loading…" bubbles
+        // and empty sidebar.
+        const terminalTypes = ['complete', 'error', 'aborted'];
+        if (terminalTypes.includes(event.type) && streamState.getCurrentStreamingContentElement()) {
+          console.log('Chat: Finalizing stranded bubble for terminal event', {
+            runId,
+            eventType: event.type,
+            currentRunId,
+            sourceTabId,
+            currentSourceTabId,
+          });
+          if (event.type === 'complete') {
+            const finalContent = event.content || streamState.getStreamedText() || '';
+            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+              finalContent || ''
+            );
+          } else if (event.type === 'error') {
+            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+              '❌ Error: ' + (event.error || 'unknown error')
+            );
+          } else if (event.type === 'aborted') {
+            streamState.getCurrentStreamingContentElement().innerHTML =
+              renderMarkdownContent('Response stopped');
+          }
+          userInput.disabled = false;
+          sendButton.disabled = false;
+          clearButton.textContent = 'Clear';
+          streamState.clearStreamingElements();
+          streamState.clearStreamedText();
+          streamState.setActiveToolCall(null);
+          streamState.setRunId(null);
+          streamState.setSourceTabId(null);
+          endResponseRun();
+          if (sendResponse) sendResponse({ success: true });
+          return true;
+        }
+
         console.log('Chat: Ignoring orchestratorEvent for other run/tab', {
           runId,
           sourceTabId,
@@ -1397,6 +1441,10 @@ document.addEventListener('DOMContentLoaded', () => {
               streamState.getReasoningElapsedMs()
             );
           }
+          // Clear stale turn-1 streaming state so the continuation turn renders fresh.
+          // Without this, accumulatedStreamedText from the first turn survives into
+          // the answer and can appear as if the rewrite "never occurred".
+          streamState.startNewTurn();
           streamState.setActiveToolCall(event.toolCall);
           if (streamState.getCurrentStreamingContentElement()) {
             if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
@@ -1474,7 +1522,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : finalContent;
             streamState.getCurrentStreamingContentElement().innerHTML =
               renderMarkdownContent(displayContent);
-            chatUI.postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
+            postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
             // Attach copy listeners to existing bubble (fix: icons were created
             // in addMessage but listeners skipped because message was empty)
@@ -1484,7 +1532,7 @@ document.addEventListener('DOMContentLoaded', () => {
               const rawIcon = document.getElementById(`copy-icon-${uid}`);
               const formattedIcon = document.getElementById(`copy-formatted-icon-${uid}`);
               if (rawIcon && formattedIcon) {
-                chatUI.attachCopyListeners(
+                attachCopyListeners(
                   finalContent,
                   streamState.getCurrentStreamingContentElement(),
                   rawIcon,

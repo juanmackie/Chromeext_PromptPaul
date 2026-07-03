@@ -28,6 +28,46 @@ function loadPdfJs() {
 }
 
 /**
+ * Read a URL's bytes as an ArrayBuffer.
+ *
+ * Local (file://) PDFs are fetched with XMLHttpRequest because Chrome's Fetch
+ * API does not support the "file" scheme — `fetch('file://…')` always throws
+ * `URL scheme "file" is not supported`, even when the extension has "Allow
+ * access to file URLs" enabled. XHR honors that permission and works.
+ *
+ * @param {string} url - The PDF URL.
+ * @param {boolean} isLocal - Whether the URL uses the file:// scheme.
+ * @returns {Promise<ArrayBuffer>}
+ */
+function fetchArrayBuffer(url, isLocal) {
+  if (!isLocal) {
+    return fetch(url).then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.arrayBuffer();
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = () => {
+      // file:// requests report status 0 on success (no HTTP status line).
+      const ok = xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300);
+      if (ok && xhr.response && xhr.response.byteLength > 0) {
+        resolve(xhr.response);
+      } else {
+        reject(new Error(`HTTP ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('file access denied'));
+    xhr.send();
+  });
+}
+
+/**
  * Fetch a PDF and extract its text content.
  * @param {string} url - The PDF URL (http/https or file://).
  * @returns {Promise<{text: string, title: string, numPages: number, truncated: boolean}>}
@@ -38,16 +78,13 @@ export async function extractPdfText(url) {
 
   let buffer;
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    buffer = await response.arrayBuffer();
+    buffer = await fetchArrayBuffer(url, isLocal);
   } catch (error) {
+    console.error('pdfExtractor: fetch failed', { url, isLocal, reason: error.message });
     if (isLocal) {
       throw new Error(
         'Cannot read this local PDF. Enable "Allow access to file URLs" for Prompt Paul ' +
-          'in chrome://extensions, then reload the PDF and try again.'
+          `in chrome://extensions, then reload the PDF and try again. (${error.message})`
       );
     }
     throw new Error(`Could not download the PDF (${error.message}).`);
@@ -56,7 +93,9 @@ export async function extractPdfText(url) {
   let pdf;
   try {
     const pdfjsLib = await loadPdfJs();
-    pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    // verbosity 0 (ERRORS) silences noisy, harmless font-parser warnings such
+    // as "TT: undefined function: 32" that pdf.js emits at the default level.
+    pdf = await pdfjsLib.getDocument({ data: buffer, verbosity: 0 }).promise;
   } catch (error) {
     throw new Error(`Could not parse the PDF (${error.message}).`);
   }

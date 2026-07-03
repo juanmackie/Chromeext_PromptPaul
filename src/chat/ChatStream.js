@@ -245,10 +245,31 @@ export class StreamStateManager {
   }
 
   /**
-   * Clear accumulated streamed text
+   * Clear accumulated streamed text and reset the render buffer.
+   * Call before a continuation turn to prevent stale turn-1 text from surviving.
    */
   clearStreamedText() {
     this.accumulatedStreamedText = '';
+    this._renderBuffer = '';
+    this._renderQueued = false;
+  }
+
+  /**
+   * Start a new turn within the same streaming bubble: reset accumulated text,
+   * render buffer, reasoning state, and tool-call state, but keep the DOM
+   * element references so the bubble stays alive for the continuation answer.
+   * Call from tool_start to wipe stale turn-1 text before the model's final answer.
+   */
+  startNewTurn() {
+    this.accumulatedStreamedText = '';
+    this._renderBuffer = '';
+    this._renderQueued = false;
+    this.activeStreamingToolCall = null;
+    this.currentReasoningContentElement = null;
+    this.accumulatedReasoningText = '';
+    this._reasoningBuffer = '';
+    this._reasoningQueued = false;
+    this._reasoningStartTime = null;
   }
 
   /**

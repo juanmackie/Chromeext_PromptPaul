@@ -10,6 +10,81 @@
  */
 
 /**
+ * Compute Levenshtein distance between two strings.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function levenshtein(a, b) {
+  const an = a.length;
+  const bn = b.length;
+  const matrix = [];
+  for (let i = 0; i <= bn; i++) matrix[i] = [i];
+  for (let j = 0; j <= an; j++) matrix[0][j] = j;
+  for (let i = 1; i <= bn; i++) {
+    for (let j = 1; j <= an; j++) {
+      matrix[i][j] =
+        a[j - 1] === b[i - 1]
+          ? matrix[i - 1][j - 1]
+          : 1 + Math.min(matrix[i - 1][j], matrix[i][j - 1], matrix[i - 1][j - 1]);
+    }
+  }
+  return matrix[bn][an];
+}
+
+/**
+ * Normalize a skill name for matching: lowercase, strip non-alphanumeric (keep hyphens).
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeName(name) {
+  return name.toLowerCase().replace(/[^a-z0-9-]/g, '');
+}
+
+/**
+ * Resolve a user-provided skill query against the available skills list.
+ * Tries exact match first (normalized), then falls back to edit-distance matching
+ * (Levenshtein ≤1, or ≤2 for names ≥6 chars) to catch typos like humaniser→humanizer.
+ * @param {string} query - User-provided name
+ * @param {Array} availableSkills - List of available skills
+ * @returns {Object|null} - The matching skill object, or null
+ */
+export function resolveSkillName(query, availableSkills) {
+  if (!query || !availableSkills || availableSkills.length === 0) return null;
+  const q = normalizeName(query);
+
+  // Exact (normalized) match
+  const exact = availableSkills.find(
+    (s) => normalizeName(s.name) === q || normalizeName(s.name).replace(/-/g, '') === q.replace(/-/g, '')
+  );
+  if (exact) return exact;
+
+  // Fuzzy edit-distance match
+  const threshold = q.length >= 6 ? 2 : 1;
+  let best = null;
+  let bestDist = Infinity;
+  for (const s of availableSkills) {
+    const sn = normalizeName(s.name);
+    const dist = levenshtein(q, sn);
+    if (dist <= threshold && dist < bestDist) {
+      bestDist = dist;
+      best = s;
+    }
+    // Also try without hyphens
+    const snFlat = sn.replace(/-/g, '');
+    const qFlat = q.replace(/-/g, '');
+    if (snFlat !== sn) {
+      const distFlat = levenshtein(qFlat, snFlat);
+      if (distFlat <= threshold && distFlat < bestDist) {
+        bestDist = distFlat;
+        best = s;
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * Parse a potential slash command.
  * @param {string} message - Raw user input
  * @param {Array} availableSkills - List of available skills (from getSkills)
@@ -36,11 +111,7 @@ export function parseCommand(message, availableSkills) {
     const bodyParts = body.split(/\s+/);
     const skillName = bodyParts[0];
     const remaining = bodyParts.slice(1).join(' ');
-    const foundSkill = availableSkills.find(
-      (s) =>
-        s.name.toLowerCase() === skillName.toLowerCase() ||
-        s.name.toLowerCase().replace(/-/g, '') === skillName.toLowerCase().replace(/-/g, '')
-    );
+    const foundSkill = resolveSkillName(skillName, availableSkills);
     if (foundSkill) {
       return { type: 'skill', skillName: foundSkill.name, body: remaining.trim() };
     }
@@ -49,14 +120,8 @@ export function parseCommand(message, availableSkills) {
   }
 
   // /<skill-name> [body] — per-skill command (alias, only for user-invocable skills)
-  const foundSkill = availableSkills.find(
-    (s) =>
-      (s.name.toLowerCase() === cmd.toLowerCase() ||
-        s.name.toLowerCase().replace(/-/g, '') === cmd.toLowerCase().replace(/-/g, '')) &&
-      s.userInvocable !== false
-  );
-
-  if (foundSkill) {
+  const foundSkill = resolveSkillName(cmd, availableSkills);
+  if (foundSkill && foundSkill.userInvocable !== false) {
     return { type: 'skill', skillName: foundSkill.name, body: body.trim() };
   }
 
@@ -94,11 +159,7 @@ export function detectSkillIntent(message, availableSkills) {
       const requestedSkill = match[1].toLowerCase();
       const remainder = message.slice((match.index || 0) + match[0].length);
       // Check if requested skill exists in available skills
-      const foundSkill = availableSkills.find(
-        (s) =>
-          s.name.toLowerCase() === requestedSkill ||
-          s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
-      );
+      const foundSkill = resolveSkillName(requestedSkill, availableSkills);
       if (foundSkill) {
         console.log(`Chat: Detected skill intent for '${foundSkill.name}'`);
         return {
@@ -116,11 +177,7 @@ export function detectSkillIntent(message, availableSkills) {
   if (slashMatch) {
     const requestedSkill = slashMatch[1].toLowerCase();
     const remainder = message.slice((slashMatch.index || 0) + slashMatch[0].length);
-    const foundSkill = availableSkills.find(
-      (s) =>
-        s.name.toLowerCase() === requestedSkill ||
-        s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
-    );
+    const foundSkill = resolveSkillName(requestedSkill, availableSkills);
     if (foundSkill) {
       console.log(`Chat: Detected slash-in-verb intent for '${foundSkill.name}'`);
       return {
@@ -141,11 +198,7 @@ export function detectSkillIntent(message, availableSkills) {
     if (match) {
       const requestedSkill = match[1].toLowerCase();
       const remainder = match[2] || '';
-      const foundSkill = availableSkills.find(
-        (s) =>
-          s.name.toLowerCase() === requestedSkill ||
-          s.name.toLowerCase().replace(/-/g, '') === requestedSkill.replace(/-/g, '')
-      );
+      const foundSkill = resolveSkillName(requestedSkill, availableSkills);
       if (foundSkill) {
         console.log(`Chat: Detected loose skill intent for '${foundSkill.name}'`);
         return {

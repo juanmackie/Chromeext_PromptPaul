@@ -117,6 +117,115 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     );
     expect(promptWithSkill).toContain('OUTPUT FORMATTING');
   });
+
+  it('injects loaded-skill instructions and a no-reload directive when loadedSkills is set', () => {
+    const skillManager = createStubSkillManager({
+      resolveSkill(name) {
+        if (name === 'humanizer') {
+          return {
+            name: 'humanizer',
+            description: 'Makes text sound natural',
+            instructions: 'Rewrite AI text to sound human.',
+          };
+        }
+        return null;
+      },
+      eligibleSkills: [{ name: 'humanizer', description: 'Makes text sound natural' }],
+    });
+    const orch = new RunOrchestrator(skillManager);
+    const run = { config: {}, loadedSkills: new Set(['humanizer']) };
+    const prompt = orch._buildSystemPrompt(run, [
+      { name: 'humanizer', description: 'Makes text sound natural' },
+    ]);
+
+    expect(prompt).toContain('SKILL: humanizer');
+    expect(prompt).toContain('Rewrite AI text to sound human.');
+    expect(prompt).toContain('already loaded');
+    // The discovery catalog must not be re-advertised once a skill is loaded.
+    expect(prompt).not.toContain('Available skills');
+  });
+
+  it('still shows the catalog when loadedSkills is empty/undefined', () => {
+    const skillManager = createStubSkillManager();
+    const orch = new RunOrchestrator(skillManager);
+    const eligibleSkills = [{ name: 'humanizer', description: 'Makes text natural' }];
+
+    const promptEmpty = orch._buildSystemPrompt({ config: {}, loadedSkills: new Set() }, eligibleSkills);
+    expect(promptEmpty).toContain('Available skills');
+    expect(promptEmpty).not.toContain('SKILL:');
+
+    // Bare run object (no loadedSkills field) must not throw and keeps catalog.
+    const promptBare = orch._buildSystemPrompt({ config: {} }, eligibleSkills);
+    expect(promptBare).toContain('Available skills');
+  });
+});
+
+describe('RunOrchestrator._buildTools', () => {
+  it('advertises skill-loader tools on a fresh run with eligible skills', async () => {
+    const skillManager = createStubSkillManager({
+      eligibleSkills: [{ name: 'humanizer', description: 'Makes text natural' }],
+    });
+    const orch = new RunOrchestrator(skillManager);
+    const tools = await orch._buildTools({ config: {}, loadedSkills: new Set() });
+    const names = tools.map((t) => t.function.name);
+
+    expect(names).toContain('skills_list');
+    expect(names).toContain('skill_view');
+    expect(names).toContain('load_skill');
+  });
+
+  it('stops advertising skill-loader tools once a skill has been loaded', async () => {
+    const skillManager = createStubSkillManager({
+      eligibleSkills: [{ name: 'humanizer', description: 'Makes text natural' }],
+    });
+    const orch = new RunOrchestrator(skillManager);
+    const tools = await orch._buildTools({ config: {}, loadedSkills: new Set(['humanizer']) });
+    const names = tools.map((t) => t.function.name);
+
+    expect(names).not.toContain('skills_list');
+    expect(names).not.toContain('skill_view');
+    expect(names).not.toContain('load_skill');
+  });
+});
+
+describe('RunOrchestrator._recordLoadedSkill', () => {
+  function makeOrch() {
+    return new RunOrchestrator(createStubSkillManager());
+  }
+  const skillViewCall = (name) => ({
+    function: { name: 'skill_view', arguments: JSON.stringify({ name }) },
+  });
+
+  it('records a skill on a successful load (canonical name from payload)', () => {
+    const orch = makeOrch();
+    const run = { loadedSkills: new Set() };
+    orch._recordLoadedSkill(run, skillViewCall('humanizer'), {
+      success: true,
+      result: { success: true, skill: { name: 'humanizer' } },
+    });
+    expect(run.loadedSkills.has('humanizer')).toBe(true);
+  });
+
+  it('does not record when the skill was not found', () => {
+    const orch = makeOrch();
+    const run = { loadedSkills: new Set() };
+    orch._recordLoadedSkill(run, skillViewCall('nope'), {
+      success: true,
+      result: { success: false, error: "Skill 'nope' not found." },
+    });
+    expect(run.loadedSkills.size).toBe(0);
+  });
+
+  it('ignores non-skill tools', () => {
+    const orch = makeOrch();
+    const run = { loadedSkills: new Set() };
+    orch._recordLoadedSkill(
+      run,
+      { function: { name: 'some_tool', arguments: '{}' } },
+      { success: true, result: { ok: true } }
+    );
+    expect(run.loadedSkills.size).toBe(0);
+  });
 });
 
 describe('createThinkParser', () => {

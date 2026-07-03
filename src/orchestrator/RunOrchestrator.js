@@ -42,6 +42,10 @@ class RunOrchestrator {
       conversationHistory: config.messages || [],
       accumulatedText: '',
       activeToolCall: null,
+      // Skills the model has loaded via skill_view/load_skill during this run.
+      // Once non-empty, their instructions are persisted into the system prompt
+      // and the skill-loader tools are no longer advertised (prevents reload loops).
+      loadedSkills: new Set(),
       toolCallIterations: 0,
       status: 'ready',
       abortController: new AbortController(),
@@ -279,9 +283,11 @@ class RunOrchestrator {
       tools.push(...formatToolsForLlm(run.config.tools));
     }
 
-    // Inject skill-related tools if eligible skills available
+    // Inject skill-related tools if eligible skills available. Once the model
+    // has already loaded a skill this run, stop advertising the loader tools so
+    // it proceeds to the answer instead of re-loading the same skill in a loop.
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
-    if (eligibleSkills.length > 0 && !run.config.requestedSkill) {
+    if (eligibleSkills.length > 0 && !run.config.requestedSkill && !(run.loadedSkills?.size > 0)) {
       tools.push({
         type: 'function',
         function: {
@@ -342,6 +348,8 @@ class RunOrchestrator {
     const parts = [CORE_INSTRUCTIONS];
     if (run.config.systemPrompt) parts.push(run.config.systemPrompt);
 
+    const loadedSkills = run.loadedSkills ? Array.from(run.loadedSkills) : [];
+
     if (run.config.requestedSkill) {
       const resolved = this.skillManager.resolveSkill(run.config.requestedSkill);
       if (resolved) {
@@ -350,6 +358,16 @@ class RunOrchestrator {
       } else {
         console.warn(`[Orchestrator] Requested skill '${run.config.requestedSkill}' not found`);
       }
+    } else if (loadedSkills.length > 0) {
+      // The model loaded these skills via skill_view earlier in this run. Persist
+      // their full instructions and tell it to stop reloading and answer now.
+      for (const name of loadedSkills) {
+        const resolved = this.skillManager.resolveSkill(name);
+        if (resolved) parts.push(this._formatSkillBlock(resolved));
+      }
+      parts.push(
+        `You have already loaded the skill(s) above this run (${loadedSkills.join(', ')}). Do NOT call skill_view, skills_list, or load_skill again — apply these instructions and produce the final answer now.`
+      );
     } else if (eligibleSkills.length > 0) {
       const skillCatalog = eligibleSkills.map((s) => `${s.name} (${s.description})`).join(', ');
       parts.push(
@@ -821,6 +839,8 @@ class RunOrchestrator {
           result: result,
         });
 
+        this._recordLoadedSkill(run, toolCall, result);
+
         run.conversationHistory.push({
           role: 'tool',
           tool_call_id: toolCall.id,
@@ -846,6 +866,40 @@ class RunOrchestrator {
     run.activeToolCall = null;
     run.activeToolCalls?.clear?.();
     await this.execute(run.id, { continueConversation: true });
+  }
+
+  /**
+   * Record a successfully loaded skill so its instructions persist into the
+   * system prompt on follow-up turns and the loader tools stop being advertised.
+   * No-op for non-skill tools or failed loads (e.g. unknown skill name).
+   * @private
+   */
+  _recordLoadedSkill(run, toolCall, result) {
+    const name = toolCall.function?.name;
+    if (name !== 'skill_view' && name !== 'load_skill') return;
+
+    // executeTool wraps implementations as { success, result }; the skill loader
+    // returns { success:false, error } inside `result` when the skill is missing.
+    const outer = result && typeof result === 'object' ? result : {};
+    if (outer.success === false) return;
+    const inner = outer.result;
+    if (inner && typeof inner === 'object' && inner.success === false) return;
+
+    // Prefer the canonical name from the loaded skill payload (matches the
+    // SkillManager key used by resolveSkill); fall back to the requested arg.
+    let skillName = inner?.skill?.name;
+    if (!skillName) {
+      try {
+        skillName = this._parseToolArguments(toolCall.function.arguments)?.name;
+      } catch (_) {
+        skillName = undefined;
+      }
+    }
+    if (skillName) {
+      if (!run.loadedSkills) run.loadedSkills = new Set();
+      run.loadedSkills.add(skillName);
+      console.log(`[Orchestrator] Recorded loaded skill: ${skillName}`);
+    }
   }
 
   /**
