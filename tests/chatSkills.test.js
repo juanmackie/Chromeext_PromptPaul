@@ -150,11 +150,24 @@ describe('ChatSkills', () => {
       expect(result.body).toContain('rewrite');
     });
 
-    it('fuzzy matches summarise → summarizer via loose pattern', () => {
+    it('does not fuzzy match via loose pattern (exact match only)', () => {
       const result = detectSkillIntent('please use summarise to condense this', mockSkills);
+      expect(result).toBeNull();
+    });
+
+    it('does not match ordinary sentences with "to" and "with" keywords', () => {
+      const result = detectSkillIntent(
+        'Turn this page into a concise research brief with next steps.',
+        mockSkills
+      );
+      expect(result).toBeNull();
+    });
+
+    it('still matches exact skill name via loose pattern', () => {
+      const result = detectSkillIntent('please use humanizer to rewrite this', mockSkills);
       expect(result).not.toBeNull();
-      expect(result.skillName).toBe('summarizer');
-      expect(result.body).toContain('condense');
+      expect(result.skillName).toBe('humanizer');
+      expect(result.body).toContain('rewrite this');
     });
 
     it('fuzzy matches humanizr (dropped letter) via slash-in-verb', () => {

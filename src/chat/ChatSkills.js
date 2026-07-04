@@ -55,7 +55,8 @@ export function resolveSkillName(query, availableSkills) {
 
   // Exact (normalized) match
   const exact = availableSkills.find(
-    (s) => normalizeName(s.name) === q || normalizeName(s.name).replace(/-/g, '') === q.replace(/-/g, '')
+    (s) =>
+      normalizeName(s.name) === q || normalizeName(s.name).replace(/-/g, '') === q.replace(/-/g, '')
   );
   if (exact) return exact;
 
@@ -189,6 +190,9 @@ export function detectSkillIntent(message, availableSkills) {
 
   // Also check for skill names mentioned anywhere after "use" or "apply"
   // Handles: "please use humanizer to rewrite", "use the summarizer on this"
+  // NOTE: Loose patterns use exact-name match only (no fuzzy Levenshtein) to
+  // prevent ordinary sentences like "Turn this into a brief with next steps"
+  // from hijacking the run via accidental skill-name proximity.
   const loosePatterns = [
     /(?:use|apply|with|invoke)\s+(?:the\s+)?(\w[\w-]*)\s+(?:to|for|on|and|then|in)\s+(.*)$/i,
   ];
@@ -198,7 +202,13 @@ export function detectSkillIntent(message, availableSkills) {
     if (match) {
       const requestedSkill = match[1].toLowerCase();
       const remainder = match[2] || '';
-      const foundSkill = resolveSkillName(requestedSkill, availableSkills);
+      const q = normalizeName(requestedSkill);
+      const foundSkill =
+        availableSkills.find(
+          (s) =>
+            normalizeName(s.name) === q ||
+            normalizeName(s.name).replace(/-/g, '') === q.replace(/-/g, '')
+        ) || null;
       if (foundSkill) {
         console.log(`Chat: Detected loose skill intent for '${foundSkill.name}'`);
         return {

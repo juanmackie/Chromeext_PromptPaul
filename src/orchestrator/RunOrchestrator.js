@@ -76,6 +76,22 @@ class RunOrchestrator {
     // stream (used by the OpenAI-style path; harmless no-op for Anthropic).
     run.thinkParser = createThinkParser();
 
+    // Absorb requestConfig.messages into conversation history so they persist
+    // across tool-call continuations. This is the single ingestion point for
+    // user messages from chat.js — after this, both _executeOpenAI and
+    // _buildAnthropicMessages build exclusively from run.conversationHistory.
+    if (
+      requestConfig.messages &&
+      Array.isArray(requestConfig.messages) &&
+      requestConfig.messages.length > 0
+    ) {
+      const newMessages = requestConfig.messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({ ...m }));
+      run.conversationHistory.push(...newMessages);
+      requestConfig.messages = [];
+    }
+
     // Sanitize conversation history to strip orphan tool messages
     run.conversationHistory = this._sanitizeMessages(run.conversationHistory);
 
@@ -85,9 +101,9 @@ class RunOrchestrator {
 
       // Execute based on provider
       if (this._isAnthropicEndpoint(run.config.llmEndpoint)) {
-        await this._executeAnthropic(run, requestConfig, tools);
+        await this._executeAnthropic(run, tools);
       } else {
-        await this._executeOpenAI(run, requestConfig, tools);
+        await this._executeOpenAI(run, tools);
       }
     } catch (error) {
       // Handle abort errors gracefully (intentional cancellations)
@@ -128,17 +144,10 @@ class RunOrchestrator {
       const implementation = this.toolImplementations.get(name);
 
       if (!implementation) {
-        // Guard: skills are not executable tools
+        // Auto-load known skills when the model calls them directly by name
         if (this.skillManager && this.skillManager.hasSkill(name)) {
-          console.warn(`[Orchestrator] '${name}' is a skill, not an executable tool`);
-          return {
-            success: true,
-            result: {
-              error: 'SKILL_NOT_EXECUTABLE',
-              message: `'${name}' is a skill (reference instructions), not a callable tool. Use skill_view to load it into context, then proceed with your own tools and knowledge.`,
-              hint: `Call skill_view with name: '${name}' to load the skill instructions.`,
-            },
-          };
+          console.log(`[Orchestrator] Auto-loading skill '${name}' on direct tool call`);
+          return await this._loadSkillByName(name);
         }
 
         console.warn(`[Orchestrator] Unknown tool/skill name: '${name}'`);
@@ -381,24 +390,16 @@ class RunOrchestrator {
   /**
    * Execute OpenAI-style streaming
    */
-  async _executeOpenAI(run, requestConfig, tools) {
+  async _executeOpenAI(run, tools) {
     const { llmEndpoint, apiKey, modelName } = run.config;
 
-    // Add a single system prompt without mutating history objects.
+    // Build messages exclusively from run.conversationHistory (already includes
+    // requestConfig.messages absorbed in execute()).
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
     const systemPrompt = this._buildSystemPrompt(run, eligibleSkills);
     const messages = run.conversationHistory
       .filter((m) => m.role !== 'system')
       .map((m) => ({ ...m }));
-    if (requestConfig.messages) {
-      const newMessages = requestConfig.messages
-        .filter((m) => m.role !== 'system')
-        .map((m) => ({ ...m }));
-      const lastMsg = messages[messages.length - 1];
-      if (!lastMsg || lastMsg.role !== 'user') {
-        messages.push(...newMessages);
-      }
-    }
     messages.unshift({ role: 'system', content: systemPrompt });
 
     const body = {
@@ -489,7 +490,7 @@ class RunOrchestrator {
     }
   }
 
-  _buildAnthropicMessages(run, requestConfig) {
+  _buildAnthropicMessages(run) {
     const messages = [];
 
     const pushMessage = (role, content) => {
@@ -539,48 +540,13 @@ class RunOrchestrator {
       }
     }
 
-    if (requestConfig.messages) {
-      for (const msg of requestConfig.messages) {
-        if (msg?.role === 'tool') {
-          pushMessage('user', [
-            {
-              type: 'tool_result',
-              tool_use_id: msg.tool_call_id,
-              content: msg.content || '',
-            },
-          ]);
-        } else if (msg?.role === 'assistant' && Array.isArray(msg.tool_calls)) {
-          const content = [];
-          if (msg._anthropicThinking?.signature) {
-            content.push({
-              type: 'thinking',
-              thinking: msg._anthropicThinking.thinking,
-              signature: msg._anthropicThinking.signature,
-            });
-          }
-          if (msg.content) content.push({ type: 'text', text: msg.content });
-          content.push(
-            ...msg.tool_calls.map((toolCall) => ({
-              type: 'tool_use',
-              id: toolCall.id,
-              name: toolCall.function?.name,
-              input: this._parseJsonArguments(toolCall.function?.arguments),
-            }))
-          );
-          pushMessage('assistant', content);
-        } else {
-          pushMessage(msg.role, msg.content || '');
-        }
-      }
-    }
-
     return messages.filter((m) => m.role !== 'system');
   }
 
   /**
    * Execute Anthropic-style streaming
    */
-  async _executeAnthropic(run, requestConfig, tools) {
+  async _executeAnthropic(run, tools) {
     const { llmEndpoint, apiKey, modelName } = run.config;
 
     const reasoningEnabled = modelSupportsReasoning(modelName);
@@ -590,7 +556,7 @@ class RunOrchestrator {
       model: modelName.replace('anthropic:', ''),
       max_tokens: reasoningEnabled ? 4096 + THINKING_BUDGET_TOKENS : 4096,
       stream: true,
-      messages: this._buildAnthropicMessages(run, requestConfig),
+      messages: this._buildAnthropicMessages(run),
     };
 
     // Enable extended thinking for models that support it. Temperature must be
@@ -876,8 +842,19 @@ class RunOrchestrator {
    */
   _recordLoadedSkill(run, toolCall, result) {
     const name = toolCall.function?.name;
-    if (name !== 'skill_view' && name !== 'load_skill') return;
+    if (!name) return;
 
+    // Handle direct skill-name tool calls: name is a known skill
+    if (name !== 'skill_view' && name !== 'load_skill') {
+      if (this.skillManager && this.skillManager.hasSkill(name)) {
+        if (!run.loadedSkills) run.loadedSkills = new Set();
+        run.loadedSkills.add(name);
+        console.log(`[Orchestrator] Recorded loaded skill from direct tool call: ${name}`);
+      }
+      return;
+    }
+
+    // For skill_view / load_skill, extract the skill name from the result payload.
     // executeTool wraps implementations as { success, result }; the skill loader
     // returns { success:false, error } inside `result` when the skill is missing.
     const outer = result && typeof result === 'object' ? result : {};
@@ -887,7 +864,7 @@ class RunOrchestrator {
 
     // Prefer the canonical name from the loaded skill payload (matches the
     // SkillManager key used by resolveSkill); fall back to the requested arg.
-    let skillName = inner?.skill?.name;
+    let skillName = inner?.skill?.name || outer?.skill?.name;
     if (!skillName) {
       try {
         skillName = this._parseToolArguments(toolCall.function.arguments)?.name;
@@ -1069,37 +1046,43 @@ class RunOrchestrator {
     return endpoint.includes('anthropic.com');
   }
 
-  _registerBuiltInTools() {
-    // Shared helper for loading a single skill by name
-    const loadSkillByName = async (name) => {
-      if (!name) {
-        return {
-          success: false,
-          error: 'Missing required parameter "name".',
-          availableSkills: (await this.skillManager.getSkillsList()).map((s) => s.name),
-        };
-      }
-      const skillData = await this.skillManager.getSkillContent(name);
-      if (!skillData) {
-        return {
-          success: false,
-          error: `Skill '${name}' not found.`,
-          availableSkills: (await this.skillManager.getSkillsList()).map((s) => s.name),
-        };
-      }
+  /**
+   * Load skill content by name and return a structured response.
+   * Used by skill_view, load_skill, and auto-load from direct skill-name tool calls.
+   * @param {string} name
+   * @returns {Promise<Object>}
+   * @private
+   */
+  async _loadSkillByName(name) {
+    if (!name) {
       return {
-        success: true,
-        skill: skillData,
-        metadata: {
-          loaded: true,
-          type: skillData.type,
-          timestamp: new Date().toISOString(),
-        },
-        reminder:
-          'Skills are reference instructions, not callable tools. Proceed with your own tools and knowledge using this guidance.',
+        success: false,
+        error: 'Missing required parameter "name".',
+        availableSkills: (await this.skillManager.getSkillsList()).map((s) => s.name),
       };
+    }
+    const skillData = await this.skillManager.getSkillContent(name);
+    if (!skillData) {
+      return {
+        success: false,
+        error: `Skill '${name}' not found.`,
+        availableSkills: (await this.skillManager.getSkillsList()).map((s) => s.name),
+      };
+    }
+    return {
+      success: true,
+      skill: skillData,
+      metadata: {
+        loaded: true,
+        type: skillData.type,
+        timestamp: new Date().toISOString(),
+      },
+      reminder:
+        'Skills are reference instructions, not callable tools. Proceed with your own tools and knowledge using this guidance.',
     };
+  }
 
+  _registerBuiltInTools() {
     // skills_list — discovery only
     this.toolImplementations.set('skills_list', async () => {
       const skills = await this.skillManager.getSkillsList();
@@ -1112,12 +1095,12 @@ class RunOrchestrator {
 
     // skill_view — load full content
     this.toolImplementations.set('skill_view', async (args) => {
-      return loadSkillByName(args?.name);
+      return this._loadSkillByName(args?.name);
     });
 
     // load_skill — compatibility alias
     this.toolImplementations.set('load_skill', async (args) => {
-      return loadSkillByName(args?.name);
+      return this._loadSkillByName(args?.name);
     });
   }
 }

@@ -1489,7 +1489,20 @@ document.addEventListener('DOMContentLoaded', () => {
               );
             }
           } else {
-            chatUI.addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
+            const resultObj = tryParseToolPayload(event.result);
+            if (resultObj?.skill) {
+              chatUI.addMessage(
+                'System',
+                `📚 Loaded skill: **${resultObj.skill.name || event.toolCall.function.name}**`
+              );
+            } else if (resultObj?.success === false || resultObj?.error) {
+              chatUI.addMessage(
+                'System',
+                `⚠️ Tool ${event.toolCall.function.name}: ${resultObj.error || 'error'}`
+              );
+            } else {
+              chatUI.addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
+            }
           }
 
           break;

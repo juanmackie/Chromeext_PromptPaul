@@ -28,7 +28,6 @@ export class StreamStateManager {
     // Streaming render buffer — accumulates deltas and flushes at 60fps
     this._renderBuffer = '';
     this._renderQueued = false;
-    this._lastScrollTop = 0;
     this._chatAreaRef = null;
 
     // Reasoning ("thinking") stream — rendered into a separate panel above the answer
@@ -55,6 +54,21 @@ export class StreamStateManager {
   }
 
   /**
+   * Whether the chat area is scrolled to (or very near) the bottom. Used to
+   * decide if streaming updates should keep the view pinned to the latest
+   * tokens. When the user has scrolled up to read earlier output, this returns
+   * false so their scroll position is left alone.
+   * @returns {boolean}
+   */
+  _isNearBottom() {
+    const el = this._chatAreaRef;
+    if (!el) return false;
+    // Tolerance covers sub-pixel rounding and the padding-bottom on #chat-area.
+    const threshold = 40;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+  }
+
+  /**
    * Queue a content delta for batched rendering via requestAnimationFrame.
    * Multiple deltas within a 16ms frame are coalesced into a single DOM write.
    * @param {string} delta
@@ -72,10 +86,13 @@ export class StreamStateManager {
     const el = this.currentStreamingContentElement;
     if (!el || !this._renderBuffer) return;
 
+    // Measure before mutating the DOM: if the user was already at the bottom,
+    // keep them pinned; if they scrolled up, don't yank them back down.
+    const stick = this._isNearBottom();
     this.accumulatedStreamedText += this._renderBuffer;
     this._renderBuffer = '';
     el.innerHTML = renderMarkdown(this.accumulatedStreamedText);
-    if (this._chatAreaRef) {
+    if (this._chatAreaRef && stick) {
       this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
     }
   }
@@ -97,10 +114,11 @@ export class StreamStateManager {
     const el = this.currentReasoningContentElement;
     if (!el || !this._reasoningBuffer) return;
 
+    const stick = this._isNearBottom();
     this.accumulatedReasoningText += this._reasoningBuffer;
     this._reasoningBuffer = '';
     el.innerHTML = renderMarkdown(this.accumulatedReasoningText);
-    if (this._chatAreaRef) {
+    if (this._chatAreaRef && stick) {
       this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
     }
   }

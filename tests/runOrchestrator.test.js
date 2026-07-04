@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import RunOrchestrator from '../src/orchestrator/RunOrchestrator.js';
 import { createThinkParser } from '../src/utils/inlineReasoning.js';
 
@@ -32,6 +32,24 @@ function createStubSkillManager(overrides = {}) {
     },
     getSlashCommands() {
       return [];
+    },
+    hasSkill(name) {
+      const names = (overrides.eligibleSkills || []).map((s) => s.name);
+      return names.includes(name);
+    },
+    getSkillNames() {
+      return (overrides.eligibleSkills || []).map((s) => s.name);
+    },
+    getSkillContent(name) {
+      const skill = (overrides.eligibleSkills || []).find((s) => s.name === name);
+      if (!skill) return null;
+      return {
+        name: skill.name,
+        description: skill.description,
+        instructions: skill.instructions || `Instructions for ${skill.name}`,
+        type: 'built-in',
+        metadata: {},
+      };
     },
   };
 }
@@ -150,7 +168,10 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     const orch = new RunOrchestrator(skillManager);
     const eligibleSkills = [{ name: 'humanizer', description: 'Makes text natural' }];
 
-    const promptEmpty = orch._buildSystemPrompt({ config: {}, loadedSkills: new Set() }, eligibleSkills);
+    const promptEmpty = orch._buildSystemPrompt(
+      { config: {}, loadedSkills: new Set() },
+      eligibleSkills
+    );
     expect(promptEmpty).toContain('Available skills');
     expect(promptEmpty).not.toContain('SKILL:');
 
@@ -311,5 +332,204 @@ describe('RunOrchestrator._processOpenAIChunk inline reasoning', () => {
     });
     expect(events.find((e) => e.type === 'reasoning')?.data).toBe('structured');
     expect(run.accumulatedText).toBe('hello');
+  });
+});
+
+describe('Fix 1: execute() persists messages into conversationHistory', () => {
+  beforeEach(() => {
+    global.chrome = {
+      runtime: { sendMessage: async () => {} },
+    };
+  });
+
+  afterEach(() => {
+    delete global.chrome;
+  });
+
+  it('execute() absorbs requestConfig.messages into run.conversationHistory and clears requestConfig', async () => {
+    const skillManager = createStubSkillManager();
+    const orch = new RunOrchestrator(skillManager);
+    let capturedHistory = null;
+
+    orch._executeOpenAI = async (run) => {
+      capturedHistory = run.conversationHistory.map((m) => ({ ...m }));
+    };
+
+    const runId = await orch.startRun({
+      llmEndpoint: 'https://api.openai.com/v1/chat/completions',
+      apiKey: 'sk-test',
+      modelName: 'gpt-4o',
+    });
+    const run = orch.getRun(runId);
+
+    const requestConfig = {
+      messages: [
+        { role: 'system', content: 'do not persist' },
+        { role: 'user', content: 'Turn this page into a research brief' },
+      ],
+    };
+
+    await orch.execute(runId, requestConfig);
+
+    expect(
+      capturedHistory.some(
+        (m) => m.role === 'user' && m.content === 'Turn this page into a research brief'
+      )
+    ).toBe(true);
+    expect(capturedHistory.some((m) => m.role === 'system')).toBe(false);
+    expect(
+      run.conversationHistory.some(
+        (m) => m.role === 'user' && m.content === 'Turn this page into a research brief'
+      )
+    ).toBe(true);
+    expect(requestConfig.messages.length).toBe(0);
+  });
+
+  it('continuation after tool call carries the original user message in the second request', async () => {
+    const skills = [
+      {
+        name: 'humanizer',
+        description: 'Makes text natural',
+        instructions: 'Rewrite to sound human.',
+      },
+    ];
+    const skillManager = createStubSkillManager({ eligibleSkills: skills });
+    const orch = new RunOrchestrator(skillManager);
+    const seenBodies = [];
+    let callCount = 0;
+
+    // Return a tool call on the first invocation, then empty text on subsequent
+    // (so the orchestrator completes without looping forever).
+    global.fetch = async (url, opts) => {
+      const body = JSON.parse(opts.body);
+      seenBodies.push(body);
+      callCount++;
+      return {
+        ok: true,
+        body: {
+          getReader: () => {
+            let readerDone = false;
+            return {
+              read: async () => {
+                if (readerDone) return { done: true, value: undefined };
+                readerDone = true;
+                if (callCount === 1) {
+                  // First call: emit a tool call so the orchestrator does a continuation
+                  const data = JSON.stringify({
+                    choices: [
+                      {
+                        delta: {
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: 'call_1',
+                              function: { name: 'humanizer', arguments: '{}' },
+                            },
+                          ],
+                        },
+                        finish_reason: null,
+                      },
+                    ],
+                  });
+                  return {
+                    done: false,
+                    value: new TextEncoder().encode(`data: ${data}\n\ndata: [DONE]\n\n`),
+                  };
+                }
+                // Subsequent calls: return text so the flow completes
+                const data = JSON.stringify({
+                  choices: [{ delta: { content: 'Final answer.' }, finish_reason: 'stop' }],
+                });
+                return {
+                  done: false,
+                  value: new TextEncoder().encode(`data: ${data}\n\ndata: [DONE]\n\n`),
+                };
+              },
+            };
+          },
+        },
+      };
+    };
+
+    const runId = await orch.startRun({
+      llmEndpoint: 'https://api.openai.com/v1/chat/completions',
+      apiKey: 'sk-test',
+      modelName: 'gpt-4o',
+    });
+
+    await orch.execute(runId, {
+      messages: [{ role: 'user', content: 'Rewrite this using humanizer' }],
+    });
+
+    // We should have gotten at least 2 LLM requests (initial + continuation)
+    expect(seenBodies.length).toBeGreaterThanOrEqual(2);
+
+    // First request body should include the user message
+    const firstBody = seenBodies[0];
+    const userFirst = firstBody.messages.find((m) => m.role === 'user');
+    expect(userFirst).toBeTruthy();
+    expect(userFirst.content).toBe('Rewrite this using humanizer');
+
+    // The continuation request should also carry the user message
+    // (absorbed into conversationHistory by execute(), so it's there even
+    // though requestConfig was { continueConversation: true } with no messages.)
+    for (let i = 1; i < seenBodies.length; i++) {
+      const body = seenBodies[i];
+      const userMsg = body.messages.find((m) => m.role === 'user');
+      expect(userMsg).toBeTruthy();
+      expect(userMsg.content).toBe('Rewrite this using humanizer');
+    }
+  });
+});
+
+describe('Fix 2: executeTool auto-loads skill on direct name', () => {
+  it('returns loaded skill content for a known skill name', async () => {
+    const skills = [
+      {
+        name: 'humanizer',
+        description: 'Makes text natural',
+        instructions: 'Rewrite to sound human.',
+      },
+    ];
+    const skillManager = createStubSkillManager({ eligibleSkills: skills });
+    const orch = new RunOrchestrator(skillManager);
+
+    const result = await orch.executeTool('run-1', {
+      id: 'tc_1',
+      function: { name: 'humanizer', arguments: '{}' },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.skill).toBeTruthy();
+    expect(result.skill.name).toBe('humanizer');
+  });
+
+  it('records auto-loaded skill via _recordLoadedSkill', async () => {
+    const skills = [
+      {
+        name: 'humanizer',
+        description: 'Makes text natural',
+        instructions: 'Rewrite to sound human.',
+      },
+    ];
+    const skillManager = createStubSkillManager({ eligibleSkills: skills });
+    const orch = new RunOrchestrator(skillManager);
+    const run = { loadedSkills: new Set() };
+
+    const result = await orch.executeTool('run-2', {
+      id: 'tc_2',
+      function: { name: 'humanizer', arguments: '{}' },
+    });
+
+    orch._recordLoadedSkill(
+      run,
+      {
+        id: 'tc_2',
+        function: { name: 'humanizer', arguments: '{}' },
+      },
+      result
+    );
+
+    expect(run.loadedSkills.has('humanizer')).toBe(true);
   });
 });
