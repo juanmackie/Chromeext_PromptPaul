@@ -917,7 +917,10 @@ class RunOrchestrator {
         event,
       })
       .catch((err) => {
-        // Chat might not be listening
+        console.warn(`[RunOrchestrator] Emit failed for run ${runId}:`, err.message);
+        if (run) {
+          run.lastEmitError = { event, error: err.message, timestamp: Date.now() };
+        }
       });
   }
 

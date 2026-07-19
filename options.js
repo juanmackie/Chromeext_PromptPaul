@@ -1328,7 +1328,7 @@ function setupInstructionHandlers() {
 
         chrome.storage.local.set({ instructions: instructions }, () => {
           refreshInstructions(); // Reload the table
-          clearForm(); // Clear the form after saving
+          resetInstructionForm(); // Clear the form after saving without confirmation
         });
       });
     });
@@ -1339,6 +1339,19 @@ function setupInstructionHandlers() {
     clearFormBtn.addEventListener('click', clearForm);
   }
 
+  function resetInstructionForm() {
+    document.getElementById('instructionName').value = '';
+    document.getElementById('instructionContent').value = '';
+    document.getElementById('instructionTags').value = '';
+    document.getElementById('instructionId').value = '';
+    document.getElementById('instructionToolChoice').value = '';
+
+    // Reset modality checkboxes - Text checked by default, others unchecked
+    document.getElementById('modalityText').checked = true;
+    document.getElementById('modalityImage').checked = false;
+    document.getElementById('modalityVideo').checked = false;
+    document.getElementById('modalityAudio').checked = false;
+  }
   async function clearForm() {
     // Check if form has any content that would be lost
     const name = document.getElementById('instructionName').value;
@@ -1357,17 +1370,7 @@ function setupInstructionHandlers() {
       }
     }
 
-    document.getElementById('instructionName').value = '';
-    document.getElementById('instructionContent').value = '';
-    document.getElementById('instructionTags').value = '';
-    document.getElementById('instructionId').value = '';
-    document.getElementById('instructionToolChoice').value = '';
-
-    // Reset modality checkboxes - Text checked by default, others unchecked
-    document.getElementById('modalityText').checked = true;
-    document.getElementById('modalityImage').checked = false;
-    document.getElementById('modalityVideo').checked = false;
-    document.getElementById('modalityAudio').checked = false;
+    resetInstructionForm();
 
     showStatus('Form cleared.');
   }

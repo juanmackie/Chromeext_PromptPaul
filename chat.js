@@ -1065,9 +1065,9 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Stops the current API request by aborting the orchestrator run.
    */
-  function stopApiRequest() {
+  async function stopApiRequest() {
     if (streamState.getRunId()) {
-      abortRun(streamState.getRunId());
+      await abortRun(streamState.getRunId());
     }
   }
 
@@ -1238,17 +1238,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!pendingAction || !pendingPanelActions.includes(pendingAction.action)) {
       return;
     }
-
-    // Filter: only process pending actions for our panel
-    if (pendingAction.tabId && panelTabId && pendingAction.tabId !== panelTabId) {
-      console.log('Chat: Ignoring pending action for other panel');
-      // Clear it anyway to prevent stuck queue
+    // Drop stale queued actions older than 30 seconds
+    if (pendingAction.queuedAt && Date.now() - pendingAction.queuedAt > 30000) {
+      console.warn('Chat: Dropping stale queued action:', pendingAction.action);
       if (chrome.storage?.session) {
         chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
       }
       return;
     }
-
+    // Filter: only process pending actions for our panel
+    if (pendingAction.tabId && panelTabId && pendingAction.tabId !== panelTabId) {
+      console.log('Chat: Ignoring pending action for other panel');
+      if (chrome.storage?.session) {
+        chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
+      }
+      return;
+    }
     let consumed = false;
     if (pendingAction.action === 'setSelectedText') {
       consumed = applySetSelectedTextAction(pendingAction);
@@ -1263,16 +1268,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function consumePendingPanelActionOnLoad() {
-    if (!chrome.storage?.session) {
-      return;
-    }
-
+    if (!chrome.storage?.session) return;
     chrome.storage.session.get([PENDING_PANEL_ACTION_KEY], (result) => {
-      const pendingAction = result?.[PENDING_PANEL_ACTION_KEY];
-      consumePendingPanelAction(pendingAction);
+      consumePendingPanelAction(result?.[PENDING_PANEL_ACTION_KEY]);
     });
   }
-
+  // Consume queued panel actions whenever written to session storage
+  if (chrome.storage?.session) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'session') return;
+      const pending = changes[PENDING_PANEL_ACTION_KEY];
+      if (!pending?.newValue) return;
+      consumePendingPanelAction(pending.newValue);
+    });
+  }
   function isSkillLoaderTool(toolName) {
     return toolName === 'load_skill' || toolName === 'skill_view';
   }

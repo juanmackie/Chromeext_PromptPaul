@@ -99,6 +99,7 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 - `chat.js` resolves `sourceTabId` for side-panel runs via `getRunSourceTabId()`, not a captured `panelTabId`.
 - Pending panel actions (`setMediaForAnalysis`, `setSelectedText`) are consumed locally in `chat.js` and not re-sent via `chrome.runtime.sendMessage`.
 - Keep privacy-sensitive analytics opt-out and safe-label handling intact.
+- Successful instruction saves reset the Add/Edit Instruction form immediately; manual clearing may still require confirmation when fields contain unsaved content.
 
 ## Work Guidance
 

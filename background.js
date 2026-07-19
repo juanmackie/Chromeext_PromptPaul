@@ -266,37 +266,41 @@ async function queuePendingPanelAction(payload) {
  * @returns {Promise<{queuedFallback:boolean, response:any}>}
  */
 async function sendPanelMessage(payload) {
-  return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendMessage(payload, (response) => {
-        if (chrome.runtime.lastError) {
-          const lastErrorMessage = chrome.runtime.lastError.message;
-          queuePendingPanelAction(payload).then((queued) => {
-            if (!queued) {
-              console.warn(
-                `Background: sendMessage (${payload.action}) failed and queue fallback failed:`,
-                lastErrorMessage
-              );
-            }
-            resolve({ queuedFallback: queued, response: null });
-          });
-          return;
-        }
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 150;
 
-        resolve({ queuedFallback: false, response });
-      });
-    } catch (error) {
-      queuePendingPanelAction(payload).then((queued) => {
-        if (!queued) {
-          console.error(
-            `Background: Exception sending message (${payload.action}):`,
-            error.message
-          );
-        }
-        resolve({ queuedFallback: queued, response: null });
-      });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const result = await new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(payload, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve({ response });
+        });
+      } catch (error) {
+        resolve({ error: error.message });
+      }
+    });
+
+    if (!result.error) {
+      return { queuedFallback: false, response: result.response };
     }
-  });
+
+    if (attempt < MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+    }
+  }
+
+  // All retries failed — queue for later consumption
+  const queued = await queuePendingPanelAction(payload);
+  if (!queued) {
+    console.warn(
+      `Background: sendMessage (${payload.action}) failed after ${MAX_RETRIES + 1} attempts and queue fallback failed`
+    );
+  }
+  return { queuedFallback: queued, response: null };
 }
 
 /**

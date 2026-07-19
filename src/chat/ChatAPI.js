@@ -194,12 +194,18 @@ export async function executeRun(runId, messages) {
 /**
  * Abort an ongoing run
  * @param {string} runId - Run ID to abort
+ * @returns {Promise<boolean>} True if abort was acknowledged
  */
-export function abortRun(runId) {
-  if (runId) {
-    chrome.runtime.sendMessage({
+export async function abortRun(runId) {
+  if (!runId) return false;
+  try {
+    const response = await chrome.runtime.sendMessage({
       action: 'abortRun',
-      runId: runId,
+      runId,
     });
+    return response?.success === true;
+  } catch (error) {
+    console.error('[ChatAPI] abortRun failed:', error.message);
+    return false;
   }
 }
