@@ -13,7 +13,6 @@
  * @requires ./themeUtils.js
  * @requires ./loadingManager.js
  */
-
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
@@ -27,6 +26,12 @@ import {
   abortRun,
   selectOptimalProfile,
 } from './src/chat/ChatAPI.js';
+import {
+  isWebSearchEnabled,
+  initWebSearchToggle,
+  buildFinalResponseBody,
+  classifyToolExecutionResult,
+} from './src/chat/ChatGrounding.js';
 import {
   MediaType,
   validateMediaData,
@@ -897,6 +902,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Initialize web search grounding toggle
+  initWebSearchToggle(document.getElementById('web-search-toggle'), loadingManager);
+
   const darkThemeToggle = document.getElementById('darkThemeToggle');
   if (darkThemeToggle) {
     setupThemeToggle(darkThemeToggle);
@@ -1379,10 +1387,14 @@ document.addEventListener('DOMContentLoaded', () => {
             currentSourceTabId,
           });
           if (event.type === 'complete') {
-            const finalContent = event.content || streamState.getStreamedText() || '';
-            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
-              finalContent || ''
+            const body = buildFinalResponseBody(
+              event.content,
+              streamState.getStreamedText(),
+              Boolean(streamState.getReasoningContentElement()),
+              event.grounding?.sources || []
             );
+            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(body);
+            if (body.trim()) streamState.addMessageToHistory({ role: 'assistant', content: body });
           } else if (event.type === 'error') {
             streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
               '❌ Error: ' + (event.error || 'unknown error')
@@ -1403,7 +1415,6 @@ document.addEventListener('DOMContentLoaded', () => {
           if (sendResponse) sendResponse({ success: true });
           return true;
         }
-
         console.log('Chat: Ignoring orchestratorEvent for other run/tab', {
           runId,
           sourceTabId,
@@ -1499,23 +1510,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           } else {
             const resultObj = tryParseToolPayload(event.result);
-            if (resultObj?.skill) {
+            const outcome = classifyToolExecutionResult(resultObj);
+            if (outcome.payload?.skill) {
               chatUI.addMessage(
                 'System',
-                `📚 Loaded skill: **${resultObj.skill.name || event.toolCall.function.name}**`
+                `📚 Loaded skill: **${outcome.payload.skill.name || event.toolCall.function.name}**`
               );
-            } else if (resultObj?.success === false || resultObj?.error) {
+            } else if (outcome.status !== 'success') {
               chatUI.addMessage(
                 'System',
-                `⚠️ Tool ${event.toolCall.function.name}: ${resultObj.error || 'error'}`
+                `⚠️ Tool ${event.toolCall.function.name}: ${outcome.message || outcome.error || 'error'}`
               );
             } else {
               chatUI.addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
             }
           }
-
           break;
-
         case 'tool_error':
           chatUI.addMessage(
             'System',
@@ -1533,21 +1543,18 @@ document.addEventListener('DOMContentLoaded', () => {
               streamState.getReasoningElapsedMs()
             );
           }
-          // Finalize the existing streaming bubble instead of creating a duplicate
+
+          const body = buildFinalResponseBody(
+            event.content,
+            streamState.getStreamedText(),
+            Boolean(streamState.getReasoningContentElement()),
+            event.grounding?.sources || []
+          );
+
           if (streamState.getCurrentStreamingContentElement()) {
-            const finalContent = event.content || streamState.getStreamedText() || '';
-            // Reasoning-only turn (model spent its budget thinking, no answer):
-            // show a notice rather than an empty bubble.
-            const displayContent =
-              !finalContent.trim() && streamState.getReasoningContentElement()
-                ? '⚠️ No final answer — the model used its token budget thinking.'
-                : finalContent;
-            streamState.getCurrentStreamingContentElement().innerHTML =
-              renderMarkdownContent(displayContent);
+            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(body);
             postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
-            // Attach copy listeners to existing bubble (fix: icons were created
-            // in addMessage but listeners skipped because message was empty)
             const msgDiv = streamState.getCurrentStreamingMessageDiv();
             const uid = streamState.getCurrentStreamingUniqueId();
             if (msgDiv && uid) {
@@ -1555,7 +1562,7 @@ document.addEventListener('DOMContentLoaded', () => {
               const formattedIcon = document.getElementById(`copy-formatted-icon-${uid}`);
               if (rawIcon && formattedIcon) {
                 attachCopyListeners(
-                  finalContent,
+                  body,
                   streamState.getCurrentStreamingContentElement(),
                   rawIcon,
                   formattedIcon
@@ -1563,20 +1570,15 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             }
           } else {
-            // Fallback: create new bubble if no streaming element exists
-            chatUI.addMessage('LLM', event.content || '');
+            chatUI.addMessage('LLM', body);
           }
 
-          // Persist final assistant content to conversation history
-          const completeFinalContent = event.content || streamState.getStreamedText() || '';
-          if (completeFinalContent) {
+          if (body.trim()) {
             streamState.addMessageToHistory({
               role: 'assistant',
-              content: completeFinalContent,
+              content: body,
             });
           }
-
-          // Reset UI state
           userInput.disabled = false;
           sendButton.disabled = false;
           clearButton.textContent = 'Clear';
@@ -1832,6 +1834,7 @@ document.addEventListener('DOMContentLoaded', () => {
       clearButton.textContent = 'Stop';
 
       // Prepare run configuration with media
+      const webSearchEnabled = await isWebSearchEnabled();
       const runConfig = {
         llmEndpoint: config.llmEndpoint,
         apiKey: config.apiKey,
@@ -1839,6 +1842,7 @@ document.addEventListener('DOMContentLoaded', () => {
         systemPrompt: config.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
+        webSearch: webSearchEnabled,
         mediaData: mediaData,
         requestedSkill,
         sourceTabId: getRunSourceTabId(),
@@ -2012,6 +2016,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Prepare run configuration
+      const webSearchEnabled = await isWebSearchEnabled();
       const runConfig = {
         llmEndpoint: effectiveConfig.llmEndpoint,
         apiKey: effectiveConfig.apiKey,
@@ -2019,6 +2024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         systemPrompt: effectiveConfig.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
+        webSearch: webSearchEnabled,
         requestedSkill,
         sourceTabId: getRunSourceTabId(),
       };

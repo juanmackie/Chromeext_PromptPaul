@@ -1002,6 +1002,97 @@ What this skill does and when to use it.
         </div>
       </section>
 
+      <!-- Web Search Grounding Section -->
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">travel_explore</span>
+          <h2 class="fs-5 fw-semibold mb-0">Web Search Grounding</h2>
+        </div>
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
+        <p class="text-secondary-emphasis small">
+          Enable the sidebar <strong>Web</strong> toggle to let the LLM search the web via
+          <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer"
+            >Brave Search API</a
+          >
+          before answering. Grounding results are returned as source-cited reference material. A
+          <a
+            href="https://api-dashboard.search.brave.com/register"
+            target="_blank"
+            rel="noopener noreferrer"
+            >free Brave account</a
+          >
+          (credit card required for signup, monthly free credits included) provides the API key.
+        </p>
+        <p class="text-secondary-emphasis small">
+          <strong>Privacy:</strong> When enabled, a model-generated search query may derive from
+          your prompt, conversation, selected text, page content, or media context and is sent to
+          Brave. The extension does not send the full conversation to Brave unless it is represented
+          in that query. Your Brave key is stored in Chrome storage and never included in LLM
+          request payloads, logs, or analytics.
+        </p>
+
+        <div class="mb-3">
+          <label for="braveSearchApiKey" class="form-label">
+            Brave Search API Key
+            <button
+              type="button"
+              class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+              data-tooltip="Paste your Brave Search API key. Get one at api-dashboard.search.brave.com/app/keys"
+              aria-label="Help"
+            >
+              <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
+            </button>
+          </label>
+          <div class="input-group">
+            <input
+              type="password"
+              id="braveSearchApiKey"
+              class="form-control"
+              placeholder="Paste your Brave Search API key"
+              autocomplete="off"
+            />
+            <button type="button" class="btn btn-outline-secondary" id="braveSearchKeyToggle">
+              <span class="material-symbols-outlined" style="font-size: 1.25rem">visibility</span>
+            </button>
+            <button type="button" class="btn btn-outline-danger" id="braveSearchKeyRemove">
+              <span class="material-symbols-outlined" style="font-size: 1.25rem">delete</span>
+            </button>
+          </div>
+          <div class="invalid-feedback" id="braveSearchApiKeyError"></div>
+          <div class="form-text">
+            Key is saved automatically. <span id="braveSearchKeyStatus" class="fw-semibold"></span>
+          </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a
+            href="https://api-dashboard.search.brave.com/app/keys"
+            target="_blank"
+            class="btn btn-outline-primary btn-sm"
+            rel="noopener noreferrer"
+          >
+            <span class="material-symbols-outlined" style="font-size: 1rem">key</span>
+            Get Your Brave API Key
+          </a>
+          <a
+            href="https://api-dashboard.search.brave.com/documentation/pricing"
+            target="_blank"
+            class="btn btn-outline-secondary btn-sm"
+            rel="noopener noreferrer"
+          >
+            <span class="material-symbols-outlined" style="font-size: 1rem">currency_exchange</span>
+            Pricing &amp; Quota Info
+          </a>
+        </div>
+      </section>
+
       <!-- Full Backup & Restore Section -->
       <section class="card mb-4 p-4">
         <div class="d-flex align-items-center gap-2 mb-3">
@@ -1019,7 +1110,8 @@ What this skill does and when to use it.
         />
         <p class="text-secondary-emphasis small">
           Export or import all extension data (profiles, skills, tools, instructions, and settings)
-          in a single file.
+          in a single file. <strong>Backup files contain API keys</strong> &mdash; store them
+          securely and never share them publicly.
         </p>
         <div class="d-flex gap-2">
           <button type="button" id="exportAllData" class="btn btn-primary">

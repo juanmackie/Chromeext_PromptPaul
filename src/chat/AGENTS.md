@@ -37,6 +37,19 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - Run `npm run test` after chat module changes.
 - For UI, media, voice, or streaming changes, reload the side panel and exercise the affected flow in Chrome or Edge.
 
+## Local Contracts
+
+- `ChatGrounding.js` owns the sidebar `webSearchEnabled` toggle, background-only Brave key status bridge, safe `Sources` formatting, and nested tool-result classification. It must not read `braveSearchApiKey` from side-panel storage.
+- `ChatGrounding.formatSourcesBlock()`, `buildBodyWithSources()`, and `buildFinalResponseBody()` are the canonical rendering helpers for grounded completions; source titles and URLs must be normalized before rendering.
+- Tool traces must classify the inner payload of the orchestrator `{ success, result }` envelope so already-used, no-results, and failed searches are never displayed as successful executions.
+- The reserved tool name `web_search` must never be shadowed by user-defined tools or imports; it is guarded in `ChatAPI.getTools()`, `RunOrchestrator._registerConfiguredTools()`, and Options save/import validation.
+- When grounding is disabled, responses must remain identical to the pre-grounding behavior — no Sources section, no changed payload shape.
+
 ## Child DOX Index
 
 - No child AGENTS.md files are currently needed under `src/chat/`.
+
+## Work Guidance
+
+- Keep `chat.js` under its enforced line guard; move toggle wiring and preference helpers into `ChatGrounding.js` rather than expanding the entry point.
+- Grounding metadata travels only in terminal events and through `braveSearch.js` helpers — never carry the Brave key in LLM request payloads, events, or logs.

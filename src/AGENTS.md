@@ -7,9 +7,9 @@ The `src/` subtree contains ES modules shared by the extension entry points, inc
 ## Ownership
 
 - Owns `src/prompts.js` and durable module folders under `src/`.
-- `src/chat/AGENTS.md` owns side panel chat modules.
-- `src/utils/AGENTS.md` owns shared helper modules.
-- `src/orchestrator/AGENTS.md` owns LLM run orchestration.
+- `src/chat/AGENTS.md` owns side panel chat modules, including `ChatGrounding.js`.
+- `src/utils/AGENTS.md` owns shared helper modules, including `braveSearch.js`.
+- `src/orchestrator/AGENTS.md` owns LLM run orchestration and web_search tool authorization.
 - Root entry points such as `chat.js`, `background.js`, and `options.js` are owned by the root AGENTS.md.
 
 ## Local Contracts

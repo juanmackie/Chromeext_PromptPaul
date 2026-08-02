@@ -6,7 +6,12 @@ The `src/orchestrator/` subtree centralizes LLM run execution, tool calls, strea
 
 ## Ownership
 
-- `RunOrchestrator.js` owns run IDs, active run state, tool execution idempotency, registered built-in tools, provider-specific execution, and follow-up calls after tool execution.
+- `RunOrchestrator.js` owns run IDs, active run state, tool execution idempotency, registered built-in tools (including the reserved `web_search` tool), provider-specific execution, and follow-up calls after tool execution.
+- The orchestrator exposes `run.webSearch` metadata only through the terminal `complete` event (`event.grounding.sources`); the Brave API key never leaves the service worker.
+- Brave execution is supplied through `braveSearchExecutor` and key availability through `webSearchStatusProvider`; `run.config.apiKey` is only the selected LLM credential.
+- Search/tool sequencing is model-directed before use: a forced user tool (when configured) runs first exactly once, then `web_search` is offered with automatic model selection (never forced) while a search slot is available. The slot is claimed before network I/O.
+- After a search attempt, the system prompt switches to an already-completed phase and the immediate continuation is text-only. Duplicate or parallel search calls receive `WEB_SEARCH_ALREADY_USED` and never issue another Brave request.
+- A search response with no usable normalized sources produces `WEB_SEARCH_NO_RESULTS`; it is not treated as successful grounding.
 
 ## Local Contracts
 

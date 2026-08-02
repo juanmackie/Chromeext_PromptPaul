@@ -146,7 +146,12 @@ export async function getTools() {
   });
 
   return definedTools.filter((tool) => {
-    if (tool.name === 'load_skill' || tool.name === 'skills_list' || tool.name === 'skill_view') {
+    if (
+      tool.name === 'load_skill' ||
+      tool.name === 'skills_list' ||
+      tool.name === 'skill_view' ||
+      tool.name === 'web_search'
+    ) {
       console.warn(`Chat: Skipping user-defined tool named '${tool.name}' because it is reserved.`);
       return false;
     }

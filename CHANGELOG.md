@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### New Features
+
+- **Web Search Grounding**: A sidebar toggle (Web) lets users optionally ground LLM answers with Brave Search. When enabled, the model may call the reserved `web_search` function tool when current, verifiable, or time-sensitive information would materially improve the answer — the toggle is a permission, not a mandate, so the model can answer directly without searching. Queries Brave's LLM Context API and returns source-cited results that the UI renders as a first-party Sources section. Requires a Brave Search API key; pricing and quotas are subject to Brave's current plans. Grounding is disabled by default.
+
 ### Bug Fixes
 
 - Fixed "A response is already in progress" error that prevented follow-up messages after initial response completion (run state was not cleared on success)
@@ -20,6 +24,11 @@
 - Added page-context helpers for token budgeting, read strategy selection, permission guards, and runtime error normalization
 - Updated docs to match the current module layout and page-aware quick-action flow
 - Expanded content extraction metadata for platform-aware quick actions and YouTube moment prompts
+
+### New
+
+- `src/utils/braveSearch.js` — bounded Brave LLM Context API client and normalized source contract
+- `src/chat/ChatGrounding.js` — toggle state, Brave key status bridge, and Sources formatting helpers
 
 ## [6.0.0] - 2026-04-25
 

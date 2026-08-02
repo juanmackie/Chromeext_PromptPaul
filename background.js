@@ -21,6 +21,7 @@ import {
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { resolvePreferredProfile } from './src/utils/profileRouting.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
+import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 
 // ===== Umami Analytics Module (privacy-first, opt-out) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -911,9 +912,34 @@ skillManager.init();
 
 // Import and initialize orchestrator
 import RunOrchestrator from './src/orchestrator/RunOrchestrator.js';
+
+const getBraveSearchApiKey = () =>
+  new Promise((resolve, reject) => {
+    chrome.storage.local.get(['braveSearchApiKey'], (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(result.braveSearchApiKey || '');
+    });
+  });
+
+const braveSearchExecutor = async (query, options = {}) => {
+  const apiKey = await getBraveSearchApiKey();
+  if (!apiKey) {
+    throw new BraveSearchError(
+      'Web search requires a Brave Search API key. Configure it in Options.',
+      { code: 'NO_KEY' }
+    );
+  }
+  return executeBraveSearch(query, apiKey, options);
+};
+
 const runOrchestrator = new RunOrchestrator(skillManager, {
   userToolExecutor: (tool, args) =>
     callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
+  webSearchStatusProvider: async () => Boolean(await getBraveSearchApiKey()),
+  braveSearchExecutor,
 });
 
 // ===== Menu System (Serialized Rebuild Queue) =====
@@ -1492,6 +1518,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           error: 'No active tab found',
         });
       }
+    });
+    return true;
+  }
+
+  // ===== Web Search Status =====
+
+  if (request.action === 'getWebSearchStatus') {
+    chrome.storage.local.get(['braveSearchApiKey'], (result) => {
+      const configured = Boolean(result.braveSearchApiKey);
+      sendResponse({ configured });
     });
     return true;
   }

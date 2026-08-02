@@ -17,6 +17,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `runtimeErrors.js` owns runtime error classification and friendly messages.
 - `validation.js` owns small shared validators.
 - `debounce.js` owns debounce and throttle helpers.
+- `braveSearch.js` owns the bounded Brave LLM Context API client, HTTP(S)-only source normalization, byte budgeting, caller-abort handling, and safe `NO_RESULTS` errors when no usable sources remain.
 
 ## Local Contracts
 

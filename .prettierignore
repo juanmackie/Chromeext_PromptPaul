@@ -1,3 +1,5 @@
 libs/
 node_modules/
 dist/
+.pi/
+.pi-subagents/

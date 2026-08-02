@@ -30,10 +30,23 @@ cd Chromeext_PromptPaul
 
 1. Open the extension Options page
 2. Set your LLM endpoint, API key, and model. The extension does not ship with a demo API key.
-3. Optionally set a system prompt and create custom instructions
-4. Save the profile you want to use
+3. Configure Web Search Grounding (optional):
+   - Enable the **Web** toggle in the side panel to allow grounding
+   - Add a Brave Search API key on the Options page (see [Brave's current plans and terms](https://brave.com/search/api/))
+   - When a key is configured and the toggle is on, the model may search the web when current, verifiable, or time-sensitive information would improve the answer — search is a permission, not a mandate, so the model can still answer directly
+   - The selected endpoint/model must support function calling; otherwise grounding will be disabled for that request
+4. Optionally set a system prompt and create custom instructions
+5. Save the profile you want to use
+
+> **Privacy note:** When Web Search is enabled, a model-generated query may derive from your prompt, conversation, selected text, page content, or media context and is sent to Brave. The full conversation is not sent unless represented in that query. The key is stored locally and never included in LLM payloads, analytics, or logs.
 
 ## Use
+
+### Side panel Web Search toggle
+
+- Click the **Web** button in the sidebar to toggle web grounding on/off
+- When on and a Brave key is configured, the model may fetch live web results before answering when fresh or verifiable facts would materially improve the answer (it may also answer directly)
+- Sources appear as a first-party section at the bottom of each answer that used web search
 
 ### Context menu
 

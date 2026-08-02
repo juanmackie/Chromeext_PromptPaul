@@ -388,10 +388,7 @@
     const message = String(error?.message || error || '');
     // Two faces of the same failure: the explicit invalidation message, and the
     // TypeError thrown when `chrome.runtime` itself has gone undefined.
-    return (
-      /extension context invalidated/i.test(message) ||
-      /reading 'sendMessage'/i.test(message)
-    );
+    return /extension context invalidated/i.test(message) || /reading 'sendMessage'/i.test(message);
   }
 
   function sendSelectionToExtension(selectedText) {

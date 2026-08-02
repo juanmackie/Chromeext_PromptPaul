@@ -754,6 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupToolHandlers(); // Add call to setup tool handlers
   setupSkillHandlers(); // Add call to setup skill handlers
   setupBackupHandlers(); // Add call to setup backup handlers
+  setupGroundingHandlers(); // Brave web search key
 
   // Add event listener for the Revert button
   const revertButton = document.getElementById('revertDefaultsButton');
@@ -1643,7 +1644,12 @@ function setupToolHandlers() {
         return;
       }
 
-      if (toolName === 'load_skill' || toolName === 'skills_list' || toolName === 'skill_view') {
+      if (
+        toolName === 'load_skill' ||
+        toolName === 'skills_list' ||
+        toolName === 'skill_view' ||
+        toolName === 'web_search'
+      ) {
         showStatus(`Tool name '${toolName}' is reserved by Prompt Paul.`, true);
         loadingManager.setButtonLoading(saveToolBtn, false);
         return;
@@ -1770,7 +1776,15 @@ function setupToolHandlers() {
             let existingTools = result.promptPaulTools || [];
             const importedTools = importData.tools;
 
-            importedTools.forEach((importedTool) => {
+            const RESERVED_TOOL_NAMES = ['web_search', 'skills_list', 'skill_view', 'load_skill'];
+            const filteredTools = importedTools.filter(
+              (t) => !RESERVED_TOOL_NAMES.includes(t.name)
+            );
+            if (filteredTools.length !== importedTools.length) {
+              const skipped = importedTools.length - filteredTools.length;
+              showStatus(`Skipped ${skipped} reserved tool name(s).`, false, true);
+            }
+            filteredTools.forEach((importedTool) => {
               const existingIndex = existingTools.findIndex((tool) => tool.id === importedTool.id);
               if (existingIndex > -1) {
                 // Update existing tool
@@ -2538,4 +2552,86 @@ function setupBackupHandlers() {
       reader.readAsText(file);
     });
   }
+}
+
+/**
+ * Setup handlers for the Web Search Grounding (Brave) configuration.
+ */
+function setupGroundingHandlers() {
+  const keyInput = document.getElementById('braveSearchApiKey');
+  const keyToggle = document.getElementById('braveSearchKeyToggle');
+  const keyRemove = document.getElementById('braveSearchKeyRemove');
+  const keyStatus = document.getElementById('braveSearchKeyStatus');
+
+  function updateKeyStatus() {
+    chrome.storage.local.get(['braveSearchApiKey'], (result) => {
+      if (result.braveSearchApiKey) {
+        const key = result.braveSearchApiKey;
+        const masked =
+          key.length > 8
+            ? key.substring(0, 4) + '•'.repeat(key.length - 8) + key.substring(key.length - 4)
+            : '•'.repeat(key.length);
+        if (keyStatus) keyStatus.textContent = '✓ Saved: ' + masked;
+        if (keyInput) keyInput.value = key;
+      } else {
+        if (keyStatus) keyStatus.textContent = 'No key configured.';
+        if (keyInput) keyInput.value = '';
+      }
+    });
+  }
+
+  // Password toggle
+  if (keyToggle && keyInput) {
+    keyToggle.addEventListener('click', () => {
+      const isPassword = keyInput.type === 'password';
+      keyInput.type = isPassword ? 'text' : 'password';
+      keyToggle.querySelector('.material-symbols-outlined').textContent = isPassword
+        ? 'visibility_off'
+        : 'visibility';
+    });
+  }
+
+  // Remove key
+  if (keyRemove) {
+    keyRemove.addEventListener('click', () => {
+      chrome.storage.local.remove('braveSearchApiKey', () => {
+        if (chrome.runtime.lastError) {
+          showStatus('Failed to remove key: ' + chrome.runtime.lastError.message, true);
+          return;
+        }
+        chrome.storage.local.set({ webSearchEnabled: false }, () => {
+          updateKeyStatus();
+          showStatus('Brave Search API key removed and web grounding disabled.', false, true);
+        });
+      });
+    });
+  }
+
+  // Auto-save on change (debounced)
+  if (keyInput) {
+    let saveTimer = null;
+    keyInput.addEventListener('input', () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        const value = keyInput.value.trim();
+        if (value) {
+          chrome.storage.local.set({ braveSearchApiKey: value }, () => {
+            if (chrome.runtime.lastError) {
+              showStatus('Failed to save key: ' + chrome.runtime.lastError.message, true);
+              return;
+            }
+            updateKeyStatus();
+            showStatus('Brave Search API key saved.', false, true);
+          });
+        } else {
+          chrome.storage.local.remove('braveSearchApiKey', () => {
+            updateKeyStatus();
+          });
+        }
+      }, 400);
+    });
+  }
+
+  // Load initial state
+  updateKeyStatus();
 }

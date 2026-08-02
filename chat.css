@@ -650,6 +650,24 @@ button:focus-visible {
   box-shadow: var(--ext-focus-ring);
 }
 
+/* Web Search toggle active state */
+#web-search-toggle[aria-pressed='true'] {
+  background-color: var(--ext-primary) !important;
+  color: var(--ext-primary-foreground) !important;
+  border-color: var(--ext-primary) !important;
+}
+
+#web-search-toggle[aria-pressed='true'] .sidebar-label::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #22c55e;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
 #send-button {
   background-color: var(--ext-primary);
   color: var(--ext-primary-foreground);

@@ -270,3 +270,15 @@ When the user requests a durable behavior change, record it here or in the relev
 - `skills/AGENTS.md`: built-in skill registry and `SKILL.md` source files.
 - `libs/AGENTS.md`: vendored browser libraries and third-party assets.
 - `icons/AGENTS.md`: extension icons and copy/action image assets.
+
+## Web Search Grounding
+
+- Brave Search API integration via `src/utils/braveSearch.js` (LLM Context endpoint, bounded requests, normalized sources).
+- The background worker owns Brave credential reads and injects the search executor; LLM profile keys never serve as Brave credentials.
+- Sidebar toggle state and key bridge in `src/chat/ChatGrounding.js`.
+- Reserved tool name `web_search` enforced in `src/chat/ChatAPI.js`, `src/orchestrator/RunOrchestrator.js`, and `options.js`.
+- Grounded completions surface a normalized, escaped first-party **Sources** section; ordinary responses omit grounding metadata when grounding is off.
+- Grounding is model-directed before use: web enabled means permission to search, not a mandate. `web_search` is offered with automatic selection alongside normal tools (or alone for `none`/a satisfied forced user tool).
+- After the single search slot is consumed, the immediate continuation is text-only and receives a phase-aware instruction to use the existing result; duplicate search calls are rejected without another Brave request.
+- Empty normalized Brave results are a safe `WEB_SEARCH_NO_RESULTS` outcome, not a successful grounded response.
+- `braveSearch.js` and grounding/provider sequencing are covered by the behavior suite.
