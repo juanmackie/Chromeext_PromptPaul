@@ -40,7 +40,7 @@ function createUniqueId(prefix) {
 }
 
 /**
- * Shows a confirmation modal and returns a promise that resolves to true/false.
+ * Shows the Bootstrap confirmation modal and returns a promise that resolves to true/false.
  * @param {string} message - The message to display.
  * @param {string} [title='Confirm'] - The modal title.
  * @param {string} [confirmText='Confirm'] - The confirm button text.
@@ -48,44 +48,63 @@ function createUniqueId(prefix) {
  */
 function showConfirmModal(message, title = 'Confirm', confirmText = 'Confirm') {
   return new Promise((resolve) => {
-    const overlay = document.getElementById('confirm-modal-overlay');
+    const modal = document.getElementById('confirmModal');
     const titleEl = document.getElementById('confirm-modal-title');
     const messageEl = document.getElementById('confirm-modal-message');
     const okBtn = document.getElementById('confirm-modal-ok');
     const cancelBtn = document.getElementById('confirm-modal-cancel');
+    const Modal = window.bootstrap?.Modal;
+
+    if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn || !Modal) {
+      console.error('Options: Confirmation modal is unavailable.');
+      resolve(false);
+      return;
+    }
 
     titleEl.textContent = title;
     messageEl.textContent = message;
     okBtn.textContent = confirmText;
-    overlay.classList.remove('hidden');
+
+    let modalInstance = null;
+    let settled = false;
 
     function cleanup() {
-      overlay.classList.add('hidden');
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
-      overlay.removeEventListener('click', onOverlayClick);
+      modal.removeEventListener('hidden.bs.modal', onHidden);
+    }
+
+    function finish(confirmed) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      modalInstance.hide();
+      resolve(confirmed);
     }
 
     function onOk() {
-      cleanup();
-      resolve(true);
+      finish(true);
     }
 
     function onCancel() {
+      finish(false);
+    }
+
+    function onHidden() {
+      finish(false);
+    }
+
+    try {
+      modalInstance = Modal.getOrCreateInstance(modal);
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      modal.addEventListener('hidden.bs.modal', onHidden);
+      modalInstance.show();
+    } catch (error) {
+      console.error('Options: Unable to show confirmation modal:', error);
       cleanup();
       resolve(false);
     }
-
-    function onOverlayClick(e) {
-      if (e.target === overlay) {
-        cleanup();
-        resolve(false);
-      }
-    }
-
-    okBtn.addEventListener('click', onOk);
-    cancelBtn.addEventListener('click', onCancel);
-    overlay.addEventListener('click', onOverlayClick);
   });
 }
 
