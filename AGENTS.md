@@ -82,7 +82,7 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 ## Ownership
 
 - Root owns project-wide contracts, `manifest.json`, package metadata, root extension entry points, shared browser UI files, README and changelog files, and the top-level DOX index.
-- Root owns top-level extension surfaces: `background.js`, `chat.js`, `options.js`, content scripts, HTML/CSS entry files, theme/loading helpers, and design prototypes.
+- Root owns top-level extension surfaces: `background.js`, `chat.js`, `options.js`, content scripts, HTML/CSS entry files, theme/loading helpers, shared UI primitives (`ui-primitives.css`), and design prototypes.
 - Child docs own durable subtrees listed in the Child DOX Index.
 - Generated build output such as `dist/` is not source of truth and should not be edited directly.
 
@@ -90,11 +90,17 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 
 - The extension is Manifest V3 and uses `background.js` as an ES module service worker.
 - API keys, profiles, custom instructions, tools, skills, and user settings live in Chrome storage.
+- The storage schema is stable: canonical keys (`profiles`, `lastSelectedProfileId`, `instructions`, `skills`, `tools`, `analyticsConsent`, `voiceInputEnabled`, `braveSearchApiKey`, `webSearchEnabled`) are pinned by regression guards; backups must keep exporting all local data with the API-key disclosure.
 - Remote LLM calls happen only when the user sends a prompt or invokes an action.
 - Browser-internal pages, extension pages, and Chrome Web Store pages must be blocked or reported before content extraction.
 - Broad host permissions are intentional for page extraction and context-menu workflows.
 - Built-in and custom skills are instructions by default, not executable tools, unless deterministic tool dispatch is explicitly implemented.
 - `chat.js` run entry points (`makeApiCall`, `makeApiCallWithMedia`) require `beginResponseRun()` before any side effects; `endResponseRun()` must run in `finally` blocks. This prevents two orchestrator runs from starting simultaneously and orphaning events.
+- Run/feedback states use the standardized `data-run-state` vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) driven by `src/utils/runState.js` and styled by shared primitives in `ui-primitives.css`; both extension surfaces must stay on this contract rather than introducing per-page state flags.
+- Shared UI primitives (buttons, chips, badges, trays, sections, run indicators) live in `ui-primitives.css`, which depends on `theme.css` tokens and must be loaded after it in every extension page.
+- The chat surface is composer-led: `chat.js` routes all send/action flows through the composer (`#input-area`) and `ChatComposer.js` owns the context tray, contextual quick-action row, and inline Stop/Retry/Edit/Continue recovery. `chat.js`'s line guard covers composer wiring; new composer UI logic must go into `src/chat/ChatComposer.js`, not the entry point.
+- The Options page is setup-led with explicit section saves: each section persists on its own action, credentials stay masked (keys are never written into input fields; `applyCredentialMask`/`resolveCredentialValue` in `src/options/OptionsUI.js` handle it), and the unsaved-changes guard covers the combined dirty state of all sections. Fresh installs seed the Default profile with the starter Mistral endpoint, model, and configured key; existing profiles are preserved.
+- All entry points funnel into the canonical chat: context menus and deep links go through the side panel via `sendPanelMessage`/`openChatWithContext` in `background.js`, preserving selection, media, attachment, and page context. The toolbar action and website deep links (`externally_connectable` for promptpaul.juanmackie.com) open the chat with `{ action: 'openChat' }`; `chat.js` consumes deep-link `textPrompt` instructions against the attached context. The Options page resolves `openChat` to the active regular web tab because an extension page cannot host the side panel; if no regular tab exists, it opens `chat.html` in a tab instead of failing silently.
 - Context-bearing prompts must use structured prompt request objects and `composeUserPrompt`; do not concatenate selected text, page content, media context, or previous-response instructions directly into raw prompt strings.
 - `chat.js` resolves `sourceTabId` for side-panel runs via `getRunSourceTabId()`, not a captured `panelTabId`.
 - Pending panel actions (`setMediaForAnalysis`, `setSelectedText`) are consumed locally in `chat.js` and not re-sent via `chrome.runtime.sendMessage`.

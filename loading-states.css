@@ -141,9 +141,9 @@
 }
 
 .toast.success {
-  background: var(--ext-primary);
-  color: var(--ext-primary-foreground);
-  border-color: var(--ext-primary-deep);
+  background: var(--ext-success);
+  color: var(--ext-success-foreground);
+  border-color: var(--ext-success-deep);
 }
 
 .toast.error {
@@ -153,15 +153,15 @@
 }
 
 .toast.warning {
-  background: var(--ext-primary-bright);
-  color: var(--ext-primary-foreground);
-  border-color: var(--ext-primary);
+  background: var(--ext-warning);
+  color: var(--ext-warning-foreground);
+  border-color: var(--ext-warning-deep);
 }
 
 .toast.info {
-  background: var(--ext-primary);
-  color: var(--ext-primary-foreground);
-  border-color: var(--ext-primary-deep);
+  background: var(--ext-info);
+  color: var(--ext-info-foreground);
+  border-color: var(--ext-info-deep);
 }
 
 .toast-icon {
@@ -385,8 +385,8 @@
 
 .connection-status.connecting {
   background: var(--ext-muted);
-  color: var(--ext-primary-bright);
-  border-color: var(--ext-primary-bright);
+  color: var(--ext-running);
+  border-color: var(--ext-running);
 }
 
 .status-dot {

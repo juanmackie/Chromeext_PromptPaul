@@ -132,6 +132,46 @@ function runUnitTests(runner) {
     checkModule('src/chat/ChatUI.js');
   });
 
+  runner.test('ChatComposer module structure valid', () => {
+    checkModule('src/chat/ChatComposer.js', [
+      'function getContextState',
+      'function getQuickActions',
+      'function getLastUserPrompt',
+      'function ensureStopButton',
+      'function ensureRecoveryRow',
+      'function initComposer',
+      'const chatComposer',
+    ]);
+    const content = readFileSafe('src/chat/ChatComposer.js');
+    for (const token of [
+      'RUN_STATES',
+      'data-run-state',
+      'message-actions',
+      'tray.hidden !== shouldHide',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`ChatComposer.js missing contract token: ${token}`);
+      }
+    }
+  });
+
+  runner.test('chat.html has composer-led surfaces', () => {
+    const content = readFileSafe('chat.html');
+    for (const id of [
+      'context-tray',
+      'quick-actions-row',
+      'page-context-strip',
+      'page-context-remove-button',
+    ]) {
+      if (!content.includes(`id="${id}"`)) {
+        throw new Error(`chat.html missing composer surface: ${id}`);
+      }
+    }
+    if (!content.includes('ui-primitives.css')) {
+      throw new Error('chat.html does not load ui-primitives.css');
+    }
+  });
+
   runner.test('ChatAPI module structure valid', () => {
     checkModule('src/chat/ChatAPI.js', []);
     const content = readFileSafe('src/chat/ChatAPI.js');
@@ -220,6 +260,68 @@ function runUnitTests(runner) {
     const content = readFileSafe('src/utils/contextBudget.js');
     if (!content.includes('export function fitTextToTokenBudget')) {
       throw new Error('contextBudget.js missing fitTextToTokenBudget export');
+    }
+  });
+
+  runner.test('runState module structure valid', () => {
+    checkModule('src/utils/runState.js', [
+      'const RUN_STATES',
+      'function isRunState',
+      'function isActiveRunState',
+      'function setRunState',
+      'function getRunState',
+    ]);
+  });
+
+  runner.test('shared UI primitives stylesheet exists', () => {
+    const content = readFileSafe('ui-primitives.css');
+    const requiredPrimitives = [
+      '.ext-btn',
+      '.ext-chip',
+      '.ext-badge',
+      '.ext-tray',
+      '.ext-section',
+      'data-run-state',
+      '.ext-run-indicator',
+      '.ext-run-banner',
+      'prefers-reduced-motion',
+    ];
+    for (const token of requiredPrimitives) {
+      if (!content.includes(token)) {
+        throw new Error(`ui-primitives.css missing primitive: ${token}`);
+      }
+    }
+  });
+
+  runner.test('theme.css exposes semantic feedback tokens', () => {
+    const content = readFileSafe('theme.css');
+    for (const token of [
+      '--ext-success',
+      '--ext-success-deep',
+      '--ext-success-bright',
+      '--ext-success-foreground',
+      '--ext-success-muted',
+      '--ext-warning',
+      '--ext-warning-deep',
+      '--ext-warning-foreground',
+      '--ext-warning-muted',
+      '--ext-info',
+      '--ext-info-deep',
+      '--ext-info-foreground',
+      '--ext-info-muted',
+      '--ext-running',
+      '--ext-running-muted',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`theme.css missing feedback token: ${token}`);
+      }
+      // Light + dark + system-preference blocks must all define feedback tokens.
+      const occurrences = content.split(token).length - 1;
+      if (occurrences < 3) {
+        throw new Error(
+          `theme.css feedback token ${token} lacks dark/system parity (${occurrences} blocks)`
+        );
+      }
     }
   });
 
@@ -433,10 +535,13 @@ function runUnitTests(runner) {
   });
 
   // ---------- File Size Validation ----------
-  runner.test('chat.js does not exceed 2320 lines', () => {
+  // Limit reflects the composer-led refactor: new composer UI (context tray,
+  // quick actions, inline recovery) lives in src/chat/ChatComposer.js, keeping
+  // chat.js growth small and modular.
+  runner.test('chat.js does not exceed 2380 lines', () => {
     const lines = readFileSafe('chat.js').split('\n').length;
-    if (lines > 2320) {
-      throw new Error(`chat.js is ${lines} lines, exceeds 2320 limit`);
+    if (lines > 2380) {
+      throw new Error(`chat.js is ${lines} lines, exceeds 2380 limit`);
     }
   });
 
@@ -462,6 +567,7 @@ function runUnitTests(runner) {
       'ChatVoice.js',
       'ChatMedia.js',
       'ChatStream.js',
+      'ChatComposer.js',
     ];
     for (const imp of expectedImports) {
       if (!chatContent.includes(imp.replace('.js', ''))) {
@@ -612,24 +718,36 @@ function runUnitTests(runner) {
       );
     }
 
-    // Check that 'complete' case sets clearButton to 'Clear'
+    // Check that 'complete' case resets the run UI (clearButton back to 'Clear')
     const completeCaseMatch = chatContent.match(/case 'complete':[\s\S]*?break;/);
     if (!completeCaseMatch) {
       throw new Error("'complete' case not found in orchestratorEvent handler");
     }
-    if (!completeCaseMatch[0].includes("clearButton.textContent = 'Clear'")) {
+    if (
+      !completeCaseMatch[0].includes("clearButton.textContent = 'Clear'") &&
+      !completeCaseMatch[0].includes('resetRunUi(')
+    ) {
       throw new Error(
         "'complete' case doesn't reset clearButton to 'Clear' - button will stay as 'Stop'"
       );
     }
 
-    // Check that 'aborted' case sets clearButton to 'Clear'
+    // Check that 'aborted' case resets the run UI (clearButton back to 'Clear')
     const abortedCaseMatch = chatContent.match(/case 'aborted':[\s\S]*?break;/);
     if (!abortedCaseMatch) {
       throw new Error("'aborted' case not found or has no break statement");
     }
-    if (!abortedCaseMatch[0].includes("clearButton.textContent = 'Clear'")) {
+    if (
+      !abortedCaseMatch[0].includes("clearButton.textContent = 'Clear'") &&
+      !abortedCaseMatch[0].includes('resetRunUi(')
+    ) {
       throw new Error("'aborted' case doesn't reset clearButton to 'Clear'");
+    }
+
+    // The shared resetRunUi helper must restore the Clear label directly.
+    const helperMatch = chatContent.match(/function resetRunUi\(runState\)\{[\s\S]*?\n {2}\}/);
+    if (helperMatch && !helperMatch[0].includes("clearButton.textContent = 'Clear'")) {
+      throw new Error("resetRunUi helper doesn't reset clearButton to 'Clear'");
     }
   });
 
@@ -766,6 +884,195 @@ function runUnitTests(runner) {
  */
 function runIntegrationTests(runner) {
   console.log('🔗 Running integration tests...\n');
+
+  runner.test('OptionsUI module structure valid', () => {
+    checkModule('src/options/OptionsUI.js', [
+      'function createDirtyTracker',
+      'function initUnsavedGuard',
+      'function applyCredentialMask',
+      'function resolveCredentialValue',
+      'function flashSaveFeedback',
+      'function renderSetupStatus',
+    ]);
+  });
+
+  runner.test('options.html has chat-led setup and explicit section saves', () => {
+    const content = readFileSafe('options.html');
+    for (const id of [
+      'setup-status-text',
+      'openChatButton',
+      'unsaved-banner',
+      'savePrivacy',
+      'saveGrounding',
+    ]) {
+      if (!content.includes(`id="${id}"`)) {
+        throw new Error(`options.html missing setup/save surface: ${id}`);
+      }
+    }
+    const capabilityBadges = content.split('data-capability-badge').length - 1;
+    if (capabilityBadges < 4) {
+      throw new Error(`options.html should mark capability sections; found ${capabilityBadges}`);
+    }
+    if (!content.includes('ui-primitives.css')) {
+      throw new Error('options.html does not load ui-primitives.css');
+    }
+  });
+
+  runner.test('options.js ships the starter Mistral profile', () => {
+    const content = readFileSafe('options.js');
+    for (const token of [
+      'STARTER_MISTRAL_ENDPOINT',
+      'STARTER_MISTRAL_API_KEY',
+      'STARTER_MISTRAL_MODEL',
+      'api.mistral.ai/v1/chat/completions',
+      'mistral-small-latest',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`options.js missing starter Mistral configuration: ${token}`);
+      }
+    }
+  });
+
+  runner.test('options.js masks credentials and guards unsaved changes', () => {
+    const content = readFileSafe('options.js');
+    for (const token of [
+      'applyCredentialMask',
+      'createDirtyTracker',
+      'initUnsavedGuard',
+      'resolveCredentialValue',
+      'announceDirtyChange',
+      'renderSetupStatus',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`options.js missing OptionsUI contract: ${token}`);
+      }
+    }
+    if (content.includes("document.getElementById('apiKey').value = selectedProfile.apiKey")) {
+      throw new Error('options.js loads the raw API key into the DOM field');
+    }
+    if (!content.includes('dataset.configured')) {
+      throw new Error('options.js does not track masked credential state');
+    }
+  });
+
+  runner.test('instruction action buttons use a uniform gap wrapper', () => {
+    const optionsContent = readFileSafe('options.js');
+    const styles = readFileSafe('options.css');
+    if (!optionsContent.includes('class="instruction-actions"')) {
+      throw new Error('Instruction actions are missing their spacing wrapper');
+    }
+    if (!styles.includes('.instruction-actions') || !styles.includes('gap: 0.5rem')) {
+      throw new Error('Instruction action spacing is not defined consistently');
+    }
+  });
+
+  runner.test('input-controls.js copies masked keys from storage', () => {
+    const content = readFileSafe('input-controls.js');
+    if (!content.includes('dataset.configured') || !content.includes('profiles')) {
+      throw new Error('input-controls.js missing masked-key copy fallback');
+    }
+  });
+
+  runner.test('manifest declares deep-link and toolbar entry points', () => {
+    const content = readFileSafe('manifest.json');
+    if (!content.includes('externally_connectable')) {
+      throw new Error('manifest.json missing externally_connectable for website deep links');
+    }
+    if (!content.includes('promptpaul.juanmackie.com')) {
+      throw new Error('manifest.json deep-link domain missing');
+    }
+    if (!content.includes('"action"')) {
+      throw new Error('manifest.json missing toolbar action entry point');
+    }
+  });
+
+  runner.test('background.js funnels deep links into canonical chat', () => {
+    const content = readFileSafe('background.js');
+    for (const token of [
+      'async function openChatWithContext',
+      'function isUsablePanelTab',
+      'async function resolvePanelTabId',
+      'chrome.action.onClicked',
+      'chrome.runtime.onMessageExternal',
+      "request.action === 'openChat'",
+      'setMediaForAnalysis',
+      'setSelectedText',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`background.js missing deep-link contract: ${token}`);
+      }
+    }
+  });
+
+  runner.test('chat.js consumes deep-link instructions', () => {
+    const content = readFileSafe('chat.js');
+    if (!content.includes('request.textPrompt')) {
+      throw new Error('chat.js does not consume deep-link textPrompt');
+    }
+  });
+
+  runner.test('options.js routes Open Chat through the canonical funnel', () => {
+    const content = readFileSafe('options.js');
+    if (!content.includes("{ action: 'openChat' }")) {
+      throw new Error('options.js Open Chat does not use the canonical openChat action');
+    }
+  });
+
+  runner.test('storage schema is stable (no retired keys)', () => {
+    const canonicalKeys = [
+      'profiles',
+      'lastSelectedProfileId',
+      'instructions',
+      'skills',
+      'tools',
+      'analyticsConsent',
+      'voiceInputEnabled',
+      'braveSearchApiKey',
+      'webSearchEnabled',
+    ];
+    const sources = ['options.js', 'background.js', 'chat.js'].map(readFileSafe).join('\n');
+    for (const key of canonicalKeys) {
+      if (!sources.includes(key)) {
+        throw new Error(`Canonical storage key no longer referenced anywhere: ${key}`);
+      }
+    }
+  });
+
+  runner.test('backup/import/export workflows are intact', () => {
+    const optionsContent = readFileSafe('options.js');
+    for (const token of [
+      'setupBackupHandlers',
+      'exportAllData',
+      'importAllDataBtn',
+      'importAllFile',
+      'chrome.storage.local.get(null',
+    ]) {
+      if (!optionsContent.includes(token)) {
+        throw new Error(`options.js backup workflow missing: ${token}`);
+      }
+    }
+    const htmlContent = readFileSafe('options.html');
+    if (!htmlContent.includes('Backup files contain API keys')) {
+      throw new Error('options.html backup warning must disclose API keys');
+    }
+  });
+
+  runner.test('nothing was retired: capability entry points still exist', () => {
+    const chat = readFileSafe('chat.js');
+    for (const token of [
+      'PRESET_MODES',
+      'load_skill',
+      'web-search-toggle',
+      'initWebSearchToggle',
+      'toggleVoiceInput',
+      'setMediaForAnalysis',
+      'openPromptPaulForSelection',
+    ]) {
+      if (!chat.includes(token) && !readFileSafe('background.js').includes(token)) {
+        throw new Error(`Retired or missing capability entry point: ${token}`);
+      }
+    }
+  });
 
   // ---------- Entry Files ----------
   runner.test('All main entry files exist and non-empty', () => {

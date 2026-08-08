@@ -22,6 +22,16 @@ import {
 import { setupThemeToggle } from './themeUtils.js';
 import { escapeHtml } from './src/utils/domSanitizer.js';
 import {
+  applyCredentialMask,
+  createDirtyTracker,
+  initUnsavedGuard,
+  announceDirtyChange,
+  resolveCredentialValue,
+  flashSaveFeedback,
+  renderSetupStatus,
+  endpointHost,
+} from './src/options/OptionsUI.js';
+import {
   getVoiceInputSettings as getStoredVoiceInputSettings,
   setVoiceInputSettings as setStoredVoiceInputSettings,
   isMicrophonePermissionDenied,
@@ -30,6 +40,19 @@ import {
 const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
 const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
 const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
+
+// Public starter configuration for first-time users. The key is intentionally
+// masked in the Options UI and is only sent when the user runs a request.
+const STARTER_MISTRAL_ENDPOINT = 'https://api.mistral.ai/v1/chat/completions';
+const STARTER_MISTRAL_API_KEY = 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
+const STARTER_MISTRAL_MODEL = 'mistral-small-latest';
+const STARTER_MISTRAL_SYSTEM_PROMPT = 'You are a helpful assistant.';
+
+// Assigned in DOMContentLoaded; invoked from async load/save flows so the
+// dirty trackers re-baseline after storage-backed fields are populated.
+let markAllTrackersClean = null;
+let refreshSetupStatus = null;
+let pendingDefaultApiKey = null;
 
 function createUniqueId(prefix) {
   const id =
@@ -332,6 +355,8 @@ function saveOptions(e) {
     return;
   }
   const apiKeyValue = apiKey.value.trim();
+  const apiKeyIsMaskedConfigured = apiKey.dataset.configured === 'true';
+  const hasConfiguredCredential = apiKeyIsMaskedConfigured || Boolean(pendingDefaultApiKey);
 
   const modelName = document.getElementById('modelName');
   if (!modelName) {
@@ -349,7 +374,13 @@ function saveOptions(e) {
   }
   const systemPromptValue = systemPrompt.value.trim();
 
-  if (!validateInputs(llmEndpointValue, apiKeyValue, modelNameValue)) {
+  if (
+    !validateInputs(
+      llmEndpointValue,
+      apiKeyValue || (hasConfiguredCredential ? 'configured' : ''),
+      modelNameValue
+    )
+  ) {
     return;
   }
 
@@ -367,7 +398,11 @@ function saveOptions(e) {
         id: selectedProfileId,
         name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(),
         llmEndpoint: llmEndpointValue,
-        apiKey: apiKeyValue,
+        apiKey: resolveCredentialValue(
+          apiKeyValue,
+          hasConfiguredCredential,
+          pendingDefaultApiKey || ''
+        ),
         modelName: modelNameValue,
         systemPrompt: systemPromptValue,
         lastUpdated: new Date().toLocaleString(),
@@ -375,7 +410,11 @@ function saveOptions(e) {
       profiles.push(profileToUpdate);
     } else {
       profileToUpdate.llmEndpoint = llmEndpointValue;
-      profileToUpdate.apiKey = apiKeyValue;
+      profileToUpdate.apiKey = resolveCredentialValue(
+        apiKeyValue,
+        hasConfiguredCredential,
+        pendingDefaultApiKey || profileToUpdate.apiKey || ''
+      );
       profileToUpdate.modelName = modelNameValue;
       profileToUpdate.systemPrompt = systemPromptValue;
       profileToUpdate.lastUpdated = new Date().toLocaleString();
@@ -392,8 +431,12 @@ function saveOptions(e) {
           showStatus('Error saving profile settings: ' + chrome.runtime.lastError.message, true);
         } else {
           showStatus(`Settings for profile '${profileToUpdate.name}' saved.`);
+          flashSaveFeedback(saveButton, false);
           // Reload options to reflect changes, especially if it was a new profile or name changed
+          pendingDefaultApiKey = null;
           loadOptions();
+          if (markAllTrackersClean) markAllTrackersClean();
+          if (refreshSetupStatus) refreshSetupStatus();
         }
         saveButton.disabled = false;
       }
@@ -407,6 +450,7 @@ function saveOptions(e) {
  * @returns {void}
  */
 function loadProfileSettings(profileId) {
+  pendingDefaultApiKey = null;
   chrome.storage.local.get(['profiles'], (result) => {
     const profiles = result.profiles || [];
     const selectedProfile =
@@ -414,7 +458,7 @@ function loadProfileSettings(profileId) {
 
     if (selectedProfile) {
       document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || '';
-      document.getElementById('apiKey').value = selectedProfile.apiKey || '';
+      applyCredentialMask(document.getElementById('apiKey'), Boolean(selectedProfile.apiKey));
       document.getElementById('modelName').value = selectedProfile.modelName || '';
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
 
@@ -430,10 +474,10 @@ function loadProfileSettings(profileId) {
       // Fallback to sync storage if profile not found (e.g. initial load or error)
       chrome.storage.sync.get(
         {
-          llmEndpoint: '',
-          apiKey: '',
-          modelName: '',
-          systemPrompt: '',
+          llmEndpoint: STARTER_MISTRAL_ENDPOINT,
+          apiKey: STARTER_MISTRAL_API_KEY,
+          modelName: STARTER_MISTRAL_MODEL,
+          systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
           lastUpdated: '',
           profileSelect: 'default',
         },
@@ -444,7 +488,7 @@ function loadProfileSettings(profileId) {
             return;
           }
           document.getElementById('llmEndpoint').value = items.llmEndpoint;
-          document.getElementById('apiKey').value = items.apiKey;
+          applyCredentialMask(document.getElementById('apiKey'), Boolean(items.apiKey));
           document.getElementById('modelName').value = items.modelName;
           document.getElementById('systemPrompt').value = items.systemPrompt;
           updateCurrentConfig(
@@ -503,10 +547,10 @@ function loadOptions() {
       const defaultProfile = {
         id: 'default',
         name: 'Default',
-        llmEndpoint: '',
-        apiKey: '',
-        modelName: '',
-        systemPrompt: '',
+        llmEndpoint: STARTER_MISTRAL_ENDPOINT,
+        apiKey: STARTER_MISTRAL_API_KEY,
+        modelName: STARTER_MISTRAL_MODEL,
+        systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
         lastUpdated: new Date().toLocaleString(),
       };
       profiles.push(defaultProfile);
@@ -528,6 +572,94 @@ function loadOptions() {
 document.addEventListener('DOMContentLoaded', () => {
   loadOptions(); // This will now also populate profiles and set up listener
 
+  // Chat-led setup status (Get Started banner)
+  const setupStatusText = document.getElementById('setup-status-text');
+  const setupStatusIcon = document.getElementById('setup-status-icon');
+  refreshSetupStatus = () => {
+    chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+      const profiles = result.profiles || [];
+      const selectedId = result.lastSelectedProfileId || 'default';
+      const profile =
+        profiles.find((p) => p.id === selectedId) || profiles.find((p) => p.id === 'default') || {};
+      renderSetupStatus(setupStatusText, setupStatusIcon, {
+        connected: Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
+        model: profile.modelName,
+        endpointHost: endpointHost(profile.llmEndpoint),
+      });
+    });
+  };
+  refreshSetupStatus();
+
+  const openChatButton = document.getElementById('openChatButton');
+  if (openChatButton) {
+    openChatButton.addEventListener('click', () => {
+      try {
+        chrome.runtime.sendMessage({ action: 'openChat' }, (response) => {
+          if (chrome.runtime.lastError || !response || !response.success) {
+            showStatus('Could not open chat. Make sure you are on a web page.', true, true);
+          }
+        });
+      } catch (err) {
+        showStatus('Could not open chat: ' + err.message, true, true);
+      }
+    });
+  }
+
+  // Dirty tracking + unsaved-changes protection
+  const unsavedBanner = document.getElementById('unsaved-banner');
+  const connectionTracker = createDirtyTracker(
+    [
+      { element: document.getElementById('llmEndpoint') },
+      { element: document.getElementById('apiKey') },
+      { element: document.getElementById('modelName') },
+      { element: document.getElementById('systemPrompt') },
+      { element: document.getElementById('profileSelect') },
+      {
+        element: document.getElementById('enableStreamingToggle'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+      {
+        element: document.getElementById('darkThemeToggle'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+    ],
+    { onChange: () => syncDirtyBanner() }
+  );
+  const privacyTracker = createDirtyTracker(
+    [
+      {
+        element: document.getElementById('analyticsConsentToggle'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+      {
+        element: document.getElementById('voiceInputEnabledToggle'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+    ],
+    { onChange: () => syncDirtyBanner() }
+  );
+  const groundingTracker = createDirtyTracker(
+    [{ element: document.getElementById('braveSearchApiKey') }],
+    { onChange: () => syncDirtyBanner() }
+  );
+  const allTrackers = [connectionTracker, privacyTracker, groundingTracker];
+  function syncDirtyBanner() {
+    const dirty = allTrackers.some((tracker) => tracker.isDirty());
+    if (unsavedBanner) unsavedBanner.hidden = !dirty;
+  }
+  markAllTrackersClean = () => allTrackers.forEach((tracker) => tracker.markClean());
+  allTrackers.forEach((tracker) => tracker.attachEvents(document));
+  // beforeunload must cover every tracker, not just the connection form.
+  initUnsavedGuard(
+    { isDirty: () => allTrackers.some((tracker) => tracker.isDirty()) },
+    { confirmBeforeUnload: true }
+  );
+  // Re-baseline once async storage loads finish so the banner is not shown on
+  // first paint; user edits after that flip the guard on again.
+  setTimeout(() => {
+    if (markAllTrackersClean) markAllTrackersClean();
+  }, 1000);
+
   // Expose each help tooltip's text to assistive tech (the CSS `content`
   // tooltip isn't announced), so keyboard + screen-reader users hear the
   // actual help instead of a generic "Help".
@@ -548,11 +680,10 @@ document.addEventListener('DOMContentLoaded', () => {
           : false;
       analyticsConsentToggle.checked = consent;
     });
-    // Persist on change
+    // Persist on explicit save (Save Privacy Settings button)
     analyticsConsentToggle.addEventListener('change', () => {
-      const checked = !!analyticsConsentToggle.checked;
-      chrome.storage.local.set({ analyticsConsent: checked });
-      showStatus(`Anonymous analytics ${checked ? 'enabled' : 'disabled'}.`, false, true);
+      announceDirtyChange(true);
+      showStatus('Privacy changes are pending — click Save Privacy Settings.', false, true);
     });
   }
 
@@ -688,30 +819,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     refreshVoiceInputControls();
 
-    voiceInputEnabledToggle.addEventListener('change', async () => {
-      try {
-        await setStoredVoiceInputSettings({
-          [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked,
-        });
-
-        const settings = await refreshVoiceInputControls();
-        if (settings.voiceInputEnabled) {
-          showStatus(
-            'Voice input enabled. Test microphone access if you need to request permission again.',
-            false,
-            true
-          );
-        } else {
-          showStatus(
-            'Voice input disabled. The chat mic button will remain visible but inactive.',
-            false,
-            true
-          );
-        }
-      } catch (error) {
-        showStatus('Failed to update voice input setting: ' + error.message, true, true);
-      }
+    voiceInputEnabledToggle.addEventListener('change', () => {
+      announceDirtyChange(true);
+      showStatus('Voice input changes are pending — click Save Privacy Settings.', false, true);
     });
+
+    const savePrivacyButton = document.getElementById('savePrivacy');
+    if (savePrivacyButton) {
+      savePrivacyButton.addEventListener('click', async () => {
+        try {
+          const consent = !!analyticsConsentToggle.checked;
+          await new Promise((resolve, reject) => {
+            chrome.storage.local.set({ analyticsConsent: consent }, () => {
+              if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+              else resolve();
+            });
+          });
+          await setStoredVoiceInputSettings({
+            [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked,
+          });
+          const status = document.getElementById('privacySaveStatus');
+          if (status) status.textContent = 'Privacy settings saved.';
+          flashSaveFeedback(savePrivacyButton, false);
+          if (typeof markAllTrackersClean === 'function') markAllTrackersClean();
+          announceDirtyChange(false);
+        } catch (error) {
+          showStatus('Failed to save privacy settings: ' + error.message, true, true);
+          flashSaveFeedback(savePrivacyButton, true);
+        }
+      });
+    }
 
     testMicPermissionBtn.addEventListener('click', testMicrophonePermission);
   }
@@ -780,13 +917,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (revertButton) {
     revertButton.addEventListener('click', () => {
       // Get default values (these are defined in loadOptions)
-      const defaultEndpoint = '';
-      const defaultApiKey = '';
-      const defaultModelName = '';
+      const defaultEndpoint = STARTER_MISTRAL_ENDPOINT;
+      const defaultModelName = STARTER_MISTRAL_MODEL;
+      pendingDefaultApiKey = STARTER_MISTRAL_API_KEY;
 
       // Set default values in the input fields
       document.getElementById('llmEndpoint').value = defaultEndpoint;
-      document.getElementById('apiKey').value = defaultApiKey;
+      const apiKeyInput = document.getElementById('apiKey');
+      apiKeyInput.value = '';
+      applyCredentialMask(apiKeyInput, true);
       document.getElementById('modelName').value = defaultModelName;
 
       // document.getElementById('systemPrompt').value = ''; // Default system prompt
@@ -864,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
         loadProfileSettings(selectedProfileId);
+        if (refreshSetupStatus) refreshSetupStatus();
       }
     });
   }
@@ -1144,9 +1284,11 @@ function setupInstructionHandlers() {
         <td data-label="Tool Choice">${escapeHtml(toolChoiceDisplay)}</td>
         <td data-label="Pin"><button class="pin-btn${currentPinnedQuickActions.has(instruction.id) ? ' pinned' : ''}" data-id="${escapeHtml(instruction.id)}" title="${currentPinnedQuickActions.has(instruction.id) ? 'Unpin from Quick Actions' : 'Pin to Quick Actions'}"><span class="material-symbols-outlined">${currentPinnedQuickActions.has(instruction.id) ? 'keep_off' : 'push_pin'}</span></button></td>
         <td data-label="Actions">
-          <button class="edit-btn" data-id="${escapeHtml(instruction.id)}">Edit</button>
-          <button class="improve-btn" data-id="${escapeHtml(instruction.id)}">Improve</button>
-          <button class="delete-btn" data-id="${escapeHtml(instruction.id)}">Delete</button>
+          <div class="instruction-actions">
+            <button class="edit-btn" data-id="${escapeHtml(instruction.id)}">Edit</button>
+            <button class="improve-btn" data-id="${escapeHtml(instruction.id)}">Improve</button>
+            <button class="delete-btn" data-id="${escapeHtml(instruction.id)}">Delete</button>
+          </div>
         </td>
       `;
       tableBody.appendChild(row);
@@ -2591,10 +2733,10 @@ function setupGroundingHandlers() {
             ? key.substring(0, 4) + '•'.repeat(key.length - 8) + key.substring(key.length - 4)
             : '•'.repeat(key.length);
         if (keyStatus) keyStatus.textContent = '✓ Saved: ' + masked;
-        if (keyInput) keyInput.value = key;
+        applyCredentialMask(keyInput, true);
       } else {
         if (keyStatus) keyStatus.textContent = 'No key configured.';
-        if (keyInput) keyInput.value = '';
+        applyCredentialMask(keyInput, false, 'Paste your Brave Search API key');
       }
     });
   }
@@ -2626,28 +2768,46 @@ function setupGroundingHandlers() {
     });
   }
 
-  // Auto-save on change (debounced)
-  if (keyInput) {
-    let saveTimer = null;
-    keyInput.addEventListener('input', () => {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => {
-        const value = keyInput.value.trim();
-        if (value) {
-          chrome.storage.local.set({ braveSearchApiKey: value }, () => {
-            if (chrome.runtime.lastError) {
-              showStatus('Failed to save key: ' + chrome.runtime.lastError.message, true);
-              return;
-            }
-            updateKeyStatus();
-            showStatus('Brave Search API key saved.', false, true);
-          });
-        } else {
-          chrome.storage.local.remove('braveSearchApiKey', () => {
-            updateKeyStatus();
-          });
+  // Explicit save for the Brave key (replaces debounced auto-save)
+  const saveGroundingButton = document.getElementById('saveGrounding');
+  if (saveGroundingButton && keyInput) {
+    saveGroundingButton.addEventListener('click', () => {
+      const value = keyInput.value.trim();
+      const wasConfigured = keyInput.dataset.configured === 'true';
+      const finish = (error) => {
+        if (error) {
+          showStatus('Failed to save Brave key: ' + error.message, true, true);
+          flashSaveFeedback(saveGroundingButton, true);
+          return;
         }
-      }, 400);
+        updateKeyStatus();
+        showStatus('Brave Search API key saved.', false, true);
+        flashSaveFeedback(saveGroundingButton, false);
+        if (markAllTrackersClean) markAllTrackersClean();
+        announceDirtyChange(false);
+      };
+      if (value) {
+        chrome.storage.local.set({ braveSearchApiKey: value }, () =>
+          finish(chrome.runtime.lastError)
+        );
+      } else if (wasConfigured) {
+        // Masked field with no new value — keep the existing stored key.
+        finish(null);
+      } else {
+        showStatus('Enter a Brave Search API key or remove the existing one.', true, true);
+        flashSaveFeedback(saveGroundingButton, true);
+      }
+    });
+  }
+
+  // Mark dirty on input; persist only via the explicit save button.
+  if (keyInput) {
+    keyInput.addEventListener('input', () => {
+      if (keyInput.dataset.configured === 'true') delete keyInput.dataset.configured;
+      if (keyStatus) {
+        keyStatus.textContent = 'Unsaved changes — click Save Web Search Settings.';
+      }
+      announceDirtyChange(true);
     });
   }
 

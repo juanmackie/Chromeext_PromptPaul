@@ -8,6 +8,7 @@ import {
   isWebSearchEnabled,
   formatSourcesBlock,
   buildBodyWithSources,
+  buildFinalResponseBody,
   normalizeSources,
   classifyToolExecutionResult,
 } from '../src/chat/ChatGrounding.js';
@@ -143,6 +144,49 @@ describe('buildBodyWithSources', () => {
     const sources = [{ id: 's1', title: 'T', url: 'https://x.com', snippets: ['a'] }];
     const body = buildBodyWithSources(42, sources);
     expect(body).toContain('**Sources:**');
+  });
+});
+
+describe('buildFinalResponseBody', () => {
+  it('keeps a normal answer unchanged after reasoning', () => {
+    expect(
+      buildFinalResponseBody('Final answer', '', [], {
+        hasReasoning: true,
+        exhausted: false,
+      })
+    ).toBe('Final answer');
+  });
+
+  it('reports confirmed token exhaustion for a reasoning-only response', () => {
+    expect(
+      buildFinalResponseBody('', '', [], {
+        hasReasoning: true,
+        exhausted: true,
+        reason: 'length',
+      })
+    ).toBe('⚠️ No final answer — the model used its token budget thinking.');
+  });
+
+  it('does not claim token exhaustion without confirmed completion metadata', () => {
+    expect(
+      buildFinalResponseBody('', '', [], {
+        hasReasoning: true,
+        exhausted: false,
+        reason: 'stop',
+      })
+    ).toBe(
+      '⚠️ The model returned reasoning but no final answer. Try again or choose a different model.'
+    );
+  });
+
+  it('shows a neutral message for an empty non-reasoning completion with a stop reason', () => {
+    expect(buildFinalResponseBody('', '', [], { hasReasoning: false, reason: 'stop' })).toBe(
+      '⚠️ The model returned no final answer. Try again or choose a different model.'
+    );
+  });
+
+  it('does not create a warning when no completion metadata exists', () => {
+    expect(buildFinalResponseBody('', '', [])).toBe('');
   });
 });
 

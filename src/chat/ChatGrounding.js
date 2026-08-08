@@ -174,12 +174,22 @@ export function buildBodyWithSources(content, sources) {
   return sourcesMd ? trimmedContent + '\n\n' + sourcesMd : trimmedContent;
 }
 
-export function buildFinalResponseBody(eventContent, streamedText, hasReasoning, sources) {
+export function buildFinalResponseBody(eventContent, streamedText, sources, completion = null) {
   const content = eventContent || streamedText || '';
-  const displayContent =
-    !content.trim() && hasReasoning
-      ? '⚠️ No final answer — the model used its token budget thinking.'
-      : content;
+  const reasoningObserved = completion?.hasReasoning === true;
+  let displayContent = content;
+
+  if (!content.trim()) {
+    if (reasoningObserved) {
+      displayContent = completion?.exhausted
+        ? '⚠️ No final answer — the model used its token budget thinking.'
+        : '⚠️ The model returned reasoning but no final answer. Try again or choose a different model.';
+    } else if (completion?.reason) {
+      displayContent =
+        '⚠️ The model returned no final answer. Try again or choose a different model.';
+    }
+  }
+
   return buildBodyWithSources(displayContent, sources);
 }
 

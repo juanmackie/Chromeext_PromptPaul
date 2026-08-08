@@ -141,11 +141,21 @@ function copyFiles(manifest) {
     'chat.js',
     'options.html',
     'options.js',
+    'error.html',
     'input-controls.js',
     'loadingManager.js',
     'themeUtils.js',
+    'theme-toggle.js',
     'content_script_unified.js',
     'pdfContentScript.js',
+    // Shared stylesheets referenced by extension pages
+    'theme.css',
+    'chat.css',
+    'options.css',
+    'loading-states.css',
+    'ui-primitives.css',
+    // Root-level vendored/legacy assets referenced by extension pages
+    'marked.min.js',
   ];
 
   // Add content script files

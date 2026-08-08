@@ -46,6 +46,8 @@ import { debounce } from './src/utils/debounce.js';
 import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
 import { extractPdfText } from './src/utils/pdfExtractor.js';
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
+import { RUN_STATES, setRunState } from './src/utils/runState.js';
+import { chatComposer } from './src/chat/ChatComposer.js';
 import { escapeHtml, renderMarkdown } from './src/utils/domSanitizer.js';
 import {
   buildExplainPrompt,
@@ -435,6 +437,11 @@ document.addEventListener('DOMContentLoaded', () => {
       hasScreenshot: Boolean(response.screenshot),
       hasMediaContext: Boolean(streamState.getMediaData()),
     };
+
+    composer.setPageContext({
+      details: `${response.url}${fitted.truncated ? ' (trimmed)' : ''}`,
+    });
+    syncChatAreaHeight();
 
     const budget = resolveDomContextBudget({
       modelId: null,
@@ -926,6 +933,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let isResponseInFlight = false;
   const inputArea = document.getElementById('input-area');
   let currentAttachmentPreviewUrl = null;
+  const contextTray = document.getElementById('context-tray');
+  const quickActionsRow = document.getElementById('quick-actions-row');
 
   // Streaming and API call state manager
   const streamState = new StreamStateManager();
@@ -986,6 +995,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function endResponseRun() {
     isResponseInFlight = false;
+  }
+
+  // Terminal run UI reset: re-enable input, restore the Clear label, and
+  // apply the terminal run state to the input area.
+  function resetRunUi(runState) {
+    userInput.disabled = false;
+    sendButton.disabled = false;
+    clearButton.textContent = 'Clear';
+    setRunState(inputArea, runState);
+  }
+
+  // Begin-run UI: disable input and switch the action button to Stop.
+  function beginRunUi() {
+    userInput.disabled = true;
+    sendButton.disabled = true;
+    clearButton.textContent = 'Stop';
+    setRunState(inputArea, RUN_STATES.STREAMING);
+  }
+
+  // Shared failure cleanup for both run entry points.
+  function handleRunFailure(error, source) {
+    console.error(`${source} Error:`, error);
+    chatUI.addMessage('System', 'Error: ' + error.message);
+    resetRunUi(RUN_STATES.ERROR);
+    userInput.focus();
+    clearCurrentMediaData();
+    streamState.clearStreamingElements();
+    streamState.clearStreamedText();
+    streamState.appendStreamedText('');
+    streamState.setActiveToolCall(null);
+    streamState.setRunId(null);
+    streamState.setSourceTabId(null);
   }
 
   function syncChatAreaHeight() {
@@ -1074,6 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
    * Stops the current API request by aborting the orchestrator run.
    */
   async function stopApiRequest() {
+    setRunState(inputArea, RUN_STATES.STOPPING);
     if (streamState.getRunId()) {
       await abortRun(streamState.getRunId());
     }
@@ -1082,6 +1124,49 @@ document.addEventListener('DOMContentLoaded', () => {
   function getRunSourceTabId() {
     return tabId || panelTabId || null;
   }
+
+  // Removes the loaded page context: clears state, hides the tray item, and
+  // removes the expandable content message from the chat DOM.
+  function detachPageContext(silent = false) {
+    lastLoadedPageContext = null;
+    const container = document.querySelector('.loaded-content-container');
+    if (container) container.remove();
+    composer.setPageContext(null);
+    syncChatAreaHeight();
+    if (!silent) loadingManager.showToast('Page content detached', 'info');
+  }
+
+  // Composer recovery: Continue always builds on the previous response;
+  // other quick actions reuse the sticky-selection prompt path.
+  async function sendComposerPrompt(instruction, actionLabel) {
+    if (actionLabel === 'continue' && hasConversation()) {
+      await makeApiCall({ instruction, context: { type: 'previous_response' } }, 'auto');
+      return;
+    }
+    await runSelectedTextPrompt(instruction, 'auto', actionLabel);
+  }
+
+  // Composer-led UI: context tray, quick actions, inline recovery. All new
+  // composer logic lives in ChatComposer.js; chat.js only supplies handlers.
+  const composer = chatComposer.initComposer({
+    container: inputArea,
+    tray: contextTray,
+    row: quickActionsRow,
+    chatArea: document.getElementById('chat-area'),
+    inputField: userInput,
+    handlers: {
+      onStop: () => stopApiRequest(),
+      onAnalyze: () => executePagePresetMode(lastUsedPreset),
+      onMode: (modeKey) => executeSelectedTextMode(modeKey),
+      onPrompt: (instruction, actionLabel) => sendComposerPrompt(instruction, actionLabel),
+      onEdit: (instruction) => {
+        userInput.value = instruction || '';
+        userInput.dispatchEvent(new Event('input'));
+        userInput.focus();
+      },
+      onDetachPage: () => detachPageContext(),
+    },
+  });
 
   /**
    * Retrieves the API configuration from Chrome storage.
@@ -1108,6 +1193,17 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedText = request.selectedText || '';
     tabId = request.tabId;
     refreshSelectedTextActionState();
+
+    // Deep-link instruction: run it immediately against the attached context.
+    if (request.textPrompt && request.textPrompt.trim()) {
+      const instruction = request.textPrompt.trim();
+      const text = getSelectedText();
+      if (text) {
+        void runSelectedTextPrompt(instruction, 'auto', 'deep link');
+      } else {
+        void makeApiCall({ instruction, context: { type: 'previous_response' } }, 'auto');
+      }
+    }
 
     // Handle media data from context menu
     if (request.mediaData) {
@@ -1390,8 +1486,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const body = buildFinalResponseBody(
               event.content,
               streamState.getStreamedText(),
-              Boolean(streamState.getReasoningContentElement()),
-              event.grounding?.sources || []
+              event.grounding?.sources || [],
+              event.completion
             );
             streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(body);
             if (body.trim()) streamState.addMessageToHistory({ role: 'assistant', content: body });
@@ -1403,9 +1499,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.getCurrentStreamingContentElement().innerHTML =
               renderMarkdownContent('Response stopped');
           }
-          userInput.disabled = false;
-          sendButton.disabled = false;
-          clearButton.textContent = 'Clear';
+          resetRunUi(RUN_STATES.IDLE);
           streamState.clearStreamingElements();
           streamState.clearStreamedText();
           streamState.setActiveToolCall(null);
@@ -1547,8 +1641,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const body = buildFinalResponseBody(
             event.content,
             streamState.getStreamedText(),
-            Boolean(streamState.getReasoningContentElement()),
-            event.grounding?.sources || []
+            event.grounding?.sources || [],
+            event.completion
           );
 
           if (streamState.getCurrentStreamingContentElement()) {
@@ -1579,9 +1673,7 @@ document.addEventListener('DOMContentLoaded', () => {
               content: body,
             });
           }
-          userInput.disabled = false;
-          sendButton.disabled = false;
-          clearButton.textContent = 'Clear';
+          resetRunUi(RUN_STATES.COMPLETE);
 
           // Reset run state so the next message isn't rejected as "in progress".
           // Without clearing the run id, isResponseBusy() stays true forever.
@@ -1597,9 +1689,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         case 'aborted': {
           chatUI.addMessage('System', 'Response stopped');
-          userInput.disabled = false;
-          sendButton.disabled = false;
-          clearButton.textContent = 'Clear';
+          resetRunUi(RUN_STATES.STOPPED);
 
           // Reset streaming variables
           streamState.clearStreamingElements();
@@ -1611,9 +1701,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         case 'error': {
           chatUI.addMessage('System', `❌ Error: ${event.error}`);
-          userInput.disabled = false;
-          sendButton.disabled = false;
-          clearButton.textContent = 'Clear';
+          resetRunUi(RUN_STATES.ERROR);
           userInput.focus();
 
           // Reset streaming variables
@@ -1642,6 +1730,8 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.clearHistory();
       clearCurrentMediaData();
       clearSelectedTextState();
+      // Keep the page tray consistent with the cleared chat DOM.
+      if (lastLoadedPageContext) detachPageContext(true);
     }
   });
   userInput.addEventListener('keydown', (event) => {
@@ -1829,9 +1919,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Create UI elements for streaming
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
       streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
-      userInput.disabled = true;
-      sendButton.disabled = true;
-      clearButton.textContent = 'Stop';
+      beginRunUi();
 
       // Prepare run configuration with media
       const webSearchEnabled = await isWebSearchEnabled();
@@ -1855,21 +1943,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Execute the run using ChatAPI module
       await executeRun(streamState.getRunId(), streamState.getConversationHistory());
     } catch (error) {
-      console.error('makeApiCallWithMedia Error:', error);
-      chatUI.addMessage('System', 'Error: ' + error.message);
-      userInput.disabled = false;
-      sendButton.disabled = false;
-      clearButton.textContent = 'Clear';
-      userInput.focus();
-
-      // Reset state
-      clearCurrentMediaData();
-      streamState.clearStreamingElements();
-      streamState.clearStreamedText();
-      streamState.appendStreamedText('');
-      streamState.setActiveToolCall(null);
-      streamState.setRunId(null);
-      streamState.setSourceTabId(null);
+      handleRunFailure(error, 'makeApiCallWithMedia');
     } finally {
       endResponseRun();
     }
@@ -2032,9 +2106,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Create UI elements for streaming
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
       streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
-      userInput.disabled = true;
-      sendButton.disabled = true;
-      clearButton.textContent = 'Stop';
+      beginRunUi();
 
       // Start orchestrator run using ChatAPI module
       streamState.setRunId(await startRun(runConfig));
@@ -2043,20 +2115,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Execute the run using ChatAPI module
       await executeRun(streamState.getRunId(), streamState.getConversationHistory());
     } catch (error) {
-      console.error('makeApiCall Error:', error);
-      chatUI.addMessage('System', 'Error: ' + error.message);
-      userInput.disabled = false;
-      sendButton.disabled = false;
-      clearButton.textContent = 'Clear';
-      userInput.focus();
-
-      // Reset streaming state
-      streamState.clearStreamingElements();
-      streamState.clearStreamedText();
-      streamState.appendStreamedText('');
-      streamState.setActiveToolCall(null);
-      streamState.setRunId(null);
-      streamState.setSourceTabId(null);
+      handleRunFailure(error, 'makeApiCall');
     } finally {
       endResponseRun();
     }
@@ -2198,9 +2257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingManager.showToast('Error: ' + errorMsg, 'error');
         console.error('Error in one-off instruction submission:', error);
       }
-      userInput.disabled = false;
-      sendButton.disabled = false;
-      clearButton.textContent = 'Clear';
+      resetRunUi(RUN_STATES.IDLE);
       currentAbortController = null;
     } finally {
       submitBtn.disabled = false;

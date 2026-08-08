@@ -19,6 +19,7 @@ The `src/orchestrator/` subtree centralizes LLM run execution, tool calls, strea
 - Tool executions must remain idempotent by `runId` and `toolCallId`.
 - Abort handling should emit a clean aborted event rather than surfacing intentional cancellation as an error.
 - Provider-specific execution must preserve OpenAI-compatible and Anthropic-compatible endpoint behavior.
+- Terminal `complete` events may include safe provider completion metadata. Reasoning-only responses receive at most one text-only recovery attempt without repeating tools or exposing hidden reasoning.
 - `CORE_INSTRUCTIONS` applies to all runs unless the project deliberately changes the formatting policy.
 
 ## Work Guidance

@@ -1,0 +1,31 @@
+# Options DOX
+
+## Purpose
+
+The `src/options/` subtree contains shared modules for the Options page setup and management experience.
+
+## Ownership
+
+- `OptionsUI.js` owns chat-led setup status rendering, dirty tracking, the unsaved-changes guard, credential masking helpers, and per-section save feedback.
+
+## Local Contracts
+
+- `OptionsUI.js` must stay DOM-light: helpers operate on element-like objects so they remain unit-testable in a Node environment.
+- Credential masking keeps stored keys out of the DOM input value: `applyCredentialMask` clears the field and sets a masked placeholder; `resolveCredentialValue` preserves the stored key when the field is masked and untouched.
+- The unsaved-changes guard is driven by the combined dirty state of every Options section (connection, privacy, web search), not a single form.
+- `options.js` (root-owned) remains the entry point for storage I/O and section wiring; new setup/management helpers belong here rather than in the entry point.
+
+## Work Guidance
+
+- Keep pure helpers exported for tests.
+- Never log or echo raw credential values.
+- Preserve existing storage schemas: masking and section saves must not rename keys or restructure stored profiles.
+
+## Verification
+
+- Run `npm run test` after module changes.
+- Exercise the Options page manually in Chrome or Edge: mask/restore keys, per-section saves, and the unsaved-changes banner.
+
+## Child DOX Index
+
+- No child AGENTS.md files are currently needed under `src/options/`.

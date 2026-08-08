@@ -717,9 +717,21 @@ button:disabled {
   text-align: right;
 } /* Actions */
 
-/* Right-align the Actions column content */
+/* Keep instruction actions evenly spaced at every table width. */
 #instructionsTable td:nth-child(6) {
   text-align: right;
+}
+
+.instruction-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.instruction-actions button {
+  margin: 0;
 }
 
 /* Specific styling for content column to handle long text */
@@ -923,6 +935,16 @@ footer a:hover {
     margin: 0.25rem;
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
+  }
+
+  #instructionsTable td:nth-child(6) .instruction-actions {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+
+  #instructionsTable td:nth-child(6) .instruction-actions button {
+    margin: 0;
   }
 
   footer {
@@ -1845,4 +1867,44 @@ body.dark-theme #toolsTable tbody tr:hover {
 
 .backup-restore .button-group {
   margin-top: 1rem;
+}
+
+/* Chat-led setup banner (Get Started) */
+.setup-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--ext-foreground);
+  font-size: var(--ext-font-size-sm);
+  line-height: 1.7;
+}
+
+.setup-steps li {
+  margin-bottom: 0.15rem;
+}
+
+.setup-status {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius-interactive);
+  background-color: var(--ext-muted);
+  box-shadow: var(--ext-shadow-sm);
+}
+
+.setup-status-icon {
+  color: var(--ext-muted-foreground);
+}
+
+.setup-status-icon.is-connected {
+  color: var(--ext-success);
+}
+
+/* Unsaved-changes banner uses ext-run-banner from ui-primitives.css */
+#unsaved-banner {
+  width: 100%;
+}
+
+/* Capability section badges */
+.section-capability-badge {
+  margin-left: 0.5rem;
+  vertical-align: middle;
 }

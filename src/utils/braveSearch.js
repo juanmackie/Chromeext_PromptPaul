@@ -160,7 +160,6 @@ export async function executeBraveSearch(query, apiKey, options = {}) {
     maximum_number_of_snippets: String(DEFAULT_MAX_SNIPPETS),
     maximum_number_of_snippets_per_url: String(DEFAULT_SNIPPETS_PER_URL),
     maximum_number_of_tokens_per_url: String(DEFAULT_TOKENS_PER_URL),
-    extra_snippets: 'true',
   });
 
   if (freshness) {
@@ -217,6 +216,16 @@ export async function executeBraveSearch(query, apiKey, options = {}) {
       // ignore read errors
     }
 
+    if (response.status === 400) {
+      throw new BraveSearchError(
+        'Brave Search rejected the request. Try a shorter query or check the search settings.',
+        {
+          code: 'BAD_REQUEST',
+          status: response.status,
+          cause: body.slice(0, 1000),
+        }
+      );
+    }
     if (response.status === 401 || response.status === 403) {
       throw new BraveSearchError(
         'Brave Search API key is invalid or expired. Update it in Options.',

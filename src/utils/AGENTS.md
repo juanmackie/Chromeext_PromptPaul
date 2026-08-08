@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `src/utils/` subtree contains shared helpers for validation, context budgeting, page permissions, action cards, profile routing, skill parsing, tool choice payloads, suggestions, read strategy, and runtime errors.
+The `src/utils/` subtree contains shared helpers for validation, context budgeting, page permissions, action cards, profile routing, skill parsing, tool choice payloads, suggestions, read strategy, run/feedback state, and runtime errors.
 
 ## Ownership
 
@@ -18,6 +18,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `validation.js` owns small shared validators.
 - `debounce.js` owns debounce and throttle helpers.
 - `braveSearch.js` owns the bounded Brave LLM Context API client, HTTP(S)-only source normalization, byte budgeting, caller-abort handling, and safe `NO_RESULTS` errors when no usable sources remain.
+- `runState.js` owns the standardized run/feedback state vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) and the `data-run-state`/`aria-busy` DOM contract shared by chat and options.
 
 ## Local Contracts
 
@@ -26,6 +27,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `permissionGuards.js` is the central place for blocked browser page behavior.
 - `suggestionStorage.js` caps stored suggestions at 60 and enforces command and prompt length limits.
 - `toolChoiceBuilder.js` is shared by chat and background paths; keep payload behavior provider-compatible.
+- `runState.js` must stay DOM-light (element-like object contract) so it remains unit-testable without a browser, and its state list must match the `[data-run-state]` styles in `ui-primitives.css`.
 
 ## Work Guidance
 

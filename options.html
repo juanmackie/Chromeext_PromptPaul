@@ -6,6 +6,7 @@
     <title>Prompt Paul Config</title>
     <link rel="stylesheet" href="libs/bootstrap.min.css" />
     <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="ui-primitives.css" />
     <link rel="stylesheet" href="options.css" />
     <link rel="stylesheet" href="loading-states.css" />
   </head>
@@ -21,6 +22,37 @@
           Context aware instant AI Insights, a mouse click away
         </p>
       </div>
+
+      <!-- Unsaved-changes banner (visible only when the form is dirty) -->
+      <div id="unsaved-banner" class="ext-run-banner mb-3" hidden role="status" aria-live="polite">
+        <span class="ext-run-indicator" aria-hidden="true"></span>
+        <span>You have unsaved changes. Save each section before leaving.</span>
+      </div>
+
+      <!-- Chat-led setup banner -->
+      <section class="card mb-4 p-4 ext-section" data-section="setup">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">rocket_launch</span>
+          <h2 class="fs-5 fw-semibold mb-0">Get Started</h2>
+        </div>
+        <ol class="setup-steps mb-3">
+          <li>Connect your model below — endpoint, API key, and model name.</li>
+          <li>Open the <strong>side panel</strong> and start chatting.</li>
+          <li>Use context menus or the sidebar buttons for quick actions.</li>
+        </ol>
+        <div class="d-flex align-items-center gap-2 setup-status mb-3">
+          <span class="material-symbols-outlined setup-status-icon" id="setup-status-icon"
+            >rocket_launch</span
+          >
+          <span id="setup-status-text" class="text-secondary-emphasis small"
+            >Checking your connection…</span
+          >
+        </div>
+        <button type="button" id="openChatButton" class="btn btn-primary">
+          <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">forum</span>
+          Open Chat
+        </button>
+      </section>
 
       <!-- Connection Section -->
       <section class="card mb-4 p-4">
@@ -283,6 +315,13 @@
           Required for voice input in the side panel. If browser permission is denied, re-enable
           voice input here and click the test button to request access again.
         </div>
+        <div class="d-flex align-items-center gap-2 mt-3">
+          <button type="button" id="savePrivacy" class="btn btn-primary">
+            <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
+            Save Privacy Settings
+          </button>
+          <span id="privacySaveStatus" class="text-secondary small" aria-live="polite"></span>
+        </div>
       </section>
 
       <!-- Instructions Section -->
@@ -296,6 +335,7 @@
         >
           <span class="material-symbols-outlined text-primary">description</span>
           <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Instructions</h2>
+          <span class="ext-badge section-capability-badge" data-capability-badge>Capability</span>
           <span class="material-symbols-outlined collapsible-icon">expand_less</span>
         </div>
         <hr
@@ -493,6 +533,7 @@
         >
           <span class="material-symbols-outlined text-primary">school</span>
           <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Agent Skills</h2>
+          <span class="ext-badge section-capability-badge" data-capability-badge>Capability</span>
           <span class="material-symbols-outlined collapsible-icon">expand_more</span>
         </div>
         <hr
@@ -830,6 +871,7 @@ What this skill does and when to use it.
         >
           <span class="material-symbols-outlined text-primary">build</span>
           <h2 class="fs-5 fw-semibold mb-0 flex-grow-1">Tools</h2>
+          <span class="ext-badge section-capability-badge" data-capability-badge>Capability</span>
           <span class="material-symbols-outlined collapsible-icon">expand_more</span>
         </div>
         <hr
@@ -1007,6 +1049,7 @@ What this skill does and when to use it.
         <div class="d-flex align-items-center gap-2 mb-3">
           <span class="material-symbols-outlined text-primary">travel_explore</span>
           <h2 class="fs-5 fw-semibold mb-0">Web Search Grounding</h2>
+          <span class="ext-badge section-capability-badge" data-capability-badge>Capability</span>
         </div>
         <hr
           class="my-2 mb-3"
@@ -1068,10 +1111,15 @@ What this skill does and when to use it.
           </div>
           <div class="invalid-feedback" id="braveSearchApiKeyError"></div>
           <div class="form-text">
-            Key is saved automatically. <span id="braveSearchKeyStatus" class="fw-semibold"></span>
+            Saved on demand with the button below.
+            <span id="braveSearchKeyStatus" class="fw-semibold"></span>
           </div>
         </div>
-        <div class="d-flex gap-2 flex-wrap">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <button type="button" id="saveGrounding" class="btn btn-primary">
+            <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
+            Save Web Search Settings
+          </button>
           <a
             href="https://api-dashboard.search.brave.com/app/keys"
             target="_blank"

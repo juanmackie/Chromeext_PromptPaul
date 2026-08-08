@@ -19,7 +19,22 @@ document.addEventListener('DOMContentLoaded', function () {
   if (apiKeyCopy && apiKeyInput) {
     apiKeyCopy.addEventListener('click', async function () {
       try {
-        await navigator.clipboard.writeText(apiKeyInput.value);
+        // The key is masked (kept out of the DOM) when configured, so copy
+        // the stored value on demand instead of an empty field.
+        let value = apiKeyInput.value;
+        if (!value && apiKeyInput.dataset.configured === 'true') {
+          const result = await chrome.storage.local.get(['profiles', 'lastSelectedProfileId']);
+          const profiles = result.profiles || [];
+          const id = result.lastSelectedProfileId || 'default';
+          const profile =
+            profiles.find((p) => p.id === id) || profiles.find((p) => p.id === 'default');
+          value = (profile && profile.apiKey) || '';
+        }
+        if (!value) {
+          console.warn('No API key to copy (not configured).');
+          return;
+        }
+        await navigator.clipboard.writeText(value);
         this.querySelector('.material-symbols-outlined').textContent = 'check';
         setTimeout(() => {
           this.querySelector('.material-symbols-outlined').textContent = 'content_copy';

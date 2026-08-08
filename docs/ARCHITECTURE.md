@@ -23,6 +23,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/chat/ChatMedia.js` prepares image, video, and audio requests
 - `src/chat/ChatStream.js` tracks streaming state and history
 - `src/chat/ChatPageActions.js` renders page-aware quick actions and preset prompts
+- `src/chat/ChatComposer.js` composer-led UI: context tray, contextual quick actions, and inline Stop/Retry/Edit/Continue recovery
 
 ### Shared Utilities
 
@@ -35,6 +36,16 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/utils/toolChoiceBuilder.js` normalizes tool choice payloads
 - `src/utils/validation.js` provides small shared validators
 - `src/utils/braveSearch.js` bounded Brave LLM Context client with URL and payload validation
+- `src/utils/runState.js` standardized run/feedback state vocabulary (`data-run-state`) shared by chat and options
+
+### Options Layer
+
+- `src/options/OptionsUI.js` setup status, dirty tracking, unsaved-changes guard, and credential masking helpers
+
+### Shared UI
+
+- `theme.css` theme tokens including semantic feedback colors (success/warning/info/running)
+- `ui-primitives.css` shared primitives (buttons, chips, badges, trays, sections, run indicators)
 
 ## Data Flow
 
@@ -65,6 +76,13 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 1. `ChatAPI.js` reads the selected profile
 2. Shared routing helpers validate the endpoint, key, and model
 3. Media requests can reroute to a vision-capable profile when needed
+
+### Reasoning responses
+
+1. `RunOrchestrator` separates structured and inline reasoning from answer text and records provider completion reasons without forwarding hidden reasoning in terminal metadata
+2. Reasoning-capable provider requests reserve explicit output capacity for the final answer
+3. A reasoning-only response receives at most one text-only recovery request with tools disabled
+4. `ChatGrounding` shows the token-budget warning only when the provider confirms a token-limit completion; otherwise it uses a neutral no-answer message
 
 ### Web Search Grounding (optional)
 

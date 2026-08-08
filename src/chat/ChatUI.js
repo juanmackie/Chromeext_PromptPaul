@@ -97,6 +97,7 @@ class ChatUI {
     if (sender === 'User') {
       messageDiv.classList.add('user-message');
       messageDiv.textContent = 'You: ' + message;
+      messageDiv.dataset.prompt = message || '';
     } else if (sender === 'System') {
       messageDiv.classList.add('system-message');
       messageDiv.textContent = 'System: ' + message;

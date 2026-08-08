@@ -4,6 +4,7 @@
     <title>Prompt Paul</title>
     <link rel="stylesheet" href="libs/bootstrap.min.css" />
     <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="ui-primitives.css" />
     <link rel="stylesheet" href="chat.css" />
     <link rel="stylesheet" href="loading-states.css" />
     <link rel="stylesheet" href="libs/highlight-github.min.css" id="highlight-theme" />
@@ -83,40 +84,60 @@
     <div class="chat-container">
       <main id="chat-main-area">
         <div id="chat-area"></div>
-        <div id="input-area">
-          <div id="attachment-strip" class="attachment-strip" hidden>
-            <img
-              id="attachment-thumbnail"
-              class="attachment-thumbnail"
-              alt="Pasted image preview"
-            />
-            <div class="attachment-copy">
-              <span id="attachment-title" class="attachment-title">Image attached</span>
-              <span id="attachment-details" class="attachment-details"
-                >Add any prompt or question, then press Send</span
+        <div id="input-area" data-run-state="idle" aria-busy="false">
+          <div id="context-tray" class="ext-tray" hidden>
+            <div id="attachment-strip" class="attachment-strip" hidden>
+              <img
+                id="attachment-thumbnail"
+                class="attachment-thumbnail"
+                alt="Pasted image preview"
+              />
+              <div class="attachment-copy">
+                <span id="attachment-title" class="attachment-title">Image attached</span>
+                <span id="attachment-details" class="attachment-details"
+                  >Add any prompt or question, then press Send</span
+                >
+              </div>
+              <button id="attachment-remove-button" class="attachment-remove-button" type="button">
+                Remove
+              </button>
+            </div>
+            <div id="selected-text-strip" class="attachment-strip selected-text-strip" hidden>
+              <span class="material-symbols-outlined selected-text-strip-icon">format_quote</span>
+              <div class="attachment-copy">
+                <span class="attachment-title">Selected text attached</span>
+                <span
+                  id="selected-text-snippet"
+                  class="attachment-details selected-text-snippet"
+                ></span>
+              </div>
+              <button
+                id="selected-text-remove-button"
+                class="attachment-remove-button"
+                type="button"
+                title="Detach selected text and continue the conversation"
               >
+                Remove
+              </button>
             </div>
-            <button id="attachment-remove-button" class="attachment-remove-button" type="button">
-              Remove
-            </button>
+            <div id="page-context-strip" class="attachment-strip page-context-strip" hidden>
+              <span class="material-symbols-outlined selected-text-strip-icon">description</span>
+              <div class="attachment-copy">
+                <span class="attachment-title">Page content</span>
+                <span id="page-context-details" class="attachment-details"></span>
+              </div>
+              <button
+                id="page-context-remove-button"
+                class="attachment-remove-button"
+                type="button"
+                title="Detach page content and continue the conversation"
+              >
+                Remove
+              </button>
+            </div>
           </div>
-          <div id="selected-text-strip" class="attachment-strip selected-text-strip" hidden>
-            <span class="material-symbols-outlined selected-text-strip-icon">format_quote</span>
-            <div class="attachment-copy">
-              <span class="attachment-title">Selected text attached</span>
-              <span
-                id="selected-text-snippet"
-                class="attachment-details selected-text-snippet"
-              ></span>
-            </div>
-            <button
-              id="selected-text-remove-button"
-              class="attachment-remove-button"
-              type="button"
-              title="Detach selected text and continue the conversation"
-            >
-              Remove
-            </button>
+          <div id="quick-actions-row" class="quick-actions-row" hidden>
+            <span id="quick-actions-label" class="quick-actions-label">Quick actions</span>
           </div>
           <div id="input-controls">
             <div id="input-wrapper">

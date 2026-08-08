@@ -2,12 +2,23 @@
 
 ## [Unreleased]
 
+### Prompt Paul UX Refinement
+
+A coordinated, composer-led refinement of the whole extension, shipped together:
+
+- **Foundation**: Extended the theme token system with semantic feedback colors (`--ext-success`, `--ext-warning`, `--ext-info`, `--ext-running` + deep/bright/foreground/muted variants) across light, dark, and system-preference themes; added a shared UI primitives layer (`ui-primitives.css` with buttons, chips, badges, trays, sections, and run indicators); standardized the run/feedback state vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) in `src/utils/runState.js`, applied to the chat input area with `aria-busy` mirroring.
+- **Chat-first composer**: The chat is now composer-led. A visible context tray (`#context-tray`) shows every attached context (selected text, media, page content) as removable chips near the input. A contextual quick-action row offers Analyze/Proofread/Explain for selections and Summary/TL;DR/Technical for loaded pages. Responses gain inline recovery: Stop while streaming, then Retry/Edit/Continue — Continue always builds on the previous response. Capabilities (sidebar, Web toggle, voice, skills) stay visible but visually secondary. Logic lives in `src/chat/ChatComposer.js`.
+- **Options**: Chat-led setup with a Get Started banner, live connection status, and an Open Chat button. Explicit per-section saves (Connection, Privacy, Web Search) replace implicit persistence, with flash feedback on each. Capability sections (Instructions, Agent Skills, Tools, Web Search) are marked with badges. Credentials are masked: stored API keys are never written into input fields; masked placeholders indicate configured keys, and saving preserves the stored key unless replaced. An unsaved-changes banner plus a `beforeunload` guard covers the combined dirty state of every section.
+- **Entry points**: All entry points funnel into the canonical chat. A toolbar action opens the side panel; extension pages and the Prompt Paul website (`externally_connectable`) can deep-link with `{ action: 'openChat', context }`, preserving selection, media, and instruction context; deep-link instructions run automatically against the attached context. Context-menu flows keep preserving page, selection, and media context.
+- **Compatibility**: Storage schemas, profiles, capabilities, and backups are unchanged; nothing was retired. Regression guards pin the storage keys, backup/import/export entry points, and capability surfaces.
+
 ### New Features
 
 - **Web Search Grounding**: A sidebar toggle (Web) lets users optionally ground LLM answers with Brave Search. When enabled, the model may call the reserved `web_search` function tool when current, verifiable, or time-sensitive information would materially improve the answer — the toggle is a permission, not a mandate, so the model can answer directly without searching. Queries Brave's LLM Context API and returns source-cited results that the UI renders as a first-party Sources section. Requires a Brave Search API key; pricing and quotas are subject to Brave's current plans. Grounding is disabled by default.
 
 ### Bug Fixes
 
+- Fixed reasoning-only completions that could consume the response budget without producing a final answer; provider completion metadata, reserved output capacity, and a bounded text-only recovery now prevent misleading token-budget warnings
 - Fixed "A response is already in progress" error that prevented follow-up messages after initial response completion (run state was not cleared on success)
 - Fixed sidebar quick-action buttons becoming permanently disabled after initial selected-text action
 

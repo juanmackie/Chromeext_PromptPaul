@@ -17,6 +17,26 @@ import { createThinkParser } from '../utils/inlineReasoning.js';
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
 const MAX_TOOL_CALL_RETRIES = 3;
+const THINKING_BUDGET_TOKENS = 2048;
+const FINAL_OUTPUT_TOKENS = 6144;
+const OPENAI_REASONING_OUTPUT_TOKENS = 8192;
+const EMPTY_REASONING_RECOVERY_PROMPT =
+  'The previous response contained internal reasoning but no final answer. Provide the final answer now. Do not explain your reasoning; return only the concise answer to the original request.';
+const TOKEN_LIMIT_REASONS = new Set([
+  'length',
+  'max_tokens',
+  'max_completion_tokens',
+  'model_length',
+  'context_length',
+]);
+
+function isTokenLimitReason(reason) {
+  return TOKEN_LIMIT_REASONS.has(
+    String(reason || '')
+      .trim()
+      .toLowerCase()
+  );
+}
 
 class RunOrchestrator {
   constructor(skillManager, options = {}) {
@@ -60,6 +80,83 @@ class RunOrchestrator {
   }
 
   /**
+   * Record provider completion metadata without retaining response content.
+   * @param {object} run
+   * @param {string|null} reason
+   */
+  _recordCompletionReason(run, reason) {
+    const normalized = String(reason || '').trim();
+    if (!normalized) return;
+    run.completionReason = normalized;
+    if (isTokenLimitReason(normalized)) run.tokenLimitReached = true;
+  }
+
+  /**
+   * Record non-sensitive token usage when a provider includes it in a stream.
+   * @param {object} run
+   * @param {object|null} usage
+   */
+  _recordCompletionUsage(run, usage) {
+    if (!usage || typeof usage !== 'object') return;
+
+    const inputTokens = Number(usage.prompt_tokens ?? usage.input_tokens);
+    const outputTokens = Number(usage.completion_tokens ?? usage.output_tokens);
+    const normalized = {};
+    if (Number.isFinite(inputTokens)) normalized.inputTokens = inputTokens;
+    if (Number.isFinite(outputTokens)) normalized.outputTokens = outputTokens;
+    if (Object.keys(normalized).length > 0) run.completionUsage = normalized;
+  }
+
+  /**
+   * Return safe completion metadata for the side-panel terminal event.
+   * @param {object} run
+   * @returns {{provider: string|null, reason: string|null, usage: object|null, hasReasoning: boolean, exhausted: boolean, recovered: boolean}}
+   */
+  _getCompletionMetadata(run) {
+    return {
+      provider: run.completionProvider || null,
+      reason: run.completionReason || null,
+      usage: run.completionUsage || null,
+      hasReasoning: Boolean(run.hasReasoning),
+      exhausted: Boolean(!run.accumulatedText.trim() && run.tokenLimitReached),
+      recovered: Boolean(run.recoverySucceeded),
+    };
+  }
+
+  _shouldRecoverEmptyResponse(run) {
+    return Boolean(
+      !run.recoveryAttempted &&
+      run.hasReasoning &&
+      !run.accumulatedText.trim() &&
+      !run.activeToolCall &&
+      !(run.activeToolCalls && run.activeToolCalls.size > 0)
+    );
+  }
+
+  _prepareEmptyResponseRecovery(run) {
+    run.recoveryAttempted = true;
+    run.conversationHistory.push({ role: 'user', content: EMPTY_REASONING_RECOVERY_PROMPT });
+    run.accumulatedText = '';
+    run.activeToolCall = null;
+    run.activeToolCalls = null;
+    run.thinkingBlock = null;
+    run.thinkParser = createThinkParser();
+    run.completionReason = null;
+    run.completionUsage = null;
+  }
+
+  _applyOpenAIOutputBudget(body, modelName) {
+    if (!modelSupportsReasoning(modelName)) return;
+
+    const normalized = String(modelName || '').replace(/^openai:/i, '');
+    if (/^(?:o[1-4](?:-|$)|gpt-5(?:-|$))/i.test(normalized)) {
+      body.max_completion_tokens = OPENAI_REASONING_OUTPUT_TOKENS;
+    } else {
+      body.max_tokens = OPENAI_REASONING_OUTPUT_TOKENS;
+    }
+  }
+
+  /**
    * Start a new run with unique ID
    */
   async startRun(config) {
@@ -85,6 +182,13 @@ class RunOrchestrator {
       conversationHistory: config.messages || [],
       accumulatedText: '',
       activeToolCall: null,
+      hasReasoning: false,
+      completionReason: null,
+      completionUsage: null,
+      completionProvider: null,
+      tokenLimitReached: false,
+      recoveryAttempted: false,
+      recoverySucceeded: false,
       // Per-run web-search state: enabled flag, attempts, and collected sources.
       webSearch: {
         enabled: Boolean(config.webSearch),
@@ -129,6 +233,13 @@ class RunOrchestrator {
     run.activeToolCalls = null;
     // Per-turn Anthropic thinking block (text + signature) for tool-call continuity.
     run.thinkingBlock = null;
+    run.hasReasoning = false;
+    run.completionReason = null;
+    run.completionUsage = null;
+    run.completionProvider = null;
+    run.tokenLimitReached = false;
+    run.recoveryAttempted = false;
+    run.recoverySucceeded = false;
     // Per-turn parser that strips inline <think>…</think> reasoning from the answer
     // stream (used by the OpenAI-style path; harmless no-op for Anthropic).
     run.thinkParser = createThinkParser();
@@ -661,8 +772,9 @@ class RunOrchestrator {
   /**
    * Execute OpenAI-style streaming
    */
-  async _executeOpenAI(run, tools) {
+  async _executeOpenAI(run, tools, { allowRecovery = true, recovery = false } = {}) {
     const { llmEndpoint, apiKey, modelName } = run.config;
+    run.completionProvider = 'openai-compatible';
 
     // Build messages exclusively from run.conversationHistory (already includes
     // requestConfig.messages absorbed in execute()).
@@ -678,6 +790,7 @@ class RunOrchestrator {
       messages,
       stream: true,
     };
+    this._applyOpenAIOutputBudget(body, modelName);
 
     const effectiveToolChoice = this._getEffectiveToolChoice(run);
     if (effectiveToolChoice !== 'none' && tools.length > 0) {
@@ -737,6 +850,7 @@ class RunOrchestrator {
     // Drain any tail held back while waiting on a possible inline-think tag.
     const tail = run.thinkParser.flush();
     if (tail.reasoning) {
+      run.hasReasoning = true;
       this._emitEvent(run.id, { type: 'reasoning', data: tail.reasoning });
     }
     if (tail.content) {
@@ -749,7 +863,11 @@ class RunOrchestrator {
     // event is emitted and the UI unlocks instead of hanging.
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
+    } else if (allowRecovery && this._shouldRecoverEmptyResponse(run)) {
+      this._prepareEmptyResponseRecovery(run);
+      await this._executeOpenAI(run, [], { allowRecovery: false, recovery: true });
     } else {
+      if (recovery && run.accumulatedText.trim()) run.recoverySucceeded = true;
       await this._finalizeTextResponse(run);
     }
   }
@@ -820,15 +938,17 @@ class RunOrchestrator {
   /**
    * Execute Anthropic-style streaming
    */
-  async _executeAnthropic(run, tools) {
+  async _executeAnthropic(run, tools, { allowRecovery = true, recovery = false } = {}) {
     const { llmEndpoint, apiKey, modelName } = run.config;
+    run.completionProvider = 'anthropic';
 
     const reasoningEnabled = modelSupportsReasoning(modelName);
-    const THINKING_BUDGET_TOKENS = 2048;
 
     const body = {
       model: modelName.replace('anthropic:', ''),
-      max_tokens: reasoningEnabled ? 4096 + THINKING_BUDGET_TOKENS : 4096,
+      max_tokens: reasoningEnabled
+        ? THINKING_BUDGET_TOKENS + FINAL_OUTPUT_TOKENS
+        : FINAL_OUTPUT_TOKENS,
       stream: true,
       messages: this._buildAnthropicMessages(run),
     };
@@ -838,7 +958,7 @@ class RunOrchestrator {
 
     // Anthropic rejects forced tool_choice while extended thinking is enabled.
     // Disable thinking only for the forced-tool turn; restore it for final auto.
-    if (reasoningEnabled && !forcingTool) {
+    if (reasoningEnabled && !forcingTool && !recovery) {
       body.thinking = { type: 'enabled', budget_tokens: THINKING_BUDGET_TOKENS };
     }
 
@@ -913,7 +1033,11 @@ class RunOrchestrator {
     // `complete` event is emitted and the UI unlocks instead of hanging.
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
+    } else if (allowRecovery && this._shouldRecoverEmptyResponse(run)) {
+      this._prepareEmptyResponseRecovery(run);
+      await this._executeAnthropic(run, [], { allowRecovery: false, recovery: true });
     } else {
+      if (recovery && run.accumulatedText.trim()) run.recoverySucceeded = true;
       await this._finalizeTextResponse(run);
     }
   }
@@ -922,7 +1046,10 @@ class RunOrchestrator {
    * Process OpenAI streaming chunk
    */
   async _processOpenAIChunk(run, parsed) {
-    const delta = parsed.choices?.[0]?.delta;
+    this._recordCompletionUsage(run, parsed.usage);
+    const choice = parsed.choices?.[0];
+    this._recordCompletionReason(run, choice?.finish_reason);
+    const delta = choice?.delta;
     if (!delta) return;
 
     if (!run.thinkParser) run.thinkParser = createThinkParser();
@@ -931,6 +1058,7 @@ class RunOrchestrator {
     // Display-only — not added to accumulatedText or conversation history.
     const structuredReasoning = delta.reasoning_content ?? delta.reasoning;
     if (structuredReasoning) {
+      run.hasReasoning = true;
       this._emitEvent(run.id, { type: 'reasoning', data: structuredReasoning });
     }
 
@@ -940,6 +1068,7 @@ class RunOrchestrator {
     if (delta.content) {
       const { content, reasoning } = run.thinkParser.push(delta.content);
       if (reasoning) {
+        run.hasReasoning = true;
         this._emitEvent(run.id, { type: 'reasoning', data: reasoning });
       }
       if (content) {
@@ -998,12 +1127,25 @@ class RunOrchestrator {
    * Process Anthropic event
    */
   async _processAnthropicEvent(run, event) {
+    if (event.type === 'message_start') {
+      this._recordCompletionUsage(run, event.message?.usage);
+      this._recordCompletionReason(run, event.message?.stop_reason);
+      return;
+    }
+
+    if (event.type === 'message_delta') {
+      this._recordCompletionUsage(run, event.usage);
+      this._recordCompletionReason(run, event.delta?.stop_reason);
+      return;
+    }
+
     if (event.type === 'content_block_delta') {
       if (event.delta.type === 'text_delta') {
         run.accumulatedText += event.delta.text;
         this._emitEvent(run.id, { type: 'content', data: event.delta.text });
       } else if (event.delta.type === 'thinking_delta') {
         if (!run.thinkingBlock) run.thinkingBlock = { thinking: '', signature: '' };
+        run.hasReasoning = true;
         run.thinkingBlock.thinking += event.delta.thinking || '';
         this._emitEvent(run.id, { type: 'reasoning', data: event.delta.thinking || '' });
       } else if (event.delta.type === 'signature_delta') {
@@ -1203,6 +1345,14 @@ class RunOrchestrator {
       type: 'complete',
       content: run.accumulatedText,
     };
+    const completion = this._getCompletionMetadata(run);
+    if (
+      completion.hasReasoning ||
+      completion.recovered ||
+      (!run.accumulatedText.trim() && completion.reason)
+    ) {
+      event.completion = completion;
+    }
     const grounding = this._getWebSearchMetadata(run);
     if (grounding) event.grounding = grounding;
     this._emitEvent(run.id, event);

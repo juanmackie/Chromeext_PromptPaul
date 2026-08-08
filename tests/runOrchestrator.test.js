@@ -335,6 +335,143 @@ describe('RunOrchestrator._processOpenAIChunk inline reasoning', () => {
   });
 });
 
+describe('completion metadata and empty reasoning recovery', () => {
+  it('captures an OpenAI finish reason from a terminal chunk without a delta', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    orch._emitEvent = () => {};
+    const run = {
+      id: 'completion-r1',
+      accumulatedText: '',
+      thinkParser: createThinkParser(),
+    };
+
+    await orch._processOpenAIChunk(run, {
+      choices: [{ delta: { reasoning_content: 'thinking' }, finish_reason: null }],
+      usage: { prompt_tokens: 12, completion_tokens: 34 },
+    });
+    await orch._processOpenAIChunk(run, {
+      choices: [{ finish_reason: 'length' }],
+    });
+
+    expect(run.completionReason).toBe('length');
+    expect(orch._getCompletionMetadata(run)).toMatchObject({
+      hasReasoning: true,
+      exhausted: true,
+      reason: 'length',
+      usage: { inputTokens: 12, outputTokens: 34 },
+    });
+  });
+
+  it('captures Anthropic stop reasons', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    orch._emitEvent = () => {};
+    const run = { id: 'completion-r2', accumulatedText: '' };
+
+    await orch._processAnthropicEvent(run, {
+      type: 'content_block_delta',
+      delta: { type: 'thinking_delta', thinking: 'thinking' },
+    });
+    await orch._processAnthropicEvent(run, {
+      type: 'message_delta',
+      delta: { stop_reason: 'max_tokens' },
+      usage: { input_tokens: 9, output_tokens: 22 },
+    });
+
+    expect(run.completionReason).toBe('max_tokens');
+    expect(orch._getCompletionMetadata(run)).toMatchObject({
+      hasReasoning: true,
+      exhausted: true,
+      reason: 'max_tokens',
+      usage: { inputTokens: 9, outputTokens: 22 },
+    });
+  });
+
+  it('reserves explicit output capacity for reasoning models', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const openAiBody = {};
+    const legacyBody = {};
+    const standardBody = {};
+
+    orch._applyOpenAIOutputBudget(openAiBody, 'o1-mini');
+    orch._applyOpenAIOutputBudget(legacyBody, 'deepseek-reasoner');
+    orch._applyOpenAIOutputBudget(standardBody, 'gpt-4o');
+
+    expect(openAiBody.max_completion_tokens).toBe(8192);
+    expect(legacyBody.max_tokens).toBe(8192);
+    expect(standardBody).toEqual({});
+  });
+
+  it('retries one reasoning-only OpenAI response without tools', async () => {
+    const originalFetch = global.fetch;
+    const requests = [];
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager());
+    orch._emitEvent = (_runId, event) => events.push(event);
+
+    global.fetch = async (_url, options) => {
+      requests.push(JSON.parse(options.body));
+      const responseText =
+        requests.length === 1
+          ? [
+              `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'thinking' } }] })}`,
+              `data: ${JSON.stringify({ choices: [{ finish_reason: 'length' }] })}`,
+              'data: [DONE]',
+              '',
+            ].join('\n')
+          : [
+              `data: ${JSON.stringify({ choices: [{ delta: { content: 'Recovered answer.' }, finish_reason: 'stop' }] })}`,
+              'data: [DONE]',
+              '',
+            ].join('\n');
+      let delivered = false;
+      return {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (delivered) return { done: true, value: undefined };
+              delivered = true;
+              return { done: false, value: new TextEncoder().encode(responseText) };
+            },
+          }),
+        },
+      };
+    };
+
+    try {
+      await orch._executeOpenAI(
+        {
+          id: 'recovery-r1',
+          config: {
+            llmEndpoint: 'https://provider.example/v1/chat/completions',
+            apiKey: 'test-key',
+            modelName: 'deepseek-reasoner',
+          },
+          conversationHistory: [{ role: 'user', content: 'Answer the question.' }],
+          accumulatedText: '',
+          webSearch: { enabled: false, attempts: 0, sources: [] },
+          abortController: new AbortController(),
+        },
+        []
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    const complete = events.find((event) => event.type === 'complete');
+    expect(requests).toHaveLength(2);
+    expect(requests[0].max_tokens).toBe(8192);
+    expect(requests[1].tools).toBeUndefined();
+    expect(requests[1].messages.at(-1).content).toContain('previous response');
+    expect(complete?.content).toBe('Recovered answer.');
+    expect(complete?.completion).toMatchObject({
+      hasReasoning: true,
+      recovered: true,
+      exhausted: false,
+    });
+  });
+});
+
 describe('Fix 1: execute() persists messages into conversationHistory', () => {
   beforeEach(() => {
     global.chrome = {
@@ -883,6 +1020,7 @@ describe('web search credential and sequencing contracts', () => {
       expect(braveCalls).toBe(0);
       const complete = events.find((e) => e.type === 'complete');
       expect(complete).toBeDefined();
+      expect(complete.completion).toBeUndefined();
       // No search happened → no grounding metadata → no Sources section.
       expect(complete.grounding).toBeUndefined();
     } finally {

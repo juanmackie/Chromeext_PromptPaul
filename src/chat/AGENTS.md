@@ -13,6 +13,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - `ChatStream.js` owns streaming state tracking.
 - `ChatVoice.js` owns speech recognition state and voice toggle behavior.
 - `ChatPageActions.js` owns page-aware quick actions and preset analysis prompts.
+- `ChatComposer.js` owns the composer-led UI: the visible context tray, the contextual quick-action row, and inline Stop/Retry/Edit/Continue recovery. It reads context from the DOM (tray item visibility, `data-run-state` on `#input-area`) and routes actions through handlers supplied by `chat.js`.
 
 ## Local Contracts
 
@@ -23,6 +24,8 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - UI state changes that affect buttons, attachments, streaming, or storage sync must stay coordinated with `chat.js`.
 - `ChatStream.js` run ID (`currentRunId`) is the authoritative ownership token for orchestrator events; `chat.js` checks it against `streamState.getRunId()` before processing any event.
 - `ChatPageActions.js` returns structured `{instruction, context}` prompt request objects via `buildSmartPromptRequest`; callers pass these to `makeApiCall` which calls `composeUserPrompt` from `src/prompts.js`.
+- Composer surfaces (`#context-tray`, `#quick-actions-row`, `#page-context-strip`) are the single visible context surface near the composer; `ChatComposer.js` keeps their visibility synchronized with strip state and the run-state contract from `src/utils/runState.js`.
+- Inline recovery buttons (Stop/Retry/Edit/Continue) must route through the canonical run entry points (`stopApiRequest`, `runSelectedTextPrompt`, `makeApiCall`); Continue always builds on `previous_response` context, never on a stale sticky selection.
 
 ## Work Guidance
 
@@ -44,6 +47,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - Tool traces must classify the inner payload of the orchestrator `{ success, result }` envelope so already-used, no-results, and failed searches are never displayed as successful executions.
 - The reserved tool name `web_search` must never be shadowed by user-defined tools or imports; it is guarded in `ChatAPI.getTools()`, `RunOrchestrator._registerConfiguredTools()`, and Options save/import validation.
 - When grounding is disabled, responses must remain identical to the pre-grounding behavior — no Sources section, no changed payload shape.
+- Terminal response rendering consumes safe completion metadata; only confirmed token-limit exhaustion uses the token-budget warning, while reasoning-only responses may receive one bounded text-only recovery.
 
 ## Child DOX Index
 
@@ -51,5 +55,5 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 
 ## Work Guidance
 
-- Keep `chat.js` under its enforced line guard; move toggle wiring and preference helpers into `ChatGrounding.js` rather than expanding the entry point.
+- Keep `chat.js` under its enforced line guard; move composer wiring and helpers into `ChatComposer.js` and `ChatGrounding.js` rather than expanding the entry point.
 - Grounding metadata travels only in terminal events and through `braveSearch.js` helpers — never carry the Brave key in LLM request payloads, events, or logs.

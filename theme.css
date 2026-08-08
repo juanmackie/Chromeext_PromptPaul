@@ -33,6 +33,25 @@
   --ext-chart-4: #a5b4fc;
   --ext-chart-5: #c7d2fe;
 
+  /* Feedback Colors - Semantic Run/Feedback States */
+  --ext-success: #16a34a;
+  --ext-success-deep: #15803d;
+  --ext-success-bright: #22c55e;
+  --ext-success-foreground: #ffffff;
+  --ext-success-muted: #dcfce7;
+  --ext-warning: #d97706;
+  --ext-warning-deep: #b45309;
+  --ext-warning-bright: #f59e0b;
+  --ext-warning-foreground: #1a1a2e;
+  --ext-warning-muted: #fef3c7;
+  --ext-info: #2563eb;
+  --ext-info-deep: #1d4ed8;
+  --ext-info-bright: #3b82f6;
+  --ext-info-foreground: #ffffff;
+  --ext-info-muted: #dbeafe;
+  --ext-running: #6366f1;
+  --ext-running-muted: #e0e7ff;
+
   /* Sidebar Colors */
   --ext-sidebar: #fafafa;
   --ext-sidebar-foreground: #1a1a2e;
@@ -172,6 +191,25 @@
   --ext-chart-4: #e0e7ff;
   --ext-chart-5: #ffffff;
 
+  /* Feedback Colors - Dark Theme */
+  --ext-success: #4ade80;
+  --ext-success-deep: #22c55e;
+  --ext-success-bright: #86efac;
+  --ext-success-foreground: #0a0a1a;
+  --ext-success-muted: #14532d;
+  --ext-warning: #fbbf24;
+  --ext-warning-deep: #f59e0b;
+  --ext-warning-bright: #fcd34d;
+  --ext-warning-foreground: #0a0a1a;
+  --ext-warning-muted: #78350f;
+  --ext-info: #60a5fa;
+  --ext-info-deep: #3b82f6;
+  --ext-info-bright: #93c5fd;
+  --ext-info-foreground: #0a0a1a;
+  --ext-info-muted: #1e3a8a;
+  --ext-running: #a5b4fc;
+  --ext-running-muted: #312e81;
+
   /* Sidebar Colors - Dark Theme */
   --ext-sidebar: #0a0a1a;
   --ext-sidebar-foreground: #e8e6f0;
@@ -243,6 +281,25 @@
       var(--ext-primary-deep) 60%,
       transparent 100%
     );
+
+    /* Feedback Colors - System Preference Fallback */
+    --ext-success: #4ade80;
+    --ext-success-deep: #22c55e;
+    --ext-success-bright: #86efac;
+    --ext-success-foreground: #0a0a1a;
+    --ext-success-muted: #14532d;
+    --ext-warning: #fbbf24;
+    --ext-warning-deep: #f59e0b;
+    --ext-warning-bright: #fcd34d;
+    --ext-warning-foreground: #0a0a1a;
+    --ext-warning-muted: #78350f;
+    --ext-info: #60a5fa;
+    --ext-info-deep: #3b82f6;
+    --ext-info-bright: #93c5fd;
+    --ext-info-foreground: #0a0a1a;
+    --ext-info-muted: #1e3a8a;
+    --ext-running: #a5b4fc;
+    --ext-running-muted: #312e81;
 
     /* Bootstrap dark overrides for system-preference fallback */
     --bs-primary: #818cf8;

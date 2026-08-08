@@ -39,3 +39,4 @@ The `src/` subtree contains ES modules shared by the extension entry points, inc
 - `src/chat/AGENTS.md`: side panel chat UI, API bridge, media handling, streaming, skills, voice input, and page-aware actions.
 - `src/utils/AGENTS.md`: shared validation, routing, budgeting, permission, skill parsing, and storage helpers.
 - `src/orchestrator/AGENTS.md`: centralized run execution, tool calls, streaming, and skill injection policy.
+- `src/options/AGENTS.md`: Options page setup and management helpers (setup status, dirty tracking, credential masking, unsaved-change guard).

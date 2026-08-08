@@ -991,6 +991,88 @@ async function openPromptPaulForSelection(tabId, selectedText) {
 }
 
 /**
+ * Canonical deep-link funnel: opens the side panel and routes context
+ * (selection, media, or instruction) into the chat, preserving every
+ * attachment. Used by the toolbar action, extension-page deep links, and
+ * website deep links (chrome.runtime.onMessageExternal).
+ * @param {Object} context - { tabId, selectedText, mediaUrl, mediaType,
+ *   instruction }.
+ * @returns {Promise<Object>} { success, mode } result.
+ */
+async function openChatWithContext(context = {}) {
+  const {
+    tabId,
+    selectedText = '',
+    mediaUrl = '',
+    mediaType = 'image',
+    instruction = '',
+  } = context;
+
+  if (!tabId) {
+    return { success: false, error: 'No tab context for deep link' };
+  }
+
+  await chrome.sidePanel.open({ tabId });
+  const actionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  // Media context: preserve the attachment (and optional instruction).
+  if (mediaUrl) {
+    let mediaData;
+    try {
+      const media = await fetchMediaAsBase64(mediaUrl);
+      mediaData = {
+        type: mediaType,
+        base64: media.base64,
+        url: mediaUrl,
+        mimeType: media.mimeType,
+      };
+    } catch (error) {
+      mediaData = {
+        type: mediaType,
+        base64: null,
+        url: mediaUrl,
+        mimeType: getMimeTypeFromUrl(mediaUrl),
+        error: error.message,
+      };
+    }
+    await sendPanelMessage({
+      action: 'setMediaForAnalysis',
+      mediaData: {
+        ...mediaData,
+        actionType: instruction ? 'custom' : null,
+        instructionId: null,
+        textPrompt: instruction ? `${instruction}\n\n${selectedText || ''}`.trim() : null,
+      },
+      tabId,
+    });
+    return { success: true, mode: 'media' };
+  }
+
+  // Text/selection context (instruction rides along as the initial prompt).
+  await sendPanelMessage({
+    action: 'setSelectedText',
+    selectedText: selectedText || '',
+    fromStartChat: true,
+    textPrompt: instruction || null,
+    tabId,
+    actionId,
+  });
+  return { success: true, mode: 'text' };
+}
+
+// Toolbar action: clicking the extension icon opens the canonical chat.
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab || tab.id === -1 || tab.id === undefined) {
+    return;
+  }
+  try {
+    await openChatWithContext({ tabId: tab.id });
+  } catch (error) {
+    console.error('Background: Failed to open chat from toolbar action:', error);
+  }
+});
+
+/**
  * Creates a single menu item with error handling.
  * @param {Object} menuConfig - Chrome context menu configuration
  * @returns {Promise<void>}
@@ -1311,6 +1393,42 @@ async function executeTabContentExtraction(tabId) {
   });
 }
 
+/**
+ * Returns whether a tab can host the side panel. Extension and browser
+ * internal pages cannot be used with chrome.sidePanel.open().
+ * @param {Object} tab - Chrome tab descriptor.
+ * @returns {boolean} True when the tab is a regular web page.
+ */
+function isUsablePanelTab(tab) {
+  const url = String(tab?.url || '');
+  return Boolean(
+    tab && tab.id !== undefined && !/^(chrome|chrome-extension|edge|about|devtools):/i.test(url)
+  );
+}
+
+/**
+ * Resolves the most relevant regular web tab for extension-page entry points.
+ * Options pages are extension tabs, so the active tab at click time is not a
+ * valid side-panel host; prefer the active web tab in the same window instead.
+ * @param {number|null} preferredTabId - Optional requested tab id.
+ * @returns {Promise<number|null>} A side-panel-capable tab id.
+ */
+async function resolvePanelTabId(preferredTabId = null) {
+  let tabs = await chrome.tabs.query({ lastFocusedWindow: true });
+  let preferred = tabs.find((tab) => tab.id === preferredTabId);
+  let candidate = [preferred, ...tabs.filter((tab) => tab.active), ...tabs].find(isUsablePanelTab);
+
+  // An Options page may be opened in a separate extension window. If that
+  // window has no web tab, fall back to any regular tab in the browser.
+  if (!candidate) {
+    tabs = await chrome.tabs.query({});
+    preferred = tabs.find((tab) => tab.id === preferredTabId);
+    candidate = [preferred, ...tabs.filter((tab) => tab.active), ...tabs].find(isUsablePanelTab);
+  }
+
+  return candidate?.id ?? null;
+}
+
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'openPromptPaulFromSelection') {
@@ -1332,6 +1450,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.error('Background: Failed to open Prompt Paul from selection:', error);
         sendResponse({ success: false, error: error.message });
       });
+    return true;
+  }
+
+  // Deep link into the canonical chat from any extension surface.
+  if (request.action === 'openChat') {
+    const context = request.context || {};
+    const requestedTabId = context.tabId || request.tabId || sender.tab?.id;
+    resolvePanelTabId(requestedTabId)
+      .then((tabId) => {
+        if (tabId) return openChatWithContext({ ...context, tabId });
+
+        // Keep the Options entry point useful even when Chrome has no regular
+        // web tab available to host a side panel (for example in a fresh
+        // extension-only window).
+        return new Promise((resolve) => {
+          chrome.tabs.create({ url: chrome.runtime.getURL('chat.html') }, (tab) => {
+            if (chrome.runtime.lastError || !tab?.id) {
+              resolve({
+                success: false,
+                error: chrome.runtime.lastError?.message || 'Unable to open chat',
+              });
+              return;
+            }
+            resolve({ success: true, mode: 'tab', tabId: tab.id });
+          });
+        });
+      })
+      .then((result) => sendResponse(result))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
@@ -1617,4 +1764,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   // Handle other actions if any
+});
+
+// Website deep links: promptpaul.juanmackie.com can open the canonical chat
+// with context via chrome.runtime.sendMessage(EXTENSION_ID, { action: 'openChat',
+// context: { selectedText, mediaUrl, mediaType, instruction } }).
+chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
+  if (!request || request.action !== 'openChat') {
+    sendResponse({ success: false, error: 'Unsupported external action' });
+    return;
+  }
+  const context = request.context || {};
+  const resolveTab =
+    context.tabId || sender.tab?.id
+      ? Promise.resolve(context.tabId || sender.tab?.id)
+      : chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]?.id);
+  resolveTab
+    .then((tabId) => openChatWithContext({ ...context, tabId }))
+    .then((result) => sendResponse(result))
+    .catch((error) => sendResponse({ success: false, error: error.message }));
+  return true;
 });

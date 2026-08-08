@@ -6,11 +6,14 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 
 - Process selected text, images, video, and audio from the browser
 - Load page content into a side panel chat
+- Composer-led chat: a visible context tray shows every attached context (selection, media, page) with one-click detach, and contextual quick actions (Analyze/Proofread/Explain, page Summary/TL;DR/Technical) sit right above the input
+- Inline recovery on every response: Stop, Retry, Edit, Continue
 - Save custom instructions and quick actions
 - Support OpenClaw-compatible Agent Skills
 - Use page-aware action cards for sites like YouTube, GitHub, Gmail, and docs
 - Trim loaded content to stay within context limits
 - Store settings locally with opt-in anonymous analytics
+- Open the chat from the toolbar icon, context menus, the Options page, or website deep links
 
 ## Install
 
@@ -29,14 +32,14 @@ cd Chromeext_PromptPaul
 ## Configure
 
 1. Open the extension Options page
-2. Set your LLM endpoint, API key, and model. The extension does not ship with a demo API key.
+2. Follow the **Get Started** banner: Prompt Paul starts with a starter Mistral configuration so you can try the workflow immediately. Replace it with your own endpoint, API key, and model whenever you are ready, then click **Open Chat** to start in the side panel.
 3. Configure Web Search Grounding (optional):
    - Enable the **Web** toggle in the side panel to allow grounding
    - Add a Brave Search API key on the Options page (see [Brave's current plans and terms](https://brave.com/search/api/))
    - When a key is configured and the toggle is on, the model may search the web when current, verifiable, or time-sensitive information would improve the answer — search is a permission, not a mandate, so the model can still answer directly
    - The selected endpoint/model must support function calling; otherwise grounding will be disabled for that request
 4. Optionally set a system prompt and create custom instructions
-5. Save the profile you want to use
+5. Save each section explicitly — Connection, Privacy, and Web Search each have their own Save button. Stored API keys stay masked in the form and are only read on demand; you will be warned if you close the page with unsaved changes.
 
 > **Privacy note:** When Web Search is enabled, a model-generated query may derive from your prompt, conversation, selected text, page content, or media context and is sent to Brave. The full conversation is not sent unless represented in that query. The key is stored locally and never included in LLM payloads, analytics, or logs.
 

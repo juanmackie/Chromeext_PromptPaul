@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   executeBraveSearch,
+  BRAVE_LLM_CONTEXT_ENDPOINT,
   isValidSourceUrl,
   maskApiKey,
   MAX_QUERY_LENGTH,
@@ -97,6 +98,17 @@ describe('executeBraveSearch HTTP error mapping', () => {
     await expect(executeBraveSearch('test', 'key')).rejects.toThrow(/rate limit/);
   });
 
+  it('classifies 400 as a safe bad-request error', async () => {
+    mockFetch(400, '{"error":"unsupported parameter"}');
+    await expect(executeBraveSearch('test', 'key')).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      status: 400,
+      userMessage:
+        'Brave Search rejected the request. Try a shorter query or check the search settings.',
+      cause: '{"error":"unsupported parameter"}',
+    });
+  });
+
   it('throws generic error for 5xx', async () => {
     mockFetch(500);
     await expect(executeBraveSearch('test', 'key')).rejects.toThrow(/HTTP 500/);
@@ -119,6 +131,90 @@ describe('executeBraveSearch HTTP error mapping', () => {
     await expect(executeBraveSearch('test', 'key', { signal: controller.signal })).rejects.toThrow(
       /cancelled/
     );
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Request contract                                                   */
+/* ------------------------------------------------------------------ */
+
+describe('executeBraveSearch request contract', () => {
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('uses only documented LLM Context query parameters', async () => {
+    let request;
+    global.fetch = async (url, init) => {
+      request = { url, init };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          grounding: {
+            generic: [
+              {
+                url: 'https://example.com',
+                title: 'Example',
+                snippets: ['A result'],
+              },
+            ],
+          },
+        }),
+      };
+    };
+
+    await executeBraveSearch('test query', 'redacted-key', { freshness: Freshness.WEEK });
+
+    const parsedUrl = new URL(request.url);
+    expect(`${parsedUrl.origin}${parsedUrl.pathname}`).toBe(BRAVE_LLM_CONTEXT_ENDPOINT);
+    expect([...parsedUrl.searchParams.keys()].sort()).toEqual([
+      'count',
+      'freshness',
+      'maximum_number_of_snippets',
+      'maximum_number_of_snippets_per_url',
+      'maximum_number_of_tokens',
+      'maximum_number_of_tokens_per_url',
+      'maximum_number_of_urls',
+      'q',
+    ]);
+    expect(parsedUrl.searchParams.get('q')).toBe('test query');
+    expect(parsedUrl.searchParams.get('count')).toBe('5');
+    expect(parsedUrl.searchParams.get('maximum_number_of_urls')).toBe('5');
+    expect(parsedUrl.searchParams.get('maximum_number_of_tokens')).toBe('2048');
+    expect(parsedUrl.searchParams.get('maximum_number_of_snippets')).toBe('15');
+    expect(parsedUrl.searchParams.get('maximum_number_of_snippets_per_url')).toBe('5');
+    expect(parsedUrl.searchParams.get('maximum_number_of_tokens_per_url')).toBe('1024');
+    expect(parsedUrl.searchParams.get('freshness')).toBe(Freshness.WEEK);
+    expect(parsedUrl.searchParams.has('extra_snippets')).toBe(false);
+    expect(request.init.method).toBe('GET');
+    expect(request.init.headers['X-Subscription-Token']).toBe('redacted-key');
+  });
+
+  it('omits optional freshness when it is not supplied', async () => {
+    let requestedUrl;
+    global.fetch = async (url) => {
+      requestedUrl = new URL(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          grounding: {
+            generic: [{ url: 'https://example.com', title: 'Example', snippets: [] }],
+          },
+        }),
+      };
+    };
+
+    await executeBraveSearch('test query', 'redacted-key');
+
+    expect(requestedUrl.searchParams.has('freshness')).toBe(false);
   });
 });
 
