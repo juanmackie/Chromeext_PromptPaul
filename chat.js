@@ -289,6 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedText = null;
     selectedTextDiv.textContent = '';
     refreshSelectedTextActionState();
+    syncChatAreaHeight();
   }
 
   function getSelectedText() {
