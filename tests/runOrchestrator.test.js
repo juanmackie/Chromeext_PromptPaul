@@ -179,6 +179,63 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     const promptBare = orch._buildSystemPrompt({ config: {} }, eligibleSkills);
     expect(promptBare).toContain('Available skills');
   });
+
+  it('directs pageActions runs to perform page-achievable tasks instead of describing steps', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const prompt = orch._buildSystemPrompt({ config: {}, pageActions: { enabled: true } }, []);
+
+    expect(prompt).toContain('ACT MODE: Page tools are enabled and callable for this run.');
+    expect(prompt).toContain('The tool list in this request is authoritative');
+    expect(prompt).toContain('do not claim that you lack browser or page tools');
+    expect(prompt).toContain('Available page tools: page_get_state, page_click');
+    expect(prompt).toContain('PERFORM it with the tools');
+    expect(prompt).toContain('call page_get_state first');
+    expect(prompt).toContain('re-inspect after every mutation');
+    expect(prompt).toContain('summarize what you actually did on the page');
+  });
+
+  it('never enumerates tool limitations and tells the model to answer normally', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const prompt = orch._buildSystemPrompt({ config: {}, pageActions: { enabled: true } }, []);
+
+    // Directs tool use for page-achievable tasks...
+    expect(prompt).toContain('ACT MODE:');
+    expect(prompt).toContain('PERFORM it with the tools');
+    // ...but never lists capabilities the tools lack. Enumerating them made
+    // models lead with "I can't" refusals for ordinary chat requests, so the
+    // block only instructs answering normally instead.
+    expect(prompt).not.toContain('terminal or OS');
+    expect(prompt).not.toContain('git clone');
+    expect(prompt).not.toContain('OUT OF SCOPE');
+    expect(prompt).not.toContain('JavaScript');
+    expect(prompt).toContain('just answer normally as a helpful assistant');
+    expect(prompt).toContain('that does not mean the tools are unavailable');
+    expect(prompt).toContain('Never fake an action');
+  });
+
+  it('lists owned-tab tools only when Tabs is enabled', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const currentTabPrompt = orch._buildSystemPrompt(
+      { config: {}, pageActions: { enabled: true, multiTabEnabled: false } },
+      []
+    );
+    expect(currentTabPrompt).toContain('page_request_user_input');
+    expect(currentTabPrompt).not.toContain('page_open_link');
+
+    const tabsPrompt = orch._buildSystemPrompt(
+      { config: {}, pageActions: { enabled: true, multiTabEnabled: true } },
+      []
+    );
+    expect(tabsPrompt).toContain('page_open_link');
+    expect(tabsPrompt).toContain('page_switch_tab');
+  });
+
+  it('omits the PAGE ACTIONS block when page actions are disabled', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const prompt = orch._buildSystemPrompt({ config: {} }, []);
+
+    expect(prompt).not.toContain('PAGE ACTIONS:');
+  });
 });
 
 describe('RunOrchestrator._buildTools', () => {
@@ -192,7 +249,6 @@ describe('RunOrchestrator._buildTools', () => {
 
     expect(names).toContain('skills_list');
     expect(names).toContain('skill_view');
-    expect(names).toContain('load_skill');
   });
 
   it('stops advertising skill-loader tools once a skill has been loaded', async () => {
@@ -205,7 +261,31 @@ describe('RunOrchestrator._buildTools', () => {
 
     expect(names).not.toContain('skills_list');
     expect(names).not.toContain('skill_view');
-    expect(names).not.toContain('load_skill');
+  });
+
+  it('advertises owned-tab tools only for an explicitly enabled run', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const disabled = await orch._buildTools({
+      config: {},
+      loadedSkills: new Set(),
+      pageActions: { enabled: true, multiTabEnabled: false },
+    });
+    expect(disabled.map((tool) => tool.function.name)).not.toContain('page_open_tab');
+
+    const enabled = await orch._buildTools({
+      config: {},
+      loadedSkills: new Set(),
+      pageActions: { enabled: true, multiTabEnabled: true, snapshot: {} },
+    });
+    expect(enabled.map((tool) => tool.function.name)).toEqual(
+      expect.arrayContaining([
+        'page_list_tabs',
+        'page_open_tab',
+        'page_open_link',
+        'page_switch_tab',
+        'page_close_tab',
+      ])
+    );
   });
 });
 
@@ -1386,5 +1466,830 @@ describe('provider tool-choice payloads', () => {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+});
+
+describe('RunOrchestrator page actions', () => {
+  function makeSnapshot() {
+    return {
+      snapshotId: 'page-snap-1',
+      url: 'https://example.test/form',
+      title: 'Example form',
+      header: 'Current page',
+      content: '[0] <input label="Search">\\n[1] <button label="Open details">',
+      footer: 'End of page',
+      elements: [
+        { index: 0, tag: 'input', label: 'Search', type: 'text', sensitive: false },
+        { index: 1, tag: 'button', label: 'Open details', text: 'Open details', sensitive: false },
+      ],
+    };
+  }
+
+  function makeCall(id, name, args) {
+    return { id, function: { name, arguments: JSON.stringify(args) } };
+  }
+
+  it('advertises page tools only for an explicitly opted-in run', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const disabledId = await orch.startRun({ tool_choice: 'auto', sourceTabId: 7 });
+    const disabled = await orch._buildTools(orch.activeRuns.get(disabledId));
+    expect(disabled.map((tool) => tool.function.name)).not.toContain('page_get_state');
+
+    const enabledId = await orch.startRun({
+      tool_choice: 'auto',
+      pageActions: true,
+      sourceTabId: 7,
+    });
+    const enabledRun = orch.activeRuns.get(enabledId);
+    const initialTools = await orch._buildTools(enabledRun);
+    expect(orch._getEffectiveToolChoice(enabledRun)).toBe('page_get_state');
+    expect(initialTools.map((tool) => tool.function.name)).toEqual(['page_get_state']);
+    enabledRun.pageActions.snapshot = makeSnapshot();
+    const enabled = await orch._buildTools(enabledRun);
+    expect(orch._getEffectiveToolChoice(enabledRun)).toBe('auto');
+    expect(enabled.map((tool) => tool.function.name)).toEqual(
+      expect.arrayContaining([
+        'page_get_state',
+        'page_click',
+        'page_input',
+        'page_select',
+        'page_scroll',
+      ])
+    );
+
+    const restricted = new RunOrchestrator(createStubSkillManager(), {
+      pageActionAvailabilityProvider: async () => false,
+    });
+    const restrictedId = await restricted.startRun({
+      tool_choice: 'auto',
+      pageActions: true,
+      sourceTabId: 7,
+    });
+    expect(
+      (await restricted._buildTools(restricted.activeRuns.get(restrictedId))).map(
+        (tool) => tool.function.name
+      )
+    ).not.toContain('page_get_state');
+  });
+
+  it('keeps the Act inspection tool available before a forced user tool', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const runId = await orch.startRun({
+      tool_choice: 'lookup',
+      tools: [
+        {
+          name: 'lookup',
+          description: 'Lookup a record',
+          parameters: { type: 'object', properties: {} },
+          endpointUrl: 'https://tools.example.test/lookup',
+        },
+      ],
+      pageActions: true,
+      sourceTabId: 7,
+    });
+    const run = orch.activeRuns.get(runId);
+
+    expect(orch._getEffectiveToolChoice(run)).toBe('page_get_state');
+    expect((await orch._buildTools(run)).map((tool) => tool.function.name)).toEqual([
+      'page_get_state',
+    ]);
+
+    run.pageActions.snapshot = makeSnapshot();
+    expect(orch._getEffectiveToolChoice(run)).toBe('lookup');
+    expect((await orch._buildTools(run)).map((tool) => tool.function.name)).toContain('lookup');
+    expect((await orch._buildTools(run)).map((tool) => tool.function.name)).toContain('page_click');
+  });
+
+  it('requires confirmation before a default-mode mutation and executes once after approval', async () => {
+    const calls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName, args) => {
+        calls.push({ actionName, args });
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        return { success: true, message: 'updated', snapshot: makeSnapshot() };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-1', 'page_get_state', {}));
+
+    const actionPromise = orch.executeTool(
+      runId,
+      makeCall('click-1', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(confirmation).toMatchObject({ action: 'page_click', risk: 'medium' });
+    // Bounded origin/title context is included for the approval card.
+    expect(confirmation.origin).toBe('example.test');
+    expect(confirmation.title).toBe('Example form');
+    expect(calls).toHaveLength(1);
+
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
+    const result = await actionPromise;
+    expect(result.result.message).toBe('updated');
+    expect(calls).toHaveLength(2);
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(false);
+  });
+
+  it('approves a cross-origin link and exposes bounded destination context', async () => {
+    const linkSnapshot = () => ({
+      ...makeSnapshot(),
+      elements: [
+        ...makeSnapshot().elements,
+        {
+          index: 2,
+          tag: 'a',
+          role: 'link',
+          label: 'External docs',
+          text: 'External docs',
+          href: 'https://external.example/docs?token=secret',
+        },
+      ],
+    });
+    let currentUrl = 'https://example.test/form';
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionDocumentProvider: async () => ({ url: currentUrl }),
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: linkSnapshot() };
+        currentUrl = 'https://external.example/docs';
+        return { success: true, navigated: true, navigationUrl: currentUrl };
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('link-state', 'page_get_state', {}));
+
+    const actionPromise = orch.executeTool(
+      runId,
+      makeCall('link-click', 'page_click', { snapshotId: 'page-snap-1', index: 2 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(confirmation).toMatchObject({
+      destination: 'https://external.example/docs',
+      destinationOrigin: 'external.example',
+    });
+    expect(confirmation.destination).not.toContain('secret');
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
+    const result = await actionPromise;
+    expect(result.result.navigated).toBe(true);
+    expect(orch.activeRuns.get(runId).pageActions.allowedOrigins).toContain(
+      'https://external.example'
+    );
+  });
+
+  it('opens a blank-target link in an owned tab without exposing its query string', async () => {
+    const linkSnapshot = () => ({
+      ...makeSnapshot(),
+      elements: [
+        ...makeSnapshot().elements,
+        {
+          index: 2,
+          tag: 'a',
+          role: 'link',
+          label: 'Open report',
+          text: 'Open report',
+          href: 'https://reports.example/report',
+          target: '_blank',
+        },
+      ],
+    });
+    const tabCalls = [];
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: linkSnapshot() }
+          : { success: true, linkUrl: 'https://reports.example/report?session=secret' },
+      pageTabExecutor: async (_runId, actionName, args) => {
+        tabCalls.push({ actionName, args });
+        return { targetTabId: 12, tab: { tabId: 12, url: 'https://reports.example/report' } };
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({
+      pageActions: true,
+      pageActionsMultiTab: true,
+      sourceTabId: 7,
+      tool_choice: 'auto',
+    });
+    await orch.executeTool(runId, makeCall('blank-state', 'page_get_state', {}));
+
+    const actionPromise = orch.executeTool(
+      runId,
+      makeCall('blank-open', 'page_open_link', {
+        snapshotId: 'page-snap-1',
+        index: 2,
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(confirmation.destination).toBe('https://reports.example/report');
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
+    const result = await actionPromise;
+    expect(result.result.tab.tabId).toBe(12);
+    expect(tabCalls).toEqual([
+      {
+        actionName: 'page_open_tab',
+        args: { url: 'https://reports.example/report?session=secret', background: false },
+      },
+    ]);
+    expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
+  });
+
+  it('approves every policy-allowed page action for the rest of the run when requested', async () => {
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-session', 'page_get_state', {}));
+
+    const firstAction = orch.executeTool(
+      runId,
+      makeCall('click-session', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const firstConfirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(
+      orch.resolvePageActionDecision(runId, firstConfirmation.confirmationId, true, true)
+    ).toBe(true);
+    await firstAction;
+
+    const run = orch.activeRuns.get(runId);
+    expect(run.pageActions.sessionApproval).toBe(true);
+    const ordinaryResult = await orch.executeTool(
+      runId,
+      makeCall('input-session', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'hello',
+      })
+    );
+    expect(ordinaryResult.result.success).toBe(true);
+    expect(events.filter((event) => event.type === 'page_action_confirmation')).toHaveLength(1);
+
+    run.pageActions.snapshot.elements[1] = {
+      ...run.pageActions.snapshot.elements[1],
+      label: 'Submit order',
+      text: 'Submit order',
+    };
+    const highRiskAction = orch.executeTool(
+      runId,
+      makeCall('click-session-high', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    const highRiskResult = await highRiskAction;
+    expect(highRiskResult.result.success).toBe(true);
+    expect(events.filter((event) => event.type === 'page_action_confirmation')).toHaveLength(1);
+  });
+
+  it('continues after an approved navigation and forces a fresh snapshot', async () => {
+    let currentUrl = 'https://example.test/form';
+    const tasksSnapshot = () => ({
+      ...makeSnapshot(),
+      content: '[0] <input label="Search">\\n[1] <button label="Tasks">',
+      elements: [
+        makeSnapshot().elements[0],
+        { ...makeSnapshot().elements[1], label: 'Tasks', text: 'Tasks' },
+      ],
+    });
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => false,
+      pageActionDocumentProvider: async () => ({ url: currentUrl }),
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'clearPageActionSession') return { success: true };
+        if (actionName === 'page_get_state') {
+          return {
+            success: true,
+            snapshot: { ...tasksSnapshot(), url: currentUrl },
+          };
+        }
+        currentUrl = 'https://example.test/tasks';
+        return {
+          success: true,
+          navigated: true,
+          navigationUrl: currentUrl,
+          message: 'navigated',
+        };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    await orch.executeTool(runId, makeCall('state-before-nav', 'page_get_state', {}));
+    const actionPromise = orch.executeTool(
+      runId,
+      makeCall('click-nav', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(confirmation).toBeTruthy();
+
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
+    const result = await actionPromise;
+    const run = orch.activeRuns.get(runId);
+    expect(result.result.navigated).toBe(true);
+    expect(result.result.notice).toContain('Navigation completed');
+    expect(run.pageActions.documentUrl).toBe('https://example.test/tasks');
+    expect(run.pageActions.snapshot).toBeNull();
+    expect(orch._getEffectiveToolChoice(run)).toBe('page_get_state');
+
+    const refreshed = await orch.executeTool(
+      runId,
+      makeCall('state-after-nav', 'page_get_state', {})
+    );
+    expect(refreshed.result.snapshot.url).toBe('https://example.test/tasks');
+    orch.abort(runId);
+  });
+
+  it('aborts a pending page-action approval and clears the pending decision', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, snapshot: makeSnapshot() },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-abort', 'page_get_state', {}));
+    const pending = orch.executeTool(
+      runId,
+      makeCall('click-abort', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    orch.abort(runId);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('allows trusted mode for ordinary controls but still blocks sensitive fields', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-2', 'page_get_state', {}));
+    const result = await orch.executeTool(
+      runId,
+      makeCall('input-1', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'hello' })
+    );
+    expect(result.result.success).toBe(true);
+
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.snapshot.elements[0].sensitive = true;
+    const blocked = await orch.executeTool(
+      runId,
+      makeCall('input-2', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'secret' })
+    );
+    expect(blocked.result.error).toBe('PAGE_ACTION_BLOCKED');
+  });
+
+  it('rejects stale snapshot targets before invoking the page', async () => {
+    let actionCalls = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => {
+        actionCalls += 1;
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-3', 'page_get_state', {}));
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.snapshot.snapshotId = 'different-snapshot';
+    const result = await orch.executeTool(
+      runId,
+      makeCall('click-2', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    expect(result.result.error).toBe('PAGE_STATE_STALE');
+    expect(actionCalls).toBe(1);
+  });
+
+  it('hints the model when page_get_state returns an empty page with no controls', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({
+        success: true,
+        snapshot: {
+          snapshotId: 'empty-1',
+          url: 'https://example.test/',
+          title: 'New tab',
+          header: '',
+          content: '',
+          footer: '',
+          elements: [],
+        },
+      }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const result = await orch.executeTool(runId, makeCall('state-empty', 'page_get_state', {}));
+
+    expect(result.result.snapshot.actionableHint).toMatch(/nothing to act on/i);
+    expect(result.result.snapshot.actionableHint).toMatch(/ask the user to open the page/i);
+  });
+
+  it('hints the model to ask for the target page when a page has text but no controls', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({
+        success: true,
+        snapshot: {
+          snapshotId: 'text-1',
+          url: 'https://example.test/article',
+          title: 'An article',
+          header: 'Article body text',
+          content: '',
+          footer: '',
+          elements: [],
+        },
+      }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const result = await orch.executeTool(runId, makeCall('state-text', 'page_get_state', {}));
+
+    expect(result.result.snapshot.actionableHint).toMatch(/no interactive controls/i);
+    expect(result.result.snapshot.actionableHint).toMatch(/ask the user to open the target page/i);
+  });
+
+  it('fails fast with one actionable error when the content-script bridge is missing', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => {
+        const error = new Error('Receiving end does not exist.');
+        error.code = 'PAGE_ACTION_MESSAGE_FAILED';
+        throw error;
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    await expect(
+      orch.executeTool(runId, makeCall('state-dead', 'page_get_state', {}))
+    ).rejects.toMatchObject({
+      code: 'PAGE_ACTION_MESSAGE_FAILED',
+    });
+    const errorEvent = events.find(
+      (event) => event.type === 'page_action_state' && event.state === 'error'
+    );
+    expect(errorEvent).toBeTruthy();
+    expect(errorEvent.error).toContain('Reload the tab and try again');
+  });
+
+  it('emits a terminal page-action error state for non-terminal executor failures', async () => {
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        throw new Error('Synthetic page action failure.');
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-error-state', 'page_get_state', {}));
+
+    await expect(
+      orch.executeTool(
+        runId,
+        makeCall('click-error-state', 'page_click', {
+          snapshotId: 'page-snap-1',
+          index: 0,
+        })
+      )
+    ).rejects.toThrow('Synthetic page action failure.');
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'page_action_state',
+        state: 'error',
+        action: 'page_click',
+        error: 'Synthetic page action failure.',
+      })
+    );
+  });
+
+  it('classifies handshake, bridge, and navigation failures as terminal errors', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    for (const code of [
+      'PAGE_ACTION_NO_CONTENT_SCRIPT',
+      'PAGE_ACTION_MESSAGE_FAILED',
+      'PAGE_ACTION_NAVIGATED',
+      'PAGE_ACTION_TIMEOUT',
+      'PAGE_ACTION_NAVIGATION_FAILED',
+      'PAGE_ACTION_NAVIGATION_TIMEOUT',
+    ]) {
+      const error = new Error('bridge down');
+      error.code = code;
+      expect(orch._isPageActionTerminalError(error)).toBe(true);
+    }
+    expect(orch._isPageActionTerminalError(null)).toBe(false);
+  });
+
+  it('propagates a run-start handshake failure as one actionable error', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionAvailabilityProvider: async () => {
+        const error = new Error(
+          'Page actions are on, but the Prompt Paul content script is not connected to this tab. Reload the tab and try again.'
+        );
+        error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
+        throw error;
+      },
+    });
+    await expect(
+      orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' })
+    ).rejects.toMatchObject({
+      code: 'PAGE_ACTION_NO_CONTENT_SCRIPT',
+    });
+  });
+
+  it('clears the content-script session on the terminal error path via _terminateRun', async () => {
+    const clearCalls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'clearPageActionSession') clearCalls.push(true);
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    orch._terminateRun(runId, { type: 'error', error: 'boom' });
+
+    expect(clearCalls).toHaveLength(1);
+    expect(events.some((event) => event.type === 'error')).toBe(true);
+    expect(orch.activeRuns.has(runId)).toBe(false);
+  });
+
+  it('aborts the controller and clears the session when terminating an aborted run', async () => {
+    const clearCalls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'clearPageActionSession') clearCalls.push(true);
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+
+    orch._terminateRun(runId, { type: 'aborted' }, { abortSignal: true });
+
+    expect(run.abortController.signal.aborted).toBe(true);
+    expect(clearCalls).toHaveLength(1);
+    expect(orch.activeRuns.has(runId)).toBe(false);
+  });
+
+  it('emits the terminal event and cleans up when finalizing a completed run', async () => {
+    const clearCalls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'clearPageActionSession') clearCalls.push(true);
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.accumulatedText = 'Done';
+
+    await orch._finalizeTextResponse(run);
+
+    expect(events.some((event) => event.type === 'complete' && event.content === 'Done')).toBe(
+      true
+    );
+    expect(clearCalls).toHaveLength(1);
+    expect(orch.activeRuns.has(runId)).toBe(false);
+  });
+
+  it('binds the run to the first snapshot document and invalidates after mid-run navigation', async () => {
+    let currentUrl = 'https://example.test/form';
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionDocumentProvider: async () => ({ url: currentUrl }),
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, snapshot: makeSnapshot() },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    await orch.executeTool(runId, makeCall('state-nav', 'page_get_state', {}));
+    expect(orch.activeRuns.get(runId).pageActions.documentUrl).toBe('https://example.test/form');
+
+    // The tab navigates mid-run; the next action must fail fast with a
+    // navigation error instead of acting on the new page.
+    currentUrl = 'https://other.test/elsewhere';
+    await expect(
+      orch.executeTool(
+        runId,
+        makeCall('input-nav', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'hi' })
+      )
+    ).rejects.toMatchObject({ code: 'PAGE_ACTION_NAVIGATED' });
+  });
+
+  it('invalidates the run when a fresh snapshot reports a different document', async () => {
+    let snapUrl = 'https://example.test/form';
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionDocumentProvider: async () => ({ url: 'https://example.test/form' }),
+      pageActionExecutor: async () => ({
+        success: true,
+        snapshot: { ...makeSnapshot(), url: snapUrl },
+      }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    await orch.executeTool(runId, makeCall('state-a', 'page_get_state', {}));
+    snapUrl = 'https://example.test/elsewhere';
+    await expect(
+      orch.executeTool(runId, makeCall('state-b', 'page_get_state', {}))
+    ).rejects.toMatchObject({ code: 'PAGE_ACTION_NAVIGATED' });
+  });
+
+  it('runs a multi-step page flow beyond the old 3-turn cap when each step succeeds', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName, args) => {
+        if (actionName === 'clearPageActionSession') return { success: true };
+        return {
+          success: true,
+          message: `${actionName} done`,
+          snapshot: {
+            snapshotId: `snap-${actionName}-${args?.index ?? 'x'}`,
+            url: 'https://example.test/mail',
+            title: 'Mail',
+            header: 'Mail app',
+            content: '[0] <input label="To">\n[1] <input label="Subject">',
+            footer: '',
+            elements: [
+              { index: 0, tag: 'input', label: 'To', type: 'text', sensitive: false },
+              { index: 1, tag: 'input', label: 'Subject', type: 'text', sensitive: false },
+            ],
+          },
+        };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_id, event) => events.push(event);
+    global.chrome = { runtime: { sendMessage: async () => {} } };
+
+    const toolCalls = [
+      ['call-get-1', 'page_get_state', {}],
+      ['call-click', 'page_click', { snapshotId: 'snap-page_get_state-x', index: 1 }],
+      [
+        'call-input-1',
+        'page_input',
+        { snapshotId: 'snap-page_click-1', index: 0, text: 'AI and me' },
+      ],
+      ['call-get-2', 'page_get_state', {}],
+      [
+        'call-input-2',
+        'page_input',
+        { snapshotId: 'snap-page_get_state-x', index: 0, text: 'haiku body' },
+      ],
+    ];
+    let callCount = 0;
+    global.fetch = async () => {
+      callCount += 1;
+      let delivered = false;
+      return {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (delivered) return { done: true, value: undefined };
+              delivered = true;
+              let delta;
+              if (callCount <= toolCalls.length) {
+                const [id, name, args] = toolCalls[callCount - 1];
+                delta = {
+                  tool_calls: [
+                    { index: 0, id, function: { name, arguments: JSON.stringify(args) } },
+                  ],
+                };
+              } else {
+                delta = { content: 'Email composed.' };
+              }
+              const data = JSON.stringify({ choices: [{ delta }] });
+              return { done: false, value: new TextEncoder().encode(`data: ${data}\n\n`) };
+            },
+          }),
+        },
+      };
+    };
+
+    try {
+      const runId = await orch.startRun({
+        llmEndpoint: 'https://api.openai.com/v1/chat/completions',
+        apiKey: 'sk-test',
+        modelName: 'gpt-4o',
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+        messages: [{ role: 'user', content: 'Compose an email' }],
+      });
+      await orch.execute(runId, {});
+
+      const complete = events.find((event) => event.type === 'complete');
+      expect(complete?.content).toContain('Email composed');
+      expect(events.filter((event) => event.type === 'tool_complete')).toHaveLength(5);
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+    } finally {
+      delete global.chrome;
+      delete global.fetch;
+    }
+  });
+
+  it('still caps repeated failing tool calls at 3 consecutive retries', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    const events = [];
+    orch._emitEvent = (_id, event) => events.push(event);
+    global.chrome = { runtime: { sendMessage: async () => {} } };
+
+    let callCount = 0;
+    global.fetch = async () => {
+      callCount += 1;
+      let delivered = false;
+      return {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (delivered) return { done: true, value: undefined };
+              delivered = true;
+              let delta;
+              if (callCount <= 4) {
+                delta = {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: `call-stale-${callCount}`,
+                      function: {
+                        name: 'page_input',
+                        arguments: JSON.stringify({
+                          snapshotId: 'stale-snapshot',
+                          index: 0,
+                          text: 'x',
+                        }),
+                      },
+                    },
+                  ],
+                };
+              } else {
+                delta = { content: 'done' };
+              }
+              const data = JSON.stringify({ choices: [{ delta }] });
+              return { done: false, value: new TextEncoder().encode(`data: ${data}\n\n`) };
+            },
+          }),
+        },
+      };
+    };
+
+    try {
+      const runId = await orch.startRun({
+        llmEndpoint: 'https://api.openai.com/v1/chat/completions',
+        apiKey: 'sk-test',
+        modelName: 'gpt-4o',
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+        messages: [{ role: 'user', content: 'Fill the form' }],
+      });
+      await expect(orch.execute(runId, {})).rejects.toThrow(/Maximum tool call retries exceeded/);
+    } finally {
+      delete global.chrome;
+      delete global.fetch;
+    }
+  });
+
+  it('adds a refreshed-snapshot notice to mutation results but not to inspections', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, message: 'done', snapshot: makeSnapshot() },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const stateResult = await orch.executeTool(runId, makeCall('state-n', 'page_get_state', {}));
+    expect(stateResult.result.notice).toBeUndefined();
+
+    const clickResult = await orch.executeTool(
+      runId,
+      makeCall('click-n', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'hello' })
+    );
+    expect(clickResult.result.notice).toMatch(/refreshed/);
+    expect(clickResult.result.notice).toMatch(/snapshotId/);
   });
 });

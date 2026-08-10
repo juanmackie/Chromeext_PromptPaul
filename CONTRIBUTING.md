@@ -37,6 +37,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 ## Development Setup
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed setup instructions.
+See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) for the review checklist.
 
 ### Quick Start
 

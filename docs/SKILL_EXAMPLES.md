@@ -41,6 +41,12 @@ apply humanizer to this message
 with weather-guide, explain this forecast
 ```
 
+## Import and Export
+
+Custom skill imports and exports use the canonical v2 Agent Skills format: an object with
+`version: '2.0'` and a `skills` array whose entries contain `skillMd` frontmatter and instructions.
+Legacy arrays and field-based skill records are not imported.
+
 ## Working With Context
 
 - Use `/skill humanizer` on text you pasted or selected

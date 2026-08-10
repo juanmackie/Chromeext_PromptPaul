@@ -119,47 +119,11 @@
 
   /* Focus Ring */
   --ext-focus-ring: 0 0 0 2px var(--ext-background), 0 0 0 4px var(--ext-primary);
-
-  /* Legacy/Compatibility Variables */
-  --background: var(--ext-background);
-  --foreground: var(--ext-foreground);
-  --card: var(--ext-card);
-  --card-foreground: var(--ext-card-foreground);
-  --popover: var(--ext-popover);
-  --popover-foreground: var(--ext-popover-foreground);
-  --primary: var(--ext-primary);
-  --primary-foreground: var(--ext-primary-foreground);
-  --secondary: var(--ext-secondary);
-  --secondary-foreground: var(--ext-secondary-foreground);
-  --muted: var(--ext-muted);
-  --muted-foreground: var(--ext-muted-foreground);
-  --accent: var(--ext-accent);
-  --accent-foreground: var(--ext-accent-foreground);
-  --destructive: var(--ext-destructive);
-  --destructive-foreground: var(--ext-destructive-foreground);
-  --border: var(--ext-border);
-  --input: var(--ext-input);
-  --ring: var(--ext-ring);
-
-  /* Brand Variables (Legacy) */
-  --brand-primary: var(--ext-primary);
-  --brand-secondary: var(--ext-secondary);
-  --brand-background: var(--ext-background);
-  --brand-text: var(--ext-foreground);
-  --surface-color: var(--ext-card);
-  --background-color: var(--ext-background);
-  --text-color: var(--ext-foreground);
-  --border-color: var(--ext-border);
-  --shadow-sm: var(--ext-shadow-sm);
-  --shadow-md: var(--ext-shadow-md);
-  --shadow-lg: var(--ext-shadow-lg);
-  --font-family: var(--ext-font-family);
 }
 
 /* Dark Theme */
 [data-theme='dark'],
-.dark-theme,
-.ext-dark {
+.dark-theme {
   /* Core Colors - Dark Theme - Indigo Monochromatic */
   --ext-background: #0a0a1a;
   --ext-foreground: #e8e6f0;
@@ -237,7 +201,7 @@
 
 /* System Preference Detection */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light-theme):not(.ext-light) {
+  :root:not([data-theme='light']) {
     /* Apply dark theme variables when system prefers dark and no explicit light theme is set */
     --ext-background: #0a0a1a;
     --ext-foreground: #e8e6f0;

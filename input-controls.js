@@ -94,15 +94,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function validateJSON(jsonString) {
-    try {
-      JSON.parse(jsonString);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   function showError(fieldId, message) {
     const errorElement = document.getElementById(fieldId + 'Error');
     const inputElement = document.getElementById(fieldId);

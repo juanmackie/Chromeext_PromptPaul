@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Compose Fixture</title>
+  </head>
+  <body>
+    <form id="compose">
+      <input id="to" name="to" placeholder="Recipients" autocomplete="off" />
+      <input id="subject" name="subject" placeholder="Subject" />
+      <div id="body" contenteditable="true" role="textbox" aria-label="Message body">
+        <p>Hello</p>
+      </div>
+      <button id="continue" type="button">Continue</button>
+      <button id="plain" type="button">Save draft</button>
+    </form>
+    <script>
+      document.getElementById('continue').addEventListener('click', () => {
+        document.getElementById('subject').value = 'navigated';
+      });
+    </script>
+  </body>
+</html>

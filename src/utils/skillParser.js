@@ -7,22 +7,6 @@
  * @module skillParser
  */
 
-const ALLOWED_FRONTMATTER_FIELDS = new Set([
-  'name',
-  'description',
-  'license',
-  'compatibility',
-  'metadata',
-  'allowed-tools',
-  'user-invocable',
-  'disable-model-invocation',
-  'command-dispatch',
-  'command-tool',
-  'command-arg-mode',
-  'homepage',
-]);
-
-const LEGACY_EXTENSION_FIELDS = ['version', 'triggers', 'tags', 'examples'];
 const MAX_NAME_LENGTH = 64;
 const MAX_DESCRIPTION_LENGTH = 1024;
 const MAX_COMPATIBILITY_LENGTH = 500;
@@ -48,18 +32,11 @@ export function parseSkillMarkdown(markdown, options = {}) {
   const frontmatterParts = extractFrontmatter(normalized);
 
   if (!frontmatterParts.hasFrontmatter) {
-    const trimmedLegacy = normalized.trim();
     return {
-      valid: true,
-      legacy: true,
-      metadata: {
-        name: 'unknown',
-        description: 'Legacy skill (no frontmatter)',
-        license: 'MIT',
-        metadata: {},
-      },
-      instructions: trimmedLegacy,
-      raw: markdown,
+      valid: false,
+      error: 'SKILL.md requires YAML frontmatter',
+      metadata: null,
+      instructions: null,
     };
   }
 
@@ -100,7 +77,6 @@ export function parseSkillMarkdown(markdown, options = {}) {
 
   return {
     valid: true,
-    legacy: false,
     metadata: validation.metadata,
     instructions: frontmatterParts.body,
     raw: markdown,
@@ -447,7 +423,7 @@ export function generateSkillMarkdown({ name, description, instructions, options
     frontmatterLines.push(`compatibility: ${formatYamlString(options.compatibility.trim())}`);
   }
 
-  const allowedTools = options.allowedTools ?? options['allowed-tools'];
+  const allowedTools = options['allowed-tools'];
   if (typeof allowedTools === 'string' && allowedTools.trim() !== '') {
     frontmatterLines.push(`allowed-tools: ${formatYamlString(allowedTools.trim())}`);
   }
@@ -534,67 +510,12 @@ export function extractSkillMetadata(parsedSkill) {
   };
 }
 
-/**
- * Converts legacy skill format to canonical SKILL.md.
- * @param {Object} legacySkill - Legacy skill object
- * @returns {Object} Canonical skill with skillMd field
- */
-export function migrateLegacySkill(legacySkill) {
-  const metadataExtensions = {};
-
-  if (legacySkill.version !== undefined) {
-    metadataExtensions['prompt-paul-version'] = String(legacySkill.version);
-  }
-  if (legacySkill.triggers !== undefined) {
-    metadataExtensions['prompt-paul-triggers'] = Array.isArray(legacySkill.triggers)
-      ? JSON.stringify(legacySkill.triggers)
-      : String(legacySkill.triggers);
-  }
-  if (legacySkill.tags !== undefined) {
-    metadataExtensions['prompt-paul-tags'] = Array.isArray(legacySkill.tags)
-      ? JSON.stringify(legacySkill.tags)
-      : String(legacySkill.tags);
-  }
-  if (legacySkill.examples !== undefined) {
-    metadataExtensions['prompt-paul-examples'] = Array.isArray(legacySkill.examples)
-      ? JSON.stringify(legacySkill.examples)
-      : String(legacySkill.examples);
-  }
-
-  const skillMd = generateSkillMarkdown({
-    name: legacySkill.name,
-    description: legacySkill.description,
-    instructions: legacySkill.content || legacySkill.instructions,
-    options: {
-      ...(legacySkill.license ? { license: legacySkill.license } : {}),
-      ...(legacySkill.compatibility ? { compatibility: legacySkill.compatibility } : {}),
-      ...(Object.keys(metadataExtensions).length > 0 ? { metadata: metadataExtensions } : {}),
-    },
-  });
-
-  return {
-    name: legacySkill.name,
-    skillMd,
-    lastUpdated: legacySkill.lastUpdated || new Date().toISOString(),
-  };
-}
-
 function normalizeLineEndings(value) {
   return value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
 function normalizeMetadataForValidation(metadata) {
   const normalized = { ...metadata };
-
-  if (normalized.allowedTools !== undefined && normalized['allowed-tools'] === undefined) {
-    normalized['allowed-tools'] = normalized.allowedTools;
-    delete normalized.allowedTools;
-  }
-
-  if (normalized.allowed_tools !== undefined && normalized['allowed-tools'] === undefined) {
-    normalized['allowed-tools'] = normalized.allowed_tools;
-    delete normalized.allowed_tools;
-  }
 
   // Normalize OpenClaw boolean fields from YAML strings to actual booleans
   for (const boolField of ['user-invocable', 'disable-model-invocation']) {
@@ -611,15 +532,6 @@ function normalizeMetadataForValidation(metadata) {
     !Array.isArray(normalized.metadata)
       ? { ...normalized.metadata }
       : {};
-
-  for (const legacyField of LEGACY_EXTENSION_FIELDS) {
-    if (normalized[legacyField] !== undefined) {
-      const key = `prompt-paul-${legacyField}`;
-      const value = normalized[legacyField];
-      metadataMap[key] = Array.isArray(value) ? JSON.stringify(value) : String(value);
-      delete normalized[legacyField];
-    }
-  }
 
   if (Object.keys(metadataMap).length > 0) {
     normalized.metadata = metadataMap;

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hang Fixture</title>
+  </head>
+  <body>
+    <button id="hang" type="button">Freeze me</button>
+    <script>
+      // A synchronous busy loop blocks the page's main thread (and therefore
+      // the content script's message listener) for 60 seconds, so a page_click
+      // on this button never receives a response and the executor times out.
+      document.getElementById('hang').addEventListener('click', () => {
+        const end = performance.now() + 60000;
+        while (performance.now() < end) {
+          // busy loop
+        }
+      });
+    </script>
+  </body>
+</html>

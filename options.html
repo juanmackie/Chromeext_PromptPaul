@@ -40,6 +40,11 @@
           <li>Open the <strong>side panel</strong> and start chatting.</li>
           <li>Use context menus or the sidebar buttons for quick actions.</li>
         </ol>
+        <p class="text-secondary-emphasis small mb-3">
+          Source checkouts are credential-free. A release build may contain a deliberately public,
+          quota-limited demo credential; do not use it for private or production data, and replace
+          it with your own key.
+        </p>
         <div class="d-flex align-items-center gap-2 setup-status mb-3">
           <span class="material-symbols-outlined setup-status-icon" id="setup-status-icon"
             >rocket_launch</span
@@ -88,63 +93,98 @@
           >
         </div>
         <p class="text-secondary-emphasis small">
-          Enter your LLM endpoint, API key, and model name to use Prompt Paul. API keys are stored
-          in Chrome storage and sent only when you send a prompt.
+          Choose an API-key endpoint or connect a ChatGPT subscription, then select a model. API
+          keys are stored in Chrome storage and sent only when you send a prompt.
         </p>
 
         <form id="optionsForm">
           <div class="mb-3">
-            <label for="llmEndpoint" class="form-label">
-              LLM API Endpoint
-              <button
-                type="button"
-                class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
-                aria-label="Help"
-              >
-                <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
-              </button>
-            </label>
-            <input
-              type="url"
-              id="llmEndpoint"
-              class="form-control"
-              placeholder="https://your-llm-provider.example/v1/chat/completions"
-              required
-            />
-            <div class="invalid-feedback" id="llmEndpointError"></div>
+            <label for="providerSelect" class="form-label">Connection type</label>
+            <select id="providerSelect" class="form-select">
+              <option value="api">API key / compatible endpoint</option>
+              <option value="codex">Codex subscription (ChatGPT)</option>
+            </select>
+            <div class="form-text">
+              Use an API key, or connect this profile to a ChatGPT subscription.
+            </div>
           </div>
 
-          <div class="mb-3">
-            <label for="apiKey" class="form-label">
-              API Key
-              <button
-                type="button"
-                class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                data-tooltip="Your API key for authentication. Keep this secure and never share it publicly."
-                aria-label="Help"
-              >
-                <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
-              </button>
-            </label>
-            <div class="input-group">
-              <input
-                type="password"
-                id="apiKey"
-                class="form-control"
-                placeholder="sk-..."
-                required
-              />
-              <button type="button" class="btn btn-outline-secondary" id="apiKeyToggle">
-                <span class="material-symbols-outlined" style="font-size: 1.25rem">visibility</span>
-              </button>
-              <button type="button" class="btn btn-outline-secondary" id="apiKeyCopy">
-                <span class="material-symbols-outlined" style="font-size: 1.25rem"
-                  >content_copy</span
+          <div
+            id="codexConnectionPanel"
+            class="alert alert-primary d-none"
+            role="region"
+            aria-live="polite"
+          >
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <strong>Codex subscription</strong>
+                <div id="codexConnectionStatus" class="small mt-1">Not connected.</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" id="connectCodexButton" class="btn btn-primary btn-sm">
+                  Sign in with ChatGPT
+                </button>
+                <button
+                  type="button"
+                  id="disconnectCodexButton"
+                  class="btn btn-outline-danger btn-sm d-none"
                 >
-              </button>
+                  Disconnect
+                </button>
+              </div>
             </div>
-            <div class="invalid-feedback" id="apiKeyError"></div>
+            <div id="codexDeviceCode" class="small mt-2 d-none"></div>
+          </div>
+
+          <div id="apiConnectionFields">
+            <div class="mb-3">
+              <label for="llmEndpoint" class="form-label">
+                LLM API Endpoint
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
+                </button>
+              </label>
+              <input
+                type="url"
+                id="llmEndpoint"
+                class="form-control"
+                placeholder="https://your-llm-provider.example/v1/chat/completions"
+              />
+              <div class="invalid-feedback" id="llmEndpointError"></div>
+            </div>
+
+            <div class="mb-3">
+              <label for="apiKey" class="form-label">
+                API Key
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Your API key for authentication. Keep this secure and never share it publicly."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
+                </button>
+              </label>
+              <div class="input-group">
+                <input type="password" id="apiKey" class="form-control" placeholder="sk-..." />
+                <button type="button" class="btn btn-outline-secondary" id="apiKeyToggle">
+                  <span class="material-symbols-outlined" style="font-size: 1.25rem"
+                    >visibility</span
+                  >
+                </button>
+                <button type="button" class="btn btn-outline-secondary" id="apiKeyCopy">
+                  <span class="material-symbols-outlined" style="font-size: 1.25rem"
+                    >content_copy</span
+                  >
+                </button>
+              </div>
+              <div class="invalid-feedback" id="apiKeyError"></div>
+            </div>
           </div>
 
           <div class="row g-3">
@@ -160,14 +200,37 @@
                   <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
                 </button>
               </label>
+              <div class="input-group">
+                <select id="modelName" class="form-select" required>
+                  <option value="">Connect or refresh to load models</option>
+                </select>
+                <button type="button" class="btn btn-outline-secondary" id="refreshModelsButton">
+                  Refresh
+                </button>
+              </div>
               <input
                 type="text"
-                id="modelName"
-                class="form-control"
-                placeholder="Enter model name"
-                required
+                id="customModelName"
+                class="form-control mt-2 d-none"
+                placeholder="Enter custom model ID"
               />
               <div class="invalid-feedback" id="modelNameError"></div>
+            </div>
+            <div class="col-md-4 d-none" id="reasoningLevelGroup">
+              <label for="reasoningLevel" class="form-label">
+                Thinking level
+                <button
+                  type="button"
+                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                  data-tooltip="Controls the reasoning effort used by the selected Codex model. Available levels depend on the model."
+                  aria-label="Help"
+                >
+                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
+                </button>
+              </label>
+              <select id="reasoningLevel" class="form-select">
+                <option value="medium">Medium</option>
+              </select>
             </div>
             <div class="col-md-4">
               <label class="form-label">Streaming Responses</label>
@@ -348,25 +411,6 @@
           "
         />
         <div class="collapse show" id="instructionsCollapse">
-          <div id="migrationPrompt" class="d-none">
-            <p class="mb-2">
-              <strong>Instructions Migration:</strong> Instructions are now stored only on this
-              device. Would you like to migrate your existing instructions from sync storage?
-            </p>
-            <div class="d-flex gap-2 mb-3">
-              <button type="button" id="migrateInstructionsBtn" class="btn btn-primary btn-sm">
-                &#128190; Migrate
-              </button>
-              <button
-                type="button"
-                id="dismissMigrationBtn"
-                class="btn btn-outline-secondary btn-sm"
-              >
-                &#10006; Dismiss
-              </button>
-            </div>
-          </div>
-
           <div id="instructions-list">
             <div class="d-flex justify-content-between align-items-end gap-3 mb-2 flex-wrap">
               <div class="flex-fill" style="min-width: 20rem">
@@ -1138,6 +1182,52 @@ What this skill does and when to use it.
             <span class="material-symbols-outlined" style="font-size: 1rem">currency_exchange</span>
             Pricing &amp; Quota Info
           </a>
+        </div>
+      </section>
+
+      <!-- Current-page actions Section -->
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">touch_app</span>
+          <h2 class="fs-5 fw-semibold mb-0">Current-Page Actions</h2>
+          <span class="ext-badge section-capability-badge" data-capability-badge>Capability</span>
+        </div>
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
+        <p class="text-secondary-emphasis small">
+          Turn on <strong>Act</strong> in the side panel to let Prompt Paul inspect and operate
+          semantic controls on the current tab. Page text is treated as untrusted data. The first
+          release is DOM-only: it does not control other tabs, run JavaScript, read cookies or
+          storage, or operate passwords, one-time codes, payment fields, or security controls.
+        </p>
+        <p class="text-secondary-emphasis small">
+          When Act is enabled, the bounded page snapshot is sent to your configured LLM endpoint.
+          Ordinary mutations ask for approval. Trusted mode is optional and still cannot bypass hard
+          safety blocks.
+        </p>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="pageActionsTrustedMode" />
+          <label class="form-check-label" for="pageActionsTrustedMode">
+            Trusted page actions (skip approval for allowed low/medium-risk actions)
+          </label>
+        </div>
+        <div class="form-text mb-3">
+          Default: off. Submits, sends, deletes, purchases, navigation, account/security changes,
+          and credential fields remain confirmation-gated or blocked.
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <button type="button" id="savePageActions" class="btn btn-primary">
+            <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
+            Save Page Action Settings
+          </button>
+          <span id="pageActionsSaveStatus" class="small text-secondary-emphasis"></span>
         </div>
       </section>
 

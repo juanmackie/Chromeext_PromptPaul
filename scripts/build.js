@@ -64,7 +64,7 @@ function validateManifest(manifest) {
 
   // Validate content scripts
   if (manifest.content_scripts) {
-    manifest.content_scripts.forEach((contentScript, index) => {
+    manifest.content_scripts.forEach((contentScript) => {
       if (contentScript.js) {
         contentScript.js.forEach((scriptPath) => {
           const fullPath = path.join(srcDir, scriptPath);
@@ -154,7 +154,7 @@ function copyFiles(manifest) {
     'options.css',
     'loading-states.css',
     'ui-primitives.css',
-    // Root-level vendored/legacy assets referenced by extension pages
+    // Root-level vendored assets referenced by extension pages
     'marked.min.js',
   ];
 
@@ -204,7 +204,24 @@ function copyFiles(manifest) {
     }
 
     if (fs.existsSync(srcPath)) {
-      fs.copyFileSync(srcPath, destPath);
+      let content = null;
+      if (file === 'options.js') {
+        content = fs.readFileSync(srcPath, 'utf8');
+        const demoKey = process.env.PROMPT_PAUL_DEMO_API_KEY?.trim() || '';
+        if (demoKey) {
+          content = content.replace(
+            "const STARTER_MISTRAL_API_KEY = '';",
+            `const STARTER_MISTRAL_API_KEY = ${JSON.stringify(demoKey)};`
+          );
+          console.log('  ✓ Injected configured public demo credential into options.js');
+        }
+      }
+
+      if (content === null) {
+        fs.copyFileSync(srcPath, destPath);
+      } else {
+        fs.writeFileSync(destPath, content);
+      }
       console.log(`  ✓ Copied ${file}`);
     } else {
       console.warn(`  ⚠ Warning: ${file} does not exist`);

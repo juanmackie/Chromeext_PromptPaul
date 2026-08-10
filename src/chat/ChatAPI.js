@@ -13,7 +13,9 @@
  */
 
 import { loadingManager } from '../../loadingManager.js';
-import { isProfileUsable, modelSupportsVision } from '../utils/profileRouting.js';
+import { modelSupportsVision, resolvePreferredProfile } from '../utils/profileRouting.js';
+import { normalizeToolDefinition } from '../utils/validation.js';
+import { setActiveRun } from './ChatRunRecovery.js';
 
 /**
  * Select the optimal profile for a request based on media context.
@@ -118,11 +120,11 @@ export async function getApiConfig() {
 
       const profiles = result.profiles || [];
       const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-      const selectedProfile =
-        profiles.find((p) => p.id === lastSelectedProfileId) ||
-        profiles.find((p) => p.id === 'default');
+      const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
+      const defaultProfile = profiles.find((p) => p.id === 'default');
+      const usableProfile = resolvePreferredProfile({ selectedProfile, defaultProfile });
 
-      if (!isProfileUsable(selectedProfile)) {
+      if (!usableProfile) {
         console.error('Chat: Configuration is incomplete or missing.');
         const error = new Error(
           'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'
@@ -130,7 +132,7 @@ export async function getApiConfig() {
         loadingManager.showToast('Please configure API settings in options', 'error');
         reject(error);
       } else {
-        resolve(selectedProfile);
+        resolve({ ...usableProfile, profileId: usableProfile.id });
       }
     });
   });
@@ -145,18 +147,16 @@ export async function getTools() {
     chrome.storage.local.get(['promptPaulTools'], resolve);
   });
 
-  return definedTools.filter((tool) => {
-    if (
-      tool.name === 'load_skill' ||
-      tool.name === 'skills_list' ||
-      tool.name === 'skill_view' ||
-      tool.name === 'web_search'
-    ) {
-      console.warn(`Chat: Skipping user-defined tool named '${tool.name}' because it is reserved.`);
-      return false;
-    }
-    return true;
-  });
+  return definedTools
+    .map((tool) => normalizeToolDefinition(tool))
+    .filter((entry) => {
+      if (!entry.valid) {
+        console.warn(`Chat: Skipping invalid user-defined tool: ${entry.error}`);
+        return false;
+      }
+      return true;
+    })
+    .map((entry) => entry.value);
 }
 
 /**
@@ -174,6 +174,7 @@ export async function startRun(runConfig) {
     throw new Error(response.error);
   }
 
+  await setActiveRun(response.runId, runConfig.sourceTabId);
   return response.runId;
 }
 

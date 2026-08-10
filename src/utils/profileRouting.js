@@ -3,7 +3,7 @@
  * @module profileRouting
  */
 
-import { isValidURL } from './validation.js';
+import { isValidHttpUrl } from './validation.js';
 
 const VISION_MODEL_PATTERNS = [
   /vision/i,
@@ -50,30 +50,28 @@ export function modelSupportsReasoning(modelName) {
   return REASONING_MODEL_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-export function isProfileUsable(profile, endpointOverride = null) {
-  const endpoint = endpointOverride || profile?.llmEndpoint;
-  return Boolean(endpoint && isValidURL(endpoint) && profile?.apiKey && profile?.modelName);
+export function isProfileUsable(profile) {
+  if (profile?.provider === 'codex') {
+    return Boolean(profile.id && typeof profile.modelName === 'string' && profile.modelName.trim());
+  }
+
+  return Boolean(
+    profile?.llmEndpoint &&
+    isValidHttpUrl(profile.llmEndpoint) &&
+    typeof profile.apiKey === 'string' &&
+    profile.apiKey &&
+    typeof profile.modelName === 'string' &&
+    profile.modelName
+  );
 }
 
-export function resolvePreferredProfile({
-  selectedProfile = null,
-  defaultProfile = null,
-  defaultLlmEndpoint = '',
-} = {}) {
+export function resolvePreferredProfile({ selectedProfile = null, defaultProfile = null } = {}) {
   if (isProfileUsable(selectedProfile)) {
     return selectedProfile;
   }
 
-  if (isProfileUsable(selectedProfile, defaultLlmEndpoint)) {
-    return { ...selectedProfile, llmEndpoint: defaultLlmEndpoint };
-  }
-
   if (isProfileUsable(defaultProfile)) {
     return defaultProfile;
-  }
-
-  if (isProfileUsable(defaultProfile, defaultLlmEndpoint)) {
-    return { ...defaultProfile, llmEndpoint: defaultLlmEndpoint };
   }
 
   return null;

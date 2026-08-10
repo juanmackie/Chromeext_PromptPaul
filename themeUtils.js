@@ -13,14 +13,13 @@ export function applyDarkTheme(isDark) {
   if (isDark) {
     root.setAttribute('data-theme', 'dark');
     root.setAttribute('data-bs-theme', 'dark');
-    body.classList.add('dark-theme', 'ext-dark');
+    body.classList.add('dark-theme');
     const icon = document.getElementById('darkThemeIcon');
     if (icon) icon.textContent = 'wb_sunny';
   } else {
     root.setAttribute('data-theme', 'light');
     root.setAttribute('data-bs-theme', 'light');
-    body.classList.remove('dark-theme', 'ext-dark');
-    body.classList.add('light-theme', 'ext-light');
+    body.classList.remove('dark-theme');
     const icon = document.getElementById('darkThemeIcon');
     if (icon) icon.textContent = 'brightness_2';
   }

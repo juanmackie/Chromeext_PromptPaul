@@ -32,23 +32,14 @@ import {
   buildFinalResponseBody,
   classifyToolExecutionResult,
 } from './src/chat/ChatGrounding.js';
-import {
-  MediaType,
-  validateMediaData,
-  getMediaAnalysisPrompt,
-  prepareMediaContent,
-  hasValidMediaData,
-  getMediaDisplayName,
-  supportsVisionAnalysis,
-} from './src/chat/ChatMedia.js';
+import { MediaType, getMediaAnalysisPrompt } from './src/chat/ChatMedia.js';
 import { StreamStateManager } from './src/chat/ChatStream.js';
-import { debounce } from './src/utils/debounce.js';
 import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
 import { extractPdfText } from './src/utils/pdfExtractor.js';
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
 import { RUN_STATES, setRunState } from './src/utils/runState.js';
 import { chatComposer } from './src/chat/ChatComposer.js';
-import { escapeHtml, renderMarkdown } from './src/utils/domSanitizer.js';
+import { renderMarkdown } from './src/utils/domSanitizer.js';
 import {
   buildExplainPrompt,
   buildSummarizePrompt,
@@ -56,13 +47,23 @@ import {
   composeUserPrompt,
 } from './src/prompts.js';
 import { renderSiteSuggestions, executePresetAnalysis } from './src/chat/ChatPageActions.js';
-
+import {
+  isPageActionsEnabled,
+  consumePageActionsEnabled,
+  isPageActionsMultiTabEnabled,
+  initPageActionsToggle,
+  initPageActionsMultiTabToggle,
+  renderPageActionConfirmation,
+  resolvePageActionConfirmation,
+  cancelPageActionConfirmations,
+  updatePageActionActivity,
+  handlePageUserInputRequest,
+} from './src/chat/ChatPageAutomation.js';
+import { clearActiveRun, restoreRunJournal } from './src/chat/ChatRunRecovery.js';
 // ── Lazy Module Loaders ───────────────────────────────────────────
 // Non-critical modules are loaded on demand to reduce initial startup cost.
-
 /** @type {import('./src/chat/ChatSkills.js') | null} */
 let _chatSkillsModule = null;
-
 /**
  * Lazy-load the ChatSkills module.
  * Loaded on first "/" keypress or skill command invocation.
@@ -74,10 +75,8 @@ async function getChatSkills() {
   }
   return _chatSkillsModule;
 }
-
 /** @type {import('./src/chat/ChatVoice.js') | null} */
 let _chatVoiceModule = null;
-
 /**
  * Lazy-load the ChatVoice module.
  * Loaded on first voice-toggle button click.
@@ -89,24 +88,8 @@ async function getChatVoice() {
   }
   return _chatVoiceModule;
 }
-
-/** @type {import('./src/chat/ChatAPI.js') | null} */
-let _chatApiModule = null;
-
-/**
- * Lazy-load the ChatAPI module for fresh config reads.
- * @returns {Promise<import('./src/chat/ChatAPI.js')>}
- */
-async function getChatApi() {
-  if (!_chatApiModule) {
-    _chatApiModule = await import('./src/chat/ChatAPI.js');
-  }
-  return _chatApiModule;
-}
-
 /** @type {import('./src/chat/ChatMedia.js') | null} */
 let _chatMediaModule = null;
-
 /**
  * Lazy-load the ChatMedia module for media-heavy operations.
  * @returns {Promise<import('./src/chat/ChatMedia.js')>}
@@ -117,35 +100,9 @@ async function getChatMedia() {
   }
   return _chatMediaModule;
 }
-
-/**
- * Error boundary wrapper for async operations.
- * Provides consistent error handling with user feedback.
- * @param {Function} asyncFn - The async function to wrap
- * @param {Object} options - Error handling options
- * @param {string} options.context - Description of the operation for logging
- * @param {boolean} options.showToast - Whether to show error toast (default: true)
- * @param {string} options.fallbackMessage - Custom error message if function fails
- * @returns {Promise<any>} The result of the async function or undefined on error
- */
-async function handleAsyncError(asyncFn, options = {}) {
-  const { context = 'Operation', showToast = true, fallbackMessage } = options;
-  try {
-    return await asyncFn();
-  } catch (error) {
-    const errorMessage = fallbackMessage || `${context} failed: ${error.message}`;
-    console.error(`Chat Error [${context}]:`, error);
-    if (showToast) {
-      loadingManager.showToast(errorMessage, 'error');
-    }
-    return undefined;
-  }
-}
-
 function renderMarkdownContent(markdown) {
   return renderMarkdown(markdown);
 }
-
 function formatUserMessageForDisplay(message) {
   const text = String(message || '');
   const firstLine = text.split(/\r?\n/)[0];
@@ -153,7 +110,6 @@ function formatUserMessageForDisplay(message) {
   if (firstLine.length <= maxInlineLength) return firstLine;
   return `${firstLine.slice(0, maxInlineLength)}…`;
 }
-
 document.addEventListener('DOMContentLoaded', () => {
   const chatArea = document.getElementById('chat-area');
   const userInput = document.getElementById('user-input');
@@ -166,14 +122,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const submitBtn = document.getElementById('submitBtn');
   const chatMainArea = document.getElementById('chat-main-area');
   const oneoffInstructionArea = document.getElementById('oneoff-instruction-area');
-
   // Quick Actions Sidebar Elements
   const addPageButton = document.getElementById('add-page-button');
   const analyzeButton = document.getElementById('analyze-button');
   const analyzeDropdown = document.getElementById('analyze-dropdown');
   const proofreadButton = document.getElementById('proofread-button');
   const explainButton = document.getElementById('explain-button');
-
   // Configure marked with highlight.js for syntax highlighting
   if (typeof marked !== 'undefined' && typeof hljs !== 'undefined') {
     marked.setOptions({
@@ -910,7 +864,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Initialize web search grounding toggle
+  // Initialize opt-in page action and web grounding toggles.
+  initPageActionsToggle(document.getElementById('page-actions-toggle'), loadingManager);
+  initPageActionsMultiTabToggle(
+    document.getElementById('page-actions-multi-tab-toggle'),
+    loadingManager
+  );
   initWebSearchToggle(document.getElementById('web-search-toggle'), loadingManager);
 
   const darkThemeToggle = document.getElementById('darkThemeToggle');
@@ -929,7 +888,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedText = null;
   let tabId = null;
   let panelTabId = null; // Owning tab for this side panel (set from message sender)
-  let currentAbortController = null;
   let lastProcessedPanelActionId = null;
   let isResponseInFlight = false;
   const inputArea = document.getElementById('input-area');
@@ -940,15 +898,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Streaming and API call state manager
   const streamState = new StreamStateManager();
   streamState.setChatAreaRef(chatArea);
-
-  // Convenience aliases for backward compatibility
-  const getCurrentRunId = () => streamState.getRunId();
-  const setCurrentRunId = (id) => streamState.setRunId(id);
-  const getCurrentSourceTabId = () => streamState.getSourceTabId();
-  const setCurrentSourceTabId = (id) => streamState.setSourceTabId(id);
-  const getCurrentMediaData = () => streamState.getMediaData();
-  const getConversationHistory = () => streamState.getConversationHistory();
-  const setConversationHistory = (history) => streamState.setConversationHistory(history);
 
   // A run is only genuinely active while its streaming bubble is still live.
   // The streaming element is created right before startRun() and cleared on
@@ -988,6 +937,7 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.setActiveToolCall(null);
       streamState.setRunId(null);
       streamState.setSourceTabId(null);
+      void clearActiveRun();
     }
 
     isResponseInFlight = true;
@@ -1005,6 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sendButton.disabled = false;
     clearButton.textContent = 'Clear';
     setRunState(inputArea, runState);
+    void clearActiveRun();
   }
 
   // Begin-run UI: disable input and switch the action button to Stop.
@@ -1388,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   function isSkillLoaderTool(toolName) {
-    return toolName === 'load_skill' || toolName === 'skill_view';
+    return toolName === 'skill_view';
   }
 
   function tryParseToolPayload(value) {
@@ -1534,7 +1485,6 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.queueRenderReasoning(event.data);
           }
           break;
-
         case 'content':
           if (streamState.getCurrentStreamingContentElement() && event.data) {
             // First answer token after reasoning — collapse the thinking panel.
@@ -1547,7 +1497,53 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.queueRenderChunk(event.data);
           }
           break;
+        case 'page_action_confirmation':
+          renderPageActionConfirmation(
+            chatArea,
+            event,
+            async (confirmationId, approved, approveAll) => {
+              try {
+                const response = await chrome.runtime.sendMessage({
+                  action: 'pageActionDecision',
+                  runId,
+                  confirmationId,
+                  approved,
+                  approveAll,
+                  sourceTabId: streamState.getSourceTabId(),
+                });
+                if (!response?.success) {
+                  loadingManager.showToast(
+                    'This page-action approval is no longer active.',
+                    'warning'
+                  );
+                }
+              } catch (error) {
+                console.warn('Chat: page-action decision failed:', error.message);
+                loadingManager.showToast('Could not send the page-action decision.', 'error');
+              }
+            },
+            () => chrome.runtime.sendMessage({ action: 'abortRun', runId }).catch(() => {})
+          );
+          break;
 
+        case 'page_action_decision':
+          resolvePageActionConfirmation(chatArea, event);
+          break;
+        case 'page_action_state':
+          updatePageActionActivity(chatArea, {
+            ...event,
+            message: event.error || event.message,
+          });
+          break;
+        /*
+              `❌ Page action failed: ${event.action} ${label} — ${event.error || 'the page did not respond.'}`
+          */
+        case 'page_action_warning':
+          updatePageActionActivity(chatArea, { ...event, state: 'warning' });
+          break;
+        case 'page_user_input_request':
+          handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
+          break;
         case 'tool_start':
           // Collapse any open thinking panel before the tool trace replaces the bubble.
           if (streamState.getReasoningContentElement()) {
@@ -1573,11 +1569,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           }
           break;
-
         case 'tool_ready':
           chatUI.addMessage('System', `⚙️ Executing tool: **${event.toolCall.function.name}**...`);
           break;
-
         case 'tool_complete':
           // Distinguish tool vs skill in the trace
           if (isSkillLoaderTool(event.toolCall.function.name)) {
@@ -1689,6 +1683,7 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         }
         case 'aborted': {
+          cancelPageActionConfirmations(chatArea);
           chatUI.addMessage('System', 'Response stopped');
           resetRunUi(RUN_STATES.STOPPED);
 
@@ -1701,6 +1696,8 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         }
         case 'error': {
+          // Terminal page-action cards use the same explicit state === 'error' guard.
+          cancelPageActionConfirmations(chatArea);
           chatUI.addMessage('System', `❌ Error: ${event.error}`);
           resetRunUi(RUN_STATES.ERROR);
           userInput.focus();
@@ -1924,14 +1921,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Prepare run configuration with media
       const webSearchEnabled = await isWebSearchEnabled();
+      const pageActionsEnabled = await consumePageActionsEnabled();
       const runConfig = {
+        provider: config.provider || 'api',
+        profileId: config.profileId || config.id,
         llmEndpoint: config.llmEndpoint,
         apiKey: config.apiKey,
         modelName: config.modelName,
+        reasoningLevel: config.reasoningLevel,
         systemPrompt: config.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
         webSearch: webSearchEnabled,
+        pageActions: pageActionsEnabled,
+        pageActionsMultiTab: pageActionsEnabled && (await isPageActionsMultiTabEnabled()),
         mediaData: mediaData,
         requestedSkill,
         sourceTabId: getRunSourceTabId(),
@@ -2092,14 +2095,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Prepare run configuration
       const webSearchEnabled = await isWebSearchEnabled();
+      const pageActionsEnabled = await consumePageActionsEnabled();
       const runConfig = {
+        provider: effectiveConfig.provider || 'api',
+        profileId: effectiveConfig.profileId || effectiveConfig.id,
         llmEndpoint: effectiveConfig.llmEndpoint,
         apiKey: effectiveConfig.apiKey,
         modelName: effectiveConfig.modelName,
+        reasoningLevel: effectiveConfig.reasoningLevel,
         systemPrompt: effectiveConfig.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
         webSearch: webSearchEnabled,
+        pageActions: pageActionsEnabled,
+        pageActionsMultiTab: pageActionsEnabled && (await isPageActionsMultiTabEnabled()),
         requestedSkill,
         sourceTabId: getRunSourceTabId(),
       };
@@ -2259,7 +2268,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Error in one-off instruction submission:', error);
       }
       resetRunUi(RUN_STATES.IDLE);
-      currentAbortController = null;
     } finally {
       submitBtn.disabled = false;
     }
@@ -2318,18 +2326,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Initial call to render and listener for changes will be added later.
-  // The block for managePinnedActionsButton listener has been removed.
-
   // Initial rendering of pinned actions
   renderPinnedActions();
 
-  // The chrome.storage.onChanged listener above has been updated to include this logic.
-  // No need for a separate listener here.
+  // Rehydrate only the bounded activity journal after a side-panel reconnect.
+  // The user must send a new request before any page action can run again.
+  void restoreRunJournal(chatArea);
 
   // Voice input functionality
   const voiceToggleButton = document.getElementById('voice-toggle-button');
-
   // Voice input initialization
   if (voiceToggleButton) {
     // Debounce wrapper for voice toggle to prevent rapid start/stop
@@ -2348,25 +2353,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     voiceToggleButton.addEventListener('click', debouncedToggleVoiceInput);
   }
-
   // Initialize voice input settings
   getChatVoice().then((voice) => {
     voice.syncVoiceInputSettings().then(() => {
       voice.updateVoiceToggleButtonState(voiceToggleButton);
     });
-
     // Clean up voice input on page unload
     window.addEventListener('beforeunload', function () {
       if (voice.getIsListening()) {
         voice.stopVoiceInput(voiceToggleButton, userInput);
       }
     });
-
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') {
         return;
       }
-
       if (changes['voiceInputEnabled'] || changes['voiceInputPermissionState']) {
         voice.syncVoiceInputSettings().then(() => {
           voice.updateVoiceToggleButtonState(voiceToggleButton);

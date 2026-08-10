@@ -89,8 +89,8 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 ## Local Contracts
 
 - The extension is Manifest V3 and uses `background.js` as an ES module service worker.
-- API keys, profiles, custom instructions, tools, skills, and user settings live in Chrome storage.
-- The storage schema is stable: canonical keys (`profiles`, `lastSelectedProfileId`, `instructions`, `skills`, `tools`, `analyticsConsent`, `voiceInputEnabled`, `braveSearchApiKey`, `webSearchEnabled`) are pinned by regression guards; backups must keep exporting all local data with the API-key disclosure.
+- API keys, profiles, custom instructions, tools, skills, and user settings live in Chrome storage. Codex subscription credentials are background-owned and keyed by profile; they are never included in profile records, run configs, events, logs, or backups.
+- The storage schema is stable: canonical keys (`profiles`, `lastSelectedProfileId`, `instructions`, `customSkills`, `promptPaulTools`, `analyticsConsent`, `analyticsInstance`, `analyticsRotateAt`, `voiceInputEnabled`, `voiceInputPermissionState`, `voiceInputPermissionLastChecked`, `braveSearchApiKey`, `webSearchEnabled`, `pageActionsEnabled`, `pageActionsTrustedMode`, `pageActionsMultiTabEnabled`, `pinnedQuickActions`, `customSiteSuggestions`) are pinned by regression guards. `pageActionsEnabled` is session-scoped, one-run state and is excluded from local/sync backups; backups export only supported persistent keys and restore Codex profiles without subscription credentials.
 - Remote LLM calls happen only when the user sends a prompt or invokes an action.
 - Browser-internal pages, extension pages, and Chrome Web Store pages must be blocked or reported before content extraction.
 - Broad host permissions are intentional for page extraction and context-menu workflows.
@@ -99,12 +99,14 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 - Run/feedback states use the standardized `data-run-state` vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) driven by `src/utils/runState.js` and styled by shared primitives in `ui-primitives.css`; both extension surfaces must stay on this contract rather than introducing per-page state flags.
 - Shared UI primitives (buttons, chips, badges, trays, sections, run indicators) live in `ui-primitives.css`, which depends on `theme.css` tokens and must be loaded after it in every extension page.
 - The chat surface is composer-led: `chat.js` routes all send/action flows through the composer (`#input-area`) and `ChatComposer.js` owns the context tray, contextual quick-action row, and inline Stop/Retry/Edit/Continue recovery. `chat.js`'s line guard covers composer wiring; new composer UI logic must go into `src/chat/ChatComposer.js`, not the entry point.
-- The Options page is setup-led with explicit section saves: each section persists on its own action, credentials stay masked (keys are never written into input fields; `applyCredentialMask`/`resolveCredentialValue` in `src/options/OptionsUI.js` handle it), and the unsaved-changes guard covers the combined dirty state of all sections. Fresh installs seed the Default profile with the starter Mistral endpoint, model, and configured key; existing profiles are preserved.
+- The Options page is setup-led with explicit section saves: each section persists on its own action, credentials stay masked (keys are never written into input fields; `applyCredentialMask`/`resolveCredentialValue` in `src/options/OptionsUI.js` handle it), and the unsaved-changes guard covers the combined dirty state of all sections. Fresh source checkouts seed the Default profile with the starter Mistral endpoint/model but no credential; release builds may inject a deliberately public, quota-limited demo key through `PROMPT_PAUL_DEMO_API_KEY`. Existing profiles are preserved.
+- Profiles may use `provider: 'api'` or `provider: 'codex'`. Codex profiles keep only model, reasoning-level, and prompt settings; a successful Codex device-code login creates or selects the profile named `Codex`. Options starts login, polls completion, and requests model metadata through the background worker. Restored Codex profiles require sign-in again.
 - All entry points funnel into the canonical chat: context menus and deep links go through the side panel via `sendPanelMessage`/`openChatWithContext` in `background.js`, preserving selection, media, attachment, and page context. The toolbar action and website deep links (`externally_connectable` for promptpaul.juanmackie.com) open the chat with `{ action: 'openChat' }`; `chat.js` consumes deep-link `textPrompt` instructions against the attached context. The Options page resolves `openChat` to the active regular web tab because an extension page cannot host the side panel; if no regular tab exists, it opens `chat.html` in a tab instead of failing silently.
 - Context-bearing prompts must use structured prompt request objects and `composeUserPrompt`; do not concatenate selected text, page content, media context, or previous-response instructions directly into raw prompt strings.
 - `chat.js` resolves `sourceTabId` for side-panel runs via `getRunSourceTabId()`, not a captured `panelTabId`.
 - Pending panel actions (`setMediaForAnalysis`, `setSelectedText`) are consumed locally in `chat.js` and not re-sent via `chrome.runtime.sendMessage`.
-- Keep privacy-sensitive analytics opt-out and safe-label handling intact.
+- Keep privacy-sensitive analytics opt-in and safe-label handling intact.
+- Page actions are default-off, DOM/semantic-control-only tools. The session-scoped `pageActionsEnabled` Act permission is consumed by one run and must reset between jobs and browser sessions; current-tab runs remain the default. Every Act-enabled run forces an initial `page_get_state` inspection before the agent can respond; later mutations still go through policy and approval gates. Snapshot text is untrusted page data; password, OTP, payment, credential, account, security, destructive, download, unsafe-scheme, and unsupported controls must remain masked, confirmation-gated, or blocked. Valid HTTP(S) same-tab links may run through `page_click` after approval; links that open a new tab use the indexed `page_open_link` tool. New origins require explicit approval even in trusted or session-approved mode. The separate Tabs toggle enables bounded owned-tab tools, limits runs to eight tabs, and blocks closing the source tab. The model may request one bounded clarification through `page_request_user_input`, but the request is rejected if it asks for secrets or payment data. Trusted mode never enables JavaScript.
 - Successful instruction saves reset the Add/Edit Instruction form immediately; manual clearing may still require confirmation when fields contain unsaved content.
 
 ## Work Guidance
@@ -113,6 +115,7 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 - Add `@fileoverview` and `@module` JSDoc to new source modules.
 - Prefer explicit exports from modules under `src/`.
 - Keep shared logic in `src/chat/`, `src/utils/`, or `src/orchestrator/` instead of adding more large blocks to root entry points.
+- Keep Codex authentication in `src/utils/codexAuth.js`, model discovery in `src/utils/modelDiscovery.js`, and Responses wire conversion in `src/orchestrator/CodexTransport.js`; do not pass OAuth access or refresh tokens through chat or UI messages. API model discovery uses the configured compatible `/models` route, while Codex discovery uses the authenticated Codex backend `/models` route.
 - Keep `docs/`, README, tests, and DOX files current when behavior, workflows, or structure changes.
 - Do not edit vendored libraries or binary assets unless the task is specifically about those files.
 - Preserve existing user changes in the working tree.
@@ -268,6 +271,9 @@ const commands = skillManager.getSlashCommands();
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md.
 
+- Follow the user's production-ready coding rules: question requirements, delete unnecessary work, simplify before optimizing, keep dependencies real, validate all inputs, include readable tests, flag security review needs, and use ASD-STE100 Simplified Technical English in new docs and comments.
+- The concise repository checklist is `docs/PRODUCTION_READINESS.md`; keep it aligned with these contracts and the development workflow.
+
 ## Child DOX Index
 
 - `docs/AGENTS.md`: documentation files, user guides, architecture notes, and development workflow docs.
@@ -276,6 +282,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - `skills/AGENTS.md`: built-in skill registry and `SKILL.md` source files.
 - `libs/AGENTS.md`: vendored browser libraries and third-party assets.
 - `icons/AGENTS.md`: extension icons and copy/action image assets.
+- `tests/AGENTS.md`: automated test suites, including real-browser integration coverage.
 
 ## Web Search Grounding
 

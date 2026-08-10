@@ -1,0 +1,32 @@
+# Production Readiness
+
+Prompt Paul follows the production-ready coding rules used for this repository.
+This checklist keeps those rules practical and reviewable.
+
+## Before a change
+
+- State the user need and the smallest useful behavior.
+- Remove obsolete code, compatibility paths, and dependencies before adding new layers.
+- Record assumptions, edge cases, failure behavior, and security risks.
+- Confirm that every dependency and browser API already exists in the project or platform.
+
+## During a change
+
+- Validate and bound user input at every external boundary.
+- Keep credentials in Chrome storage or environment variables. Never commit secrets or place them in logs, DOM fields, events, backups, or LLM payloads.
+- Use the existing sanitizer for untrusted HTML and the existing validators for URLs, profiles, tools, skills, and page actions.
+- Keep modules cohesive, names descriptive, and functions easy to test. Split a large file when its responsibilities diverge; do not split only to meet a line count.
+- Use ASD-STE100 Simplified Technical English in new documentation and comments.
+
+## Before closeout
+
+- Add readable tests for new behavior, including common and failure cases.
+- Run `npm run validate` and `npm run smoke` when relevant.
+- Run `npm run test:browser` for browser-runtime or page-action changes.
+- Run `npm audit --audit-level=high --omit=optional` before release.
+- Review authentication, user data, external API, and page-action changes for security before production deployment.
+- Update the nearest DOX contract when behavior, structure, workflow, or quality requirements change.
+
+## Current review risks
+
+`background.js`, `chat.js`, `options.js`, and `src/orchestrator/RunOrchestrator.js` are large cohesive entry points. Keep changes narrow and extract only when responsibilities diverge. A future refactor should preserve the existing message, storage, and run-event contracts and include focused regression tests.

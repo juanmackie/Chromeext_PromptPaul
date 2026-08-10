@@ -1,6 +1,6 @@
 /**
  * @fileoverview Shared utility for building tool_choice payloads for LLM API requests.
- * Note: Policy decisions (e.g., preserving load_skill in 'none' mode) are now handled
+ * Note: Policy decisions (e.g., preserving skill_view in 'none' mode) are now handled
  * by the orchestrator. This file contains only mechanical formatting functions.
  * @module toolChoiceBuilder
  */
@@ -77,9 +77,7 @@ export function formatToolsForLlm(tools) {
     .map((tool) => {
       try {
         const parameters =
-          typeof tool.parameters === 'string'
-            ? JSON.parse(tool.parameters)
-            : tool.parametersForLlm || tool.parameters || {};
+          typeof tool.parameters === 'string' ? JSON.parse(tool.parameters) : tool.parameters || {};
 
         return {
           type: 'function',

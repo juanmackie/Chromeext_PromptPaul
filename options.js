@@ -13,7 +13,13 @@
  */
 
 import { loadingManager } from './loadingManager.js';
-import { isValidURL } from './src/utils/validation.js';
+import {
+  BACKUP_LOCAL_KEYS,
+  BACKUP_SYNC_KEYS,
+  isValidHttpUrl,
+  normalizeBackupPayload,
+  normalizeToolDefinition,
+} from './src/utils/validation.js';
 import {
   generateSkillMarkdown,
   parseSkillMarkdown,
@@ -21,6 +27,7 @@ import {
 } from './src/utils/skillParser.js';
 import { setupThemeToggle } from './themeUtils.js';
 import { escapeHtml } from './src/utils/domSanitizer.js';
+import { resolvePreferredProfile } from './src/utils/profileRouting.js';
 import {
   applyCredentialMask,
   createDirtyTracker,
@@ -41,18 +48,26 @@ const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
 const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
 const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
 
-// Public starter configuration for first-time users. The key is intentionally
-// masked in the Options UI and is only sent when the user runs a request.
+// Starter configuration for first-time users. A deliberately public, quota-limited
+// demo key may be injected into release builds by build.js; source checkouts stay
+// credential-free and require the user to configure their own key.
 const STARTER_MISTRAL_ENDPOINT = 'https://api.mistral.ai/v1/chat/completions';
-const STARTER_MISTRAL_API_KEY = 'wuS4CEjyu9KApITISfF1b5Th5hSvpkgF';
+const STARTER_MISTRAL_API_KEY = '';
 const STARTER_MISTRAL_MODEL = 'mistral-small-latest';
 const STARTER_MISTRAL_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 // Assigned in DOMContentLoaded; invoked from async load/save flows so the
 // dirty trackers re-baseline after storage-backed fields are populated.
 let markAllTrackersClean = null;
+let markGroundingTrackerClean = null;
+let markPageActionsTrackerClean = null;
 let refreshSetupStatus = null;
 let pendingDefaultApiKey = null;
+let codexLoginPollTimer = null;
+let modelLoadSequence = 0;
+const modelMetadataByProfile = new Map();
+const CUSTOM_MODEL_VALUE = '__custom__';
+const DEFAULT_CODEX_REASONING_LEVEL = 'medium';
 
 function createUniqueId(prefix) {
   const id =
@@ -182,6 +197,228 @@ function updateCurrentConfig(endpoint, key, model, timestamp, systemPrompt, prof
   }
 }
 
+function getStoredProfiles() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['profiles'], (result) => resolve(result.profiles || []));
+  });
+}
+
+async function resolveCodexProfileId() {
+  const profiles = await getStoredProfiles();
+  const existing = profiles.find((profile) => profile.provider === 'codex');
+  if (existing) return existing.id;
+
+  let profileId = 'codex';
+  while (profiles.some((profile) => profile.id === profileId)) {
+    profileId = `codex_${Date.now()}`;
+  }
+  return profileId;
+}
+
+async function ensureCodexProfile(profileId) {
+  const profiles = await getStoredProfiles();
+  let profile = profiles.find((entry) => entry.id === profileId);
+  if (!profile) {
+    profile = {
+      id: profileId,
+      name: 'Codex',
+      provider: 'codex',
+      llmEndpoint: '',
+      apiKey: '',
+      modelName: '',
+      reasoningLevel: DEFAULT_CODEX_REASONING_LEVEL,
+      systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
+      lastUpdated: new Date().toLocaleString(),
+    };
+    profiles.push(profile);
+  } else {
+    profile.provider = 'codex';
+    profile.name = 'Codex';
+    profile.llmEndpoint = '';
+    profile.apiKey = '';
+    if (!profile.reasoningLevel) profile.reasoningLevel = DEFAULT_CODEX_REASONING_LEVEL;
+    profile.lastUpdated = new Date().toLocaleString();
+  }
+
+  await new Promise((resolve, reject) => {
+    chrome.storage.local.set({ profiles, lastSelectedProfileId: profileId }, () =>
+      chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve()
+    );
+  });
+  return profile;
+}
+
+function selectedModelValue() {
+  const modelSelect = document.getElementById('modelName');
+  if (!modelSelect) return '';
+  if (modelSelect.value === CUSTOM_MODEL_VALUE) {
+    return document.getElementById('customModelName')?.value.trim() || '';
+  }
+  return modelSelect.value.trim();
+}
+
+function setCustomModelVisibility(show) {
+  const input = document.getElementById('customModelName');
+  if (input) input.classList.toggle('d-none', !show);
+}
+
+function setModelSelection(modelName) {
+  const modelSelect = document.getElementById('modelName');
+  if (!modelSelect) return;
+  const value = String(modelName || '').trim();
+  const option = Array.from(modelSelect.options || []).find((entry) => entry.value === value);
+  if (value && option) {
+    modelSelect.value = value;
+    setCustomModelVisibility(false);
+    return;
+  }
+  const customOption = Array.from(modelSelect.options || []).find(
+    (entry) => entry.value === CUSTOM_MODEL_VALUE
+  );
+  if (customOption) {
+    modelSelect.value = CUSTOM_MODEL_VALUE;
+    const input = document.getElementById('customModelName');
+    if (input) input.value = value;
+    setCustomModelVisibility(true);
+  } else if (value) {
+    const savedOption = document.createElement('option');
+    savedOption.value = value;
+    savedOption.textContent = `${value} (saved)`;
+    modelSelect.appendChild(savedOption);
+    modelSelect.value = value;
+    setCustomModelVisibility(false);
+  }
+}
+
+function updateReasoningOptions(profileId, modelId, savedLevel = '') {
+  const group = document.getElementById('reasoningLevelGroup');
+  const select = document.getElementById('reasoningLevel');
+  if (document.getElementById('providerSelect')?.value !== 'codex') {
+    if (group) group.classList.add('d-none');
+    return;
+  }
+  const metadata = modelMetadataByProfile.get(profileId)?.get(modelId);
+  const levels = metadata?.reasoningLevels || [];
+  if (!group || !select || !levels.length) {
+    if (group) group.classList.add('d-none');
+    return;
+  }
+
+  const current = String(savedLevel || select.value || metadata.defaultReasoningLevel || '').trim();
+  select.innerHTML = '';
+  levels.forEach((level) => {
+    const option = document.createElement('option');
+    option.value = level.value;
+    option.textContent = level.description ? `${level.label} — ${level.description}` : level.label;
+    select.appendChild(option);
+  });
+  select.value = levels.some((level) => level.value === current)
+    ? current
+    : metadata.defaultReasoningLevel || levels[0].value;
+  group.classList.remove('d-none');
+}
+
+function showSavedModelFallback(profile, label = 'Model list unavailable') {
+  const modelSelect = document.getElementById('modelName');
+  if (!modelSelect) return;
+  document.getElementById('reasoningLevelGroup')?.classList.add('d-none');
+  modelSelect.innerHTML = `<option value="">${label}</option>`;
+  if (profile.provider !== 'codex') {
+    const customOption = document.createElement('option');
+    customOption.value = CUSTOM_MODEL_VALUE;
+    customOption.textContent = 'Custom model ID…';
+    modelSelect.appendChild(customOption);
+    setModelSelection(profile.modelName || '');
+    return;
+  }
+  if (profile.modelName) {
+    const savedOption = document.createElement('option');
+    savedOption.value = profile.modelName;
+    savedOption.textContent = `${profile.modelName} (saved)`;
+    modelSelect.appendChild(savedOption);
+    modelSelect.value = profile.modelName;
+  }
+}
+
+async function persistProfileModelSettings(profileId, modelName, reasoningLevel) {
+  const profiles = await getStoredProfiles();
+  const profile = profiles.find((entry) => entry.id === profileId);
+  if (!profile) return;
+  profile.modelName = modelName;
+  if (reasoningLevel) profile.reasoningLevel = reasoningLevel;
+  profile.lastUpdated = new Date().toLocaleString();
+  await new Promise((resolve) => chrome.storage.local.set({ profiles }, resolve));
+}
+
+async function loadAvailableModels(profile) {
+  const sequence = ++modelLoadSequence;
+  const modelSelect = document.getElementById('modelName');
+  if (!modelSelect || !profile?.id) return;
+  modelSelect.disabled = true;
+  modelSelect.innerHTML = '<option value="">Loading models…</option>';
+  setCustomModelVisibility(false);
+
+  try {
+    if (profile.provider === 'codex') {
+      const status = await chrome.runtime.sendMessage({
+        action: 'codexAuthStatus',
+        profileId: profile.id,
+      });
+      if (!status?.status?.connected) {
+        showSavedModelFallback(profile, 'Sign in to load models');
+        return;
+      }
+    } else if (!profile.apiKey || !profile.llmEndpoint) {
+      showSavedModelFallback(profile, 'Save API settings to load models');
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({
+      action: 'getAvailableModels',
+      profileId: profile.id,
+    });
+    if (sequence !== modelLoadSequence) return;
+    if (!response?.success) throw new Error(response?.error || 'Unable to load models.');
+
+    const models = response.models || [];
+    const metadata = new Map(models.map((model) => [model.id, model]));
+    modelMetadataByProfile.set(profile.id, metadata);
+    modelSelect.innerHTML = '';
+    models.forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.textContent =
+        model.displayName === model.id ? model.id : `${model.displayName} (${model.id})`;
+      modelSelect.appendChild(option);
+    });
+    if (profile.provider !== 'codex') {
+      const customOption = document.createElement('option');
+      customOption.value = CUSTOM_MODEL_VALUE;
+      customOption.textContent = 'Custom model ID…';
+      modelSelect.appendChild(customOption);
+    }
+    setModelSelection(profile.modelName || models[0]?.id || '');
+    const selected = selectedModelValue();
+    const selectedMetadata = metadata.get(selected);
+    updateReasoningOptions(profile.id, selected, profile.reasoningLevel);
+    if (profile.provider === 'codex' && selected && selected !== profile.modelName) {
+      await persistProfileModelSettings(
+        profile.id,
+        selected,
+        selectedMetadata?.defaultReasoningLevel ||
+          profile.reasoningLevel ||
+          DEFAULT_CODEX_REASONING_LEVEL
+      );
+    }
+  } catch (error) {
+    if (sequence !== modelLoadSequence) return;
+    showSavedModelFallback(profile);
+    updateReasoningOptions(profile.id, profile.modelName, profile.reasoningLevel);
+    showStatus(error.message, true);
+  } finally {
+    if (sequence === modelLoadSequence) modelSelect.disabled = false;
+  }
+}
+
 function syncDeleteProfileButtonState(selectedProfileId = null) {
   const profileSelectElement = document.getElementById('profileSelect');
   const deleteProfileButton = document.getElementById('deleteProfileButton');
@@ -255,11 +492,9 @@ function validateInputs(endpoint, key, model) {
     setFieldError('llmEndpoint', 'API endpoint is required');
     isValid = false;
   } else {
-    try {
-      new URL(endpoint);
-    } catch (e) {
-      errors.push('Please enter a valid URL for the API endpoint');
-      setFieldError('llmEndpoint', 'Invalid URL format');
+    if (!isValidHttpUrl(endpoint)) {
+      errors.push('Please enter a valid HTTP(S) URL for the API endpoint');
+      setFieldError('llmEndpoint', 'Endpoint must use http or https');
       isValid = false;
     }
   }
@@ -283,6 +518,70 @@ function validateInputs(endpoint, key, model) {
   }
 
   return isValid;
+}
+
+function updateCodexConnectionControls(provider, profileId) {
+  const isCodex = provider === 'codex';
+  const panel = document.getElementById('codexConnectionPanel');
+  const apiFields = document.getElementById('apiConnectionFields');
+  const endpoint = document.getElementById('llmEndpoint');
+  const apiKey = document.getElementById('apiKey');
+  if (panel) panel.classList.toggle('d-none', !isCodex);
+  if (apiFields) apiFields.classList.toggle('d-none', isCodex);
+  if (endpoint) endpoint.required = !isCodex;
+  if (apiKey) apiKey.required = !isCodex && apiKey.dataset.configured !== 'true';
+  if (!isCodex || !profileId) return;
+
+  chrome.runtime
+    .sendMessage({ action: 'codexAuthStatus', profileId })
+    .then((response) => {
+      const status = response?.status || {};
+      const text = document.getElementById('codexConnectionStatus');
+      const connect = document.getElementById('connectCodexButton');
+      const disconnect = document.getElementById('disconnectCodexButton');
+      if (text) {
+        text.textContent = status.connected
+          ? `Connected${status.email ? ` as ${status.email}` : ''}${status.planType ? ` (${status.planType})` : ''}.`
+          : 'Not connected.';
+      }
+      if (connect) connect.textContent = status.connected ? 'Reconnect' : 'Sign in with ChatGPT';
+      if (disconnect) disconnect.classList.toggle('d-none', !status.connected);
+    })
+    .catch(() => {});
+}
+
+async function startCodexLogin() {
+  const profileId = await resolveCodexProfileId();
+  const response = await chrome.runtime.sendMessage({ action: 'codexLoginStart', profileId });
+  if (!response?.success) throw new Error(response?.error || 'Unable to start Codex sign-in.');
+  const code = document.getElementById('codexDeviceCode');
+  if (code) {
+    code.textContent = `Enter ${response.login.userCode} at ${response.login.verificationUrl}. Waiting for approval...`;
+    code.classList.remove('d-none');
+  }
+  if (codexLoginPollTimer) clearInterval(codexLoginPollTimer);
+  const poll = async () => {
+    const result = await chrome.runtime.sendMessage({ action: 'codexLoginPoll', profileId });
+    if (!result?.success) throw new Error(result?.error || 'Codex sign-in failed.');
+    if (result.pending) return;
+    clearInterval(codexLoginPollTimer);
+    codexLoginPollTimer = null;
+    if (code) code.classList.add('d-none');
+    await ensureCodexProfile(profileId);
+    loadOptions();
+    updateCodexConnectionControls('codex', profileId);
+    showStatus('Codex subscription connected.', false, true);
+  };
+  codexLoginPollTimer = setInterval(
+    () =>
+      poll().catch((error) => {
+        clearInterval(codexLoginPollTimer);
+        codexLoginPollTimer = null;
+        showStatus(error.message, true);
+      }),
+    Math.max(response.login.intervalSeconds, 1) * 1000
+  );
+  await poll();
 }
 
 /**
@@ -339,6 +638,7 @@ function saveOptions(e) {
     return;
   }
   const selectedProfileId = profileSelectElement.value; // No trim, could be 'add_new_profile'
+  const provider = document.getElementById('providerSelect')?.value || 'api';
 
   const llmEndpoint = document.getElementById('llmEndpoint');
   if (!llmEndpoint) {
@@ -364,7 +664,8 @@ function saveOptions(e) {
     showStatus('Error: modelName element is missing. Please reload the page.', true);
     return;
   }
-  const modelNameValue = modelName.value.trim();
+  const modelNameValue = selectedModelValue();
+  const reasoningLevelValue = document.getElementById('reasoningLevel')?.value || '';
 
   const systemPrompt = document.getElementById('systemPrompt');
   if (!systemPrompt) {
@@ -375,6 +676,7 @@ function saveOptions(e) {
   const systemPromptValue = systemPrompt.value.trim();
 
   if (
+    provider === 'api' &&
     !validateInputs(
       llmEndpointValue,
       apiKeyValue || (hasConfiguredCredential ? 'configured' : ''),
@@ -392,30 +694,35 @@ function saveOptions(e) {
   chrome.storage.local.get(['profiles'], (result) => {
     let profiles = result.profiles || [];
     let profileToUpdate = profiles.find((p) => p.id === selectedProfileId);
+    const storedApiKey = profileToUpdate?.apiKey || '';
+    const effectiveStoredApiKey = pendingDefaultApiKey || storedApiKey || '';
+    const credentialIsConfigured = apiKeyIsMaskedConfigured || Boolean(effectiveStoredApiKey);
 
     if (!profileToUpdate) {
       profileToUpdate = {
         id: selectedProfileId,
         name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(),
-        llmEndpoint: llmEndpointValue,
-        apiKey: resolveCredentialValue(
-          apiKeyValue,
-          hasConfiguredCredential,
-          pendingDefaultApiKey || ''
-        ),
+        provider,
+        llmEndpoint: provider === 'codex' ? '' : llmEndpointValue,
+        apiKey:
+          provider === 'codex'
+            ? ''
+            : resolveCredentialValue(apiKeyValue, credentialIsConfigured, effectiveStoredApiKey),
         modelName: modelNameValue,
+        reasoningLevel: reasoningLevelValue,
         systemPrompt: systemPromptValue,
         lastUpdated: new Date().toLocaleString(),
       };
       profiles.push(profileToUpdate);
     } else {
-      profileToUpdate.llmEndpoint = llmEndpointValue;
-      profileToUpdate.apiKey = resolveCredentialValue(
-        apiKeyValue,
-        hasConfiguredCredential,
-        pendingDefaultApiKey || profileToUpdate.apiKey || ''
-      );
+      profileToUpdate.provider = provider;
+      profileToUpdate.llmEndpoint = provider === 'codex' ? '' : llmEndpointValue;
+      profileToUpdate.apiKey =
+        provider === 'codex'
+          ? ''
+          : resolveCredentialValue(apiKeyValue, credentialIsConfigured, effectiveStoredApiKey);
       profileToUpdate.modelName = modelNameValue;
+      profileToUpdate.reasoningLevel = reasoningLevelValue;
       profileToUpdate.systemPrompt = systemPromptValue;
       profileToUpdate.lastUpdated = new Date().toLocaleString();
     }
@@ -457,9 +764,19 @@ function loadProfileSettings(profileId) {
       profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === 'default');
 
     if (selectedProfile) {
+      const providerSelect = document.getElementById('providerSelect');
+      if (providerSelect) providerSelect.value = selectedProfile.provider || 'api';
       document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || '';
       applyCredentialMask(document.getElementById('apiKey'), Boolean(selectedProfile.apiKey));
-      document.getElementById('modelName').value = selectedProfile.modelName || '';
+      const modelSelect = document.getElementById('modelName');
+      if (modelSelect) {
+        modelSelect.innerHTML = '<option value="">Loading models…</option>';
+        modelSelect.value = '';
+      }
+      const customModelInput = document.getElementById('customModelName');
+      if (customModelInput) customModelInput.value = '';
+      const reasoningSelect = document.getElementById('reasoningLevel');
+      if (reasoningSelect) reasoningSelect.value = selectedProfile.reasoningLevel || '';
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
 
       updateCurrentConfig(
@@ -470,37 +787,8 @@ function loadProfileSettings(profileId) {
         selectedProfile.systemPrompt,
         selectedProfile.name
       );
-    } else {
-      // Fallback to sync storage if profile not found (e.g. initial load or error)
-      chrome.storage.sync.get(
-        {
-          llmEndpoint: STARTER_MISTRAL_ENDPOINT,
-          apiKey: STARTER_MISTRAL_API_KEY,
-          modelName: STARTER_MISTRAL_MODEL,
-          systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
-          lastUpdated: '',
-          profileSelect: 'default',
-        },
-        (items) => {
-          if (chrome.runtime.lastError) {
-            console.error('Error loading settings from sync:', chrome.runtime.lastError);
-            showStatus('Error loading settings: ' + chrome.runtime.lastError.message, true);
-            return;
-          }
-          document.getElementById('llmEndpoint').value = items.llmEndpoint;
-          applyCredentialMask(document.getElementById('apiKey'), Boolean(items.apiKey));
-          document.getElementById('modelName').value = items.modelName;
-          document.getElementById('systemPrompt').value = items.systemPrompt;
-          updateCurrentConfig(
-            items.llmEndpoint,
-            items.apiKey,
-            items.modelName,
-            items.lastUpdated,
-            items.systemPrompt,
-            items.profileSelect
-          );
-        }
-      );
+      updateCodexConnectionControls(selectedProfile.provider || 'api', selectedProfile.id);
+      loadAvailableModels(selectedProfile);
     }
   });
 }
@@ -547,6 +835,7 @@ function loadOptions() {
       const defaultProfile = {
         id: 'default',
         name: 'Default',
+        provider: 'api',
         llmEndpoint: STARTER_MISTRAL_ENDPOINT,
         apiKey: STARTER_MISTRAL_API_KEY,
         modelName: STARTER_MISTRAL_MODEL,
@@ -557,10 +846,8 @@ function loadOptions() {
       chrome.storage.local.set({ profiles: profiles }, () => {
         if (chrome.runtime.lastError) {
           console.error('Options: Error saving default profile:', chrome.runtime.lastError);
-        } else {
         }
       }); // Save updated profiles array
-    } else {
     }
 
     populateProfileDropdown(profiles, lastSelectedProfileId);
@@ -580,12 +867,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const profiles = result.profiles || [];
       const selectedId = result.lastSelectedProfileId || 'default';
       const profile =
-        profiles.find((p) => p.id === selectedId) || profiles.find((p) => p.id === 'default') || {};
+        resolvePreferredProfile({
+          selectedProfile: profiles.find((p) => p.id === selectedId),
+          defaultProfile: profiles.find((p) => p.id === 'default'),
+        }) || {};
       renderSetupStatus(setupStatusText, setupStatusIcon, {
-        connected: Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
+        connected:
+          profile.provider === 'codex'
+            ? false
+            : Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
         model: profile.modelName,
         endpointHost: endpointHost(profile.llmEndpoint),
       });
+      if (profile.provider === 'codex') {
+        chrome.runtime
+          .sendMessage({ action: 'codexAuthStatus', profileId: profile.id })
+          .then((response) => {
+            renderSetupStatus(setupStatusText, setupStatusIcon, {
+              connected: response?.status?.connected === true,
+              model: profile.modelName,
+              endpointHost: 'ChatGPT subscription',
+            });
+          })
+          .catch(() => {});
+      }
     });
   };
   refreshSetupStatus();
@@ -609,9 +914,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const unsavedBanner = document.getElementById('unsaved-banner');
   const connectionTracker = createDirtyTracker(
     [
+      { element: document.getElementById('providerSelect') },
       { element: document.getElementById('llmEndpoint') },
       { element: document.getElementById('apiKey') },
       { element: document.getElementById('modelName') },
+      { element: document.getElementById('customModelName') },
+      { element: document.getElementById('reasoningLevel') },
       { element: document.getElementById('systemPrompt') },
       { element: document.getElementById('profileSelect') },
       {
@@ -642,7 +950,18 @@ document.addEventListener('DOMContentLoaded', () => {
     [{ element: document.getElementById('braveSearchApiKey') }],
     { onChange: () => syncDirtyBanner() }
   );
-  const allTrackers = [connectionTracker, privacyTracker, groundingTracker];
+  const pageActionsTracker = createDirtyTracker(
+    [
+      {
+        element: document.getElementById('pageActionsTrustedMode'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+    ],
+    { onChange: () => syncDirtyBanner() }
+  );
+  const allTrackers = [connectionTracker, privacyTracker, groundingTracker, pageActionsTracker];
+  markGroundingTrackerClean = () => groundingTracker.markClean();
+  markPageActionsTrackerClean = () => pageActionsTracker.markClean();
   function syncDirtyBanner() {
     const dirty = allTrackers.some((tracker) => tracker.isDirty());
     if (unsavedBanner) unsavedBanner.hidden = !dirty;
@@ -669,7 +988,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const addProfileButton = document.getElementById('addProfileButton');
   const deleteProfileButton = document.getElementById('deleteProfileButton');
 
-  // Analytics consent toggle (opt-out, default ON)
+  // Analytics consent toggle (opt-in, default OFF)
   const analyticsConsentToggle = document.getElementById('analyticsConsentToggle');
   if (analyticsConsentToggle) {
     // Initialize from storage (default true when missing)
@@ -905,12 +1224,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
-  checkAndPromptInstructionMigration();
   setupInstructionHandlers();
   setupToolHandlers(); // Add call to setup tool handlers
   setupSkillHandlers(); // Add call to setup skill handlers
   setupBackupHandlers(); // Add call to setup backup handlers
   setupGroundingHandlers(); // Brave web search key
+  setupPageActionHandlers();
 
   // Add event listener for the Revert button
   const revertButton = document.getElementById('revertDefaultsButton');
@@ -926,7 +1245,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const apiKeyInput = document.getElementById('apiKey');
       apiKeyInput.value = '';
       applyCredentialMask(apiKeyInput, true);
-      document.getElementById('modelName').value = defaultModelName;
+      setModelSelection(defaultModelName);
 
       // document.getElementById('systemPrompt').value = ''; // Default system prompt
 
@@ -938,6 +1257,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const profileSelectElement = document.getElementById('profileSelect');
   if (addProfileButton && profileSelectElement) {
     addProfileButton.addEventListener('click', () => {
+      profileSelectElement.dataset.cloneFromProfileId = profileSelectElement.value;
       profileSelectElement.value = 'add_new_profile';
       profileSelectElement.dispatchEvent(new Event('change'));
     });
@@ -953,22 +1273,37 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newProfileName && newProfileName.trim() !== '') {
           chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
             let profiles = result.profiles || [];
-            // Ensure profileSelectElement is available before accessing its value.
-            const currentProfileId = profileSelectElement ? profileSelectElement.value : 'default';
+            const currentProfileId =
+              profileSelectElement?.dataset.cloneFromProfileId ||
+              result.lastSelectedProfileId ||
+              'default';
             const currentProfile =
               profiles.find((p) => p.id === currentProfileId) ||
               profiles.find((p) => p.id === 'default') ||
               {};
+            if (profileSelectElement?.dataset.cloneFromProfileId) {
+              delete profileSelectElement.dataset.cloneFromProfileId;
+            }
 
             const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
             const newProfile = {
               id: newProfileId,
               name: newProfileName.trim(),
+              provider: currentProfile.provider || 'api',
               llmEndpoint:
-                document.getElementById('llmEndpoint').value.trim() || currentProfile.llmEndpoint,
-              apiKey: document.getElementById('apiKey').value.trim() || currentProfile.apiKey,
-              modelName:
-                document.getElementById('modelName').value.trim() || currentProfile.modelName,
+                currentProfile.provider === 'codex'
+                  ? ''
+                  : document.getElementById('llmEndpoint').value.trim() ||
+                    currentProfile.llmEndpoint,
+              apiKey:
+                currentProfile.provider === 'codex'
+                  ? ''
+                  : document.getElementById('apiKey').value.trim() || currentProfile.apiKey || '',
+              modelName: selectedModelValue() || currentProfile.modelName,
+              reasoningLevel:
+                document.getElementById('reasoningLevel')?.value ||
+                currentProfile.reasoningLevel ||
+                '',
               systemPrompt:
                 document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
               lastUpdated: new Date().toLocaleString(),
@@ -1019,43 +1354,44 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Listen for storage changes
-  chrome.storage.onChanged.addListener((changes, area) => {
-    // no-op, future hooks for storage sync
+  chrome.storage.onChanged.addListener(() => {
+    // Storage sync changes are handled by the theme toggle module.
   });
 });
 
-// Migration logic for instructions from sync to local
-function checkAndPromptInstructionMigration() {
-  chrome.storage.sync.get(['instructions'], (syncResult) => {
-    chrome.storage.local.get(['instructions'], (localResult) => {
-      const syncInstructions = syncResult.instructions || [];
-      const localInstructions = localResult.instructions || [];
-      // Show prompt if sync has instructions and local does not
-      if (syncInstructions.length > 0 && localInstructions.length === 0) {
-        const migrationPrompt = document.getElementById('migrationPrompt');
-        migrationPrompt.classList.remove('hidden');
-        document.getElementById('migrateInstructionsBtn').onclick = () => {
-          chrome.storage.local.set({ instructions: syncInstructions }, () => {
-            chrome.storage.sync.set({ instructions: [] }, () => {
-              migrationPrompt.classList.add('hidden');
-              showStatus('Instructions migrated to this device only.', false, true);
-              // Reload instructions table
-              if (typeof window.setupInstructionHandlers === 'function') {
-                // If handler is re-entrant, reload
-                document.querySelector('#instructionsTable tbody').innerHTML = '';
-                // Call loadInstructions directly if available
-                if (window.loadInstructions) window.loadInstructions();
-              }
-            });
-          });
-        };
-        document.getElementById('dismissMigrationBtn').onclick = () => {
-          migrationPrompt.classList.add('hidden');
-        };
-      }
-    });
+document.getElementById('providerSelect')?.addEventListener('change', (event) => {
+  const profileId = document.getElementById('profileSelect')?.value;
+  updateCodexConnectionControls(event.target.value, profileId);
+});
+document.getElementById('modelName')?.addEventListener('change', (event) => {
+  const profileId = document.getElementById('profileSelect')?.value;
+  setCustomModelVisibility(event.target.value === CUSTOM_MODEL_VALUE);
+  updateReasoningOptions(
+    profileId,
+    selectedModelValue(),
+    document.getElementById('reasoningLevel')?.value
+  );
+});
+document.getElementById('refreshModelsButton')?.addEventListener('click', () => {
+  const profileId = document.getElementById('profileSelect')?.value;
+  if (!profileId || profileId === 'add_new_profile') {
+    showStatus('Select a profile before refreshing models.', true);
+    return;
+  }
+  chrome.storage.local.get(['profiles'], (result) => {
+    const profile = (result.profiles || []).find((entry) => entry.id === profileId);
+    if (profile) loadAvailableModels(profile);
   });
-}
+});
+document.getElementById('connectCodexButton')?.addEventListener('click', () => {
+  startCodexLogin().catch((error) => showStatus(error.message, true));
+});
+document.getElementById('disconnectCodexButton')?.addEventListener('click', async () => {
+  const profileId = document.getElementById('profileSelect')?.value;
+  const response = await chrome.runtime.sendMessage({ action: 'codexLogout', profileId });
+  if (!response?.success) showStatus(response?.error || 'Unable to disconnect Codex.', true);
+  else updateCodexConnectionControls('codex', profileId);
+});
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
 
@@ -1110,7 +1446,6 @@ async function populateToolDropdown() {
 function setupInstructionHandlers() {
   const saveInstructionBtn = document.getElementById('saveInstruction');
   const clearFormBtn = document.getElementById('clearForm');
-  const instructionForm = document.querySelector('.instruction-form');
   const instructionSearchInput = document.getElementById('instructionSearch');
   const instructionsCount = document.getElementById('instructionsCount');
 
@@ -1708,9 +2043,6 @@ function isValidJson(str) {
 function setupToolHandlers() {
   const saveToolBtn = document.getElementById('saveTool');
   const clearToolFormBtn = document.getElementById('clearToolForm');
-  const toolEndpointUrlEl = document.getElementById('toolEndpointUrl');
-  const toolHttpMethodEl = document.getElementById('toolHttpMethod');
-
   // Load and display tools
   function loadTools() {
     chrome.storage.local.get(['promptPaulTools'], (result) => {
@@ -1799,42 +2131,20 @@ function setupToolHandlers() {
       const toolHttpMethod = document.getElementById('toolHttpMethod').value;
       const toolId = document.getElementById('toolId').value;
 
-      if (!toolName || !toolDescription) {
-        showStatus('Tool name and description are required.', true);
+      const normalizedTool = normalizeToolDefinition({
+        name: toolName,
+        description: toolDescription,
+        parameters: toolParameters,
+        endpointUrl: toolEndpointUrl,
+        httpMethod: toolHttpMethod,
+      });
+      if (!normalizedTool.valid) {
+        showStatus(normalizedTool.error, true);
         loadingManager.setButtonLoading(saveToolBtn, false);
         return;
       }
 
-      if (
-        toolName === 'load_skill' ||
-        toolName === 'skills_list' ||
-        toolName === 'skill_view' ||
-        toolName === 'web_search'
-      ) {
-        showStatus(`Tool name '${toolName}' is reserved by Prompt Paul.`, true);
-        loadingManager.setButtonLoading(saveToolBtn, false);
-        return;
-      }
-
-      if (toolEndpointUrl) {
-        if (!isValidURL(toolEndpointUrl)) {
-          showStatus('Tool endpoint URL must be a valid URL.', true);
-          loadingManager.setButtonLoading(saveToolBtn, false);
-          return;
-        }
-        const protocol = new URL(toolEndpointUrl).protocol;
-        if (protocol !== 'http:' && protocol !== 'https:') {
-          showStatus('Tool endpoint URL must use http or https.', true);
-          loadingManager.setButtonLoading(saveToolBtn, false);
-          return;
-        }
-      }
-
-      if (toolParameters && !isValidJson(toolParameters)) {
-        showStatus('Parameters must be valid JSON.', true);
-        loadingManager.setButtonLoading(saveToolBtn, false);
-        return;
-      }
+      const normalizedToolValue = normalizedTool.value;
 
       chrome.storage.local.get(['promptPaulTools'], (result) => {
         let tools = result.promptPaulTools || [];
@@ -1846,11 +2156,11 @@ function setupToolHandlers() {
             if (tool.id === toolId) {
               return {
                 ...tool,
-                name: toolName,
-                description: toolDescription,
-                parameters: toolParameters,
-                endpointUrl: toolEndpointUrl,
-                httpMethod: toolHttpMethod,
+                name: normalizedToolValue.name,
+                description: normalizedToolValue.description,
+                parameters: normalizedToolValue.parameters,
+                endpointUrl: normalizedToolValue.endpointUrl,
+                httpMethod: normalizedToolValue.httpMethod,
                 lastUpdated: now,
               };
             }
@@ -1861,11 +2171,11 @@ function setupToolHandlers() {
           // Add new tool
           const newTool = {
             id: createUniqueId('tool'),
-            name: toolName,
-            description: toolDescription,
-            parameters: toolParameters,
-            endpointUrl: toolEndpointUrl,
-            httpMethod: toolHttpMethod,
+            name: normalizedToolValue.name,
+            description: normalizedToolValue.description,
+            parameters: normalizedToolValue.parameters,
+            endpointUrl: normalizedToolValue.endpointUrl,
+            httpMethod: normalizedToolValue.httpMethod,
             createdAt: now,
             lastUpdated: now,
           };
@@ -1937,15 +2247,15 @@ function setupToolHandlers() {
             let existingTools = result.promptPaulTools || [];
             const importedTools = importData.tools;
 
-            const RESERVED_TOOL_NAMES = ['web_search', 'skills_list', 'skill_view', 'load_skill'];
-            const filteredTools = importedTools.filter(
-              (t) => !RESERVED_TOOL_NAMES.includes(t.name)
-            );
-            if (filteredTools.length !== importedTools.length) {
-              const skipped = importedTools.length - filteredTools.length;
-              showStatus(`Skipped ${skipped} reserved tool name(s).`, false, true);
+            const normalizedImports = importedTools
+              .map((tool) => normalizeToolDefinition(tool))
+              .filter((entry) => entry.valid)
+              .map((entry) => entry.value);
+            if (normalizedImports.length !== importedTools.length) {
+              const skipped = importedTools.length - normalizedImports.length;
+              showStatus(`Skipped ${skipped} invalid or reserved tool(s).`, false, true);
             }
-            filteredTools.forEach((importedTool) => {
+            normalizedImports.forEach((importedTool) => {
               const existingIndex = existingTools.findIndex((tool) => tool.id === importedTool.id);
               if (existingIndex > -1) {
                 // Update existing tool
@@ -2014,17 +2324,10 @@ function setupSkillHandlers() {
       builtIn.forEach((s) => skillsMap.set(s.name, { ...s, source: 'Built-in' }));
       // Custom overrides built-in (or adds new)
       custom.forEach((s) => {
-        let description = s.description || '';
-
-        if (typeof s.skillMd === 'string') {
-          const parsed = parseSkillMarkdown(s.skillMd);
-          if (parsed.valid) {
-            description = parsed.metadata.description;
-          } else if (!description) {
-            description = `Invalid SKILL.md (${parsed.error})`;
-          }
-        }
-
+        const parsed = typeof s.skillMd === 'string' ? parseSkillMarkdown(s.skillMd) : null;
+        const description = parsed?.valid
+          ? parsed.metadata.description
+          : `Invalid SKILL.md (${parsed?.error || 'canonical skillMd is required'})`;
         skillsMap.set(s.name, { ...s, description, source: 'Custom' });
       });
 
@@ -2060,45 +2363,32 @@ function setupSkillHandlers() {
             document.getElementById('skillName').value = skill.name;
             document.getElementById('skillName').disabled = true; // Cannot change ID of existing skill
 
-            // Parse canonical SKILL.md format if available, else use legacy fields
-            if (skill.skillMd) {
-              const parsed = parseSkillMarkdown(skill.skillMd);
-              if (parsed.valid) {
-                document.getElementById('skillDescription').value = parsed.metadata.description;
-                document.getElementById('skillContent').value = parsed.instructions;
+            if (typeof skill.skillMd !== 'string') {
+              showStatus(`Skill '${skillName}' is not in canonical SKILL.md format.`, true);
+              return;
+            }
 
-                // Optional fields
-                const versionInput = document.getElementById('skillVersion');
-                const triggersInput = document.getElementById('skillTriggers');
-                const tagsInput = document.getElementById('skillTags');
-                const licenseInput = document.getElementById('skillLicense');
-                const compatibilityInput = document.getElementById('skillCompatibility');
-                const allowedToolsInput = document.getElementById('skillAllowedTools');
-                const metadataInput = document.getElementById('skillMetadata');
+            const parsed = parseSkillMarkdown(skill.skillMd);
+            if (!parsed.valid) {
+              showStatus(`Skill '${skillName}' could not be parsed: ${parsed.error}`, true);
+              return;
+            }
 
-                if (versionInput) versionInput.value = parsed.metadata.version || '1.0.0';
-                if (triggersInput)
-                  triggersInput.value = (parsed.metadata.triggers || []).join(', ');
-                if (tagsInput) tagsInput.value = (parsed.metadata.tags || []).join(', ');
-                if (licenseInput) licenseInput.value = parsed.metadata.license || '';
-                if (compatibilityInput)
-                  compatibilityInput.value = parsed.metadata.compatibility || '';
-                if (allowedToolsInput)
-                  allowedToolsInput.value = parsed.metadata['allowed-tools'] || '';
-                if (metadataInput) {
-                  metadataInput.value = parsed.metadata.metadata
-                    ? JSON.stringify(parsed.metadata.metadata, null, 2)
-                    : '';
-                }
-              } else {
-                // Fallback if parsing fails
-                document.getElementById('skillDescription').value = skill.description || '';
-                document.getElementById('skillContent').value = skill.content || '';
-              }
-            } else {
-              // Legacy format
-              document.getElementById('skillDescription').value = skill.description || '';
-              document.getElementById('skillContent').value = skill.content || '';
+            document.getElementById('skillDescription').value = parsed.metadata.description;
+            document.getElementById('skillContent').value = parsed.instructions;
+
+            const licenseInput = document.getElementById('skillLicense');
+            const compatibilityInput = document.getElementById('skillCompatibility');
+            const allowedToolsInput = document.getElementById('skillAllowedTools');
+            const metadataInput = document.getElementById('skillMetadata');
+
+            if (licenseInput) licenseInput.value = parsed.metadata.license || '';
+            if (compatibilityInput) compatibilityInput.value = parsed.metadata.compatibility || '';
+            if (allowedToolsInput) allowedToolsInput.value = parsed.metadata['allowed-tools'] || '';
+            if (metadataInput) {
+              metadataInput.value = parsed.metadata.metadata
+                ? JSON.stringify(parsed.metadata.metadata, null, 2)
+                : '';
             }
           }
         });
@@ -2195,7 +2485,7 @@ function setupSkillHandlers() {
         options: {
           ...(license ? { license } : {}),
           ...(compatibility ? { compatibility } : {}),
-          ...(allowedTools ? { allowedTools } : {}),
+          ...(allowedTools ? { 'allowed-tools': allowedTools } : {}),
           ...(customMetadata ? { metadata: customMetadata } : {}),
           userInvocable,
           disableModelInvocation,
@@ -2247,9 +2537,6 @@ function setupSkillHandlers() {
     if (contentInput) contentInput.value = '';
 
     const optionalInputs = [
-      'skillVersion',
-      'skillTriggers',
-      'skillTags',
       'skillLicense',
       'skillCompatibility',
       'skillAllowedTools',
@@ -2295,7 +2582,7 @@ function setupSkillHandlers() {
     });
   }
 
-  // Import skills handler - supports both v1 (legacy) and v2 (canonical) formats
+  // Import canonical Agent Skills export format.
   const importBtn = document.getElementById('importSkills');
   if (importBtn) {
     importBtn.addEventListener('click', () => {
@@ -2314,53 +2601,23 @@ function setupSkillHandlers() {
           const imported = JSON.parse(e.target.result);
           let skillsToImport = [];
 
-          // Detect format version
-          if (imported.version === '2.0' && imported.skills) {
-            // v2 canonical format
-            skillsToImport = imported.skills;
-          } else if (Array.isArray(imported)) {
-            // v1 legacy format (array of skills)
-            skillsToImport = imported;
-          } else {
-            showStatus('Invalid skill file format. Expected v2 object or v1 array.', true);
+          if (imported.version !== '2.0' || !Array.isArray(imported.skills)) {
+            showStatus('Invalid skill file format. Expected a v2 skills export.', true);
             return;
           }
+          skillsToImport = imported.skills;
 
           chrome.storage.local.get(['customSkills'], (result) => {
             let customSkills = result.customSkills || [];
             let importCount = 0;
-            let migrateCount = 0;
-
             let invalidCount = 0;
 
             skillsToImport.forEach((newSkill) => {
-              let canonicalMarkdown = null;
-
-              if (typeof newSkill.skillMd === 'string' && newSkill.skillMd.trim() !== '') {
-                canonicalMarkdown = newSkill.skillMd;
-              } else if (
-                newSkill.name &&
-                newSkill.description &&
-                (newSkill.content || newSkill.instructions)
-              ) {
-                canonicalMarkdown = generateSkillMarkdown({
-                  name: newSkill.name,
-                  description: newSkill.description,
-                  instructions: newSkill.content || newSkill.instructions,
-                  options: {
-                    ...(newSkill.license ? { license: newSkill.license } : {}),
-                    ...(newSkill.compatibility ? { compatibility: newSkill.compatibility } : {}),
-                    ...(newSkill['allowed-tools']
-                      ? { allowedTools: newSkill['allowed-tools'] }
-                      : {}),
-                    ...(newSkill.metadata ? { metadata: newSkill.metadata } : {}),
-                  },
-                });
-                migrateCount++;
-              } else {
+              if (typeof newSkill.skillMd !== 'string' || newSkill.skillMd.trim() === '') {
                 invalidCount++;
                 return;
               }
+              const canonicalMarkdown = newSkill.skillMd;
 
               const parsed = parseSkillMarkdown(canonicalMarkdown);
               if (!parsed.valid) {
@@ -2384,9 +2641,8 @@ function setupSkillHandlers() {
             });
 
             chrome.storage.local.set({ customSkills }, () => {
-              const migrateMsg = migrateCount > 0 ? ` (${migrateCount} migrated from legacy)` : '';
               const invalidMsg = invalidCount > 0 ? ` (${invalidCount} skipped as invalid)` : '';
-              showStatus(`Imported ${importCount} skills${migrateMsg}${invalidMsg}.`);
+              showStatus(`Imported ${importCount} skills${invalidMsg}.`);
               loadSkills();
             });
           });
@@ -2521,8 +2777,7 @@ function setupSkillHandlers() {
       importBtn.disabled = true;
       importBtn.innerHTML =
         '<span class="material-symbols-outlined sync-spin">sync</span> Importing...';
-      statusEl.textContent =
-        '<span style="color: var(--ext-muted-foreground);">Fetching skill from GitHub...</span>';
+      statusEl.textContent = 'Fetching skill from GitHub...';
 
       try {
         // Fetch skill with multiple path/branch fallback strategies
@@ -2534,7 +2789,7 @@ function setupSkillHandlers() {
           );
         }
 
-        const { skillMd, url: resolvedUrl } = fetchResult;
+        const { skillMd } = fetchResult;
 
         statusEl.textContent =
           '<span style="color: var(--ext-muted-foreground);">Found skill, saving...</span>';
@@ -2581,7 +2836,7 @@ function setupSkillHandlers() {
 
         statusEl.innerHTML =
           '<span class="ext-text-primary">✓ Successfully imported "' +
-          parsed.metadata.name +
+          escapeHtml(parsed.metadata.name) +
           '"</span>';
         urlInput.value = '';
         loadSkills(); // Reload the skills table
@@ -2590,8 +2845,7 @@ function setupSkillHandlers() {
           statusEl.textContent = '';
         }, 3000);
       } catch (error) {
-        statusEl.textContent =
-          '<span style="color: var(--ext-destructive);">Error: ' + error.message + '</span>';
+        statusEl.textContent = `Error: ${error?.message || 'Could not import the skill.'}`;
       } finally {
         resetButton();
       }
@@ -2630,11 +2884,22 @@ function setupBackupHandlers() {
       try {
         showStatus('Preparing full backup...', false, true);
 
-        const localData = await new Promise((resolve) => chrome.storage.local.get(null, resolve));
-        const syncData = await new Promise((resolve) => chrome.storage.sync.get(null, resolve));
+        const localSnapshot = await new Promise((resolve) =>
+          chrome.storage.local.get(null, resolve)
+        );
+        const syncSnapshot = await new Promise((resolve) => chrome.storage.sync.get(null, resolve));
+        const localData = Object.fromEntries(
+          BACKUP_LOCAL_KEYS.filter((key) =>
+            Object.prototype.hasOwnProperty.call(localSnapshot, key)
+          ).map((key) => [key, localSnapshot[key]])
+        );
+        const syncData = Object.fromEntries(
+          BACKUP_SYNC_KEYS.filter((key) =>
+            Object.prototype.hasOwnProperty.call(syncSnapshot, key)
+          ).map((key) => [key, syncSnapshot[key]])
+        );
 
         const fullBackup = {
-          version: '1.0',
           timestamp: new Date().toISOString(),
           local: localData,
           sync: syncData,
@@ -2650,7 +2915,7 @@ function setupBackupHandlers() {
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
 
-        showStatus('Full backup exported successfully.', false, true);
+        showStatus('Backup exported. Codex subscription tokens are not included.', false, true);
       } catch (error) {
         console.error('Export error:', error);
         showStatus('Failed to export backup: ' + error.message, true, true);
@@ -2683,22 +2948,33 @@ function setupBackupHandlers() {
         try {
           const backup = JSON.parse(e.target.result);
 
-          if (!backup.local && !backup.sync) {
-            throw new Error('Invalid backup format: missing storage data.');
+          const normalizedBackup = normalizeBackupPayload(backup);
+          if (!normalizedBackup.valid) {
+            throw new Error(normalizedBackup.error);
           }
 
           showStatus('Restoring data...', false, true);
 
-          // Restore local data
-          if (backup.local) {
-            await new Promise((resolve) => chrome.storage.local.set(backup.local, resolve));
+          // Restore only validated, supported storage keys. Credentials remain
+          // part of full backups by design and are covered by the UI warning.
+          if (Object.keys(normalizedBackup.value.local).length > 0) {
+            await new Promise((resolve) =>
+              chrome.storage.local.set(normalizedBackup.value.local, resolve)
+            );
+          }
+          if (Object.keys(normalizedBackup.value.sync).length > 0) {
+            await new Promise((resolve) =>
+              chrome.storage.sync.set(normalizedBackup.value.sync, resolve)
+            );
           }
 
-          // Restore sync data
-          if (backup.sync) {
-            await new Promise((resolve) => chrome.storage.sync.set(backup.sync, resolve));
+          if (normalizedBackup.warnings?.length > 0) {
+            showStatus(
+              `Restore complete; skipped ${normalizedBackup.warnings.length} unsupported field(s).`,
+              false,
+              true
+            );
           }
-
           showStatus('Restore complete. Reloading...', false, true);
 
           // Reload the page to reflect all changes
@@ -2783,7 +3059,7 @@ function setupGroundingHandlers() {
         updateKeyStatus();
         showStatus('Brave Search API key saved.', false, true);
         flashSaveFeedback(saveGroundingButton, false);
-        if (markAllTrackersClean) markAllTrackersClean();
+        if (markGroundingTrackerClean) markGroundingTrackerClean();
         announceDirtyChange(false);
       };
       if (value) {
@@ -2813,4 +3089,45 @@ function setupGroundingHandlers() {
 
   // Load initial state
   updateKeyStatus();
+}
+
+/**
+ * Setup the trusted current-page action preference.
+ */
+function setupPageActionHandlers() {
+  const toggle = document.getElementById('pageActionsTrustedMode');
+  const saveButton = document.getElementById('savePageActions');
+  const status = document.getElementById('pageActionsSaveStatus');
+  if (!toggle) return;
+
+  chrome.storage.local.get(['pageActionsTrustedMode'], (result) => {
+    toggle.checked = result.pageActionsTrustedMode === true;
+    if (status)
+      status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
+  });
+
+  toggle.addEventListener('change', () => {
+    announceDirtyChange(true);
+    if (status) status.textContent = 'Unsaved changes — click Save Page Action Settings.';
+  });
+
+  saveButton?.addEventListener('click', () => {
+    chrome.storage.local.set({ pageActionsTrustedMode: toggle.checked }, () => {
+      if (chrome.runtime.lastError) {
+        showStatus(
+          'Failed to save page-action settings: ' + chrome.runtime.lastError.message,
+          true,
+          true
+        );
+        flashSaveFeedback(saveButton, true);
+        return;
+      }
+      if (status)
+        status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
+      showStatus('Page-action settings saved.', false, true);
+      flashSaveFeedback(saveButton, false);
+      markPageActionsTrackerClean?.();
+      announceDirtyChange(false);
+    });
+  });
 }

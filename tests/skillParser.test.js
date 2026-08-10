@@ -31,18 +31,16 @@ describe('skillParser', () => {
 
       const result = parseSkillMarkdown(md);
       expect(result.valid).toBe(true);
-      expect(result.legacy).toBe(false);
       expect(result.metadata.name).toBe('humanizer');
       expect(result.metadata.description).toBe('Makes text sound more natural');
       expect(result.instructions).toContain('# Instructions');
     });
 
-    it('parses legacy skill without frontmatter', () => {
+    it('rejects skills without frontmatter', () => {
       const md = 'Just some instructions with no frontmatter.';
       const result = parseSkillMarkdown(md);
-      expect(result.valid).toBe(true);
-      expect(result.legacy).toBe(true);
-      expect(result.metadata.name).toBe('unknown');
+      expect(result.valid).toBe(false);
+      expect(result.error).toMatch(/requires YAML frontmatter/);
     });
 
     it('rejects skill with missing closing ---', () => {

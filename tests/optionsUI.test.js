@@ -6,6 +6,7 @@ import {
   announceDirtyChange,
   applyCredentialMask,
   resolveCredentialValue,
+  resolveProfileCredentialValue,
   flashSaveFeedback,
   renderSetupStatus,
   endpointHost,
@@ -16,6 +17,7 @@ function makeInput(value = '') {
   return {
     value,
     placeholder: '',
+    required: true,
     dataset: {},
     addEventListener(type, fn) {
       listeners[type] = fn;
@@ -92,6 +94,7 @@ describe('applyCredentialMask', () => {
     const input = makeInput('secret-value');
     applyCredentialMask(input, true);
     expect(input.value).toBe('');
+    expect(input.required).toBe(false);
     expect(input.dataset.configured).toBe('true');
     expect(input.placeholder).toBe(MASKED_KEY_PLACEHOLDER);
   });
@@ -101,6 +104,7 @@ describe('applyCredentialMask', () => {
     input.dataset.configured = 'true';
     applyCredentialMask(input, false, 'Paste key');
     expect(input.value).toBe('');
+    expect(input.required).toBe(true);
     expect(input.dataset.configured).toBeUndefined();
     expect(input.placeholder).toBe('Paste key');
   });
@@ -117,6 +121,20 @@ describe('resolveCredentialValue', () => {
 
   it('returns empty when nothing typed and not masked', () => {
     expect(resolveCredentialValue('', false, 'stored-key')).toBe('');
+  });
+});
+
+describe('resolveProfileCredentialValue', () => {
+  it('preserves a stored profile key even when the mask marker is stale', () => {
+    expect(resolveProfileCredentialValue('', false, 'stored-key')).toBe('stored-key');
+  });
+
+  it('prefers a newly typed key over the stored profile key', () => {
+    expect(resolveProfileCredentialValue('new-key', true, 'stored-key')).toBe('new-key');
+  });
+
+  it('uses a pending credential for a new or reverted profile', () => {
+    expect(resolveProfileCredentialValue('', false, '', 'pending-key')).toBe('pending-key');
   });
 });
 

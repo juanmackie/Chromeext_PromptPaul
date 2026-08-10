@@ -173,19 +173,20 @@ export function announceDirtyChange(isDirty) {
 
 /**
  * Applies credential masking to an input: never loads the raw value into the
- * field; instead marks it configured with a masked placeholder.
+ * field; instead marks it configured with a masked placeholder and disables
+ * native required validation while configured, restoring it when unconfigured.
  * @param {Object} input - The password input element.
  * @param {boolean} configured - Whether a key is stored.
  * @param {string} [placeholder] - Masked placeholder text.
  */
 export function applyCredentialMask(input, configured, placeholder = MASKED_KEY_PLACEHOLDER) {
   if (!input) return;
+  input.value = '';
+  input.required = !configured;
   if (configured) {
-    input.value = '';
     input.placeholder = placeholder;
     input.dataset.configured = 'true';
   } else {
-    input.value = '';
     input.placeholder = input.dataset.originalPlaceholder || placeholder;
     delete input.dataset.configured;
   }
@@ -204,6 +205,29 @@ export function resolveCredentialValue(rawValue, isMaskedConfigured, storedValue
   if (value) return value;
   if (isMaskedConfigured) return String(storedValue || '');
   return '';
+}
+
+/**
+ * Resolve a profile credential when the stored value may be masked or the
+ * credential field's configured marker may be stale after profile switching.
+ * @param {string} rawValue - Current input value.
+ * @param {boolean} isMaskedConfigured - Whether the field is marked configured.
+ * @param {string} storedValue - Existing profile credential.
+ * @param {string} [pendingValue] - Pending default/release credential.
+ * @returns {string} The credential to persist.
+ */
+export function resolveProfileCredentialValue(
+  rawValue,
+  isMaskedConfigured,
+  storedValue,
+  pendingValue = ''
+) {
+  const effectiveStoredValue = String(pendingValue || storedValue || '');
+  return resolveCredentialValue(
+    rawValue,
+    isMaskedConfigured || Boolean(effectiveStoredValue),
+    effectiveStoredValue
+  );
 }
 
 /**

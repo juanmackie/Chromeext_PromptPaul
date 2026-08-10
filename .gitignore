@@ -38,3 +38,6 @@ dist/
 # Ignore coverage output
 coverage/
 .nyc_output/
+
+# Ignore Playwright artifacts
+test-results/

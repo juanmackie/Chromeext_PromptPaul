@@ -16,7 +16,8 @@ build (`npm run build` then Load unpacked on `dist/`).
 4. **Context continuity** — attached context (selection, page, media) persists
    across turns, actions, and recovery (Retry/Edit/Continue).
 5. **Capability parity** — skills, web search grounding, voice, presets, custom
-   instructions, and tools behave exactly as before the refinement.
+   instructions, and tools behave exactly as before the refinement; page actions
+   are a separate default-off opt-in.
 
 ## Journey 1 — Selected text (context menu + quick actions)
 
@@ -85,6 +86,34 @@ Verification: axes 1 (media bytes + error paths preserved), 2 (three entry
 paths — context menu, Options, website deep link, toolbar), 4 (attachment
 continuity), 5 (media analysis unchanged).
 
+## Journey 4 — Current-page semantic action
+
+Steps:
+
+1. Open a normal form or SPA and click the side-panel **Act** toggle; confirm it
+   is `aria-pressed="true"` and that the next run is the only run granted page tools.
+2. Ask Prompt Paul to inspect the page. It uses `page_get_state` and shows a
+   bounded semantic snapshot; page text that contains instructions is treated as
+   untrusted data.
+3. Ask it to fill a harmless field or click a non-destructive control. The
+   target is highlighted and the run shows an approval card; Deny causes no DOM
+   event, while Approve executes once and refreshes the snapshot. **Approve all
+   this session** enables every policy-allowed mutation for the rest of the
+   current run; hard-blocked controls remain unavailable.
+4. Change the SPA DOM before the next action. The stale snapshot is rejected and
+   Prompt Paul requests a fresh state rather than guessing an index.
+5. Enable **Trusted page actions** in Options and repeat a harmless mutation;
+   allowed low/medium-risk actions may proceed without a card. Password, OTP,
+   payment, security, destructive, navigation, and unsupported controls remain
+   blocked or confirmation-gated.
+6. Press Stop during approval or execution; the card disables, the run ends, the
+   highlight is removed, the Act toggle resets to off, and the next run starts
+   cleanly.
+
+Verification: axes 1 (no secret/action leakage), 3 (approval card themes), 4
+(snapshot refresh, session approval, and abort cleanup), 5 (Act-off parity and
+trusted-mode limits).
+
 ## Options surface checks
 
 - **Setup**: Get Started banner shows "Not connected" until endpoint + key +
@@ -92,8 +121,8 @@ continuity), 5 (media analysis unchanged).
 - **Masked credentials**: after saving a profile, the API key field shows a
   masked placeholder and never contains the raw key; the copy button still
   copies the stored key; saving with the field blank preserves the stored key.
-- **Explicit section saves**: Connection, Privacy, and Web Search each persist
-  on their own Save button with green flash feedback.
+- **Explicit section saves**: Connection, Privacy, Web Search, and Page Actions
+  each persist on their own Save button with green flash feedback.
 - **Unsaved changes**: editing any field shows the warning banner; navigating
   away triggers the `beforeunload` prompt.
 - **Backup**: Full Backup exports all local data (warning discloses API keys);
@@ -108,8 +137,8 @@ continuity), 5 (media analysis unchanged).
 - Labels: quick actions and recovery buttons carry `title`/`aria-label`; the
   context tray items use visible text labels; the unsaved banner is
   `aria-live="polite"`.
-- State: run states mirror to `aria-busy`; the Web toggle uses `aria-pressed`;
-  recovery rows are `role="group"` with labels.
+- State: run states mirror to `aria-busy`; the Web and Act toggles use
+  `aria-pressed`; approval cards use `role="alertdialog"` and native buttons.
 - Reduced motion: `prefers-reduced-motion` disables pulse animations in
   `ui-primitives.css`.
 - Keyboard: skip link targets the composer; all new controls are native

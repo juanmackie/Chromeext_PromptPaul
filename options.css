@@ -283,7 +283,7 @@ body.dark-theme ::selection {
 
 body {
   padding: 0;
-  font-family: var(--font-family);
+  font-family: var(--ext-font-family);
   background-color: var(--ext-background);
   color: var(--ext-foreground);
   line-height: 1.6;
@@ -1665,19 +1665,6 @@ body.dark-theme #toolsTable tbody tr:hover {
 
 .hidden {
   display: none !important;
-}
-
-.migration-prompt {
-  display: none;
-  margin-bottom: 1em;
-  padding: 1rem;
-  background: var(--ext-accent);
-  border-radius: 0px;
-  border: 1px solid var(--ext-border);
-}
-
-.migration-prompt .button-group {
-  margin-top: 0.5em;
 }
 
 .instruction-form {

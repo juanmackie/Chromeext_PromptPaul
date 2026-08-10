@@ -15,8 +15,8 @@
     "test": "node scripts/test-runner.js",
     "test:unit": "node scripts/test-runner.js --unit",
     "test:integration": "node scripts/test-runner.js --integration",
-    "test:coverage": "node scripts/test-runner.js --coverage",
     "test:behavior": "vitest run",
+    "test:browser": "playwright test tests/browser/page-actions.spec.js",
     "build": "node scripts/build.js",
     "build:dev": "node scripts/build.js --dev",
     "build:prod": "node scripts/build.js --prod",
@@ -26,6 +26,7 @@
     "ci": "npm run validate && npm run build:prod"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "eslint": "^8.57.1",
     "prettier": "^3.8.3",
     "vitest": "^4.1.8"

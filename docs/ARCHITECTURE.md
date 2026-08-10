@@ -23,6 +23,8 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/chat/ChatMedia.js` prepares image, video, and audio requests
 - `src/chat/ChatStream.js` tracks streaming state and history
 - `src/chat/ChatPageActions.js` renders page-aware quick actions and preset prompts
+- `src/chat/ChatPageAutomation.js` owns the default-off Act and Tabs toggles, sanitized page-action approval cards, and reconnect notices
+- `src/chat/ChatRunRecovery.js` stores the opaque active-run pointer and renders bounded session journal status after reconnect
 - `src/chat/ChatComposer.js` composer-led UI: context tray, contextual quick actions, and inline Stop/Retry/Edit/Continue recovery
 
 ### Shared Utilities
@@ -34,8 +36,12 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/utils/suggestionStorage.js` stores custom site suggestions
 - `src/utils/skillParser.js` parses and validates `SKILL.md`
 - `src/utils/toolChoiceBuilder.js` normalizes tool choice payloads
-- `src/utils/validation.js` provides small shared validators
+- `src/utils/validation.js` owns HTTP(S)-only endpoint validation, custom-tool/profile normalization, and bounded backup restore validation
+- `src/utils/codexAuth.js` owns the profile-local ChatGPT device-code login, token refresh, and secret-free status bridge. `src/orchestrator/CodexTransport.js` converts Prompt Paul history/tools to the ChatGPT Codex Responses wire and parses its stream.
+- `src/utils/modelDiscovery.js` owns background-only `/models` requests. API profiles use the configured compatible endpoint, while Codex profiles use the authenticated Codex backend route and receive model-specific reasoning metadata.
 - `src/utils/braveSearch.js` bounded Brave LLM Context client with URL and payload validation
+- `src/utils/pageDom.js` bounded semantic DOM snapshot normalization and sensitive-field masking
+- `src/utils/pageActionPolicy.js` page-action and bounded tab argument validation, risk classification, hard blocks, and trusted-mode policy
 - `src/utils/runState.js` standardized run/feedback state vocabulary (`data-run-state`) shared by chat and options
 
 ### Options Layer
@@ -76,13 +82,33 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 1. `ChatAPI.js` reads the selected profile
 2. Shared routing helpers validate the endpoint, key, and model
 3. Media requests can reroute to a vision-capable profile when needed
+4. Options creates or selects the `Codex` profile after successful subscription sign-in, then loads the provider model list and persists the selected model/reasoning level
 
 ### Reasoning responses
 
 1. `RunOrchestrator` separates structured and inline reasoning from answer text and records provider completion reasons without forwarding hidden reasoning in terminal metadata
 2. Reasoning-capable provider requests reserve explicit output capacity for the final answer
-3. A reasoning-only response receives at most one text-only recovery request with tools disabled
-4. `ChatGrounding` shows the token-budget warning only when the provider confirms a token-limit completion; otherwise it uses a neutral no-answer message
+3. Codex model metadata supplies the Options thinking-level choices; the selected level is sent as `reasoning.effort`
+4. A reasoning-only response receives at most one text-only recovery request with tools disabled
+5. `ChatGrounding` shows the token-budget warning only when the provider confirms a token-limit completion; otherwise it uses a neutral no-answer message
+
+### Storage import and external tool boundaries
+
+1. Options export filters to supported local/sync backup keys; API credentials remain subject to the existing backup warning, while Codex subscription tokens are never exported.
+2. Backup restore validates supported storage keys and nested profiles/tools before writing; unknown keys are skipped, and restored Codex profiles require reauthentication.
+3. Custom tools remain user-configured HTTP(S) endpoints, but save, import, profile/runtime resolution, and execution share the same method/name/URL validation.
+4. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged.
+5. Release builds may inject a deliberately public, quota-limited demo credential; source checkouts remain credential-free.
+
+### Current-Page Actions (optional)
+
+1. The side-panel **Act** toggle stores `pageActionsEnabled` in session storage, defaults to `false`, and consumes it for one run; it is a run permission, not a request to act. Options separately persists `pageActionsTrustedMode`, also default `false`.
+2. `chat.js` passes `pageActions: true` only for opted-in runs with a supported source tab. A separate Tabs toggle passes `pageActionsMultiTab: true`. `RunOrchestrator` forces the first page-action tool turn through `page_get_state`; later mutations still require policy evaluation and approval. Tabs are owned by the run, capped at eight, and new origins require approval. `page_request_user_input` pauses for one bounded, non-secret clarification.
+3. The all-pages content script creates an on-demand, bounded semantic snapshot with indexed controls and a run-scoped `snapshotId`; text is marked as untrusted reference data and password/OTP/credential/payment values are masked or omitted.
+4. Mutating actions require the current snapshot ID and are routed by `background.js` to the originating tab. Approved navigation-capable clicks may replace the current-tab document once; `background.js` waits for the new content-script bridge, and the orchestrator clears the old snapshot and forces `page_get_state` before another mutation. Unexpected navigation and disconnected or semantically changed element references still fail closed.
+5. `pageActionPolicy.js` classifies targets and enforces default confirmation, trusted-mode limits, hard blocks, input/action caps, and DOM-only behavior. There is no selector, coordinate, arbitrary JavaScript, or main-world escape hatch; validated HTTP(S) links may transition the current tab after approval, while `_blank` links use the owned-tab `page_open_link` tool.
+6. Confirmable actions emit bounded `page_action_confirmation` events. The side panel renders Approve/Deny cards with an explicit “Approve all this session” option for every policy-allowed action; that session approval is scoped to the live run, while hard-blocked controls remain unavailable. Decisions are matched to the live run and opaque confirmation ID, and timeout/stop/error paths clear pending UI and content-script state.
+7. The page-actions system-prompt block is directive: when the user's request is achievable on the current page, the model must inspect, act, re-inspect after each mutation, and summarize what it did. A multi-tab run may use only its owned tabs and must switch before acting on another tab. Approved navigation-capable controls and valid HTTP(S) links require a fresh inspection; `_blank` links use `page_open_link`. The model never fakes an action. An empty snapshot result tells the model the page has nothing actionable and to ask the user to open the target page.
 
 ### Web Search Grounding (optional)
 
@@ -102,6 +128,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `scripts/build.js` copies the extension into `dist/`
 - `scripts/test-runner.js` checks module structure and key regression guards
 - `scripts/smoke-check.js` performs the cheapest end-to-end sanity check
+- `npm run test:browser` loads the unpacked extension in a real headed Chromium-family browser and exercises the content-script bridge, indexed compose controls, interrupted connections, timeout, navigation identity, and service-worker restart paths; set `PROMPT_PAUL_BROWSER=chrome|edge` to target an installed branded browser. Chrome 137+ and equivalent Edge builds use the browser-level CDP Extensions domain to load the unpacked directory.
 
 ## Notes
 

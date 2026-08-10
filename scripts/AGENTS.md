@@ -7,13 +7,13 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 ## Ownership
 
 - `build.js` owns manifest validation, build directory recreation, source file copying, source directory copying, and build metadata generation.
-- `test-runner.js` owns structural tests, regression guards, manifest checks, skill checks, and source size checks.
+- `test-runner.js` owns structural tests, regression guards, manifest checks, skill checks, and source size checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
 - `smoke-check.js` owns the cheapest manifest and vendored dependency sanity checks.
 
 ## Local Contracts
 
 - Scripts are CommonJS Node scripts and assume `process.cwd()` is the repository root.
-- `build.js` writes generated output to `dist/`; `dist/` is not source of truth.
+- `build.js` writes generated output to `dist/`; `dist/` is not source of truth. Release builds may inject the deliberately public, quota-limited `PROMPT_PAUL_DEMO_API_KEY` into the generated starter profile; source files must remain credential-free.
 - `build.js` copies root manifest-referenced files and the `src`, `libs`, and `skills` directories.
 - `test-runner.js` is intentionally structural and should guard contracts that are easy to regress without a browser.
 - `smoke-check.js` must remain cheap enough to run often.
@@ -24,7 +24,8 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - Prefer clear failure messages that name the missing file, contract, or token.
 - Update package scripts when adding new script entry points.
 - Update tests when adding source modules with durable contracts.
-- Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`), side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`), and structured prompt contracts (`composeUserPrompt`, raw concatenation patterns) live in `test-runner.js`.
+- Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`), side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`), structured prompt contracts (`composeUserPrompt`, raw concatenation patterns), and current-page action contracts (bounded snapshots, stale-state rejection, reserved tools, approval routing, and run-scoped session approval) live in `test-runner.js`.
+- The current-page action guard also pins the bounded user-input and owned-tab tool entry points.
 
 ## Verification
 

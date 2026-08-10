@@ -7,7 +7,14 @@ The `src/orchestrator/` subtree centralizes LLM run execution, tool calls, strea
 ## Ownership
 
 - `RunOrchestrator.js` owns run IDs, active run state, tool execution idempotency, registered built-in tools (including the reserved `web_search` tool), provider-specific execution, and follow-up calls after tool execution.
+- `CodexTransport.js` owns the ChatGPT subscription Responses request/input/tool conversion and SSE parsing. `RunOrchestrator.js` remains the owner of Codex tool execution, policy, skills, recovery, and Prompt Paul event shapes.
 - The orchestrator exposes `run.webSearch` metadata only through the terminal `complete` event (`event.grounding.sources`); the Brave API key never leaves the service worker.
+- Current-page actions are opt-in per run through `config.pageActions`, source-tab scoped, and registered as the reserved `page_get_state`, `page_click`, `page_input`, `page_select`, and `page_scroll` tools. Their executor is injected by the service worker; the model never receives browser APIs or selectors. Valid HTTP(S) same-tab links are confirmation-gated through `page_click`; `_blank` links use the indexed `page_open_link` tab tool. Navigation may resume only after the service worker observes the current-tab transition and re-establishes the content-script bridge.
+- `config.pageActionsMultiTab` is a second explicit opt-in. It advertises only owned-tab list/open/switch/close tools, limits a run to eight tabs, blocks closing the source tab, and requires approval before a new origin is added. Page actions target the run's selected owned tab and require a fresh snapshot after a switch.
+- `page_request_user_input` is a bounded clarification tool. It is available only in an Act-enabled run, blocks secret/payment questions, and waits for an extension-page response with a timeout or abort path.
+- Act owns the first tool turn: when `config.pageActions` is enabled, `page_get_state` is the only advertised and forced tool until the initial snapshot exists. A forced custom tool choice resumes only after inspection. The Act prompt must name the authoritative callable page tools and tell the model not to claim that those tools are unavailable.
+- The page-actions system-prompt block is directive and non-limiting: the model must execute page-achievable requests with the page tools (inspect → act → re-inspect → summarize what it did) rather than describing steps. The block deliberately never enumerates capabilities the tools lack (terminal/OS actions, JavaScript, cross-tab work), because that enumeration drove models to lead with “I can’t” refusals; requests the tools cannot execute are answered normally as a helpful assistant, and the model never fakes an action. Approved navigation-capable controls may transition the current tab once; the next turn must re-inspect the new document. Navigation links remain blocked. Secrets stay out of the page tools. Empty snapshots tell the model to ask the user to open the target page.
+- Page-action policy is snapshotted at run start. Default mode confirms state-changing actions; trusted mode only skips allowed low/medium-risk approvals. An approval-card “Approve all this session” choice is scoped to the active run and skips every confirmation for policy-allowed actions; credential, OTP, payment, security, destructive, navigation-link, and unsupported actions that are hard-blocked remain unavailable.
 - Brave execution is supplied through `braveSearchExecutor` and key availability through `webSearchStatusProvider`; `run.config.apiKey` is only the selected LLM credential.
 - Search/tool sequencing is model-directed before use: a forced user tool (when configured) runs first exactly once, then `web_search` is offered with automatic model selection (never forced) while a search slot is available. The slot is claimed before network I/O.
 - After a search attempt, the system prompt switches to an already-completed phase and the immediate continuation is text-only. Duplicate or parallel search calls receive `WEB_SEARCH_ALREADY_USED` and never issue another Brave request.
@@ -15,10 +22,14 @@ The `src/orchestrator/` subtree centralizes LLM run execution, tool calls, strea
 
 ## Local Contracts
 
+- Navigation links are supported only when the snapshot exposes a validated HTTP(S) destination. Same-tab links use `page_click` with approval; links that open a new tab use the indexed `page_open_link` tool. New origins always require explicit approval, including trusted or session-approved runs.
+
 - Skills are injected as instructions via the composed system prompt (`_buildSystemPrompt`), not via conversation history unshift. Requested skills are resolved through `resolveSkill` and included even when `disable-model-invocation` hides them from model self-discovery.
 - Tool executions must remain idempotent by `runId` and `toolCallId`.
+- The tool-call retry cap counts consecutive failing tool turns only: a successful tool result resets the counter, so multi-step page automation (inspect → act → re-inspect) can run up to the page-action budget. Mutation results carry a refreshed-snapshot notice so the model re-reads the current `snapshotId` and indexes instead of reusing stale ones.
 - Abort handling should emit a clean aborted event rather than surfacing intentional cancellation as an error.
 - Provider-specific execution must preserve OpenAI-compatible and Anthropic-compatible endpoint behavior.
+- Codex subscription runs use the background-provided access token and account identifier only at request time; never persist or emit those values through run state, journals, or UI events. The selected profile reasoning level is sent as the Codex Responses `reasoning.effort` field.
 - Terminal `complete` events may include safe provider completion metadata. Reasoning-only responses receive at most one text-only recovery attempt without repeating tools or exposing hidden reasoning.
 - `CORE_INSTRUCTIONS` applies to all runs unless the project deliberately changes the formatting policy.
 
@@ -27,7 +38,8 @@ The `src/orchestrator/` subtree centralizes LLM run execution, tool calls, strea
 - Keep orchestration logic centralized here instead of duplicating run or tool execution flow in `background.js`.
 - Register new built-in tools through the existing tool registry pattern.
 - Keep skill policy aligned with root AGENTS.md and `src/utils/skillParser.js`.
-- Preserve event shapes consumed by `chat.js`.
+- Preserve event shapes consumed by `chat.js`; page-action confirmation events must include only bounded summaries, risk, target labels, and opaque confirmation IDs, never raw DOM values or secrets.
+- Runtime events carry a monotonic per-run sequence and a bounded session journal. The journal stores safe activity summaries only; raw DOM snapshots, tool arguments, credentials, and streaming deltas are not persisted.
 
 ## Verification
 

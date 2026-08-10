@@ -11,8 +11,9 @@ The `src/options/` subtree contains shared modules for the Options page setup an
 ## Local Contracts
 
 - `OptionsUI.js` must stay DOM-light: helpers operate on element-like objects so they remain unit-testable in a Node environment.
-- Credential masking keeps stored keys out of the DOM input value: `applyCredentialMask` clears the field and sets a masked placeholder; `resolveCredentialValue` preserves the stored key when the field is masked and untouched.
-- The unsaved-changes guard is driven by the combined dirty state of every Options section (connection, privacy, web search), not a single form.
+- Credential masking keeps stored keys out of the DOM input value: `applyCredentialMask` clears the field, sets a masked placeholder, and disables native `required` validation while configured so saves can preserve the stored key; unconfigured fields restore `required`; `resolveCredentialValue` preserves the stored key when the field is masked and untouched.
+- Codex profiles hide API credential fields and use the background `codexLoginStart`/`codexLoginPoll`/`codexLogout` bridge. A successful login creates or selects the `Codex` profile. Model choices and supported reasoning levels come from the background `getAvailableModels` bridge. The Options page may display only sanitized connection/model metadata, never access or refresh tokens.
+- The unsaved-changes guard is driven by the combined dirty state of every Options section (connection, privacy, web search, and page actions), not a single form.
 - `options.js` (root-owned) remains the entry point for storage I/O and section wiring; new setup/management helpers belong here rather than in the entry point.
 
 ## Work Guidance

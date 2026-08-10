@@ -213,7 +213,7 @@ function makeRecoveryButton(label, title) {
  * @returns {Object} The composer controller with a refresh() method.
  */
 export function initComposer(options) {
-  const { container, tray, row, chatArea, inputField, handlers } = options || {};
+  const { container, tray, row, chatArea, handlers } = options || {};
   const useMutationObserver =
     typeof MutationObserver === 'function' &&
     container &&

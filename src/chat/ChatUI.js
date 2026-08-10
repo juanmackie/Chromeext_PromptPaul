@@ -12,7 +12,7 @@
  */
 
 import { loadingManager } from '../../loadingManager.js';
-import { escapeHtml, renderMarkdown } from '../utils/domSanitizer.js';
+import { renderMarkdown } from '../utils/domSanitizer.js';
 import { attachCopyListeners, postProcessRenderedContent } from './ChatClipboard.js';
 
 /**
@@ -250,8 +250,6 @@ class ChatUI {
     actions.appendChild(expandBtn);
 
     header.appendChild(actions);
-
-    const expandLabel = expandBtn;
 
     let isExpanded = false;
 

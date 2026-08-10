@@ -1,5 +1,8 @@
 # Changelog
 
+- Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
+- Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
+
 ## [Unreleased]
 
 ### Prompt Paul UX Refinement
@@ -10,14 +13,26 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 - **Chat-first composer**: The chat is now composer-led. A visible context tray (`#context-tray`) shows every attached context (selected text, media, page content) as removable chips near the input. A contextual quick-action row offers Analyze/Proofread/Explain for selections and Summary/TL;DR/Technical for loaded pages. Responses gain inline recovery: Stop while streaming, then Retry/Edit/Continue — Continue always builds on the previous response. Capabilities (sidebar, Web toggle, voice, skills) stay visible but visually secondary. Logic lives in `src/chat/ChatComposer.js`.
 - **Options**: Chat-led setup with a Get Started banner, live connection status, and an Open Chat button. Explicit per-section saves (Connection, Privacy, Web Search) replace implicit persistence, with flash feedback on each. Capability sections (Instructions, Agent Skills, Tools, Web Search) are marked with badges. Credentials are masked: stored API keys are never written into input fields; masked placeholders indicate configured keys, and saving preserves the stored key unless replaced. An unsaved-changes banner plus a `beforeunload` guard covers the combined dirty state of every section.
 - **Entry points**: All entry points funnel into the canonical chat. A toolbar action opens the side panel; extension pages and the Prompt Paul website (`externally_connectable`) can deep-link with `{ action: 'openChat', context }`, preserving selection, media, and instruction context; deep-link instructions run automatically against the attached context. Context-menu flows keep preserving page, selection, and media context.
-- **Compatibility**: Storage schemas, profiles, capabilities, and backups are unchanged; nothing was retired. Regression guards pin the storage keys, backup/import/export entry points, and capability surfaces.
+- **Compatibility**: Canonical storage keys, profiles, capabilities, and API-key backup export remain supported. Codex subscription credentials are excluded from backups. Legacy sync migrations, retired message handlers, and non-canonical skill records were intentionally removed; imports now require the documented canonical formats.
 
 ### New Features
 
 - **Web Search Grounding**: A sidebar toggle (Web) lets users optionally ground LLM answers with Brave Search. When enabled, the model may call the reserved `web_search` function tool when current, verifiable, or time-sensitive information would materially improve the answer — the toggle is a permission, not a mandate, so the model can answer directly without searching. Queries Brave's LLM Context API and returns source-cited results that the UI renders as a first-party Sources section. Requires a Brave Search API key; pricing and quotas are subject to Brave's current plans. Grounding is disabled by default.
+- **Current-page actions**: A separate default-off Act toggle adapts Page-Agent's semantic DOM snapshot and indexed-control ideas for the current tab. When Act is enabled, the first tool turn is forced through `page_get_state` so the agent inspects the current page before responding; it can then use guarded `page_click`, `page_input`, `page_select`, and `page_scroll` tools. State-changing actions use accessible approval cards by default; an optional trusted mode skips only allowed low/medium-risk confirmations. No arbitrary JavaScript, selectors, passwords, payment/security fields, navigation, or cross-tab automation is exposed.
+- **Page actions take action**: Act-enabled runs now direct the model to perform page-achievable requests on the current tab (inspect, act, re-inspect, then summarize what it did) instead of describing steps. Requests outside page scope — like cloning a repo to a local machine (terminal/OS), needing a different page, JavaScript, or cross-tab work — get an honest one-sentence limitation plus the closest achievable offer, never a fake action. Empty pages prompt the model to ask the user to open the target page.
+
+### Security and Reliability
+
+- Removed the exposed starter credential from source; release builds may inject only a deliberately public, quota-limited demo credential through `PROMPT_PAUL_DEMO_API_KEY`.
+- Added shared HTTP(S)-only validation for profiles and custom tools, validated backup restore data, and removed sensitive custom-tool endpoint/error logging.
+- Updated transitive development dependencies to versions with no current high-severity audit findings.
 
 ### Bug Fixes
 
+- Fixed Options profile saves losing an existing masked API key after model or endpoint edits, and fixed new profiles falling back to the Default profile's credential. Saves now preserve the stored profile credential and new profiles clone from the profile that was active before creation.
+- Fixed chat configuration resolution rejecting an incomplete selected profile even when a valid Default profile existed; chat now matches background fallback behavior. Open Chat also falls back to a standalone chat tab when Chrome rejects opening the side panel from the Options page.
+- Fixed page-action runs aborting with "Maximum tool call retries exceeded (3)" after only three tool turns: the cap now counts only consecutive failing tool calls (a successful tool result resets it), so multi-step flows such as inspect → act → re-inspect → act can complete up to the page-action budget. Mutation results now also carry a refreshed-snapshot notice so the model re-reads the latest snapshotId and index numbers instead of reusing stale ones.
+- Fixed current-page actions failing on dynamic SPA pages when unrelated class or DOM mutations invalidated an otherwise unchanged target; actions now validate the indexed control's connection and semantic fingerprint instead of a page-wide mutation counter.
 - Fixed reasoning-only completions that could consume the response budget without producing a final answer; provider completion metadata, reserved output capacity, and a bounded text-only recovery now prevent misleading token-budget warnings
 - Fixed "A response is already in progress" error that prevented follow-up messages after initial response completion (run state was not cleared on success)
 - Fixed sidebar quick-action buttons becoming permanently disabled after initial selected-text action
@@ -40,6 +55,8 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 
 - `src/utils/braveSearch.js` — bounded Brave LLM Context API client and normalized source contract
 - `src/chat/ChatGrounding.js` — toggle state, Brave key status bridge, and Sources formatting helpers
+- `src/chat/ChatPageAutomation.js` — Act toggle state and sanitized page-action approval cards
+- `src/utils/pageDom.js` / `src/utils/pageActionPolicy.js` — bounded page snapshots, masking, risk policy, and trusted-mode limits
 
 ## [6.0.0] - 2026-04-25
 
@@ -67,7 +84,8 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 - **CI/CD pipeline**: Enhanced GitHub Actions workflow
   - Validate job (lint, format, tests)
   - Build job (production build with artifact upload)
-  - Test job (full suite with coverage)
+  - Required validation job (lint, formatting, structural tests, behavior tests, and smoke checks)
+  - Dependency audit and production build artifact jobs
 
 - **Code quality tools**: Added ESLint and Prettier configuration
 

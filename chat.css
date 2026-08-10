@@ -759,23 +759,74 @@ button:focus-visible {
   box-shadow: var(--ext-focus-ring);
 }
 
-/* Web Search toggle active state */
+#page-actions-toggle[aria-pressed='true'],
 #web-search-toggle[aria-pressed='true'] {
-  background-color: var(--ext-primary) !important;
-  color: var(--ext-primary-foreground) !important;
-  border-color: var(--ext-primary) !important;
+  border-color: var(--ext-primary);
+  background: var(--ext-info-muted);
+  color: var(--ext-primary);
 }
 
-#web-search-toggle[aria-pressed='true'] .sidebar-label::after {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: var(--ext-success-bright);
-  margin-left: 2px;
-  vertical-align: super;
+.page-action-confirmation {
+  border: 1px solid var(--ext-warning);
+  background: var(--ext-warning-muted);
 }
+
+.page-action-confirmation p {
+  margin: 6px 0;
+}
+
+.page-action-confirmation-context {
+  font-size: 0.85em;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.page-action-confirmation-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.page-action-activity {
+  border: 1px solid var(--ext-border);
+  background: var(--ext-muted);
+  font-size: 0.88em;
+}
+
+.page-action-activity-list {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+}
+
+.page-action-activity-list li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.run-recovery-notice {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+}
+
+.run-recovery-notice p {
+  margin: 0;
+  color: var(--ext-secondary);
+  font-size: 0.85rem;
+}
+
+.page-user-input-request {
+  border: 1px solid var(--ext-info);
+}
+
+.page-user-input-request input {
+  min-width: 12rem;
+}
+
+/* Web Search toggle uses the same active shading as the Act toggle (shared
+   rule above); no separate active-state override. */
 
 #send-button {
   background-color: var(--ext-primary);

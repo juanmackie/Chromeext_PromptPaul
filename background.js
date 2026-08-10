@@ -11,19 +11,26 @@
  * @requires ./src/utils/validation.js
  */
 
-import { isValidURL } from './src/utils/validation.js';
-import { parseSkillMarkdown, migrateLegacySkill } from './src/utils/skillParser.js';
+import { parseSkillMarkdown } from './src/utils/skillParser.js';
 import { getCurrentPageSupport } from './src/utils/permissionGuards.js';
 import {
   classifyRuntimeMessageError,
   friendlyRuntimeErrorMessage,
 } from './src/utils/runtimeErrors.js';
-import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
+import {
+  formatToolRequestError,
+  isValidHttpUrl,
+  normalizeToolHttpMethod,
+} from './src/utils/validation.js';
 import { resolvePreferredProfile } from './src/utils/profileRouting.js';
+import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
+import { PageTabController } from './src/orchestrator/PageTabController.js';
+import { createCodexAuthManager } from './src/utils/codexAuth.js';
+import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
 
-// ===== Umami Analytics Module (privacy-first, opt-out) =====
+// ===== Umami Analytics Module (privacy-first, opt-in) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
 const UMAMI_WEBSITE_ID = 'd1b4d7cb-2e57-44ec-a91f-6692fb365a02';
 const ANALYTICS_CONSENT_KEY = 'analyticsConsent';
@@ -43,6 +50,8 @@ const DENYLIST = [
   'ssid',
 ];
 const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
+const pageTabController = new PageTabController();
+const codexAuthManager = createCodexAuthManager();
 
 /**
  * Generates a UUID v4 compliant unique identifier.
@@ -88,7 +97,9 @@ async function getEnvInfo() {
     const ua = navigator.userAgent;
     const m = ua.match(/Chrome\/(\d+)/);
     if (m) chromeMajor = m[1];
-  } catch (_) {}
+  } catch (_) {
+    // Platform detection is best-effort and must not block the extension.
+  }
   return { extVersion, platform: platformInfo?.os || 'unknown', chromeMajor };
 }
 
@@ -174,16 +185,6 @@ async function sendUmamiEvent(name, data) {
     // never throw
     console.warn('Analytics send failed:', e);
   }
-}
-
-/**
- * Tracks when the extension is installed or updated.
- * @returns {Promise<void>}
- */
-async function trackInstalled() {
-  const env = await getEnvInfo();
-  const instance = await getInstanceId();
-  await sendUmamiEvent('installed', { ...env, instance });
 }
 
 /**
@@ -439,7 +440,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         console.error('Error fetching media:', error);
         try {
           await trackErrorEvent('network', `media_${error?.name || 'err'}`);
-        } catch (_) {}
+        } catch (_) {
+          // Analytics is best-effort; preserve the media error path.
+        }
 
         mediaData = {
           type: mediaType,
@@ -522,9 +525,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
                 ? [instruction.tool_choice]
                 : [],
           });
-        } catch (_) {}
-
-        const toolChoice = normalizeToolChoice(instruction.tool_choice);
+        } catch (_) {
+          // Analytics is best-effort; preserve the instruction action path.
+        }
 
         // Send to chat for processing
         await sendPanelMessage({
@@ -554,7 +557,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           model: cfg?.modelName,
           tools: [],
         });
-      } catch (_) {}
+      } catch (_) {
+        // Analytics is best-effort; preserve the predefined command path.
+      }
 
       // Send to chat for processing
       const actionType = info.menuItemId;
@@ -577,41 +582,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Simplified validateConfig function
 async function validateConfig() {
   const result = await new Promise((resolve) =>
-    chrome.storage.local.get(['profiles', 'lastSelectedProfileId', 'defaultLlmEndpoint'], resolve)
+    chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], resolve)
   );
 
   const profiles = result.profiles || [];
   const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-  const defaultLlmEndpoint = result.defaultLlmEndpoint || '';
-
-  // Find profiles
   const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
   const defaultProfile = profiles.find((p) => p.id === 'default');
-  const validProfile = resolvePreferredProfile({
-    selectedProfile,
-    defaultProfile,
-    defaultLlmEndpoint,
-  });
+  const validProfile = resolvePreferredProfile({ selectedProfile, defaultProfile });
 
   if (validProfile) {
     return validProfile;
   }
 
-  // Handle errors
-  const hasEndpoint = defaultLlmEndpoint && isValidURL(defaultLlmEndpoint);
-  const hasValidProfile = selectedProfile || defaultProfile;
-
-  if (!hasEndpoint) {
-    throw new Error(
-      'LLM API endpoint is missing or invalid. Please configure it in the options page.'
-    );
-  } else if (!hasValidProfile) {
+  if (!selectedProfile && !defaultProfile) {
     throw new Error('No valid profiles found. Please create a profile in the options page.');
-  } else {
-    throw new Error(
-      'Configuration is incomplete. Please set API key and model name in the options page.'
-    );
   }
+
+  throw new Error(
+    'Configuration is incomplete. Please set API endpoint, API key, and model name in the options page.'
+  );
 }
 
 // ===== Skill Manager (Agent Skills Spec Compliant) =====
@@ -724,7 +714,11 @@ class SkillManager {
 
       for (const skill of customSkills) {
         try {
-          const skillMd = skill.skillMd || migrateLegacySkill(skill).skillMd;
+          const skillMd = typeof skill.skillMd === 'string' ? skill.skillMd : null;
+          if (!skillMd) {
+            console.warn(`Custom skill '${skill.name}' is not in canonical SKILL.md format.`);
+            continue;
+          }
           const parsed = parseSkillMarkdown(skillMd);
 
           if (parsed.valid) {
@@ -734,7 +728,6 @@ class SkillManager {
               raw: skillMd,
               type: 'custom',
               lastUpdated: skill.lastUpdated,
-              legacy: !skill.skillMd,
             });
           } else {
             console.warn(`Custom skill '${skill.name}' parse error:`, parsed.error);
@@ -935,11 +928,254 @@ const braveSearchExecutor = async (query, options = {}) => {
   return executeBraveSearch(query, apiKey, options);
 };
 
+const pageActionPolicyProvider = async () => {
+  const result = await chrome.storage.local.get(['pageActionsTrustedMode']);
+  return result.pageActionsTrustedMode === true;
+};
+
+const PAGE_ACTION_PING_TIMEOUT_MS = 1500;
+const PAGE_ACTION_PING_RETRY_DELAY_MS = 250;
+
+/**
+ * Ping the page-action content script on a tab with a bounded timeout.
+ * Resolves to { connected } — never throws.
+ * @param {number} tabId
+ * @returns {Promise<{connected: boolean}>}
+ */
+const pingPageActionContentScript = (tabId) =>
+  new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve({ connected: false });
+    }, PAGE_ACTION_PING_TIMEOUT_MS);
+    try {
+      chrome.tabs.sendMessage(tabId, { action: 'pageActionPing' }, (response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ connected: !chrome.runtime.lastError && Boolean(response?.success) });
+      });
+    } catch (_) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ connected: false });
+    }
+  });
+
+/**
+ * Verify the page-action content script is reachable, retrying once after a
+ * short delay so transient interruptions (for example a tab that just started
+ * loading) do not count as a permanent disconnect.
+ * @param {number} tabId
+ * @returns {Promise<boolean>}
+ */
+const verifyPageActionConnection = async (tabId) => {
+  const first = await pingPageActionContentScript(tabId);
+  if (first.connected) return true;
+  await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_PING_RETRY_DELAY_MS));
+  return (await pingPageActionContentScript(tabId)).connected;
+};
+
+const pageActionAvailabilityProvider = async (tabId) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!getCurrentPageSupport(tab?.url).available) return false;
+    // The URL is supported, but page actions also need a connected content
+    // script. Verify the bridge before the run starts; otherwise the forced
+    // page_get_state call would fail and the orchestrator would retry it
+    // until the tool-call limit is reached.
+    const connected = await verifyPageActionConnection(tabId);
+    if (!connected) {
+      const error = new Error(
+        'Page actions are on, but the Prompt Paul content script is not connected to this tab. Reload the tab and try again.'
+      );
+      error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    if (error?.code === 'PAGE_ACTION_NO_CONTENT_SCRIPT') throw error;
+    return false;
+  }
+};
+
+/**
+ * Resolve the current document identity for a tab (origin/path only). The
+ * orchestrator binds a page-actions run to this identity and invalidates the
+ * run when the tab navigates unexpectedly, while approved navigation-capable
+ * actions explicitly replace the identity after the new bridge reconnects.
+ * Returns null when the identity cannot be resolved.
+ * @param {number} tabId
+ * @returns {Promise<{url: string}|null>}
+ */
+const pageActionDocumentProvider = async (tabId) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab?.url) return null;
+    return { url: sanitizePageActionUrl(tab.url) };
+  } catch (_) {
+    return null;
+  }
+};
+
+const PAGE_ACTION_NAVIGATION_TIMEOUT_MS = 15_000;
+const PAGE_ACTION_NAVIGATION_POLL_MS = 250;
+
+const getPageActionTabUrl = async (tabId) => {
+  const tab = await chrome.tabs.get(tabId);
+  return sanitizePageActionUrl(tab?.url || '');
+};
+
+/**
+ * Wait for an approved current-tab navigation to commit and for the new
+ * document's page-action bridge to reconnect. A full document navigation can
+ * close the message port before the content script replies, so this is the
+ * recovery path for that expected transition.
+ * @param {number} tabId
+ * @param {string} previousUrl
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{url: string}>}
+ */
+const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
+  const deadline = Date.now() + PAGE_ACTION_NAVIGATION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
+
+    let currentUrl = '';
+    try {
+      currentUrl = await getPageActionTabUrl(tabId);
+    } catch (_) {
+      const error = new Error('The source tab is no longer available for page navigation.');
+      error.code = 'PAGE_ACTION_NAVIGATION_FAILED';
+      throw error;
+    }
+
+    if (currentUrl && currentUrl !== previousUrl) {
+      const connected = await pingPageActionContentScript(tabId);
+      if (connected.connected) return { url: currentUrl };
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_NAVIGATION_POLL_MS));
+  }
+
+  const error = new Error('The approved page navigation did not complete in time.');
+  error.code = 'PAGE_ACTION_NAVIGATION_TIMEOUT';
+  throw error;
+};
+
+const sendPageActionMessage = (tabId, message, signal) =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    let onAbort = null;
+    const timeoutId = setTimeout(() => {
+      const error = new Error('The page did not respond to the action in time.');
+      error.code = 'PAGE_ACTION_TIMEOUT';
+      finish(null, error);
+    }, 15_000);
+
+    const finish = (value, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (onAbort && signal) signal.removeEventListener('abort', onAbort);
+      if (error) reject(error);
+      else resolve(value || { success: false, error: 'Empty page-action response.' });
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        finish(null, new DOMException('The run was aborted.', 'AbortError'));
+        return;
+      }
+      onAbort = () => finish(null, new DOMException('The run was aborted.', 'AbortError'));
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (chrome.runtime.lastError) {
+          const error = new Error(friendlyRuntimeErrorMessage(chrome.runtime.lastError.message));
+          error.code = 'PAGE_ACTION_MESSAGE_FAILED';
+          finish(null, error);
+          return;
+        }
+        if (response?.success === false) {
+          const error = new Error(response.error || 'The page action failed.');
+          error.code = response.code || 'PAGE_ACTION_FAILED';
+          finish(null, error);
+          return;
+        }
+        finish(response, null);
+      });
+    } catch (error) {
+      error.code = error.code || 'PAGE_ACTION_MESSAGE_FAILED';
+      finish(null, error);
+    }
+  });
+
+const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
+  if (!tabId) {
+    const error = new Error('No supported source tab is available for page actions.');
+    error.code = 'PAGE_ACTION_NO_TAB';
+    throw error;
+  }
+
+  const message =
+    actionName === 'clearPageActionSession'
+      ? { action: 'clearPageActionSession', runId: options.runId }
+      : { action: 'pageAction', runId: options.runId, pageAction: actionName, args };
+  const expectNavigation = options.expectNavigation === true;
+  const previousUrl = expectNavigation ? await getPageActionTabUrl(tabId) : '';
+
+  try {
+    const response = await sendPageActionMessage(tabId, message, options.signal);
+    if (!expectNavigation) return response;
+
+    const responseUrl = sanitizePageActionUrl(response?.snapshot?.url || '');
+    if (responseUrl && previousUrl && responseUrl !== previousUrl) {
+      return { ...response, navigated: true, navigationUrl: responseUrl };
+    }
+
+    const currentUrl = await getPageActionTabUrl(tabId);
+    if (currentUrl && previousUrl && currentUrl !== previousUrl) {
+      const connected = await pingPageActionContentScript(tabId);
+      if (connected.connected) {
+        return { ...response, navigated: true, navigationUrl: currentUrl };
+      }
+    }
+    return response;
+  } catch (error) {
+    // A full document navigation commonly closes the content-script message
+    // port before it can reply. Only treat bridge loss/timeouts as recoverable
+    // here when the orchestrator explicitly approved this navigation-capable
+    // action; ordinary page-action failures must still surface unchanged.
+    if (
+      !expectNavigation ||
+      !['PAGE_ACTION_MESSAGE_FAILED', 'PAGE_ACTION_TIMEOUT'].includes(error?.code)
+    ) {
+      throw error;
+    }
+    const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);
+    return { success: true, navigated: true, navigationUrl: navigation.url };
+  }
+};
+
 const runOrchestrator = new RunOrchestrator(skillManager, {
+  codexAuthProvider: (profileId) => codexAuthManager.getValidAuth(profileId),
   userToolExecutor: (tool, args) =>
     callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
   webSearchStatusProvider: async () => Boolean(await getBraveSearchApiKey()),
   braveSearchExecutor,
+  pageActionPolicyProvider,
+  pageActionAvailabilityProvider,
+  pageActionDocumentProvider,
+  pageActionExecutor,
+  pageTabExecutor: (runId, actionName, args) => pageTabController.execute(runId, actionName, args),
+  pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
+  pageTabRunDisposer: (runId) => pageTabController.disposeRun(runId),
 });
 
 // ===== Menu System (Serialized Rebuild Queue) =====
@@ -987,6 +1223,25 @@ async function openPromptPaulForSelection(tabId, selectedText) {
     selectedText: selectedText || '',
     tabId,
     actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+  });
+}
+
+/**
+ * Open the standalone chat page when a side panel cannot be opened.
+ * @returns {Promise<Object>} { success, mode } result.
+ */
+function openChatInTab() {
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('chat.html') }, (tab) => {
+      if (chrome.runtime.lastError || !tab?.id) {
+        resolve({
+          success: false,
+          error: chrome.runtime.lastError?.message || 'Unable to open chat',
+        });
+        return;
+      }
+      resolve({ success: true, mode: 'tab', tabId: tab.id });
+    });
   });
 }
 
@@ -1221,6 +1476,14 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 
 // Generic function to call a user-defined endpoint
 async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'GET') {
+  if (!isValidHttpUrl(endpointUrl)) {
+    throw new Error('Tool endpoint URL must use http or https.');
+  }
+  const normalizedMethod = normalizeToolHttpMethod(userDefinedMethod);
+  if (normalizedMethod === null) {
+    throw new Error('Tool HTTP method is not supported.');
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 1-minute timeout
 
@@ -1235,8 +1498,7 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
     let finalArgs = args;
 
     const isEmptyArgs = !args || Object.keys(args).length === 0;
-    let method = userDefinedMethod || (isEmptyArgs ? 'GET' : 'POST');
-    method = method.toUpperCase();
+    let method = normalizedMethod || (isEmptyArgs ? 'GET' : 'POST');
     finalFetchOptions.method = method;
 
     if (method === 'GET' && !isEmptyArgs) {
@@ -1252,14 +1514,8 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      let errorBody = '';
-      try {
-        errorBody = await response.text(); // Try to get error details from response body
-      } catch (_) {
-        /* Ignore if body cannot be read */
-      }
-      const errorMsg = `HTTP error ${response.status}: ${response.statusText}. ${errorBody}`.trim();
-      console.error(`Background: HTTP error for ${finalEndpointUrl}:`, errorMsg);
+      const errorMsg = formatToolRequestError(response.status);
+      console.warn('Background: User tool request failed', { status: response.status });
       throw new Error(errorMsg);
     }
 
@@ -1277,12 +1533,11 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      console.error(`Background: Tool call to ${endpointUrl} timed out after 60 seconds.`);
-      throw new Error(`Tool call to ${endpointUrl} timed out after 60 seconds.`);
+      console.warn('Background: User tool request timed out');
+      throw new Error('User tool request timed out after 60 seconds.');
     }
-    console.error(`Background: Error calling endpoint ${endpointUrl}:`, error);
-    // Rethrow a more specific error message
-    throw new Error(`Failed to call endpoint ${endpointUrl}: ${error.message}`);
+    console.warn('Background: User tool request failed', { errorName: error.name || 'Error' });
+    throw new Error(formatToolRequestError());
   }
 }
 
@@ -1458,24 +1713,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const context = request.context || {};
     const requestedTabId = context.tabId || request.tabId || sender.tab?.id;
     resolvePanelTabId(requestedTabId)
-      .then((tabId) => {
-        if (tabId) return openChatWithContext({ ...context, tabId });
+      .then(async (tabId) => {
+        if (!tabId) return openChatInTab();
 
-        // Keep the Options entry point useful even when Chrome has no regular
-        // web tab available to host a side panel (for example in a fresh
-        // extension-only window).
-        return new Promise((resolve) => {
-          chrome.tabs.create({ url: chrome.runtime.getURL('chat.html') }, (tab) => {
-            if (chrome.runtime.lastError || !tab?.id) {
-              resolve({
-                success: false,
-                error: chrome.runtime.lastError?.message || 'Unable to open chat',
-              });
-              return;
-            }
-            resolve({ success: true, mode: 'tab', tabId: tab.id });
-          });
-        });
+        try {
+          return await openChatWithContext({ ...context, tabId });
+        } catch (error) {
+          // Opening a side panel from an extension page can fail when the
+          // resolved web tab is inactive or Chrome does not carry the user
+          // gesture through the service-worker message. Always give Options a
+          // visible fallback instead of making the button appear inert.
+          console.warn('Background: Side panel open failed; opening chat tab:', error.message);
+          return openChatInTab();
+        }
       })
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ success: false, error: error.message }));
@@ -1581,35 +1831,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'getPinnedActionTabContent') {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (tabs && tabs[0] && tabs[0].id) {
-        const result = await executeTabContentExtraction(tabs[0].id);
-        sendResponse({
-          action: 'pinnedActionTabContentResponse',
-          success: result.success,
-          content: result.content || result.data,
-          title: result.title,
-          siteName: result.siteName,
-          byline: result.byline,
-          excerpt: result.excerpt,
-          lang: result.lang,
-          url: result.url,
-          error: result.error,
-          instruction: request.instruction,
-        });
-      } else {
-        sendResponse({
-          action: 'pinnedActionTabContentResponse',
-          success: false,
-          error: 'No active tab found',
-          instruction: request.instruction,
-        });
-      }
-    });
-    return true;
-  }
-
   if (request.action === 'getSkills') {
     const skillsList = skillManager.getSkillsList();
     const slashCommands = skillManager.getSlashCommands();
@@ -1642,33 +1863,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'getExplainContent') {
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-      if (tabs && tabs[0] && tabs[0].id) {
-        const result = await executeTabContentExtraction(tabs[0].id);
-        sendResponse({
-          action: 'explainContentResponse',
-          success: result.success,
-          content: result.content || result.data,
-          title: result.title,
-          siteName: result.siteName,
-          byline: result.byline,
-          excerpt: result.excerpt,
-          lang: result.lang,
-          url: result.url,
-          error: result.error,
-        });
-      } else {
-        sendResponse({
-          action: 'explainContentResponse',
-          success: false,
-          error: 'No active tab found',
-        });
-      }
-    });
-    return true;
-  }
-
   // ===== Web Search Status =====
 
   if (request.action === 'getWebSearchStatus') {
@@ -1676,6 +1870,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const configured = Boolean(result.braveSearchApiKey);
       sendResponse({ configured });
     });
+    return true;
+  }
+
+  if (request.action === 'codexAuthStatus') {
+    codexAuthManager
+      .getAuthStatus(request.profileId)
+      .then((status) => sendResponse({ success: true, status }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'getAvailableModels') {
+    chrome.storage.local.get(['profiles'], (result) => {
+      const profile = (result.profiles || []).find((entry) => entry.id === request.profileId);
+      if (!profile) {
+        sendResponse({ success: false, error: 'The selected profile was not found.' });
+        return;
+      }
+      const authPromise =
+        profile.provider === 'codex'
+          ? codexAuthManager.getValidAuth(profile.id)
+          : Promise.resolve(null);
+      authPromise
+        .then((auth) => fetchAvailableModels({ profile, auth }))
+        .then((models) => sendResponse({ success: true, models }))
+        .catch((error) => sendResponse({ success: false, error: error.message }));
+    });
+    return true;
+  }
+
+  if (request.action === 'codexLoginStart') {
+    codexAuthManager
+      .startLogin(request.profileId)
+      .then((login) => sendResponse({ success: true, login }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'codexLoginPoll') {
+    codexAuthManager
+      .pollLogin(request.profileId)
+      .then((result) => sendResponse({ success: true, ...result }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'codexLogout') {
+    codexAuthManager
+      .logout(request.profileId)
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
@@ -1720,10 +1965,96 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'pageActionDecision') {
+    // Sender/run ownership validation: approval decisions must come from a
+    // Prompt Paul extension page (the side panel), and the supplied source tab
+    // must match the run's source tab — the opaque confirmation ID alone is
+    // not enough to authorize an action.
+    const extensionOrigin = chrome.runtime.getURL('');
+    const isExtensionSender =
+      typeof sender?.url === 'string' && sender.url.startsWith(extensionOrigin);
+    if (!isExtensionSender) {
+      sendResponse({
+        success: false,
+        error: 'Approval decisions must come from the Prompt Paul extension.',
+      });
+      return true;
+    }
+    const decisionRun = runOrchestrator.activeRuns.get(request.runId);
+    // Extension pages can run in a dedicated harness/options tab whose
+    // sender.tab.id is not the web tab that owns the run. Prefer the explicit
+    // source-tab token from trusted extension surfaces, then fall back to the
+    // sender tab for side-panel messages that omit it.
+    const senderTabId = isExtensionSender
+      ? (request.sourceTabId ?? sender?.tab?.id)
+      : sender?.tab?.id;
+    if (
+      !decisionRun ||
+      decisionRun.sourceTabId == null ||
+      senderTabId !== decisionRun.sourceTabId
+    ) {
+      sendResponse({
+        success: false,
+        error: 'Approval decision does not match the run source tab.',
+      });
+      return true;
+    }
+    const accepted = runOrchestrator.resolvePageActionDecision(
+      request.runId,
+      request.confirmationId,
+      request.approved === true,
+      request.approveAll === true
+    );
+    sendResponse({ success: accepted });
+    return true;
+  }
+
+  if (request.action === 'pageUserInputResponse') {
+    const extensionOrigin = chrome.runtime.getURL('');
+    if (typeof sender?.url !== 'string' || !sender.url.startsWith(extensionOrigin)) {
+      sendResponse({ success: false, error: 'User input responses must come from Prompt Paul.' });
+      return true;
+    }
+    const run = runOrchestrator.activeRuns.get(request.runId);
+    if (!run || run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
+      sendResponse({ success: false, error: 'User input response does not match the run.' });
+      return true;
+    }
+    sendResponse({
+      success: runOrchestrator.resolvePageUserInput(
+        request.runId,
+        request.requestId,
+        request.answer
+      ),
+    });
+    return true;
+  }
+
   if (request.action === 'abortRun') {
     const { runId } = request;
     runOrchestrator.abort(runId);
     sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'getRunJournal') {
+    const extensionOrigin = chrome.runtime.getURL('');
+    if (typeof sender?.url !== 'string' || !sender.url.startsWith(extensionOrigin)) {
+      sendResponse({
+        success: false,
+        error: 'Run journals are available only to Prompt Paul pages.',
+      });
+      return true;
+    }
+    const key = RunOrchestrator.getRunJournalStorageKey();
+    chrome.storage.session
+      .get([key])
+      .then((result) => {
+        const journals = result?.[key] || {};
+        const requested = request.runId ? journals[request.runId] : null;
+        sendResponse({ success: true, journal: requested || null });
+      })
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
@@ -1732,37 +2063,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // Legacy handler for backward compatibility
-  if (request.action === 'executePromptPaulTool') {
-    const { id, name, arguments: argsString } = request.toolCall;
-
-    const normalizedArgs =
-      typeof argsString === 'string' ? argsString : JSON.stringify(argsString || {});
-
-    runOrchestrator
-      .executeTool(null, { id, function: { name, arguments: normalizedArgs } })
-      .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'executeLlmApiRequest') {
-    const { prompt, tool_choice } = request;
-    const sourceTabId = sender.tab?.id || null;
-    // Use orchestrator instead of legacy makeLlmApiRequest
-    runOrchestrator
-      .startRun({ tool_choice, sourceTabId })
-      .then((runId) => {
-        return runOrchestrator.execute(runId, { messages: [{ role: 'user', content: prompt }] });
-      })
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch((error) => {
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
   // Handle other actions if any
 });
 

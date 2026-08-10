@@ -6,7 +6,6 @@
  * Responsibilities:
  * - Run unit tests for module structure and validity
  * - Run integration tests for cross-module consistency
- * - Generate coverage reports
  * - Validate code quality
  */
 
@@ -19,8 +18,6 @@ const repoRoot = process.cwd();
 const args = process.argv.slice(2);
 const runUnit = args.includes('--unit') || args.length === 0;
 const runIntegration = args.includes('--integration') || args.length === 0;
-const showCoverage = args.includes('--coverage');
-
 console.log('🧪 Running Prompt Paul tests...\n');
 
 /**
@@ -245,6 +242,27 @@ function runUnitTests(runner) {
   // ---------- Utils Module Structure ----------
   runner.test('skillParser module structure valid', () => {
     checkModule('src/utils/skillParser.js');
+  });
+
+  runner.test('modelDiscovery module structure valid', () => {
+    checkModule('src/utils/modelDiscovery.js', [
+      'function normalizeAvailableModels',
+      'function deriveModelsEndpoint',
+      'async function fetchAvailableModels',
+    ]);
+    const content = readFileSafe('src/utils/modelDiscovery.js');
+    for (const token of [
+      'createCodexModelHeaders',
+      'CODEX_MODELS_ENDPOINT',
+      'return normalizeAvailableModels',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`modelDiscovery.js missing contract token: ${token}`);
+      }
+    }
+    if (content.includes('return { ...auth') || content.includes('return auth')) {
+      throw new Error('modelDiscovery.js must not return authentication records');
+    }
   });
 
   runner.test('toolChoiceBuilder module structure valid', () => {
@@ -478,6 +496,62 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('Production readiness guardrails are present', () => {
+    const pkg = JSON.parse(readFileSafe('package.json'));
+    const requiredScripts = ['lint', 'format:check', 'test', 'test:behavior', 'smoke', 'validate'];
+    for (const script of requiredScripts) {
+      if (typeof pkg.scripts?.[script] !== 'string') {
+        throw new Error(`package.json is missing the production gate: ${script}`);
+      }
+    }
+
+    const gitignore = readFileSafe('.gitignore');
+    for (const entry of ['.env', '.env.local', 'coverage/', 'test-results/']) {
+      if (!gitignore.includes(entry)) {
+        throw new Error(`.gitignore is missing the sensitive or generated path: ${entry}`);
+      }
+    }
+
+    const readinessDoc = readFileSafe('docs/PRODUCTION_READINESS.md');
+    for (const phrase of [
+      'Validate and bound user input',
+      'Never commit secrets',
+      'Add readable tests',
+      'npm audit --audit-level=high --omit=optional',
+    ]) {
+      if (!readinessDoc.includes(phrase)) {
+        throw new Error(`Production readiness documentation is missing: ${phrase}`);
+      }
+    }
+
+    const sourceFiles = [];
+    const visit = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (['node_modules', 'dist', 'libs', '.git', '.pi', '.pi-subagents'].includes(entry.name)) {
+          continue;
+        }
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(fullPath);
+        else if (entry.isFile() && /\.(?:js|mjs|cjs)$/.test(entry.name)) sourceFiles.push(fullPath);
+      }
+    };
+    visit(repoRoot);
+
+    const secretPatterns = [
+      /\bsk-[A-Za-z0-9]{20,}\b/,
+      /\bAIza[A-Za-z0-9_-]{20,}\b/,
+      /\bBearer\s+[A-Za-z0-9._-]{20,}\b/,
+      /\b(?:xox[baprs]|gh[pousr])-[A-Za-z0-9_-]{20,}\b/,
+      /\bAKIA[A-Z0-9]{16}\b/,
+    ];
+    for (const file of sourceFiles) {
+      const content = fs.readFileSync(file, 'utf8');
+      if (secretPatterns.some((pattern) => pattern.test(content))) {
+        throw new Error(`Possible hardcoded credential found in ${path.relative(repoRoot, file)}`);
+      }
+    }
+  });
+
   runner.test('Package.json has devDependencies', () => {
     const pkg = JSON.parse(readFileSafe('package.json'));
     if (!pkg.devDependencies || Object.keys(pkg.devDependencies).length === 0) {
@@ -539,7 +613,7 @@ function runUnitTests(runner) {
   // quick actions, inline recovery) lives in src/chat/ChatComposer.js, keeping
   // chat.js growth small and modular.
   runner.test('chat.js does not exceed 2380 lines', () => {
-    const lines = readFileSafe('chat.js').split('\n').length;
+    const lines = readFileSafe('chat.js').trimEnd().split('\n').length;
     if (lines > 2380) {
       throw new Error(`chat.js is ${lines} lines, exceeds 2380 limit`);
     }
@@ -931,6 +1005,12 @@ function runIntegrationTests(runner) {
         throw new Error(`options.js missing starter Mistral configuration: ${token}`);
       }
     }
+    if (!content.includes("const STARTER_MISTRAL_API_KEY = '';")) {
+      throw new Error('options.js must not ship a hardcoded starter credential');
+    }
+    if (!readFileSafe('scripts/build.js').includes('PROMPT_PAUL_DEMO_API_KEY')) {
+      throw new Error('build.js must document the explicit public demo-key injection path');
+    }
   });
 
   runner.test('options.js masks credentials and guards unsaved changes', () => {
@@ -952,6 +1032,19 @@ function runIntegrationTests(runner) {
     }
     if (!content.includes('dataset.configured')) {
       throw new Error('options.js does not track masked credential state');
+    }
+  });
+
+  runner.test('options.js escapes imported skill status output', () => {
+    const content = readFileSafe('options.js');
+    if (!content.includes('escapeHtml(parsed.metadata.name)')) {
+      throw new Error('Imported skill names must be escaped before innerHTML rendering');
+    }
+    if (content.includes("parsed.metadata.name + '\"</span>'")) {
+      throw new Error('Imported skill names must not be concatenated into HTML unescaped');
+    }
+    if (!content.includes('statusEl.textContent = `Error: ${error?.message')) {
+      throw new Error('Import errors must use textContent instead of HTML rendering');
     }
   });
 
@@ -1023,17 +1116,58 @@ function runIntegrationTests(runner) {
       'profiles',
       'lastSelectedProfileId',
       'instructions',
-      'skills',
-      'tools',
+      'customSkills',
+      'promptPaulTools',
       'analyticsConsent',
+      'analyticsInstance',
+      'analyticsRotateAt',
       'voiceInputEnabled',
+      'voiceInputPermissionState',
+      'voiceInputPermissionLastChecked',
       'braveSearchApiKey',
       'webSearchEnabled',
+      'pageActionsEnabled',
+      'pageActionsTrustedMode',
+      'pinnedQuickActions',
+      'customSiteSuggestions',
     ];
-    const sources = ['options.js', 'background.js', 'chat.js'].map(readFileSafe).join('\n');
+    const sources = [
+      'options.js',
+      'background.js',
+      'chat.js',
+      'src/chat/ChatVoice.js',
+      'src/utils/suggestionStorage.js',
+    ]
+      .map(readFileSafe)
+      .join('\n');
     for (const key of canonicalKeys) {
       if (!sources.includes(key)) {
         throw new Error(`Canonical storage key no longer referenced anywhere: ${key}`);
+      }
+    }
+  });
+
+  runner.test('retired compatibility paths are absent', () => {
+    const sources = [
+      readFileSafe('background.js'),
+      readFileSafe('chat.js'),
+      readFileSafe('options.js'),
+      readFileSafe('src/orchestrator/RunOrchestrator.js'),
+      readFileSafe('src/utils/skillParser.js'),
+      readFileSafe('src/utils/toolChoiceBuilder.js'),
+    ].join('\n');
+    for (const token of [
+      'executePromptPaulTool',
+      'executeLlmApiRequest',
+      'getPinnedActionTabContent',
+      'getExplainContent',
+      'defaultLlmEndpoint',
+      'migrateLegacySkill',
+      'parametersForLlm',
+      'load_skill',
+    ]) {
+      if (sources.includes(token)) {
+        throw new Error(`Retired compatibility path remains: ${token}`);
       }
     }
   });
@@ -1057,13 +1191,30 @@ function runIntegrationTests(runner) {
     }
   });
 
-  runner.test('nothing was retired: capability entry points still exist', () => {
+  runner.test('custom-tool diagnostics do not leak endpoint or response data', () => {
+    const content = readFileSafe('background.js');
+    for (const token of [
+      'HTTP error for ${finalEndpointUrl}',
+      'Error calling endpoint ${endpointUrl}',
+      'errorBody = await response.text',
+    ]) {
+      if (content.includes(token)) {
+        throw new Error(`Custom-tool diagnostics still expose sensitive data: ${token}`);
+      }
+    }
+    if (!content.includes('formatToolRequestError')) {
+      throw new Error('Background custom-tool failures must use the redacted error formatter');
+    }
+  });
+
+  runner.test('current capability entry points still exist', () => {
     const chat = readFileSafe('chat.js');
     for (const token of [
       'PRESET_MODES',
-      'load_skill',
       'web-search-toggle',
       'initWebSearchToggle',
+      'page-actions-toggle',
+      'initPageActionsToggle',
       'toggleVoiceInput',
       'setMediaForAnalysis',
       'openPromptPaulForSelection',
@@ -1071,6 +1222,84 @@ function runIntegrationTests(runner) {
       if (!chat.includes(token) && !readFileSafe('background.js').includes(token)) {
         throw new Error(`Retired or missing capability entry point: ${token}`);
       }
+    }
+  });
+
+  runner.test('page action contracts are wired and guarded', () => {
+    const content = readFileSafe('content_script_unified.js');
+    const orchestrator = readFileSafe('src/orchestrator/RunOrchestrator.js');
+    const policy = readFileSafe('src/utils/pageActionPolicy.js');
+    const background = readFileSafe('background.js');
+    const chat = readFileSafe('chat.js');
+    const card = readFileSafe('src/chat/ChatPageAutomation.js');
+    for (const token of [
+      'pageActionSessions',
+      'PAGE_ACTION_MAX_ELEMENTS',
+      'PAGE_ACTION_MAX_PAYLOAD_BYTES',
+      'pageActionPing',
+      'sanitizePageActionUrl',
+      'clearPageActionHighlight',
+      'pageAction',
+      'editable: Boolean(element.isContentEditable)',
+      'element.checked === true',
+      "getAttribute('autocomplete')",
+    ]) {
+      if (!content.includes(token))
+        throw new Error(`Content script missing page-action guard: ${token}`);
+    }
+    for (const token of [
+      'page_get_state',
+      'page_click',
+      'page_input',
+      'page_select',
+      'page_scroll',
+      'page_request_user_input',
+      'page_open_tab',
+      'page_open_link',
+      'resolvePageActionDecision',
+      'sessionApproval',
+      'page_action_confirmation',
+      '_isPageActionTerminalError',
+      '_terminateRun',
+      "state: 'error'",
+    ]) {
+      if (!orchestrator.includes(token))
+        throw new Error(`Orchestrator missing page-action contract: ${token}`);
+    }
+    for (const token of [
+      'PAGE_ACTION_RISKS',
+      'evaluatePageActionPolicy',
+      'sensitive',
+      'navigation: true',
+    ]) {
+      if (!policy.includes(token))
+        throw new Error(`Page-action policy missing safety contract: ${token}`);
+    }
+    for (const token of [
+      'pageActionPing',
+      'PAGE_ACTION_NO_CONTENT_SCRIPT',
+      'PAGE_ACTION_TIMEOUT',
+      'finish(null, error)',
+      'Approval decisions must come from the Prompt Paul extension.',
+      'pageActionDocumentProvider',
+    ]) {
+      if (!background.includes(token))
+        throw new Error(`Background missing page-action bridge guard: ${token}`);
+    }
+    for (const token of ["state === 'error'", "action: 'abortRun'", 'pageActionDecision']) {
+      if (!chat.includes(token)) throw new Error(`Chat missing page-action UI guard: ${token}`);
+    }
+    for (const token of [
+      "'Stop'",
+      "'Approve all this session'",
+      'page-action-confirmation-context',
+      'onStop',
+    ]) {
+      if (!card.includes(token))
+        throw new Error(`Approval card missing context/Stop contract: ${token}`);
+    }
+    if (orchestrator.includes('execute_javascript')) {
+      throw new Error('Page-action orchestrator must not expose arbitrary JavaScript execution');
     }
   });
 
@@ -1190,6 +1419,7 @@ function runIntegrationTests(runner) {
       'AGENTS.md',
       'docs/ARCHITECTURE.md',
       'docs/DEVELOPMENT.md',
+      'docs/PRODUCTION_READINESS.md',
       'docs/SKILL_EXAMPLES.md',
     ];
     for (const file of docFiles) {
@@ -1205,11 +1435,14 @@ function runIntegrationTests(runner) {
     checkModule('src/orchestrator/RunOrchestrator.js');
     const content = readFileSafe('src/orchestrator/RunOrchestrator.js');
     for (const token of [
-      'formatToolsForLlm(run.config.tools)',
+      'formatToolsForLlm(normalizedUserTools)',
       'MAX_TOOL_CALL_RETRIES',
       'activeToolCalls',
       '_buildSystemPrompt(run, eligibleSkills)',
-      'this.activeRuns.delete(run.id)',
+      // Terminal teardown is centralized: every completion path must go through
+      // _terminateRun, and the active run must be deleted inside it.
+      '_terminateRun(runId, event',
+      'this.activeRuns.delete(runId)',
     ]) {
       if (!content.includes(token)) {
         throw new Error(`RunOrchestrator.js missing regression guard: ${token}`);
@@ -1230,7 +1463,9 @@ function runIntegrationTests(runner) {
       'options.js',
       'pdfContentScript.js',
       'themeUtils.js',
+      'theme-toggle.js',
       'marked.min.js',
+      'vitest.config.js',
     ];
     for (const file of rootFiles) {
       if (!knownRootFiles.includes(file) && !file.endsWith('.min.js')) {
@@ -1238,45 +1473,6 @@ function runIntegrationTests(runner) {
       }
     }
   });
-}
-
-/**
- * ============================================================
- * COVERAGE REPORT
- * ============================================================
- */
-function generateCoverageReport() {
-  console.log('\n📊 Coverage Report:\n');
-
-  const modules = [
-    'src/chat/ChatUI.js',
-    'src/chat/ChatAPI.js',
-    'src/chat/ChatStream.js',
-    'src/chat/ChatMedia.js',
-    'src/chat/ChatSkills.js',
-    'src/chat/ChatVoice.js',
-  ];
-
-  let totalLines = 0;
-  let totalFunctions = 0;
-
-  for (const modulePath of modules) {
-    const fullPath = path.join(repoRoot, modulePath);
-    if (fs.existsSync(fullPath)) {
-      const content = fs.readFileSync(fullPath, 'utf8');
-      const lines = content.split('\n').length;
-      // Count function definitions
-      const functions = (content.match(/(?:exports+)?(?:asyncs+)?functions+w+|classs+w+/g) || [])
-        .length;
-      totalLines += lines;
-      totalFunctions += functions;
-      console.log(`  ${modulePath}:`);
-      console.log(`    Lines: ${lines}`);
-      console.log(`    Functions/Classes: ${functions}`);
-    }
-  }
-
-  console.log(`\n  Total: ${totalLines} lines, ${totalFunctions} functions/classes`);
 }
 
 /**
@@ -1293,10 +1489,6 @@ function main() {
 
   if (runIntegration) {
     runIntegrationTests(runner);
-  }
-
-  if (showCoverage) {
-    generateCoverageReport();
   }
 
   runner.summary();
