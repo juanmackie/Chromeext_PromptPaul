@@ -6,7 +6,8 @@
 
 ## Ownership
 
-- `page-actions.spec.js` owns the page-action integration cases, including approved link navigation and owned-tab link opening.
+- `page-actions.spec.js` owns the page-action integration cases, including approved link navigation, owned-tab link opening, and hostile content-script message rejection.
+- `chat-actions.spec.js` owns real-browser selected-text chat action coverage.
 - `browserTestSupport.js` owns browser launch, fixture-server, extension-worker, and test cleanup helpers.
 - `extension-harness.html` and `extension-harness.js` own the extension-page bridge used by tests.
 - `fixtures/` owns credential-free local representatives of form and compose pages.
@@ -25,7 +26,7 @@
 
 ## Verification
 
-- Run `npm run test:browser` from the repository root.
+- Run `npm run test:browser` from the repository root; the command runs every spec in this directory.
 - Run `npx prettier --check` and `npx eslint` for changed browser test files.
 
 ## Child DOX Index

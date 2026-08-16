@@ -7,6 +7,11 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 ## Ownership
 
 - Root-level test files cover shared runtime and regression behavior.
+- `hermesTransport.test.js` covers Hermes endpoint validation, capability/error handling, approval choices, output adaptation, and event adaptation without real credentials or a live gateway.
+- `runtimeAuthorization.test.js` covers extension sender, content-script tab, and opaque run-owner checks without Chrome runtime state.
+- `streamSafety.test.js` covers bounded SSE buffers and provider error-body reads.
+- `hermesContext.test.js` covers bounded Hermes history, page-context retention, current-turn handling, and historical media redaction.
+- `chatHermes.test.js` covers approval-card settlement; `keyedOperationLock.test.js` covers per-profile session reset and session-key concurrency primitives.
 - `pageDom.test.js`, `pageActionPolicy.test.js`, and `pageTabController.test.js` cover bounded page state, policy, and owned-tab behavior.
 - `tests/browser/AGENTS.md` owns unpacked-extension Playwright coverage and local browser fixtures.
 

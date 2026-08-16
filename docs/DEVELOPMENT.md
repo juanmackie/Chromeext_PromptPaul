@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 20.19 or newer
 - Chrome or Edge for extension testing
 - Git for source control
 

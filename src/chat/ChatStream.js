@@ -42,7 +42,14 @@ export class StreamStateManager {
     this.currentSourceTabId = null;
     this.currentMediaData = null;
 
+    // Orchestrator events carry a monotonic per-run sequence. Buffering them
+    // here keeps tool traces and terminal events in event order when runtime
+    // message delivery completes out of order.
+    this.nextOrchestratorEventSequence = 1;
+    this.pendingOrchestratorEvents = new Map();
+
     this.conversationHistory = [];
+    this.conversationId = createConversationId();
   }
 
   /**
@@ -169,6 +176,7 @@ export class StreamStateManager {
     this._reasoningBuffer = '';
     this._reasoningQueued = false;
     this._reasoningStartTime = null;
+    this.resetOrchestratorEventOrdering();
   }
 
   /**
@@ -187,6 +195,7 @@ export class StreamStateManager {
     this.resetStreamingState();
     this.resetApiState();
     this.conversationHistory = [];
+    this.conversationId = createConversationId();
   }
 
   /**
@@ -209,6 +218,7 @@ export class StreamStateManager {
    */
   initStreamingElements(messageDiv, contentElement, uniqueId) {
     this.setStreamingElements(messageDiv, contentElement, uniqueId);
+    this.resetOrchestratorEventOrdering();
     this.clearStreamedText();
     this.appendStreamedText('');
   }
@@ -220,6 +230,55 @@ export class StreamStateManager {
     this._reasoningBuffer = '';
     this._reasoningQueued = false;
     this._reasoningStartTime = null;
+  }
+
+  /**
+   * Reset the per-run orchestrator event ordering buffer.
+   */
+  resetOrchestratorEventOrdering() {
+    this.nextOrchestratorEventSequence = 1;
+    this.pendingOrchestratorEvents.clear();
+  }
+
+  /**
+   * Return newly contiguous orchestrator events in sequence order.
+   * Events without sequence metadata remain compatible with older senders.
+   * A terminal event flushes any remaining buffered events so the UI cannot
+   * stay locked when a non-terminal event was lost during panel startup.
+   * @param {Object} event - Orchestrator event.
+   * @returns {Array<Object>} Events ready for rendering.
+   */
+  queueOrchestratorEvent(event) {
+    const sequence = Number(event?.sequence);
+    if (!Number.isInteger(sequence) || sequence <= 0) return [event];
+    if (
+      sequence < this.nextOrchestratorEventSequence ||
+      this.pendingOrchestratorEvents.has(sequence)
+    ) {
+      return [];
+    }
+
+    this.pendingOrchestratorEvents.set(sequence, event);
+    const ordered = [];
+    while (this.pendingOrchestratorEvents.has(this.nextOrchestratorEventSequence)) {
+      ordered.push(this.pendingOrchestratorEvents.get(this.nextOrchestratorEventSequence));
+      this.pendingOrchestratorEvents.delete(this.nextOrchestratorEventSequence);
+      this.nextOrchestratorEventSequence += 1;
+    }
+
+    if (ordered.length === 0 && ['complete', 'error', 'aborted'].includes(event.type)) {
+      const remaining = Array.from(this.pendingOrchestratorEvents.entries()).sort(
+        ([left], [right]) => left - right
+      );
+      this.pendingOrchestratorEvents.clear();
+      for (const [remainingSequence, remainingEvent] of remaining) {
+        if (remainingSequence < this.nextOrchestratorEventSequence) continue;
+        ordered.push(remainingEvent);
+        this.nextOrchestratorEventSequence = remainingSequence + 1;
+      }
+    }
+
+    return ordered;
   }
 
   /**
@@ -392,10 +451,33 @@ export class StreamStateManager {
   }
 
   /**
+   * Start a new local conversation and return its opaque identity.
+   * @returns {string}
+   */
+  startNewConversation() {
+    this.conversationHistory = [];
+    this.conversationId = createConversationId();
+    return this.conversationId;
+  }
+
+  /**
+   * Return the identity shared by provider switches within this chat.
+   * @returns {string}
+   */
+  getConversationId() {
+    return this.conversationId;
+  }
+
+  /**
    * Set conversation history.
    * @param {Array} history - Conversation history
    */
   setConversationHistory(history) {
     this.conversationHistory = history;
   }
+}
+
+function createConversationId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `conversation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }

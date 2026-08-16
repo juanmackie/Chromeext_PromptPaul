@@ -72,10 +72,9 @@ Steps:
    analysis runs and streams.
 3. Paste or drop a second image while a selection exists — both contexts show
    in the tray; sending combines them.
-4. From the Options page, click **Open Chat** (Get Started banner) — the side
-   panel opens for the active regular web tab (extension pages cannot host a
-   side panel) through the canonical `openChat` funnel; if no regular tab is
-   available, chat opens in its own tab.
+4. From the Options page, click **Open Chat** (Get Started banner) — the
+   browser side panel opens in the current window directly from the button
+   gesture; the Options page does not open a full-page chat tab.
 5. From the website (promptpaul.juanmackie.com, `externally_connectable`),
    send `chrome.runtime.sendMessage(EXTENSION_ID, { action: 'openChat',
 context: { selectedText, mediaUrl } })` — the chat opens with the context
@@ -116,6 +115,12 @@ trusted-mode limits).
 
 ## Options surface checks
 
+- **Profile-first connection setup**: the selected connection profile appears before its
+  provider-specific fields; saved profiles show their provider and a new connection flow asks for
+  the provider before creating the profile.
+- **Provider-specific controls**: API profiles show endpoint/key/model controls, Codex profiles show
+  sign-in/model controls, and Hermes profiles show gateway/key controls without an unused model
+  selector.
 - **Setup**: Get Started banner shows "Not connected" until endpoint + key +
   model are set, then "Connected — <model> via <host>".
 - **Masked credentials**: after saving a profile, the API key field shows a

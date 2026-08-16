@@ -80,6 +80,49 @@ export function isTrayVisible(tray) {
 }
 
 /**
+ * Create the main conversation action controller.
+ * @param {object} options - Action dependencies supplied by chat.js.
+ * @returns {{refresh: Function, handleClick: Function}}
+ */
+export function createConversationController({
+  button,
+  isBusy,
+  getConfig,
+  stop,
+  resetHermes,
+  clearLocal,
+  onError,
+}) {
+  async function refresh() {
+    if (!button) return;
+    try {
+      const config = await getConfig();
+      if (!isBusy()) button.textContent = config?.provider === 'hermes' ? 'New chat' : 'Clear';
+    } catch (_) {
+      if (!isBusy()) button.textContent = 'Clear';
+    }
+  }
+
+  async function handleClick() {
+    if (isBusy()) {
+      await stop();
+      return;
+    }
+
+    try {
+      const config = await getConfig();
+      if (config?.provider === 'hermes') await resetHermes(config.profileId);
+      clearLocal();
+      await refresh();
+    } catch (error) {
+      if (typeof onError === 'function') onError(error);
+    }
+  }
+
+  return { refresh, handleClick };
+}
+
+/**
  * Reads the most recent user prompt from the chat area DOM.
  * @param {Object} chatArea - Chat area element.
  * @returns {string|null} The last user prompt or null.
@@ -209,7 +252,7 @@ function makeRecoveryButton(label, title) {
  * @param {Object} options.chatArea - The #chat-area element.
  * @param {Object} options.inputField - The #user-input textarea.
  * @param {Object} options.handlers - Action callbacks: { onStop, onPrompt,
- *   onEdit, onMode, onPageMode, onAnalyze }.
+ *   onEdit, onMode, onPageMode, onAnalyze, onDetachPage }.
  * @returns {Object} The composer controller with a refresh() method.
  */
 export function initComposer(options) {
@@ -318,6 +361,18 @@ export function initComposer(options) {
     });
   }
 
+  // Wire the tray's page-context Remove button to the detach handler.
+  const pageContextStrip = tray
+    ? Array.from(tray.children || []).find((child) => child.id === 'page-context-strip')
+    : null;
+  const pageContextRemoveButton =
+    pageContextStrip && typeof pageContextStrip.querySelector === 'function'
+      ? pageContextStrip.querySelector('#page-context-remove-button')
+      : null;
+  if (pageContextRemoveButton && typeof handlers?.onDetachPage === 'function') {
+    pageContextRemoveButton.addEventListener('click', () => handlers.onDetachPage());
+  }
+
   syncTrayVisibility();
   refresh();
 
@@ -350,6 +405,7 @@ export const chatComposer = {
   initComposer,
   getContextState,
   getQuickActions,
+  createConversationController,
   getLastUserPrompt,
   getLastAssistantBubble,
   ensureStopButton,

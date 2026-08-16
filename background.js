@@ -20,15 +20,26 @@ import {
 import {
   formatToolRequestError,
   isValidHttpUrl,
+  MAX_TOOL_ARGUMENTS_BYTES,
+  normalizeProfileRecord,
   normalizeToolHttpMethod,
 } from './src/utils/validation.js';
-import { resolvePreferredProfile } from './src/utils/profileRouting.js';
+import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileRouting.js';
 import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
+import { readBoundedResponseText } from './src/utils/streamSafety.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
+import { HermesTransport } from './src/orchestrator/HermesTransport.js';
+import { createKeyedOperationLock } from './src/utils/keyedOperationLock.js';
+import {
+  isContentScriptSender,
+  isExtensionSender,
+  isRunOwner,
+  requestMatchesSenderTab,
+} from './src/utils/runtimeAuthorization.js';
 
 // ===== Umami Analytics Module (privacy-first, opt-in) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -50,8 +61,56 @@ const DENYLIST = [
   'ssid',
 ];
 const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
+const HERMES_API_KEYS_KEY = 'hermesApiKeys';
+const HERMES_SESSIONS_KEY = 'hermesSessions';
+const HERMES_SESSION_KEYS_KEY = 'hermesSessionKeys';
+const hermesSessionResetLock = createKeyedOperationLock();
+const hermesSessionKeyLock = createKeyedOperationLock();
 const pageTabController = new PageTabController();
 const codexAuthManager = createCodexAuthManager();
+const hermesTransport = new HermesTransport({
+  credentialProvider: getHermesCredential,
+  sessionKeyProvider: getHermesSessionKey,
+  sessionStore: {
+    get: getHermesSession,
+    set: setHermesSession,
+    delete: async (profileId) => {
+      const result = await chrome.storage.local.get(HERMES_SESSIONS_KEY);
+      const sessions = { ...(result?.[HERMES_SESSIONS_KEY] || {}) };
+      delete sessions[profileId];
+      await chrome.storage.local.set({ [HERMES_SESSIONS_KEY]: sessions });
+    },
+  },
+});
+
+async function getHermesCredential(profileId) {
+  const result = await chrome.storage.local.get(HERMES_API_KEYS_KEY);
+  return result?.[HERMES_API_KEYS_KEY]?.[profileId] || '';
+}
+
+async function getHermesSession(profileId) {
+  const result = await chrome.storage.local.get(HERMES_SESSIONS_KEY);
+  return result?.[HERMES_SESSIONS_KEY]?.[profileId] || '';
+}
+
+async function setHermesSession(profileId, sessionRecord) {
+  const result = await chrome.storage.local.get(HERMES_SESSIONS_KEY);
+  const sessions = result?.[HERMES_SESSIONS_KEY] || {};
+  sessions[profileId] = sessionRecord;
+  await chrome.storage.local.set({ [HERMES_SESSIONS_KEY]: sessions });
+}
+
+async function getHermesSessionKey(profileId) {
+  return hermesSessionKeyLock.run(profileId, async () => {
+    const result = await chrome.storage.local.get(HERMES_SESSION_KEYS_KEY);
+    const keys = { ...(result?.[HERMES_SESSION_KEYS_KEY] || {}) };
+    if (keys[profileId]) return keys[profileId];
+    const key = `prompt-paul-${uuidv4()}`.slice(0, 256);
+    keys[profileId] = key;
+    await chrome.storage.local.set({ [HERMES_SESSION_KEYS_KEY]: keys });
+    return key;
+  });
+}
 
 /**
  * Generates a UUID v4 compliant unique identifier.
@@ -1165,6 +1224,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
 
 const runOrchestrator = new RunOrchestrator(skillManager, {
   codexAuthProvider: (profileId) => codexAuthManager.getValidAuth(profileId),
+  hermesTransport,
   userToolExecutor: (tool, args) =>
     callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
   webSearchStatusProvider: async () => Boolean(await getBraveSearchApiKey()),
@@ -1495,9 +1555,16 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
       },
       signal: controller.signal,
     };
-    let finalArgs = args;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+      throw new Error('Tool arguments must be an object.');
+    }
+    const serializedArgs = JSON.stringify(args);
+    if (new TextEncoder().encode(serializedArgs).byteLength > MAX_TOOL_ARGUMENTS_BYTES) {
+      throw new Error('Tool arguments are too large.');
+    }
+    const finalArgs = args;
 
-    const isEmptyArgs = !args || Object.keys(args).length === 0;
+    const isEmptyArgs = Object.keys(finalArgs).length === 0;
     let method = normalizedMethod || (isEmptyArgs ? 'GET' : 'POST');
     finalFetchOptions.method = method;
 
@@ -1522,14 +1589,16 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
     // Attempt to parse response as JSON, fall back to text if not JSON
     const contentType = response.headers.get('content-type');
 
-    let result;
+    const boundedBody = await readBoundedResponseText(response);
     if (contentType && contentType.includes('application/json')) {
-      result = await response.json();
-    } else {
-      result = await response.text();
+      try {
+        return JSON.parse(boundedBody);
+      } catch (_) {
+        return boundedBody;
+      }
     }
 
-    return result;
+    return boundedBody;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
@@ -1684,15 +1753,73 @@ async function resolvePanelTabId(preferredTabId = null) {
   return candidate?.id ?? null;
 }
 
+function getExtensionOrigin() {
+  return chrome.runtime.getURL('');
+}
+
+function rejectUnauthorizedMessage(sendResponse, error = 'Prompt Paul authorization is required.') {
+  sendResponse({ success: false, error });
+  return true;
+}
+
+function isAuthorizedRunRequest(request, sender) {
+  return isRunOwner(
+    runOrchestrator.activeRuns.get(request?.runId),
+    request,
+    sender,
+    getExtensionOrigin()
+  );
+}
+
+async function resolveStoredRunConfig(config) {
+  const profileId = typeof config?.profileId === 'string' ? config.profileId.trim() : '';
+  if (!profileId) {
+    if (config?.pageActions && !config.provider) return config;
+    throw new Error('A saved connection profile is required.');
+  }
+
+  const result = await chrome.storage.local.get(['profiles', 'promptPaulTools']);
+  const profile = (result.profiles || []).find((entry) => entry.id === profileId);
+  if (!profile) throw new Error('The selected connection profile was not found.');
+  const normalizedProfile = normalizeProfileRecord(profile);
+  if (!normalizedProfile.valid) throw new Error(normalizedProfile.error);
+
+  const storedProfile = normalizedProfile.value;
+  const provider = storedProfile.provider;
+  return {
+    ...config,
+    provider,
+    profileId: storedProfile.id,
+    llmEndpoint: provider === 'api' ? storedProfile.llmEndpoint : '',
+    apiKey: provider === 'api' ? storedProfile.apiKey : '',
+    modelName: storedProfile.modelName,
+    reasoningLevel: storedProfile.reasoningLevel || '',
+    systemPrompt: storedProfile.systemPrompt || '',
+    tools: Array.isArray(result.promptPaulTools) ? result.promptPaulTools : [],
+    ...(provider === 'hermes'
+      ? {
+          hermesEndpoint: getHermesEndpoint(storedProfile),
+          hermesProfile: storedProfile.hermesProfile || '',
+          hermesRemoteConfirmed: storedProfile.hermesRemoteConfirmed === true,
+        }
+      : {}),
+  };
+}
+
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  const extensionOrigin = getExtensionOrigin();
+  const extensionPageSender = isExtensionSender(sender, extensionOrigin);
+
   if (request.action === 'openPromptPaulFromSelection') {
-    const tabId = request.tabId || sender.tab?.id;
-    if (!tabId) {
-      sendResponse({ success: false, error: 'No tab context' });
-      return false;
+    if (
+      !isContentScriptSender(sender, extensionOrigin) ||
+      !requestMatchesSenderTab(sender, request.tabId)
+    ) {
+      return rejectUnauthorizedMessage(sendResponse, 'Selection handoff must come from its tab.');
     }
 
+    const tabId = sender.tab.id;
     const selectedText = String(request.selectedText || '').trim();
     if (!selectedText) {
       sendResponse({ success: false, error: 'No selected text provided' });
@@ -1710,6 +1837,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Deep link into the canonical chat from any extension surface.
   if (request.action === 'openChat') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse, 'Chat opening must come from Prompt Paul.');
+    }
     const context = request.context || {};
     const requestedTabId = context.tabId || request.tabId || sender.tab?.id;
     resolvePanelTabId(requestedTabId)
@@ -1733,23 +1863,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'openOptionsPage') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse, 'Options must be opened by Prompt Paul.');
+    }
     chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
     sendResponse({ success: true });
     return true;
   }
 
   if (request.action === 'captureScreenshot') {
-    chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-      if (chrome.runtime.lastError) {
-        sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
-      } else {
-        sendResponse({ dataUrl });
+    if (!isContentScriptSender(sender, extensionOrigin) || !Number.isInteger(sender.tab.windowId)) {
+      return rejectUnauthorizedMessage(
+        sendResponse,
+        'Screenshot capture must come from a page content script.'
+      );
+    }
+    chrome.tabs.query({ active: true, windowId: sender.tab.windowId }, (tabs) => {
+      if (chrome.runtime.lastError || tabs[0]?.id !== sender.tab.id) {
+        sendResponse({
+          dataUrl: null,
+          error: 'Screenshot capture requires the source page to be active.',
+        });
+        return;
       }
+      chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse({ dataUrl });
+        }
+      });
     });
     return true;
   }
 
   if (request.action === 'getLoadContent') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
+    }
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       if (tabs && tabs[0] && tabs[0].id) {
         const result = await executeTabContentExtraction(tabs[0].id);
@@ -1783,9 +1934,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getTabContent') {
-    const tabId = request.tabId || (sender.tab ? sender.tab.id : null);
-    if (tabId) {
-      executeTabContentExtraction(tabId).then((result) => {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
+    }
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      if (tabs && tabs[0] && tabs[0].id) {
+        const result = await executeTabContentExtraction(tabs[0].id);
         sendResponse({
           action: 'tabContentResponse',
           success: result.success,
@@ -1802,36 +1956,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           screenshot: result.screenshot || null,
           error: result.error,
         });
-      });
-    } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-        if (tabs && tabs[0] && tabs[0].id) {
-          const result = await executeTabContentExtraction(tabs[0].id);
-          sendResponse({
-            action: 'tabContentResponse',
-            success: result.success,
-            content: result.content || result.data,
-            title: result.title,
-            siteName: result.siteName,
-            byline: result.byline,
-            excerpt: result.excerpt,
-            lang: result.lang,
-            url: result.url,
-            platform: result.platform || null,
-            platformInfo: result.platformInfo || null,
-            readStrategy: result.readStrategy || 'auto',
-            screenshot: result.screenshot || null,
-            error: result.error,
-          });
-        } else {
-          sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
-        }
-      });
-    }
+      } else {
+        sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
+      }
+    });
     return true;
   }
 
   if (request.action === 'getSkills') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     const skillsList = skillManager.getSkillsList();
     const slashCommands = skillManager.getSlashCommands();
     sendResponse({ skills: skillsList, slashCommands });
@@ -1839,6 +1974,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getSkillContent') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     skillManager
       .getSkillContent(request.name)
       .then((content) => {
@@ -1851,12 +1989,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'resolveSkill') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     const resolved = skillManager.resolveSkill(request.name);
     sendResponse({ skill: resolved });
     return true;
   }
 
   if (request.action === 'getSkillSnapshot') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     const snapshot = skillManager.getEligibleSnapshot();
     const promptText = skillManager.formatForPrompt();
     sendResponse({ snapshot, promptText });
@@ -1866,6 +2010,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // ===== Web Search Status =====
 
   if (request.action === 'getWebSearchStatus') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     chrome.storage.local.get(['braveSearchApiKey'], (result) => {
       const configured = Boolean(result.braveSearchApiKey);
       sendResponse({ configured });
@@ -1874,6 +2021,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'codexAuthStatus') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     codexAuthManager
       .getAuthStatus(request.profileId)
       .then((status) => sendResponse({ success: true, status }))
@@ -1882,6 +2032,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getAvailableModels') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     chrome.storage.local.get(['profiles'], (result) => {
       const profile = (result.profiles || []).find((entry) => entry.id === request.profileId);
       if (!profile) {
@@ -1893,7 +2046,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           ? codexAuthManager.getValidAuth(profile.id)
           : Promise.resolve(null);
       authPromise
-        .then((auth) => fetchAvailableModels({ profile, auth }))
+        .then((auth) =>
+          fetchAvailableModels({
+            profile,
+            auth,
+            clientVersion: chrome.runtime.getManifest()?.version || '0.0.0',
+          })
+        )
         .then((models) => sendResponse({ success: true, models }))
         .catch((error) => sendResponse({ success: false, error: error.message }));
     });
@@ -1901,6 +2060,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'codexLoginStart') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     codexAuthManager
       .startLogin(request.profileId)
       .then((login) => sendResponse({ success: true, login }))
@@ -1909,6 +2071,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'codexLoginPoll') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     codexAuthManager
       .pollLogin(request.profileId)
       .then((result) => sendResponse({ success: true, ...result }))
@@ -1917,6 +2082,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'codexLogout') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     codexAuthManager
       .logout(request.profileId)
       .then(() => sendResponse({ success: true }))
@@ -1924,23 +2092,122 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'testHermesConnection') {
+    if (!extensionPageSender) {
+      sendResponse({
+        success: false,
+        error: 'Hermes connection tests must come from Prompt Paul.',
+      });
+      return true;
+    }
+    chrome.storage.local
+      .get(['profiles'])
+      .then(async ({ profiles = [] }) => {
+        const profile = profiles.find((entry) => entry.id === request.profileId);
+        if (!profile || profile.provider !== 'hermes') {
+          throw new Error('Save the selected profile as Hermes before testing the connection.');
+        }
+        const result = await hermesTransport.checkConnection({
+          ...profile,
+          hermesEndpoint: getHermesEndpoint(profile),
+        });
+        sendResponse({
+          success: true,
+          result: {
+            healthy: true,
+            healthWarning: result?.healthWarning || null,
+            capabilityCount:
+              result?.capabilities && typeof result.capabilities === 'object'
+                ? Object.keys(result.capabilities).length
+                : 0,
+          },
+        });
+      })
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'endHermesConversation') {
+    if (!extensionPageSender) {
+      sendResponse({ success: false, error: 'Hermes chat resets must come from Prompt Paul.' });
+      return true;
+    }
+
+    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
+    if (!profileId) {
+      sendResponse({ success: false, error: 'A Hermes profile is required.' });
+      return true;
+    }
+
+    const resetPromise = hermesSessionResetLock.tryRun(profileId, async () => {
+      const { profiles = [] } = await chrome.storage.local.get(['profiles']);
+      const profile = profiles.find((entry) => entry.id === profileId);
+      if (!profile || profile.provider !== 'hermes') {
+        throw new Error('The selected Hermes profile was not found.');
+      }
+
+      const activeHermesRun = [...runOrchestrator.activeRuns.values()].some(
+        (run) => run.config?.provider === 'hermes' && run.config?.profileId === profileId
+      );
+      if (activeHermesRun) {
+        throw new Error('Stop the active Hermes response before starting a new chat.');
+      }
+
+      const sessionId = await hermesTransport.getStoredSession(profileId);
+      if (sessionId) {
+        await hermesTransport.endSession(
+          {
+            ...profile,
+            hermesEndpoint: getHermesEndpoint(profile),
+          },
+          sessionId
+        );
+      }
+      await hermesTransport.clearStoredSession(profileId);
+      return { endedSession: Boolean(sessionId) };
+    });
+    if (!resetPromise) {
+      sendResponse({ success: false, error: 'A Hermes chat reset is already in progress.' });
+      return true;
+    }
+    resetPromise
+      .then((result) => sendResponse({ success: true, ...result }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
   // ===== Orchestration Handlers =====
 
   if (request.action === 'startRun') {
-    const { config } = request;
-    runOrchestrator
-      .startRun(config)
-      .then((runId) => {
-        sendResponse({ runId });
+    if (!extensionPageSender) {
+      sendResponse({ error: 'Runs must start from a Prompt Paul page.' });
+      return true;
+    }
+
+    const config = request.config || {};
+    const ownerToken = uuidv4();
+    Promise.resolve()
+      .then(async () => {
+        const effectiveConfig = await resolveStoredRunConfig(config);
+        if (effectiveConfig.provider === 'hermes') {
+          if (hermesSessionResetLock.isLocked(effectiveConfig.profileId)) {
+            throw new Error('Hermes New chat is still resetting the previous session.');
+          }
+          effectiveConfig.pageActions = false;
+          effectiveConfig.webSearch = false;
+        }
+        return runOrchestrator.startRun(effectiveConfig, ownerToken);
       })
-      .catch((error) => {
-        sendResponse({ error: error.message });
-      });
+      .then((runId) => sendResponse({ runId, ownerToken }))
+      .catch((error) => sendResponse({ error: error.message }));
     return true;
   }
 
   if (request.action === 'executeRun') {
     const { runId, requestConfig } = request;
+    if (!isAuthorizedRunRequest(request, sender)) {
+      return rejectUnauthorizedMessage(sendResponse, 'Run execution is not authorized.');
+    }
     runOrchestrator
       .execute(runId, requestConfig)
       .then(() => {
@@ -1954,6 +2221,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'executeTool') {
     const { runId, toolCall } = request;
+    if (!isAuthorizedRunRequest(request, sender)) {
+      return rejectUnauthorizedMessage(sendResponse, 'Tool execution is not authorized.');
+    }
     runOrchestrator
       .executeTool(runId, toolCall)
       .then((result) => {
@@ -1970,24 +2240,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Prompt Paul extension page (the side panel), and the supplied source tab
     // must match the run's source tab — the opaque confirmation ID alone is
     // not enough to authorize an action.
-    const extensionOrigin = chrome.runtime.getURL('');
-    const isExtensionSender =
-      typeof sender?.url === 'string' && sender.url.startsWith(extensionOrigin);
-    if (!isExtensionSender) {
+    const decisionRun = runOrchestrator.activeRuns.get(request.runId);
+    if (!extensionPageSender || !isAuthorizedRunRequest(request, sender)) {
       sendResponse({
         success: false,
         error: 'Approval decisions must come from the Prompt Paul extension.',
       });
       return true;
     }
-    const decisionRun = runOrchestrator.activeRuns.get(request.runId);
     // Extension pages can run in a dedicated harness/options tab whose
     // sender.tab.id is not the web tab that owns the run. Prefer the explicit
     // source-tab token from trusted extension surfaces, then fall back to the
     // sender tab for side-panel messages that omit it.
-    const senderTabId = isExtensionSender
-      ? (request.sourceTabId ?? sender?.tab?.id)
-      : sender?.tab?.id;
+    const senderTabId = request.sourceTabId ?? sender?.tab?.id;
     if (
       !decisionRun ||
       decisionRun.sourceTabId == null ||
@@ -2010,9 +2275,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'pageUserInputResponse') {
-    const extensionOrigin = chrome.runtime.getURL('');
-    if (typeof sender?.url !== 'string' || !sender.url.startsWith(extensionOrigin)) {
-      sendResponse({ success: false, error: 'User input responses must come from Prompt Paul.' });
+    if (!isAuthorizedRunRequest(request, sender)) {
+      sendResponse({ success: false, error: 'User input response is not authorized.' });
       return true;
     }
     const run = runOrchestrator.activeRuns.get(request.runId);
@@ -2032,14 +2296,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'abortRun') {
     const { runId } = request;
-    runOrchestrator.abort(runId);
-    sendResponse({ success: true });
+    if (!isAuthorizedRunRequest(request, sender)) {
+      return rejectUnauthorizedMessage(sendResponse, 'Run abort is not authorized.');
+    }
+    runOrchestrator
+      .abort(runId)
+      .then((success) => sendResponse({ success: success !== false }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'hermesApprovalDecision') {
+    if (!isAuthorizedRunRequest(request, sender)) {
+      sendResponse({ success: false, error: 'Hermes approval is not authorized.' });
+      return true;
+    }
+    const run = runOrchestrator.activeRuns.get(request.runId);
+    if (
+      !run ||
+      run.config?.provider !== 'hermes' ||
+      (run.sourceTabId != null && request.sourceTabId !== run.sourceTabId)
+    ) {
+      sendResponse({ success: false, error: 'Hermes run was not found.' });
+      return true;
+    }
+    runOrchestrator
+      .resolveHermesApproval(request.runId, request.approvalId, request.choice)
+      .then((success) => sendResponse({ success }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
   if (request.action === 'getRunJournal') {
-    const extensionOrigin = chrome.runtime.getURL('');
-    if (typeof sender?.url !== 'string' || !sender.url.startsWith(extensionOrigin)) {
+    if (!extensionPageSender) {
       sendResponse({
         success: false,
         error: 'Run journals are available only to Prompt Paul pages.',
@@ -2059,6 +2348,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getTools') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
     sendResponse({ tools: runOrchestrator.getToolImplementations() });
     return true;
   }

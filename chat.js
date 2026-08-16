@@ -20,10 +20,13 @@ import { chatUI } from './src/chat/ChatUI.js';
 import { attachCopyListeners, postProcessRenderedContent } from './src/chat/ChatClipboard.js';
 import {
   getApiConfig,
+  getApiConfigCached,
   getTools,
+  prepareRunMessages,
   startRun,
   executeRun,
   abortRun,
+  getRunAuth,
   selectOptimalProfile,
 } from './src/chat/ChatAPI.js';
 import {
@@ -33,8 +36,9 @@ import {
   classifyToolExecutionResult,
 } from './src/chat/ChatGrounding.js';
 import { MediaType, getMediaAnalysisPrompt } from './src/chat/ChatMedia.js';
+import { initChatModelStatus } from './src/chat/ChatModelStatus.js';
 import { StreamStateManager } from './src/chat/ChatStream.js';
-import { resolveDomContextBudget, fitTextToTokenBudget } from './src/utils/contextBudget.js';
+import { prepareLoadedPageContext } from './src/chat/PageContext.js';
 import { extractPdfText } from './src/utils/pdfExtractor.js';
 import { friendlyRuntimeErrorMessage } from './src/utils/runtimeErrors.js';
 import { RUN_STATES, setRunState } from './src/utils/runState.js';
@@ -48,7 +52,6 @@ import {
 } from './src/prompts.js';
 import { renderSiteSuggestions, executePresetAnalysis } from './src/chat/ChatPageActions.js';
 import {
-  isPageActionsEnabled,
   consumePageActionsEnabled,
   isPageActionsMultiTabEnabled,
   initPageActionsToggle,
@@ -60,6 +63,9 @@ import {
   handlePageUserInputRequest,
 } from './src/chat/ChatPageAutomation.js';
 import { clearActiveRun, restoreRunJournal } from './src/chat/ChatRunRecovery.js';
+import * as hermesChat from './src/chat/ChatHermes.js';
+import { initQuickActionsMenu } from './src/chat/ChatActionMenu.js';
+import { readCurrentPageSelection } from './src/chat/ChatSelection.js';
 // ── Lazy Module Loaders ───────────────────────────────────────────
 // Non-critical modules are loaded on demand to reduce initial startup cost.
 /** @type {import('./src/chat/ChatSkills.js') | null} */
@@ -137,9 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingManager.showToast('A response is already in progress', 'warning');
             return;
           }
-
           submitBtn.disabled = true;
-
           try {
             return hljs.highlight(code, { language: lang }).value;
           } catch (_) {
@@ -154,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize chatUI DOM references
   chatUI.initialize();
   const pinnedActionsContainer = document.getElementById('pinned-actions-container');
-
+  initQuickActionsMenu(document.getElementById('quick-actions-sidebar'));
   // Preset registry for analysis modes
   const PRESET_MODES = {
     summary: {
@@ -191,6 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let lastUsedPreset = 'summary'; // Default preset mode
   let lastLoadedPageContext = null;
+  let pageContextHistoryMessage = null;
 
   /**
    * Helper to execute a preset analysis.
@@ -266,22 +271,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateSelectedTextActionButtons() {
-    // Sidebar actions run on the sticky selection OR, once a conversation
-    // exists, as a follow-up on the previous response.
-    const canRun = Boolean(getSelectedText()) || hasConversation();
     [analyzeButton, proofreadButton, explainButton, analyzeDropdown, customPromptsDropdown].forEach(
       (button) => {
         if (!button) return;
-        button.disabled = !canRun;
-        button.title = canRun
-          ? button.dataset.enabledTitle || button.title
-          : 'Select text first to run this action';
+        button.disabled = false;
+        button.title = button.dataset.enabledTitle || button.title;
       }
     );
   }
 
-  // Show/hide the dismissible selected-text chip in the chat input area so the
-  // sticky selection is never hidden state.
   function updateSelectedTextChip() {
     if (!selectedTextStrip) return;
     const text = getSelectedText();
@@ -301,10 +299,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSelectedTextChip();
   }
 
-  // Compose the prompt request for a sidebar action: attach sticky selected text
-  // as structured context when present, otherwise fall back to a follow-up on
-  // the existing conversation. Returns null (and warns) when there is neither.
-  function composeActionPrompt(basePrompt, actionLabel) {
+  async function composeActionPrompt(basePrompt, actionLabel) {
+    if (!getSelectedText()) {
+      selectedText = await readCurrentPageSelection(getRunSourceTabId());
+      if (selectedText) refreshSelectedTextActionState();
+    }
     const text = getSelectedText();
     if (text) {
       return {
@@ -323,13 +322,12 @@ document.addEventListener('DOMContentLoaded', () => {
         },
       };
     }
-    // Nothing selected and no conversation to build on — emit standard warning.
     getSelectedTextForAction(actionLabel);
     return null;
   }
 
   async function runSelectedTextPrompt(prompt, toolChoice, actionLabel) {
-    const composed = composeActionPrompt(prompt, actionLabel);
+    const composed = await composeActionPrompt(prompt, actionLabel);
     if (composed === null) {
       return false;
     }
@@ -347,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
 
-    const composed = composeActionPrompt(preset.prompt, `run ${preset.label}`);
+    const composed = await composeActionPrompt(preset.prompt, `run ${preset.label}`);
     if (composed === null) {
       return false;
     }
@@ -361,7 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function executeSelectedTextInstruction(instruction) {
     const actionName = instruction.name || 'this prompt';
-    const composed = composeActionPrompt(instruction.content, `run ${actionName}`);
+    const composed = await composeActionPrompt(instruction.content, `run ${actionName}`);
     if (composed === null) {
       return false;
     }
@@ -372,92 +370,47 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  function removePageContextHistory() {
+    if (pageContextHistoryMessage) {
+      const history = streamState.getConversationHistory();
+      const index = history.indexOf(pageContextHistoryMessage);
+      if (index >= 0) history.splice(index, 1);
+    }
+    pageContextHistoryMessage = null;
+  }
+
   // Inserts already-extracted page content into the chat context. Shared by the
   // normal DOM path and the PDF path (which supplies a response-shaped object).
   function applyLoadedPageContent(response) {
-    let sourceInfo = response.title;
-    if (response.siteName) sourceInfo = `${response.title} (${response.siteName})`;
-    if (response.byline) sourceInfo += ` by ${response.byline}`;
+    // Prepare everything first so a budget or prompt error cannot leave a
+    // visible page card without matching model context.
+    const prepared = prepareLoadedPageContext(response, {
+      hasMediaContext: Boolean(streamState.getMediaData()),
+    });
 
-    chatUI.addLoadedContentMessage(sourceInfo, response.content);
-
+    removePageContextHistory();
+    document.querySelectorAll('.loaded-content-container').forEach((container) => {
+      container.remove();
+    });
+    chatUI.addLoadedContentMessage(prepared.sourceInfo, response.content);
     showSiteSuggestions(response.url, response.platform, response.platformInfo);
 
-    lastLoadedPageContext = {
-      url: response.url,
-      platform: response.platform || null,
-      readStrategy: response.readStrategy || 'auto',
-      extractionSource: response.extractionSource || 'auto',
-      extractionReason: response.extractionReason || '',
-      hasScreenshot: Boolean(response.screenshot),
-      hasMediaContext: Boolean(streamState.getMediaData()),
-    };
-
-    composer.setPageContext({
-      details: `${response.url}${fitted.truncated ? ' (trimmed)' : ''}`,
-    });
-    syncChatAreaHeight();
-
-    const budget = resolveDomContextBudget({
-      modelId: null,
-      userMessage: '',
-      contextCount: 1,
-      fileAttachmentCount: streamState.getMediaData() ? 1 : 0,
-    });
-    const fitted = fitTextToTokenBudget(response.content, budget.perContextDomTokens);
-    const contextNotes = [];
-    if (lastLoadedPageContext.readStrategy !== 'auto') {
-      contextNotes.push(`Read strategy: ${lastLoadedPageContext.readStrategy}.`);
-    }
-    if (
-      lastLoadedPageContext.extractionSource &&
-      lastLoadedPageContext.extractionSource !== 'auto'
-    ) {
-      const extractionNote = `Extraction source: ${lastLoadedPageContext.extractionSource}.`;
-      contextNotes.push(
-        lastLoadedPageContext.extractionReason
-          ? `${extractionNote} ${lastLoadedPageContext.extractionReason}`
-          : extractionNote
-      );
-    }
-    if (lastLoadedPageContext.hasScreenshot) {
-      contextNotes.push('Visual screenshot context is available.');
-    }
-    if (lastLoadedPageContext.hasMediaContext) {
-      contextNotes.push('Additional media attachment context is active.');
-    }
-
-    const loadedContextInstruction = [
-      `I have loaded the content from the page "${response.title}" (${response.url}).`,
-      `Source: ${response.siteName || 'Unknown'}`,
-      `Author: ${response.byline || 'Unknown'}`,
-      `Platform: ${response.platform || 'unknown'}`,
-      contextNotes.length ? `Context notes: ${contextNotes.join(' ')}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    streamState.getConversationHistory().push({
-      role: 'user',
-      content: composeUserPrompt({
-        instruction: loadedContextInstruction,
-        context: {
-          type: 'page_content',
-          text: fitted.text,
-        },
-      }),
-    });
+    lastLoadedPageContext = prepared.pageContext;
+    composer.setPageContext({ details: prepared.details });
+    pageContextHistoryMessage = prepared.historyMessage;
+    streamState.getConversationHistory().push(pageContextHistoryMessage);
 
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
     userInput.focus();
     const statusParts = ['Content loaded.'];
-    if (fitted.truncated) {
+    if (prepared.fitted.truncated) {
       statusParts.push(
-        `Trimmed to fit context budget (${fitted.includedTokens}/${fitted.originalTokens} estimated tokens).`
+        `Trimmed to fit context budget (${prepared.fitted.includedTokens}/${prepared.fitted.originalTokens} estimated tokens).`
       );
     }
     chatUI.addMessage('System', statusParts.join(' '));
+    syncChatAreaHeight();
   }
 
   // Reads a PDF in the chat page via pdf.js and feeds the text into the chat.
@@ -531,10 +484,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Analyze button - runs last used preset mode on page content
   if (analyzeButton) {
     analyzeButton.addEventListener('click', () => {
-      executePagePresetMode(lastUsedPreset);
+      executeSelectedTextMode(lastUsedPreset);
     });
   }
 
@@ -877,12 +829,20 @@ document.addEventListener('DOMContentLoaded', () => {
     setupThemeToggle(darkThemeToggle);
   }
 
+  initChatModelStatus({
+    statusElement: document.getElementById('sidebar-model-status'),
+    modeElement: document.getElementById('sidebar-mode-value'),
+    reasoningElement: document.getElementById('sidebar-reasoning-value'),
+  });
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.pinnedQuickActions || changes.instructions)) {
       renderPinnedActions();
     }
+    if (area === 'local' && (changes.profiles || changes.lastSelectedProfileId)) {
+      void conversationControls?.refresh();
+    }
   });
-
   const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
 
   let selectedText = null;
@@ -890,20 +850,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let panelTabId = null; // Owning tab for this side panel (set from message sender)
   let lastProcessedPanelActionId = null;
   let isResponseInFlight = false;
+  let conversationControls = null;
   const inputArea = document.getElementById('input-area');
   let currentAttachmentPreviewUrl = null;
   const contextTray = document.getElementById('context-tray');
   const quickActionsRow = document.getElementById('quick-actions-row');
-
-  // Streaming and API call state manager
   const streamState = new StreamStateManager();
   streamState.setChatAreaRef(chatArea);
-
-  // A run is only genuinely active while its streaming bubble is still live.
-  // The streaming element is created right before startRun() and cleared on
-  // every terminal event, so a run id with no streaming element means the run
-  // is stranded (its terminal event was never delivered) and must not block
-  // future runs.
   function hasLiveStreamingRun() {
     return (
       Boolean(streamState.getRunId()) && Boolean(streamState.getCurrentStreamingContentElement())
@@ -946,10 +899,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function endResponseRun() {
     isResponseInFlight = false;
+    void conversationControls?.refresh();
   }
 
-  // Terminal run UI reset: re-enable input, restore the Clear label, and
-  // apply the terminal run state to the input area.
   function resetRunUi(runState) {
     userInput.disabled = false;
     sendButton.disabled = false;
@@ -958,7 +910,6 @@ document.addEventListener('DOMContentLoaded', () => {
     void clearActiveRun();
   }
 
-  // Begin-run UI: disable input and switch the action button to Stop.
   function beginRunUi() {
     userInput.disabled = true;
     sendButton.disabled = true;
@@ -1080,9 +1031,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Removes the loaded page context: clears state, hides the tray item, and
   // removes the expandable content message from the chat DOM.
   function detachPageContext(silent = false) {
+    removePageContextHistory();
     lastLoadedPageContext = null;
-    const container = document.querySelector('.loaded-content-container');
-    if (container) container.remove();
+    document.querySelectorAll('.loaded-content-container').forEach((container) => {
+      container.remove();
+    });
     composer.setPageContext(null);
     syncChatAreaHeight();
     if (!silent) loadingManager.showToast('Page content detached', 'info');
@@ -1176,7 +1129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (request.fromStartChat) {
       chatMainArea.classList.remove('hidden');
       oneoffInstructionArea.classList.add('hidden');
-      streamState.clearHistory();
+      streamState.startNewConversation();
       clearCurrentMediaData();
     } else {
       selectedTextDiv.textContent = selectedText;
@@ -1409,10 +1362,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (sendResponse) sendResponse({ success: true, ignored: !consumed });
       return true;
     } else if (request.action === 'orchestratorEvent') {
-      // NEW: Handle events from orchestrator
-      const { runId, sourceTabId, event } = request;
+      let { runId, sourceTabId, event } = request;
 
-      // Filter events by run ID first; side panels may not receive a tab identity.
       const currentRunId = streamState.getRunId();
       const currentSourceTabId = streamState.getSourceTabId();
       const sourceTabsMatch =
@@ -1420,11 +1371,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const isOwnedEvent = currentRunId && runId === currentRunId && sourceTabsMatch;
 
       if (!isOwnedEvent) {
-        // Terminal-event safety net: when the event is terminal and there is a
-        // live streaming element but isOwnedEvent failed (runId mismatch, or
-        // sourceTabId hasn't registered yet), finalize the bubble and unlock
-        // instead of silently dropping. Prevents permanently "Loading…" bubbles
-        // and empty sidebar.
         const terminalTypes = ['complete', 'error', 'aborted'];
         if (terminalTypes.includes(event.type) && streamState.getCurrentStreamingContentElement()) {
           console.log('Chat: Finalizing stranded bubble for terminal event', {
@@ -1451,6 +1397,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.getCurrentStreamingContentElement().innerHTML =
               renderMarkdownContent('Response stopped');
           }
+          chatUI.moveMessageToEnd(streamState.getCurrentStreamingMessageDiv());
           resetRunUi(RUN_STATES.IDLE);
           streamState.clearStreamingElements();
           streamState.clearStreamedText();
@@ -1472,245 +1419,283 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
       }
 
-      switch (event.type) {
-        case 'reasoning':
-          if (streamState.getCurrentStreamingMessageDiv() && event.data) {
-            if (!streamState.getReasoningContentElement()) {
-              const reasoningEl = chatUI.ensureReasoningPanel(
-                streamState.getCurrentStreamingMessageDiv()
-              );
-              streamState.setReasoningContentElement(reasoningEl);
+      for (event of streamState.queueOrchestratorEvent(event))
+        switch (event.type) {
+          case 'reasoning':
+            if (streamState.getCurrentStreamingMessageDiv() && event.data) {
+              if (!streamState.getReasoningContentElement()) {
+                const reasoningEl = chatUI.ensureReasoningPanel(
+                  streamState.getCurrentStreamingMessageDiv()
+                );
+                streamState.setReasoningContentElement(reasoningEl);
+              }
+              streamState.markReasoningStart();
+              streamState.queueRenderReasoning(event.data);
             }
-            streamState.markReasoningStart();
-            streamState.queueRenderReasoning(event.data);
-          }
-          break;
-        case 'content':
-          if (streamState.getCurrentStreamingContentElement() && event.data) {
-            // First answer token after reasoning — collapse the thinking panel.
+            break;
+          case 'content':
+            if (streamState.getCurrentStreamingContentElement() && event.data) {
+              // First answer token after reasoning — collapse the thinking panel.
+              if (streamState.getReasoningContentElement()) {
+                chatUI.finalizeReasoningPanel(
+                  streamState.getCurrentStreamingMessageDiv(),
+                  streamState.getReasoningElapsedMs()
+                );
+              }
+              streamState.queueRenderChunk(event.data);
+            }
+            break;
+          case 'page_action_confirmation':
+            renderPageActionConfirmation(
+              chatArea,
+              event,
+              async (confirmationId, approved, approveAll) => {
+                try {
+                  const response = await chrome.runtime.sendMessage({
+                    action: 'pageActionDecision',
+                    runId,
+                    confirmationId,
+                    approved,
+                    approveAll,
+                    ...getRunAuth(runId, streamState.getSourceTabId()),
+                  });
+                  if (!response?.success) {
+                    loadingManager.showToast(
+                      'This page-action approval is no longer active.',
+                      'warning'
+                    );
+                  }
+                } catch (error) {
+                  console.warn('Chat: page-action decision failed:', error.message);
+                  loadingManager.showToast('Could not send the page-action decision.', 'error');
+                }
+              },
+              () => abortRun(runId)
+            );
+            break;
+
+          case 'hermes_approval_required':
+            hermesChat.renderHermesApproval(
+              chatArea,
+              event,
+              async (choice) => {
+                try {
+                  const response = await chrome.runtime.sendMessage({
+                    action: 'hermesApprovalDecision',
+                    runId,
+                    approvalId: event.approvalId,
+                    choice,
+                    ...getRunAuth(runId, streamState.getSourceTabId()),
+                  });
+                  if (!response?.success) {
+                    loadingManager.showToast(
+                      'This Hermes approval is no longer active.',
+                      'warning'
+                    );
+                  }
+                } catch (error) {
+                  console.warn('Chat: Hermes approval failed:', error.message);
+                  loadingManager.showToast('Could not send the Hermes approval.', 'error');
+                }
+              },
+              () => abortRun(runId)
+            );
+            break;
+
+          case 'hermes_approval_updated':
+            hermesChat.settleHermesApproval(chatArea, event);
+            break;
+          case 'page_action_decision':
+            resolvePageActionConfirmation(chatArea, event);
+            break;
+          case 'page_action_state':
+            updatePageActionActivity(chatArea, {
+              ...event,
+              message: event.error || event.message,
+            });
+            break;
+          /*
+              `❌ Page action failed: ${event.action} ${label} — ${event.error || 'the page did not respond.'}`
+          */
+          case 'page_action_warning':
+            updatePageActionActivity(chatArea, { ...event, state: 'warning' });
+            break;
+          case 'page_user_input_request':
+            event.ownerToken = getRunAuth(runId).ownerToken;
+            handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
+            break;
+          case 'tool_start':
             if (streamState.getReasoningContentElement()) {
               chatUI.finalizeReasoningPanel(
                 streamState.getCurrentStreamingMessageDiv(),
                 streamState.getReasoningElapsedMs()
               );
             }
-            streamState.queueRenderChunk(event.data);
-          }
-          break;
-        case 'page_action_confirmation':
-          renderPageActionConfirmation(
-            chatArea,
-            event,
-            async (confirmationId, approved, approveAll) => {
-              try {
-                const response = await chrome.runtime.sendMessage({
-                  action: 'pageActionDecision',
-                  runId,
-                  confirmationId,
-                  approved,
-                  approveAll,
-                  sourceTabId: streamState.getSourceTabId(),
-                });
-                if (!response?.success) {
-                  loadingManager.showToast(
-                    'This page-action approval is no longer active.',
-                    'warning'
-                  );
-                }
-              } catch (error) {
-                console.warn('Chat: page-action decision failed:', error.message);
-                loadingManager.showToast('Could not send the page-action decision.', 'error');
-              }
-            },
-            () => chrome.runtime.sendMessage({ action: 'abortRun', runId }).catch(() => {})
-          );
-          break;
-
-        case 'page_action_decision':
-          resolvePageActionConfirmation(chatArea, event);
-          break;
-        case 'page_action_state':
-          updatePageActionActivity(chatArea, {
-            ...event,
-            message: event.error || event.message,
-          });
-          break;
-        /*
-              `❌ Page action failed: ${event.action} ${label} — ${event.error || 'the page did not respond.'}`
-          */
-        case 'page_action_warning':
-          updatePageActionActivity(chatArea, { ...event, state: 'warning' });
-          break;
-        case 'page_user_input_request':
-          handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
-          break;
-        case 'tool_start':
-          // Collapse any open thinking panel before the tool trace replaces the bubble.
-          if (streamState.getReasoningContentElement()) {
-            chatUI.finalizeReasoningPanel(
-              streamState.getCurrentStreamingMessageDiv(),
-              streamState.getReasoningElapsedMs()
-            );
-          }
-          // Clear stale turn-1 streaming state so the continuation turn renders fresh.
-          // Without this, accumulatedStreamedText from the first turn survives into
-          // the answer and can appear as if the rewrite "never occurred".
-          streamState.startNewTurn();
-          streamState.setActiveToolCall(event.toolCall);
-          if (streamState.getCurrentStreamingContentElement()) {
-            if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
-              streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
-                `Loading skill: **${event.toolCall.function.name}**`
-              );
-            } else {
-              streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
-                `⚙️ Using tool: **${event.toolCall.function.name}**`
-              );
-            }
-          }
-          break;
-        case 'tool_ready':
-          chatUI.addMessage('System', `⚙️ Executing tool: **${event.toolCall.function.name}**...`);
-          break;
-        case 'tool_complete':
-          // Distinguish tool vs skill in the trace
-          if (isSkillLoaderTool(event.toolCall.function.name)) {
-            try {
-              clearCurrentMediaData();
-              const args = tryParseToolPayload(event.toolCall.function.arguments);
-              const resultObj = tryParseToolPayload(event.result);
-              const skillResult = resultObj?.result || resultObj;
-              if (skillResult && skillResult.success) {
-                chatUI.addMessage('System', `Loaded skill: **${args.name || 'unknown'}**`);
-                const skillContent = JSON.stringify(skillResult);
-                const contentPreview =
-                  skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
-                chatUI.addMessage(
-                  'System',
-                  `Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``
+            streamState.startNewTurn();
+            streamState.setActiveToolCall(event.toolCall);
+            if (streamState.getCurrentStreamingContentElement()) {
+              if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
+                streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+                  `Loading skill: **${event.toolCall.function.name}**`
                 );
               } else {
-                chatUI.addMessage('System', `⚠️ Skill **${args.name || 'unknown'}** not found.`);
-              }
-            } catch (e) {
-              console.warn(
-                `Could not parse ${event.toolCall.function.name} arguments for traceability`
-              );
-            }
-          } else {
-            const resultObj = tryParseToolPayload(event.result);
-            const outcome = classifyToolExecutionResult(resultObj);
-            if (outcome.payload?.skill) {
-              chatUI.addMessage(
-                'System',
-                `📚 Loaded skill: **${outcome.payload.skill.name || event.toolCall.function.name}**`
-              );
-            } else if (outcome.status !== 'success') {
-              chatUI.addMessage(
-                'System',
-                `⚠️ Tool ${event.toolCall.function.name}: ${outcome.message || outcome.error || 'error'}`
-              );
-            } else {
-              chatUI.addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
-            }
-          }
-          break;
-        case 'tool_error':
-          chatUI.addMessage(
-            'System',
-            `❌ Error executing tool ${event.toolCall.function.name}: ${event.error}`
-          );
-
-          streamState.setActiveToolCall(null);
-          break;
-
-        case 'complete': {
-          // Collapse the thinking panel if it never got collapsed (e.g. reasoning-only turn).
-          if (streamState.getReasoningContentElement()) {
-            chatUI.finalizeReasoningPanel(
-              streamState.getCurrentStreamingMessageDiv(),
-              streamState.getReasoningElapsedMs()
-            );
-          }
-
-          const body = buildFinalResponseBody(
-            event.content,
-            streamState.getStreamedText(),
-            event.grounding?.sources || [],
-            event.completion
-          );
-
-          if (streamState.getCurrentStreamingContentElement()) {
-            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(body);
-            postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
-
-            const msgDiv = streamState.getCurrentStreamingMessageDiv();
-            const uid = streamState.getCurrentStreamingUniqueId();
-            if (msgDiv && uid) {
-              const rawIcon = document.getElementById(`copy-icon-${uid}`);
-              const formattedIcon = document.getElementById(`copy-formatted-icon-${uid}`);
-              if (rawIcon && formattedIcon) {
-                attachCopyListeners(
-                  body,
-                  streamState.getCurrentStreamingContentElement(),
-                  rawIcon,
-                  formattedIcon
+                streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+                  `⚙️ Using tool: **${event.toolCall.function.name}**`
                 );
               }
             }
-          } else {
-            chatUI.addMessage('LLM', body);
+            break;
+          case 'tool_ready':
+            chatUI.addMessage(
+              'System',
+              `⚙️ Executing tool: **${event.toolCall.function.name}**...`
+            );
+            break;
+          case 'tool_complete':
+            if (isSkillLoaderTool(event.toolCall.function.name)) {
+              try {
+                clearCurrentMediaData();
+                const args = tryParseToolPayload(event.toolCall.function.arguments);
+                const resultObj = tryParseToolPayload(event.result);
+                const skillResult = resultObj?.result || resultObj;
+                if (skillResult && skillResult.success) {
+                  chatUI.addMessage('System', `Loaded skill: **${args.name || 'unknown'}**`);
+                  const skillContent = JSON.stringify(skillResult);
+                  const contentPreview =
+                    skillContent.substring(0, 200) + (skillContent.length > 200 ? '...' : '');
+                  chatUI.addMessage(
+                    'System',
+                    `Skill instructions preview:\n\`\`\`\n${contentPreview}\n\`\`\``
+                  );
+                } else {
+                  chatUI.addMessage('System', `⚠️ Skill **${args.name || 'unknown'}** not found.`);
+                }
+              } catch (e) {
+                console.warn(
+                  `Could not parse ${event.toolCall.function.name} arguments for traceability`
+                );
+              }
+            } else {
+              const resultObj = tryParseToolPayload(event.result);
+              const outcome = classifyToolExecutionResult(resultObj);
+              if (outcome.payload?.skill) {
+                chatUI.addMessage(
+                  'System',
+                  `📚 Loaded skill: **${outcome.payload.skill.name || event.toolCall.function.name}**`
+                );
+              } else if (outcome.status !== 'success') {
+                chatUI.addMessage(
+                  'System',
+                  `⚠️ Tool ${event.toolCall.function.name}: ${outcome.message || outcome.error || 'error'}`
+                );
+              } else {
+                chatUI.addMessage('System', `✅ Tool ${event.toolCall.function.name} executed.`);
+              }
+            }
+            break;
+          case 'tool_error':
+            chatUI.addMessage(
+              'System',
+              `❌ Error executing tool ${event.toolCall.function.name}: ${event.error}`
+            );
+
+            streamState.setActiveToolCall(null);
+            break;
+
+          case 'complete': {
+            hermesChat.settleHermesApprovals(chatArea, 'complete');
+            // Collapse the thinking panel if it never got collapsed (e.g. reasoning-only turn).
+            if (streamState.getReasoningContentElement()) {
+              chatUI.finalizeReasoningPanel(
+                streamState.getCurrentStreamingMessageDiv(),
+                streamState.getReasoningElapsedMs()
+              );
+            }
+
+            const body = buildFinalResponseBody(
+              event.content,
+              streamState.getStreamedText(),
+              event.grounding?.sources || [],
+              event.completion
+            );
+
+            if (streamState.getCurrentStreamingContentElement()) {
+              streamState.getCurrentStreamingContentElement().innerHTML =
+                renderMarkdownContent(body);
+              postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
+
+              const msgDiv = streamState.getCurrentStreamingMessageDiv();
+              const uid = streamState.getCurrentStreamingUniqueId();
+              if (msgDiv && uid) {
+                const rawIcon = document.getElementById(`copy-icon-${uid}`);
+                const formattedIcon = document.getElementById(`copy-formatted-icon-${uid}`);
+                if (rawIcon && formattedIcon) {
+                  attachCopyListeners(
+                    body,
+                    streamState.getCurrentStreamingContentElement(),
+                    rawIcon,
+                    formattedIcon
+                  );
+                }
+              }
+            } else {
+              chatUI.addMessage('LLM', body);
+            }
+
+            const completedMessageDiv = streamState.getCurrentStreamingMessageDiv();
+            if (completedMessageDiv) chatUI.moveMessageToEnd(completedMessageDiv);
+
+            if (body.trim()) {
+              streamState.addMessageToHistory({
+                role: 'assistant',
+                content: body,
+              });
+            }
+            resetRunUi(RUN_STATES.COMPLETE);
+
+            // Reset run state so the next message isn't rejected as "in progress".
+            // Without clearing the run id, isResponseBusy() stays true forever.
+            streamState.clearStreamingElements();
+            streamState.clearStreamedText();
+            streamState.setActiveToolCall(null);
+            streamState.setRunId(null);
+            streamState.setSourceTabId(null);
+
+            // A conversation now exists, so sidebar actions can run as follow-ups.
+            refreshSelectedTextActionState();
+            break;
           }
+          case 'aborted': {
+            hermesChat.settleHermesApprovals(chatArea, 'aborted');
+            cancelPageActionConfirmations(chatArea);
+            chatUI.addMessage('System', 'Response stopped');
+            resetRunUi(RUN_STATES.STOPPED);
 
-          if (body.trim()) {
-            streamState.addMessageToHistory({
-              role: 'assistant',
-              content: body,
-            });
+            // Reset streaming variables
+            streamState.clearStreamingElements();
+            streamState.clearStreamedText();
+            streamState.setActiveToolCall(null);
+            streamState.setRunId(null);
+            streamState.setSourceTabId(null);
+            break;
           }
-          resetRunUi(RUN_STATES.COMPLETE);
+          case 'error': {
+            hermesChat.settleHermesApprovals(chatArea, 'error');
+            // Terminal page-action cards use the same explicit state === 'error' guard.
+            cancelPageActionConfirmations(chatArea);
+            chatUI.addMessage('System', `❌ Error: ${event.error}`);
+            resetRunUi(RUN_STATES.ERROR);
+            userInput.focus();
 
-          // Reset run state so the next message isn't rejected as "in progress".
-          // Without clearing the run id, isResponseBusy() stays true forever.
-          streamState.clearStreamingElements();
-          streamState.clearStreamedText();
-          streamState.setActiveToolCall(null);
-          streamState.setRunId(null);
-          streamState.setSourceTabId(null);
-
-          // A conversation now exists, so sidebar actions can run as follow-ups.
-          refreshSelectedTextActionState();
-          break;
+            // Reset streaming variables
+            streamState.clearStreamingElements();
+            streamState.clearStreamedText();
+            streamState.setActiveToolCall(null);
+            streamState.setRunId(null);
+            streamState.setSourceTabId(null);
+            break;
+          }
         }
-        case 'aborted': {
-          cancelPageActionConfirmations(chatArea);
-          chatUI.addMessage('System', 'Response stopped');
-          resetRunUi(RUN_STATES.STOPPED);
-
-          // Reset streaming variables
-          streamState.clearStreamingElements();
-          streamState.clearStreamedText();
-          streamState.setActiveToolCall(null);
-          streamState.setRunId(null);
-          streamState.setSourceTabId(null);
-          break;
-        }
-        case 'error': {
-          // Terminal page-action cards use the same explicit state === 'error' guard.
-          cancelPageActionConfirmations(chatArea);
-          chatUI.addMessage('System', `❌ Error: ${event.error}`);
-          resetRunUi(RUN_STATES.ERROR);
-          userInput.focus();
-
-          // Reset streaming variables
-          streamState.clearStreamingElements();
-          streamState.clearStreamedText();
-          streamState.setActiveToolCall(null);
-          streamState.setRunId(null);
-          streamState.setSourceTabId(null);
-          break;
-        }
-      }
 
       if (sendResponse) sendResponse({ success: true });
       return true;
@@ -1720,18 +1705,32 @@ document.addEventListener('DOMContentLoaded', () => {
   sendButton.addEventListener('click', sendMessage);
   const clearButton = document.getElementById('clear-button');
 
-  clearButton.addEventListener('click', () => {
-    if (clearButton.textContent === 'Stop') {
-      stopApiRequest();
-    } else {
+  conversationControls = chatComposer.createConversationController({
+    button: clearButton,
+    isBusy: isResponseBusy,
+    getConfig: getApiConfig,
+    stop: stopApiRequest,
+    resetHermes: async (profileId) => {
+      const response = await chrome.runtime.sendMessage({
+        action: 'endHermesConversation',
+        profileId,
+      });
+      if (!response?.success) {
+        throw new Error(response?.error || 'Hermes could not start a new chat.');
+      }
+    },
+    clearLocal: () => {
       chatUI.clearChat();
-      streamState.clearHistory();
+      streamState.startNewConversation();
       clearCurrentMediaData();
       clearSelectedTextState();
-      // Keep the page tray consistent with the cleared chat DOM.
       if (lastLoadedPageContext) detachPageContext(true);
-    }
+    },
+    onError: (error) =>
+      loadingManager.showToast(`Could not start a new chat: ${error.message}`, 'error'),
   });
+  clearButton.addEventListener('click', conversationControls.handleClick);
+  void conversationControls.refresh();
   userInput.addEventListener('keydown', (event) => {
     if (isSlashMenuVisible()) {
       if (event.key === 'ArrowDown') {
@@ -1885,7 +1884,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       clearCurrentMediaData();
-      const config = await getApiConfig();
+      const config = await getApiConfigCached();
       const userMessage = composeUserPrompt(promptRequest);
 
       const effectiveToolChoice =
@@ -1893,7 +1892,6 @@ document.addEventListener('DOMContentLoaded', () => {
           ? 'auto'
           : tool_choice;
 
-      // Add user message to history if provided
       if (userMessage) {
         chatUI.addMessage('User', formatUserMessageForDisplay(userMessage));
 
@@ -1914,38 +1912,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
-      // Create UI elements for streaming
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
       streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
       beginRunUi();
 
-      // Prepare run configuration with media
       const webSearchEnabled = await isWebSearchEnabled();
       const pageActionsEnabled = await consumePageActionsEnabled();
       const runConfig = {
         provider: config.provider || 'api',
         profileId: config.profileId || config.id,
         llmEndpoint: config.llmEndpoint,
-        apiKey: config.apiKey,
+        hermesEndpoint: config.hermesEndpoint,
+        hermesProfile: config.hermesProfile,
+        hermesRemoteConfirmed: config.hermesRemoteConfirmed === true,
         modelName: config.modelName,
         reasoningLevel: config.reasoningLevel,
         systemPrompt: config.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
         webSearch: webSearchEnabled,
-        pageActions: pageActionsEnabled,
+        pageActions: config.provider === 'hermes' ? false : pageActionsEnabled,
         pageActionsMultiTab: pageActionsEnabled && (await isPageActionsMultiTabEnabled()),
         mediaData: mediaData,
         requestedSkill,
+        conversationId: streamState.getConversationId(),
         sourceTabId: getRunSourceTabId(),
       };
-
-      // Start orchestrator run using ChatAPI module
       streamState.setRunId(await startRun(runConfig));
       streamState.setSourceTabId(runConfig.sourceTabId);
 
-      // Execute the run using ChatAPI module
-      await executeRun(streamState.getRunId(), streamState.getConversationHistory());
+      await executeRun(
+        streamState.getRunId(),
+        prepareRunMessages(runConfig, streamState.getConversationHistory())
+      );
     } catch (error) {
       handleRunFailure(error, 'makeApiCallWithMedia');
     } finally {
@@ -2035,7 +2034,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!beginResponseRun()) return;
 
     try {
-      const config = await getApiConfig();
+      const config = await getApiConfigCached();
       const userMessage = composeUserPrompt(promptRequest);
 
       // Adaptive model routing: check if media context needs a vision-capable model
@@ -2100,30 +2099,32 @@ document.addEventListener('DOMContentLoaded', () => {
         provider: effectiveConfig.provider || 'api',
         profileId: effectiveConfig.profileId || effectiveConfig.id,
         llmEndpoint: effectiveConfig.llmEndpoint,
-        apiKey: effectiveConfig.apiKey,
+        hermesEndpoint: effectiveConfig.hermesEndpoint,
+        hermesProfile: effectiveConfig.hermesProfile,
+        hermesRemoteConfirmed: effectiveConfig.hermesRemoteConfirmed === true,
         modelName: effectiveConfig.modelName,
         reasoningLevel: effectiveConfig.reasoningLevel,
         systemPrompt: effectiveConfig.systemPrompt,
         tool_choice: effectiveToolChoice,
         tools: await getTools(),
         webSearch: webSearchEnabled,
-        pageActions: pageActionsEnabled,
+        pageActions: effectiveConfig.provider === 'hermes' ? false : pageActionsEnabled,
         pageActionsMultiTab: pageActionsEnabled && (await isPageActionsMultiTabEnabled()),
         requestedSkill,
+        conversationId: streamState.getConversationId(),
         sourceTabId: getRunSourceTabId(),
       };
-
-      // Create UI elements for streaming
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
       streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
       beginRunUi();
 
-      // Start orchestrator run using ChatAPI module
       streamState.setRunId(await startRun(runConfig));
       streamState.setSourceTabId(runConfig.sourceTabId);
 
-      // Execute the run using ChatAPI module
-      await executeRun(streamState.getRunId(), streamState.getConversationHistory());
+      await executeRun(
+        streamState.getRunId(),
+        prepareRunMessages(runConfig, streamState.getConversationHistory())
+      );
     } catch (error) {
       handleRunFailure(error, 'makeApiCall');
     } finally {
@@ -2299,8 +2300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const instruction = allInstructions.find((inst) => inst.id === pinId);
         if (instruction) {
           const button = document.createElement('button');
-          const iconLetter = instruction.name ? instruction.name[0].toUpperCase() : '?';
-          button.textContent = iconLetter;
+          button.textContent = instruction.name || 'Untitled prompt';
           button.title = instruction.name; // Set full instruction name as tooltip
           button.classList.add('quick-action-button', 'pinned-action-item');
           button.dataset.instructionId = instruction.id; // Store ID

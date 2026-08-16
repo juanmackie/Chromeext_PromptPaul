@@ -187,6 +187,7 @@ export function handlePageUserInputRequest(chatArea, event, runId, sourceTabId) 
       runId,
       requestId,
       answer,
+      ownerToken: event.ownerToken || '',
       sourceTabId,
     })
   );

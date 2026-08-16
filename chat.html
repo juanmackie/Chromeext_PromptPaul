@@ -11,85 +11,162 @@
   </head>
   <body>
     <a href="#user-input" class="skip-link">Skip to chat input</a>
-    <div id="quick-actions-sidebar">
-      <!-- Theme toggle: first in sidebar (top-right area) -->
-      <button id="themeToggleBtn" class="quick-action-button" title="Toggle dark theme">
-        <span class="sidebar-label">Theme</span>
+    <aside id="quick-actions-sidebar" aria-label="Chat actions">
+      <div class="quick-actions-primary" role="toolbar" aria-label="Primary actions">
+        <button id="add-page-button" class="quick-action-button" title="Load page content">
+          <span class="material-symbols-outlined" aria-hidden="true">article</span>
+          <span class="sidebar-label">Page</span>
+        </button>
+        <button
+          id="analyze-button"
+          class="quick-action-button"
+          title="Analyze selected text"
+          data-enabled-title="Analyze selected text"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>
+          <span class="sidebar-label">Analyze</span>
+        </button>
+      </div>
+      <div class="quick-actions-divider" aria-hidden="true"></div>
+      <button
+        id="quick-actions-more"
+        class="quick-action-button quick-actions-more-button"
+        type="button"
+        title="More actions"
+        aria-label="More actions"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-controls="quick-actions-menu"
+      >
+        <span class="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+        <span class="sidebar-label">More</span>
+        <span
+          id="quick-actions-indicator"
+          class="quick-actions-indicator"
+          aria-hidden="true"
+          hidden
+        ></span>
       </button>
       <input type="checkbox" id="darkThemeToggle" class="hidden" />
-      <!-- Static actions with text labels -->
-      <button id="add-page-button" class="quick-action-button" title="Load page content">
-        <span class="sidebar-label">Page</span>
-      </button>
-      <button
-        id="analyze-button"
-        class="quick-action-button"
-        title="Analyze selected text"
-        data-enabled-title="Analyze selected text"
+      <div
+        id="quick-actions-menu"
+        class="quick-actions-menu"
+        role="dialog"
+        aria-label="More actions"
+        hidden
       >
-        <span class="sidebar-label">Analyze</span>
-      </button>
-      <button
-        id="analyze-dropdown"
-        class="quick-action-button"
-        title="Choose selected-text mode"
-        data-enabled-title="Choose selected-text mode"
-      >
-        <span class="sidebar-label">Mode</span>
-      </button>
-      <button
-        id="proofread-button"
-        class="quick-action-button"
-        title="Proofread selected text"
-        data-enabled-title="Proofread selected text"
-      >
-        <span class="sidebar-label">Proof</span>
-      </button>
-      <button
-        id="explain-button"
-        class="quick-action-button"
-        title="Explain selected text"
-        data-enabled-title="Explain selected text"
-      >
-        <span class="sidebar-label">Explain</span>
-      </button>
-      <button
-        id="custom-prompts-dropdown"
-        class="quick-action-button"
-        title="Run selected-text prompt"
-        data-enabled-title="Run selected-text prompt"
-      >
-        <span class="sidebar-label">Prompts</span>
-      </button>
-      <!-- Current-page action toggle -->
-      <button
-        id="page-actions-toggle"
-        class="quick-action-button"
-        title="Page actions are off — click to enable current-page actions"
-        aria-pressed="false"
-      >
-        <span class="sidebar-label">Act</span>
-      </button>
-      <button
-        id="page-actions-multi-tab-toggle"
-        class="quick-action-button"
-        title="Multi-tab page actions are off"
-        aria-pressed="false"
-      >
-        <span class="sidebar-label">Tabs</span>
-      </button>
-      <!-- Web Search toggle -->
-      <button
-        id="web-search-toggle"
-        class="quick-action-button"
-        title="Web search is off — click to enable grounding"
-        aria-pressed="false"
-      >
-        <span class="sidebar-label">Web</span>
-      </button>
-      <!-- Pinned instructions will be added here by chat.js -->
-      <div id="pinned-actions-container"></div>
-    </div>
+        <div class="quick-actions-menu-header">
+          <span>More actions</span>
+          <button
+            id="quick-actions-close"
+            class="quick-actions-close"
+            type="button"
+            aria-label="Close more actions"
+            title="Close"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </div>
+        <section class="quick-actions-section" aria-labelledby="quick-actions-text-heading">
+          <h2 id="quick-actions-text-heading">Text actions</h2>
+          <button
+            id="analyze-dropdown"
+            class="quick-action-button quick-action-menu-item"
+            title="Choose selected-text mode"
+            data-enabled-title="Choose selected-text mode"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+            <span class="sidebar-label">Mode</span>
+          </button>
+          <button
+            id="proofread-button"
+            class="quick-action-button quick-action-menu-item"
+            title="Proofread selected text"
+            data-enabled-title="Proofread selected text"
+            data-close-quick-actions
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">spellcheck</span>
+            <span class="sidebar-label">Proofread</span>
+          </button>
+          <button
+            id="explain-button"
+            class="quick-action-button quick-action-menu-item"
+            title="Explain selected text"
+            data-enabled-title="Explain selected text"
+            data-close-quick-actions
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">lightbulb</span>
+            <span class="sidebar-label">Explain</span>
+          </button>
+          <button
+            id="custom-prompts-dropdown"
+            class="quick-action-button quick-action-menu-item"
+            title="Run selected-text prompt"
+            data-enabled-title="Run selected-text prompt"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">bookmarks</span>
+            <span class="sidebar-label">Prompts</span>
+          </button>
+        </section>
+        <section class="quick-actions-section" aria-labelledby="quick-actions-tools-heading">
+          <h2 id="quick-actions-tools-heading">Page tools</h2>
+          <button
+            id="page-actions-toggle"
+            class="quick-action-button quick-action-menu-item"
+            title="Page actions are off — click to enable current-page actions"
+            aria-pressed="false"
+            data-close-quick-actions
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">ads_click</span>
+            <span class="sidebar-label">Act</span>
+          </button>
+          <button
+            id="page-actions-multi-tab-toggle"
+            class="quick-action-button quick-action-menu-item"
+            title="Multi-tab page actions are off"
+            aria-pressed="false"
+            data-close-quick-actions
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">tab</span>
+            <span class="sidebar-label">Tabs</span>
+          </button>
+          <!-- Web Search toggle -->
+          <button
+            id="web-search-toggle"
+            class="quick-action-button quick-action-menu-item"
+            title="Web search is off — click to enable grounding"
+            aria-pressed="false"
+            data-close-quick-actions
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">travel_explore</span>
+            <span class="sidebar-label">Web</span>
+          </button>
+        </section>
+        <section
+          id="pinned-actions-section"
+          class="quick-actions-section"
+          aria-labelledby="quick-actions-pinned-heading"
+        >
+          <h2 id="quick-actions-pinned-heading">Pinned prompts</h2>
+          <div id="pinned-actions-container"></div>
+        </section>
+        <section
+          class="quick-actions-section quick-actions-preferences"
+          aria-labelledby="quick-actions-preferences-heading"
+        >
+          <h2 id="quick-actions-preferences-heading">Preferences</h2>
+          <button
+            id="themeToggleBtn"
+            class="quick-action-button quick-action-menu-item"
+            title="Toggle dark theme"
+            data-close-quick-actions
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">dark_mode</span>
+            <span class="sidebar-label">Theme</span>
+          </button>
+        </section>
+      </div>
+    </aside>
     <!-- Drag & Drop overlay -->
     <div id="drop-overlay" class="drop-overlay hidden">
       <div class="drop-overlay-content">
@@ -99,6 +176,19 @@
       </div>
     </div>
     <div class="chat-container">
+      <div
+        id="sidebar-model-status"
+        class="sidebar-model-status"
+        role="status"
+        aria-label="Current mode and reasoning level"
+        title="Current mode and reasoning level"
+      >
+        <span class="sidebar-status-label">Mode</span>
+        <strong id="sidebar-mode-value" class="sidebar-status-value">—</strong>
+        <span class="sidebar-status-divider" aria-hidden="true"></span>
+        <span class="sidebar-status-label">Reasoning</span>
+        <strong id="sidebar-reasoning-value" class="sidebar-status-value">—</strong>
+      </div>
       <main id="chat-main-area">
         <div id="chat-area"></div>
         <div id="input-area" data-run-state="idle" aria-busy="false">

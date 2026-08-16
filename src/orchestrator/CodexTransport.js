@@ -4,6 +4,7 @@
  */
 
 import { CODEX_API_ENDPOINT } from '../utils/codexAuth.js';
+import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
 
 function toResponsesContent(content, role) {
   if (typeof content === 'string') {
@@ -89,11 +90,18 @@ export function buildCodexRequest({
 }
 
 export function createCodexHeaders({ accessToken, accountId, sessionId }) {
+  let clientVersion = '0.0.0';
+  try {
+    clientVersion = chrome.runtime.getManifest()?.version || clientVersion;
+  } catch (_) {
+    // Unit tests and non-extension callers do not provide chrome.runtime.
+  }
   const headers = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${accessToken}`,
     'OpenAI-Beta': 'codex-1',
     originator: 'prompt_paul',
+    version: clientVersion,
     'User-Agent': 'PromptPaul/6.1',
     'session-id': sessionId,
   };
@@ -117,7 +125,9 @@ export async function* streamCodexResponse({
     signal,
   });
   if (!response.ok) {
-    const error = new Error(`Codex API error ${response.status}: ${await response.text()}`);
+    const error = new Error(
+      `Codex API error ${response.status}: ${await readBoundedResponseText(response)}`
+    );
     error.status = response.status;
     throw error;
   }
@@ -129,7 +139,7 @@ export async function* streamCodexResponse({
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
     for (const line of lines) {

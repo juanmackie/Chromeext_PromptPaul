@@ -1,4 +1,5 @@
 // Enhanced input controls and validation
+import { isValidHttpUrl } from './src/utils/validation.js';
 document.addEventListener('DOMContentLoaded', function () {
   // Password toggle functionality
   const apiKeyToggle = document.getElementById('apiKeyToggle');
@@ -86,12 +87,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Validation functions
   function validateURL(url) {
-    try {
-      new URL(url);
-      return url.startsWith('https://');
-    } catch {
-      return false;
-    }
+    return isValidHttpUrl(url);
   }
 
   function showError(fieldId, message) {
@@ -170,14 +166,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Export validation functions for use in options.js
 window.inputControls = {
-  validateURL: function (url) {
-    try {
-      new URL(url);
-      return url.startsWith('https://');
-    } catch {
-      return false;
-    }
-  },
+  validateURL: isValidHttpUrl,
   validateJSON: function (jsonString) {
     try {
       JSON.parse(jsonString);

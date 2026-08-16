@@ -13,7 +13,8 @@
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 import { modelSupportsReasoning } from '../utils/profileRouting.js';
 import { createThinkParser } from '../utils/inlineReasoning.js';
-import { normalizeToolDefinition } from '../utils/validation.js';
+import { MAX_TOOL_ARGUMENTS_BYTES, normalizeToolDefinition } from '../utils/validation.js';
+import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
 import {
   evaluatePageActionPolicy,
   isPageActionName,
@@ -24,7 +25,9 @@ import {
   normalizePageUserInputArgs,
 } from '../utils/pageActionPolicy.js';
 import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../utils/pageDom.js';
+import { buildHermesTurn } from '../utils/hermesContext.js';
 import { buildCodexRequest, streamCodexResponse } from './CodexTransport.js';
+import { extractHermesOutputText, normalizeHermesEvent } from './HermesTransport.js';
 
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
@@ -94,7 +97,9 @@ class RunOrchestrator {
         throw error;
       });
     this.codexAuthProvider = options.codexAuthProvider;
+    this.hermesTransport = options.hermesTransport || null;
     this.activeRuns = new Map(); // runId -> RunState
+    this.hermesProfileRuns = new Map(); // profileId -> active runId
     this.toolExecutions = new Set(); // Set of "runId:toolCallId"
     this.toolImplementations = new Map();
     this.journalWrite = Promise.resolve();
@@ -204,7 +209,7 @@ class RunOrchestrator {
   /**
    * Start a new run with unique ID
    */
-  async startRun(config) {
+  async startRun(config, ownerToken = '') {
     if (config.webSearch && this.webSearchStatusProvider) {
       const configured = await this.webSearchStatusProvider();
       if (!configured) {
@@ -231,6 +236,7 @@ class RunOrchestrator {
       : false;
     const runState = {
       id: runId,
+      ownerToken: typeof ownerToken === 'string' ? ownerToken : '',
       config,
       sourceTabId: config.sourceTabId || null, // Tab that initiated this run
       conversationHistory: config.messages || [],
@@ -275,6 +281,13 @@ class RunOrchestrator {
         documentUrl: null,
         targetTabId: config.sourceTabId || null,
         allowedOrigins: new Set(),
+      },
+      hermes: {
+        remoteRunId: null,
+        sessionId: null,
+        sessionKey: '',
+        stopRequested: false,
+        pendingApproval: null,
       },
       toolChoiceState: {
         original: normalizedToolChoice,
@@ -341,7 +354,11 @@ class RunOrchestrator {
     ) {
       const newMessages = requestConfig.messages
         .filter((m) => m.role !== 'system')
-        .map((m) => ({ ...m }));
+        .map((message) => {
+          const clean = { ...message };
+          delete clean._promptPaulContext;
+          return clean;
+        });
       run.conversationHistory.push(...newMessages);
       requestConfig.messages = [];
     }
@@ -362,6 +379,11 @@ class RunOrchestrator {
     }
 
     try {
+      if (run.config.provider === 'hermes') {
+        await this._executeHermes(run);
+        return;
+      }
+
       // Build tools with skill injection
       const tools = await this._buildTools(run);
 
@@ -425,6 +447,12 @@ class RunOrchestrator {
     this._emitEvent(runId, event);
     this._cleanupToolExecutions(runId);
     this.pageTabRunDisposer?.(runId);
+    if (run.config?.provider === 'hermes') {
+      const profileId = String(run.config.profileId || '');
+      if (this.hermesProfileRuns.get(profileId) === runId) {
+        this.hermesProfileRuns.delete(profileId);
+      }
+    }
     if (this.activeRuns.has(runId)) this.activeRuns.delete(runId);
   }
 
@@ -1343,11 +1371,25 @@ class RunOrchestrator {
   /**
    * Abort a run
    */
-  abort(runId) {
+  async abort(runId) {
+    const run = this.activeRuns.get(runId);
+    if (run?.config?.provider === 'hermes' && run.hermes?.remoteRunId && this.hermesTransport) {
+      const profile = this._getHermesProfile(run.config);
+      if (run.status === 'stopping') return true;
+      run.status = 'stopping';
+      await this.hermesTransport.stopRun(profile, run.hermes.remoteRunId, {
+        sessionKey: run.hermes.sessionKey,
+      });
+      run.hermes.stopRequested = true;
+      // Keep the run and profile lock until Hermes reports a terminal state.
+      // The active SSE stream or status recovery path will perform teardown.
+      return true;
+    }
     this._terminateRun(runId, { type: 'aborted' }, { abortSignal: true });
     // Clean up tool executions for this run to prevent memory leak, even when
     // the run is already gone (idempotent).
     this._cleanupToolExecutions(runId);
+    return true;
   }
 
   /**
@@ -1407,7 +1449,15 @@ class RunOrchestrator {
   }
 
   _registerConfiguredTools(run) {
-    if (!this.userToolExecutor || !Array.isArray(run.config.tools)) return;
+    // Hermes executes gateway-owned tools. Prompt Paul tools are not sent to
+    // or callable by the Hermes transport, so do not register dead handlers.
+    if (
+      run.config?.provider === 'hermes' ||
+      !this.userToolExecutor ||
+      !Array.isArray(run.config.tools)
+    ) {
+      return;
+    }
 
     for (const rawTool of run.config.tools) {
       const normalized = normalizeToolDefinition(rawTool);
@@ -1874,6 +1924,295 @@ class RunOrchestrator {
   }
 
   /**
+   * Return the validated Hermes profile fields carried by a run config.
+   * @param {object} config
+   * @returns {object}
+   * @private
+   */
+  _getHermesProfile(config) {
+    return {
+      id: String(config?.profileId || '').trim(),
+      hermesEndpoint: String(config?.hermesEndpoint || config?.llmEndpoint || '').trim(),
+      hermesProfile: String(config?.hermesProfile || '').trim(),
+      hermesRemoteConfirmed: config?.hermesRemoteConfirmed === true,
+    };
+  }
+
+  _getHermesTurn(run) {
+    return buildHermesTurn(run.conversationHistory, {
+      modelId: run.config.modelName,
+      instructions: this._buildHermesInstructions(run),
+    });
+  }
+
+  _getHermesCurrentTurnInput(messages) {
+    return buildHermesTurn(messages).input;
+  }
+
+  _buildHermesInstructions(run) {
+    const parts = [CORE_INSTRUCTIONS, String(run.config.systemPrompt || '').trim()];
+    if (run.config.requestedSkill) {
+      const skill = this.skillManager.resolveSkill(run.config.requestedSkill);
+      if (skill) {
+        parts.push(this._formatSkillBlock(skill));
+      } else {
+        console.warn(`[Orchestrator] Requested skill '${run.config.requestedSkill}' not found`);
+      }
+    }
+    return parts.filter(Boolean).join('\n\n');
+  }
+
+  async _waitForHermesRun(profile, remoteRunId, sessionKey, signal, initialError) {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    let lastError = initialError;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+      try {
+        const status = await this.hermesTransport.getRunStatus(profile, remoteRunId, {
+          sessionKey,
+          signal,
+        });
+        const value = String(status?.status || '').toLowerCase();
+        if (['completed', 'failed', 'cancelled', 'stopped'].includes(value)) return status;
+      } catch (error) {
+        if ([400, 401, 403, 404].includes(error?.status)) throw error;
+        lastError = error;
+      }
+      await new Promise((resolve, reject) => {
+        let timer;
+        const onAbort = () => {
+          cleanup();
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        };
+        const cleanup = () => {
+          clearTimeout(timer);
+          if (signal) signal.removeEventListener('abort', onAbort);
+        };
+        timer = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, 1000);
+        if (signal) {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
+    }
+    throw lastError || new Error('Hermes run status did not reach a terminal state.');
+  }
+
+  _applyHermesRecoveredOutput(run, output) {
+    const recovered = extractHermesOutputText(output);
+    if (!recovered) return;
+    const current = run.accumulatedText || '';
+    if (!current) {
+      run.accumulatedText = recovered;
+      this._emitEvent(run.id, { type: 'content', data: recovered });
+    } else if (recovered.startsWith(current)) {
+      const remainder = recovered.slice(current.length);
+      run.accumulatedText = recovered;
+      if (remainder) this._emitEvent(run.id, { type: 'content', data: remainder });
+    } else {
+      // The status payload is authoritative when the stream used a different
+      // chunking or formatting. The terminal event replaces the stale partial
+      // bubble, so do not append divergent text and duplicate the answer.
+      run.accumulatedText = recovered;
+    }
+  }
+
+  /**
+   * Execute a run through the Hermes gateway. Hermes owns server-side tools;
+   * Prompt Paul only renders their bounded lifecycle events.
+   * @param {object} run
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _executeHermes(run) {
+    if (!this.hermesTransport) {
+      throw new Error('Hermes support is not available in this build.');
+    }
+    if (run.pageActions?.enabled) {
+      throw new Error('Act is not available with Hermes until the gateway supports browser tools.');
+    }
+
+    const profile = this._getHermesProfile(run.config);
+    if (!profile.id || !profile.hermesEndpoint) {
+      throw new Error('Configure a Hermes gateway endpoint in Options before sending a prompt.');
+    }
+    const activeProfileRun = this.hermesProfileRuns.get(profile.id);
+    if (activeProfileRun && activeProfileRun !== run.id) {
+      throw new Error('A Hermes response is already running for this profile.');
+    }
+    this.hermesProfileRuns.set(profile.id, run.id);
+
+    const sessionKey = await this.hermesTransport.getSessionKey(profile.id);
+    run.hermes.sessionKey = sessionKey;
+    const conversationId = String(run.config.conversationId || '').trim();
+    const hasSessionRecords = typeof this.hermesTransport.getStoredSessionRecord === 'function';
+    const stored = hasSessionRecords
+      ? await this.hermesTransport.getStoredSessionRecord(profile.id)
+      : { sessionId: await this.hermesTransport.getStoredSession(profile.id), conversationId: '' };
+    let sessionId = stored.sessionId;
+    if (
+      sessionId &&
+      conversationId &&
+      hasSessionRecords &&
+      stored.conversationId !== conversationId
+    ) {
+      if (typeof this.hermesTransport.endSession === 'function') {
+        await this.hermesTransport.endSession(profile, sessionId);
+      }
+      await this.hermesTransport.clearStoredSession(profile.id);
+      sessionId = '';
+    }
+    if (!sessionId) {
+      sessionId = await this.hermesTransport.ensureSession(profile);
+      await this.hermesTransport.storeSession(profile.id, sessionId, conversationId);
+    }
+    run.hermes.sessionId = sessionId;
+
+    const hermesTurn = this._getHermesTurn(run);
+    const instructions = this._buildHermesInstructions(run);
+
+    let started;
+    try {
+      started = await this.hermesTransport.startRun(profile, {
+        input: hermesTurn.input,
+        conversationHistory: hermesTurn.conversationHistory,
+        sessionId,
+        instructions,
+        model: String(run.config.modelName || '').trim(),
+        sessionKey,
+        signal: run.abortController.signal,
+      });
+    } catch (error) {
+      if (error?.status !== 404 || error?.code !== 'session_not_found' || !sessionId) throw error;
+      await this.hermesTransport.clearStoredSession(profile.id);
+      sessionId = await this.hermesTransport.ensureSession(profile);
+      await this.hermesTransport.storeSession(profile.id, sessionId, conversationId);
+      run.hermes.sessionId = sessionId;
+      started = await this.hermesTransport.startRun(profile, {
+        input: hermesTurn.input,
+        conversationHistory: hermesTurn.conversationHistory,
+        sessionId,
+        instructions,
+        model: String(run.config.modelName || '').trim(),
+        sessionKey,
+        signal: run.abortController.signal,
+      });
+    }
+    run.hermes.remoteRunId = started.runId;
+    if (started.sessionId && started.sessionId !== sessionId) {
+      run.hermes.sessionId = started.sessionId;
+      await this.hermesTransport.storeSession(profile.id, started.sessionId, conversationId);
+    }
+
+    let terminal = null;
+    let streamError = null;
+    const onEvent = async (event) => {
+      if (!this.activeRuns.has(run.id)) return;
+      const normalized = normalizeHermesEvent(event);
+      if (!normalized) return;
+      if (normalized.type === 'content') {
+        run.accumulatedText += normalized.data;
+        this._emitEvent(run.id, normalized);
+      } else if (normalized.type === 'reasoning') {
+        run.hasReasoning = true;
+        this._emitEvent(run.id, normalized);
+      } else if (normalized.type === 'hermes_terminal') {
+        terminal = normalized;
+        if (normalized.output !== undefined)
+          this._applyHermesRecoveredOutput(run, normalized.output);
+        this._recordCompletionUsage(run, normalized.usage);
+      } else if (normalized.type === 'hermes_approval_required') {
+        run.hermes.pendingApproval = normalized;
+        this._emitEvent(run.id, normalized);
+      } else if (normalized.type === 'hermes_approval_updated') {
+        if (run.hermes.pendingApproval?.approvalId === normalized.approvalId) {
+          run.hermes.pendingApproval = null;
+        }
+        this._emitEvent(run.id, normalized);
+      } else {
+        this._emitEvent(run.id, normalized);
+      }
+    };
+    try {
+      await this.hermesTransport.streamRun(profile, started.runId, {
+        sessionKey,
+        signal: run.abortController.signal,
+        onEvent,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      streamError = error;
+    }
+
+    if (!this.activeRuns.has(run.id)) return;
+    const needsCompletedOutputRecovery =
+      terminal?.status === 'complete' && !run.accumulatedText.trim() && !terminal.output;
+    if (!terminal || (streamError && !terminal.output) || needsCompletedOutputRecovery) {
+      const status = await this._waitForHermesRun(
+        profile,
+        started.runId,
+        sessionKey,
+        run.abortController.signal,
+        streamError
+      );
+      const statusValue = String(status?.status || '').toLowerCase();
+      if (statusValue === 'completed') {
+        this._applyHermesRecoveredOutput(run, status.output);
+        terminal = { status: 'complete' };
+      } else if (['cancelled', 'stopped'].includes(statusValue)) {
+        terminal = { status: 'stopped' };
+      } else if (statusValue === 'failed') {
+        terminal = { status: 'error', error: status.error || 'Hermes run failed.' };
+      }
+    }
+
+    if (!this.activeRuns.has(run.id)) return;
+    if (terminal?.status === 'stopped') {
+      this._terminateRun(run.id, { type: 'aborted' }, { run });
+      return;
+    }
+    if (terminal?.status === 'error') {
+      throw new Error(terminal.error || 'Hermes run failed.');
+    }
+    await this._finalizeTextResponse(run);
+  }
+
+  /**
+   * Resolve a Hermes server approval for a live run.
+   * @param {string} runId
+   * @param {string} choice
+   * @returns {Promise<boolean>}
+   */
+  async resolveHermesApproval(runId, approvalId, choice) {
+    const run = this.activeRuns.get(runId);
+    const pending = run?.hermes?.pendingApproval;
+    if (
+      !run ||
+      run.config?.provider !== 'hermes' ||
+      !run.hermes?.remoteRunId ||
+      !pending?.approvalId ||
+      pending.approvalId !== String(approvalId || '').trim()
+    ) {
+      return false;
+    }
+    await this.hermesTransport.respondToApproval(
+      this._getHermesProfile(run.config),
+      run.hermes.remoteRunId,
+      choice,
+      { sessionKey: run.hermes.sessionKey }
+    );
+    run.hermes.pendingApproval = null;
+    this._emitEvent(runId, {
+      type: 'hermes_approval_updated',
+      approvalId: pending.approvalId,
+      choice,
+    });
+    return true;
+  }
+
+  /**
    * Execute the ChatGPT subscription-backed Codex Responses stream.
    */
   async _executeCodex(run, tools, { allowRecovery = true, recovery = false } = {}) {
@@ -2036,7 +2375,7 @@ class RunOrchestrator {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await readBoundedResponseText(response);
       const toolHint =
         run.webSearch?.enabled && (response.status === 400 || response.status === 422)
           ? ' The selected endpoint may not support function calling; disable Web grounding or choose a tool-capable model.'
@@ -2052,7 +2391,7 @@ class RunOrchestrator {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
@@ -2216,7 +2555,7 @@ class RunOrchestrator {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await readBoundedResponseText(response);
       const toolHint =
         run.webSearch?.enabled && (response.status === 400 || response.status === 422)
           ? ' The selected endpoint may not support function calling; disable Web grounding or choose a tool-capable model.'
@@ -2232,7 +2571,7 @@ class RunOrchestrator {
       const { done, value } = await reader.read();
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
 
       // Anthropic uses \n-separated events
       let newlineIndex;
@@ -2797,9 +3136,17 @@ class RunOrchestrator {
 
   _parseToolArguments(rawArgs) {
     if (rawArgs == null || rawArgs === '') return {};
-    if (typeof rawArgs === 'object') return rawArgs;
+    if (typeof rawArgs === 'object') {
+      if (new TextEncoder().encode(JSON.stringify(rawArgs)).byteLength > MAX_TOOL_ARGUMENTS_BYTES) {
+        throw new Error('Tool arguments are too large.');
+      }
+      return rawArgs;
+    }
 
     const normalized = String(rawArgs).trim();
+    if (new TextEncoder().encode(normalized).byteLength > MAX_TOOL_ARGUMENTS_BYTES) {
+      throw new Error('Tool arguments are too large.');
+    }
     if (!normalized) return {};
 
     const parsed = this._tryParseJson(normalized);

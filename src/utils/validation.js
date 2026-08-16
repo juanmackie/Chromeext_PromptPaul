@@ -5,6 +5,7 @@
 
 const MAX_TOOL_NAME_LENGTH = 64;
 const MAX_TOOL_DESCRIPTION_LENGTH = 1024;
+export const MAX_TOOL_ARGUMENTS_BYTES = 16_384;
 const MAX_TOOL_PARAMETERS_BYTES = 16_384;
 const MAX_ENDPOINT_LENGTH = 2_048;
 const MAX_PROFILE_ID_LENGTH = 128;
@@ -54,7 +55,6 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'voiceInputEnabled',
   'voiceInputPermissionState',
   'voiceInputPermissionLastChecked',
-  'braveSearchApiKey',
   'webSearchEnabled',
   'pageActionsTrustedMode',
   'pageActionsMultiTabEnabled',
@@ -91,7 +91,11 @@ export function isValidHttpUrl(value) {
 
   try {
     const parsed = new URL(trimmed);
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.username;
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      !parsed.username &&
+      !parsed.password
+    );
   } catch (_) {
     return false;
   }
@@ -212,8 +216,12 @@ export function normalizeProfileRecord(profile) {
 
   const id = String(profile.id || '').trim();
   const name = String(profile.name || '').trim();
-  const provider = profile.provider === 'codex' ? 'codex' : 'api';
+  const provider = ['api', 'codex', 'hermes'].includes(profile.provider) ? profile.provider : 'api';
   const endpoint = String(profile.llmEndpoint || '').trim();
+  const hermesEndpoint = String(
+    profile.hermesEndpoint || (provider === 'hermes' ? profile.llmEndpoint : '') || ''
+  ).trim();
+  const hermesProfile = String(profile.hermesProfile || '').trim();
   const apiKey = String(profile.apiKey || '').trim();
   const modelName = String(profile.modelName || '').trim();
   const reasoningLevel = String(profile.reasoningLevel || '')
@@ -224,8 +232,14 @@ export function normalizeProfileRecord(profile) {
   if (!id || id.length > MAX_PROFILE_ID_LENGTH || name.length > MAX_PROFILE_NAME_LENGTH) {
     return { valid: false, error: 'Profile id and name are required and bounded.' };
   }
-  if (provider !== 'codex' && endpoint && !isValidHttpUrl(endpoint)) {
+  if (provider === 'api' && endpoint && !isValidHttpUrl(endpoint)) {
     return { valid: false, error: 'Profile endpoint URL must use http or https.' };
+  }
+  if (provider === 'hermes' && hermesEndpoint && !isValidHttpUrl(hermesEndpoint)) {
+    return { valid: false, error: 'Hermes endpoint URL must use http or https.' };
+  }
+  if (hermesProfile && !/^[A-Za-z0-9._-]{1,64}$/.test(hermesProfile)) {
+    return { valid: false, error: 'Hermes profile name is invalid.' };
   }
   if (apiKey.length > MAX_API_KEY_LENGTH || modelName.length > MAX_MODEL_NAME_LENGTH) {
     return { valid: false, error: 'Profile credential or model name is too large.' };
@@ -241,10 +255,14 @@ export function normalizeProfileRecord(profile) {
     id,
     name,
     provider,
-    llmEndpoint: provider === 'codex' ? '' : endpoint,
-    apiKey: provider === 'codex' ? '' : apiKey,
+    llmEndpoint: provider === 'api' ? endpoint : '',
+    apiKey: provider === 'api' ? apiKey : '',
     modelName,
     systemPrompt,
+    ...(provider === 'hermes' ? { hermesEndpoint, hermesProfile } : {}),
+    ...(provider === 'hermes' && profile.hermesRemoteConfirmed === true
+      ? { hermesRemoteConfirmed: true }
+      : {}),
     ...(reasoningLevel ? { reasoningLevel } : {}),
     ...(typeof profile.lastUpdated === 'string' ? { lastUpdated: profile.lastUpdated } : {}),
   };
@@ -295,7 +313,7 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
     const value = area[key];
     if (key === 'profiles') {
       if (!Array.isArray(value)) return { valid: false, error: 'Profiles must be an array.' };
-      const profiles = value.map(normalizeProfileRecord);
+      const profiles = value.map((profile) => normalizeProfileRecord({ ...profile, apiKey: '' }));
       const invalid = profiles.find((entry) => !entry.valid);
       if (invalid) return { valid: false, error: invalid.error };
       result[key] = profiles.map((entry) => entry.value);

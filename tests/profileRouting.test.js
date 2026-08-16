@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isProfileUsable, resolvePreferredProfile } from '../src/utils/profileRouting.js';
+import {
+  getHermesEndpoint,
+  isProfileUsable,
+  resolvePreferredProfile,
+} from '../src/utils/profileRouting.js';
 
 const validProfile = (overrides = {}) => ({
   id: 'profile',
@@ -30,5 +34,17 @@ describe('profile routing', () => {
 
   it('accepts a connected-by-auth Codex profile without an API endpoint or key', () => {
     expect(isProfileUsable({ id: 'codex', provider: 'codex', modelName: 'gpt-5.4' })).toBe(true);
+  });
+
+  it('uses the legacy endpoint field for existing Hermes profiles', () => {
+    const profile = {
+      id: 'hermes',
+      provider: 'hermes',
+      llmEndpoint: 'https://100.126.237.111:30433',
+      hermesEndpoint: '',
+    };
+
+    expect(getHermesEndpoint(profile)).toBe('https://100.126.237.111:30433');
+    expect(isProfileUsable(profile)).toBe(true);
   });
 });

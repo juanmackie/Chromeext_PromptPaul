@@ -50,9 +50,25 @@ export function modelSupportsReasoning(modelName) {
   return REASONING_MODEL_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+/**
+ * Return the configured Hermes endpoint, including the legacy field used by
+ * profiles created before Hermes had a dedicated endpoint property.
+ * @param {object|null|undefined} profile
+ * @returns {string}
+ */
+export function getHermesEndpoint(profile) {
+  if (!profile || profile.provider !== 'hermes') return '';
+  return String(profile.hermesEndpoint || profile.llmEndpoint || '').trim();
+}
+
 export function isProfileUsable(profile) {
   if (profile?.provider === 'codex') {
     return Boolean(profile.id && typeof profile.modelName === 'string' && profile.modelName.trim());
+  }
+
+  if (profile?.provider === 'hermes') {
+    const endpoint = getHermesEndpoint(profile);
+    return Boolean(profile.id && endpoint && isValidHttpUrl(endpoint));
   }
 
   return Boolean(

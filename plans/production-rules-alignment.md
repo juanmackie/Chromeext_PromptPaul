@@ -74,6 +74,13 @@ Review the current Prompt Paul repository against `C:\Users\juanm\Documents\GitH
 5. [x] Make CI run `npm run validate` as the required quality gate, delete the redundant structural-test/fictional-coverage job and `test:coverage` report unless real instrumentation is intentionally added later, then clean lint warnings and only split modules where ownership/testing improves. CI now gates validation, audit, and build; dead imports/variables/empty blocks were removed, lint is now warning-free, and no broad split was justified.
 6. [x] Remove the stale `docs/RANKED_IMPLEMENTATION.md` README link, repair changelog/analytics/backup/compatibility documentation, and update every affected DOX owner. Documentation and DOX now describe opt-in analytics, canonical compatibility boundaries, validated backup restore, and the accepted public-demo credential exception.
 
+## Follow-up hardening completed
+
+- Privileged runtime messages now require extension-page senders; content-script requests are bound to their sender tab, and run mutations use opaque owner tokens with stored-profile configuration resolved in the background.
+- Provider SSE buffers and error-body reads are byte-bounded across OpenAI-compatible, Anthropic, Codex, Hermes, and Brave paths.
+- The browser command runs every `tests/browser/` spec, CI runs the headed suite under Xvfb, and hostile content-script requests have browser coverage.
+- Options endpoint feedback now uses the shared HTTP(S) validator, including loopback Hermes endpoints, and rejects URL credentials.
+
 ## Verification
 
 - Review results against every rules section, with file/line evidence for each non-trivial finding.

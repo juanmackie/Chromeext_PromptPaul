@@ -70,6 +70,44 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('rejects privileged runtime requests from a content script', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const tab = await harness.evaluate((url) => window.pageActionHarness.findTab(url), targetUrl);
+      expect(tab?.id).toBeTruthy();
+      const extraction = await harness.evaluate(
+        ({ tabId }) =>
+          window.pageActionHarness.sendFromContentScript(tabId, {
+            action: 'getTabContent',
+            tabId: 999999,
+          }),
+        { tabId: tab.id }
+      );
+      expect(extraction.success).toBe(false);
+      expect(extraction.error).toContain('Prompt Paul');
+
+      const run = await harness.evaluate(
+        (tabId) =>
+          window.pageActionHarness.sendFromContentScript(tabId, {
+            action: 'startRun',
+            config: { pageActions: true, sourceTabId: tabId },
+          }),
+        tab.id
+      );
+      expect(run.error).toContain('Prompt Paul page');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('fails fast with one actionable result when the content-script connection is interrupted', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);

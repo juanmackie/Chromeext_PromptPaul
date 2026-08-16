@@ -15,6 +15,7 @@
 import { loadingManager } from '../../loadingManager.js';
 import { modelSupportsVision, resolvePreferredProfile } from '../utils/profileRouting.js';
 import { normalizeToolDefinition } from '../utils/validation.js';
+import { buildHermesTurn } from '../utils/hermesContext.js';
 import { setActiveRun } from './ChatRunRecovery.js';
 
 /**
@@ -34,7 +35,11 @@ export async function selectOptimalProfile(profiles, selectedProfileId, mediaDat
     profiles.find((p) => p.id === selectedProfileId) || profiles.find((p) => p.id === 'default');
 
   // If no vision needed or current profile already supports it, use current
-  if (!needsVision || (currentProfile && modelSupportsVision(currentProfile.modelName))) {
+  if (
+    !needsVision ||
+    currentProfile?.provider === 'hermes' ||
+    (currentProfile && modelSupportsVision(currentProfile.modelName))
+  ) {
     return { config: currentProfile, rerouted: false };
   }
 
@@ -60,6 +65,7 @@ export async function selectOptimalProfile(profiles, selectedProfileId, mediaDat
 
 /** @type {Object|null} */
 let configCache = null;
+const runOwnerTokens = new Map();
 
 /** @type {number} */
 let configCacheTimestamp = 0;
@@ -127,7 +133,7 @@ export async function getApiConfig() {
       if (!usableProfile) {
         console.error('Chat: Configuration is incomplete or missing.');
         const error = new Error(
-          'Configuration is incomplete. Please set up the API endpoint, API key, and model name in the options page.'
+          'Configuration is incomplete. Please configure a usable provider in the options page.'
         );
         loadingManager.showToast('Please configure API settings in options', 'error');
         reject(error);
@@ -165,17 +171,42 @@ export async function getTools() {
  * @returns {Promise<string>} - Run ID
  */
 export async function startRun(runConfig) {
+  const safeRunConfig = { ...runConfig };
+  delete safeRunConfig.apiKey;
   const response = await chrome.runtime.sendMessage({
     action: 'startRun',
-    config: runConfig,
+    config: safeRunConfig,
   });
 
   if (response.error) {
     throw new Error(response.error);
   }
+  if (!response.runId || typeof response.ownerToken !== 'string' || !response.ownerToken) {
+    throw new Error('Run authorization was not established. Reload Prompt Paul and try again.');
+  }
 
+  runOwnerTokens.set(response.runId, response.ownerToken);
   await setActiveRun(response.runId, runConfig.sourceTabId);
   return response.runId;
+}
+
+/**
+ * Return the opaque token for a run-owned runtime request.
+ * @param {string} runId - Active run ID.
+ * @returns {string} Opaque owner token, or an empty string when unavailable.
+ */
+export function getRunOwnerToken(runId) {
+  return runOwnerTokens.get(runId) || '';
+}
+
+/**
+ * Build the owner fields for a run-scoped runtime request.
+ * @param {string} runId - Active run ID.
+ * @param {number|null} sourceTabId - Source tab identity, when available.
+ * @returns {{ownerToken: string, sourceTabId: number|null}}
+ */
+export function getRunAuth(runId, sourceTabId = null) {
+  return { ownerToken: getRunOwnerToken(runId), sourceTabId };
 }
 
 /**
@@ -184,17 +215,42 @@ export async function startRun(runConfig) {
  * @param {Array} messages - Message history
  */
 export async function executeRun(runId, messages) {
-  const response = await chrome.runtime.sendMessage({
-    action: 'executeRun',
-    runId: runId,
-    requestConfig: {
-      messages: messages,
-    },
-  });
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'executeRun',
+      runId: runId,
+      ownerToken: getRunOwnerToken(runId),
+      requestConfig: {
+        messages: messages,
+      },
+    });
 
-  if (response && response.error) {
-    throw new Error(response.error);
+    if (response && response.error) {
+      throw new Error(response.error);
+    }
+  } finally {
+    runOwnerTokens.delete(runId);
   }
+}
+
+/**
+ * Prepare the history sent through the runtime bridge for one provider run.
+ * Hermes receives bounded explicit history; other providers retain the full
+ * local transcript behavior.
+ * @param {Object} config - Selected provider configuration.
+ * @param {Array} messages - Local conversation history.
+ * @returns {Array}
+ */
+export function prepareRunMessages(config, messages) {
+  if (config?.provider !== 'hermes') return messages;
+  const turn = buildHermesTurn(messages, {
+    modelId: config.modelName,
+    instructions: config.systemPrompt,
+  });
+  const currentMessages = Array.isArray(turn.input)
+    ? turn.input
+    : [{ role: 'user', content: turn.input }];
+  return [...turn.conversationHistory, ...currentMessages];
 }
 
 /**
@@ -208,8 +264,11 @@ export async function abortRun(runId) {
     const response = await chrome.runtime.sendMessage({
       action: 'abortRun',
       runId,
+      ownerToken: getRunOwnerToken(runId),
     });
-    return response?.success === true;
+    const acknowledged = response?.success === true;
+    if (acknowledged) runOwnerTokens.delete(runId);
+    return acknowledged;
   } catch (error) {
     console.error('[ChatAPI] abortRun failed:', error.message);
     return false;

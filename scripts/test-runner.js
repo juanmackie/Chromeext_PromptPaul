@@ -254,7 +254,7 @@ function runUnitTests(runner) {
     for (const token of [
       'createCodexModelHeaders',
       'CODEX_MODELS_ENDPOINT',
-      'return normalizeAvailableModels',
+      'normalizeAvailableModels',
     ]) {
       if (!content.includes(token)) {
         throw new Error(`modelDiscovery.js missing contract token: ${token}`);
@@ -498,7 +498,15 @@ function runUnitTests(runner) {
 
   runner.test('Production readiness guardrails are present', () => {
     const pkg = JSON.parse(readFileSafe('package.json'));
-    const requiredScripts = ['lint', 'format:check', 'test', 'test:behavior', 'smoke', 'validate'];
+    const requiredScripts = [
+      'lint',
+      'format:check',
+      'test',
+      'test:behavior',
+      'test:browser',
+      'smoke',
+      'validate',
+    ];
     for (const script of requiredScripts) {
       if (typeof pkg.scripts?.[script] !== 'string') {
         throw new Error(`package.json is missing the production gate: ${script}`);
@@ -924,7 +932,8 @@ function runUnitTests(runner) {
       'executeSelectedTextInstruction',
       'runSelectedTextPrompt',
       'getSelectedTextForAction',
-      'executePagePresetMode(lastUsedPreset)',
+      'readCurrentPageSelection(getRunSourceTabId())',
+      'executeSelectedTextMode(lastUsedPreset)',
       "executeSelectedTextMode('proofread')",
       'executeSelectedTextInstruction(instructionToExecute)',
     ];
@@ -1033,6 +1042,15 @@ function runIntegrationTests(runner) {
     if (!content.includes('dataset.configured')) {
       throw new Error('options.js does not track masked credential state');
     }
+    for (const token of [
+      'normalizeProfileRecord(profileToUpdate)',
+      'normalizeProfileRecord(defaultProfile)',
+      'normalizeProfileRecord(newProfile)',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`options.js must normalize profile writes: ${token}`);
+      }
+    }
   });
 
   runner.test('options.js escapes imported skill status output', () => {
@@ -1045,6 +1063,43 @@ function runIntegrationTests(runner) {
     }
     if (!content.includes('statusEl.textContent = `Error: ${error?.message')) {
       throw new Error('Import errors must use textContent instead of HTML rendering');
+    }
+  });
+
+  runner.test('Options connection setup is profile-first', () => {
+    const html = readFileSafe('options.html');
+    const options = readFileSafe('options.js');
+    const styles = readFileSafe('options.css');
+    const profileIndex = html.indexOf('id="profileSelect"');
+    const providerIndex = html.indexOf('id="providerSelect"');
+    if (profileIndex < 0 || providerIndex < 0 || profileIndex > providerIndex) {
+      throw new Error('The connection profile must appear before the provider controls');
+    }
+    if ((html.match(/id="profileSelect"/g) || []).length !== 1) {
+      throw new Error('The Options page must have one connection profile selector');
+    }
+    for (const token of [
+      'profileProviderBadge',
+      'providerModelControls',
+      'Response defaults',
+      'Appearance',
+    ]) {
+      if (!html.includes(token)) throw new Error(`Options UX contract missing: ${token}`);
+    }
+    for (const token of [
+      'requestNewProfile',
+      'newProfileProviderInput',
+      'providerLabel',
+      'getHermesEndpoint',
+      'Save Settings before testing the Hermes connection.',
+      'API Key (optional)',
+      "apiKey.required = provider === 'api'",
+      'providerSelect.disabled',
+    ]) {
+      if (!options.includes(token)) throw new Error(`options.js UX contract missing: ${token}`);
+    }
+    for (const token of ['.profile-selector-bar', '.options-disclosure']) {
+      if (!styles.includes(token)) throw new Error(`options.css UX contract missing: ${token}`);
     }
   });
 
@@ -1104,10 +1159,10 @@ function runIntegrationTests(runner) {
     }
   });
 
-  runner.test('options.js routes Open Chat through the canonical funnel', () => {
+  runner.test('options.js opens Open Chat in the side panel', () => {
     const content = readFileSafe('options.js');
-    if (!content.includes("{ action: 'openChat' }")) {
-      throw new Error('options.js Open Chat does not use the canonical openChat action');
+    if (!content.includes('chrome.sidePanel') || !content.includes('WINDOW_ID_CURRENT')) {
+      throw new Error('options.js Open Chat does not open the current window side panel');
     }
   });
 
@@ -1130,6 +1185,9 @@ function runIntegrationTests(runner) {
       'pageActionsTrustedMode',
       'pinnedQuickActions',
       'customSiteSuggestions',
+      'hermesApiKeys',
+      'hermesSessions',
+      'hermesSessionKeys',
     ];
     const sources = [
       'options.js',
@@ -1143,6 +1201,54 @@ function runIntegrationTests(runner) {
     for (const key of canonicalKeys) {
       if (!sources.includes(key)) {
         throw new Error(`Canonical storage key no longer referenced anywhere: ${key}`);
+      }
+    }
+  });
+
+  runner.test('Hermes credentials and session pointers stay out of backups', () => {
+    const validation = readFileSafe('src/utils/validation.js');
+    const sources = [readFileSafe('options.js'), readFileSafe('background.js')].join('\n');
+    for (const key of ['hermesApiKeys', 'hermesSessions', 'hermesSessionKeys']) {
+      if (!sources.includes(key)) throw new Error(`Hermes storage key is not wired: ${key}`);
+      if (validation.includes(`'${key}'`)) {
+        throw new Error(
+          `Hermes secret or session key must not be included in backup allowlists: ${key}`
+        );
+      }
+    }
+  });
+
+  runner.test('Hermes New chat ends only the selected session', () => {
+    const background = readFileSafe('background.js');
+    const chat = readFileSafe('chat.js');
+    const composer = readFileSafe('src/chat/ChatComposer.js');
+    const resetStart = background.indexOf("request.action === 'endHermesConversation'");
+    const orchestrationStart = background.indexOf('// ===== Orchestration Handlers =====');
+    if (resetStart < 0 || orchestrationStart <= resetStart) {
+      throw new Error('Hermes New chat handler is missing.');
+    }
+    const resetHandler = background.slice(resetStart, orchestrationStart);
+    for (const token of [
+      'activeHermesRun',
+      'hermesTransport.endSession',
+      'hermesTransport.clearStoredSession',
+      'Stop the active Hermes response before starting a new chat.',
+    ]) {
+      if (!resetHandler.includes(token)) {
+        throw new Error(`Hermes New chat handler missing guard: ${token}`);
+      }
+    }
+    if (resetHandler.includes('HERMES_SESSION_KEYS_KEY')) {
+      throw new Error('Hermes New chat must not rotate or delete the memory key.');
+    }
+    for (const token of [
+      'createConversationController',
+      "config?.provider === 'hermes'",
+      "action: 'endHermesConversation'",
+      'clearLocal:',
+    ]) {
+      if (!`${chat}\n${composer}`.includes(token)) {
+        throw new Error(`Chat New chat wiring missing: ${token}`);
       }
     }
   });
@@ -1186,8 +1292,22 @@ function runIntegrationTests(runner) {
       }
     }
     const htmlContent = readFileSafe('options.html');
-    if (!htmlContent.includes('Backup files contain API keys')) {
-      throw new Error('options.html backup warning must disclose API keys');
+    if (!htmlContent.includes('Backup files do not contain credentials')) {
+      throw new Error('options.html must disclose that backup credentials are excluded');
+    }
+    if (!optionsContent.includes('normalizeBackupPayload({ local: localData, sync: syncData })')) {
+      throw new Error('Backup export must use the validated, credential-free payload');
+    }
+  });
+
+  runner.test('chat run bridge excludes provider credentials', () => {
+    const chat = readFileSafe('chat.js');
+    const chatApi = readFileSafe('src/chat/ChatAPI.js');
+    if (chat.includes('apiKey:')) {
+      throw new Error('chat.js must not place provider credentials in run messages');
+    }
+    if (!chatApi.includes('delete safeRunConfig.apiKey')) {
+      throw new Error('ChatAPI must strip provider credentials before the background bridge');
     }
   });
 
@@ -1204,6 +1324,79 @@ function runIntegrationTests(runner) {
     }
     if (!content.includes('formatToolRequestError')) {
       throw new Error('Background custom-tool failures must use the redacted error formatter');
+    }
+    if (!content.includes('MAX_TOOL_ARGUMENTS_BYTES')) {
+      throw new Error('Background custom-tool arguments must be bounded');
+    }
+  });
+
+  runner.test('endpoint UI uses the shared HTTP(S) validator', () => {
+    const controls = readFileSafe('input-controls.js');
+    const html = readFileSafe('options.html');
+    if (!controls.includes("import { isValidHttpUrl } from './src/utils/validation.js';")) {
+      throw new Error('input-controls.js must use the shared HTTP(S) validator');
+    }
+    if (controls.includes("startsWith('https://')")) {
+      throw new Error('input-controls.js contains a stale HTTPS-only validator');
+    }
+    if (!html.includes('<script type="module" src="input-controls.js"></script>')) {
+      throw new Error('input-controls.js must load as an ES module');
+    }
+  });
+
+  runner.test('privileged runtime messages enforce sender and run ownership', () => {
+    const background = readFileSafe('background.js');
+    const auth = readFileSafe('src/utils/runtimeAuthorization.js');
+    const chatApi = readFileSafe('src/chat/ChatAPI.js');
+    const harness = readFileSafe('tests/browser/extension-harness.js');
+    for (const token of [
+      'isContentScriptSender',
+      'requestMatchesSenderTab',
+      'isRunOwner',
+      'resolveStoredRunConfig',
+      'normalizeProfileRecord',
+      'isAuthorizedRunRequest',
+      'ownerToken',
+      'getRunOwnerToken',
+    ]) {
+      if (![background, auth, chatApi, harness].some((content) => content.includes(token))) {
+        throw new Error(`Runtime authorization contract is missing: ${token}`);
+      }
+    }
+    for (const token of [
+      "request.action === 'captureScreenshot'",
+      "request.action === 'getTabContent'",
+      "request.action === 'startRun'",
+      "request.action === 'executeRun'",
+      "request.action === 'executeTool'",
+      "request.action === 'abortRun'",
+    ]) {
+      if (!background.includes(token)) {
+        throw new Error(`Background handler is missing authorization coverage: ${token}`);
+      }
+    }
+  });
+
+  runner.test('provider streams and error bodies are bounded', () => {
+    const sources = [
+      readFileSafe('src/utils/streamSafety.js'),
+      readFileSafe('src/orchestrator/RunOrchestrator.js'),
+      readFileSafe('src/orchestrator/CodexTransport.js'),
+      readFileSafe('src/orchestrator/HermesTransport.js'),
+      readFileSafe('src/utils/braveSearch.js'),
+    ].join('\n');
+    for (const token of [
+      'MAX_SSE_BUFFER_BYTES',
+      'MAX_PROVIDER_ERROR_BYTES',
+      'appendBoundedSseBuffer',
+      'readBoundedResponseText',
+    ]) {
+      if (!sources.includes(token)) {
+        throw new Error(`Provider response bound is missing: ${token}`);
+      }
+    }
+    if (sources.includes('buffer += decoder.decode(value, { stream: true })')) {
+      throw new Error('Provider SSE buffers must use the bounded append helper');
     }
   });
 
@@ -1286,7 +1479,7 @@ function runIntegrationTests(runner) {
       if (!background.includes(token))
         throw new Error(`Background missing page-action bridge guard: ${token}`);
     }
-    for (const token of ["state === 'error'", "action: 'abortRun'", 'pageActionDecision']) {
+    for (const token of ["state === 'error'", 'abortRun(runId)', 'pageActionDecision']) {
       if (!chat.includes(token)) throw new Error(`Chat missing page-action UI guard: ${token}`);
     }
     for (const token of [

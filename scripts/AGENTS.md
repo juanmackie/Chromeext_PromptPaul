@@ -22,9 +22,11 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 
 - Keep scripts cross-platform where practical.
 - Prefer clear failure messages that name the missing file, contract, or token.
+- Keep `test:browser` pointed at the complete `tests/browser/` suite; CI runs it with headed Chromium under Xvfb.
 - Update package scripts when adding new script entry points.
 - Update tests when adding source modules with durable contracts.
 - Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`), side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`), structured prompt contracts (`composeUserPrompt`, raw concatenation patterns), and current-page action contracts (bounded snapshots, stale-state rejection, reserved tools, approval routing, and run-scoped session approval) live in `test-runner.js`.
+- The storage regression guard also pins Hermes credential and session keys so future backup or migration changes cannot expose them accidentally. Backup tests also require provider/search credentials to stay out of exported payloads, and custom-tool argument limits to remain enforced.
 - The current-page action guard also pins the bounded user-input and owned-tab tool entry points.
 
 ## Verification

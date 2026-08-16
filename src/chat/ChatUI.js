@@ -148,6 +148,23 @@ class ChatUI {
   }
 
   /**
+   * Move a rendered message to the end of the chat transcript.
+   * This is used when a streaming assistant bubble was created before tool
+   * activity but the final answer must appear after that activity.
+   * @param {HTMLElement|null} messageDiv - Message container to move.
+   * @returns {boolean} Whether the message was moved.
+   */
+  moveMessageToEnd(messageDiv) {
+    if (!this.chatArea || !messageDiv || messageDiv.parentNode !== this.chatArea) {
+      return false;
+    }
+
+    this.chatArea.appendChild(messageDiv);
+    this.chatArea.scrollTop = this.chatArea.scrollHeight;
+    return true;
+  }
+
+  /**
    * Lazily create (or return) the collapsible reasoning panel for an LLM bubble.
    * The panel is prepended inside the bubble, above the `.llm-content-area`.
    * @param {HTMLElement} messageDiv - The LLM message container

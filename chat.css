@@ -48,8 +48,10 @@
 
 /* Dark theme variables are now defined in theme.css */
 body {
+  --quick-actions-sidebar-width: 52px;
   height: 100dvh;
-  width: 100vw;
+  width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: row;
   background-color: var(--ext-background);
@@ -60,63 +62,312 @@ body {
 }
 
 #quick-actions-sidebar {
-  width: 60px;
+  position: relative;
+  z-index: var(--ext-z-popover);
+  width: var(--quick-actions-sidebar-width);
+  flex: 0 0 var(--quick-actions-sidebar-width);
   height: 100dvh;
   display: flex;
   flex-direction: column;
   background-color: var(--ext-sidebar);
-  padding: 10px 5px;
+  padding: 12px 6px;
   align-items: center;
   box-sizing: border-box;
-  border-right: 2px solid var(--ext-sidebar-border);
+  border-right: 1px solid var(--ext-sidebar-border);
+}
+
+.quick-actions-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-actions-divider {
+  width: 24px;
+  height: 1px;
+  margin: 8px 0;
+  background: var(--ext-sidebar-border);
+  opacity: 0.45;
 }
 
 .quick-action-button {
-  width: 44px;
-  height: 44px;
-  margin-bottom: 5px;
+  position: relative;
+  width: 38px;
+  height: 38px;
+  margin: 0;
   padding: 0;
-  border: 1px solid var(--ext-sidebar-border);
-  border-radius: 0px;
-  background-color: var(--ext-sidebar-primary);
-  color: var(--ext-sidebar-primary-foreground);
+  border: 1px solid transparent;
+  border-radius: var(--ext-radius-interactive);
+  background-color: transparent;
+  color: var(--ext-sidebar-foreground);
   cursor: pointer;
-  word-wrap: break-word;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 0.7em;
-  overflow: hidden;
   box-sizing: border-box;
-  box-shadow: var(--ext-shadow);
-  transition: var(--ext-transition-fast);
+  box-shadow: none;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
   font-family: var(--ext-font-family);
   gap: 2px;
 }
 
-.quick-action-button .material-icons {
+.quick-action-button .material-symbols-outlined {
   font-size: 20px;
   line-height: 1;
 }
 
 .sidebar-label {
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  line-height: 1;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .quick-action-button:hover {
-  transform: translate(-2px, -2px);
-  box-shadow: var(--ext-shadow-hover);
-  background-color: var(--ext-sidebar-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--ext-shadow-sm);
+  background-color: var(--ext-muted);
+  color: var(--ext-primary);
+}
+
+.quick-action-button:active {
+  transform: translateY(1px) scale(0.97);
+  box-shadow: none;
+}
+
+.quick-action-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ext-focus-ring);
+}
+
+.quick-actions-more-button[data-active='true'] {
+  color: var(--ext-primary);
+}
+
+.quick-actions-indicator {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ext-primary);
+  box-shadow: 0 0 0 2px var(--ext-sidebar);
+}
+
+.quick-actions-menu {
+  position: absolute;
+  top: 10px;
+  left: calc(100% + 10px);
+  width: 224px;
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--ext-border);
+  border-radius: 10px;
+  background: var(--ext-card);
+  color: var(--ext-card-foreground);
+  box-shadow: var(--ext-shadow-md);
+}
+
+.quick-actions-menu[hidden] {
+  display: none;
+}
+
+.quick-actions-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 9px 4px;
+  border-bottom: 1px solid var(--ext-border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.quick-actions-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--ext-radius-interactive);
+  background: transparent;
+  color: var(--ext-muted-foreground);
+  cursor: pointer;
+}
+
+.quick-actions-close:hover {
+  background: var(--ext-muted);
+  color: var(--ext-foreground);
+}
+
+.quick-actions-close .material-symbols-outlined {
+  font-size: 17px;
+}
+
+.quick-actions-section {
+  padding: 10px 0 2px;
+}
+
+.quick-actions-section + .quick-actions-section {
+  border-top: 1px solid color-mix(in srgb, var(--ext-border) 45%, transparent);
+}
+
+.quick-actions-section h2 {
+  margin: 0 4px 5px;
+  color: var(--ext-muted-foreground);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.quick-action-menu-item {
+  width: 100%;
+  height: 34px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 9px;
+  color: var(--ext-foreground);
+  text-align: left;
+}
+
+.quick-action-menu-item .sidebar-label {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.quick-action-menu-item:hover {
+  transform: none;
+  box-shadow: none;
+  background: var(--ext-muted);
+}
+
+.quick-action-menu-item[aria-pressed='true'] {
+  background: var(--ext-info-muted);
+  color: var(--ext-primary);
+}
+
+#pinned-actions-container {
+  display: grid;
+  gap: 3px;
+}
+
+#pinned-actions-section:not(:has(#pinned-actions-container button)) {
+  display: none;
+}
+
+#pinned-actions-container .pinned-action-item {
+  width: 100%;
+  height: 34px;
+  flex-direction: row;
+  justify-content: flex-start;
+  padding: 0 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ext-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  box-shadow: none;
+}
+
+#pinned-actions-container .pinned-action-item::before {
+  content: 'bookmark';
+  font-family: 'Material Symbols Outlined';
+  font-size: 18px;
+  font-weight: 400;
+}
+
+#pinned-actions-container .pinned-action-item:hover {
+  transform: none;
+  background: var(--ext-muted);
+  color: var(--ext-primary);
+}
+
+.sidebar-model-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 60;
+  width: 44px;
+  margin: 0;
+  padding: 6px 3px 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--ext-sidebar-border);
+  border-left: 2px solid var(--ext-sidebar-accent);
+  background: var(--ext-card);
+  color: var(--ext-card-foreground);
+  font-family: var(--ext-font-family);
+  text-align: center;
+  cursor: help;
+  pointer-events: none;
+}
+
+.sidebar-status-label {
+  display: block;
+  overflow: hidden;
+  font-size: 7px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0.68;
+}
+
+.sidebar-status-value {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sidebar-status-divider {
+  display: block;
+  width: 16px;
+  height: 1px;
+  margin: 5px auto;
+  background: var(--ext-sidebar-border);
+  opacity: 0.55;
 }
 
 /* Input wrapper for voice button inside input */
 #input-wrapper {
   position: relative;
   flex-grow: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   margin-right: 0.5rem;
@@ -197,13 +448,16 @@ body {
 }
 
 .quick-action-button:active {
-  transform: translate(2px, 2px);
-  box-shadow: var(--ext-shadow-active);
+  transform: translateY(1px) scale(0.97);
+  box-shadow: none;
 }
 
 .chat-container {
+  position: relative;
   flex-grow: 1;
   height: 100dvh;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -265,12 +519,15 @@ body.dark-theme ::selection {
 
 #chat-area {
   position: relative;
-  height: calc(100dvh - var(--chat-input-area-height, 150px));
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
   overflow-y: auto;
   scroll-behavior: smooth;
   z-index: 50;
-  padding-bottom: 20px;
   min-width: 0;
+  padding: 56px 12px calc(var(--chat-input-area-height, 150px) + 20px);
+  box-sizing: border-box;
 }
 
 #chat-area::-webkit-scrollbar {
@@ -301,8 +558,10 @@ body.dark-theme ::selection {
   background-color: var(--ext-card);
   position: fixed;
   bottom: 0;
-  left: 0;
+  left: var(--quick-actions-sidebar-width);
   right: 0;
+  width: auto;
+  box-sizing: border-box;
   border-top: 2px solid var(--ext-border);
   box-shadow: 0 -4px 0px 0px var(--ext-shadow-color);
   z-index: var(--ext-z-dropdown);
@@ -521,6 +780,8 @@ body.run-capabilities-subtle #quick-actions-sidebar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
 }
 
 #user-input {
@@ -558,6 +819,7 @@ body.run-capabilities-subtle #quick-actions-sidebar {
   width: auto;
   max-width: 95%;
   min-width: 0;
+  box-sizing: border-box;
   box-shadow: var(--ext-shadow);
   font-family: var(--ext-font-family);
 }
@@ -847,15 +1109,6 @@ button:focus-visible {
   border-color: var(--ext-primary-deep);
 }
 
-/* Adjust input area and buttons when sidebar is open */
-body.sidebar-open #input-area {
-  right: 350px; /* Adjust based on sidebar width */
-}
-
-body.sidebar-open #chat-area {
-  right: 350px; /* Adjust chat area when sidebar is open */
-}
-
 /* Theme Toggle Icon Button */
 #darkThemeToggle {
   background: none;
@@ -1007,6 +1260,9 @@ body.sidebar-open #chat-area {
 /* Chat main area and one-off instruction area */
 #chat-main-area,
 #oneoff-instruction-area {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1129,6 +1385,8 @@ td {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
   padding: 10px 12px;
   background-color: var(--ext-muted);
   cursor: pointer;
@@ -1140,7 +1398,13 @@ td {
 }
 
 .loaded-content-info {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.9em;
+}
+
+.loaded-content-actions {
+  flex: 0 0 auto;
 }
 
 .expand-toggle-btn {

@@ -6,6 +6,8 @@
  * @module braveSearch
  */
 
+import { readBoundedResponseText } from './streamSafety.js';
+
 /**
  * Fixed endpoint — never accept a caller-supplied URL.
  * Brave recommends the LLM Context endpoint for agent grounding:
@@ -211,7 +213,7 @@ export async function executeBraveSearch(query, apiKey, options = {}) {
   if (!response.ok) {
     let body = '';
     try {
-      body = await response.text();
+      body = await readBoundedResponseText(response);
     } catch {
       // ignore read errors
     }

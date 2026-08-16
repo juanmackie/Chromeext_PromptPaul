@@ -7,6 +7,7 @@ import { CODEX_API_ENDPOINT } from './codexAuth.js';
 
 export const OPENAI_MODELS_ENDPOINT = 'https://api.openai.com/v1/models';
 export const CODEX_MODELS_ENDPOINT = CODEX_API_ENDPOINT.replace(/\/responses\/?$/, '/models');
+const DEFAULT_CODEX_CLIENT_VERSION = '0.0.0';
 
 const MAX_MODELS = 200;
 const NON_CHAT_MODEL_PATTERNS = [
@@ -142,11 +143,12 @@ export function deriveModelsEndpoint(endpoint) {
   }
 }
 
-function createCodexModelHeaders(auth) {
+function createCodexModelHeaders(auth, clientVersion = DEFAULT_CODEX_CLIENT_VERSION) {
   const headers = {
     Authorization: `Bearer ${auth.accessToken}`,
     'OpenAI-Beta': 'codex-1',
     originator: 'prompt_paul',
+    version: String(clientVersion || DEFAULT_CODEX_CLIENT_VERSION),
     'User-Agent': 'PromptPaul/6.1',
   };
   if (auth.accountId) headers['ChatGPT-Account-Id'] = auth.accountId;
@@ -161,24 +163,38 @@ function createCodexModelHeaders(auth) {
  * @param {Function} [params.fetchImpl=fetch] - Fetch implementation.
  * @returns {Promise<Array<object>>}
  */
-export async function fetchAvailableModels({ profile, auth = null, fetchImpl = fetch }) {
+export async function fetchAvailableModels({
+  profile,
+  auth = null,
+  clientVersion = DEFAULT_CODEX_CLIENT_VERSION,
+  fetchImpl = fetch,
+}) {
   const provider = profile?.provider === 'codex' ? 'codex' : 'api';
-  const endpoint =
+  let endpoint =
     provider === 'codex' ? CODEX_MODELS_ENDPOINT : deriveModelsEndpoint(profile?.llmEndpoint);
   if (!endpoint) throw new Error('The configured endpoint does not expose a models route.');
   if (provider === 'codex' && !auth?.accessToken) {
     throw new Error('Connect this Codex profile before loading models.');
+  }
+  if (provider === 'codex') {
+    endpoint = `${endpoint}?client_version=${encodeURIComponent(
+      String(clientVersion || DEFAULT_CODEX_CLIENT_VERSION)
+    )}`;
   }
 
   const response = await fetchImpl(endpoint, {
     method: 'GET',
     headers:
       provider === 'codex'
-        ? createCodexModelHeaders(auth)
+        ? createCodexModelHeaders(auth, clientVersion)
         : { Authorization: `Bearer ${profile.apiKey}` },
   });
   if (!response.ok) {
     throw new Error(`Model discovery failed with HTTP ${response.status}.`);
   }
-  return normalizeAvailableModels(await response.json(), provider);
+  const models = normalizeAvailableModels(await response.json(), provider);
+  if (provider === 'codex' && !models.length) {
+    throw new Error('Codex returned no visible models for this account.');
+  }
+  return models;
 }

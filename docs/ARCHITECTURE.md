@@ -26,10 +26,12 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/chat/ChatPageAutomation.js` owns the default-off Act and Tabs toggles, sanitized page-action approval cards, and reconnect notices
 - `src/chat/ChatRunRecovery.js` stores the opaque active-run pointer and renders bounded session journal status after reconnect
 - `src/chat/ChatComposer.js` composer-led UI: context tray, contextual quick actions, and inline Stop/Retry/Edit/Continue recovery
+- `src/chat/ChatStream.js` owns the local conversation identity so provider switches can continue the visible transcript safely
 
 ### Shared Utilities
 
 - `src/utils/contextBudget.js` trims loaded page content to fit the model window
+- `src/utils/hermesContext.js` builds bounded Hermes current-turn input and explicit transcript history while removing historical binary media
 - `src/utils/readStrategy.js` picks the extraction mode from page signals
 - `src/utils/permissionGuards.js` blocks unsupported browser pages
 - `src/utils/actionCards.js` generates site-specific quick actions
@@ -37,7 +39,10 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/utils/skillParser.js` parses and validates `SKILL.md`
 - `src/utils/toolChoiceBuilder.js` normalizes tool choice payloads
 - `src/utils/validation.js` owns HTTP(S)-only endpoint validation, custom-tool/profile normalization, and bounded backup restore validation
+- `src/utils/runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages
+- `src/utils/streamSafety.js` bounds provider SSE buffers and error-body reads
 - `src/utils/codexAuth.js` owns the profile-local ChatGPT device-code login, token refresh, and secret-free status bridge. `src/orchestrator/CodexTransport.js` converts Prompt Paul history/tools to the ChatGPT Codex Responses wire and parses its stream.
+- `src/orchestrator/HermesTransport.js` owns the authenticated Hermes gateway routes, session creation, bounded SSE parsing, and server approval requests. Hermes credentials and session pointers stay in the background worker.
 - `src/utils/modelDiscovery.js` owns background-only `/models` requests. API profiles use the configured compatible endpoint, while Codex profiles use the authenticated Codex backend route and receive model-specific reasoning metadata.
 - `src/utils/braveSearch.js` bounded Brave LLM Context client with URL and payload validation
 - `src/utils/pageDom.js` bounded semantic DOM snapshot normalization and sensitive-field masking
@@ -79,10 +84,19 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 ### Profile routing
 
-1. `ChatAPI.js` reads the selected profile
-2. Shared routing helpers validate the endpoint, key, and model
-3. Media requests can reroute to a vision-capable profile when needed
-4. Options creates or selects the `Codex` profile after successful subscription sign-in, then loads the provider model list and persists the selected model/reasoning level
+1. `ChatAPI.js` reads the selected profile and keeps the opaque run owner token in memory
+2. The background worker re-resolves the saved profile and configured tools before starting a run, so provider credentials and endpoints are not accepted from an untrusted message
+3. Shared routing helpers validate the endpoint, key, and model
+4. Media requests can reroute to a vision-capable profile when needed
+5. Options creates or selects the `Codex` profile after successful subscription sign-in, then loads the provider model list and persists the selected model/reasoning level
+
+### Hermes gateway provider (optional)
+
+1. Options stores a Hermes profile with a loopback gateway endpoint and optional Hermes profile slug. The API key is stored in the background-owned `hermesApiKeys` map and is not included in profile records or backups.
+2. `background.js` validates the stored profile, checks `/health` and `/v1/capabilities`, requires the advertised run submission/status/SSE/stop/approval features, and starts Hermes runs through `RunOrchestrator`.
+3. `HermesTransport` creates or reuses one opaque Hermes session per profile and local conversation identity, sends bounded `conversation_history` plus the latest structured user input, recovers only explicit `session_not_found` run failures, and observes `/v1/runs/{id}/events` through a bounded SSE parser.
+4. Hermes message, reasoning, server-tool, approval, completion, failure, and cancellation events are adapted to the existing `orchestratorEvent` vocabulary. Server tools stay owned by Hermes; Prompt Paul does not execute their payloads.
+5. Prompt Paul renders Hermes approval cards, ties decisions to the pending opaque approval ID, and sends only validated approval choices back through the background worker. Act/page actions remain disabled until Hermes exposes a documented client-tool result protocol.
 
 ### Reasoning responses
 
@@ -98,7 +112,8 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 2. Backup restore validates supported storage keys and nested profiles/tools before writing; unknown keys are skipped, and restored Codex profiles require reauthentication.
 3. Custom tools remain user-configured HTTP(S) endpoints, but save, import, profile/runtime resolution, and execution share the same method/name/URL validation.
 4. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged.
-5. Release builds may inject a deliberately public, quota-limited demo credential; source checkouts remain credential-free.
+5. Privileged runtime messages require an extension-page sender; content-script extraction is bound to its own tab, and run mutations require the opaque owner token issued at run start.
+6. Release builds may inject a deliberately public, quota-limited demo credential; source checkouts remain credential-free.
 
 ### Current-Page Actions (optional)
 
@@ -128,7 +143,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `scripts/build.js` copies the extension into `dist/`
 - `scripts/test-runner.js` checks module structure and key regression guards
 - `scripts/smoke-check.js` performs the cheapest end-to-end sanity check
-- `npm run test:browser` loads the unpacked extension in a real headed Chromium-family browser and exercises the content-script bridge, indexed compose controls, interrupted connections, timeout, navigation identity, and service-worker restart paths; set `PROMPT_PAUL_BROWSER=chrome|edge` to target an installed branded browser. Chrome 137+ and equivalent Edge builds use the browser-level CDP Extensions domain to load the unpacked directory.
+- `npm run test:browser` runs every unpacked-extension spec in `tests/browser/` against a real headed Chromium-family browser and exercises the content-script bridge, selected-text actions, privileged-message rejection, indexed compose controls, interrupted connections, timeout, navigation identity, and service-worker restart paths; set `PROMPT_PAUL_BROWSER=chrome|edge` to target an installed branded browser. Chrome 137+ and equivalent Edge builds use the browser-level CDP Extensions domain to load the unpacked directory. CI runs this suite under Xvfb.
 
 ## Notes
 

@@ -90,10 +90,32 @@ describe('model discovery', () => {
       },
     });
 
-    expect(request.url).toBe(CODEX_MODELS_ENDPOINT);
+    expect(request.url).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.0.0`);
+    expect(request.options.headers.version).toBe('0.0.0');
     expect(request.options.headers.Authorization).toBe('Bearer access-secret');
     expect(request.options.headers['ChatGPT-Account-Id']).toBe('account-1');
     expect(models[0]).not.toHaveProperty('accessToken');
     expect(models[0].id).toBe('gpt-5.4-codex');
+  });
+
+  it('sends the Codex client version on the discovery request', async () => {
+    let request;
+    await fetchAvailableModels({
+      profile: { provider: 'codex' },
+      auth: { accessToken: 'access-secret' },
+      clientVersion: '6.1.0',
+      fetchImpl: async (url, options) => {
+        request = { url, options };
+        return {
+          ok: true,
+          async json() {
+            return { models: [{ slug: 'gpt-5.4-codex', visibility: 'list' }] };
+          },
+        };
+      },
+    });
+
+    expect(request.url).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=6.1.0`);
+    expect(request.options.headers.version).toBe('6.1.0');
   });
 });

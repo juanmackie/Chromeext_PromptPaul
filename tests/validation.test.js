@@ -15,6 +15,7 @@ describe('validation helpers', () => {
     expect(isValidHttpUrl('javascript:alert(1)')).toBe(false);
     expect(isValidHttpUrl('file:///tmp/secret')).toBe(false);
     expect(isValidHttpUrl('https://user:pass@example.com')).toBe(false);
+    expect(isValidHttpUrl('https://:pass@example.com')).toBe(false);
   });
 
   it('normalizes and bounds tool definitions', () => {
@@ -94,6 +95,7 @@ describe('validation helpers', () => {
             modelName: 'model',
           },
         ],
+        braveSearchApiKey: 'secret',
         promptPaulTools: [
           { name: 'lookup', description: 'Lookup', endpointUrl: 'https://example.com/tool' },
         ],
@@ -104,8 +106,10 @@ describe('validation helpers', () => {
 
     expect(result.valid).toBe(true);
     expect(result.value.local.unknownInjectedKey).toBeUndefined();
+    expect(result.value.local.braveSearchApiKey).toBeUndefined();
+    expect(result.value.local.profiles[0].apiKey).toBe('');
     expect(result.value.local.promptPaulTools[0].httpMethod).toBe('');
-    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings).toHaveLength(2);
   });
 
   it('does not restore the transient Act permission from a backup', () => {
@@ -141,6 +145,24 @@ describe('validation helpers', () => {
       llmEndpoint: '',
       apiKey: '',
       reasoningLevel: 'high',
+    });
+  });
+
+  it('migrates a legacy Hermes endpoint into the dedicated field', () => {
+    const result = normalizeProfileRecord({
+      id: 'hermes',
+      name: 'Hermes',
+      provider: 'hermes',
+      llmEndpoint: 'https://100.126.237.111:30433',
+      hermesEndpoint: '',
+      modelName: '',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(result.value).toMatchObject({
+      provider: 'hermes',
+      hermesEndpoint: 'https://100.126.237.111:30433',
+      llmEndpoint: '',
     });
   });
 });

@@ -1895,3 +1895,72 @@ body.dark-theme #toolsTable tbody tr:hover {
   margin-left: 0.5rem;
   vertical-align: middle;
 }
+
+/* Profile-first connection controls */
+.profile-selector-bar {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius-interactive);
+  background: var(--ext-muted);
+}
+
+.profile-select {
+  min-width: 16rem;
+}
+
+.profile-actions {
+  flex-shrink: 0;
+}
+
+#addProfileButton,
+#deleteProfileButton {
+  height: auto !important;
+  min-height: 2.25rem;
+  margin: 0 !important;
+  padding: 0.45rem 0.7rem !important;
+}
+
+#deleteProfileButton {
+  background: transparent !important;
+  color: var(--ext-destructive) !important;
+  border-color: var(--ext-destructive) !important;
+}
+
+#deleteProfileButton:disabled {
+  opacity: 0.55;
+}
+
+#providerSelect:disabled {
+  opacity: 1;
+  color: var(--ext-foreground);
+  background-color: var(--ext-muted);
+  cursor: not-allowed;
+}
+
+.options-disclosure {
+  border-top: 1px solid var(--ext-border);
+  padding-top: 0.75rem;
+}
+
+.options-disclosure summary {
+  color: var(--ext-primary);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.options-disclosure summary:focus-visible {
+  outline: none;
+  box-shadow: var(--ext-focus-ring);
+}
+
+.options-utility-links a,
+.options-utility-links button {
+  color: var(--ext-muted-foreground);
+  text-decoration: none;
+}
+
+.options-utility-links a:hover,
+.options-utility-links button:hover {
+  color: var(--ext-primary);
+  text-decoration: underline;
+}

@@ -53,6 +53,7 @@
   const pendingConfirmations = new Map();
   const toolResults = new Map();
   const sourceTabs = new Map();
+  const runTokens = new Map();
 
   chrome.runtime.onMessage.addListener((request) => {
     if (
@@ -64,6 +65,22 @@
   });
 
   window.pageActionHarness = Object.freeze({
+    async attachSelectionSource(targetUrl, selectedText = 'Previous selection') {
+      const tabId = await getTabId(targetUrl);
+      if (!tabId) return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
+      await chrome.storage.session.set({
+        pendingPanelAction: {
+          action: 'setSelectedText',
+          actionId: `browser-selection-${Date.now()}`,
+          selectedText,
+          tabId,
+          fromStartChat: true,
+          queuedAt: Date.now(),
+        },
+      });
+      return { success: true, tabId };
+    },
+
     async ping(targetUrl) {
       const tabId = await getTabId(targetUrl);
       if (!tabId) return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
@@ -72,6 +89,22 @@
 
     async pingTabId(tabId) {
       return sendPageAction(Number(tabId), { action: 'pageActionPing' });
+    },
+
+    async sendFromContentScript(tabId, message) {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: Number(tabId) },
+        func: (payload) =>
+          new Promise((resolve) => {
+            chrome.runtime.sendMessage(payload, (response) => {
+              resolve(
+                chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : response
+              );
+            });
+          }),
+        args: [message],
+      });
+      return result?.result || { success: false, error: 'Empty content-script response.' };
     },
 
     async directAction(targetUrl, runId, pageAction, args = {}) {
@@ -100,7 +133,10 @@
           messages: [],
         },
       });
-      if (response?.runId) sourceTabs.set(String(response.runId), sourceTabId);
+      if (response?.runId) {
+        sourceTabs.set(String(response.runId), sourceTabId);
+        runTokens.set(String(response.runId), response.ownerToken || '');
+      }
       return response;
     },
 
@@ -115,6 +151,7 @@
         action: 'pageActionDecision',
         runId,
         confirmationId: confirmation.confirmationId,
+        ownerToken: runTokens.get(String(runId)) || '',
         approved: Boolean(approved),
         approveAll: Boolean(approveAll),
         sourceTabId: sourceTabs.get(String(runId)) || (await getTabId(targetUrl)),
@@ -127,6 +164,7 @@
       const request = sendRuntimeMessage({
         action: 'executeTool',
         runId,
+        ownerToken: runTokens.get(String(runId)) || '',
         toolCall: {
           id,
           function: { name, arguments: JSON.stringify(args) },
@@ -141,7 +179,11 @@
     },
 
     abortRun(runId) {
-      return sendRuntimeMessage({ action: 'abortRun', runId });
+      return sendRuntimeMessage({
+        action: 'abortRun',
+        runId,
+        ownerToken: runTokens.get(String(runId)) || '',
+      });
     },
 
     async findTab(targetUrl) {

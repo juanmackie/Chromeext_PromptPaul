@@ -13,7 +13,8 @@ This checklist keeps those rules practical and reviewable.
 ## During a change
 
 - Validate and bound user input at every external boundary.
-- Keep credentials in Chrome storage or environment variables. Never commit secrets or place them in logs, DOM fields, events, backups, or LLM payloads.
+- Keep user credentials in Chrome storage. Build-only secrets must come from platform secret management; do not rely only on environment variables. Never commit secrets or place them in logs, DOM fields, events, backups, or LLM payloads.
+- The release demo credential is a deliberate public, quota-limited exception. Treat it as exposed, never use it for private data, and rotate it independently.
 - Use the existing sanitizer for untrusted HTML and the existing validators for URLs, profiles, tools, skills, and page actions.
 - Keep modules cohesive, names descriptive, and functions easy to test. Split a large file when its responsibilities diverge; do not split only to meet a line count.
 - Use ASD-STE100 Simplified Technical English in new documentation and comments.
@@ -22,9 +23,9 @@ This checklist keeps those rules practical and reviewable.
 
 - Add readable tests for new behavior, including common and failure cases.
 - Run `npm run validate` and `npm run smoke` when relevant.
-- Run `npm run test:browser` for browser-runtime or page-action changes.
+- Run `npm run test:browser` for browser-runtime or page-action changes. The CI browser job runs the complete unpacked-extension suite with headed Chromium under Xvfb.
 - Run `npm audit --audit-level=high --omit=optional` before release.
-- Review authentication, user data, external API, and page-action changes for security before production deployment.
+- Review authentication, user data, external API, and page-action changes for security before production deployment. Do not describe the extension as production-ready until these reviews and the required browser/provider checks are complete.
 - Update the nearest DOX contract when behavior, structure, workflow, or quality requirements change.
 
 ## Current review risks

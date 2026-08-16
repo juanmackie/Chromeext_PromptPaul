@@ -18,6 +18,7 @@ import {
   BACKUP_SYNC_KEYS,
   isValidHttpUrl,
   normalizeBackupPayload,
+  normalizeProfileRecord,
   normalizeToolDefinition,
 } from './src/utils/validation.js';
 import {
@@ -27,7 +28,7 @@ import {
 } from './src/utils/skillParser.js';
 import { setupThemeToggle } from './themeUtils.js';
 import { escapeHtml } from './src/utils/domSanitizer.js';
-import { resolvePreferredProfile } from './src/utils/profileRouting.js';
+import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileRouting.js';
 import {
   applyCredentialMask,
   createDirtyTracker,
@@ -68,6 +69,7 @@ let modelLoadSequence = 0;
 const modelMetadataByProfile = new Map();
 const CUSTOM_MODEL_VALUE = '__custom__';
 const DEFAULT_CODEX_REASONING_LEVEL = 'medium';
+const HERMES_API_KEYS_KEY = 'hermesApiKeys';
 
 function createUniqueId(prefix) {
   const id =
@@ -323,21 +325,17 @@ function showSavedModelFallback(profile, label = 'Model list unavailable') {
   if (!modelSelect) return;
   document.getElementById('reasoningLevelGroup')?.classList.add('d-none');
   modelSelect.innerHTML = `<option value="">${label}</option>`;
-  if (profile.provider !== 'codex') {
-    const customOption = document.createElement('option');
-    customOption.value = CUSTOM_MODEL_VALUE;
-    customOption.textContent = 'Custom model ID…';
-    modelSelect.appendChild(customOption);
-    setModelSelection(profile.modelName || '');
-    return;
-  }
+  const customOption = document.createElement('option');
+  customOption.value = CUSTOM_MODEL_VALUE;
+  customOption.textContent = 'Enter model ID manually…';
+  modelSelect.appendChild(customOption);
   if (profile.modelName) {
     const savedOption = document.createElement('option');
     savedOption.value = profile.modelName;
     savedOption.textContent = `${profile.modelName} (saved)`;
     modelSelect.appendChild(savedOption);
-    modelSelect.value = profile.modelName;
   }
+  setModelSelection(profile.modelName || '');
 }
 
 async function persistProfileModelSettings(profileId, modelName, reasoningLevel) {
@@ -357,6 +355,13 @@ async function loadAvailableModels(profile) {
   modelSelect.disabled = true;
   modelSelect.innerHTML = '<option value="">Loading models…</option>';
   setCustomModelVisibility(false);
+  if (profile.provider === 'hermes') {
+    modelSelect.innerHTML = '<option value="">Hermes gateway default model</option>';
+    modelSelect.value = '';
+    modelSelect.disabled = false;
+    updateReasoningOptions(profile.id, '', '');
+    return;
+  }
 
   try {
     if (profile.provider === 'codex') {
@@ -380,6 +385,13 @@ async function loadAvailableModels(profile) {
     if (!response?.success) throw new Error(response?.error || 'Unable to load models.');
 
     const models = response.models || [];
+    if (!models.length) {
+      throw new Error(
+        profile.provider === 'codex'
+          ? 'No visible Codex models were returned for this account.'
+          : 'No models were returned by this endpoint.'
+      );
+    }
     const metadata = new Map(models.map((model) => [model.id, model]));
     modelMetadataByProfile.set(profile.id, metadata);
     modelSelect.innerHTML = '';
@@ -413,7 +425,10 @@ async function loadAvailableModels(profile) {
     if (sequence !== modelLoadSequence) return;
     showSavedModelFallback(profile);
     updateReasoningOptions(profile.id, profile.modelName, profile.reasoningLevel);
-    showStatus(error.message, true);
+    showStatus(
+      `${error.message} Select “Enter model ID manually…” to continue, or reconnect Codex and refresh.`,
+      true
+    );
   } finally {
     if (sequence === modelLoadSequence) modelSelect.disabled = false;
   }
@@ -431,22 +446,52 @@ function syncDeleteProfileButtonState(selectedProfileId = null) {
   deleteProfileButton.disabled = selectedId === 'default' || selectedId === 'add_new_profile';
 }
 
-function requestProfileName(defaultName = 'New Profile') {
+function providerLabel(provider) {
+  return (
+    {
+      api: 'API connection',
+      codex: 'ChatGPT subscription',
+      hermes: 'Hermes gateway',
+    }[provider] || 'Connection'
+  );
+}
+
+function updateProfileSummary(profile) {
+  const badge = document.getElementById('profileProviderBadge');
+  const state = document.getElementById('profileStateText');
+  const provider = profile?.provider || 'api';
+  if (badge) {
+    badge.textContent = providerLabel(provider);
+    badge.className = `ext-badge ${provider === 'hermes' ? 'ext-badge--warning' : 'ext-badge--info'}`;
+  }
+  if (state) {
+    state.textContent = `${providerLabel(provider)} settings are saved per profile.`;
+  }
+}
+
+function requestNewProfile(defaultName = 'New connection') {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'profile-name-dialog-overlay';
     const dialog = document.createElement('div');
     dialog.className = 'profile-name-dialog';
     dialog.innerHTML = `
-      <h3>Create Profile</h3>
+      <h3>Create connection profile</h3>
       <label for="newProfileNameInput">Profile name</label>
       <input id="newProfileNameInput" class="form-control" value="${escapeHtml(defaultName)}" />
+      <label for="newProfileProviderInput" class="mt-3">Connection type</label>
+      <select id="newProfileProviderInput" class="form-select">
+        <option value="api">API key / compatible endpoint</option>
+        <option value="codex">ChatGPT subscription</option>
+        <option value="hermes">Hermes Agent gateway</option>
+      </select>
       <div class="profile-name-dialog-actions">
         <button type="button" class="btn btn-outline-secondary profile-name-cancel">Cancel</button>
         <button type="button" class="btn btn-primary profile-name-confirm">Create</button>
       </div>
     `;
     const input = dialog.querySelector('#newProfileNameInput');
+    const providerInput = dialog.querySelector('#newProfileProviderInput');
     const confirm = dialog.querySelector('.profile-name-confirm');
     const cancel = dialog.querySelector('.profile-name-cancel');
 
@@ -460,14 +505,16 @@ function requestProfileName(defaultName = 'New Profile') {
     input.focus();
     input.select();
 
-    confirm.addEventListener('click', () => finish(input.value));
-    cancel.addEventListener('click', () => finish(''));
+    confirm.addEventListener('click', () =>
+      finish({ name: input.value, provider: providerInput.value })
+    );
+    cancel.addEventListener('click', () => finish({ name: '', provider: '' }));
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') finish(input.value);
-      if (event.key === 'Escape') finish('');
+      if (event.key === 'Enter') finish({ name: input.value, provider: providerInput.value });
+      if (event.key === 'Escape') finish({ name: '', provider: '' });
     });
     overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) finish('');
+      if (event.target === overlay) finish({ name: '', provider: '' });
     });
   });
 }
@@ -522,14 +569,46 @@ function validateInputs(endpoint, key, model) {
 
 function updateCodexConnectionControls(provider, profileId) {
   const isCodex = provider === 'codex';
+  const isHermes = provider === 'hermes';
+  const providerSelect = document.getElementById('providerSelect');
   const panel = document.getElementById('codexConnectionPanel');
   const apiFields = document.getElementById('apiConnectionFields');
+  const hermesPanel = document.getElementById('hermesConnectionPanel');
+  const hermesRemote = document.getElementById('hermesRemoteConfirmed');
   const endpoint = document.getElementById('llmEndpoint');
   const apiKey = document.getElementById('apiKey');
+  const apiKeyLabelText = document.getElementById('apiKeyLabelText');
+  const apiKeyHint = document.getElementById('apiKeyHint');
   if (panel) panel.classList.toggle('d-none', !isCodex);
   if (apiFields) apiFields.classList.toggle('d-none', isCodex);
+  if (hermesPanel) hermesPanel.classList.toggle('d-none', !isHermes);
+  if (hermesRemote && !isHermes) hermesRemote.checked = false;
   if (endpoint) endpoint.required = !isCodex;
-  if (apiKey) apiKey.required = !isCodex && apiKey.dataset.configured !== 'true';
+  if (apiKey) apiKey.required = provider === 'api' && apiKey.dataset.configured !== 'true';
+  if (endpoint) {
+    endpoint.placeholder = isHermes
+      ? 'http://127.0.0.1:8642'
+      : 'https://your-llm-provider.example/v1/chat/completions';
+  }
+  if (apiKey) apiKey.placeholder = isHermes ? 'Optional Hermes API key' : 'sk-...';
+  if (apiKeyLabelText) apiKeyLabelText.textContent = isHermes ? 'API Key (optional)' : 'API Key';
+  if (apiKeyHint) apiKeyHint.classList.toggle('d-none', !isHermes);
+  const modelSelect = document.getElementById('modelName');
+  if (modelSelect) modelSelect.required = !isCodex && !isHermes;
+  const modelControls = document.getElementById('providerModelControls');
+  if (modelControls) modelControls.classList.toggle('d-none', isHermes);
+  const refreshButton = document.getElementById('refreshModelsButton');
+  if (refreshButton) refreshButton.disabled = isHermes;
+  const revertButton = document.getElementById('revertDefaultsButton');
+  if (revertButton) {
+    revertButton.classList.toggle('d-none', !(!isCodex && !isHermes));
+  }
+  if (providerSelect) {
+    providerSelect.disabled = Boolean(profileId && profileId !== 'add_new_profile');
+    providerSelect.title = providerSelect.disabled
+      ? 'Create a new connection profile to use another connection type.'
+      : '';
+  }
   if (!isCodex || !profileId) return;
 
   chrome.runtime
@@ -657,6 +736,8 @@ function saveOptions(e) {
   const apiKeyValue = apiKey.value.trim();
   const apiKeyIsMaskedConfigured = apiKey.dataset.configured === 'true';
   const hasConfiguredCredential = apiKeyIsMaskedConfigured || Boolean(pendingDefaultApiKey);
+  const hermesProfileValue = document.getElementById('hermesProfile')?.value.trim() || '';
+  const hermesRemoteConfirmed = document.getElementById('hermesRemoteConfirmed')?.checked === true;
 
   const modelName = document.getElementById('modelName');
   if (!modelName) {
@@ -685,30 +766,50 @@ function saveOptions(e) {
   ) {
     return;
   }
+  if (provider === 'hermes' && (!llmEndpointValue || !isValidHttpUrl(llmEndpointValue))) {
+    setFieldError('llmEndpoint', 'Enter the Hermes gateway URL.');
+    showStatus('Hermes gateway endpoint is required.', true);
+    return;
+  }
+  if (
+    provider === 'hermes' &&
+    hermesProfileValue &&
+    !/^[A-Za-z0-9._-]{1,64}$/.test(hermesProfileValue)
+  ) {
+    showStatus('Hermes profile must use letters, numbers, dots, underscores, or hyphens.', true);
+    return;
+  }
 
   // Disable save button while saving
   const saveButton = document.getElementById('save');
   saveButton.disabled = true;
 
   // Save to local storage profiles
-  chrome.storage.local.get(['profiles'], (result) => {
+  chrome.storage.local.get(['profiles', HERMES_API_KEYS_KEY], (result) => {
     let profiles = result.profiles || [];
+    const hermesApiKeys = result[HERMES_API_KEYS_KEY] || {};
     let profileToUpdate = profiles.find((p) => p.id === selectedProfileId);
     const storedApiKey = profileToUpdate?.apiKey || '';
-    const effectiveStoredApiKey = pendingDefaultApiKey || storedApiKey || '';
+    const storedHermesKey = hermesApiKeys[selectedProfileId] || '';
+    const effectiveStoredApiKey =
+      provider === 'hermes' ? storedHermesKey : pendingDefaultApiKey || storedApiKey || '';
     const credentialIsConfigured = apiKeyIsMaskedConfigured || Boolean(effectiveStoredApiKey);
-
+    const resolvedCredential = resolveCredentialValue(
+      apiKeyValue,
+      credentialIsConfigured,
+      effectiveStoredApiKey
+    );
     if (!profileToUpdate) {
       profileToUpdate = {
         id: selectedProfileId,
         name: selectedProfileId === 'default' ? 'Default' : 'New Profile ' + Date.now(),
         provider,
-        llmEndpoint: provider === 'codex' ? '' : llmEndpointValue,
-        apiKey:
-          provider === 'codex'
-            ? ''
-            : resolveCredentialValue(apiKeyValue, credentialIsConfigured, effectiveStoredApiKey),
-        modelName: modelNameValue,
+        llmEndpoint: provider === 'api' ? llmEndpointValue : '',
+        apiKey: provider === 'api' ? resolvedCredential : '',
+        hermesEndpoint: provider === 'hermes' ? llmEndpointValue : '',
+        hermesProfile: provider === 'hermes' ? hermesProfileValue : '',
+        hermesRemoteConfirmed: provider === 'hermes' && hermesRemoteConfirmed,
+        modelName: provider === 'hermes' ? '' : modelNameValue,
         reasoningLevel: reasoningLevelValue,
         systemPrompt: systemPromptValue,
         lastUpdated: new Date().toLocaleString(),
@@ -716,19 +817,44 @@ function saveOptions(e) {
       profiles.push(profileToUpdate);
     } else {
       profileToUpdate.provider = provider;
-      profileToUpdate.llmEndpoint = provider === 'codex' ? '' : llmEndpointValue;
-      profileToUpdate.apiKey =
-        provider === 'codex'
-          ? ''
-          : resolveCredentialValue(apiKeyValue, credentialIsConfigured, effectiveStoredApiKey);
-      profileToUpdate.modelName = modelNameValue;
+      profileToUpdate.llmEndpoint = provider === 'api' ? llmEndpointValue : '';
+      profileToUpdate.apiKey = provider === 'api' ? resolvedCredential : '';
+      profileToUpdate.hermesEndpoint = provider === 'hermes' ? llmEndpointValue : '';
+      profileToUpdate.hermesProfile = provider === 'hermes' ? hermesProfileValue : '';
+      profileToUpdate.hermesRemoteConfirmed = provider === 'hermes' && hermesRemoteConfirmed;
+      profileToUpdate.modelName = provider === 'hermes' ? '' : modelNameValue;
       profileToUpdate.reasoningLevel = reasoningLevelValue;
       profileToUpdate.systemPrompt = systemPromptValue;
       profileToUpdate.lastUpdated = new Date().toLocaleString();
     }
 
+    if (provider === 'hermes') {
+      if (resolvedCredential) hermesApiKeys[selectedProfileId] = resolvedCredential;
+    } else {
+      delete hermesApiKeys[selectedProfileId];
+    }
+
+    const normalizedProfile = normalizeProfileRecord(profileToUpdate);
+    if (!normalizedProfile.valid) {
+      saveButton.disabled = false;
+      showStatus(`Unable to save profile: ${normalizedProfile.error}`, true);
+      return;
+    }
+    const profileIndex = profiles.findIndex((profile) => profile.id === selectedProfileId);
+    if (profileIndex < 0) {
+      saveButton.disabled = false;
+      showStatus('Unable to save profile: the selected profile was not found.', true);
+      return;
+    }
+    profiles[profileIndex] = normalizedProfile.value;
+    profileToUpdate = normalizedProfile.value;
+
     chrome.storage.local.set(
-      { profiles: profiles, lastSelectedProfileId: selectedProfileId },
+      {
+        profiles: profiles,
+        [HERMES_API_KEYS_KEY]: hermesApiKeys,
+        lastSelectedProfileId: selectedProfileId,
+      },
       () => {
         if (chrome.runtime.lastError) {
           console.error(
@@ -758,16 +884,31 @@ function saveOptions(e) {
  */
 function loadProfileSettings(profileId) {
   pendingDefaultApiKey = null;
-  chrome.storage.local.get(['profiles'], (result) => {
+  chrome.storage.local.get(['profiles', HERMES_API_KEYS_KEY], (result) => {
     const profiles = result.profiles || [];
+    const hermesApiKeys = result[HERMES_API_KEYS_KEY] || {};
     const selectedProfile =
       profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === 'default');
 
     if (selectedProfile) {
       const providerSelect = document.getElementById('providerSelect');
       if (providerSelect) providerSelect.value = selectedProfile.provider || 'api';
-      document.getElementById('llmEndpoint').value = selectedProfile.llmEndpoint || '';
-      applyCredentialMask(document.getElementById('apiKey'), Boolean(selectedProfile.apiKey));
+      updateProfileSummary(selectedProfile);
+      document.getElementById('llmEndpoint').value =
+        selectedProfile.provider === 'hermes'
+          ? getHermesEndpoint(selectedProfile)
+          : selectedProfile.llmEndpoint || '';
+      const hermesProfileInput = document.getElementById('hermesProfile');
+      if (hermesProfileInput) hermesProfileInput.value = selectedProfile.hermesProfile || '';
+      const hermesRemoteInput = document.getElementById('hermesRemoteConfirmed');
+      if (hermesRemoteInput) {
+        hermesRemoteInput.checked = selectedProfile.hermesRemoteConfirmed === true;
+      }
+      const configuredCredential =
+        selectedProfile.provider === 'hermes'
+          ? Boolean(hermesApiKeys[selectedProfile.id])
+          : Boolean(selectedProfile.apiKey);
+      applyCredentialMask(document.getElementById('apiKey'), configuredCredential);
       const modelSelect = document.getElementById('modelName');
       if (modelSelect) {
         modelSelect.innerHTML = '<option value="">Loading models…</option>';
@@ -780,8 +921,10 @@ function loadProfileSettings(profileId) {
       document.getElementById('systemPrompt').value = selectedProfile.systemPrompt || '';
 
       updateCurrentConfig(
-        selectedProfile.llmEndpoint,
-        selectedProfile.apiKey,
+        selectedProfile.provider === 'hermes'
+          ? getHermesEndpoint(selectedProfile)
+          : selectedProfile.llmEndpoint,
+        configuredCredential ? 'configured' : selectedProfile.apiKey,
         selectedProfile.modelName,
         selectedProfile.lastUpdated || new Date().toLocaleString(),
         selectedProfile.systemPrompt,
@@ -807,9 +950,10 @@ function loadOptions() {
     addNewOption.textContent = '+ Add New Profile...';
     profileSelectElement.appendChild(addNewOption);
 
+    const defaultProfile = profiles.find((profile) => profile.id === 'default');
     const defaultOption = document.createElement('option');
     defaultOption.value = 'default';
-    defaultOption.textContent = 'Default';
+    defaultOption.textContent = `Default · ${providerLabel(defaultProfile?.provider || 'api')}`;
     profileSelectElement.appendChild(defaultOption);
 
     if (profiles && profiles.length > 0) {
@@ -817,7 +961,7 @@ function loadOptions() {
         if (profile.id === 'default') return; // Skip default if already added
         const option = document.createElement('option');
         option.value = profile.id;
-        option.textContent = profile.name;
+        option.textContent = `${profile.name} · ${providerLabel(profile.provider)}`;
         profileSelectElement.appendChild(option);
       });
     }
@@ -842,7 +986,8 @@ function loadOptions() {
         systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
         lastUpdated: new Date().toLocaleString(),
       };
-      profiles.push(defaultProfile);
+      const normalizedDefaultProfile = normalizeProfileRecord(defaultProfile);
+      if (normalizedDefaultProfile.valid) profiles.push(normalizedDefaultProfile.value);
       chrome.storage.local.set({ profiles: profiles }, () => {
         if (chrome.runtime.lastError) {
           console.error('Options: Error saving default profile:', chrome.runtime.lastError);
@@ -875,9 +1020,13 @@ document.addEventListener('DOMContentLoaded', () => {
         connected:
           profile.provider === 'codex'
             ? false
-            : Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
+            : profile.provider === 'hermes'
+              ? Boolean(getHermesEndpoint(profile))
+              : Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
         model: profile.modelName,
-        endpointHost: endpointHost(profile.llmEndpoint),
+        endpointHost: endpointHost(
+          profile.provider === 'hermes' ? getHermesEndpoint(profile) : profile.llmEndpoint
+        ),
       });
       if (profile.provider === 'codex') {
         chrome.runtime
@@ -899,11 +1048,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (openChatButton) {
     openChatButton.addEventListener('click', () => {
       try {
-        chrome.runtime.sendMessage({ action: 'openChat' }, (response) => {
-          if (chrome.runtime.lastError || !response || !response.success) {
-            showStatus('Could not open chat. Make sure you are on a web page.', true, true);
-          }
-        });
+        chrome.sidePanel
+          .open({ windowId: chrome.windows.WINDOW_ID_CURRENT })
+          .catch((error) => showStatus('Could not open chat: ' + error.message, true, true));
       } catch (err) {
         showStatus('Could not open chat: ' + err.message, true, true);
       }
@@ -917,6 +1064,11 @@ document.addEventListener('DOMContentLoaded', () => {
       { element: document.getElementById('providerSelect') },
       { element: document.getElementById('llmEndpoint') },
       { element: document.getElementById('apiKey') },
+      { element: document.getElementById('hermesProfile') },
+      {
+        element: document.getElementById('hermesRemoteConfirmed'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
       { element: document.getElementById('modelName') },
       { element: document.getElementById('customModelName') },
       { element: document.getElementById('reasoningLevel') },
@@ -1269,8 +1421,8 @@ document.addEventListener('DOMContentLoaded', () => {
       syncDeleteProfileButtonState(selectedProfileId);
 
       if (selectedProfileId === 'add_new_profile') {
-        const newProfileName = await requestProfileName('New Profile');
-        if (newProfileName && newProfileName.trim() !== '') {
+        const newProfileChoice = await requestNewProfile();
+        if (newProfileChoice?.name && newProfileChoice.name.trim() !== '') {
           chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
             let profiles = result.profiles || [];
             const currentProfileId =
@@ -1286,29 +1438,57 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const newProfileId = 'profile_' + Date.now(); // Unique ID for the new profile
+            const provider = newProfileChoice.provider || 'api';
+            const sameProvider = currentProfile.provider === provider;
             const newProfile = {
               id: newProfileId,
-              name: newProfileName.trim(),
-              provider: currentProfile.provider || 'api',
+              name: newProfileChoice.name.trim(),
+              provider,
               llmEndpoint:
-                currentProfile.provider === 'codex'
+                provider !== 'api'
                   ? ''
-                  : document.getElementById('llmEndpoint').value.trim() ||
-                    currentProfile.llmEndpoint,
-              apiKey:
-                currentProfile.provider === 'codex'
+                  : sameProvider
+                    ? document.getElementById('llmEndpoint').value.trim() ||
+                      currentProfile.llmEndpoint
+                    : '',
+              apiKey: '',
+              hermesEndpoint:
+                provider === 'hermes' && sameProvider
+                  ? document.getElementById('llmEndpoint').value.trim() ||
+                    getHermesEndpoint(currentProfile)
+                  : '',
+              hermesProfile:
+                provider === 'hermes' && sameProvider
+                  ? document.getElementById('hermesProfile')?.value.trim() ||
+                    currentProfile.hermesProfile ||
+                    ''
+                  : '',
+              hermesRemoteConfirmed:
+                provider === 'hermes' &&
+                sameProvider &&
+                document.getElementById('hermesRemoteConfirmed')?.checked === true,
+              modelName:
+                provider === 'hermes'
                   ? ''
-                  : document.getElementById('apiKey').value.trim() || currentProfile.apiKey || '',
-              modelName: selectedModelValue() || currentProfile.modelName,
+                  : sameProvider
+                    ? selectedModelValue() || currentProfile.modelName
+                    : '',
               reasoningLevel:
-                document.getElementById('reasoningLevel')?.value ||
-                currentProfile.reasoningLevel ||
-                '',
+                provider === 'codex' && sameProvider
+                  ? document.getElementById('reasoningLevel')?.value ||
+                    currentProfile.reasoningLevel ||
+                    ''
+                  : '',
               systemPrompt:
                 document.getElementById('systemPrompt').value.trim() || currentProfile.systemPrompt,
               lastUpdated: new Date().toLocaleString(),
             };
-            profiles.push(newProfile);
+            const normalizedNewProfile = normalizeProfileRecord(newProfile);
+            if (!normalizedNewProfile.valid) {
+              showStatus(`Unable to create profile: ${normalizedNewProfile.error}`, true, true);
+              return;
+            }
+            profiles.push(normalizedNewProfile.value);
             chrome.storage.local.set(
               { profiles: profiles, lastSelectedProfileId: newProfileId },
               () => {
@@ -1319,7 +1499,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncDeleteProfileButtonState(newProfileId);
                 loadProfileSettings(newProfileId); // Load its settings into the form
                 showStatus(
-                  `Profile "${newProfile.name}" created. Review and save settings.`,
+                  `Profile "${newProfile.name}" created. Add its credentials, then save settings.`,
                   false,
                   true
                 );
@@ -1362,6 +1542,14 @@ document.addEventListener('DOMContentLoaded', () => {
 document.getElementById('providerSelect')?.addEventListener('change', (event) => {
   const profileId = document.getElementById('profileSelect')?.value;
   updateCodexConnectionControls(event.target.value, profileId);
+  if (event.target.value === 'hermes') {
+    const modelSelect = document.getElementById('modelName');
+    if (modelSelect) {
+      modelSelect.required = false;
+      modelSelect.innerHTML = '<option value="">Hermes gateway default model</option>';
+      modelSelect.value = '';
+    }
+  }
 });
 document.getElementById('modelName')?.addEventListener('change', (event) => {
   const profileId = document.getElementById('profileSelect')?.value;
@@ -1391,6 +1579,41 @@ document.getElementById('disconnectCodexButton')?.addEventListener('click', asyn
   const response = await chrome.runtime.sendMessage({ action: 'codexLogout', profileId });
   if (!response?.success) showStatus(response?.error || 'Unable to disconnect Codex.', true);
   else updateCodexConnectionControls('codex', profileId);
+});
+
+document.getElementById('testHermesButton')?.addEventListener('click', async () => {
+  const profileId = document.getElementById('profileSelect')?.value;
+  const status = document.getElementById('hermesConnectionStatus');
+  if (!profileId || profileId === 'add_new_profile') {
+    if (status) status.textContent = 'Select and save a Hermes profile first.';
+    return;
+  }
+  if (status) status.textContent = 'Testing…';
+  try {
+    const { profiles = [] } = await chrome.storage.local.get(['profiles']);
+    const storedProfile = profiles.find((profile) => profile.id === profileId);
+    if (storedProfile?.provider !== 'hermes') {
+      throw new Error('Save this profile as Hermes before testing the connection.');
+    }
+    const savedEndpoint = getHermesEndpoint(storedProfile);
+    const currentEndpoint = document.getElementById('llmEndpoint')?.value.trim() || '';
+    if (!savedEndpoint || (currentEndpoint && currentEndpoint !== savedEndpoint)) {
+      throw new Error('Save Settings before testing the Hermes connection.');
+    }
+    const response = await chrome.runtime.sendMessage({
+      action: 'testHermesConnection',
+      profileId,
+    });
+    if (!response?.success) throw new Error(response?.error || 'Hermes connection failed.');
+    const healthWarning = response.result?.healthWarning?.message;
+    if (status) {
+      status.textContent = healthWarning
+        ? `Connected to Hermes. ${healthWarning}`
+        : 'Connected to Hermes.';
+    }
+  } catch (error) {
+    if (status) status.textContent = error.message;
+  }
 });
 
 document.getElementById('optionsForm').addEventListener('submit', saveOptions);
@@ -2898,11 +3121,12 @@ function setupBackupHandlers() {
             Object.prototype.hasOwnProperty.call(syncSnapshot, key)
           ).map((key) => [key, syncSnapshot[key]])
         );
+        const normalizedBackup = normalizeBackupPayload({ local: localData, sync: syncData });
+        if (!normalizedBackup.valid) throw new Error(normalizedBackup.error);
 
         const fullBackup = {
           timestamp: new Date().toISOString(),
-          local: localData,
-          sync: syncData,
+          ...normalizedBackup.value,
         };
 
         const dataStr =
@@ -2915,7 +3139,7 @@ function setupBackupHandlers() {
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
 
-        showStatus('Backup exported. Codex subscription tokens are not included.', false, true);
+        showStatus('Backup exported. Credentials are not included.', false, true);
       } catch (error) {
         console.error('Export error:', error);
         showStatus('Failed to export backup: ' + error.message, true, true);
@@ -2955,8 +3179,8 @@ function setupBackupHandlers() {
 
           showStatus('Restoring data...', false, true);
 
-          // Restore only validated, supported storage keys. Credentials remain
-          // part of full backups by design and are covered by the UI warning.
+          // Restore only validated, supported storage keys. Credentials are
+          // intentionally removed by normalizeBackupPayload.
           if (Object.keys(normalizedBackup.value.local).length > 0) {
             await new Promise((resolve) =>
               chrome.storage.local.set(normalizedBackup.value.local, resolve)

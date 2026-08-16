@@ -75,37 +75,54 @@
           "
         />
 
-        <div class="d-flex gap-2 flex-wrap mb-3">
-          <a
-            href="https://ko-fi.com/N4N3184MUV"
-            target="_blank"
-            class="btn btn-outline-primary btn-sm"
-            >&#9749; Buy me a coffee</a
-          >
-          <button id="revertDefaultsButton" class="btn btn-outline-danger btn-sm">
-            Reset Configuration
-          </button>
-          <a
-            href="https://promptpaul.juanmackie.com/#feedbackform"
-            target="_blank"
-            class="btn btn-outline-primary btn-sm"
-            >Feedback</a
-          >
-        </div>
         <p class="text-secondary-emphasis small">
-          Choose an API-key endpoint or connect a ChatGPT subscription, then select a model. API
-          keys are stored in Chrome storage and sent only when you send a prompt.
+          Choose a saved connection profile, then adjust only the settings needed by that provider.
+          Credentials stay in Chrome storage and are sent only when you use the connection.
         </p>
 
         <form id="optionsForm">
+          <div class="profile-selector-bar mb-3">
+            <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+              <div class="flex-grow-1">
+                <label for="profileSelect" class="form-label mb-1">Connection profile</label>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <select id="profileSelect" class="form-select profile-select">
+                    <!-- Options will be populated by JavaScript -->
+                  </select>
+                  <span id="profileProviderBadge" class="ext-badge ext-badge--info"
+                    >API connection</span
+                  >
+                </div>
+                <div id="profileStateText" class="form-text">
+                  Connection type and credentials are saved per profile.
+                </div>
+              </div>
+              <div class="profile-actions d-flex gap-2 align-items-end">
+                <button type="button" id="addProfileButton" class="btn btn-outline-primary btn-sm">
+                  <span class="material-symbols-outlined" style="font-size: 1.1rem">add</span>
+                  New connection
+                </button>
+                <button
+                  type="button"
+                  id="deleteProfileButton"
+                  class="btn btn-outline-danger btn-sm"
+                  disabled
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="mb-3">
             <label for="providerSelect" class="form-label">Connection type</label>
             <select id="providerSelect" class="form-select">
               <option value="api">API key / compatible endpoint</option>
               <option value="codex">Codex subscription (ChatGPT)</option>
+              <option value="hermes">Hermes Agent gateway</option>
             </select>
             <div class="form-text">
-              Use an API key, or connect this profile to a ChatGPT subscription.
+              This profile uses one connection type. Create a new connection profile to use another.
             </div>
           </div>
 
@@ -160,7 +177,7 @@
 
             <div class="mb-3">
               <label for="apiKey" class="form-label">
-                API Key
+                <span id="apiKeyLabelText">API Key</span>
                 <button
                   type="button"
                   class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
@@ -184,10 +201,45 @@
                 </button>
               </div>
               <div class="invalid-feedback" id="apiKeyError"></div>
+              <div id="apiKeyHint" class="form-text d-none">
+                Optional for trusted Hermes gateways that do not require Bearer authentication.
+              </div>
             </div>
           </div>
 
-          <div class="row g-3">
+          <div id="hermesConnectionPanel" class="alert alert-warning d-none" role="region">
+            <strong>Hermes Agent gateway</strong>
+            <p class="small mb-2">
+              Hermes can run high-risk tools on your computer. Keep the gateway on loopback unless
+              you trust the private network. HTTP is acceptable for a protected overlay such as
+              Tailscale; test the connection after saving the Hermes profile.
+            </p>
+            <div class="mb-2">
+              <label for="hermesProfile" class="form-label">Hermes profile (optional)</label>
+              <input
+                type="text"
+                id="hermesProfile"
+                class="form-control"
+                placeholder="default"
+                maxlength="64"
+                pattern="[A-Za-z0-9._-]{1,64}"
+              />
+              <div class="form-text">Leave blank to use the gateway default profile.</div>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="hermesRemoteConfirmed" />
+              <label class="form-check-label small" for="hermesRemoteConfirmed">
+                I trust this remote Hermes network and understand it can access this computer's
+                tools.
+              </label>
+            </div>
+            <button type="button" id="testHermesButton" class="btn btn-warning btn-sm">
+              Test Hermes connection
+            </button>
+            <span id="hermesConnectionStatus" class="small ms-2" aria-live="polite"></span>
+          </div>
+
+          <div id="providerModelControls" class="row g-3">
             <div class="col-md-4">
               <label for="modelName" class="form-label">
                 Model Name
@@ -232,94 +284,72 @@
                 <option value="medium">Medium</option>
               </select>
             </div>
-            <div class="col-md-4">
-              <label class="form-label">Streaming Responses</label>
-              <div class="form-check form-switch mt-1">
-                <input
-                  class="form-check-input"
-                  type="checkbox"
-                  id="enableStreamingToggle"
-                  checked
-                />
-                <label class="form-check-label" for="enableStreamingToggle">Enable Streaming</label>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Theme</label>
-              <div class="form-check form-switch mt-1">
-                <input class="form-check-input" type="checkbox" id="darkThemeToggle" />
-                <label class="form-check-label" for="darkThemeToggle">
-                  <span
-                    class="material-symbols-outlined align-middle"
-                    style="font-size: 1rem"
-                    id="darkThemeIcon"
-                    >brightness_2</span
+          </div>
+
+          <details class="options-disclosure mt-3">
+            <summary>Response defaults</summary>
+            <div class="row g-3 pt-3">
+              <div class="col-md-4">
+                <label class="form-label">Streaming responses</label>
+                <div class="form-check form-switch mt-1">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="enableStreamingToggle"
+                    checked
+                  />
+                  <label class="form-check-label" for="enableStreamingToggle"
+                    >Enable streaming</label
                   >
-                  Dark Theme
+                </div>
+              </div>
+              <div class="col-md-12">
+                <label for="systemPrompt" class="form-label">
+                  System prompt (optional)
+                  <button
+                    type="button"
+                    class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+                    data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context."
+                    aria-label="Help"
+                  >
+                    <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
+                  </button>
                 </label>
+                <select id="promptTemplate" class="form-select mb-2">
+                  <option value="">Insert template...</option>
+                  <option value="general">General Helper</option>
+                  <option value="code">Code Reviewer</option>
+                  <option value="summarizer">Summarizer</option>
+                  <option value="analyst">Data Analyst</option>
+                  <option value="writer">Creative Writer</option>
+                </select>
+                <textarea
+                  id="systemPrompt"
+                  class="form-control"
+                  rows="4"
+                  placeholder="You are a helpful assistant."
+                ></textarea>
+                <div class="form-text text-end"><span id="charCount">0</span> characters</div>
+                <div class="invalid-feedback" id="systemPromptError"></div>
               </div>
             </div>
-          </div>
+          </details>
 
-          <div class="mb-3 mt-3">
-            <label for="systemPrompt" class="form-label">
-              System Prompt (Optional)
-              <button
-                type="button"
-                class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                data-tooltip="Sets the AI's behavior and personality. This message is sent with every request to establish context."
-                aria-label="Help"
-              >
-                <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
-              </button>
-            </label>
-            <select id="promptTemplate" class="form-select mb-2">
-              <option value="">Insert template...</option>
-              <option value="general">General Helper</option>
-              <option value="code">Code Reviewer</option>
-              <option value="summarizer">Summarizer</option>
-              <option value="analyst">Data Analyst</option>
-              <option value="writer">Creative Writer</option>
-            </select>
-            <textarea
-              id="systemPrompt"
-              class="form-control"
-              rows="4"
-              placeholder="You are a helpful assistant."
-            ></textarea>
-            <div class="form-text text-end"><span id="charCount">0</span> characters</div>
-            <div class="invalid-feedback" id="systemPromptError"></div>
-          </div>
-
-          <div class="row g-3 align-items-end">
-            <div class="col-md-8">
-              <label for="profileSelect" class="form-label">
-                Current Profile
-                <button
-                  type="button"
-                  class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                  data-tooltip="Profiles save different API configurations. Switch between them for different use cases."
-                  aria-label="Help"
+          <details class="options-disclosure mt-2">
+            <summary>Appearance</summary>
+            <div class="form-check form-switch pt-3">
+              <input class="form-check-input" type="checkbox" id="darkThemeToggle" />
+              <label class="form-check-label" for="darkThemeToggle">
+                <span
+                  class="material-symbols-outlined align-middle"
+                  style="font-size: 1rem"
+                  id="darkThemeIcon"
+                  >brightness_2</span
                 >
-                  <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
-                </button>
+                Dark theme
               </label>
-              <select id="profileSelect" class="form-select">
-                <!-- Options will be populated by JavaScript -->
-              </select>
             </div>
-            <div class="col-md-2">
-              <button type="button" id="addProfileButton" class="btn btn-outline-primary w-100">
-                <span class="material-symbols-outlined" style="font-size: 1.25rem">add</span> New
-              </button>
-            </div>
-            <div class="col-md-2">
-              <button type="button" id="deleteProfileButton" class="btn btn-danger w-100" disabled>
-                <span class="material-symbols-outlined" style="font-size: 1.25rem">delete</span>
-                Delete
-              </button>
-            </div>
-          </div>
+          </details>
 
           <div class="mt-3">
             <button type="submit" id="save" class="btn btn-primary">
@@ -1247,9 +1277,9 @@ What this skill does and when to use it.
           "
         />
         <p class="text-secondary-emphasis small">
-          Export or import all extension data (profiles, skills, tools, instructions, and settings)
-          in a single file. <strong>Backup files contain API keys</strong> &mdash; store them
-          securely and never share them publicly.
+          Export or import supported extension data (profiles, skills, tools, instructions, and
+          settings) in a single file. <strong>Backup files do not contain credentials</strong>
+          &mdash; configure API access again after restoring.
         </p>
         <div class="d-flex gap-2">
           <button type="button" id="exportAllData" class="btn btn-primary">
@@ -1263,6 +1293,16 @@ What this skill does and when to use it.
           <input type="file" id="importAllFile" accept=".json" class="d-none" />
         </div>
       </section>
+    </div>
+
+    <div class="options-utility-links text-center small mb-2">
+      <button type="button" id="revertDefaultsButton" class="btn btn-link btn-sm text-danger">
+        Reset API defaults
+      </button>
+      <span aria-hidden="true">·</span>
+      <a href="https://promptpaul.juanmackie.com/#feedbackform" target="_blank">Feedback</a>
+      <span aria-hidden="true">·</span>
+      <a href="https://ko-fi.com/N4N3184MUV" target="_blank">Buy me a coffee</a>
     </div>
 
     <footer class="text-center text-secondary small py-3">
@@ -1312,7 +1352,7 @@ What this skill does and when to use it.
     </div>
 
     <script src="libs/bootstrap.bundle.min.js"></script>
-    <script src="input-controls.js"></script>
+    <script type="module" src="input-controls.js"></script>
     <script type="module" src="options.js"></script>
   </body>
 </html>
