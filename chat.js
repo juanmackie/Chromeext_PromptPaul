@@ -1258,9 +1258,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filter: only process pending actions for our panel
     if (pendingAction.tabId && panelTabId && pendingAction.tabId !== panelTabId) {
       console.log('Chat: Ignoring pending action for other panel');
-      if (chrome.storage?.session) {
-        chrome.storage.session.remove([PENDING_PANEL_ACTION_KEY]);
-      }
+      // Keep the action queued. The panel for the target tab may be opening
+      // and will consume it during its own load.
       return;
     }
     let consumed = false;

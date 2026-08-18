@@ -732,6 +732,26 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('panel context handoff preserves rejected one-off actions', () => {
+    const background = readFileSafe('background.js');
+    const chat = readFileSafe('chat.js');
+
+    if (!background.includes('result.response && result.response.ignored !== true')) {
+      throw new Error('background.js must queue panel messages explicitly rejected by the panel');
+    }
+    if (!chat.includes('// Keep the action queued.')) {
+      throw new Error('chat.js must preserve queued actions rejected by another panel');
+    }
+    const mismatchStart = chat.indexOf('if (pendingAction.tabId && panelTabId');
+    const mismatchEnd = chat.indexOf('let consumed = false;', mismatchStart);
+    if (mismatchStart < 0 || mismatchEnd < 0) {
+      throw new Error('chat.js pending panel action ownership guard is missing');
+    }
+    if (chat.slice(mismatchStart, mismatchEnd).includes('chrome.storage.session.remove')) {
+      throw new Error('chat.js must not delete a pending action rejected by another panel');
+    }
+  });
+
   runner.test('chat.js routes side-panel run events by current run ID', () => {
     const content = readFileSafe('chat.js');
     const required = [

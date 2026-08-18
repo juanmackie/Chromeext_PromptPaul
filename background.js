@@ -29,6 +29,7 @@ import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
+import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -345,7 +346,10 @@ async function sendPanelMessage(payload) {
       }
     });
 
-    if (!result.error) {
+    // A live panel can receive the message and still reject it when it belongs
+    // to a different tab. Treat missing or rejected acknowledgements like a
+    // delivery failure so the session queue can hand it to the target panel.
+    if (!result.error && result.response && result.response.ignored !== true) {
       return { queuedFallback: false, response: result.response };
     }
 
@@ -1612,13 +1616,18 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
 
 // Registry for built-in tool implementations — now handled by RunOrchestrator
 
-// True when a URL points at a PDF document (by path extension).
-function isPdfUrl(url) {
-  try {
-    return new URL(url).pathname.toLowerCase().endsWith('.pdf');
-  } catch {
-    return false;
-  }
+async function isPdfTab(tab) {
+  if (isLikelyPdfUrl(tab?.url, tab?.title)) return true;
+  return probePdfUrl(tab?.url);
+}
+
+function createPdfExtractionResult(tab) {
+  return {
+    success: false,
+    isPdf: true,
+    pdfUrl: getPdfSourceUrl(tab.url) || tab.url,
+    title: tab.title || '',
+  };
 }
 
 // Unified extraction function to avoid circular messaging and redundant injections
@@ -1628,8 +1637,8 @@ async function executeTabContentExtraction(tabId) {
       // PDFs can't be read from the DOM (native viewer is an opaque plugin); the
       // chat page parses the bytes with pdf.js instead. Route by URL before the
       // restriction guard so local file:// PDFs aren't blocked as `file:` pages.
-      if (isPdfUrl(tab?.url)) {
-        resolve({ success: false, isPdf: true, pdfUrl: tab.url, title: tab.title || '' });
+      if (isLikelyPdfUrl(tab?.url, tab?.title)) {
+        resolve(createPdfExtractionResult(tab));
         return;
       }
 
@@ -1647,7 +1656,7 @@ async function executeTabContentExtraction(tabId) {
         return;
       }
 
-      const support = getCurrentPageSupport(tab?.url);
+      const support = getCurrentPageSupport(getPdfSourceUrl(tab?.url) || tab?.url);
       if (!support.available) {
         resolve({ success: false, error: support.blockedReason, readStrategy: 'auto' });
         return;
@@ -1666,51 +1675,66 @@ async function executeTabContentExtraction(tabId) {
             'Background: Tab message failed (script might not be loaded):',
             runtimeError
           );
-          // Fallback: only inject if needed
-          chrome.scripting.executeScript(
-            {
-              target: { tabId: tabId },
-              files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
-            },
-            () => {
-              if (chrome.runtime.lastError) {
-                resolve({
-                  success: false,
-                  error: friendlyRuntimeErrorMessage(runtimeError),
-                  errorKind,
-                  readStrategy: 'auto',
-                });
-              } else {
-                // Try messaging again after injection
-                chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
-                  if (chrome.runtime.lastError) {
-                    resolve({
-                      success: false,
-                      error: friendlyRuntimeErrorMessage(chrome.runtime.lastError.message),
-                      errorKind: classifyRuntimeMessageError(chrome.runtime.lastError.message),
-                      readStrategy: 'auto',
-                    });
-                  } else {
-                    resolve(
-                      res || {
+          isPdfTab(tab).then((isPdf) => {
+            if (isPdf) {
+              resolve(createPdfExtractionResult(tab));
+              return;
+            }
+            // Fallback: only inject if needed
+            chrome.scripting.executeScript(
+              {
+                target: { tabId: tabId },
+                files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+              },
+              () => {
+                if (chrome.runtime.lastError) {
+                  resolve({
+                    success: false,
+                    error: friendlyRuntimeErrorMessage(runtimeError),
+                    errorKind,
+                    readStrategy: 'auto',
+                  });
+                } else {
+                  // Try messaging again after injection
+                  chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
+                    if (chrome.runtime.lastError) {
+                      resolve({
                         success: false,
-                        error: 'Empty response after injection',
+                        error: friendlyRuntimeErrorMessage(chrome.runtime.lastError.message),
+                        errorKind: classifyRuntimeMessageError(chrome.runtime.lastError.message),
                         readStrategy: 'auto',
-                      }
-                    );
-                  }
-                });
+                      });
+                    } else {
+                      resolve(
+                        res || {
+                          success: false,
+                          error: 'Empty response after injection',
+                          readStrategy: 'auto',
+                        }
+                      );
+                    }
+                  });
+                }
               }
-            }
-          );
+            );
+          });
         } else {
-          resolve(
-            response || {
-              success: false,
-              error: 'Empty response from content script',
-              readStrategy: 'auto',
+          const result = response || {
+            success: false,
+            error: 'Empty response from content script',
+            readStrategy: 'auto',
+          };
+          if (result.success && result.content) {
+            resolve(result);
+            return;
+          }
+          isPdfTab(tab).then((isPdf) => {
+            if (isPdf) {
+              resolve(createPdfExtractionResult(tab));
+            } else {
+              resolve(result);
             }
-          );
+          });
         }
       });
     });
@@ -1943,6 +1967,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({
           action: 'tabContentResponse',
           success: result.success,
+          isPdf: result.isPdf || false,
+          pdfUrl: result.pdfUrl || null,
           content: result.content || result.data,
           title: result.title,
           siteName: result.siteName,

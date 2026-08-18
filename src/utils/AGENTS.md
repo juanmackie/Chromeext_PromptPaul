@@ -22,6 +22,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. The session-scoped `pageActionsEnabled` Act permission is not part of local backup/export data.
 - `debounce.js` owns debounce and throttle helpers.
 - `braveSearch.js` owns the bounded Brave LLM Context API client, HTTP(S)-only source normalization, byte budgeting, caller-abort handling, and safe `NO_RESULTS` errors when no usable sources remain.
+- `pdfDetection.js` owns PDF URL hints, built-in Chrome viewer source unwrapping, response-header detection, and bounded signature probing for extensionless PDF endpoints.
 - `runState.js` owns the standardized run/feedback state vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) and the `data-run-state`/`aria-busy` DOM contract shared by chat and options.
 - `keyedOperationLock.js` owns small per-key runtime locks used to serialize Hermes session-key creation and reject overlapping session resets.
 - `runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages.
