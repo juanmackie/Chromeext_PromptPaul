@@ -47,7 +47,7 @@ export function buildAnalyzePrompt(contextLabel) {
 
 /**
  * Context types that can be composed into a final user prompt.
- * @typedef {'none'|'selected_text'|'page_content'|'media'|'previous_response'} ContextType
+ * @typedef {'none'|'selected_text'|'page_content'|'media'|'previous_response'|'document'} ContextType
  */
 
 /**
@@ -62,6 +62,7 @@ function getContextLabel(type) {
     page_content: 'Page content',
     media: 'Attached media',
     previous_response: 'Previous response',
+    document: 'Attached document',
   };
   return labels[type] || 'Context';
 }
@@ -100,7 +101,11 @@ export function composeUserPrompt(promptRequest) {
   const label = getContextLabel(contextType);
   const parts = [instruction, '', `--- ${label} ---`, text, `--- End ${label} ---`];
 
-  if (contextType === 'selected_text' || contextType === 'page_content') {
+  if (
+    contextType === 'selected_text' ||
+    contextType === 'page_content' ||
+    contextType === 'document'
+  ) {
     parts.push(
       '',
       'Use the context as source material for the task. Do not continue or imitate the context author or sender. If asked for a reply or response, write from the user perspective.'

@@ -1,5 +1,7 @@
 # Changelog
 
+- Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.
+- Added zero-dependency document attachments: dropping `.txt`, `.md`, `.markdown`, `.csv`, or `.json` files into the composer reads them as bounded text (200k-character cap) and sends them as a new `document` prompt context type instead of base64 media.
 - Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
 - Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
 
@@ -16,6 +18,11 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 - **Compatibility**: Canonical storage keys, profiles, and capabilities remain supported. API, Brave, Codex, and Hermes credentials are excluded from backups; restore requires connection credentials to be configured again. Legacy sync migrations, retired message handlers, and non-canonical skill records were intentionally removed; imports now require the documented canonical formats.
 
 ### New Features
+
+- **Verified page-action receipts**: State-changing actions now report `not_delivered`, `delivered_unverified`, or `delivered_verified` with bounded action-specific evidence. Unverified mutations cannot be repeated until the page is inspected again.
+- **Local manual intervention**: `page_pause_for_user` lets the user complete a safe step in the visible tab. Resume is explicit, invalidates the old snapshot, and requires fresh inspection. Passwords, OTPs, recovery codes, and payment data remain outside chat and run events.
+- **Executable browser-action evaluation**: Added an 11-case credential-free corpus with provider-boundary coverage, real browser fixtures, bounded result metrics, receipt evidence, failure codes, action counts, and prompt-size measurements.
+- **Progressive scope and diff measurement**: Added bounded indexed-region and snapshot-diff measurement to the test harness. It is selector-free and remains test-only; no new public page tool accepts model-supplied selectors.
 
 - **Web Search Grounding**: A sidebar toggle (Web) lets users optionally ground LLM answers with Brave Search. When enabled, the model may call the reserved `web_search` function tool when current, verifiable, or time-sensitive information would materially improve the answer — the toggle is a permission, not a mandate, so the model can answer directly without searching. Queries Brave's LLM Context API and returns source-cited results that the UI renders as a first-party Sources section. Requires a Brave Search API key; pricing and quotas are subject to Brave's current plans. Grounding is disabled by default.
 - **Current-page actions**: A separate default-off Act toggle adapts Page-Agent's semantic DOM snapshot and indexed-control ideas for the current tab. When Act is enabled, the first tool turn is forced through `page_get_state` so the agent inspects the current page before responding; it can then use guarded `page_click`, `page_input`, `page_select`, and `page_scroll` tools. State-changing actions use accessible approval cards by default; an optional trusted mode skips only allowed low/medium-risk confirmations. No arbitrary JavaScript, selectors, passwords, payment/security fields, navigation, or cross-tab automation is exposed.

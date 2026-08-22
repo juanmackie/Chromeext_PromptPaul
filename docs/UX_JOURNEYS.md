@@ -108,10 +108,18 @@ Steps:
 6. Press Stop during approval or execution; the card disables, the run ends, the
    highlight is removed, the Act toggle resets to off, and the next run starts
    cleanly.
+7. When Prompt Paul shows a **Manual step needed** card for a safe user-only
+   step, complete the visible consent or sign-in handoff in the active tab
+   without sending secrets to chat, then choose **Resume**. Confirm that the old
+   snapshot is invalidated and the run performs a fresh inspection before acting.
+8. After a mutation, check the activity result: `delivered_verified` includes
+   bounded postcondition evidence; `delivered_unverified` stops repeat attempts
+   until a fresh inspection; `not_delivered` reports that no supported effect was
+   observed.
 
 Verification: axes 1 (no secret/action leakage), 3 (approval card themes), 4
-(snapshot refresh, session approval, and abort cleanup), 5 (Act-off parity and
-trusted-mode limits).
+(snapshot refresh, session approval, manual intervention, receipts, and abort
+cleanup), 5 (Act-off parity and trusted-mode limits).
 
 ## Options surface checks
 

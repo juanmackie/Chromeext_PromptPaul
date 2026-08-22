@@ -1500,7 +1500,6 @@ document.addEventListener('DOMContentLoaded', () => {
               () => abortRun(runId)
             );
             break;
-
           case 'hermes_approval_updated':
             hermesChat.settleHermesApproval(chatArea, event);
             break;
@@ -1520,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updatePageActionActivity(chatArea, { ...event, state: 'warning' });
             break;
           case 'page_user_input_request':
+          case 'page_manual_intervention_request':
             event.ownerToken = getRunAuth(runId).ownerToken;
             handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
             break;
@@ -1824,39 +1824,37 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const file of files) {
       try {
         const mediaModule = await getChatMedia();
-        const validation = mediaModule.validateDroppedFile(file);
-        if (!validation.valid) {
-          chatUI.addMessage('System', `❌ ${validation.error}`);
+        const plan = await mediaModule.prepareDroppedFile(file);
+        if (plan.kind === 'invalid') {
+          chatUI.addMessage('System', `❌ ${plan.error}`);
           continue;
         }
 
-        const fileData = await mediaModule.readFileAsBase64(file);
-        const mediaType = file.type.startsWith('video/')
-          ? MediaType.VIDEO
-          : file.type.startsWith('audio/')
-            ? MediaType.AUDIO
-            : MediaType.IMAGE;
+        if (plan.kind === 'document') {
+          // Documents (.txt/.md/.csv/.json) are bounded text context, never base64 media.
+          chatUI.addMediaPreview(plan.preview);
+          makeApiCall({
+            instruction: plan.instruction,
+            context: {
+              type: 'document',
+              text: plan.text,
+            },
+          });
+          continue;
+        }
 
-        const mediaData = {
-          type: mediaType,
-          mimeType: fileData.mimeType,
-          base64: fileData.base64,
-          textPrompt: `Analyze this ${mediaType}: ${fileData.name}`,
-        };
-
-        chatUI.addMediaPreview(mediaData);
-        setCurrentMediaData(mediaData);
+        chatUI.addMediaPreview(plan.mediaData);
+        setCurrentMediaData(plan.mediaData);
 
         // Auto-analyze with prompt
-        const userPrompt = `Analyze this ${mediaModule.getMediaDisplayName(mediaType)}: ${fileData.name}`;
         makeApiCallWithMedia(
           {
-            instruction: userPrompt,
+            instruction: plan.instruction,
             context: {
               type: 'media',
             },
           },
-          mediaData
+          plan.mediaData
         );
       } catch (err) {
         console.error('Drop handler error:', err);

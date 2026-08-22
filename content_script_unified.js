@@ -427,8 +427,38 @@
     if (host === 'mail.google.com') {
       return { platform: 'gmail', label: 'Gmail' };
     }
+    if (host === 'reddit.com' || host.endsWith('.reddit.com')) {
+      const threadMatch = path.match(/^\/r\/([^/]+)\/comments\//);
+      if (threadMatch) {
+        return {
+          platform: 'reddit',
+          label: 'Reddit thread',
+          subreddit: threadMatch[1],
+          permalink: path,
+        };
+      }
+    }
     if (host === 'github.com') {
-      return { platform: 'github', label: 'GitHub' };
+      const ghMatch = path.match(
+        /^\/([^/]+)\/(?!$)([^/]+)?(?:\/(tree|issues|pull|discussions)(?:\/([^/?#]+))?)?/
+      );
+      let githubKind = null;
+      let githubNumber = '';
+      if (ghMatch && ghMatch[3]) {
+        if (ghMatch[3] === 'issues') githubKind = 'issues';
+        else if (ghMatch[3] === 'pull') githubKind = 'pull';
+      }
+      if ((githubKind === 'issues' || githubKind === 'pull') && ghMatch[4]) {
+        githubNumber = ghMatch[4];
+      }
+      return {
+        platform: 'github',
+        label: 'GitHub',
+        githubKind,
+        githubOwner: ghMatch ? ghMatch[1] : '',
+        githubRepo: ghMatch && ghMatch[2] ? ghMatch[2] : '',
+        githubNumber,
+      };
     }
     if (host === 'docs.google.com') {
       if (path.startsWith('/document/')) return { platform: 'google-docs', label: 'Google Docs' };
@@ -582,6 +612,8 @@
     }
 
     if (signals.isCodeHeavy) return 'Fallback kept code and link structure on a code-heavy page.';
+    if (source === 'adapter')
+      return 'Structured platform adapter preserved thread or feed context.';
     if (signals.isTableHeavy) return 'Fallback preserved tables and structured content better.';
     if (signals.isListHeavy) return 'Fallback retained list structure better than Readability.';
     if (signals.isArticleLike) return 'Fallback won despite the page reading like an article.';
@@ -624,6 +656,10 @@
       score -= signals.isCodeHeavy ? 220 : 0;
       score -= signals.isTableHeavy ? 120 : 0;
       score -= signals.isListHeavy && !signals.isArticleLike ? 60 : 0;
+    } else if (source === 'adapter') {
+      // Structured adapters beat junk extractions on their matched platforms
+      // but still lose to a genuinely large, coherent extraction.
+      score += ADAPTER_SCORE_BONUS;
     } else {
       score += signals.isCodeHeavy ? 320 : 0;
       score += signals.isTableHeavy ? 220 : 0;
@@ -646,13 +682,343 @@
     };
   }
 
-  function chooseExtractionResult(readabilityResult, fallbackResult, signals) {
+  function chooseExtractionResult(
+    readabilityResult,
+    fallbackResult,
+    signals,
+    adapterCandidate = null
+  ) {
     const scored = [];
     if (readabilityResult)
       scored.push(scoreExtractionCandidate(readabilityResult, 'readability', signals));
     if (fallbackResult) scored.push(scoreExtractionCandidate(fallbackResult, 'fallback', signals));
+    if (adapterCandidate)
+      scored.push(scoreExtractionCandidate(adapterCandidate, 'adapter', signals));
     scored.sort((a, b) => b.score - a.score || b.contentLength - a.contentLength);
     return scored[0] || null;
+  }
+
+  // --- 4b-2. SITE ADAPTERS (mirrors src/utils/siteExtractors.js) ---
+
+  // Classic content scripts have no module loader, so the pure formatters in
+  // src/utils/siteExtractors.js are mirrored here. Keep caps and behavior
+  // aligned with SITE_EXTRACTOR_CAPS when changing either side.
+  const ADAPTER_ITEM_TEXT_CAP = 600;
+  const ADAPTER_TOTAL_CHARS = 24000;
+  const REDDIT_MAX_COMMENTS = 60;
+  const REDDIT_MAX_DEPTH = 8;
+  const FEED_MAX_ITEMS = 20;
+  const FEED_SNIPPET_CAP = 300;
+
+  function clampAdapterText(text, cap) {
+    const clean = String(text || '')
+      .replace(/\u0000/gu, '') // eslint-disable-line no-control-regex
+      .replace(/\r\n/gu, '\n')
+      .trim();
+    if (!clean) return '';
+    if (cap <= 0) return '';
+    if (clean.length <= cap) return clean;
+    return `${clean.slice(0, Math.max(0, cap - 13))}… [truncated]`;
+  }
+
+  function clampAdapterInline(text, cap) {
+    return clampAdapterText(text, cap)
+      .replace(/\s*\n+\s*/g, ' ')
+      .trim();
+  }
+
+  function isFeedDocument() {
+    const contentType = String(document.contentType || '').toLowerCase();
+    if (!contentType.includes('xml')) return false;
+    const root = document.documentElement;
+    return Boolean(root && /^(rss|feed)$/i.test(root.nodeName || ''));
+  }
+
+  function decodeAdapterXmlEntities(text) {
+    return String(text || '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+
+  function adapterXmlTextToPlainText(raw) {
+    let text = String(raw || '');
+    const cdata = text.match(/<!\[CDATA\[([\s\S]*?)]]>/);
+    if (cdata) {
+      return String(cdata[1])
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    return decodeAdapterXmlEntities(
+      String(text)
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
+  }
+
+  function extractAdapterXmlTag(block, tag) {
+    const match = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'i'));
+    return match ? match[1] : '';
+  }
+
+  function formatFeedMarkdown(xmlText) {
+    try {
+      const source = String(xmlText || '');
+      const isRss = /<rss[\s>]/i.test(source);
+      const isAtom = /<feed[\s>]/i.test(source);
+      if (!isRss && !isAtom) return '';
+
+      const itemTag = isRss ? 'item' : 'entry';
+      const headEnd = source.search(new RegExp(`<${itemTag}[\\s>]`, 'i'));
+      const head = headEnd === -1 ? source : source.slice(0, headEnd);
+      const feedTitle = clampAdapterInline(
+        adapterXmlTextToPlainText(extractAdapterXmlTag(head, 'title')),
+        ADAPTER_ITEM_TEXT_CAP
+      );
+
+      const itemBlocks = source.match(new RegExp(`<${itemTag}[\\s\\S]*?</${itemTag}>`, 'gi')) || [];
+      const lines = [feedTitle ? `## Feed: ${feedTitle}` : '## Feed', ''];
+      let rendered = 0;
+      for (const block of itemBlocks) {
+        if (rendered >= FEED_MAX_ITEMS) break;
+        const itemTitle = clampAdapterInline(
+          adapterXmlTextToPlainText(extractAdapterXmlTag(block, 'title')),
+          ADAPTER_ITEM_TEXT_CAP
+        );
+        const hrefMatch = block.match(/<link\b[^>]*\bhref=["']([^"']+)["']/i);
+        const link = hrefMatch
+          ? clampAdapterInline(hrefMatch[1], 500)
+          : clampAdapterInline(adapterXmlTextToPlainText(extractAdapterXmlTag(block, 'link')), 500);
+        const dateRaw =
+          extractAdapterXmlTag(block, 'pubDate') ||
+          extractAdapterXmlTag(block, 'updated') ||
+          extractAdapterXmlTag(block, 'published');
+        const date = clampAdapterInline(adapterXmlTextToPlainText(dateRaw), 60);
+        const snippetSource =
+          extractAdapterXmlTag(block, 'description') ||
+          extractAdapterXmlTag(block, 'summary') ||
+          extractAdapterXmlTag(block, 'content:encoded') ||
+          extractAdapterXmlTag(block, 'content');
+        const snippet = clampAdapterText(
+          adapterXmlTextToPlainText(snippetSource),
+          FEED_SNIPPET_CAP
+        );
+        if (!itemTitle && !link && !snippet) continue;
+        lines.push(`### ${itemTitle || link || '(untitled entry)'}`, '');
+        const meta = [];
+        if (date) meta.push(date);
+        if (link) meta.push(link);
+        if (meta.length) lines.push(meta.join(' · '), '');
+        if (snippet) lines.push(snippet, '');
+        rendered++;
+      }
+      if (rendered === 0) return '';
+      const out = lines.join('\n').trim();
+      if (out.length > ADAPTER_TOTAL_CHARS) {
+        return `${out.slice(0, ADAPTER_TOTAL_CHARS - 13)}… [truncated]`;
+      }
+      return out;
+    } catch (_) {
+      return ''; // Fail open to the normal extraction path.
+    }
+  }
+
+  function collectRedditThread(platformInfo) {
+    const postEl = document.querySelector('shreddit-post');
+    if (!postEl) return null; // Unknown Reddit DOM; fail open.
+
+    const postTitle = clampAdapterInline(
+      postEl.getAttribute('post-title') || document.querySelector('h1')?.textContent || '',
+      ADAPTER_ITEM_TEXT_CAP
+    );
+    const postBody = clampAdapterText(
+      postEl.querySelector('[slot="text-body"]')?.innerText || '',
+      ADAPTER_ITEM_TEXT_CAP
+    );
+    const scoreRaw = parseInt(postEl.getAttribute('score'), 10);
+    const thread = {
+      post: {
+        title: postTitle,
+        author: clampAdapterInline(postEl.getAttribute('author'), 100),
+        subreddit:
+          platformInfo?.subreddit ||
+          clampAdapterInline(postEl.getAttribute('subreddit-prefixed-name'), 100),
+        score: Number.isFinite(scoreRaw) ? scoreRaw : undefined,
+        body: postBody,
+      },
+      comments: [],
+    };
+
+    const seenBodies = new Set();
+    for (const el of document.querySelectorAll('shreddit-comment')) {
+      if (thread.comments.length >= REDDIT_MAX_COMMENTS) break;
+      const text = clampAdapterText(
+        el.querySelector('[slot="comment"]')?.innerText || '',
+        ADAPTER_ITEM_TEXT_CAP
+      ).replace(/\s*\n+\s*/g, ' ');
+      if (!text || seenBodies.has(text)) continue;
+      seenBodies.add(text);
+      const depthRaw = parseInt(el.getAttribute('depth'), 10);
+      const scoreValue = parseInt(el.getAttribute('score'), 10);
+      thread.comments.push({
+        author: clampAdapterInline(el.getAttribute('author'), 100),
+        score: Number.isFinite(scoreValue) ? scoreValue : undefined,
+        depth: Number.isFinite(depthRaw) ? depthRaw : 0,
+        body: text,
+      });
+    }
+
+    const mirroredFormat = formatRedditThreadMirror(thread);
+    return mirroredFormat
+      ? {
+          type: 'adapter-reddit',
+          title: thread.post.title || document.title,
+          siteName: 'Reddit',
+          data: mirroredFormat,
+        }
+      : null;
+  }
+
+  function formatRedditThreadMirror(thread, caps = {}) {
+    const limits = {
+      itemText: ADAPTER_ITEM_TEXT_CAP,
+      redditComments: REDDIT_MAX_COMMENTS,
+      redditDepth: REDDIT_MAX_DEPTH,
+      totalChars: ADAPTER_TOTAL_CHARS,
+      ...caps,
+    };
+    const post = thread?.post || {};
+    const rawComments = Array.isArray(thread?.comments) ? thread.comments : [];
+    const title = clampAdapterInline(post.title, limits.itemText);
+    const body = clampAdapterText(post.body, limits.itemText);
+    if (!title && !body && rawComments.length === 0) return '';
+
+    const lines = [];
+    if (title) lines.push(`## Reddit thread: ${title}`, '');
+    const meta = [];
+    if (post.subreddit) meta.push(`r/${clampAdapterInline(post.subreddit, 100)}`);
+    if (post.author) meta.push(`u/${clampAdapterInline(post.author, 100)}`);
+    if (Number.isFinite(post.score)) meta.push(`Score: ${post.score}`);
+    if (meta.length) lines.push(`- ${meta.join(' · ')}`, '');
+    if (body) lines.push(body, '');
+
+    const renderedComments = [];
+    for (const comment of rawComments.slice(0, limits.redditComments)) {
+      if (renderedComments.length >= limits.redditComments) break;
+      if (!comment) continue;
+      const depth = Number.isFinite(comment.depth)
+        ? Math.max(0, Math.min(limits.redditDepth, comment.depth))
+        : 0;
+      const indent = '  '.repeat(depth);
+      const who = comment.author ? `u/${clampAdapterInline(comment.author, 100)}` : 'unknown';
+      const score = Number.isFinite(comment.score) ? ` (${comment.score})` : '';
+      const text = String(comment.body || '').trim();
+      if (!text) continue;
+      renderedComments.push(`${indent}- ${who}${score}: ${text}`);
+    }
+    if (renderedComments.length > 0) {
+      lines.push('### Comments', '', ...renderedComments);
+    }
+
+    const out = lines.join('\n').trim();
+    if (out.length > limits.totalChars) {
+      return `${out.slice(0, limits.totalChars - 13)}… [truncated]`;
+    }
+    return out;
+  }
+
+  function collectGitHubMetadataFields(platformInfo) {
+    const fields = [];
+    const kind = platformInfo?.githubKind || null;
+
+    if (kind === 'issues' || kind === 'pull') {
+      if (platformInfo.githubOwner && platformInfo.githubRepo) {
+        fields.push([
+          kind === 'pull' ? 'Pull request' : 'Issue',
+          `#${platformInfo.githubNumber || '?'} in ${platformInfo.githubOwner}/${platformInfo.githubRepo}`,
+        ]);
+      }
+      const issueTitle = clampAdapterInline(
+        document.querySelector('bdi.js-issue-title, .js-issue-title, h1 .markdown-title')
+          ?.textContent || '',
+        ADAPTER_ITEM_TEXT_CAP
+      );
+      if (issueTitle) fields.push(['Title', issueTitle]);
+      const state = clampAdapterInline(
+        document.querySelector('.State, span.State')?.textContent || '',
+        40
+      );
+      if (state) fields.push(['State', state]);
+      const author = clampAdapterInline(document.querySelector('a.author')?.textContent || '', 100);
+      if (author) fields.push(['Author', author]);
+      const labels = Array.from(document.querySelectorAll('.IssueLabel'))
+        .slice(0, 8)
+        .map((el) => (el.textContent || '').trim())
+        .filter(Boolean);
+      if (labels.length) fields.push(['Labels', labels.join(', ')]);
+      return { kind, fields };
+    }
+
+    if (platformInfo.githubOwner && platformInfo.githubRepo) {
+      fields.push(['Repository', `${platformInfo.githubOwner}/${platformInfo.githubRepo}`]);
+    }
+    const description = clampAdapterInline(
+      document.querySelector('[itemprop="about"], .repo-description p, p.f4.my-3')?.textContent ||
+        '',
+      ADAPTER_ITEM_TEXT_CAP
+    );
+    if (description) fields.push(['Description', description]);
+    const visibility = clampAdapterInline(
+      Array.from(document.querySelectorAll('span.Label'))
+        .map((el) => (el.textContent || '').trim())
+        .find((label) => /^(public|private)$/i.test(label)) || '',
+      20
+    );
+    if (visibility) fields.push(['Visibility', visibility]);
+    const language = clampAdapterInline(
+      document.querySelector('[itemprop="programmingLanguage"]')?.textContent || '',
+      60
+    );
+    if (language) fields.push(['Language', language]);
+    const stars = clampAdapterInline(
+      document.querySelector('#repo-stars-counter-star, #repo-stars-counter')?.textContent || '',
+      20
+    );
+    if (stars) fields.push(['Stars', stars]);
+    const topics = Array.from(document.querySelectorAll('a.topic-tag'))
+      .slice(0, 6)
+      .map((el) => (el.textContent || '').trim())
+      .filter(Boolean);
+    if (topics.length) fields.push(['Topics', topics.join(', ')]);
+    return { kind: 'repo', fields };
+  }
+
+  function formatGitHubMetadataMirror(meta, caps = {}) {
+    const limits = { itemText: ADAPTER_ITEM_TEXT_CAP, ...caps };
+    const kind = meta?.kind === 'issues' || meta?.kind === 'pull' ? meta.kind : 'repo';
+    const heading =
+      kind === 'repo'
+        ? 'Repository metadata'
+        : kind === 'pull'
+          ? 'Pull request metadata'
+          : 'Issue metadata';
+    const lines = [`### ${heading}`, ''];
+    let used = 0;
+    for (const field of Array.isArray(meta?.fields) ? meta.fields : []) {
+      if (!Array.isArray(field)) continue;
+      const label = clampAdapterInline(field[0] || '', 40);
+      const value = clampAdapterInline(field[1] || '', limits.itemText);
+      if (!label || !value) continue;
+      lines.push(`- ${label}: ${value}`);
+      used++;
+      if (used >= 12) break;
+    }
+    return used === 0 ? '' : lines.join('\n');
   }
 
   // --- 4c. SCREENSHOT NEED DETECTION ---
@@ -668,6 +1034,32 @@
   }
 
   // --- 5. MAIN ROUTER (TWO-PASS COMPARISON) ---
+
+  // Adapter candidates get a fixed bonus so they win against the broken/junk
+  // extractions typical of their matched platforms while remaining fail-open.
+  const ADAPTER_SCORE_BONUS = 1500;
+
+  async function extractPlatformAdapter(url, platformInfo) {
+    try {
+      if (isFeedDocument()) {
+        const feedMarkdown = formatFeedMarkdown(document.documentElement.outerHTML);
+        return feedMarkdown
+          ? {
+              type: 'adapter-feed',
+              title: document.title,
+              siteName: window.location.hostname.replace('www.', ''),
+              data: feedMarkdown,
+            }
+          : null;
+      }
+      if (platformInfo?.platform === 'reddit') {
+        return collectRedditThread(platformInfo);
+      }
+    } catch (e) {
+      console.warn('PromptPaul: Platform adapter failed, falling back', e);
+    }
+    return null; // Fail open to the two-pass extraction path.
+  }
 
   async function getUnifiedContent() {
     const url = window.location.href;
@@ -705,10 +1097,18 @@
       }
     }
 
+    // 1b. Site adapters (feeds, Reddit) produce a third scored candidate.
+    const adapterCandidate = await extractPlatformAdapter(url, platformInfo);
+
     // 2. Run BOTH extractors for comparison
     const readabilityResult = extractReadability();
     const fallbackResult = extractFallback();
-    const chosen = chooseExtractionResult(readabilityResult, fallbackResult, pageSignals);
+    const chosen = chooseExtractionResult(
+      readabilityResult,
+      fallbackResult,
+      pageSignals,
+      adapterCandidate
+    );
 
     // 3. Handle edge cases where one fails
     if (!chosen) {
@@ -725,8 +1125,19 @@
     console.log(
       `PromptPaul: Using ${chosen.source} (${chosen.contentLength} chars, score ${chosen.score}) - ${chosen.reason}`
     );
+
+    // GitHub pages keep the winning generic body but gain a structured
+    // metadata header so repository/issue context survives weak extraction.
+    let finalCandidate = chosen.candidate;
+    if (platformInfo?.platform === 'github' && finalCandidate?.data) {
+      const metaBlock = formatGitHubMetadataMirror(collectGitHubMetadataFields(platformInfo));
+      if (metaBlock) {
+        finalCandidate = { ...finalCandidate, data: `${metaBlock}\n\n${finalCandidate.data}` };
+      }
+    }
+
     return {
-      ...chosen.candidate,
+      ...finalCandidate,
       platform: platformInfo?.platform || null,
       platformInfo,
       readStrategy,
@@ -1329,6 +1740,17 @@
     element.click();
   }
 
+  function buildPageActionReceipt(disposition, kind, details = {}) {
+    return {
+      disposition,
+      evidence: {
+        kind,
+        ...(typeof details.matched === 'boolean' ? { matched: details.matched } : {}),
+        ...(typeof details.changed === 'boolean' ? { changed: details.changed } : {}),
+      },
+    };
+  }
+
   async function executePageAction(request) {
     const session = getPageActionSession(request.runId);
     if (session.actions >= PAGE_ACTION_MAX_ACTIONS) {
@@ -1342,6 +1764,10 @@
       return { success: true, snapshot: createPageActionSnapshot(session) };
     }
     if (action === 'page_scroll') {
+      const beforeScroll = {
+        x: Math.round(window.scrollX || 0),
+        y: Math.round(window.scrollY || 0),
+      };
       const directionName = String(request.args?.direction || 'down').toLowerCase();
       const direction = ['up', 'left'].includes(directionName) ? -1 : 1;
       const pages = Math.min(5, Math.max(0, Number(request.args?.pages) || 0.5));
@@ -1386,10 +1812,17 @@
         });
       }
       await waitForPageActionSettled();
+      const snapshot = createPageActionSnapshot(session);
+      const changed = snapshot.scroll.x !== beforeScroll.x || snapshot.scroll.y !== beforeScroll.y;
       return {
         success: true,
         message: `Scrolled ${directionName} ${pages} page(s).`,
-        snapshot: createPageActionSnapshot(session),
+        snapshot,
+        actionReceipt: buildPageActionReceipt(
+          changed ? 'delivered_verified' : 'delivered_unverified',
+          'scroll_position',
+          { changed }
+        ),
       };
     }
 
@@ -1397,9 +1830,13 @@
     if (record.disabled) throw new Error('The target is disabled.');
     if (record.sensitive) throw new Error('Sensitive controls are blocked.');
     highlightPageActionTarget(session, record);
+    const beforeUrl = sanitizePageActionUrl(window.location.href);
+    const beforeChecked =
+      typeof record.ref.checked === 'boolean' ? Boolean(record.ref.checked) : null;
     try {
       const element = record.ref;
       const tag = element.tagName.toLowerCase();
+      let actionReceipt = buildPageActionReceipt('delivered_unverified', 'action_dispatched');
       if (action === 'page_open_link') {
         const link = getPageActionLinkMetadata(element);
         if (!link?.href) {
@@ -1418,6 +1855,7 @@
           message: `Link target resolved for ${record.label || record.tag}.`,
           linkUrl: link.href,
           snapshot: createPageActionSnapshot(session),
+          actionReceipt: buildPageActionReceipt('delivered_verified', 'link_resolved'),
         };
       } else if (action === 'page_click') {
         if (record.download) {
@@ -1443,6 +1881,14 @@
         if (!text || text.length > PAGE_ACTION_MAX_INPUT_CHARS)
           throw new Error('Input text is empty or too long.');
         dispatchPageActionInput(element, text);
+        const matched = element.isContentEditable
+          ? String(element.textContent || '').includes(text)
+          : String(element.value || '') === text;
+        actionReceipt = buildPageActionReceipt(
+          matched ? 'delivered_verified' : 'delivered_unverified',
+          'input_value_match',
+          { matched }
+        );
       } else if (action === 'page_select') {
         if (tag !== 'select') throw new Error('The target is not a select control.');
         const option = String(request.args?.option || '')
@@ -1457,14 +1903,36 @@
         element.value = match.value;
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
+        const selected = element.options[element.selectedIndex];
+        const matched =
+          String(selected?.value || '').toLowerCase() === option ||
+          String(selected?.textContent || '')
+            .trim()
+            .toLowerCase() === option;
+        actionReceipt = buildPageActionReceipt(
+          matched ? 'delivered_verified' : 'delivered_unverified',
+          'selected_option_match',
+          { matched }
+        );
       } else {
         throw new Error('Unsupported page action.');
       }
       await waitForPageActionSettled();
+      const snapshot = createPageActionSnapshot(session);
+      const checkedChanged = beforeChecked !== null && Boolean(element.checked) !== beforeChecked;
+      const navigationChanged = sanitizePageActionUrl(window.location.href) !== beforeUrl;
+      if (action === 'page_click' && checkedChanged) {
+        actionReceipt = buildPageActionReceipt('delivered_verified', 'checked_state', {
+          changed: true,
+        });
+      } else if (action === 'page_click' && navigationChanged) {
+        actionReceipt = buildPageActionReceipt('delivered_verified', 'navigation_observed');
+      }
       return {
         success: true,
         message: `${action} completed for ${record.label || record.tag}.`,
-        snapshot: createPageActionSnapshot(session),
+        snapshot,
+        actionReceipt,
       };
     } finally {
       clearPageActionHighlight(session);

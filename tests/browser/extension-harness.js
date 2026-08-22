@@ -51,6 +51,7 @@
 
   const getTabId = async (targetUrl) => (await findTargetTab(targetUrl))?.id || null;
   const pendingConfirmations = new Map();
+  const pendingManualInterventions = new Map();
   const toolResults = new Map();
   const sourceTabs = new Map();
   const runTokens = new Map();
@@ -61,6 +62,12 @@
       request.event?.type === 'page_action_confirmation'
     ) {
       pendingConfirmations.set(request.runId, request.event);
+    }
+    if (
+      request.action === 'orchestratorEvent' &&
+      request.event?.type === 'page_manual_intervention_request'
+    ) {
+      pendingManualInterventions.set(request.runId, request.event);
     }
   });
 
@@ -113,12 +120,22 @@
       return sendPageAction(tabId, { action: 'pageAction', runId, pageAction, args });
     },
 
+    async measureScopeDiff(before, after) {
+      const module = await import(chrome.runtime.getURL('src/utils/pageActionScopeDiff.js'));
+      const diff = module.diffPageActionSnapshots(before, after);
+      return {
+        regions: module.buildIndexedPageRegions(after),
+        diff,
+        metrics: module.measurePageActionScopeDiff(after, diff),
+      };
+    },
+
     async setTrustedMode(enabled) {
       await chrome.storage.local.set({ pageActionsTrustedMode: Boolean(enabled) });
       return { success: true };
     },
 
-    async startRun(targetUrl, multiTab = false) {
+    async startRun(targetUrl, multiTab = false, extraConfig = {}) {
       const sourceTabId = await getTabId(targetUrl);
       if (!sourceTabId) {
         return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
@@ -131,6 +148,7 @@
           sourceTabId,
           tool_choice: 'auto',
           messages: [],
+          ...extraConfig,
         },
       });
       if (response?.runId) {
@@ -142,6 +160,25 @@
 
     getConfirmation(runId) {
       return pendingConfirmations.get(String(runId)) || null;
+    },
+
+    getManualIntervention(runId) {
+      return pendingManualInterventions.get(String(runId)) || null;
+    },
+
+    async resumeManualIntervention(runId, resume = true) {
+      const request = pendingManualInterventions.get(String(runId));
+      if (!request) return { success: false, error: 'No pending manual intervention.' };
+      const response = await sendRuntimeMessage({
+        action: 'pageManualInterventionResume',
+        runId,
+        requestId: request.requestId,
+        ownerToken: runTokens.get(String(runId)) || '',
+        resume: Boolean(resume),
+        sourceTabId: sourceTabs.get(String(runId)) || null,
+      });
+      if (response?.success) pendingManualInterventions.delete(String(runId));
+      return response;
     },
 
     async resolveConfirmation(targetUrl, runId, approved = true, approveAll = false) {

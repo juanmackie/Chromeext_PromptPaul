@@ -1,5 +1,7 @@
 # Page-Agent Adoption Plan
 
+**Status:** Completed. The original implementation plan is retained as a design record; current behavior and release gates are owned by `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`, and the applicable `AGENTS.md` contracts.
+
 ## Context
 
 Prompt Paul is an existing Manifest V3 Chrome extension with a side-panel chat, page/selection/media extraction, custom tools/skills, and optional Brave web grounding. The requested outcome is to study Alibaba's [`page-agent`](https://github.com/alibaba/page-agent) and identify the highest-value ideas or components we can adapt to make Prompt Paul more usable and helpful, without copying blindly or weakening extension safety/privacy.
@@ -117,7 +119,7 @@ Upstream references used for this mapping:
 - [x] Thread the opt-in toggle and trusted-mode policy through both chat run entry points; register/authorize page tools in the orchestrator.
 - [x] Implement confirmation request/decision/timeout/abort routing and sanitized activity/history UI.
 - [x] Add Options controls, backup/restore keys, docs, changelog, privacy/limitations copy, DOX updates, and structural guards.
-- [x] Run automated and manual verification, including restricted pages, ordinary forms, SPAs, stale DOM changes, prompt injection text, password fields, submits, stop/abort, and worker/UI restart cases. Automated/static verification is complete; interactive Chrome/Edge execution remains a manual follow-up because this environment has no browser automation session.
+- [x] Run automated and real-browser verification, including restricted pages, ordinary forms, SPAs, stale DOM changes, prompt injection text, password fields, submits, stop/abort, manual intervention, receipts, scope/diff measurement, and worker/UI restart cases. The credential-free corpus and browser suite are automated; interactive unpacked-extension spot checks and human security review remain release follow-ups.
 
 ## Verification
 

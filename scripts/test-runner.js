@@ -1445,6 +1445,7 @@ function runIntegrationTests(runner) {
     const background = readFileSafe('background.js');
     const chat = readFileSafe('chat.js');
     const card = readFileSafe('src/chat/ChatPageAutomation.js');
+    const scopeDiff = readFileSafe('src/utils/pageActionScopeDiff.js');
     for (const token of [
       'pageActionSessions',
       'PAGE_ACTION_MAX_ELEMENTS',
@@ -1475,9 +1476,19 @@ function runIntegrationTests(runner) {
       '_isPageActionTerminalError',
       '_terminateRun',
       "state: 'error'",
+      'page_pause_for_user',
+      'actionReceipt',
     ]) {
       if (!orchestrator.includes(token))
         throw new Error(`Orchestrator missing page-action contract: ${token}`);
+    }
+    for (const token of [
+      'buildIndexedPageRegions',
+      'diffPageActionSnapshots',
+      'measurePageActionScopeDiff',
+    ]) {
+      if (!scopeDiff.includes(token))
+        throw new Error(`Scope/diff utility missing evaluation contract: ${token}`);
     }
     for (const token of [
       'PAGE_ACTION_RISKS',
@@ -1495,6 +1506,7 @@ function runIntegrationTests(runner) {
       'finish(null, error)',
       'Approval decisions must come from the Prompt Paul extension.',
       'pageActionDocumentProvider',
+      'pageManualInterventionResume',
     ]) {
       if (!background.includes(token))
         throw new Error(`Background missing page-action bridge guard: ${token}`);
@@ -1506,6 +1518,8 @@ function runIntegrationTests(runner) {
       "'Stop'",
       "'Approve all this session'",
       'page-action-confirmation-context',
+      'page_manual_intervention_request',
+      'activeTab',
       'onStop',
     ]) {
       if (!card.includes(token))

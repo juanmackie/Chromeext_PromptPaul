@@ -370,6 +370,17 @@ class ChatUI {
       row.appendChild(audio);
       title.textContent = 'Audio Analysis';
       detail.textContent = 'Right-clicked audio ready for analysis';
+    } else if (mediaData.type === 'text') {
+      // Document attachment: bounded text chip with filename and size metadata.
+      title.textContent = `Document attached: ${mediaData.name || 'document'}`;
+      const detailParts = [];
+      if (Number.isFinite(mediaData.lineCount)) {
+        detailParts.push(`${mediaData.lineCount} line${mediaData.lineCount === 1 ? '' : 's'}`);
+      }
+      if (mediaData.truncated) detailParts.push('truncated to fit the context budget');
+      detail.textContent = detailParts.length
+        ? `${detailParts.join(', ')} — ready for analysis`
+        : 'Ready for analysis';
     }
 
     const copy = document.createElement('div');

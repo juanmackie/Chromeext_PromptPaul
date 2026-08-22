@@ -131,7 +131,9 @@ export function updatePageActionActivity(chatArea, event = {}) {
   const action = String(event.action || 'page action').replace(/^page_/, '');
   const target = event.target?.label ? ` — ${event.target.label}` : '';
   const state = event.state || (event.type === 'page_action_warning' ? 'warning' : 'updated');
-  item.textContent = `${action}${target}: ${state}${event.message ? ` — ${event.message}` : ''}`;
+  const disposition = String(event.receipt?.disposition || '').replaceAll('_', ' ');
+  const receiptText = disposition ? ` — ${disposition}` : '';
+  item.textContent = `${action}${target}: ${state}${receiptText}${event.message ? ` — ${event.message}` : ''}`;
   while (list.children.length > 12) list.removeChild(list.firstElementChild);
   chatArea.scrollTop = chatArea.scrollHeight;
   return card;
@@ -181,6 +183,9 @@ export function renderPageUserInputRequest(chatArea, event, onSubmit) {
 }
 
 export function handlePageUserInputRequest(chatArea, event, runId, sourceTabId) {
+  if (event?.type === 'page_manual_intervention_request') {
+    return handlePageManualInterventionRequest(chatArea, event, runId, sourceTabId);
+  }
   return renderPageUserInputRequest(chatArea, event, (requestId, answer) =>
     chrome.runtime.sendMessage({
       action: 'pageUserInputResponse',
@@ -191,6 +196,82 @@ export function handlePageUserInputRequest(chatArea, event, runId, sourceTabId) 
       sourceTabId,
     })
   );
+}
+
+export function handlePageManualInterventionRequest(chatArea, event, runId, sourceTabId) {
+  if (!chatArea || !event?.requestId) return null;
+  const existing = chatArea.querySelector(`[data-page-manual-intervention="${event.requestId}"]`);
+  if (existing) return existing;
+  const card = document.createElement('div');
+  card.className = 'message system-message page-action-confirmation';
+  card.dataset.pageManualIntervention = event.requestId;
+  card.setAttribute('role', 'alertdialog');
+  card.setAttribute('aria-live', 'assertive');
+  const title = document.createElement('strong');
+  title.textContent = 'Manual step needed';
+  card.appendChild(title);
+  const question = document.createElement('p');
+  question.textContent = String(
+    event.question || 'Complete the safe step in the visible tab.'
+  ).slice(0, 600);
+  card.appendChild(question);
+  if (event.activeTab) {
+    const activeTab = document.createElement('p');
+    activeTab.className = 'page-action-confirmation-context';
+    const activeTitle = String(event.activeTab.title || '').trim();
+    const activeOrigin = String(event.activeTab.origin || '').trim();
+    const tabId = Number.isInteger(event.activeTab.tabId)
+      ? `tab ${event.activeTab.tabId}`
+      : 'active tab';
+    activeTab.textContent = `Active ${tabId}${activeTitle ? ` — ${activeTitle}` : ''}${
+      activeOrigin ? ` (${activeOrigin})` : ''
+    }`;
+    card.appendChild(activeTab);
+  }
+  const controls = document.createElement('div');
+  controls.className = 'page-action-confirmation-controls';
+  const resume = document.createElement('button');
+  resume.type = 'button';
+  resume.className = 'btn btn-primary btn-sm';
+  resume.textContent = 'Resume';
+  const stop = document.createElement('button');
+  stop.type = 'button';
+  stop.className = 'btn btn-outline-danger btn-sm';
+  stop.textContent = 'Stop';
+  const settle = (state) => {
+    resume.disabled = true;
+    stop.disabled = true;
+    card.dataset.decision = state;
+  };
+  resume.addEventListener('click', async () => {
+    settle('resumed');
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'pageManualInterventionResume',
+        runId,
+        requestId: event.requestId,
+        ownerToken: event.ownerToken || '',
+        sourceTabId,
+      });
+      if (!response?.success) card.dataset.decision = 'error';
+    } catch (_) {
+      card.dataset.decision = 'error';
+    }
+  });
+  stop.addEventListener('click', () => {
+    settle('stopped');
+    void chrome.runtime.sendMessage({
+      action: 'abortRun',
+      runId,
+      ownerToken: event.ownerToken || '',
+      sourceTabId,
+    });
+  });
+  controls.append(resume, stop);
+  card.appendChild(controls);
+  chatArea.appendChild(card);
+  chatArea.scrollTop = chatArea.scrollHeight;
+  return card;
 }
 
 function applyPageActionsToggle(element, enabled) {

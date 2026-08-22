@@ -74,4 +74,32 @@ describe('composeUserPrompt', () => {
 
     expect(result).toBe('Analyze this image.');
   });
+
+  it('wraps document attachments with boundaries and source-material guidance', () => {
+    const result = composeUserPrompt({
+      instruction: 'Summarize the key numbers.',
+      context: {
+        type: 'document',
+        text: 'name,score\na,1\nb,2',
+      },
+    });
+
+    expect(result).toContain('--- Attached document ---');
+    expect(result).toContain('name,score');
+    expect(result).toContain('--- End Attached document ---');
+    expect(result).toContain('Use the context as source material for the task');
+    expect(result).toContain('Do not continue or imitate the context author or sender');
+  });
+
+  it('returns a bare instruction when a document context has no text', () => {
+    const result = composeUserPrompt({
+      instruction: 'Summarize.',
+      context: {
+        type: 'document',
+        text: '',
+      },
+    });
+
+    expect(result).toBe('Summarize.');
+  });
 });

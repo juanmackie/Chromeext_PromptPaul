@@ -6,12 +6,15 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 
 - Process selected text, images, video, and audio from the browser
 - Load page content into a side panel chat
+- Attach `.txt` / `.md` / `.csv` / `.json` documents as bounded text context (converted locally, never uploaded as raw files)
+- Structured extraction for Reddit threads, GitHub repository/issue pages, and RSS/Atom feed URLs, plus YouTube transcripts
 - Composer-led chat: a visible context tray shows every attached context (selection, media, page) with one-click detach, and contextual quick actions (Analyze/Proofread/Explain, page Summary/TL;DR/Technical) sit right above the input
 - Inline recovery on every response: Stop, Retry, Edit, Continue
 - Save custom instructions and quick actions
 - Support OpenClaw-compatible Agent Skills
 - Use page-aware action cards for sites like YouTube, GitHub, Gmail, and docs
 - Opt into guarded natural-language actions on the current page (inspect, click, fill, select, scroll)
+- Receive bounded action receipts and safe recovery when a page action is not verified
 - Trim loaded content to stay within context limits
 - Store settings locally with opt-in anonymous analytics
 - Open the chat from the toolbar icon, context menus, the Options page, or website deep links
@@ -54,6 +57,8 @@ cd Chromeext_PromptPaul
 - Page text is untrusted reference data. Passwords, OTPs, credentials, payment fields, security/account controls, destructive actions, unsafe links, JavaScript, cross-tab work, and unsupported visual interactions are blocked or confirmation-gated. Valid HTTP(S) same-tab links can run through `page_click`; `_blank` links use `page_open_link` when Tabs is enabled.
 - Ordinary state-changing actions require approval by default. The Options trusted mode only skips allowed low/medium-risk approvals.
 - If the page changes after a snapshot, Prompt Paul requests a fresh snapshot instead of acting on a stale target.
+- Mutations report `not_delivered`, `delivered_unverified`, or `delivered_verified`; an unverified mutation is not repeated until the page is inspected again.
+- For safe user-only work, Prompt Paul may show a **Manual step needed** card. Complete the step in the visible tab, then choose **Resume**. Resume clears the old snapshot and inspects the page again. Do not enter passwords, OTPs, recovery codes, or payment data in chat.
 
 ### Side panel Web Search toggle
 
@@ -96,6 +101,8 @@ npm run build
 npm run build:dev
 npm run build:prod
 npm run test
+npm run test:behavior
+npm run test:browser
 npm run smoke
 npm run validate
 ```
@@ -105,6 +112,7 @@ npm run validate
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
+- [docs/BROWSER_AGENT_REPOSITORY_REVIEW.md](docs/BROWSER_AGENT_REPOSITORY_REVIEW.md)
 - [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md)
 
 ## API Compatibility
@@ -116,6 +124,7 @@ Prompt Paul works with OpenAI-compatible endpoints, including Mistral, OpenAI, a
 - API keys and settings stay in Chrome storage
 - The optional release demo credential is public by design; never use it for private or production data
 - When **Act** is enabled, bounded DOM/page metadata is sent to the configured LLM endpoint for that run. Page text is treated as untrusted data and sensitive field values are masked or omitted.
+- Action receipts expose only bounded status and postcondition evidence. The evaluation harness stores counts and sizes, not credentials, raw page history, or screenshots.
 - Anonymous analytics are opt-in and disabled by default
 - Analytics sends only coarse event labels such as instruction name, model name, and tool names
 - No page URLs, page titles, page content, API keys, or prompt text are sent to analytics

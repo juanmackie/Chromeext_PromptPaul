@@ -5,6 +5,7 @@ import {
   normalizePageActionArgs,
   normalizePageTabActionArgs,
   normalizePageUserInputArgs,
+  normalizePageManualInterventionArgs,
 } from '../src/utils/pageActionPolicy.js';
 
 describe('pageActionPolicy', () => {
@@ -68,6 +69,19 @@ describe('pageActionPolicy', () => {
       value: { question: 'Which account should I use?', options: ['A', 'B'] },
     });
     expect(normalizePageUserInputArgs({ question: 'Enter your password' }).valid).toBe(false);
+  });
+
+  it('allows safe manual intervention but rejects secret or destructive requests', () => {
+    expect(
+      normalizePageManualInterventionArgs({ question: 'Complete the CAPTCHA in the visible tab.' })
+    ).toEqual({
+      valid: true,
+      value: { question: 'Complete the CAPTCHA in the visible tab.' },
+    });
+    expect(normalizePageManualInterventionArgs({ question: 'Enter the OTP' }).valid).toBe(false);
+    expect(normalizePageManualInterventionArgs({ question: 'Complete the purchase' }).valid).toBe(
+      false
+    );
   });
 
   it('allows read-only page state and scrolling without confirmation', () => {

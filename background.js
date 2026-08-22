@@ -2256,7 +2256,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(result);
       })
       .catch((error) => {
-        sendResponse({ error: error.message });
+        sendResponse({ error: error.message, code: String(error.code || '').slice(0, 80) });
       });
     return true;
   }
@@ -2315,6 +2315,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         request.runId,
         request.requestId,
         request.answer
+      ),
+    });
+    return true;
+  }
+
+  if (request.action === 'pageManualInterventionResume') {
+    if (!isAuthorizedRunRequest(request, sender)) {
+      sendResponse({ success: false, error: 'Manual-intervention response is not authorized.' });
+      return true;
+    }
+    const run = runOrchestrator.activeRuns.get(request.runId);
+    if (!run || run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
+      sendResponse({
+        success: false,
+        error: 'Manual-intervention response does not match the run.',
+      });
+      return true;
+    }
+    sendResponse({
+      success: runOrchestrator.resolvePageManualIntervention(
+        request.runId,
+        request.requestId,
+        request.resume === undefined ? true : request.resume === true
       ),
     });
     return true;

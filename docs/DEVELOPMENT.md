@@ -27,6 +27,8 @@ Load the unpacked extension from `chrome://extensions/` and point Chrome at this
 - `src/utils/` - shared helpers for budgeting, routing, validation, page snapshots/policy, and storage
 - `skills/` - built-in skill definitions
 - `docs/` - documentation
+- `tests/page-action-evaluation.json` - credential-free page-action evaluation corpus
+- `tests/browser/` - real-browser integration tests and browser-safe evaluation
 - `scripts/` - build, smoke, and test scripts
 
 ## Common Commands
@@ -52,7 +54,7 @@ npm audit --audit-level=high --omit=optional
 6. Run `npm audit --audit-level=high --omit=optional` before release.
 7. Build with `npm run build`.
 8. Reload the unpacked extension in Chrome.
-9. For page-action changes, test both Act-off ordinary chat and Act-on static forms/SPAs with approval, stale DOM, sensitive-field, restricted-page, Stop, and worker-restart cases. When Tabs is enabled, test owned-tab limits, source-tab close blocking, site approval, and fresh inspection after switching. A reconnect may restore activity status but must not resume actions automatically. Run `npm run test:browser` for the unpacked-extension Playwright suite; use `PROMPT_PAUL_BROWSER=chrome` or `PROMPT_PAUL_BROWSER=edge` when validating an installed branded browser. Branded runs load the unpacked directory through the browser-level CDP Extensions domain, which is required by Chrome 137+ and equivalent Edge builds.
+9. For page-action changes, test both Act-off ordinary chat and Act-on static forms/SPAs with approval, stale DOM, sensitive-field, restricted-page, Stop, worker-restart, receipt, and manual-intervention cases. Confirm that Pause for user requires explicit Resume and a fresh inspection, and that unverified mutations are not repeated. When Tabs is enabled, test owned-tab limits, source-tab close blocking, site approval, and fresh inspection after switching. A reconnect may restore activity status but must not resume actions automatically. Run `npm run test:browser` for the unpacked-extension Playwright suite; use `PROMPT_PAUL_BROWSER=chrome` or `PROMPT_PAUL_BROWSER=edge` when validating an installed branded browser. Branded runs load the unpacked directory through the browser-level CDP Extensions domain, which is required by Chrome 137+ and equivalent Edge builds. The browser evaluator records bounded metrics only; restricted-page and Hermes provider boundaries stay in the unit matrix.
 
 See [Production Readiness](PRODUCTION_READINESS.md) for the concise review contract.
 
@@ -77,7 +79,7 @@ When you add a new module:
 
 - Background logs: `chrome://extensions/` -> Inspect views
 - Side panel logs: open the side panel and inspect the page
-- Content script logs: inspect the active tab; page-action snapshots and action errors are bounded and never include credential values
+- Content script logs: inspect the active tab; page-action snapshots, receipts, manual-intervention events, and action errors are bounded and never include credential values. Scope/diff metrics expose only region IDs, indices, counts, and byte sizes.
 
 ## Code Style
 

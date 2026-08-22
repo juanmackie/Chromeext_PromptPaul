@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import RunOrchestrator from '../src/orchestrator/RunOrchestrator.js';
 import { createThinkParser } from '../src/utils/inlineReasoning.js';
 
@@ -1916,6 +1916,129 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(false);
   });
 
+  it('returns a verified receipt from an executor postcondition', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : {
+              success: true,
+              message: 'updated',
+              snapshot: makeSnapshot(),
+              actionReceipt: {
+                disposition: 'delivered_verified',
+                evidence: { kind: 'input_value_match', matched: true },
+              },
+            },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('receipt-state', 'page_get_state', {}));
+
+    const result = await orch.executeTool(
+      runId,
+      makeCall('receipt-input', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'hello',
+      })
+    );
+
+    expect(result.result.actionReceipt).toEqual({
+      disposition: 'delivered_verified',
+      evidence: { kind: 'input_value_match', matched: true, changed: undefined },
+    });
+  });
+
+  it('blocks a same-mutation retry after an unverified receipt', async () => {
+    let actionCalls = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        actionCalls += 1;
+        return actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, message: 'maybe updated', snapshot: makeSnapshot() };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('retry-state', 'page_get_state', {}));
+
+    const first = await orch.executeTool(
+      runId,
+      makeCall('retry-input-1', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'hello',
+      })
+    );
+    const second = await orch.executeTool(
+      runId,
+      makeCall('retry-input-2', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'hello',
+      })
+    );
+
+    expect(first.result.actionReceipt.disposition).toBe('delivered_unverified');
+    expect(second.result.error).toBe('PAGE_ACTION_UNVERIFIED_RETRY_BLOCKED');
+    expect(actionCalls).toBe(2);
+  });
+
+  it('pauses for a safe manual step and forces fresh inspection on resume', async () => {
+    const calls = [];
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        calls.push(actionName);
+        if (actionName === 'clearPageActionSession') return { success: true };
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('manual-state', 'page_get_state', {}));
+
+    const pause = orch.executeTool(
+      runId,
+      makeCall('manual-pause', 'page_pause_for_user', {
+        question: 'Complete the CAPTCHA in the visible tab, then resume.',
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = events.find((event) => event.type === 'page_manual_intervention_request');
+    expect(request).toMatchObject({
+      state: 'paused',
+      question: expect.stringContaining('CAPTCHA'),
+      activeTab: { tabId: 7, title: 'Example form', origin: 'https://example.test' },
+    });
+
+    const blocked = await orch.executeTool(
+      runId,
+      makeCall('manual-blocked', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    expect(blocked.result.error).toBe('PAGE_MANUAL_INTERVENTION_PENDING');
+    expect(orch.resolvePageManualIntervention(runId, request.requestId, true)).toBe(true);
+    await expect(pause).resolves.toMatchObject({ result: { resumed: true } });
+    expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
+    expect(calls).toContain('clearPageActionSession');
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'page_manual_intervention_resumed', state: 'resumed' }),
+      ])
+    );
+
+    const refreshed = await orch.executeTool(
+      runId,
+      makeCall('manual-refresh', 'page_get_state', {})
+    );
+    expect(refreshed.result.snapshot.snapshotId).toBe('page-snap-1');
+  });
+
   it('approves a cross-origin link and exposes bounded destination context', async () => {
     const linkSnapshot = () => ({
       ...makeSnapshot(),
@@ -2128,6 +2251,36 @@ describe('RunOrchestrator page actions', () => {
     );
     expect(refreshed.result.snapshot.url).toBe('https://example.test/tasks');
     orch.abort(runId);
+  });
+
+  it('denies a page-action approval after its timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const events = [];
+      const orch = new RunOrchestrator(createStubSkillManager(), {
+        pageActionExecutor: async (_tabId, actionName) =>
+          actionName === 'page_get_state'
+            ? { success: true, snapshot: makeSnapshot() }
+            : { success: true, snapshot: makeSnapshot() },
+      });
+      orch._emitEvent = (_runId, event) => events.push(event);
+      const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+      await orch.executeTool(runId, makeCall('timeout-state', 'page_get_state', {}));
+      const pending = orch.executeTool(
+        runId,
+        makeCall('timeout-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+      );
+      await vi.advanceTimersByTimeAsync(60_001);
+      const result = await pending;
+      expect(result.result.error).toBe('PAGE_ACTION_DENIED');
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'page_action_decision', timedOut: true }),
+        ])
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('aborts a pending page-action approval and clears the pending decision', async () => {

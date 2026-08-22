@@ -9,6 +9,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `contextBudget.js` owns token estimation and DOM context trimming.
 - `hermesContext.js` owns bounded Hermes current-turn/history preparation, active page-context retention, and historical media redaction.
 - `readStrategy.js` owns extraction strategy selection from page signals.
+- `siteExtractors.js` owns pure bounded formatters for Reddit threads, GitHub page metadata, and RSS/Atom feeds (`SITE_EXTRACTOR_CAPS`, truncation markers, XML text normalization). The classic content script mirrors these helpers; keep both sides aligned and covered by `tests/siteExtractors.test.js`.
 - `permissionGuards.js` owns restricted URL and host permission checks.
 - `actionCards.js` owns inferred site-specific prompt cards.
 - `suggestionStorage.js` owns custom site suggestion persistence and normalization.
@@ -29,6 +30,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `streamSafety.js` owns bounded SSE buffers and provider error-body reads.
 - `pageDom.js` owns bounded semantic snapshot normalization, element masking, safe display formatting, and snapshot identity checks for current-page actions.
 - `pageActionPolicy.js` owns page-action argument validation, risk classification, hard blocks, trusted-mode decisions, and confirmation metadata. It also validates the separate bounded tab tools. It must never authorize arbitrary JavaScript or unowned tabs.
+- `pageActionScopeDiff.js` owns non-public, bounded indexed-region and snapshot-diff metrics for the page-action evaluation harness. It must not accept model-supplied selectors or expose raw page values.
 - Link targets are bounded to HTTP(S) origin/path metadata in `pageDom.js`; `page_click` handles approved same-tab links and `page_open_link` handles indexed owned-tab links. Query strings and fragments stay out of model-visible snapshots.
 
 ## Local Contracts
@@ -43,6 +45,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - Privileged background messages must require an extension-page sender; content-script requests must bind to the sender tab; run mutations must include the opaque owner token issued at run start.
 - Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`.
 - Page-state fingerprints and tab arguments must stay bounded, deterministic, and safe to log. New tab origins are approved by the orchestrator, not by model-provided flags.
+- Scope/diff metrics are evaluation data only. They may expose region IDs, indices, counts, and byte sizes, but never credentials, raw page history, or screenshots.
 
 ## Work Guidance
 

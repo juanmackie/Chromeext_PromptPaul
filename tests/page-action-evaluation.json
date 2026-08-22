@@ -1,0 +1,111 @@
+[
+  {
+    "id": "verified-input",
+    "family": "receipt",
+    "fixture": "form.html",
+    "operation": "page_input",
+    "expected": "delivered_verified",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "false-success-click",
+    "family": "receipt",
+    "fixture": "form.html",
+    "operation": "page_click",
+    "expected": "delivered_unverified",
+    "failureCode": "PAGE_ACTION_UNVERIFIED_RETRY_BLOCKED",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "partial-mutation-timeout",
+    "family": "receipt",
+    "fixture": "form.html",
+    "operation": "page_input",
+    "expected": "delivered_unverified",
+    "failureCode": "PAGE_ACTION_TIMEOUT",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "stale-target",
+    "family": "state",
+    "fixture": "form.html",
+    "operation": "page_click",
+    "expected": "error",
+    "failureCode": "PAGE_STATE_STALE",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "repeated-mutation",
+    "family": "recovery",
+    "fixture": "form.html",
+    "operation": "page_click",
+    "expected": "error",
+    "failureCode": "PAGE_ACTION_UNVERIFIED_RETRY_BLOCKED",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "approval-timeout",
+    "family": "approval",
+    "fixture": "form.html",
+    "operation": "page_click",
+    "expected": "error",
+    "failureCode": "PAGE_ACTION_DENIED",
+    "providers": ["api"],
+    "sensitive": false
+  },
+  {
+    "id": "abort-pending-approval",
+    "family": "abort",
+    "fixture": "form.html",
+    "operation": "page_click",
+    "expected": "aborted",
+    "failureCode": "AbortError",
+    "providers": ["api"],
+    "sensitive": false
+  },
+  {
+    "id": "page-injection-is-data",
+    "family": "trust-boundary",
+    "fixture": "injection.html",
+    "operation": "page_get_state",
+    "expected": "delivered_verified",
+    "failureCode": "PAGE_TEXT_UNTRUSTED",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "restricted-page",
+    "family": "availability",
+    "fixture": "restricted-page",
+    "operation": "page_get_state",
+    "expected": "error",
+    "failureCode": "PAGE_ACTIONS_DISABLED",
+    "providers": ["api"],
+    "sensitive": false
+  },
+  {
+    "id": "sensitive-control",
+    "family": "policy",
+    "fixture": "form.html",
+    "operation": "page_input",
+    "expected": "error",
+    "failureCode": "PAGE_ACTION_BLOCKED",
+    "providers": ["api", "codex"],
+    "sensitive": true
+  },
+  {
+    "id": "hermes-page-actions-disabled",
+    "family": "provider-boundary",
+    "fixture": "form.html",
+    "operation": "page_get_state",
+    "expected": "error",
+    "failureCode": "PAGE_ACTIONS_DISABLED",
+    "providers": ["hermes"],
+    "sensitive": false
+  }
+]

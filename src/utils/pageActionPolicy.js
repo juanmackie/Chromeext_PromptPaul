@@ -21,6 +21,7 @@ export const PAGE_TAB_ACTION_NAMES = Object.freeze([
   'page_close_tab',
 ]);
 export const PAGE_USER_INPUT_ACTION_NAME = 'page_request_user_input';
+export const PAGE_MANUAL_INTERVENTION_ACTION_NAME = 'page_pause_for_user';
 
 export const PAGE_ACTION_RISKS = Object.freeze({
   READ_ONLY: 'read-only',
@@ -49,6 +50,10 @@ export function isPageTabActionName(value) {
 
 export function isPageUserInputActionName(value) {
   return String(value || '') === PAGE_USER_INPUT_ACTION_NAME;
+}
+
+export function isPageManualInterventionActionName(value) {
+  return String(value || '') === PAGE_MANUAL_INTERVENTION_ACTION_NAME;
 }
 
 /**
@@ -159,6 +164,26 @@ export function normalizePageTabActionArgs(actionName, args = {}) {
     return { valid: false, error: 'A valid owned tabId is required.' };
   }
   return { valid: true, value: { tabId } };
+}
+
+export function normalizePageManualInterventionArgs(args = {}) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return { valid: false, error: 'Manual-intervention arguments must be an object.' };
+  }
+  const question = capPageText(args.question, 600);
+  if (!question) return { valid: false, error: 'A clear manual-intervention request is required.' };
+  if (
+    /password|passcode|one[-_ ]?time|otp|api[-_ ]?key|token|secret|payment|credential|purchase|buy|checkout|pay|transfer|delete|remove|destructive|security settings|change password/i.test(
+      question
+    )
+  ) {
+    return {
+      valid: false,
+      error:
+        'Manual intervention cannot request secrets, payments, destructive actions, or security changes.',
+    };
+  }
+  return { valid: true, value: { question } };
 }
 
 export function normalizePageUserInputArgs(args = {}) {
@@ -339,13 +364,16 @@ export const pageActionPolicy = {
   PAGE_ACTION_NAMES,
   PAGE_TAB_ACTION_NAMES,
   PAGE_USER_INPUT_ACTION_NAME,
+  PAGE_MANUAL_INTERVENTION_ACTION_NAME,
   PAGE_ACTION_RISKS,
   isPageActionName,
   isPageTabActionName,
   isPageUserInputActionName,
+  isPageManualInterventionActionName,
   normalizePageActionArgs,
   normalizePageTabActionArgs,
   normalizePageUserInputArgs,
+  normalizePageManualInterventionArgs,
   classifyPageAction,
   evaluatePageActionPolicy,
 };
