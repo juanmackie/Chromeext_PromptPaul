@@ -7,7 +7,7 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 ## Ownership
 
 - `build.js` owns manifest validation, build directory recreation, source file copying, source directory copying, and build metadata generation.
-- `test-runner.js` owns structural tests, regression guards, manifest checks, skill checks, and source size checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
+- `test-runner.js` owns structural tests, regression guards, manifest checks, and skill checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
 - `smoke-check.js` owns the cheapest manifest and vendored dependency sanity checks.
 
 ## Local Contracts

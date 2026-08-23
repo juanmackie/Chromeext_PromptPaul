@@ -146,7 +146,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `scripts/build.js` copies the extension into `dist/`
 - `scripts/test-runner.js` checks module structure and key regression guards
 - `scripts/smoke-check.js` performs the cheapest end-to-end sanity check
-- `npm run test:browser` runs every unpacked-extension spec in `tests/browser/` against a real headed Chromium-family browser and exercises the content-script bridge, selected-text actions, the executable page-action corpus, live scope/diff measurement, privileged-message rejection, indexed compose controls, interrupted connections, timeout, navigation identity, and service-worker restart paths; set `PROMPT_PAUL_BROWSER=chrome|edge` to target an installed branded browser. Chrome 137+ and equivalent Edge builds use the browser-level CDP Extensions domain to load the unpacked directory. CI runs this suite under Xvfb.
+- `npm run test:browser` runs every unpacked-extension spec in `tests/browser/` against a real headed Chromium-family browser and exercises the content-script bridge, selected-text actions, the executable page-action corpus, live scope/diff measurement, privileged-message rejection, indexed compose controls, interrupted connections, timeout, active-tab navigation recovery, and service-worker restart paths; set `PROMPT_PAUL_BROWSER=chrome|edge` to target an installed branded browser. Chrome 137+ and equivalent Edge builds use the browser-level CDP Extensions domain to load the unpacked directory. CI runs this suite under Xvfb.
 
 ## Notes
 

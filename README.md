@@ -56,7 +56,7 @@ cd Chromeext_PromptPaul
 - Prompt Paul can inspect a bounded DOM snapshot and, when appropriate, click, fill, select, or scroll standard controls in the current tab.
 - Page text is untrusted reference data. Passwords, OTPs, credentials, payment fields, security/account controls, destructive actions, unsafe links, JavaScript, cross-tab work, and unsupported visual interactions are blocked or confirmation-gated. Valid HTTP(S) same-tab links can run through `page_click`; `_blank` links use `page_open_link` when Tabs is enabled.
 - Ordinary state-changing actions require approval by default. The Options trusted mode only skips allowed low/medium-risk approvals.
-- If the page changes after a snapshot, Prompt Paul requests a fresh snapshot instead of acting on a stale target.
+- If the active page changes after a snapshot, Prompt Paul discards the stale snapshot, inspects the current page, and continues the request. It never acts on stale targets.
 - Mutations report `not_delivered`, `delivered_unverified`, or `delivered_verified`; an unverified mutation is not repeated until the page is inspected again.
 - For safe user-only work, Prompt Paul may show a **Manual step needed** card. Complete the step in the visible tab, then choose **Resume**. Resume clears the old snapshot and inspects the page again. Do not enter passwords, OTPs, recovery codes, or payment data in chat.
 

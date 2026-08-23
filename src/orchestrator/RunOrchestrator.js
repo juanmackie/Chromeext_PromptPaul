@@ -616,9 +616,9 @@ class RunOrchestrator {
   }
 
   /**
-   * Page-action failures that are terminal for the run (dead message bridge,
-   * failed approved navigation, or unexpected navigation) must fail fast
-   * instead of being fed back to the model for retries.
+   * Page-action failures that are terminal for the run (dead message bridge or
+   * failed approved navigation) must fail fast instead of being fed back to
+   * the model for retries. Unexpected document changes are recoverable.
    * @private
    * @param {Error} error
    * @returns {boolean}

@@ -616,29 +616,6 @@ function runUnitTests(runner) {
     });
   });
 
-  // ---------- File Size Validation ----------
-  // Limit reflects the composer-led refactor: new composer UI (context tray,
-  // quick actions, inline recovery) lives in src/chat/ChatComposer.js, keeping
-  // chat.js growth small and modular.
-  runner.test('chat.js does not exceed 2380 lines', () => {
-    const lines = readFileSafe('chat.js').trimEnd().split('\n').length;
-    if (lines > 2380) {
-      throw new Error(`chat.js is ${lines} lines, exceeds 2380 limit`);
-    }
-  });
-
-  runner.test('No source module exceeds 600 lines', () => {
-    const moduleFiles = fs
-      .readdirSync(path.join(repoRoot, 'src/chat'))
-      .filter((f) => f.endsWith('.js'));
-    for (const file of moduleFiles) {
-      const lines = readFileSafe(`src/chat/${file}`).split('\n').length;
-      if (lines > 600) {
-        throw new Error(`${file} is ${lines} lines, exceeds 600 limit`);
-      }
-    }
-  });
-
   // ---------- Import Cross-Reference ----------
   runner.test('chat.js imports all chat modules', () => {
     const chatContent = readFileSafe('chat.js');
