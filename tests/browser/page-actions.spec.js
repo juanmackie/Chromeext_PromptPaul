@@ -362,7 +362,7 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
-  test('rejects an indexed mutation after the source tab navigates mid-run', async () => {
+  test('re-inspects and continues after the source tab navigates mid-run', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
     const { context } = launched;
@@ -387,8 +387,46 @@ test.describe('page-agent-style page actions', () => {
           }),
         { runId, snapshotId: inspected.snapshot.snapshotId, index: body.index }
       );
-      expect(result.error).toContain('page changed during this run');
-      expect(result.error).not.toContain('Maximum tool call retries exceeded');
+      expect(result.error).toBeUndefined();
+      expect(result.result).toMatchObject({
+        pageChanged: true,
+        actionReceipt: { disposition: 'not_delivered' },
+      });
+
+      const refreshed = await harness.evaluate(
+        (id) =>
+          window.pageActionHarness.executeTool(
+            id,
+            `navigation-state-${Date.now()}`,
+            'page_get_state',
+            {}
+          ),
+        runId
+      );
+      expect(refreshed.error, JSON.stringify(refreshed)).toBeUndefined();
+      expect(refreshed.result.snapshot.url).toBe(fixtureUrl(fixtureServer, 'outlook-compose.html'));
+      const newBody = refreshed.result.snapshot.elements.find(
+        (element) => element.editable === true
+      );
+      expect(newBody).toBeTruthy();
+
+      const followUp = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'navigation-input-follow-up', 'page_input', {
+            snapshotId,
+            index,
+            text: 'continued after navigation',
+          }),
+        {
+          runId,
+          snapshotId: refreshed.result.snapshot.snapshotId,
+          index: newBody.index,
+        }
+      );
+      expect(followUp.result.actionReceipt).toMatchObject({ disposition: 'delivered_verified' });
+      await expect(target.locator('[contenteditable="true"]').first()).toContainText(
+        'continued after navigation'
+      );
     } finally {
       await abortRun(harness, runId);
       await context.close();

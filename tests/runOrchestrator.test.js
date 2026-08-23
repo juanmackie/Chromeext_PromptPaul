@@ -191,6 +191,8 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('PERFORM it with the tools');
     expect(prompt).toContain('call page_get_state first');
     expect(prompt).toContain('re-inspect after every mutation');
+    expect(prompt).toContain('If the current tab changes documents during the run');
+    expect(prompt).toContain('continue the same request');
     expect(prompt).toContain('summarize what you actually did on the page');
   });
 
@@ -2448,12 +2450,11 @@ describe('RunOrchestrator page actions', () => {
     );
   });
 
-  it('classifies handshake, bridge, and navigation failures as terminal errors', async () => {
+  it('classifies handshake and bridge failures as terminal errors', async () => {
     const orch = new RunOrchestrator(createStubSkillManager());
     for (const code of [
       'PAGE_ACTION_NO_CONTENT_SCRIPT',
       'PAGE_ACTION_MESSAGE_FAILED',
-      'PAGE_ACTION_NAVIGATED',
       'PAGE_ACTION_TIMEOUT',
       'PAGE_ACTION_NAVIGATION_FAILED',
       'PAGE_ACTION_NAVIGATION_TIMEOUT',
@@ -2463,6 +2464,9 @@ describe('RunOrchestrator page actions', () => {
       expect(orch._isPageActionTerminalError(error)).toBe(true);
     }
     expect(orch._isPageActionTerminalError(null)).toBe(false);
+    const navigation = new Error('page changed');
+    navigation.code = 'PAGE_ACTION_NAVIGATED';
+    expect(orch._isPageActionTerminalError(navigation)).toBe(false);
   });
 
   it('propagates a run-start handshake failure as one actionable error', async () => {
@@ -2543,37 +2547,56 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.activeRuns.has(runId)).toBe(false);
   });
 
-  it('binds the run to the first snapshot document and invalidates after mid-run navigation', async () => {
+  it('rebinds the run and skips a stale mutation after mid-run navigation', async () => {
     let currentUrl = 'https://example.test/form';
+    const executorCalls = [];
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionPolicyProvider: async () => true,
       pageActionDocumentProvider: async () => ({ url: currentUrl }),
-      pageActionExecutor: async (_tabId, actionName) =>
-        actionName === 'page_get_state'
-          ? { success: true, snapshot: makeSnapshot() }
-          : { success: true, snapshot: makeSnapshot() },
+      pageActionExecutor: async (_tabId, actionName) => {
+        executorCalls.push(actionName);
+        return {
+          success: true,
+          snapshot: { ...makeSnapshot(), url: currentUrl },
+        };
+      },
     });
-    orch._emitEvent = () => {};
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
     const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
 
     await orch.executeTool(runId, makeCall('state-nav', 'page_get_state', {}));
     expect(orch.activeRuns.get(runId).pageActions.documentUrl).toBe('https://example.test/form');
 
-    // The tab navigates mid-run; the next action must fail fast with a
-    // navigation error instead of acting on the new page.
+    // The tab navigates mid-run; the stale mutation must not be sent to the
+    // new page. The live run adopts the new document and forces inspection.
     currentUrl = 'https://other.test/elsewhere';
-    await expect(
-      orch.executeTool(
-        runId,
-        makeCall('input-nav', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'hi' })
-      )
-    ).rejects.toMatchObject({ code: 'PAGE_ACTION_NAVIGATED' });
+    const changed = await orch.executeTool(
+      runId,
+      makeCall('input-nav', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'hi' })
+    );
+    expect(changed.result.pageChanged).toBe(true);
+    expect(changed.result.actionReceipt).toMatchObject({ disposition: 'not_delivered' });
+    expect(executorCalls).toEqual(['page_get_state']);
+    expect(orch.activeRuns.get(runId).pageActions.documentUrl).toBe('https://other.test/elsewhere');
+    expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
+    expect(orch._getEffectiveToolChoice(orch.activeRuns.get(runId))).toBe('page_get_state');
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'page_action_warning', code: 'PAGE_ACTION_PAGE_CHANGED' })
+    );
+
+    const refreshed = await orch.executeTool(
+      runId,
+      makeCall('state-after-nav', 'page_get_state', {})
+    );
+    expect(refreshed.result.snapshot.url).toBe('https://other.test/elsewhere');
+    expect(executorCalls).toEqual(['page_get_state', 'page_get_state']);
   });
 
-  it('invalidates the run when a fresh snapshot reports a different document', async () => {
+  it('rebinds when a fresh snapshot reports a different document', async () => {
     let snapUrl = 'https://example.test/form';
     const orch = new RunOrchestrator(createStubSkillManager(), {
-      pageActionDocumentProvider: async () => ({ url: 'https://example.test/form' }),
+      pageActionDocumentProvider: async () => ({ url: snapUrl }),
       pageActionExecutor: async () => ({
         success: true,
         snapshot: { ...makeSnapshot(), url: snapUrl },
@@ -2584,9 +2607,42 @@ describe('RunOrchestrator page actions', () => {
 
     await orch.executeTool(runId, makeCall('state-a', 'page_get_state', {}));
     snapUrl = 'https://example.test/elsewhere';
-    await expect(
-      orch.executeTool(runId, makeCall('state-b', 'page_get_state', {}))
-    ).rejects.toMatchObject({ code: 'PAGE_ACTION_NAVIGATED' });
+    const refreshed = await orch.executeTool(runId, makeCall('state-b', 'page_get_state', {}));
+    expect(refreshed.result.snapshot.url).toBe('https://example.test/elsewhere');
+    expect(orch.activeRuns.get(runId).pageActions.documentUrl).toBe(
+      'https://example.test/elsewhere'
+    );
+  });
+
+  it('keeps an unexpected navigation unverified and forces a fresh snapshot', async () => {
+    let currentUrl = 'https://example.test/form';
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionDocumentProvider: async () => ({ url: currentUrl }),
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') {
+          return { success: true, snapshot: { ...makeSnapshot(), url: currentUrl } };
+        }
+        currentUrl = 'https://other.test/elsewhere';
+        return { success: true, navigated: true, navigationUrl: currentUrl };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    await orch.executeTool(runId, makeCall('state-unexpected', 'page_get_state', {}));
+    const result = await orch.executeTool(
+      runId,
+      makeCall('input-unexpected', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'hi',
+      })
+    );
+    expect(result.result.pageChanged).toBe(true);
+    expect(result.result.actionReceipt).toMatchObject({ disposition: 'delivered_unverified' });
+    expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
+    expect(orch._getEffectiveToolChoice(orch.activeRuns.get(runId))).toBe('page_get_state');
   });
 
   it('runs a multi-step page flow beyond the old 3-turn cap when each step succeeds', async () => {

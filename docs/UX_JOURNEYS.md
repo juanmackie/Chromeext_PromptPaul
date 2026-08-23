@@ -99,8 +99,11 @@ Steps:
    event, while Approve executes once and refreshes the snapshot. **Approve all
    this session** enables every policy-allowed mutation for the rest of the
    current run; hard-blocked controls remain unavailable.
-4. Change the SPA DOM before the next action. The stale snapshot is rejected and
-   Prompt Paul requests a fresh state rather than guessing an index.
+4. Change the SPA DOM or navigate the active tab before the next action. Prompt
+   Paul discards the stale snapshot, inspects the current page, and continues the
+   request rather than guessing an index or requiring a new user message. If a
+   mutation was interrupted during navigation, it is reported as unverified and
+   is not repeated blindly.
 5. Enable **Trusted page actions** in Options and repeat a harmless mutation;
    allowed low/medium-risk actions may proceed without a card. Password, OTP,
    payment, security, destructive, navigation, and unsupported controls remain

@@ -3,6 +3,7 @@
 - Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.
 - Added zero-dependency document attachments: dropping `.txt`, `.md`, `.markdown`, `.csv`, or `.json` files into the composer reads them as bounded text (200k-character cap) and sends them as a new `document` prompt context type instead of base64 media.
 - Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
+- Act runs now recover from active-tab document changes by discarding stale snapshots, re-inspecting the current supported page, and continuing the request. Mutations interrupted during navigation remain unverified and are never blindly repeated.
 - Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
 
 ## [Unreleased]

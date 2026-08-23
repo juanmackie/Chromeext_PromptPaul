@@ -1067,9 +1067,9 @@ const pageActionAvailabilityProvider = async (tabId) => {
 
 /**
  * Resolve the current document identity for a tab (origin/path only). The
- * orchestrator binds a page-actions run to this identity and invalidates the
- * run when the tab navigates unexpectedly, while approved navigation-capable
- * actions explicitly replace the identity after the new bridge reconnects.
+ * orchestrator binds a page-actions run to this identity and can rebind the
+ * active Act run when the tab changes documents. Query strings and fragments
+ * remain excluded from the identity.
  * Returns null when the identity cannot be resolved.
  * @param {number} tabId
  * @returns {Promise<{url: string}|null>}
@@ -1126,6 +1126,26 @@ const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
 
   const error = new Error('The approved page navigation did not complete in time.');
   error.code = 'PAGE_ACTION_NAVIGATION_TIMEOUT';
+  throw error;
+};
+
+/**
+ * Wait for the page-action bridge to attach to the current document after a
+ * navigation that completed before the first recovery inspection.
+ * @param {number} tabId
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<void>}
+ */
+const waitForPageActionBridge = async (tabId, signal) => {
+  const deadline = Date.now() + PAGE_ACTION_NAVIGATION_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
+    const connected = await pingPageActionContentScript(tabId);
+    if (connected.connected) return;
+    await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_NAVIGATION_POLL_MS));
+  }
+  const error = new Error('The page did not reconnect to page actions in time.');
+  error.code = 'PAGE_ACTION_TIMEOUT';
   throw error;
 };
 
@@ -1191,18 +1211,29 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       ? { action: 'clearPageActionSession', runId: options.runId }
       : { action: 'pageAction', runId: options.runId, pageAction: actionName, args };
   const expectNavigation = options.expectNavigation === true;
-  const previousUrl = expectNavigation ? await getPageActionTabUrl(tabId) : '';
+  let previousUrl = '';
+  try {
+    previousUrl = await getPageActionTabUrl(tabId);
+  } catch (_) {
+    // Preserve the existing executor error path if the tab disappears before
+    // the message can be sent.
+  }
 
   try {
     const response = await sendPageActionMessage(tabId, message, options.signal);
-    if (!expectNavigation) return response;
 
     const responseUrl = sanitizePageActionUrl(response?.snapshot?.url || '');
     if (responseUrl && previousUrl && responseUrl !== previousUrl) {
       return { ...response, navigated: true, navigationUrl: responseUrl };
     }
 
-    const currentUrl = await getPageActionTabUrl(tabId);
+    let currentUrl = '';
+    try {
+      currentUrl = await getPageActionTabUrl(tabId);
+    } catch (_) {
+      if (!expectNavigation) return response;
+      throw _;
+    }
     if (currentUrl && previousUrl && currentUrl !== previousUrl) {
       const connected = await pingPageActionContentScript(tabId);
       if (connected.connected) {
@@ -1212,17 +1243,38 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     return response;
   } catch (error) {
     // A full document navigation commonly closes the content-script message
-    // port before it can reply. Only treat bridge loss/timeouts as recoverable
-    // here when the orchestrator explicitly approved this navigation-capable
-    // action; ordinary page-action failures must still surface unchanged.
-    if (
-      !expectNavigation ||
-      !['PAGE_ACTION_MESSAGE_FAILED', 'PAGE_ACTION_TIMEOUT'].includes(error?.code)
-    ) {
+    // port before it can reply. If the URL changed, wait for the new bridge and
+    // return a recoverable transition even when the action was not pre-approved
+    // as navigation-capable. The orchestrator records the mutation as
+    // unverified so it is never blindly repeated.
+    if (!['PAGE_ACTION_MESSAGE_FAILED', 'PAGE_ACTION_TIMEOUT'].includes(error?.code)) {
       throw error;
     }
+    let currentUrl = '';
+    try {
+      currentUrl = await getPageActionTabUrl(tabId);
+    } catch (_) {
+      throw error;
+    }
+    if (expectNavigation) {
+      const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);
+      return { success: true, navigated: true, navigationUrl: navigation.url };
+    }
+    if (actionName === 'page_get_state' && currentUrl && currentUrl === previousUrl) {
+      // A navigation can finish before the new content script has attached.
+      // Give the bridge one bounded reconnect window before surfacing the
+      // original failure to the orchestrator.
+      await waitForPageActionBridge(tabId, options.signal);
+      return await sendPageActionMessage(tabId, message, options.signal);
+    }
+    if (!currentUrl || !previousUrl || currentUrl === previousUrl) throw error;
     const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);
-    return { success: true, navigated: true, navigationUrl: navigation.url };
+    return {
+      success: true,
+      navigated: true,
+      navigationUrl: navigation.url,
+      delivery: 'unknown',
+    };
   }
 };
 

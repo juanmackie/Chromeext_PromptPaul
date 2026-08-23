@@ -36,13 +36,12 @@ const CORE_INSTRUCTIONS =
 const MAX_TOOL_CALL_RETRIES = 3;
 const THINKING_BUDGET_TOKENS = 2048;
 // Page-action failures that are terminal for the run: the content-script
-// bridge is unreachable, an approved navigation cannot complete, or the tab
-// navigated unexpectedly. Retrying the same action cannot safely succeed and
-// would only burn tool-call retries, so the run fails fast with one actionable error.
+// bridge is unreachable or an approved navigation cannot complete. A document
+// transition is recoverable: stale mutations are skipped, the new document is
+// adopted, and the next model turn is forced through page_get_state.
 const PAGE_ACTION_TERMINAL_ERROR_CODES = new Set([
   'PAGE_ACTION_NO_CONTENT_SCRIPT',
   'PAGE_ACTION_MESSAGE_FAILED',
-  'PAGE_ACTION_NAVIGATED',
   // A page that does not respond to an action within the executor timeout is
   // effectively dead or hung; retrying would only compound the stall.
   'PAGE_ACTION_TIMEOUT',
@@ -640,28 +639,28 @@ class RunOrchestrator {
   }
 
   /**
-   * Single actionable message when the tab navigated away from the document the
-   * run is bound to.
+   * Bounded activity message when the tab navigates during an Act run.
    * @returns {string}
    */
-  _pageActionNavigationErrorMessage() {
+  _pageActionNavigationRecoveryMessage() {
     return (
-      'The page changed during this run. Page actions are disabled until you send ' +
-      'a new request for the current page.'
+      'The page changed during this run. The previous snapshot was discarded and the ' +
+      'current page will be inspected before continuing.'
     );
   }
 
   /**
-   * Verify the tab still shows the document the run is bound to. Unexpected
-   * navigation invalidates the run so actions never target an unintended page;
-   * approved navigation-capable actions update the identity in the executor path.
-   * Returns an Error on mismatch, or null when the run may proceed.
+   * Read the current document identity and report whether it changed. A missing
+   * identity is still treated as a terminal bridge/tab failure; a changed
+   * identity is recoverable and must be adopted before another mutation.
    * @private
    * @param {object} run
-   * @returns {Promise<Error|null>}
+   * @returns {Promise<{changed: boolean, unavailable?: boolean, url?: string}>}
    */
   async _checkPageActionDocument(run) {
-    if (!this.pageActionDocumentProvider || !run.pageActions?.documentUrl) return null;
+    if (!this.pageActionDocumentProvider || !run.pageActions?.documentUrl) {
+      return { changed: false };
+    }
     let current = null;
     try {
       current = await this.pageActionDocumentProvider(
@@ -670,15 +669,72 @@ class RunOrchestrator {
     } catch (_) {
       current = null;
     }
-    if (!current?.url || current.url !== run.pageActions.documentUrl) {
-      const error = new Error(this._pageActionNavigationErrorMessage());
-      error.code = 'PAGE_ACTION_NAVIGATED';
-      return error;
-    }
-    return null;
+    const url = sanitizePageActionUrl(current?.url || '');
+    if (!url) return { changed: false, unavailable: true };
+    return { changed: url !== run.pageActions.documentUrl, url };
   }
 
-  _buildPageActionReceipt(actionName, result, previousSnapshot, nextSnapshot, navigationObserved) {
+  /**
+   * Adopt a newly observed document and discard all state derived from the old
+   * snapshot. The origin is recorded because the user explicitly enabled Act
+   * for the active target tab and chose automatic continuation across page
+   * changes.
+   * @private
+   * @param {object} run
+   * @param {string} url
+   */
+  _adoptPageActionDocument(run, url) {
+    const nextUrl = sanitizePageActionUrl(url);
+    if (!nextUrl) return;
+    run.pageActions.documentUrl = nextUrl;
+    run.pageActions.snapshot = null;
+    run.pageActions.lastActionHash = '';
+    run.pageActions.lastActionReceipt = null;
+    run.pageActions.repeatedActionCount = 0;
+    try {
+      run.pageActions.allowedOrigins.add(new URL(nextUrl).origin);
+    } catch (_) {
+      // Sanitization already bounds the value; invalid URLs are ignored.
+    }
+  }
+
+  /**
+   * Return the bounded result for a mutation that was not sent because its
+   * snapshot belonged to the previous document.
+   * @private
+   * @param {object} run
+   * @param {string} actionName
+   * @returns {{success: boolean, result: object}}
+   */
+  _pageActionDocumentChangedResult(run, actionName) {
+    const message = this._pageActionNavigationRecoveryMessage();
+    this._emitEvent(run.id, {
+      type: 'page_action_warning',
+      code: 'PAGE_ACTION_PAGE_CHANGED',
+      action: actionName,
+      message,
+    });
+    return {
+      success: true,
+      result: {
+        pageChanged: true,
+        actionReceipt: {
+          disposition: 'not_delivered',
+          evidence: { kind: 'page_changed_before_action' },
+        },
+        notice: `${message} Call page_get_state before the next action.`,
+      },
+    };
+  }
+
+  _buildPageActionReceipt(
+    actionName,
+    result,
+    previousSnapshot,
+    nextSnapshot,
+    navigationObserved,
+    unexpectedNavigation = false
+  ) {
     const supplied = result?.actionReceipt;
     if (supplied && typeof supplied === 'object') {
       const disposition = String(supplied.disposition || '');
@@ -707,6 +763,13 @@ class RunOrchestrator {
       return {
         disposition: 'delivered_verified',
         evidence: { kind: 'snapshot_captured', snapshotId: nextSnapshot?.snapshotId || '' },
+      };
+    }
+
+    if (unexpectedNavigation) {
+      return {
+        disposition: 'delivered_unverified',
+        evidence: { kind: 'page_changed_during_action', changed: true },
       };
     }
 
@@ -914,18 +977,22 @@ class RunOrchestrator {
       explicitlyApproved = true;
     }
 
-    // Bind the run to the document the model first observes, and verify the
-    // tab has not navigated away before every action (including re-snapshots).
+    // Bind the run to the document the model first observes. If the active tab
+    // changed since the last snapshot, adopt the new document and never send a
+    // stale mutation. page_get_state is allowed to proceed so it can establish
+    // the fresh snapshot in the same tool turn.
     if (run.pageActions.documentUrl) {
-      const navigationError = await this._checkPageActionDocument(run);
-      if (navigationError) {
-        this._emitEvent(run.id, {
-          type: 'page_action_state',
-          state: 'error',
-          action: actionName,
-          error: navigationError.message,
-        });
-        throw navigationError;
+      const documentStatus = await this._checkPageActionDocument(run);
+      if (documentStatus.unavailable) {
+        const error = new Error(this._pageActionConnectionErrorMessage());
+        error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
+        throw error;
+      }
+      if (documentStatus.changed) {
+        this._adoptPageActionDocument(run, documentStatus.url);
+        if (actionName !== 'page_get_state') {
+          return this._pageActionDocumentChangedResult(run, actionName);
+        }
       }
     }
 
@@ -979,13 +1046,8 @@ class RunOrchestrator {
       );
       const navigationObserved = Boolean(result?.navigated || snapshotChangedDocument);
 
-      if (navigationObserved && !expectedNavigation) {
-        // The snapshot itself reports a different document than the one the
-        // run is bound to; invalidate instead of acting on an unintended page.
-        const navigationError = new Error(this._pageActionNavigationErrorMessage());
-        navigationError.code = 'PAGE_ACTION_NAVIGATED';
-        throw navigationError;
-      }
+      const unexpectedNavigation =
+        navigationObserved && !expectedNavigation && actionName !== 'page_get_state';
 
       if (navigationObserved) {
         const nextDocumentUrl = reportedNavigationUrl || normalizedSnapshot?.url || '';
@@ -996,19 +1058,24 @@ class RunOrchestrator {
           navigationError.code = 'PAGE_ACTION_NAVIGATION_FAILED';
           throw navigationError;
         }
-        // An approved navigation replaces the document identity exactly once.
-        // A full navigation has no usable old content-script snapshot, so force
-        // the next model turn through page_get_state.
-        run.pageActions.documentUrl = nextDocumentUrl;
-        const snapshotMatchesNavigation =
-          Boolean(normalizedSnapshot?.url) && normalizedSnapshot.url === nextDocumentUrl;
-        run.pageActions.snapshot = snapshotMatchesNavigation ? normalizedSnapshot : null;
-        if (snapshotMatchesNavigation) result.snapshot = normalizedSnapshot;
-        else result.snapshot = undefined;
-        try {
-          run.pageActions.allowedOrigins.add(new URL(nextDocumentUrl).origin);
-        } catch (_) {
-          // Invalid executor URLs are ignored after the navigation result is bounded.
+        if (unexpectedNavigation) {
+          // The action may have been delivered before the document changed, so
+          // retain only an unverified receipt and force a fresh inspection.
+          this._adoptPageActionDocument(run, nextDocumentUrl);
+          result.navigated = true;
+          result.pageChanged = true;
+          result.snapshot = undefined;
+          result.notice = `${this._pageActionNavigationRecoveryMessage()} Call page_get_state before the next action.`;
+        } else {
+          // An approved navigation, or a fresh page_get_state response, replaces
+          // the document identity. Full navigations force the next turn through
+          // page_get_state because the old bridge has no usable snapshot.
+          this._adoptPageActionDocument(run, nextDocumentUrl);
+          const snapshotMatchesNavigation =
+            Boolean(normalizedSnapshot?.url) && normalizedSnapshot.url === nextDocumentUrl;
+          run.pageActions.snapshot = snapshotMatchesNavigation ? normalizedSnapshot : null;
+          if (snapshotMatchesNavigation) result.snapshot = normalizedSnapshot;
+          else result.snapshot = undefined;
         }
       } else if (normalizedSnapshot) {
         run.pageActions.snapshot = normalizedSnapshot;
@@ -1031,7 +1098,8 @@ class RunOrchestrator {
         result,
         previousSnapshot,
         normalizedSnapshot,
-        navigationObserved
+        navigationObserved,
+        unexpectedNavigation
       );
       result.actionReceipt = receipt;
       if (isMutation) run.pageActions.lastActionReceipt = receipt;
@@ -1065,11 +1133,9 @@ class RunOrchestrator {
       run.pageActions.navigationPending = false;
       const terminal = this._isPageActionTerminalError(error);
       const message = terminal
-        ? error.code === 'PAGE_ACTION_NAVIGATED'
-          ? this._pageActionNavigationErrorMessage()
-          : String(error.code || '').startsWith('PAGE_ACTION_NAVIGATION_')
-            ? error.message || 'The approved page navigation failed.'
-            : this._pageActionConnectionErrorMessage()
+        ? String(error.code || '').startsWith('PAGE_ACTION_NAVIGATION_')
+          ? error.message || 'The approved page navigation failed.'
+          : this._pageActionConnectionErrorMessage()
         : error.message || 'The page action failed.';
       this._emitEvent(run.id, {
         type: 'page_action_state',
@@ -2168,6 +2234,8 @@ class RunOrchestrator {
           'transition, call page_get_state before acting again. Valid HTTP(S) links can navigate the current ' +
           'tab with approval; ' +
           newTabLinkInstruction +
+          ' If the current tab changes documents during the run, discard the old snapshot, call page_get_state, ' +
+          'and continue the same request; do not claim that page tools are unavailable.' +
           ' For ' +
           'anything the page tools cannot do, just answer normally as a helpful assistant. If a tool result ' +
           'reports a policy or state error, follow its recovery step; that does not mean the tools are ' +
