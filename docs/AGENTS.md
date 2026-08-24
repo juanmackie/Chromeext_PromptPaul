@@ -23,6 +23,7 @@ Documentation in this subtree explains Prompt Paul architecture, development wor
 - Update `docs/DEVELOPMENT.md` when setup, commands, testing, or workflow changes.
 - Update `docs/PRODUCTION_READINESS.md` when production gates, security rules, or review requirements change.
 - Update `docs/SKILL_EXAMPLES.md` when skill invocation behavior, supported patterns, or examples change.
+- Update `docs/STORE_LISTING.md` whenever the Chrome Web Store listing changes; keep its "What's new" entry aligned with the latest release section in the root changelog.
 - Keep relative links valid from the document being edited.
 
 ## Verification
