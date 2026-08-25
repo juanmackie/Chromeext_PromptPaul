@@ -373,12 +373,11 @@ body {
   margin-right: 0.5rem;
 }
 
-/* Voice button inside input */
-#voice-toggle-button {
+/* Compact actions inside the prompt input */
+#voice-toggle-button,
+#input-expand-toggle {
   position: absolute;
-  right: 6px;
   top: 50%;
-  transform: translateY(-50%);
   width: 32px;
   height: 32px;
   padding: 0;
@@ -394,12 +393,24 @@ body {
   box-shadow: none;
 }
 
-#voice-toggle-button .material-symbols-outlined {
+#voice-toggle-button {
+  right: 6px;
+  transform: translateY(-50%);
+}
+
+#input-expand-toggle {
+  right: 42px;
+  transform: translateY(-50%);
+}
+
+#voice-toggle-button .material-symbols-outlined,
+#input-expand-toggle .material-symbols-outlined {
   font-size: 20px;
   line-height: 1;
 }
 
-#voice-toggle-button:hover {
+#voice-toggle-button:hover,
+#input-expand-toggle:hover {
   background-color: var(--ext-muted);
   color: var(--ext-primary);
   transform: translateY(-50%);
@@ -417,7 +428,8 @@ body {
   box-shadow: none;
 }
 
-#voice-toggle-button:active {
+#voice-toggle-button:active,
+#input-expand-toggle:active {
   transform: translateY(-50%) scale(0.95);
   box-shadow: none;
 }
@@ -427,7 +439,8 @@ body {
   color: var(--ext-primary-foreground);
 }
 
-#voice-toggle-button:focus-visible {
+#voice-toggle-button:focus-visible,
+#input-expand-toggle:focus-visible {
   box-shadow: var(--ext-focus-ring);
 }
 
@@ -812,7 +825,7 @@ body.run-capabilities-subtle #quick-actions-sidebar {
 
 #user-input {
   flex-grow: 1;
-  padding: 0.6rem 2.5rem 0.6rem 1rem;
+  padding: 0.6rem 5rem 0.6rem 1rem;
   border: 2px solid var(--ext-border);
   border-radius: 4px;
   box-shadow: var(--ext-shadow-sm);
@@ -821,6 +834,28 @@ body.run-capabilities-subtle #quick-actions-sidebar {
   transition: var(--ext-transition);
   width: 100%;
   min-width: 0;
+  resize: none;
+}
+
+#input-area.input-area-expanded #user-input {
+  height: min(35dvh, 280px);
+  min-height: 140px;
+}
+
+#input-area.input-area-expanded #voice-toggle-button,
+#input-area.input-area-expanded #input-expand-toggle {
+  top: 8px;
+  transform: none;
+}
+
+#input-area.input-area-expanded #voice-toggle-button:hover,
+#input-area.input-area-expanded #input-expand-toggle:hover {
+  transform: none;
+}
+
+#input-area.input-area-expanded #voice-toggle-button:active,
+#input-area.input-area-expanded #input-expand-toggle:active {
+  transform: scale(0.95);
 }
 
 #user-input:focus {
@@ -1379,7 +1414,7 @@ td {
   }
 
   #user-input {
-    padding: 0.4rem 0.6rem;
+    padding: 0.4rem 5rem 0.4rem 0.6rem;
   }
 
   .attachment-thumbnail {

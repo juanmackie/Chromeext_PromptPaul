@@ -25,6 +25,37 @@ test.afterAll(async () => {
   await fixtureServer?.close();
 });
 
+test('expands and collapses the prompt input', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
+  try {
+    const toggle = chat.locator('#input-expand-toggle');
+    const inputArea = chat.locator('#input-area');
+    const icon = toggle.locator('.material-symbols-outlined');
+
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(icon).toHaveText('open_in_full');
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(inputArea).toHaveClass(/input-area-expanded/);
+    await expect(icon).toHaveText('close_fullscreen');
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(inputArea).not.toHaveClass(/input-area-expanded/);
+    await expect(icon).toHaveText('open_in_full');
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
 test('captures the live page selection when Analyze is clicked', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
   const { context } = await launchTestBrowser(userDataDir);

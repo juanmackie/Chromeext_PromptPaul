@@ -255,12 +255,22 @@
                 rows="1"
               ></textarea>
               <button
+                id="input-expand-toggle"
+                title="Expand prompt input"
+                type="button"
+                aria-label="Expand prompt input"
+                aria-expanded="false"
+                aria-controls="user-input"
+              >
+                <span class="material-symbols-outlined" aria-hidden="true">open_in_full</span>
+              </button>
+              <button
                 id="voice-toggle-button"
                 title="Voice Input"
                 type="button"
                 aria-label="Voice input"
               >
-                <span class="material-symbols-outlined">mic</span>
+                <span class="material-symbols-outlined" aria-hidden="true">mic</span>
               </button>
             </div>
             <button id="send-button" class="btn btn-primary">Send</button>

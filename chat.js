@@ -1014,6 +1014,30 @@ document.addEventListener('DOMContentLoaded', () => {
   syncChatAreaHeight();
   window.addEventListener('resize', syncChatAreaHeight);
 
+  const inputExpandToggle = document.getElementById('input-expand-toggle');
+  const inputExpandIcon = inputExpandToggle?.querySelector('.material-symbols-outlined');
+  if (inputExpandToggle && inputArea && userInput) {
+    const setInputExpanded = (expanded) => {
+      inputArea.classList.toggle('input-area-expanded', expanded);
+      inputExpandToggle.setAttribute('aria-expanded', String(expanded));
+      inputExpandToggle.title = expanded ? 'Collapse prompt input' : 'Expand prompt input';
+      inputExpandToggle.setAttribute(
+        'aria-label',
+        expanded ? 'Collapse prompt input' : 'Expand prompt input'
+      );
+      if (inputExpandIcon) {
+        inputExpandIcon.textContent = expanded ? 'close_fullscreen' : 'open_in_full';
+      }
+      syncChatAreaHeight();
+    };
+
+    inputExpandToggle.addEventListener('click', () => {
+      const expanded = !inputArea.classList.contains('input-area-expanded');
+      setInputExpanded(expanded);
+      userInput.focus();
+    });
+  }
+
   /**
    * Stops the current API request by aborting the orchestrator run.
    */
