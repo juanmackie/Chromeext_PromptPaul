@@ -838,8 +838,17 @@ body.run-capabilities-subtle #quick-actions-sidebar {
 }
 
 #input-area.input-area-expanded #user-input {
-  height: min(35dvh, 280px);
-  min-height: 140px;
+  flex-basis: 100%;
+  min-height: clamp(140px, 35dvh, 280px);
+}
+
+/* Expanded mode: Send and Clear wrap to a row under the wider input. */
+#input-area.input-area-expanded #input-controls {
+  flex-wrap: wrap;
+}
+
+#input-area.input-area-expanded #send-button {
+  margin-left: auto;
 }
 
 #input-area.input-area-expanded #voice-toggle-button,

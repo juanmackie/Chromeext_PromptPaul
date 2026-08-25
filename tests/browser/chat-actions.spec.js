@@ -36,7 +36,11 @@ test('expands and collapses the prompt input', async () => {
   try {
     const toggle = chat.locator('#input-expand-toggle');
     const inputArea = chat.locator('#input-area');
+    const userInput = chat.locator('#user-input');
+    const sendButton = chat.locator('#send-button');
+    const clearButton = chat.locator('#clear-button');
     const icon = toggle.locator('.material-symbols-outlined');
+    const collapsedInputBox = await userInput.boundingBox();
 
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(icon).toHaveText('open_in_full');
@@ -45,6 +49,17 @@ test('expands and collapses the prompt input', async () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(inputArea).toHaveClass(/input-area-expanded/);
     await expect(icon).toHaveText('close_fullscreen');
+    await chat.waitForTimeout(250);
+
+    const expandedInputBox = await userInput.boundingBox();
+    const sendButtonBox = await sendButton.boundingBox();
+    const clearButtonBox = await clearButton.boundingBox();
+    expect(expandedInputBox).not.toBeNull();
+    expect(sendButtonBox).not.toBeNull();
+    expect(clearButtonBox).not.toBeNull();
+    expect(expandedInputBox.width).toBeGreaterThan(collapsedInputBox.width);
+    expect(sendButtonBox.y).toBeGreaterThanOrEqual(expandedInputBox.y + expandedInputBox.height);
+    expect(clearButtonBox.y).toBeGreaterThanOrEqual(expandedInputBox.y + expandedInputBox.height);
 
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
