@@ -1561,7 +1561,7 @@ td {
   border: 1px solid var(--ext-border);
   border-radius: 4px;
   padding: 4px 0;
-  z-index: var(--ext-z-dropdown);
+  z-index: var(--ext-z-tooltip);
   min-width: 140px;
   box-shadow: var(--ext-shadow-hover);
 }
@@ -1597,7 +1597,7 @@ td {
   border: 1px solid var(--ext-border);
   border-radius: 4px;
   padding: 4px 0;
-  z-index: var(--ext-z-dropdown);
+  z-index: var(--ext-z-tooltip);
   min-width: 180px;
   max-height: 300px;
   overflow-y: auto;

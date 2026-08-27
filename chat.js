@@ -352,6 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     lastUsedPreset = modeKey;
     activateSelectedTextActionView();
+    loadingManager.showToast(`${preset.label} started`, 'info');
     await makeApiCall(composed, 'auto');
     // Keep the selection sticky so further actions can run on the same text.
     return true;

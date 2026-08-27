@@ -104,3 +104,140 @@ test('captures the live page selection when Analyze is clicked', async () => {
     removeUserDataDir(userDataDir);
   }
 });
+
+test('shows feedback when Analyze is clicked without selected text', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
+  try {
+    await chat.locator('#analyze-button').click();
+
+    await expect(chat.locator('.toast.warning')).toContainText('Please select text first');
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+test('shows immediate feedback when Analyze starts with selected text', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const target = await context.newPage();
+  const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+  await target.goto(targetUrl);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  await harness.evaluate((url) => window.pageActionHarness.attachSelectionSource(url), targetUrl);
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
+  try {
+    await expect(chat.locator('#selected-text-strip')).toBeVisible();
+    await chat.locator('#analyze-button').click();
+
+    await expect(chat.locator('.toast.info')).toContainText('Summary started');
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+test('keeps the custom prompt list above the open action menu', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
+  try {
+    await chat.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.set(
+            {
+              instructions: [
+                {
+                  id: 'custom-prompt-overlap-test',
+                  name: 'Customer query',
+                  instruction: 'Test prompt',
+                },
+              ],
+            },
+            resolve
+          )
+        )
+    );
+
+    await chat.locator('#quick-actions-more').click();
+    await chat.locator('#custom-prompts-dropdown').click();
+
+    const promptMenu = chat.locator('#custom-prompts-menu');
+    await expect(promptMenu).toBeVisible();
+    await expect(promptMenu.locator('.custom-prompt-item')).toHaveText(/Customer query/);
+
+    const promptPaintedOnTop = await chat.evaluate(() => {
+      const promptMenuElement = document.querySelector('#custom-prompts-menu');
+      const actionMenuElement = document.querySelector('#quick-actions-menu');
+      if (!promptMenuElement || !actionMenuElement) return false;
+
+      const promptRect = promptMenuElement.getBoundingClientRect();
+      const actionRect = actionMenuElement.getBoundingClientRect();
+      const x = Math.max(promptRect.left, actionRect.left) + 8;
+      const y = Math.max(promptRect.top, actionRect.top) + 8;
+      const paintedElement = document.elementFromPoint(x, y);
+      return Boolean(paintedElement?.closest('#custom-prompts-menu'));
+    });
+
+    expect(promptPaintedOnTop).toBe(true);
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+test('shows mode choices above the open action menu', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
+  try {
+    await chat.locator('#quick-actions-more').click();
+    await chat.locator('#analyze-dropdown').click();
+
+    const presetMenu = chat.locator('#preset-menu');
+    await expect(presetMenu).toBeVisible();
+    await expect(presetMenu.locator('.preset-menu-item')).toHaveText([
+      'Summary',
+      'TL;DR',
+      'Technical',
+      'Proofread',
+      'Executive',
+    ]);
+
+    const presetPaintedOnTop = await chat.evaluate(() => {
+      const presetMenuElement = document.querySelector('#preset-menu');
+      const actionMenuElement = document.querySelector('#quick-actions-menu');
+      if (!presetMenuElement || !actionMenuElement) return false;
+
+      const presetRect = presetMenuElement.getBoundingClientRect();
+      const actionRect = actionMenuElement.getBoundingClientRect();
+      const x = Math.max(presetRect.left, actionRect.left) + 8;
+      const y = Math.max(presetRect.top, actionRect.top) + 8;
+      const paintedElement = document.elementFromPoint(x, y);
+      return Boolean(paintedElement?.closest('#preset-menu'));
+    });
+
+    expect(presetPaintedOnTop).toBe(true);
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
