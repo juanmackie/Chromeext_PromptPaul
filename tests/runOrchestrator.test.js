@@ -193,6 +193,9 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('re-inspect after every mutation');
     expect(prompt).toContain('If the current tab changes documents during the run');
     expect(prompt).toContain('continue the same request');
+    expect(prompt).toContain('do not stop after a partial result');
+    expect(prompt).toContain('ask whether to continue');
+    expect(prompt).toContain('an interim progress report or next-steps menu is not completion');
     expect(prompt).toContain('summarize what you actually did on the page');
   });
 
@@ -2193,6 +2196,95 @@ describe('RunOrchestrator page actions', () => {
     const highRiskResult = await highRiskAction;
     expect(highRiskResult.result.success).toBe(true);
     expect(events.filter((event) => event.type === 'page_action_confirmation')).toHaveLength(1);
+  });
+
+  it('keeps session approval for later same-origin navigation-capable actions', async () => {
+    const events = [];
+    let snapshotVersion = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') {
+          snapshotVersion += 1;
+          return {
+            success: true,
+            snapshot: {
+              ...makeSnapshot(),
+              elements: [
+                makeSnapshot().elements[0],
+                {
+                  ...makeSnapshot().elements[1],
+                  label: snapshotVersion === 1 ? 'Open details' : 'Continue',
+                  text: snapshotVersion === 1 ? 'Open details' : 'Continue',
+                },
+              ],
+            },
+          };
+        }
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('state-session-navigation', 'page_get_state', {}));
+
+    const firstAction = orch.executeTool(
+      runId,
+      makeCall('click-session-navigation-1', 'page_click', {
+        snapshotId: 'page-snap-1',
+        index: 1,
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const firstConfirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(firstConfirmation).toBeTruthy();
+    expect(
+      orch.resolvePageActionDecision(runId, firstConfirmation.confirmationId, true, true)
+    ).toBe(true);
+    await firstAction;
+
+    await orch.executeTool(runId, makeCall('state-session-navigation-2', 'page_get_state', {}));
+    const secondAction = orch.executeTool(
+      runId,
+      makeCall('click-session-navigation-2', 'page_click', {
+        snapshotId: 'page-snap-1',
+        index: 1,
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmations = events.filter((event) => event.type === 'page_action_confirmation');
+    const secondConfirmation = confirmations[1];
+    if (secondConfirmation) {
+      orch.resolvePageActionDecision(runId, secondConfirmation.confirmationId, true);
+    }
+    await expect(secondAction).resolves.toMatchObject({ result: { success: true } });
+    expect(confirmations).toHaveLength(1);
+
+    orch.activeRuns.get(runId).pageActions.snapshot.elements.push({
+      index: 2,
+      tag: 'a',
+      role: 'link',
+      label: 'External docs',
+      text: 'External docs',
+      href: 'https://external.example/docs',
+    });
+    const newOriginAction = orch.executeTool(
+      runId,
+      makeCall('click-session-new-origin', 'page_click', {
+        snapshotId: 'page-snap-1',
+        index: 2,
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const newOriginConfirmation = events.find(
+      (event) =>
+        event.type === 'page_action_confirmation' &&
+        event.confirmationId !== firstConfirmation.confirmationId
+    );
+    expect(newOriginConfirmation).toMatchObject({ destinationOrigin: 'external.example' });
+    expect(orch.resolvePageActionDecision(runId, newOriginConfirmation.confirmationId, true)).toBe(
+      true
+    );
+    await expect(newOriginAction).resolves.toMatchObject({ result: { success: true } });
   });
 
   it('continues after an approved navigation and forces a fresh snapshot', async () => {

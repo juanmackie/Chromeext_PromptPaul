@@ -538,6 +538,102 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('keeps session approval for later navigation-capable actions', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      const inspected = await startAndInspect(harness, targetUrl, 'session-approval');
+      runId = inspected.runId;
+      const saveDraft = inspected.snapshot.elements.find(
+        (element) => element.label === 'Save draft'
+      );
+      expect(saveDraft).toBeTruthy();
+
+      await harness.evaluate(
+        ({ runId, snapshotId, index }) => (
+          void window.pageActionHarness.executeTool(runId, 'session-save-draft', 'page_click', {
+            snapshotId,
+            index,
+          }),
+          true
+        ),
+        { runId, snapshotId: inspected.snapshot.snapshotId, index: saveDraft.index }
+      );
+      await expect
+        .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
+        .toMatchObject({ action: 'page_click' });
+
+      const decision = await harness.evaluate(
+        ({ url, runId }) => window.pageActionHarness.resolveConfirmation(url, runId, true, true),
+        { url: targetUrl, runId }
+      );
+      expect(decision.success, JSON.stringify(decision)).toBe(true);
+      await expect
+        .poll(() =>
+          harness.evaluate(
+            (id) => window.pageActionHarness.getToolResult(id, 'session-save-draft'),
+            runId
+          )
+        )
+        .toMatchObject({ result: { success: true } });
+
+      const refreshed = await harness.evaluate(
+        (id) =>
+          window.pageActionHarness.executeTool(
+            id,
+            'session-approval-refresh',
+            'page_get_state',
+            {}
+          ),
+        runId
+      );
+      expect(refreshed, JSON.stringify(refreshed)).toMatchObject({
+        result: { snapshot: expect.any(Object) },
+      });
+      const continueButton = refreshed.result.snapshot.elements.find(
+        (element) => element.label === 'Continue'
+      );
+      expect(continueButton).toBeTruthy();
+
+      await harness.evaluate(
+        ({ runId, snapshotId, index }) => (
+          void window.pageActionHarness.executeTool(runId, 'session-continue', 'page_click', {
+            snapshotId,
+            index,
+          }),
+          true
+        ),
+        {
+          runId,
+          snapshotId: refreshed.result.snapshot.snapshotId,
+          index: continueButton.index,
+        }
+      );
+      await expect
+        .poll(() =>
+          harness.evaluate(
+            (id) => window.pageActionHarness.getToolResult(id, 'session-continue'),
+            runId
+          )
+        )
+        .toMatchObject({ result: { success: true } });
+      expect(
+        await harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId)
+      ).toBe(null);
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('opens an approved blank-target link in an owned tab', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);

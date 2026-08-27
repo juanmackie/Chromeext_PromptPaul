@@ -952,9 +952,12 @@ class RunOrchestrator {
     const requiresNewOriginApproval = Boolean(
       targetOrigin && !run.pageActions.allowedOrigins.has(targetOrigin)
     );
+    // Session approval bypasses the normal confirmation for every allowed
+    // action. A navigation to an origin the run has not approved yet remains
+    // an explicit one-time decision.
     const requiresConfirmation =
       policy.requiresConfirmation &&
-      (!run.pageActions.sessionApproval || policy.navigation === true || requiresNewOriginApproval);
+      (!run.pageActions.sessionApproval || requiresNewOriginApproval);
     let explicitlyApproved = false;
     if (requiresConfirmation) {
       const approved = await this._requestPageActionConfirmation(
@@ -1220,17 +1223,21 @@ class RunOrchestrator {
         origin = '';
       }
       const needsOriginApproval = Boolean(origin && !run.pageActions.allowedOrigins.has(origin));
-      const approved = await this._requestPageActionConfirmation(run, actionName, args, target, {
-        ...policy,
-        reason: needsOriginApproval
-          ? `${policy.reason} This is a new site for this run.`
-          : policy.reason,
-      });
-      if (!approved) {
-        return {
-          success: true,
-          result: { error: 'PAGE_ACTION_DENIED', message: 'The user denied opening this link.' },
-        };
+      const requiresConfirmation =
+        policy.requiresConfirmation && (!run.pageActions.sessionApproval || needsOriginApproval);
+      if (requiresConfirmation) {
+        const approved = await this._requestPageActionConfirmation(run, actionName, args, target, {
+          ...policy,
+          reason: needsOriginApproval
+            ? `${policy.reason} This is a new site for this run.`
+            : policy.reason,
+        });
+        if (!approved) {
+          return {
+            success: true,
+            result: { error: 'PAGE_ACTION_DENIED', message: 'The user denied opening this link.' },
+          };
+        }
       }
       if (origin) run.pageActions.allowedOrigins.add(origin);
       run.pageActions.actions += 1;
@@ -1315,7 +1322,7 @@ class RunOrchestrator {
         run.pageActions.allowedOrigins.add(origin);
       }
     }
-    if (actionName === 'page_close_tab') {
+    if (actionName === 'page_close_tab' && !run.pageActions.sessionApproval) {
       const approved = await this._requestPageActionConfirmation(
         run,
         actionName,
@@ -2223,7 +2230,11 @@ class RunOrchestrator {
           pageToolNames +
           '. You can perform requests that are achievable on the current page. When a request is ' +
           'achievable on this page, PERFORM it with the tools instead of describing steps: call ' +
-          'page_get_state first, act, re-inspect after every mutation, and continue until done; use ' +
+          'page_get_state first, act, re-inspect after every mutation, and continue until done. For ' +
+          'multi-item or ongoing requests, do not stop after a partial result or ask whether to continue; ' +
+          'an interim progress report or next-steps menu is not completion; keep using the tools until ' +
+          'the requested work is complete. Ask a question only when a real ' +
+          'ambiguity, blocked action, or safe manual step prevents progress. Use ' +
           'page_pause_for_user only for a safe manual step in the visible tab, then wait for explicit ' +
           'Resume and call page_get_state again; when you ' +
           'finish, summarize what you actually did on the page. Read-only inspection and scrolling run ' +
