@@ -473,6 +473,12 @@ function runUnitTests(runner) {
     if (!notch.includes("const STORAGE_KEY = 'notchEnabled'")) {
       throw new Error('Notch must use the persistent notchEnabled preference');
     }
+    if (!notch.includes("const PINNED_ACTIONS_KEY = 'pinnedQuickActions'")) {
+      throw new Error('Notch must render saved pinned prompts');
+    }
+    if (!notch.includes('MAX_PINNED_ACTIONS = 4')) {
+      throw new Error('Notch must keep the pinned prompt list bounded');
+    }
     if (!notch.includes('extension context invalidated') || !notch.includes('try {')) {
       throw new Error('Notch runtime messaging must handle invalidated extension contexts');
     }
@@ -483,6 +489,8 @@ function runUnitTests(runner) {
     for (const token of [
       'const NOTCH_ACTIONS = new Set([',
       "'openActions',",
+      "'runPinnedInstruction',",
+      'notchPinnedAction',
       'isContentScriptSender(sender, extensionOrigin)',
       'requestMatchesSenderTab(sender, request?.tabId)',
       'NOTCH_MAX_PAGE_CHARS',

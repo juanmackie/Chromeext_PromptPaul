@@ -36,6 +36,30 @@ test('shows an isolated quick-action notch when enabled', async () => {
   try {
     await target.goto(fixtureUrl(fixtureServer, 'form.html'));
     await expect(target.locator('[data-prompt-paul-notch-host]')).toHaveCount(0);
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.set(
+            {
+              instructions: [
+                { id: 'pinned-summarize', name: 'Summarize cleanly', content: 'Summarize this.' },
+                { id: 'pinned-proofread', name: 'Proofread text', content: 'Proofread this.' },
+                { id: 'pinned-explain', name: 'Explain simply', content: 'Explain this.' },
+                { id: 'pinned-formal', name: 'Make formal', content: 'Make this formal.' },
+                { id: 'pinned-short', name: 'Shorten text', content: 'Shorten this.' },
+              ],
+              pinnedQuickActions: [
+                'pinned-summarize',
+                'pinned-proofread',
+                'pinned-explain',
+                'pinned-formal',
+                'pinned-short',
+              ],
+            },
+            resolve
+          )
+        )
+    );
 
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     await options.locator('#notchEnabledToggle').check();
@@ -65,6 +89,11 @@ test('shows an isolated quick-action notch when enabled', async () => {
       .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).fontFamily));
     expect(new Set(fontFamilies).size).toBe(1);
     await expect(host.locator('[data-notch-action="summarizePage"]')).toBeVisible();
+    await expect(host.locator('.notch-pinned-section')).toBeVisible();
+    await expect(host.locator('.notch-pinned-action')).toHaveCount(4);
+    await expect(host.locator('.notch-pinned-action').first()).toContainText('Summarize cleanly');
+    await expect(host.locator('.notch-pinned-action').nth(1)).toContainText('Proofread text');
+    await expect(host.locator('.notch-pinned-more')).toHaveText('+ 1 more in All actions');
 
     await host.locator('[data-notch-action="openActions"]').click();
     await expect(host.locator('.notch-panel')).toBeHidden();

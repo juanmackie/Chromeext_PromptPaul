@@ -10,7 +10,7 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 - Structured extraction for Reddit threads, GitHub repository/issue pages, and RSS/Atom feed URLs, plus YouTube transcripts
 - Composer-led chat: a visible context tray shows every attached context (selection, media, page) with one-click detach, and contextual quick actions (Analyze/Proofread/Explain, page Summary/TL;DR/Technical) sit right above the input
 - Inline recovery on every response: Stop, Retry, Edit, Continue
-- Save custom instructions and quick actions
+- Save custom instructions and quick actions, surfaced as compact pinned prompts in the Top Notch
 - Support OpenClaw-compatible Agent Skills
 - Use page-aware action cards for sites like YouTube, GitHub, Gmail, and docs
 - Opt into guarded natural-language actions on the current page (inspect, click, fill, select, scroll)
@@ -56,9 +56,10 @@ cd Chromeext_PromptPaul
 ### Browser-page Top Notch
 
 - Open Options and enable **Top Notch**, then save the section.
-- On supported web pages, expand the top-centered Prompt Paul notch for **Open chat**, **All actions**, **Summarize page**, **Explain selection**, or **Settings**.
-- The notch uses an isolated Shadow DOM and does not change page layout. It is hidden by default and does not run on browser-internal or extension pages.
-- Page and selection content is sent only after you choose the matching action. Content-script requests are bound to their sender tab and use the existing side-panel chat flow.
+- On supported web pages, expand the top-centered Prompt Paul notch for **Open chat**, **Summarize**, **Explain**, **All actions**, or **Settings**.
+- Saved pinned prompts appear in a compact section, in the order you pinned them. Choose one to run it against the current selection, the current page on a new chat, or the active conversation; up to four are shown so the notch stays focused.
+- The notch uses an isolated Shadow DOM, blends into the top edge of the browser page, and does not change page layout. It is hidden by default and does not run on browser-internal or extension pages.
+- Page, selection, and pinned-prompt content is sent only after you choose the matching action. Content-script requests are bound to their sender tab and use the existing side-panel chat flow.
 
 ### Side panel Page Actions toggle
 

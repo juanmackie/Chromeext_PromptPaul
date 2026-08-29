@@ -7,13 +7,17 @@
   if (window.top !== window || document.querySelector('[data-prompt-paul-notch-host]')) return;
 
   const STORAGE_KEY = 'notchEnabled';
+  const PINNED_ACTIONS_KEY = 'pinnedQuickActions';
+  const INSTRUCTIONS_KEY = 'instructions';
   const HOST_ATTRIBUTE = 'data-prompt-paul-notch-host';
   const MAX_SELECTION_CHARS = 20_000;
+  const MAX_PINNED_ACTIONS = 4;
   const ACTIONS = Object.freeze({
     OPEN_CHAT: 'openChat',
     OPEN_ACTIONS: 'openActions',
     SUMMARIZE_PAGE: 'summarizePage',
     EXPLAIN_SELECTION: 'explainSelection',
+    RUN_PINNED_INSTRUCTION: 'runPinnedInstruction',
     OPEN_OPTIONS: 'openOptions',
   });
 
@@ -47,12 +51,13 @@
 
     .notch-shell {
       --notch-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
-      --notch-surface: rgba(8, 10, 13, 0.97);
+      --notch-surface: rgba(10, 12, 16, 0.96);
+      --notch-surface-raised: rgba(25, 28, 35, 0.78);
       --notch-edge: rgba(255, 255, 255, 0.12);
       display: flex;
       flex-direction: column;
       align-items: center;
-      width: 154px;
+      width: 184px;
       pointer-events: none;
       font-family: "Geist Mono", "JetBrains Mono", "SF Mono", "Monaco", monospace;
       font-size: 13px;
@@ -62,7 +67,7 @@
     }
 
     .notch-shell[data-expanded='true'] {
-      width: min(320px, calc(100vw - 24px));
+      width: min(360px, calc(100vw - 20px));
     }
 
     .notch-rail,
@@ -76,24 +81,27 @@
       align-items: center;
       justify-content: center;
       width: 100%;
-      height: 34px;
-      min-height: 34px;
-      padding: 4px 6px;
+      height: 31px;
+      min-height: 31px;
+      padding: 3px 7px 4px;
       overflow: visible;
       border: 1px solid var(--notch-edge);
       border-top: 0;
-      border-radius: 0 0 19px 23px;
-      background: var(--notch-surface);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), inset 0 1px rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(18px);
-      transition: height 420ms var(--notch-spring), border-radius 520ms var(--notch-spring);
+      border-radius: 0 0 16px 16px;
+      background: linear-gradient(180deg, rgba(5, 7, 10, 0.98), var(--notch-surface));
+      box-shadow: 0 7px 22px rgba(0, 0, 0, 0.16), inset 0 1px rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(20px) saturate(1.25);
+      transition: height 420ms var(--notch-spring), border-radius 520ms var(--notch-spring),
+        box-shadow 220ms ease;
     }
 
     .notch-shell[data-expanded='true'] .notch-rail {
       width: 100%;
-      height: 31px;
-      min-height: 31px;
-      border-radius: 0 0 0 0;
+      height: 29px;
+      min-height: 29px;
+      border-color: transparent;
+      border-radius: 0;
+      box-shadow: inset 0 -1px rgba(255, 255, 255, 0.08);
     }
 
     .notch-toggle,
@@ -148,7 +156,16 @@
     .notch-toggle-content {
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: center;
+      gap: 7px;
+      width: 100%;
+    }
+
+    .notch-toggle-name {
+      color: rgba(245, 247, 250, 0.82);
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: 0.015em;
     }
 
     .notch-mark {
@@ -184,13 +201,13 @@
     .notch-panel {
       width: 100%;
       margin: 0;
-      padding: 16px;
+      padding: 13px;
       border: 1px solid var(--notch-edge);
       border-top: 0;
-      border-radius: 0 0 26px 26px;
-      background: var(--notch-surface);
+      border-radius: 0 0 20px 20px;
+      background: linear-gradient(180deg, var(--notch-surface), rgba(14, 16, 21, 0.98));
       box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(22px);
+      backdrop-filter: blur(24px) saturate(1.2);
     }
 
     .notch-panel[hidden] {
@@ -248,7 +265,7 @@
     .notch-header {
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 13px;
+      margin-bottom: 10px;
     }
 
     .notch-title {
@@ -289,9 +306,9 @@
     .notch-site-row {
       gap: 7px;
       min-width: 0;
-      margin-bottom: 13px;
+      margin-bottom: 10px;
       color: rgba(245, 247, 250, 0.58);
-      font-size: 11px;
+      font-size: 10px;
     }
 
     .notch-site-dot {
@@ -310,22 +327,63 @@
 
     .notch-actions {
       display: grid;
-      gap: 7px;
+      gap: 6px;
+    }
+
+    .notch-primary-actions {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .notch-action {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       width: 100%;
-      min-height: 39px;
-      padding: 8px 10px;
+      min-height: 35px;
+      padding: 7px 8px;
       border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.045);
+      border-radius: 9px;
+      background: var(--notch-surface-raised);
       color: #f5f7fa;
       text-align: left;
       transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .notch-primary-actions .notch-action {
+      min-height: 54px;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      padding: 7px 4px;
+      text-align: center;
+    }
+
+    .notch-primary-actions .notch-action-copy {
+      width: 100%;
+    }
+
+    .notch-primary-actions .notch-action-label {
+      justify-content: center;
+      overflow: hidden;
+      font-size: 10px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .notch-secondary-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .notch-secondary-actions .notch-action {
+      justify-content: center;
+      min-height: 32px;
+      padding: 6px 8px;
+      text-align: center;
     }
 
     .notch-action:hover:not(:disabled) {
@@ -346,8 +404,8 @@
     .notch-action-icon {
       display: grid;
       place-items: center;
-      width: 22px;
-      height: 22px;
+      width: 21px;
+      height: 21px;
       flex: 0 0 auto;
       color: #6bb6ff;
     }
@@ -370,18 +428,74 @@
     .notch-action-label {
       gap: 6px;
       color: #f5f7fa;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
     }
 
     .notch-action-hint {
-      display: block;
+      display: none;
       overflow: hidden;
       margin-top: 2px;
       color: rgba(245, 247, 250, 0.52);
       font-size: 10px;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .notch-action:disabled .notch-action-hint {
+      display: block;
+    }
+
+    .notch-pinned-section {
+      margin-top: 11px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .notch-pinned-section[hidden] {
+      display: none;
+    }
+
+    .notch-section-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 2px 6px;
+      color: rgba(245, 247, 250, 0.56);
+      font-size: 9px;
+      font-weight: 650;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .notch-section-count {
+      color: rgba(245, 247, 250, 0.36);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.03em;
+    }
+
+    .notch-pinned-actions {
+      max-height: 166px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+
+    .notch-pinned-action {
+      min-height: 34px;
+      padding: 6px 8px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .notch-pinned-action .notch-action-icon {
+      width: 19px;
+      height: 19px;
+      color: #a7d3ff;
+    }
+
+    .notch-pinned-more {
+      margin: 6px 2px 0;
+      color: rgba(245, 247, 250, 0.4);
+      font-size: 9px;
     }
 
     .notch-feedback {
@@ -457,6 +571,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
+      .notch-shell,
       .notch-action,
       .notch-panel,
       .notch-panel .notch-header,
@@ -476,6 +591,7 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4H5a1 1 0 0 0-1 1v2M17 4h2a1 1 0 0 1 1 1v2M7 20H5a1 1 0 0 1-1-1v-2M17 20h2a1 1 0 0 0 1-1v-2"/><path d="M8 8h8v8H8z"/></svg>',
     settings:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.1 1.9 2.2.5.2 2.2 1.7 1.4-1.2 1.9.5 2.2-2 .9-.5 2.2-2.1.5L10 21l-1.1-1.9-2.2-.5-.2-2.2-1.7-1.4 1.2-1.9-.5-2.2 2-.9.5-2.2 2.1-.5Z"/><circle cx="12" cy="12" r="2.5"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4 8 0 1.5 5-2.5 2.5v3H9v-3L6.5 9 8 4Z"/><path d="M12 14.5V21"/></svg>',
   };
 
   function getSelectedText() {
@@ -496,6 +612,91 @@
     feedback.textContent = message;
     if (tone) feedback.dataset.tone = tone;
     else delete feedback.dataset.tone;
+  }
+
+  function readPinnedActions() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([PINNED_ACTIONS_KEY, INSTRUCTIONS_KEY], (result) => {
+          if (chrome.runtime.lastError) {
+            resolve({ items: [], total: 0 });
+            return;
+          }
+
+          const pinnedIds = Array.isArray(result?.[PINNED_ACTIONS_KEY])
+            ? result[PINNED_ACTIONS_KEY]
+            : [];
+          const instructions = Array.isArray(result?.[INSTRUCTIONS_KEY])
+            ? result[INSTRUCTIONS_KEY]
+            : [];
+          const byId = new Map(
+            instructions.map((instruction) => [String(instruction?.id || '').trim(), instruction])
+          );
+          const seen = new Set();
+          const items = [];
+
+          for (const rawId of pinnedIds) {
+            const id = String(rawId || '').trim();
+            const instruction = byId.get(id);
+            if (!id || !instruction || seen.has(id)) continue;
+            seen.add(id);
+            items.push({
+              id,
+              label: String(instruction.name || 'Untitled prompt')
+                .trim()
+                .slice(0, 80),
+            });
+          }
+
+          resolve({ items: items.slice(0, MAX_PINNED_ACTIONS), total: items.length });
+        });
+      } catch (_) {
+        resolve({ items: [], total: 0 });
+      }
+    });
+  }
+
+  function createPinnedAction(item) {
+    const button = document.createElement('button');
+    button.className = 'notch-action notch-pinned-action';
+    button.type = 'button';
+    button.dataset.notchAction = ACTIONS.RUN_PINNED_INSTRUCTION;
+    button.dataset.instructionId = item.id;
+    button.title = item.label;
+
+    const icon = document.createElement('span');
+    icon.className = 'notch-action-icon';
+    icon.innerHTML = icons.pin;
+
+    const copy = document.createElement('span');
+    copy.className = 'notch-action-copy';
+    const label = document.createElement('span');
+    label.className = 'notch-action-label';
+    label.textContent = item.label || 'Untitled prompt';
+    copy.appendChild(label);
+    button.append(icon, copy);
+    button.addEventListener('click', () =>
+      sendAction(ACTIONS.RUN_PINNED_INSTRUCTION, { instructionId: item.id })
+    );
+    return button;
+  }
+
+  async function renderPinnedActions() {
+    const section = shadow?.querySelector('.notch-pinned-section');
+    const container = shadow?.querySelector('.notch-pinned-actions');
+    const count = shadow?.querySelector('.notch-section-count');
+    const more = shadow?.querySelector('.notch-pinned-more');
+    if (!section || !container) return;
+
+    const { items, total } = await readPinnedActions();
+    if (!shadow || !section.isConnected) return;
+    container.replaceChildren(...items.map(createPinnedAction));
+    section.hidden = items.length === 0;
+    if (count) count.textContent = String(total);
+    if (more) {
+      more.hidden = total <= items.length;
+      more.textContent = more.hidden ? '' : `+ ${total - items.length} more in All actions`;
+    }
   }
 
   function updateSelectionState() {
@@ -540,9 +741,14 @@
     if (expanded) updateSelectionState();
   }
 
-  function sendAction(notchAction) {
-    const payload = { action: 'notchAction', notchAction };
-    if (notchAction === ACTIONS.EXPLAIN_SELECTION) payload.selectedText = getSelectedText();
+  function sendAction(notchAction, details = {}) {
+    const payload = { action: 'notchAction', notchAction, ...details };
+    if (
+      notchAction === ACTIONS.EXPLAIN_SELECTION ||
+      notchAction === ACTIONS.RUN_PINNED_INSTRUCTION
+    ) {
+      payload.selectedText = getSelectedText();
+    }
     if (notchAction === ACTIONS.EXPLAIN_SELECTION && !payload.selectedText) {
       setFeedback('Select text first.', 'error');
       updateSelectionState();
@@ -601,6 +807,7 @@
           <button class="notch-toggle" type="button" aria-expanded="false" aria-controls="notch-panel" title="Open Prompt Paul notch">
             <span class="notch-toggle-content">
               <span class="notch-mark" aria-hidden="true"></span>
+              <span class="notch-toggle-name">Prompt Paul</span>
               <span class="notch-status" aria-hidden="true"></span>
             </span>
             <span class="notch-sr-only">Open Prompt Paul quick actions</span>
@@ -618,26 +825,36 @@
             <span class="notch-site-dot" aria-hidden="true"></span>
             <span class="notch-site"></span>
           </div>
-          <div class="notch-actions" role="toolbar" aria-label="Prompt Paul actions">
+          <div class="notch-actions notch-primary-actions" role="toolbar" aria-label="Primary Prompt Paul actions">
             <button class="notch-action" type="button" data-notch-action="openChat">
               <span class="notch-action-icon">${icons.chat}</span>
               <span class="notch-action-copy"><span class="notch-action-label">Open chat</span><span class="notch-action-hint">Ask anything about this page</span></span>
             </button>
-            <button class="notch-action" type="button" data-notch-action="openActions">
-              <span class="notch-action-icon">${icons.selection}</span>
-              <span class="notch-action-copy"><span class="notch-action-label">All actions</span><span class="notch-action-hint">Open the full Prompt Paul action menu</span></span>
-            </button>
             <button class="notch-action" type="button" data-notch-action="summarizePage">
               <span class="notch-action-icon">${icons.page}</span>
-              <span class="notch-action-copy"><span class="notch-action-label">Summarize page</span><span class="notch-action-hint">Read the current page and summarize it</span></span>
+              <span class="notch-action-copy"><span class="notch-action-label">Summarize</span><span class="notch-action-hint">Read and summarize this page</span></span>
             </button>
             <button class="notch-action" type="button" data-notch-action="explainSelection" disabled>
               <span class="notch-action-icon">${icons.selection}</span>
-              <span class="notch-action-copy"><span class="notch-action-label">Explain selection</span><span class="notch-action-hint">Select text to enable</span></span>
+              <span class="notch-action-copy"><span class="notch-action-label">Explain</span><span class="notch-action-hint">Select text to enable</span></span>
+            </button>
+          </div>
+          <section class="notch-pinned-section" aria-labelledby="notch-pinned-title" hidden>
+            <div class="notch-section-heading">
+              <span id="notch-pinned-title">Pinned prompts</span>
+              <span class="notch-section-count" aria-label="Pinned prompt count"></span>
+            </div>
+            <div class="notch-actions notch-pinned-actions" role="toolbar" aria-label="Pinned prompts"></div>
+            <div class="notch-pinned-more" hidden></div>
+          </section>
+          <div class="notch-secondary-actions" role="toolbar" aria-label="More Prompt Paul actions">
+            <button class="notch-action" type="button" data-notch-action="openActions">
+              <span class="notch-action-icon">${icons.selection}</span>
+              <span class="notch-action-copy"><span class="notch-action-label">All actions</span><span class="notch-action-hint">Open the full action menu</span></span>
             </button>
             <button class="notch-action" type="button" data-notch-action="openOptions">
               <span class="notch-action-icon">${icons.settings}</span>
-              <span class="notch-action-copy"><span class="notch-action-label">Settings</span><span class="notch-action-hint">Manage the notch and connections</span></span>
+              <span class="notch-action-copy"><span class="notch-action-label">Settings</span><span class="notch-action-hint">Manage Prompt Paul</span></span>
             </button>
           </div>
           <div class="notch-feedback" role="status" aria-live="polite"></div>
@@ -668,6 +885,7 @@
     };
     document.addEventListener('keydown', keydownListener, true);
     updateSelectionState();
+    void renderPinnedActions();
   }
 
   function applyEnabled(enabled) {
@@ -680,8 +898,12 @@
   });
 
   storageListener = (changes, area) => {
-    if (area === 'local' && changes[STORAGE_KEY]) {
+    if (area !== 'local') return;
+    if (changes[STORAGE_KEY]) {
       applyEnabled(changes[STORAGE_KEY].newValue === true);
+    }
+    if (changes[PINNED_ACTIONS_KEY] || changes[INSTRUCTIONS_KEY]) {
+      void renderPinnedActions();
     }
   };
   chrome.storage.onChanged.addListener(storageListener);

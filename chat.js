@@ -1279,6 +1279,65 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  function applyNotchPinnedAction(request) {
+    if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
+    if (request.actionId) lastProcessedPanelActionId = request.actionId;
+
+    const instructionId = String(request.instructionId || '').trim();
+    if (!instructionId) {
+      loadingManager.showToast('Pinned prompt is not available.', 'warning');
+      return false;
+    }
+
+    tabId = request.tabId;
+    const pinnedSelection = String(request.selectedText || '')
+      .trim()
+      .slice(0, 20_000);
+    if (pinnedSelection) {
+      selectedText = pinnedSelection;
+      refreshSelectedTextActionState();
+    }
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+    chrome.storage.local.get(['instructions'], (result) => {
+      if (chrome.runtime.lastError) {
+        loadingManager.showToast('Could not load the pinned prompt.', 'error');
+        return;
+      }
+      const instruction = (result.instructions || []).find(
+        (entry) => String(entry?.id || '') === instructionId
+      );
+      if (!instruction) {
+        loadingManager.showToast('Pinned prompt is no longer available.', 'warning');
+        return;
+      }
+      const pageData = request.pageData || {};
+      if (!pinnedSelection && !hasConversation() && pageData.success && pageData.content) {
+        const metadata = {
+          title: pageData.title,
+          siteName: pageData.siteName,
+          byline: pageData.byline,
+          url: pageData.url,
+          type: pageData.type,
+        };
+        void makeApiCall(
+          {
+            instruction: instruction.content,
+            context: {
+              type: 'page_content',
+              text: String(pageData.content).slice(0, 200_000),
+              metadata,
+            },
+          },
+          normalizeToolChoice(instruction.tool_choice)
+        );
+        return;
+      }
+      void executeSelectedTextInstruction(instruction);
+    });
+    return true;
+  }
+
   function applyNotchSelectionAction(request) {
     if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
     if (request.actionId) lastProcessedPanelActionId = request.actionId;
@@ -1347,6 +1406,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'setSelectedText',
       'setMediaForAnalysis',
       'notchOpenActions',
+      'notchPinnedAction',
       'notchSelectionAction',
       'notchPageAction',
     ];
@@ -1375,6 +1435,8 @@ document.addEventListener('DOMContentLoaded', () => {
       consumed = applySetMediaForAnalysisAction(pendingAction);
     } else if (pendingAction.action === 'notchOpenActions') {
       consumed = applyNotchOpenActions(pendingAction);
+    } else if (pendingAction.action === 'notchPinnedAction') {
+      consumed = applyNotchPinnedAction(pendingAction);
     } else if (pendingAction.action === 'notchSelectionAction') {
       consumed = applyNotchSelectionAction(pendingAction);
     } else if (pendingAction.action === 'notchPageAction') {
@@ -1462,6 +1524,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
       }
       const consumed = applyNotchOpenActions(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
+      return true;
+    } else if (request.action === 'notchPinnedAction') {
+      if (isPanelAction) {
+        if (sendResponse) sendResponse({ success: true, ignored: true });
+        return true;
+      }
+      const consumed = applyNotchPinnedAction(request);
       if (sendResponse) sendResponse({ success: true, ignored: !consumed });
       return true;
     } else if (request.action === 'notchSelectionAction') {

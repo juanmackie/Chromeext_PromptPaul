@@ -67,6 +67,7 @@ const NOTCH_ACTIONS = new Set([
   'openActions',
   'summarizePage',
   'explainSelection',
+  'runPinnedInstruction',
   'openOptions',
 ]);
 const NOTCH_MAX_SELECTION_CHARS = 20_000;
@@ -2106,6 +2107,52 @@ async function handleNotchAction(request, sender) {
 
   if (action === 'openChat') {
     return openChatWithContext({ tabId }, { panelOpenPromise });
+  }
+
+  if (action === 'runPinnedInstruction') {
+    const instructionId =
+      typeof request?.instructionId === 'string' ? request.instructionId.trim() : '';
+    if (!instructionId || instructionId.length > 256) {
+      return { success: false, error: 'Pinned prompt is not available.' };
+    }
+    const { instructions = [], pinnedQuickActions = [] } = await chrome.storage.local.get([
+      'instructions',
+      'pinnedQuickActions',
+    ]);
+    const isPinned =
+      Array.isArray(pinnedQuickActions) &&
+      pinnedQuickActions.some((pinId) => String(pinId) === instructionId);
+    const instruction =
+      Array.isArray(instructions) &&
+      instructions.find((entry) => String(entry?.id || '') === instructionId);
+    if (!isPinned || !instruction) {
+      return { success: false, error: 'Pinned prompt is no longer available.' };
+    }
+    const selectedText = String(request?.selectedText || '')
+      .trim()
+      .slice(0, NOTCH_MAX_SELECTION_CHARS);
+    let pageData = null;
+    if (!selectedText) {
+      const extracted = await executeTabContentExtraction(tabId);
+      if (extracted?.success && extracted.content) {
+        pageData = {
+          success: true,
+          content: String(extracted.content).slice(0, NOTCH_MAX_PAGE_CHARS),
+          title: String(extracted.title || tab.title || '').slice(0, 300),
+          siteName: String(extracted.siteName || '').slice(0, 120),
+          byline: String(extracted.byline || '').slice(0, 240),
+          url: sanitizePageActionUrl(extracted.url || tab.url || ''),
+          type: String(extracted.type || '').slice(0, 80),
+        };
+      }
+    }
+    const result = await createNotchPanelAction(
+      'notchPinnedAction',
+      tabId,
+      { instructionId, selectedText, pageData },
+      panelOpenPromise
+    );
+    return { success: true, queued: result.queuedFallback };
   }
 
   if (action === 'openActions') {

@@ -91,12 +91,13 @@ Steps:
 
 1. Open Options, leave **Top Notch** off, and confirm no notch appears on a normal web page.
 2. Enable the setting and click **Save Notch Settings**. Open pages mount the top-centered notch without changing their layout.
-3. Expand the notch with the keyboard or pointer. Confirm the action labels, focus ring, Escape-to-close behavior, and reduced-motion-safe transitions.
-4. Use **Summarize page**. The background validates the sender tab, bounds the extracted page content, and routes the structured summary request into the side panel.
-5. Select text on the page and confirm **Explain selection** becomes enabled. Run it and confirm the selected text is routed through the existing structured prompt path.
-6. Disable and save the setting. Confirm the notch is removed from the open page and does not appear in a new tab.
+3. Expand the notch with the keyboard or pointer. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, and top-edge styling.
+4. If custom prompts are pinned, confirm the notch shows them in pin order and caps the visible list at four items. Choose a pinned prompt and confirm it runs against the current selection, current page, or active conversation through the existing chat action flow.
+5. Use **Summarize**. The background validates the sender tab, bounds the extracted page content, and routes the structured summary request into the side panel.
+6. Select text on the page and confirm **Explain** becomes enabled. Run it and confirm the selected text is routed through the existing structured prompt path.
+7. Disable and save the setting. Confirm the notch is removed from the open page and does not appear in a new tab.
 
-Verification: axes 1 (preference persists), 2 (notch actions reach canonical chat), 3 (isolated surface and responsive narrow pages), 4 (selection/page context stays bounded), 5 (allowlisted actions and restricted-page boundaries).
+Verification: axes 1 (preference persists), 2 (notch and pinned actions reach canonical chat), 3 (isolated surface and responsive narrow pages), 4 (selection/page/pinned context stays bounded), 5 (allowlisted actions and restricted-page boundaries).
 
 ## Journey 5 — Current-page semantic action
 
@@ -154,8 +155,7 @@ cleanup), 5 (Act-off parity and trusted-mode limits).
   each persist on their own Save button with green flash feedback.
 - **Appearance**: choose **Light**, **Dark**, or **System**. System follows the browser or operating
   system preference and updates when that preference changes.
-- **Top Notch**: off by default; saving the toggle updates open pages, and the notch offers only
-  the documented browser-page actions.
+- **Top Notch**: off by default; saving the toggle updates open pages. The notch keeps primary actions compact and shows up to four saved pinned prompts.
 - **Unsaved changes**: editing any field shows the warning banner; navigating
   away triggers the `beforeunload` prompt.
 - **Backup**: Full Backup exports all local data (warning discloses API keys);
