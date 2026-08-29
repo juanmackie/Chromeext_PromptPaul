@@ -105,6 +105,7 @@ class RunOrchestrator {
     this.pageTabRunRegistrar = options.pageTabRunRegistrar;
     this.pageTabRunDisposer = options.pageTabRunDisposer;
     this.pageActionTabFailureHandler = options.pageActionTabFailureHandler;
+    this.pageActionActivityHandler = options.pageActionActivityHandler;
     this.pageActionExecutor =
       options.pageActionExecutor ||
       (async () => {
@@ -3810,6 +3811,11 @@ class RunOrchestrator {
         -RUN_JOURNAL_MAX_EVENTS
       );
       this._persistRunJournal(run);
+    }
+    try {
+      this.pageActionActivityHandler?.(run, enrichedEvent);
+    } catch (error) {
+      console.warn(`[RunOrchestrator] Page activity notification failed for run ${runId}:`, error);
     }
     chrome.runtime
       .sendMessage({

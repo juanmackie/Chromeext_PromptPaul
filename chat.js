@@ -59,6 +59,7 @@ import {
 import {
   consumePageActionsEnabled,
   restorePageActionsEnabled,
+  setPageActionsEnabled,
   initPageActionsToggle,
   renderPageActionConfirmation,
   resolvePageActionConfirmation,
@@ -1279,6 +1280,48 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  function applyNotchInstructionAction(request) {
+    if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
+    if (request.actionId) lastProcessedPanelActionId = request.actionId;
+
+    const textPrompt = String(request.textPrompt || '')
+      .trim()
+      .slice(0, 20_000);
+    if (!textPrompt) {
+      loadingManager.showToast('An instruction is required.', 'warning');
+      return false;
+    }
+
+    tabId = request.tabId;
+    const selected = String(request.selectedText || '')
+      .trim()
+      .slice(0, 20_000);
+    if (selected && request.act !== true) {
+      chatMainArea.classList.remove('hidden');
+      oneoffInstructionArea.classList.add('hidden');
+      void makeApiCall(
+        {
+          instruction: textPrompt,
+          context: { type: 'selected_text', text: selected },
+        },
+        'auto'
+      );
+      return true;
+    }
+
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+    void (async () => {
+      if (request.act === true) await setPageActionsEnabled(true);
+      userInput.value = textPrompt;
+      userInput.dispatchEvent(new Event('input'));
+      await sendMessage();
+    })().catch((error) => {
+      loadingManager.showToast(`Could not send instruction: ${error.message}`, 'error');
+    });
+    return true;
+  }
+
   function applyNotchPinnedAction(request) {
     if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
     if (request.actionId) lastProcessedPanelActionId = request.actionId;
@@ -1406,6 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'setSelectedText',
       'setMediaForAnalysis',
       'notchOpenActions',
+      'notchInstructionAction',
       'notchPinnedAction',
       'notchSelectionAction',
       'notchPageAction',
@@ -1435,6 +1479,8 @@ document.addEventListener('DOMContentLoaded', () => {
       consumed = applySetMediaForAnalysisAction(pendingAction);
     } else if (pendingAction.action === 'notchOpenActions') {
       consumed = applyNotchOpenActions(pendingAction);
+    } else if (pendingAction.action === 'notchInstructionAction') {
+      consumed = applyNotchInstructionAction(pendingAction);
     } else if (pendingAction.action === 'notchPinnedAction') {
       consumed = applyNotchPinnedAction(pendingAction);
     } else if (pendingAction.action === 'notchSelectionAction') {
@@ -1524,6 +1570,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
       }
       const consumed = applyNotchOpenActions(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
+      return true;
+    } else if (request.action === 'notchInstructionAction') {
+      if (isPanelAction) {
+        if (sendResponse) sendResponse({ success: true, ignored: true });
+        return true;
+      }
+      const consumed = applyNotchInstructionAction(request);
       if (sendResponse) sendResponse({ success: true, ignored: !consumed });
       return true;
     } else if (request.action === 'notchPinnedAction') {

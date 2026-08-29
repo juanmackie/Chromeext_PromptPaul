@@ -10,6 +10,46 @@
   const PINNED_ACTIONS_KEY = 'pinnedQuickActions';
   const INSTRUCTIONS_KEY = 'instructions';
   const HOST_ATTRIBUTE = 'data-prompt-paul-notch-host';
+  const ACT_GLOW_HOST_ATTRIBUTE = 'data-prompt-paul-act-glow';
+  const ACT_GLOW_STYLE = `
+    :host {
+      all: initial;
+      position: fixed;
+      inset: 0;
+      z-index: 2147483639;
+      display: block;
+      pointer-events: none;
+    }
+
+    .act-glow-frame {
+      position: absolute;
+      inset: 4px;
+      border: 3px solid rgba(10, 132, 255, 0.78);
+      border-radius: 10px;
+      box-shadow:
+        0 0 0 1px rgba(10, 132, 255, 0.34),
+        0 0 12px rgba(10, 132, 255, 0.64),
+        0 0 30px rgba(10, 132, 255, 0.28),
+        inset 0 0 14px rgba(10, 132, 255, 0.2);
+      animation: act-glow-pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes act-glow-pulse {
+      0%,
+      100% {
+        opacity: 0.76;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .act-glow-frame {
+        animation: none;
+      }
+    }
+  `;
   const MAX_SELECTION_CHARS = 20_000;
   const MAX_PINNED_ACTIONS = 4;
   const ACTIONS = Object.freeze({
@@ -18,6 +58,7 @@
     SUMMARIZE_PAGE: 'summarizePage',
     EXPLAIN_SELECTION: 'explainSelection',
     RUN_PINNED_INSTRUCTION: 'runPinnedInstruction',
+    SEND_INSTRUCTION: 'sendInstruction',
     OPEN_OPTIONS: 'openOptions',
   });
 
@@ -30,6 +71,13 @@
   let keydownListener = null;
   let runtimeListener = null;
   let collapseTimer = null;
+  let glowHost = null;
+  let glowRunId = null;
+  let actEnabled = false;
+  let dictationRecognition = null;
+  let dictationListening = false;
+  let dictationFinalText = '';
+  let dictationHadError = false;
 
   const styleText = `
     :host {
@@ -370,6 +418,90 @@
       white-space: nowrap;
     }
 
+    .notch-utility-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .notch-utility-action {
+      justify-content: center;
+      min-height: 34px;
+      padding: 6px 8px;
+    }
+
+    .notch-utility-action .notch-action-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .notch-utility-action .notch-action-label {
+      font-size: 10px;
+    }
+
+    .notch-utility-action.notch-dictation-active,
+    .notch-utility-action.notch-act-enabled {
+      border-color: rgba(10, 132, 255, 0.68);
+      background: rgba(10, 132, 255, 0.14);
+      color: #fff;
+    }
+
+    .notch-act-form {
+      display: flex;
+      gap: 6px;
+      margin-top: 7px;
+      padding: 5px;
+      border: 1px solid rgba(10, 132, 255, 0.5);
+      border-radius: 10px;
+      background: rgba(5, 7, 10, 0.5);
+      box-shadow: 0 0 16px rgba(10, 132, 255, 0.12);
+    }
+
+    .notch-act-form[hidden] {
+      display: none;
+    }
+
+    .notch-act-input {
+      min-width: 0;
+      flex: 1 1 auto;
+      height: 31px;
+      padding: 0 8px;
+      border: 0;
+      outline: none;
+      background: transparent;
+      color: #f5f7fa;
+      font: inherit;
+      font-size: 11px;
+    }
+
+    .notch-act-input::placeholder {
+      color: rgba(245, 247, 250, 0.4);
+    }
+
+    .notch-act-submit {
+      display: grid;
+      place-items: center;
+      width: 31px;
+      height: 31px;
+      flex: 0 0 auto;
+      padding: 0;
+      border: 0;
+      border-radius: 7px;
+      background: #0a84ff;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .notch-act-submit:hover {
+      background: #3d9bff;
+    }
+
+    .notch-act-submit .notch-action-icon {
+      width: 17px;
+      height: 17px;
+    }
+
     .notch-secondary-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -591,6 +723,9 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4H5a1 1 0 0 0-1 1v2M17 4h2a1 1 0 0 1 1 1v2M7 20H5a1 1 0 0 1-1-1v-2M17 20h2a1 1 0 0 0 1-1v-2"/><path d="M8 8h8v8H8z"/></svg>',
     settings:
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.1 1.9 2.2.5.2 2.2 1.7 1.4-1.2 1.9.5 2.2-2 .9-.5 2.2-2.1.5L10 21l-1.1-1.9-2.2-.5-.2-2.2-1.7-1.4 1.2-1.9-.5-2.2 2-.9.5-2.2 2.1-.5Z"/><circle cx="12" cy="12" r="2.5"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6"/></svg>',
+    act: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 4 14 3.5-5L18 18l2-2-5.5-6L20 8 5 3Z"/></svg>',
+    send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Z"/><path d="M7 12h13"/></svg>',
     pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4 8 0 1.5 5-2.5 2.5v3H9v-3L6.5 9 8 4Z"/><path d="M12 14.5V21"/></svg>',
   };
 
@@ -612,6 +747,27 @@
     feedback.textContent = message;
     if (tone) feedback.dataset.tone = tone;
     else delete feedback.dataset.tone;
+  }
+
+  function setActGlow(active, runId) {
+    const nextRunId = String(runId || '');
+    if (!active) {
+      if (glowRunId && nextRunId && glowRunId !== nextRunId) return;
+      glowHost?.remove();
+      glowHost = null;
+      glowRunId = null;
+      return;
+    }
+    if (!nextRunId) return;
+    if (!glowHost) {
+      glowHost = document.createElement('div');
+      glowHost.setAttribute(ACT_GLOW_HOST_ATTRIBUTE, '');
+      glowHost.setAttribute('aria-hidden', 'true');
+      const glowShadow = glowHost.attachShadow({ mode: 'open' });
+      glowShadow.innerHTML = `<style>${ACT_GLOW_STYLE}</style><div class="act-glow-frame" aria-hidden="true"></div>`;
+      document.documentElement.appendChild(glowHost);
+    }
+    glowRunId = nextRunId;
   }
 
   function readPinnedActions() {
@@ -699,6 +855,144 @@
     }
   }
 
+  function updateActModeUI() {
+    const toggle = shadow?.querySelector('.notch-act-toggle');
+    const form = shadow?.querySelector('.notch-act-form');
+    const input = shadow?.querySelector('.notch-act-input');
+    if (!toggle || !form) return;
+
+    toggle.setAttribute('aria-pressed', String(actEnabled));
+    toggle.title = actEnabled ? 'Turn off Act mode' : 'Enable Act mode';
+    toggle.classList.toggle('notch-act-enabled', actEnabled);
+    form.hidden = !actEnabled;
+    if (!actEnabled && input) input.value = '';
+  }
+
+  function setActEnabled(next) {
+    actEnabled = Boolean(next);
+    updateActModeUI();
+    if (actEnabled) shadow?.querySelector('.notch-act-input')?.focus();
+  }
+
+  function updateDictationUI() {
+    const button = shadow?.querySelector('.notch-dictation-action');
+    const icon = button?.querySelector('.notch-action-icon');
+    const label = button?.querySelector('.notch-action-label');
+    if (!button || !icon || !label) return;
+
+    button.classList.toggle('notch-dictation-active', dictationListening);
+    button.setAttribute('aria-pressed', String(dictationListening));
+    button.title = dictationListening ? 'Stop dictation' : 'Dictate an instruction';
+    icon.innerHTML = dictationListening ? icons.send : icons.mic;
+    label.textContent = dictationListening ? 'Send' : 'Dictate';
+  }
+
+  function cancelDictation() {
+    const recognition = dictationRecognition;
+    dictationRecognition = null;
+    dictationListening = false;
+    dictationFinalText = '';
+    dictationHadError = false;
+    if (recognition) {
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.onresult = null;
+      try {
+        recognition.stop();
+      } catch (_) {
+        // The recognition may already be stopping.
+      }
+    }
+    updateDictationUI();
+  }
+
+  function startDictation() {
+    if (dictationListening) {
+      dictationRecognition?.stop();
+      return;
+    }
+
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      setFeedback('Dictation is not available in this browser.', 'error');
+      return;
+    }
+
+    const recognition = new Recognition();
+    dictationRecognition = recognition;
+    dictationListening = true;
+    dictationFinalText = '';
+    dictationHadError = false;
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = navigator.language || 'en-US';
+    updateDictationUI();
+    setFeedback('Listening…');
+
+    recognition.onresult = (event) => {
+      let finalText = '';
+      let interimText = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = String(event.results[index][0]?.transcript || '');
+        if (event.results[index].isFinal) finalText += transcript;
+        else interimText += transcript;
+      }
+      dictationFinalText = `${dictationFinalText} ${finalText}`.trim();
+      const preview = `${dictationFinalText} ${interimText}`.trim();
+      const input = shadow?.querySelector('.notch-act-input');
+      if (input && actEnabled) input.value = preview;
+      setFeedback(preview ? `Listening: ${preview}` : 'Listening…');
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error !== 'aborted') {
+        dictationHadError = true;
+        setFeedback(
+          event.error === 'not-allowed'
+            ? 'Microphone permission is required for dictation.'
+            : 'Dictation could not start.',
+          'error'
+        );
+      }
+    };
+
+    recognition.onend = () => {
+      if (dictationRecognition !== recognition) return;
+      dictationRecognition = null;
+      dictationListening = false;
+      updateDictationUI();
+      const text = dictationFinalText.trim();
+      const hadError = dictationHadError;
+      dictationFinalText = '';
+      dictationHadError = false;
+      if (!text) {
+        if (!hadError) setFeedback('No instruction heard.', 'error');
+        return;
+      }
+      sendAction(ACTIONS.SEND_INSTRUCTION, { textPrompt: text, act: actEnabled });
+    };
+
+    try {
+      recognition.start();
+    } catch (_) {
+      cancelDictation();
+      setFeedback('Dictation could not start.', 'error');
+    }
+  }
+
+  function submitActInstruction(event) {
+    event.preventDefault();
+    const input = shadow?.querySelector('.notch-act-input');
+    const textPrompt = String(input?.value || '').trim();
+    if (!textPrompt) {
+      setFeedback('Describe the task first.', 'error');
+      input?.focus();
+      return;
+    }
+    sendAction(ACTIONS.SEND_INSTRUCTION, { textPrompt, act: true });
+  }
+
   function updateSelectionState() {
     const button = shadow?.querySelector('[data-notch-action="explainSelection"]');
     if (!button) return;
@@ -711,6 +1005,10 @@
 
   function setExpanded(next) {
     expanded = Boolean(next);
+    if (!expanded) {
+      cancelDictation();
+      setActEnabled(false);
+    }
     const shell = shadow?.querySelector('.notch-shell');
     const panel = shadow?.querySelector('.notch-panel');
     const toggle = shadow?.querySelector('.notch-toggle');
@@ -738,14 +1036,18 @@
     }
     toggle.setAttribute('aria-expanded', String(expanded));
     toggle.title = expanded ? 'Collapse Prompt Paul notch' : 'Open Prompt Paul notch';
-    if (expanded) updateSelectionState();
+    if (expanded) {
+      updateSelectionState();
+      void renderPinnedActions();
+    }
   }
 
   function sendAction(notchAction, details = {}) {
     const payload = { action: 'notchAction', notchAction, ...details };
     if (
       notchAction === ACTIONS.EXPLAIN_SELECTION ||
-      notchAction === ACTIONS.RUN_PINNED_INSTRUCTION
+      notchAction === ACTIONS.RUN_PINNED_INSTRUCTION ||
+      notchAction === ACTIONS.SEND_INSTRUCTION
     ) {
       payload.selectedText = getSelectedText();
     }
@@ -754,8 +1056,20 @@
       updateSelectionState();
       return;
     }
+    if (notchAction === ACTIONS.SEND_INSTRUCTION) {
+      const textPrompt = String(payload.textPrompt || '')
+        .trim()
+        .slice(0, 20_000);
+      if (!textPrompt) {
+        setFeedback('Describe the task first.', 'error');
+        return;
+      }
+      payload.textPrompt = textPrompt;
+    }
 
-    setFeedback('Opening Prompt Paul…');
+    setFeedback(
+      notchAction === ACTIONS.SEND_INSTRUCTION ? 'Sending instruction…' : 'Opening Prompt Paul…'
+    );
     try {
       chrome.runtime.sendMessage(payload, (response) => {
         if (chrome.runtime.lastError) {
@@ -783,6 +1097,8 @@
   function destroy() {
     clearTimeout(collapseTimer);
     collapseTimer = null;
+    cancelDictation();
+    actEnabled = false;
     if (selectionListener) document.removeEventListener('selectionchange', selectionListener);
     if (documentClickListener) document.removeEventListener('click', documentClickListener, true);
     if (keydownListener) document.removeEventListener('keydown', keydownListener, true);
@@ -839,6 +1155,40 @@
               <span class="notch-action-copy"><span class="notch-action-label">Explain</span><span class="notch-action-hint">Select text to enable</span></span>
             </button>
           </div>
+          <div class="notch-utility-actions" role="toolbar" aria-label="Voice and page actions">
+            <button
+              class="notch-action notch-utility-action notch-dictation-action"
+              type="button"
+              aria-pressed="false"
+              title="Dictate an instruction"
+            >
+              <span class="notch-action-icon">${icons.mic}</span>
+              <span class="notch-action-copy"><span class="notch-action-label">Dictate</span></span>
+            </button>
+            <button
+              class="notch-action notch-utility-action notch-act-toggle"
+              type="button"
+              aria-pressed="false"
+              title="Enable Act mode"
+            >
+              <span class="notch-action-icon">${icons.act}</span>
+              <span class="notch-action-copy"><span class="notch-action-label">Act</span></span>
+            </button>
+          </div>
+          <form class="notch-act-form" aria-label="Act task" hidden>
+            <label class="notch-sr-only" for="notch-act-input">Task for Prompt Paul to perform</label>
+            <input
+              id="notch-act-input"
+              class="notch-act-input"
+              type="text"
+              maxlength="20000"
+              autocomplete="off"
+              placeholder="What should I do on this page?"
+            />
+            <button class="notch-act-submit" type="submit" title="Run Act task" aria-label="Run Act task">
+              <span class="notch-action-icon">${icons.send}</span>
+            </button>
+          </form>
           <section class="notch-pinned-section" aria-labelledby="notch-pinned-title" hidden>
             <div class="notch-section-heading">
               <span id="notch-pinned-title">Pinned prompts</span>
@@ -870,6 +1220,11 @@
     shadow.querySelectorAll('[data-notch-action]').forEach((button) => {
       button.addEventListener('click', () => sendAction(button.dataset.notchAction));
     });
+    shadow.querySelector('.notch-dictation-action')?.addEventListener('click', startDictation);
+    shadow
+      .querySelector('.notch-act-toggle')
+      ?.addEventListener('click', () => setActEnabled(!actEnabled));
+    shadow.querySelector('.notch-act-form')?.addEventListener('submit', submitActInstruction);
 
     selectionListener = () => updateSelectionState();
     document.addEventListener('selectionchange', selectionListener);
@@ -910,6 +1265,9 @@
   runtimeListener = (request) => {
     if (request?.action === 'notchPreferenceChanged') {
       applyEnabled(request.enabled === true);
+    }
+    if (request?.action === 'notchActRunState') {
+      setActGlow(request.active === true, request.runId);
     }
   };
   chrome.runtime.onMessage.addListener(runtimeListener);

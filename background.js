@@ -68,10 +68,13 @@ const NOTCH_ACTIONS = new Set([
   'summarizePage',
   'explainSelection',
   'runPinnedInstruction',
+  'sendInstruction',
   'openOptions',
 ]);
 const NOTCH_MAX_SELECTION_CHARS = 20_000;
 const NOTCH_MAX_PAGE_CHARS = 200_000;
+const NOTCH_MAX_INSTRUCTION_CHARS = 20_000;
+const activeNotchRunTabs = new Map();
 const HERMES_API_KEYS_KEY = 'hermesApiKeys';
 const HERMES_SESSIONS_KEY = 'hermesSessions';
 const HERMES_SESSION_KEYS_KEY = 'hermesSessionKeys';
@@ -1415,6 +1418,7 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
   },
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
+  pageActionActivityHandler: updateNotchActState,
 });
 
 // PageTabController owns tab scope; the background owns bridge readiness and
@@ -2004,6 +2008,52 @@ function getExtensionOrigin() {
   return chrome.runtime.getURL('');
 }
 
+function sendNotchActState(tabId, active, runId) {
+  if (!Number.isInteger(tabId) || !runId) return;
+  try {
+    chrome.tabs.sendMessage(
+      tabId,
+      { action: 'notchActRunState', active, runId },
+      () => void chrome.runtime.lastError
+    );
+  } catch (_) {
+    // The tab may be navigating or closed; the next page-action event will
+    // notify the current target when its content script is ready.
+  }
+}
+
+function updateNotchActState(run, event) {
+  if (!run?.pageActions?.enabled || !run.id) return;
+
+  const runId = String(run.id);
+  const targetTabId =
+    Number(event?.tabId || run.pageActions.targetTabId || run.sourceTabId || 0) || null;
+  const isActionRunning = event?.type === 'page_action_state' && event.state === 'running';
+  const isActionFinished =
+    event?.type === 'page_action_state' && ['complete', 'error'].includes(event.state);
+  const isRunFinished = ['complete', 'error', 'aborted'].includes(event?.type);
+  let trackedTabs = activeNotchRunTabs.get(runId);
+
+  if (isActionRunning && targetTabId) {
+    if (!trackedTabs) trackedTabs = new Set();
+    for (const previousTabId of trackedTabs) {
+      if (previousTabId !== targetTabId) sendNotchActState(previousTabId, false, runId);
+    }
+    sendNotchActState(targetTabId, true, runId);
+    trackedTabs.add(targetTabId);
+    activeNotchRunTabs.set(runId, trackedTabs);
+    return;
+  }
+
+  if (!isActionFinished && !isRunFinished) return;
+  if (trackedTabs) {
+    for (const trackedTabId of trackedTabs) sendNotchActState(trackedTabId, false, runId);
+    activeNotchRunTabs.delete(runId);
+  } else if (targetTabId) {
+    sendNotchActState(targetTabId, false, runId);
+  }
+}
+
 function rejectUnauthorizedMessage(sendResponse, error = 'Prompt Paul authorization is required.') {
   sendResponse({ success: false, error });
   return true;
@@ -2150,6 +2200,24 @@ async function handleNotchAction(request, sender) {
       'notchPinnedAction',
       tabId,
       { instructionId, selectedText, pageData },
+      panelOpenPromise
+    );
+    return { success: true, queued: result.queuedFallback };
+  }
+
+  if (action === 'sendInstruction') {
+    const textPrompt =
+      typeof request?.textPrompt === 'string'
+        ? request.textPrompt.trim().slice(0, NOTCH_MAX_INSTRUCTION_CHARS)
+        : '';
+    if (!textPrompt) return { success: false, error: 'An instruction is required.' };
+    const selectedText = String(request?.selectedText || '')
+      .trim()
+      .slice(0, NOTCH_MAX_SELECTION_CHARS);
+    const result = await createNotchPanelAction(
+      'notchInstructionAction',
+      tabId,
+      { textPrompt, selectedText, act: request?.act === true },
       panelOpenPromise
     );
     return { success: true, queued: result.queuedFallback };

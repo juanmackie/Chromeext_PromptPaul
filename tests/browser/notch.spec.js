@@ -94,6 +94,58 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await expect(host.locator('.notch-pinned-action').first()).toContainText('Summarize cleanly');
     await expect(host.locator('.notch-pinned-action').nth(1)).toContainText('Proofread text');
     await expect(host.locator('.notch-pinned-more')).toHaveText('+ 1 more in All actions');
+    await expect(host.locator('.notch-dictation-action')).toBeVisible();
+    const actToggle = host.locator('.notch-act-toggle');
+    const actForm = host.locator('.notch-act-form');
+    await expect(actToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(actForm).toBeHidden();
+    await actToggle.click();
+    await expect(actToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(actForm).toBeVisible();
+    await actToggle.click();
+    await expect(actToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(actForm).toBeHidden();
+
+    const targetTabId = await harness.evaluate(
+      (targetUrl) =>
+        new Promise((resolve) =>
+          chrome.tabs.query({}, (tabs) =>
+            resolve(tabs.find((tab) => tab.url === targetUrl)?.id || null)
+          )
+        ),
+      target.url()
+    );
+    expect(targetTabId).not.toBeNull();
+    await harness.evaluate(
+      (tabId) =>
+        new Promise((resolve) =>
+          chrome.tabs.sendMessage(
+            tabId,
+            { action: 'notchActRunState', active: true, runId: 'browser-glow-run' },
+            () => {
+              void chrome.runtime.lastError;
+              resolve();
+            }
+          )
+        ),
+      targetTabId
+    );
+    await expect(target.locator('[data-prompt-paul-act-glow]')).toHaveCount(1);
+    await harness.evaluate(
+      (tabId) =>
+        new Promise((resolve) =>
+          chrome.tabs.sendMessage(
+            tabId,
+            { action: 'notchActRunState', active: false, runId: 'browser-glow-run' },
+            () => {
+              void chrome.runtime.lastError;
+              resolve();
+            }
+          )
+        ),
+      targetTabId
+    );
+    await expect(target.locator('[data-prompt-paul-act-glow]')).toHaveCount(0);
 
     await host.locator('[data-notch-action="openActions"]').click();
     await expect(host.locator('.notch-panel')).toBeHidden();

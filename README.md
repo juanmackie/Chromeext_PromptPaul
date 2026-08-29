@@ -56,10 +56,11 @@ cd Chromeext_PromptPaul
 ### Browser-page Top Notch
 
 - Open Options and enable **Top Notch**, then save the section.
-- On supported web pages, expand the top-centered Prompt Paul notch for **Open chat**, **Summarize**, **Explain**, **All actions**, or **Settings**.
+- On supported web pages, expand the top-centered Prompt Paul notch for **Open chat**, **Summarize**, **Explain**, **Dictate**, **Act**, **All actions**, or **Settings**.
 - Saved pinned prompts appear in a compact section, in the order you pinned them. Choose one to run it against the current selection, the current page on a new chat, or the active conversation; up to four are shown so the notch stays focused.
-- The notch uses an isolated Shadow DOM, blends into the top edge of the browser page, and does not change page layout. It is hidden by default and does not run on browser-internal or extension pages.
-- Page, selection, and pinned-prompt content is sent only after you choose the matching action. Content-script requests are bound to their sender tab and use the existing side-panel chat flow.
+- **Dictate** listens for one instruction and sends it when speech ends. **Act** reveals a small task field; submitting it enables the bounded page-action run for that task only.
+- While Act performs a page action, the target page gets a temporary blue border glow. The notch uses an isolated Shadow DOM, blends into the top edge of the browser page, and does not change page layout.
+- Page, selection, pinned-prompt, dictation, and Act task content is sent only after you choose the matching action. Content-script requests are bound to their sender tab and use the existing side-panel chat flow.
 
 ### Side panel Page Actions toggle
 

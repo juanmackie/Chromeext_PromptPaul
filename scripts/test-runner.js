@@ -479,6 +479,13 @@ function runUnitTests(runner) {
     if (!notch.includes('MAX_PINNED_ACTIONS = 4')) {
       throw new Error('Notch must keep the pinned prompt list bounded');
     }
+    if (
+      !notch.includes('notchActRunState') ||
+      !notch.includes('startDictation') ||
+      !notch.includes('notch-act-form')
+    ) {
+      throw new Error('Notch must expose Act activity and dictation controls');
+    }
     if (!notch.includes('extension context invalidated') || !notch.includes('try {')) {
       throw new Error('Notch runtime messaging must handle invalidated extension contexts');
     }
@@ -490,7 +497,11 @@ function runUnitTests(runner) {
       'const NOTCH_ACTIONS = new Set([',
       "'openActions',",
       "'runPinnedInstruction',",
+      "'sendInstruction',",
       'notchPinnedAction',
+      'notchInstructionAction',
+      'pageActionActivityHandler',
+      'NOTCH_MAX_INSTRUCTION_CHARS',
       'isContentScriptSender(sender, extensionOrigin)',
       'requestMatchesSenderTab(sender, request?.tabId)',
       'NOTCH_MAX_PAGE_CHARS',

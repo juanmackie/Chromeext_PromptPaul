@@ -93,11 +93,14 @@ Steps:
 2. Enable the setting and click **Save Notch Settings**. Open pages mount the top-centered notch without changing their layout.
 3. Expand the notch with the keyboard or pointer. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, and top-edge styling.
 4. If custom prompts are pinned, confirm the notch shows them in pin order and caps the visible list at four items. Choose a pinned prompt and confirm it runs against the current selection, current page, or active conversation through the existing chat action flow.
-5. Use **Summarize**. The background validates the sender tab, bounds the extracted page content, and routes the structured summary request into the side panel.
-6. Select text on the page and confirm **Explain** becomes enabled. Run it and confirm the selected text is routed through the existing structured prompt path.
-7. Disable and save the setting. Confirm the notch is removed from the open page and does not appear in a new tab.
+5. Choose **Dictate**, grant microphone access if needed, speak one instruction, and confirm the instruction is sent when dictation ends. Confirm the same action works with **Act** enabled.
+6. Enable **Act** and confirm its floating task field appears. Submit a harmless page task and confirm the task uses the bounded page-action run path.
+7. While the task is changing the page, confirm only the target page shows the temporary on-brand blue border glow. Confirm the glow clears when the action completes, errors, or stops.
+8. Use **Summarize**. The background validates the sender tab, bounds the extracted page content, and routes the structured summary request into the side panel.
+9. Select text on the page and confirm **Explain** becomes enabled. Run it and confirm the selected text is routed through the existing structured prompt path.
+10. Disable and save the setting. Confirm the notch is removed from the open page and does not appear in a new tab.
 
-Verification: axes 1 (preference persists), 2 (notch and pinned actions reach canonical chat), 3 (isolated surface and responsive narrow pages), 4 (selection/page/pinned context stays bounded), 5 (allowlisted actions and restricted-page boundaries).
+Verification: axes 1 (preference persists), 2 (notch, pinned, dictated, and Act actions reach canonical chat), 3 (isolated surface and responsive narrow pages), 4 (selection/page/pinned/task context stays bounded), 5 (allowlisted actions, glow lifecycle, and restricted-page boundaries).
 
 ## Journey 5 — Current-page semantic action
 
