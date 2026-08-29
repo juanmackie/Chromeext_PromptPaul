@@ -7,8 +7,18 @@ const PAGE_ACTIONS_ENABLED_KEY = 'pageActionsEnabled';
 const PAGE_ACTIONS_MULTI_TAB_KEY = 'pageActionsMultiTabEnabled';
 const PAGE_ACTIONS_STORAGE = 'session';
 
+let pageActionsToggleElement = null;
+let pageActionsArmed = false;
+let pageActionsRunActive = false;
+let pageActionsStateVersion = 0;
+
 function getPageActionsStorage() {
   return chrome.storage[PAGE_ACTIONS_STORAGE];
+}
+
+function renderPageActionsToggle() {
+  if (!pageActionsToggleElement) return;
+  applyPageActionsToggle(pageActionsToggleElement, pageActionsArmed);
 }
 
 /**
@@ -29,8 +39,11 @@ export function isPageActionsEnabled() {
  * @returns {Promise<void>}
  */
 export function setPageActionsEnabled(enabled) {
+  pageActionsStateVersion += 1;
+  pageActionsArmed = Boolean(enabled);
+  renderPageActionsToggle();
   return new Promise((resolve) => {
-    getPageActionsStorage().set({ [PAGE_ACTIONS_ENABLED_KEY]: Boolean(enabled) }, resolve);
+    getPageActionsStorage().set({ [PAGE_ACTIONS_ENABLED_KEY]: pageActionsArmed }, resolve);
   });
 }
 
@@ -43,9 +56,25 @@ export function consumePageActionsEnabled() {
     const storage = getPageActionsStorage();
     storage.get([PAGE_ACTIONS_ENABLED_KEY], (result) => {
       const enabled = Boolean(result?.[PAGE_ACTIONS_ENABLED_KEY]);
+      // Keep the visual Act lease active while the run is in progress even
+      // though the one-run permission is removed from session storage now.
+      pageActionsStateVersion += 1;
+      pageActionsArmed = false;
+      pageActionsRunActive = enabled;
+      renderPageActionsToggle();
       storage.remove([PAGE_ACTIONS_ENABLED_KEY], () => resolve(enabled));
     });
   });
+}
+
+/**
+ * Keep the sidebar Act toggle visually active for the lifetime of an
+ * accepted page-action run. The permission remains one-shot in storage.
+ * @param {boolean} active
+ */
+export function setPageActionsRunActive(active) {
+  pageActionsRunActive = Boolean(active);
+  renderPageActionsToggle();
 }
 
 /**
@@ -53,10 +82,15 @@ export function consumePageActionsEnabled() {
  * @returns {Promise<void>}
  */
 export function restorePageActionsEnabled() {
+  pageActionsStateVersion += 1;
+  pageActionsRunActive = false;
   return new Promise((resolve) => {
     const storage = getPageActionsStorage();
     storage.get([PAGE_ACTIONS_ENABLED_KEY], (result) => {
-      if (result?.[PAGE_ACTIONS_ENABLED_KEY] !== undefined) {
+      const isArmed = result?.[PAGE_ACTIONS_ENABLED_KEY] !== undefined;
+      pageActionsArmed = isArmed ? Boolean(result[PAGE_ACTIONS_ENABLED_KEY]) : true;
+      renderPageActionsToggle();
+      if (isArmed) {
         resolve();
         return;
       }
@@ -293,10 +327,15 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
 
 function applyPageActionsToggle(element, enabled) {
   if (!element) return;
-  element.setAttribute('aria-pressed', String(enabled));
-  element.title = enabled
-    ? 'Page actions are on — click to disable bounded page and tab actions'
-    : 'Page actions are off — click to enable bounded page and tab actions';
+  const active = Boolean(enabled) || pageActionsRunActive;
+  element.setAttribute('aria-pressed', String(active));
+  element.dataset.runActive = String(pageActionsRunActive);
+  element.disabled = pageActionsRunActive;
+  element.title = pageActionsRunActive
+    ? 'Act is running — page actions stay enabled for this run'
+    : active
+      ? 'Page actions are on — click to disable bounded page and tab actions'
+      : 'Page actions are off — click to enable bounded page and tab actions';
 }
 
 /**
@@ -307,11 +346,17 @@ function applyPageActionsToggle(element, enabled) {
 export function initPageActionsToggle(toggleElement, loadingManagerRef) {
   if (!toggleElement) return;
 
-  isPageActionsEnabled().then((enabled) => applyPageActionsToggle(toggleElement, enabled));
+  pageActionsToggleElement = toggleElement;
+  const initialStateVersion = pageActionsStateVersion;
+  isPageActionsEnabled().then((enabled) => {
+    if (initialStateVersion !== pageActionsStateVersion) return;
+    pageActionsArmed = enabled;
+    renderPageActionsToggle();
+  });
   toggleElement.addEventListener('click', async () => {
-    const next = toggleElement.getAttribute('aria-pressed') !== 'true';
+    const next = !pageActionsArmed;
     await setPageActionsEnabled(next);
-    applyPageActionsToggle(toggleElement, next);
+    renderPageActionsToggle();
     loadingManagerRef?.showToast?.(
       next
         ? 'Page actions enabled for the next run. Risky actions still require approval.'
@@ -322,7 +367,9 @@ export function initPageActionsToggle(toggleElement, loadingManagerRef) {
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === PAGE_ACTIONS_STORAGE && changes[PAGE_ACTIONS_ENABLED_KEY]) {
-      applyPageActionsToggle(toggleElement, Boolean(changes[PAGE_ACTIONS_ENABLED_KEY].newValue));
+      pageActionsStateVersion += 1;
+      pageActionsArmed = Boolean(changes[PAGE_ACTIONS_ENABLED_KEY].newValue);
+      renderPageActionsToggle();
     }
   });
 }

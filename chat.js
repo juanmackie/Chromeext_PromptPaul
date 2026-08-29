@@ -60,6 +60,7 @@ import {
   consumePageActionsEnabled,
   restorePageActionsEnabled,
   setPageActionsEnabled,
+  setPageActionsRunActive,
   initPageActionsToggle,
   renderPageActionConfirmation,
   resolvePageActionConfirmation,
@@ -905,6 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function resetRunUi(runState) {
+    setPageActionsRunActive(false);
     userInput.disabled = false;
     sendButton.disabled = false;
     clearButton.textContent = 'Clear';

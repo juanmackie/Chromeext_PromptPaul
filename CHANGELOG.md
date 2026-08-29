@@ -40,6 +40,7 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 
 ### Bug Fixes
 
+- Fixed the sidebar Act toggle losing its active shading as soon as the one-run permission was consumed; it now stays visibly active and unavailable until the Act run reaches a terminal state.
 - Fixed long-running Act runs surfacing Chrome's asynchronous message-channel closure. `executeRun` now acknowledges acceptance immediately, keeps the owner token until terminal cleanup, and relies on ordered run events plus the session journal for completion; transient disconnects are shown with a recovery message.
 - Fixed Options profile saves losing an existing masked API key after model or endpoint edits, and fixed new profiles falling back to the Default profile's credential. Saves now preserve the stored profile credential and new profiles clone from the profile that was active before creation.
 - Fixed chat configuration resolution rejecting an incomplete selected profile even when a valid Default profile existed; chat now matches background fallback behavior. Open Chat now opens the canonical side panel directly from the Options page.

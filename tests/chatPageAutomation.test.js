@@ -9,6 +9,8 @@ import {
   setPageActionsEnabled,
   consumePageActionsEnabled,
   restorePageActionsEnabled,
+  setPageActionsRunActive,
+  initPageActionsToggle,
 } from '../src/chat/ChatPageAutomation.js';
 
 describe('ChatPageAutomation Act permission', () => {
@@ -83,5 +85,35 @@ describe('ChatPageAutomation Act permission', () => {
     await restorePageActionsEnabled();
 
     expect(await isPageActionsEnabled()).toBe(false);
+  });
+
+  it('keeps the sidebar Act shading through the active run', async () => {
+    const attributes = {};
+    const toggle = {
+      dataset: {},
+      disabled: false,
+      setAttribute(name, value) {
+        attributes[name] = value;
+      },
+      getAttribute(name) {
+        return attributes[name];
+      },
+      addEventListener() {},
+    };
+    global.chrome.storage.onChanged = { addListener() {} };
+
+    initPageActionsToggle(toggle);
+    await setPageActionsEnabled(true);
+    expect(attributes['aria-pressed']).toBe('true');
+
+    expect(await consumePageActionsEnabled()).toBe(true);
+    expect(attributes['aria-pressed']).toBe('true');
+    expect(toggle.dataset.runActive).toBe('true');
+    expect(toggle.disabled).toBe(true);
+
+    setPageActionsRunActive(false);
+    expect(attributes['aria-pressed']).toBe('false');
+    expect(toggle.dataset.runActive).toBe('false');
+    expect(toggle.disabled).toBe(false);
   });
 });
