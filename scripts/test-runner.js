@@ -998,24 +998,39 @@ function runIntegrationTests(runner) {
     }
   });
 
-  runner.test('options.js ships the starter Mistral profile', () => {
+  runner.test('options.js ships the starter OpenRouter profile', () => {
     const content = readFileSafe('options.js');
     for (const token of [
-      'STARTER_MISTRAL_ENDPOINT',
-      'STARTER_MISTRAL_API_KEY',
-      'STARTER_MISTRAL_MODEL',
-      'api.mistral.ai/v1/chat/completions',
-      'mistral-small-latest',
+      'STARTER_OPENROUTER_ENDPOINT',
+      'STARTER_OPENROUTER_API_KEY',
+      'STARTER_OPENROUTER_MODEL',
+      'https://openrouter.ai/api/v1/chat/completions',
+      'openrouter/free',
     ]) {
       if (!content.includes(token)) {
-        throw new Error(`options.js missing starter Mistral configuration: ${token}`);
+        throw new Error(`options.js missing starter OpenRouter configuration: ${token}`);
       }
     }
-    if (!content.includes("const STARTER_MISTRAL_API_KEY = '';")) {
+    if (!content.includes("const STARTER_OPENROUTER_API_KEY = '';")) {
       throw new Error('options.js must not ship a hardcoded starter credential');
     }
-    if (!readFileSafe('scripts/build.js').includes('PROMPT_PAUL_DEMO_API_KEY')) {
-      throw new Error('build.js must document the explicit public demo-key injection path');
+    if (/mistral|PROMPT_PAUL_DEMO_API_KEY/i.test(content + readFileSafe('scripts/build.js'))) {
+      throw new Error('Options starter flow must not retain the retired Mistral or demo-key path');
+    }
+  });
+
+  runner.test('options.html explains the OpenRouter free-model quick start', () => {
+    const content = readFileSafe('options.html');
+    for (const token of [
+      'https://openrouter.ai/keys',
+      'https://openrouter.ai/api/v1/chat/completions',
+      'https://openrouter.ai/collections/free-models',
+      'openrouter/free',
+      'Quality may vary with less capable models.',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`options.html missing OpenRouter quick-start guidance: ${token}`);
+      }
     }
   });
 

@@ -206,17 +206,20 @@ describe('executable page-action evaluation matrix', () => {
       });
       const timeoutRun = await start(timeoutOrch, provider, `${provider}-partial-timeout`);
       const timeoutArgs = { snapshotId: 'evaluation-snapshot', index: 1 };
-      await expect(
-        timeoutOrch.executeTool(
-          timeoutRun,
-          call(`${provider}-partial-timeout`, 'page_click', timeoutArgs)
-        )
-      ).rejects.toMatchObject({ code: expected('partial-mutation-timeout').failureCode });
+      const timeoutResult = await timeoutOrch.executeTool(
+        timeoutRun,
+        call(`${provider}-partial-timeout`, 'page_click', timeoutArgs)
+      );
+      expect(timeoutResult.result).toMatchObject({
+        error: 'PAGE_TAB_UNAVAILABLE',
+        code: expected('partial-mutation-timeout').failureCode,
+        handled: true,
+      });
       records.push(
         record(
           'partial-mutation-timeout',
           provider,
-          { result: { error: 'PAGE_ACTION_TIMEOUT' } },
+          timeoutResult,
           1,
           JSON.stringify(timeoutArgs).length
         )

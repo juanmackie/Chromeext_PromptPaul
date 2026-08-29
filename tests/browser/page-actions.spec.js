@@ -1,5 +1,5 @@
 /**
- * @fileoverview Page-agent-style real-browser coverage for current-page actions.
+ * @fileoverview Page-agent-style real-browser coverage for bounded page actions.
  * @module pageActionsBrowserSpec
  */
 
@@ -69,6 +69,147 @@ test.describe('page-agent-style page actions', () => {
       });
       await expect(target.locator('#body')).toContainText('Indexed browser interaction');
     } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('resolves the active web tab when a directly opened panel has no source tab', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      await target.bringToFront();
+      const started = await harness.evaluate(() =>
+        window.pageActionHarness.startRunWithoutSource()
+      );
+      expect(started.runId, JSON.stringify(started)).toBeTruthy();
+      runId = started.runId;
+
+      const state = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(runId, 'direct-panel-state', 'page_get_state', {}),
+        { runId }
+      );
+      expect(state.result?.snapshot, JSON.stringify(state)).toBeTruthy();
+      expect(state.result.snapshot.url).toBe(targetUrl);
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('reports an actionable error when no supported web tab is available', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    await context.newPage();
+    const harness = await openHarness(context);
+
+    try {
+      const started = await harness.evaluate(() =>
+        window.pageActionHarness.startRunWithoutSource()
+      );
+      expect(started.runId).toBeUndefined();
+      expect(started.error).toBe('Act needs an active web page. Open a web page and try again.');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('does not fall back to a background web tab from an active new tab', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const backgroundPage = await context.newPage();
+    await backgroundPage.goto(fixtureUrl(fixtureServer, 'form.html'));
+    const harness = await openHarness(context);
+    const blankPage = await context.newPage();
+
+    try {
+      await blankPage.bringToFront();
+      const started = await harness.evaluate(() =>
+        window.pageActionHarness.startRunWithoutSource()
+      );
+      expect(started.runId).toBeUndefined();
+      expect(started.error).toBe('Act needs an active web page. Open a web page and try again.');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('propagates the resolved source tab to later approval decisions', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      await target.bringToFront();
+      const started = await harness.evaluate(() =>
+        window.pageActionHarness.startRunWithoutSource()
+      );
+      expect(started.runId, JSON.stringify(started)).toBeTruthy();
+      runId = started.runId;
+
+      const state = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(
+            runId,
+            'approval-source-state',
+            'page_get_state',
+            {}
+          ),
+        { runId }
+      );
+      expect(state.result?.snapshot, JSON.stringify(state)).toBeTruthy();
+      const saveDraft = state.result.snapshot.elements.find(
+        (element) => element.label === 'Save draft'
+      );
+      expect(saveDraft).toBeTruthy();
+
+      await harness.evaluate(
+        ({ runId, snapshotId, index }) => (
+          void window.pageActionHarness.executeTool(runId, 'approval-source-click', 'page_click', {
+            snapshotId,
+            index,
+          }),
+          true
+        ),
+        { runId, snapshotId: state.result.snapshot.snapshotId, index: saveDraft.index }
+      );
+      await expect
+        .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
+        .toMatchObject({ action: 'page_click' });
+
+      const decision = await harness.evaluate(
+        ({ url, runId }) => window.pageActionHarness.resolveConfirmation(url, runId),
+        { url: targetUrl, runId }
+      );
+      expect(decision.success, JSON.stringify(decision)).toBe(true);
+      await expect
+        .poll(() =>
+          harness.evaluate(
+            (id) => window.pageActionHarness.getToolResult(id, 'approval-source-click'),
+            runId
+          )
+        )
+        .toMatchObject({ result: { success: true } });
+    } finally {
+      await abortRun(harness, runId);
       await context.close();
       removeUserDataDir(userDataDir);
     }
@@ -352,9 +493,15 @@ test.describe('page-agent-style page actions', () => {
         { runId, snapshotId: inspected.snapshot.snapshotId, index: button.index }
       );
       expect(Date.now() - startedAt).toBeLessThan(25_000);
-      expect(result.error).toContain('content script is disconnected');
-      expect(result.error).toContain('Reload the tab and try again');
-      expect(result.error).not.toContain('Maximum tool call retries exceeded');
+      const tabFailure = result.result || result;
+      expect(tabFailure.message).toContain('content script is disconnected');
+      expect(tabFailure.message).toContain('Reload the tab and try again');
+      expect(tabFailure.message).not.toContain('Maximum tool call retries exceeded');
+      expect(tabFailure).toMatchObject({
+        error: 'PAGE_TAB_UNAVAILABLE',
+        handled: true,
+        scope: 'tab',
+      });
     } finally {
       await abortRun(harness, runId);
       await context.close();
@@ -511,17 +658,6 @@ test.describe('page-agent-style page actions', () => {
         { runId, snapshotId: inspected.snapshot.snapshotId, index: link.index }
       );
       expect(actionStarted).toBe(true);
-      await expect
-        .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
-        .toMatchObject({
-          action: 'page_click',
-          destination: fixtureUrl(fixtureServer, 'landing.html'),
-        });
-      const decision = await harness.evaluate(
-        ({ url, runId }) => window.pageActionHarness.resolveConfirmation(url, runId),
-        { url: targetUrl, runId }
-      );
-      expect(decision.success, JSON.stringify(decision)).toBe(true);
       await expect(target).toHaveURL(fixtureUrl(fixtureServer, 'landing.html'));
       await expect
         .poll(() =>
@@ -671,14 +807,6 @@ test.describe('page-agent-style page actions', () => {
       );
       expect(actionStarted).toBe(true);
       await expect
-        .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
-        .toMatchObject({ action: 'page_open_link' });
-      const decision = await harness.evaluate(
-        ({ url, runId }) => window.pageActionHarness.resolveConfirmation(url, runId),
-        { url: targetUrl, runId }
-      );
-      expect(decision.success, JSON.stringify(decision)).toBe(true);
-      await expect
         .poll(() =>
           harness.evaluate(
             ({ runId }) => window.pageActionHarness.getToolResult(runId, 'blank-link'),
@@ -695,6 +823,68 @@ test.describe('page-agent-style page actions', () => {
         .pages()
         .find((page) => page !== target && page.url().includes('/landing.html'));
       await expect(destination.locator('#destination')).toHaveText('Landing destination');
+      const destinationState = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(
+            runId,
+            'blank-destination-state',
+            'page_get_state',
+            {}
+          ),
+        { runId }
+      );
+      expect(destinationState.result?.snapshot, JSON.stringify(destinationState)).toBeTruthy();
+      expect(destinationState.result.snapshot.url).toContain('/landing.html');
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('waits for a background tab bridge before switching into it', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      const inspected = await startAndInspect(harness, targetUrl, 'background-tab');
+      runId = inspected.runId;
+      const source = await harness.evaluate(
+        (url) => window.pageActionHarness.findTab(url),
+        targetUrl
+      );
+      const link = inspected.snapshot.elements.find((element) => element.label === 'Open new tab');
+      const opened = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'background-open', 'page_open_link', {
+            snapshotId,
+            index,
+            background: true,
+          }),
+        { runId, snapshotId: inspected.snapshot.snapshotId, index: link.index }
+      );
+      expect(opened.result?.openedTabId, JSON.stringify(opened)).toBeTruthy();
+      expect(opened.result.targetTabId).toBe(source.id);
+      const switched = await harness.evaluate(
+        ({ runId, tabId }) =>
+          window.pageActionHarness.executeTool(runId, 'background-switch', 'page_switch_tab', {
+            tabId,
+          }),
+        { runId, tabId: opened.result.openedTabId }
+      );
+      expect(switched.result?.targetTabId).toBe(opened.result.openedTabId);
+      const state = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(runId, 'background-state', 'page_get_state', {}),
+        { runId }
+      );
+      expect(state.result?.snapshot?.url, JSON.stringify(state)).toContain('/landing.html');
     } finally {
       await abortRun(harness, runId);
       await context.close();

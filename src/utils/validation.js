@@ -40,6 +40,8 @@ export const RESERVED_TOOL_NAMES = Object.freeze([
   'page_switch_tab',
   'page_close_tab',
   'page_request_user_input',
+  'page_pause_for_user',
+  'page_record_note',
 ]);
 export const ALLOWED_TOOL_METHODS = Object.freeze(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
 

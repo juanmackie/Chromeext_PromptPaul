@@ -48,6 +48,23 @@ export function consumePageActionsEnabled() {
   });
 }
 
+/**
+ * Restore Act after a run fails before the background worker accepts it.
+ * @returns {Promise<void>}
+ */
+export function restorePageActionsEnabled() {
+  return new Promise((resolve) => {
+    const storage = getPageActionsStorage();
+    storage.get([PAGE_ACTIONS_ENABLED_KEY], (result) => {
+      if (result?.[PAGE_ACTIONS_ENABLED_KEY] !== undefined) {
+        resolve();
+        return;
+      }
+      storage.set({ [PAGE_ACTIONS_ENABLED_KEY]: true }, resolve);
+    });
+  });
+}
+
 export function isPageActionsMultiTabEnabled() {
   return new Promise((resolve) => {
     chrome.storage.local.get([PAGE_ACTIONS_MULTI_TAB_KEY], (result) => {
@@ -60,8 +77,8 @@ function applyMultiTabToggle(element, enabled) {
   if (!element) return;
   element.setAttribute('aria-pressed', String(enabled));
   element.title = enabled
-    ? 'Multi-tab page actions are on — new sites require approval'
-    : 'Multi-tab page actions are off';
+    ? 'Owned-tab actions are on — safe navigation is covered by Act'
+    : 'Owned-tab actions are off — enable Act for tab scope';
 }
 
 export function initPageActionsMultiTabToggle(toggleElement, loadingManagerRef) {
@@ -72,7 +89,7 @@ export function initPageActionsMultiTabToggle(toggleElement, loadingManagerRef) 
     await chrome.storage.local.set({ [PAGE_ACTIONS_MULTI_TAB_KEY]: next });
     applyMultiTabToggle(toggleElement, next);
     loadingManagerRef?.showToast?.(
-      next ? 'Multi-tab actions enabled for the next run.' : 'Multi-tab actions disabled.',
+      next ? 'Legacy owned-tab setting enabled.' : 'Legacy owned-tab setting disabled.',
       'info'
     );
   });
@@ -278,8 +295,8 @@ function applyPageActionsToggle(element, enabled) {
   if (!element) return;
   element.setAttribute('aria-pressed', String(enabled));
   element.title = enabled
-    ? 'Page actions are on — click to disable current-page actions'
-    : 'Page actions are off — click to enable current-page actions';
+    ? 'Page actions are on — click to disable bounded page and tab actions'
+    : 'Page actions are off — click to enable bounded page and tab actions';
 }
 
 /**

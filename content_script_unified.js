@@ -1187,7 +1187,11 @@
   const PAGE_ACTION_MAX_TEXT_CHARS = 240;
   const PAGE_ACTION_MAX_ATTRIBUTE_CHARS = 120;
   const PAGE_ACTION_MAX_INPUT_CHARS = 2000;
-  const PAGE_ACTION_MAX_ACTIONS = 16;
+  // The orchestrator applies separate observation/navigation/mutation budgets.
+  // This per-document cap matches the combined orchestrator ceilings (64
+  // observations + 24 navigations + 16 mutations) and resets with each
+  // document/session.
+  const PAGE_ACTION_MAX_ACTIONS = 104;
   // Total serialized snapshot budget (content + elements array); matches
   // PAGE_DOM_CAPS.maxPayloadBytes in src/utils/pageDom.js.
   const PAGE_ACTION_MAX_PAYLOAD_BYTES = 64 * 1024;
@@ -1311,14 +1315,18 @@
   function isPageActionSensitive(element, label, text) {
     const type = String(element.getAttribute('type') || '').toLowerCase();
     const autocomplete = String(element.getAttribute('autocomplete') || '').toLowerCase();
+    const tag = String(element.tagName || '').toLowerCase();
+    const valueBearing =
+      element.isContentEditable || ['input', 'textarea', 'select', 'option'].includes(tag);
+    const pattern = valueBearing
+      ? /password|passcode|one[-_ ]?time|otp|2fa|secret|token|api[-_ ]?key|credit|card|cvv|cvc|ssn|social security/i
+      : /password|passcode|one[-_ ]?time|otp|2fa|secret|token|api[-_ ]?key|credit\s+card|debit\s+card|card\s+number|cvv|cvc|ssn|social security/i;
     return (
       type === 'password' ||
       ['file', 'hidden'].includes(type) ||
       autocomplete.includes('password') ||
       autocomplete.includes('one-time-code') ||
-      /password|passcode|one[-_ ]?time|otp|2fa|secret|token|api[-_ ]?key|credit|card|cvv|cvc|ssn|social security/i.test(
-        `${label} ${text} ${element.getAttribute('name') || ''}`
-      )
+      pattern.test(`${label} ${text} ${element.getAttribute('name') || ''}`)
     );
   }
 
@@ -1745,6 +1753,10 @@
       disposition,
       evidence: {
         kind,
+        ...(details.scope ? { scope: String(details.scope).slice(0, 32) } : {}),
+        ...(typeof details.pageEffectObserved === 'boolean'
+          ? { pageEffectObserved: details.pageEffectObserved }
+          : {}),
         ...(typeof details.matched === 'boolean' ? { matched: details.matched } : {}),
         ...(typeof details.changed === 'boolean' ? { changed: details.changed } : {}),
       },
@@ -1870,7 +1882,7 @@
         }
         if (record.target === '_blank') {
           const error = new Error(
-            'This link opens a new tab. Use page_open_link when Tabs is enabled.'
+            'This link opens a new tab. Use page_open_link when Act is enabled.'
           );
           error.code = 'PAGE_NAVIGATION_NEW_TAB';
           throw error;
@@ -1912,7 +1924,7 @@
         actionReceipt = buildPageActionReceipt(
           matched ? 'delivered_verified' : 'delivered_unverified',
           'selected_option_match',
-          { matched }
+          { matched, scope: 'control', pageEffectObserved: false }
         );
       } else {
         throw new Error('Unsupported page action.');

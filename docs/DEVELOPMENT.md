@@ -14,7 +14,7 @@ cd Chromeext_PromptPaul
 npm install
 ```
 
-Load the unpacked extension from `chrome://extensions/` and point Chrome at this repository or the `dist/` folder after building. Source checkouts do not contain a starter credential. A release build may inject a deliberately public, quota-limited demo credential with `PROMPT_PAUL_DEMO_API_KEY`; never use that credential for private data.
+Load the unpacked extension from `chrome://extensions/` and point Chrome at this repository or the `dist/` folder after building. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options.
 
 ## Project Layout
 
@@ -54,7 +54,7 @@ npm audit --audit-level=high --omit=optional
 6. Run `npm audit --audit-level=high --omit=optional` before release.
 7. Build with `npm run build`.
 8. Reload the unpacked extension in Chrome.
-9. For page-action changes, test both Act-off ordinary chat and Act-on static forms/SPAs with approval, stale DOM, sensitive-field, restricted-page, Stop, worker-restart, receipt, and manual-intervention cases. Confirm that Pause for user requires explicit Resume and a fresh inspection, and that unverified mutations are not repeated. When Tabs is enabled, test owned-tab limits, source-tab close blocking, site approval, and fresh inspection after switching. A reconnect may restore activity status but must not resume actions automatically. Run `npm run test:browser` for the unpacked-extension Playwright suite; use `PROMPT_PAUL_BROWSER=chrome` or `PROMPT_PAUL_BROWSER=edge` when validating an installed branded browser. Branded runs load the unpacked directory through the browser-level CDP Extensions domain, which is required by Chrome 137+ and equivalent Edge builds. The browser evaluator records bounded metrics only; restricted-page and Hermes provider boundaries stay in the unit matrix.
+9. For page-action changes, test both Act-off ordinary chat and Act-on static forms/SPAs with approval, stale DOM, sensitive-field, restricted-page, Stop, worker-restart, receipt, and manual-intervention cases. Confirm that Pause for user requires explicit Resume and a fresh inspection, and that unverified mutations are not repeated. Test foreground and background owned-tab opening, readiness after `tabs.create`, bridge-failure quarantine, source-tab close blocking, the separate 64/24/16 action budgets, task-note/history bounds, and fresh inspection after switching. A reconnect may restore activity status but must not resume actions automatically. Run `npm run test:browser` for the unpacked-extension Playwright suite; use `PROMPT_PAUL_BROWSER=chrome` or `PROMPT_PAUL_BROWSER=edge` when validating an installed branded browser. Branded runs load the unpacked directory through the browser-level CDP Extensions domain, which is required by Chrome 137+ and equivalent Edge builds. The browser evaluator records bounded metrics only; restricted-page and Hermes provider boundaries stay in the unit matrix.
 
 See [Production Readiness](PRODUCTION_READINESS.md) for the concise review contract.
 

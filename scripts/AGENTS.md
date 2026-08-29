@@ -13,7 +13,7 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 ## Local Contracts
 
 - Scripts are CommonJS Node scripts and assume `process.cwd()` is the repository root.
-- `build.js` writes generated output to `dist/`; `dist/` is not source of truth. Release builds may inject the deliberately public, quota-limited `PROMPT_PAUL_DEMO_API_KEY` into the generated starter profile; source files must remain credential-free.
+- `build.js` writes generated output to `dist/`; `dist/` is not source of truth. Builds copy the credential-free starter profile; connection credentials remain user-provided.
 - `build.js` copies root manifest-referenced files and the `src`, `libs`, and `skills` directories.
 - `test-runner.js` is intentionally structural and should guard contracts that are easy to regress without a browser.
 - `smoke-check.js` must remain cheap enough to run often.

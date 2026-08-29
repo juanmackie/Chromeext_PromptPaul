@@ -8,6 +8,7 @@ import {
   isPageActionsEnabled,
   setPageActionsEnabled,
   consumePageActionsEnabled,
+  restorePageActionsEnabled,
 } from '../src/chat/ChatPageAutomation.js';
 
 describe('ChatPageAutomation Act permission', () => {
@@ -63,5 +64,24 @@ describe('ChatPageAutomation Act permission', () => {
     expect(await consumePageActionsEnabled()).toBe(true);
     expect(sessionState.pageActionsEnabled).toBeUndefined();
     expect(await consumePageActionsEnabled()).toBe(false);
+  });
+
+  it('can restore Act when run setup fails before a run starts', async () => {
+    await setPageActionsEnabled(true);
+    expect(await consumePageActionsEnabled()).toBe(true);
+
+    await restorePageActionsEnabled();
+
+    expect(await isPageActionsEnabled()).toBe(true);
+  });
+
+  it('does not override an explicit disable while run setup is settling', async () => {
+    await setPageActionsEnabled(true);
+    expect(await consumePageActionsEnabled()).toBe(true);
+    await setPageActionsEnabled(false);
+
+    await restorePageActionsEnabled();
+
+    expect(await isPageActionsEnabled()).toBe(false);
   });
 });

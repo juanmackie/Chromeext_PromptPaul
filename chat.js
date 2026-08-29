@@ -27,6 +27,7 @@ import {
   executeRun,
   abortRun,
   getRunAuth,
+  clearRunOwnerToken,
   selectOptimalProfile,
 } from './src/chat/ChatAPI.js';
 import {
@@ -53,9 +54,8 @@ import {
 import { renderSiteSuggestions, executePresetAnalysis } from './src/chat/ChatPageActions.js';
 import {
   consumePageActionsEnabled,
-  isPageActionsMultiTabEnabled,
+  restorePageActionsEnabled,
   initPageActionsToggle,
-  initPageActionsMultiTabToggle,
   renderPageActionConfirmation,
   resolvePageActionConfirmation,
   cancelPageActionConfirmations,
@@ -819,10 +819,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize opt-in page action and web grounding toggles.
   initPageActionsToggle(document.getElementById('page-actions-toggle'), loadingManager);
-  initPageActionsMultiTabToggle(
-    document.getElementById('page-actions-multi-tab-toggle'),
-    loadingManager
-  );
   initWebSearchToggle(document.getElementById('web-search-toggle'), loadingManager);
 
   const darkThemeToggle = document.getElementById('darkThemeToggle');
@@ -921,7 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Shared failure cleanup for both run entry points.
   function handleRunFailure(error, source) {
     console.error(`${source} Error:`, error);
-    chatUI.addMessage('System', 'Error: ' + error.message);
+    chatUI.addMessage('System', 'Error: ' + friendlyRuntimeErrorMessage(error));
     resetRunUi(RUN_STATES.ERROR);
     userInput.focus();
     clearCurrentMediaData();
@@ -1426,6 +1422,7 @@ document.addEventListener('DOMContentLoaded', () => {
           streamState.clearStreamingElements();
           streamState.clearStreamedText();
           streamState.setActiveToolCall(null);
+          clearRunOwnerToken(runId);
           streamState.setRunId(null);
           streamState.setSourceTabId(null);
           endResponseRun();
@@ -1682,6 +1679,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.clearStreamingElements();
             streamState.clearStreamedText();
             streamState.setActiveToolCall(null);
+            clearRunOwnerToken(runId);
             streamState.setRunId(null);
             streamState.setSourceTabId(null);
 
@@ -1699,6 +1697,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.clearStreamingElements();
             streamState.clearStreamedText();
             streamState.setActiveToolCall(null);
+            clearRunOwnerToken(runId);
             streamState.setRunId(null);
             streamState.setSourceTabId(null);
             break;
@@ -1715,6 +1714,7 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.clearStreamingElements();
             streamState.clearStreamedText();
             streamState.setActiveToolCall(null);
+            clearRunOwnerToken(runId);
             streamState.setRunId(null);
             streamState.setSourceTabId(null);
             break;
@@ -1904,6 +1904,8 @@ document.addEventListener('DOMContentLoaded', () => {
   ) {
     if (!beginResponseRun()) return;
 
+    let pageActionsConsumed = false;
+    let runStarted = false;
     try {
       clearCurrentMediaData();
       const config = await getApiConfigCached();
@@ -1940,6 +1942,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const webSearchEnabled = await isWebSearchEnabled();
       const pageActionsEnabled = await consumePageActionsEnabled();
+      pageActionsConsumed = pageActionsEnabled;
       const runConfig = {
         provider: config.provider || 'api',
         profileId: config.profileId || config.id,
@@ -1954,13 +1957,14 @@ document.addEventListener('DOMContentLoaded', () => {
         tools: await getTools(),
         webSearch: webSearchEnabled,
         pageActions: config.provider === 'hermes' ? false : pageActionsEnabled,
-        pageActionsMultiTab: pageActionsEnabled && (await isPageActionsMultiTabEnabled()),
+        pageActionsMultiTab: pageActionsEnabled,
         mediaData: mediaData,
         requestedSkill,
         conversationId: streamState.getConversationId(),
         sourceTabId: getRunSourceTabId(),
       };
       streamState.setRunId(await startRun(runConfig));
+      runStarted = true;
       streamState.setSourceTabId(runConfig.sourceTabId);
 
       await executeRun(
@@ -1968,6 +1972,13 @@ document.addEventListener('DOMContentLoaded', () => {
         prepareRunMessages(runConfig, streamState.getConversationHistory())
       );
     } catch (error) {
+      if (pageActionsConsumed && !runStarted) {
+        try {
+          await restorePageActionsEnabled();
+        } catch (restoreError) {
+          console.warn('Chat: Could not restore Act after failed run setup.', restoreError);
+        }
+      }
       handleRunFailure(error, 'makeApiCallWithMedia');
     } finally {
       endResponseRun();
@@ -2055,6 +2066,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function makeApiCall(promptRequest = null, tool_choice = 'auto', requestedSkill = null) {
     if (!beginResponseRun()) return;
 
+    let pageActionsConsumed = false;
+    let runStarted = false;
     try {
       const config = await getApiConfigCached();
       const userMessage = composeUserPrompt(promptRequest);
@@ -2117,6 +2130,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Prepare run configuration
       const webSearchEnabled = await isWebSearchEnabled();
       const pageActionsEnabled = await consumePageActionsEnabled();
+      pageActionsConsumed = pageActionsEnabled;
       const runConfig = {
         provider: effectiveConfig.provider || 'api',
         profileId: effectiveConfig.profileId || effectiveConfig.id,
@@ -2131,7 +2145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tools: await getTools(),
         webSearch: webSearchEnabled,
         pageActions: effectiveConfig.provider === 'hermes' ? false : pageActionsEnabled,
-        pageActionsMultiTab: pageActionsEnabled && (await isPageActionsMultiTabEnabled()),
+        pageActionsMultiTab: pageActionsEnabled,
         requestedSkill,
         conversationId: streamState.getConversationId(),
         sourceTabId: getRunSourceTabId(),
@@ -2141,6 +2155,7 @@ document.addEventListener('DOMContentLoaded', () => {
       beginRunUi();
 
       streamState.setRunId(await startRun(runConfig));
+      runStarted = true;
       streamState.setSourceTabId(runConfig.sourceTabId);
 
       await executeRun(
@@ -2148,6 +2163,13 @@ document.addEventListener('DOMContentLoaded', () => {
         prepareRunMessages(runConfig, streamState.getConversationHistory())
       );
     } catch (error) {
+      if (pageActionsConsumed && !runStarted) {
+        try {
+          await restorePageActionsEnabled();
+        } catch (restoreError) {
+          console.warn('Chat: Could not restore Act after failed run setup.', restoreError);
+        }
+      }
       handleRunFailure(error, 'makeApiCall');
     } finally {
       endResponseRun();

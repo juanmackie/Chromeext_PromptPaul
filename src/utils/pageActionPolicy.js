@@ -123,8 +123,9 @@ export function normalizePageActionArgs(actionName, args = {}) {
 }
 
 /**
- * Normalize bounded multi-tab arguments. Tabs are opt-in and remain owned by
- * the current run; arbitrary browser APIs are never exposed to the model.
+ * Normalize bounded multi-tab arguments. Tab tools are available only inside
+ * the single Act lease and remain owned by the current run; arbitrary browser
+ * APIs are never exposed to the model.
  * @param {string} actionName
  * @param {object} args
  * @returns {{valid: boolean, value?: object, error?: string}}
@@ -289,7 +290,7 @@ export function classifyPageAction(target = {}, actionName = '') {
       risk: PAGE_ACTION_RISKS.PROHIBITED,
       requiresConfirmation: true,
       prohibited: true,
-      reason: 'This link opens a new tab. Use page_open_link when Tabs is enabled.',
+      reason: 'This link opens a new tab. Use page_open_link when Act is enabled.',
     };
   }
 

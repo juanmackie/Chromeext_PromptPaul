@@ -40,12 +40,38 @@ describe('PageTabController', () => {
       url: 'https://other.example/path',
       background: true,
     });
-    expect(opened.targetTabId).toBe(2);
+    expect(opened.openedTabId).toBe(2);
+    expect(opened.targetTabId).toBe(1);
     await controller.execute('run-1', 'page_switch_tab', { tabId: 1 });
     await expect(controller.execute('run-1', 'page_close_tab', { tabId: 1 })).rejects.toMatchObject(
       { code: 'PAGE_TAB_SOURCE_CLOSE_BLOCKED' }
     );
     await controller.execute('run-1', 'page_close_tab', { tabId: 2 });
     expect(chrome.tabs.remove).toHaveBeenCalledWith(2);
+  });
+
+  it('waits for a new tab bridge before reporting it ready', async () => {
+    const readiness = vi.fn(async () => undefined);
+    const readyController = new PageTabController({ ensureTabReady: readiness });
+    readyController.registerRun('run-ready', 1);
+    const opened = await readyController.execute('run-ready', 'page_open_tab', {
+      url: 'https://other.example/path',
+    });
+    expect(readiness).toHaveBeenCalledWith(2, undefined);
+    expect(opened).toMatchObject({ openedTabId: 2, targetTabId: 2, ready: true });
+  });
+
+  it('quarantines a failed tab and selects another owned tab', async () => {
+    await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://other.example/path',
+      background: true,
+    });
+    const recovery = controller.quarantine('run-1', 1, { code: 'PAGE_ACTION_TIMEOUT' });
+    expect(recovery).toMatchObject({ tabId: 1, nextTargetTabId: 2, available: true });
+    expect(controller.getTargetTabId('run-1')).toBe(2);
+    expect(controller.getTabStatus('run-1', 1)).toMatchObject({
+      status: 'unavailable',
+      code: 'PAGE_ACTION_TIMEOUT',
+    });
   });
 });

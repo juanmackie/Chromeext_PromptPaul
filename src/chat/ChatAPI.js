@@ -186,6 +186,7 @@ export async function startRun(runConfig) {
   }
 
   runOwnerTokens.set(response.runId, response.ownerToken);
+  if (response.sourceTabId != null) runConfig.sourceTabId = response.sourceTabId;
   await setActiveRun(response.runId, runConfig.sourceTabId);
   return response.runId;
 }
@@ -200,6 +201,17 @@ export function getRunOwnerToken(runId) {
 }
 
 /**
+ * Release the opaque owner token after a terminal run event is rendered.
+ * Execution acknowledgements are intentionally non-terminal so long-running
+ * runs can outlive the side-panel message channel.
+ * @param {string} runId - Active run ID.
+ * @returns {void}
+ */
+export function clearRunOwnerToken(runId) {
+  if (runId) runOwnerTokens.delete(runId);
+}
+
+/**
  * Build the owner fields for a run-scoped runtime request.
  * @param {string} runId - Active run ID.
  * @param {number|null} sourceTabId - Source tab identity, when available.
@@ -210,9 +222,12 @@ export function getRunAuth(runId, sourceTabId = null) {
 }
 
 /**
- * Execute an orchestrator run
+ * Ask the background worker to execute an orchestrator run. The worker
+ * acknowledges acceptance immediately; completion arrives through runtime
+ * events so this call never holds a message channel open for the run lifetime.
  * @param {string} runId - Run ID
  * @param {Array} messages - Message history
+ * @returns {Promise<object>}
  */
 export async function executeRun(runId, messages) {
   try {
@@ -225,11 +240,16 @@ export async function executeRun(runId, messages) {
       },
     });
 
-    if (response && response.error) {
+    if (response?.error) {
       throw new Error(response.error);
     }
-  } finally {
-    runOwnerTokens.delete(runId);
+    if (response?.success === false) {
+      throw new Error(response.error || 'The background worker rejected the run.');
+    }
+    return response || { success: true, accepted: true };
+  } catch (error) {
+    clearRunOwnerToken(runId);
+    throw error;
   }
 }
 
@@ -267,7 +287,7 @@ export async function abortRun(runId) {
       ownerToken: getRunOwnerToken(runId),
     });
     const acknowledged = response?.success === true;
-    if (acknowledged) runOwnerTokens.delete(runId);
+    if (acknowledged) clearRunOwnerToken(runId);
     return acknowledged;
   } catch (error) {
     console.error('[ChatAPI] abortRun failed:', error.message);

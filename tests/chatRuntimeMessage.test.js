@@ -1,0 +1,54 @@
+/**
+ * @fileoverview Regression coverage for long-running execution acknowledgements.
+ * @module chatRuntimeMessage
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../loadingManager.js', () => ({
+  loadingManager: {
+    showToast: vi.fn(),
+  },
+}));
+
+const { startRun, executeRun, getRunAuth, clearRunOwnerToken } =
+  await import('../src/chat/ChatAPI.js');
+const { friendlyRuntimeErrorMessage } = await import('../src/utils/runtimeErrors.js');
+
+describe('chat runtime execution bridge', () => {
+  beforeEach(() => {
+    clearRunOwnerToken('run-1');
+    globalThis.chrome = {
+      runtime: {
+        sendMessage: vi.fn(),
+      },
+      storage: {
+        session: {
+          set: vi.fn(() => Promise.resolve()),
+          remove: vi.fn(() => Promise.resolve()),
+        },
+      },
+    };
+  });
+
+  it('keeps the run owner token after the background accepts execution', async () => {
+    chrome.runtime.sendMessage
+      .mockResolvedValueOnce({ runId: 'run-1', ownerToken: 'owner-1', sourceTabId: 7 })
+      .mockResolvedValueOnce({ success: true, accepted: true });
+
+    await startRun({ sourceTabId: 7 });
+    await executeRun('run-1', [{ role: 'user', content: 'long task' }]);
+
+    expect(getRunAuth('run-1', 7)).toEqual({ ownerToken: 'owner-1', sourceTabId: 7 });
+  });
+
+  it('translates Chrome transient channel closures into a recoverable message', () => {
+    expect(
+      friendlyRuntimeErrorMessage(
+        new Error(
+          'A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received'
+        )
+      )
+    ).toBe('The page connection was interrupted. Reload the tab and try again.');
+  });
+});

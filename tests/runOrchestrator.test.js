@@ -2044,7 +2044,7 @@ describe('RunOrchestrator page actions', () => {
     expect(refreshed.result.snapshot.snapshotId).toBe('page-snap-1');
   });
 
-  it('approves a cross-origin link and exposes bounded destination context', async () => {
+  it('navigates a cross-origin HTTP link under the bounded Act lease', async () => {
     const linkSnapshot = () => ({
       ...makeSnapshot(),
       elements: [
@@ -2073,19 +2073,10 @@ describe('RunOrchestrator page actions', () => {
     const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
     await orch.executeTool(runId, makeCall('link-state', 'page_get_state', {}));
 
-    const actionPromise = orch.executeTool(
+    const result = await orch.executeTool(
       runId,
       makeCall('link-click', 'page_click', { snapshotId: 'page-snap-1', index: 2 })
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
-    expect(confirmation).toMatchObject({
-      destination: 'https://external.example/docs',
-      destinationOrigin: 'external.example',
-    });
-    expect(confirmation.destination).not.toContain('secret');
-    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
-    const result = await actionPromise;
     expect(result.result.navigated).toBe(true);
     expect(orch.activeRuns.get(runId).pageActions.allowedOrigins).toContain(
       'https://external.example'
@@ -2109,7 +2100,6 @@ describe('RunOrchestrator page actions', () => {
       ],
     });
     const tabCalls = [];
-    const events = [];
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async (_tabId, actionName) =>
         actionName === 'page_get_state'
@@ -2120,7 +2110,7 @@ describe('RunOrchestrator page actions', () => {
         return { targetTabId: 12, tab: { tabId: 12, url: 'https://reports.example/report' } };
       },
     });
-    orch._emitEvent = (_runId, event) => events.push(event);
+    orch._emitEvent = () => {};
     const runId = await orch.startRun({
       pageActions: true,
       pageActionsMultiTab: true,
@@ -2136,10 +2126,6 @@ describe('RunOrchestrator page actions', () => {
         index: 2,
       })
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
-    expect(confirmation.destination).toBe('https://reports.example/report');
-    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
     const result = await actionPromise;
     expect(result.result.tab.tabId).toBe(12);
     expect(tabCalls).toEqual([
@@ -2274,17 +2260,8 @@ describe('RunOrchestrator page actions', () => {
         index: 2,
       })
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const newOriginConfirmation = events.find(
-      (event) =>
-        event.type === 'page_action_confirmation' &&
-        event.confirmationId !== firstConfirmation.confirmationId
-    );
-    expect(newOriginConfirmation).toMatchObject({ destinationOrigin: 'external.example' });
-    expect(orch.resolvePageActionDecision(runId, newOriginConfirmation.confirmationId, true)).toBe(
-      true
-    );
     await expect(newOriginAction).resolves.toMatchObject({ result: { success: true } });
+    expect(events.filter((event) => event.type === 'page_action_confirmation')).toHaveLength(1);
   });
 
   it('continues after an approved navigation and forces a fresh snapshot', async () => {
@@ -2486,28 +2463,67 @@ describe('RunOrchestrator page actions', () => {
     expect(result.result.snapshot.actionableHint).toMatch(/ask the user to open the target page/i);
   });
 
-  it('fails fast with one actionable error when the content-script bridge is missing', async () => {
+  it('isolates a missing content-script bridge to the affected tab', async () => {
+    const quarantine = vi.fn(() => ({ tabId: 7, nextTargetTabId: 12, available: true }));
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async () => {
         const error = new Error('Receiving end does not exist.');
         error.code = 'PAGE_ACTION_MESSAGE_FAILED';
         throw error;
       },
+      pageActionTabFailureHandler: quarantine,
     });
     const events = [];
     orch._emitEvent = (_runId, event) => events.push(event);
     const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
 
-    await expect(
-      orch.executeTool(runId, makeCall('state-dead', 'page_get_state', {}))
-    ).rejects.toMatchObject({
+    const result = await orch.executeTool(runId, makeCall('state-dead', 'page_get_state', {}));
+    expect(result.result).toMatchObject({
+      error: 'PAGE_TAB_UNAVAILABLE',
       code: 'PAGE_ACTION_MESSAGE_FAILED',
+      handled: true,
+      scope: 'tab',
+      nextTargetTabId: 12,
     });
+    expect(quarantine).toHaveBeenCalledWith(
+      runId,
+      7,
+      expect.objectContaining({ code: 'PAGE_ACTION_MESSAGE_FAILED' })
+    );
     const errorEvent = events.find(
       (event) => event.type === 'page_action_state' && event.state === 'error'
     );
     expect(errorEvent).toBeTruthy();
     expect(errorEvent.error).toContain('Reload the tab and try again');
+  });
+
+  it('allows a fresh inspection to re-probe a reloaded source tab', async () => {
+    let attempts = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          const error = new Error('Receiving end does not exist.');
+          error.code = 'PAGE_ACTION_MESSAGE_FAILED';
+          throw error;
+        }
+        return { success: true, snapshot: makeSnapshot() };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const failed = await orch.executeTool(
+      runId,
+      makeCall('state-reload-failed', 'page_get_state', {})
+    );
+    expect(failed.result.error).toBe('PAGE_TAB_UNAVAILABLE');
+
+    const recovered = await orch.executeTool(
+      runId,
+      makeCall('state-reload-recovered', 'page_get_state', {})
+    );
+    expect(recovered.result.snapshot).toBeTruthy();
+    expect(orch.activeRuns.get(runId).pageActions.unavailableTabs.has(7)).toBe(false);
   });
 
   it('emits a terminal page-action error state for non-terminal executor failures', async () => {
@@ -2542,7 +2558,7 @@ describe('RunOrchestrator page actions', () => {
     );
   });
 
-  it('classifies handshake and bridge failures as terminal errors', async () => {
+  it('classifies handshake and bridge failures as recoverable tab errors', async () => {
     const orch = new RunOrchestrator(createStubSkillManager());
     for (const code of [
       'PAGE_ACTION_NO_CONTENT_SCRIPT',
@@ -2553,7 +2569,8 @@ describe('RunOrchestrator page actions', () => {
     ]) {
       const error = new Error('bridge down');
       error.code = code;
-      expect(orch._isPageActionTerminalError(error)).toBe(true);
+      expect(orch._isPageActionTabFailure(error)).toBe(true);
+      expect(orch._isPageActionTerminalError(error)).toBe(false);
     }
     expect(orch._isPageActionTerminalError(null)).toBe(false);
     const navigation = new Error('page changed');
@@ -2915,5 +2932,30 @@ describe('RunOrchestrator page actions', () => {
     );
     expect(clickResult.result.notice).toMatch(/refreshed/);
     expect(clickResult.result.notice).toMatch(/snapshotId/);
+  });
+
+  it('keeps observation and mutation budgets independent for long tasks', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, snapshot: makeSnapshot() },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    for (let index = 0; index < 64; index += 1) {
+      const result = await orch.executeTool(
+        runId,
+        makeCall(`scroll-${index}`, 'page_scroll', { direction: 'down' })
+      );
+      expect(result.result.error).toBeUndefined();
+    }
+    const exhausted = await orch.executeTool(
+      runId,
+      makeCall('scroll-64', 'page_scroll', { direction: 'down' })
+    );
+    expect(exhausted.result).toMatchObject({ error: 'PAGE_ACTION_LIMIT', budget: 'observation' });
+    expect(orch.activeRuns.get(runId).pageActions.budgets.mutation).toBe(0);
   });
 });

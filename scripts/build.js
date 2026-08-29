@@ -204,24 +204,7 @@ function copyFiles(manifest) {
     }
 
     if (fs.existsSync(srcPath)) {
-      let content = null;
-      if (file === 'options.js') {
-        content = fs.readFileSync(srcPath, 'utf8');
-        const demoKey = process.env.PROMPT_PAUL_DEMO_API_KEY?.trim() || '';
-        if (demoKey) {
-          content = content.replace(
-            "const STARTER_MISTRAL_API_KEY = '';",
-            `const STARTER_MISTRAL_API_KEY = ${JSON.stringify(demoKey)};`
-          );
-          console.log('  ✓ Injected configured public demo credential into options.js');
-        }
-      }
-
-      if (content === null) {
-        fs.copyFileSync(srcPath, destPath);
-      } else {
-        fs.writeFileSync(destPath, content);
-      }
+      fs.copyFileSync(srcPath, destPath);
       console.log(`  ✓ Copied ${file}`);
     } else {
       console.warn(`  ⚠ Warning: ${file} does not exist`);

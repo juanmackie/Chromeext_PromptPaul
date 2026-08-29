@@ -16,7 +16,7 @@
 ## Local Contracts
 
 - The suite must load the repository unpacked, exercise the content-script bridge and indexed semantic controls, and remain safe to run without network credentials.
-- Coverage includes connection interruption, compose contenteditable fields, executor timeout, approved same-tab and cross-origin link navigation, owned-tab link opening, active-tab navigation recovery, service-worker restart, manual-intervention resume, verified/unverified receipts, and live scope/diff measurements.
+- Coverage includes connection interruption, compose contenteditable fields, executor timeout, same-tab and cross-origin link navigation under Act, foreground and background owned-tab opening with readiness, active-tab navigation recovery, tab-local failure handling, service-worker restart, manual-intervention resume, verified/unverified receipts, and live scope/diff measurements.
 - Branded-browser runs select Chrome or Edge with `PROMPT_PAUL_BROWSER=chrome|edge`; the suite uses the browser-level CDP `Extensions.loadUnpacked` path required by Chrome 137+ and equivalent Edge builds. The default uses the installed Playwright Chromium runtime.
 
 ## Work Guidance

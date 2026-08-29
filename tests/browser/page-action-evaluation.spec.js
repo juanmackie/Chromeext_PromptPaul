@@ -252,7 +252,9 @@ test('executes browser-safe corpus cases and records bounded results', async () 
         window.pageActionHarness.executeTool(runId, 'evaluation-timeout', 'page_click', args),
       { runId: timeout.runId, args: timeoutArgs }
     );
-    expect(timeoutResult.code).toBe(timeoutCase.failureCode);
+    const timeoutPayload = timeoutResult.result || timeoutResult;
+    expect(timeoutPayload.error).toBe('PAGE_TAB_UNAVAILABLE');
+    expect(timeoutPayload.code).toBe(timeoutCase.failureCode);
     records.push(
       evaluationRecord(timeoutCase.id, timeoutResult, 2, promptChars(timeoutArgs), {
         toolCallCount: 2,

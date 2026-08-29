@@ -998,6 +998,9 @@ const pageActionPolicyProvider = async () => {
 
 const PAGE_ACTION_PING_TIMEOUT_MS = 1500;
 const PAGE_ACTION_PING_RETRY_DELAY_MS = 250;
+const PAGE_ACTION_INJECTION_TIMEOUT_MS = 5000;
+const PAGE_ACTION_READY_TIMEOUT_MS = 30_000;
+const PAGE_ACTION_READY_POLL_MS = 300;
 
 /**
  * Ping the page-action content script on a tab with a bounded timeout.
@@ -1042,6 +1045,104 @@ const verifyPageActionConnection = async (tabId) => {
   return (await pingPageActionContentScript(tabId)).connected;
 };
 
+/**
+ * Inject the unified page bridge when a tab was opened after the extension
+ * content-script match was evaluated. Chrome can return from tabs.create while
+ * the document is still in its provisional state, so readiness is a separate
+ * bounded phase instead of an implicit assumption in page_open_tab.
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+const injectPageActionContentScript = (tabId) =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => {
+      const error = new Error('Content script injection did not complete in time.');
+      error.code = 'PAGE_ACTION_INJECTION_FAILED';
+      finish(error);
+    }, PAGE_ACTION_INJECTION_TIMEOUT_MS);
+    try {
+      chrome.scripting.executeScript(
+        {
+          target: { tabId },
+          files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+            const error = new Error(
+              chrome.runtime.lastError.message || 'Content script injection failed.'
+            );
+            error.code = 'PAGE_ACTION_INJECTION_FAILED';
+            finish(error);
+            return;
+          }
+          finish();
+        }
+      );
+    } catch (error) {
+      error.code = error.code || 'PAGE_ACTION_INJECTION_FAILED';
+      finish(error);
+    }
+  });
+
+/**
+ * Wait for a tab's document and page bridge to become usable. This absorbs the
+ * normal tabs.create -> loading -> content-script attach race and quarantines
+ * only genuinely unavailable tabs at the orchestrator boundary.
+ * @param {number} tabId
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<boolean>}
+ */
+const ensurePageActionContentScript = async (tabId, signal) => {
+  const deadline = Date.now() + PAGE_ACTION_READY_TIMEOUT_MS;
+  let injected = false;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
+    let tab;
+    try {
+      tab = await chrome.tabs.get(Number(tabId));
+    } catch (error) {
+      lastError = error;
+      break;
+    }
+    const url = String(tab?.url || tab?.pendingUrl || '').trim();
+    if (url && getCurrentPageSupport(url).available) {
+      if (await verifyPageActionConnection(Number(tabId))) return true;
+      // A content script may be absent because this tab was created after the
+      // match decision. Inject once after the document commits, then continue
+      // polling until the bridge answers.
+      if (!injected && tab.status !== 'loading') {
+        try {
+          await injectPageActionContentScript(Number(tabId));
+        } catch (error) {
+          lastError = error;
+          throw error;
+        }
+        injected = true;
+      }
+    } else if (url && !getCurrentPageSupport(url).available) {
+      const error = new Error('This browser page cannot host Prompt Paul page actions.');
+      error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_READY_POLL_MS));
+  }
+  const error = new Error(
+    'The Prompt Paul content script did not become ready in time. Reload the tab and try again.'
+  );
+  error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
+  error.cause = lastError?.message || '';
+  throw error;
+};
+
 const pageActionAvailabilityProvider = async (tabId) => {
   try {
     const tab = await chrome.tabs.get(tabId);
@@ -1050,17 +1151,16 @@ const pageActionAvailabilityProvider = async (tabId) => {
     // script. Verify the bridge before the run starts; otherwise the forced
     // page_get_state call would fail and the orchestrator would retry it
     // until the tool-call limit is reached.
-    const connected = await verifyPageActionConnection(tabId);
-    if (!connected) {
-      const error = new Error(
-        'Page actions are on, but the Prompt Paul content script is not connected to this tab. Reload the tab and try again.'
-      );
-      error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
-      throw error;
-    }
+    await ensurePageActionContentScript(tabId);
     return true;
   } catch (error) {
-    if (error?.code === 'PAGE_ACTION_NO_CONTENT_SCRIPT') throw error;
+    if (['PAGE_ACTION_NO_CONTENT_SCRIPT', 'PAGE_ACTION_INJECTION_FAILED'].includes(error?.code)) {
+      const actionable = new Error(
+        'Page actions are on, but the Prompt Paul content script is not ready in this tab. Reload the tab and try again.'
+      );
+      actionable.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
+      throw actionable;
+    }
     return false;
   }
 };
@@ -1211,6 +1311,9 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       ? { action: 'clearPageActionSession', runId: options.runId }
       : { action: 'pageAction', runId: options.runId, pageAction: actionName, args };
   const expectNavigation = options.expectNavigation === true;
+  if (actionName !== 'clearPageActionSession') {
+    await ensurePageActionContentScript(tabId, options.signal);
+  }
   let previousUrl = '';
   try {
     previousUrl = await getPageActionTabUrl(tabId);
@@ -1289,10 +1392,17 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
   pageActionAvailabilityProvider,
   pageActionDocumentProvider,
   pageActionExecutor,
-  pageTabExecutor: (runId, actionName, args) => pageTabController.execute(runId, actionName, args),
+  pageTabExecutor: (runId, actionName, args, options = {}) =>
+    pageTabController.execute(runId, actionName, { ...args, signal: options.signal }),
   pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
   pageTabRunDisposer: (runId) => pageTabController.disposeRun(runId),
+  pageActionTabFailureHandler: (runId, tabId, failure) =>
+    pageTabController.quarantine(runId, tabId, failure),
 });
+
+// PageTabController owns tab scope; the background owns bridge readiness and
+// injection because only the service worker can use chrome.scripting safely.
+pageTabController.ensureTabReady = ensurePageActionContentScript;
 
 // ===== Menu System (Serialized Rebuild Queue) =====
 
@@ -1802,7 +1912,24 @@ async function executeTabContentExtraction(tabId) {
 function isUsablePanelTab(tab) {
   const url = String(tab?.url || '');
   return Boolean(
-    tab && tab.id !== undefined && !/^(chrome|chrome-extension|edge|about|devtools):/i.test(url)
+    tab &&
+    tab.id !== undefined &&
+    /^(https?:|file:)/i.test(url) &&
+    !/^(chrome|chrome-extension|edge|about|devtools):/i.test(url)
+  );
+}
+
+function isExtensionPageTab(tab) {
+  return /^(chrome|edge|moz)-extension:/i.test(String(tab?.url || ''));
+}
+
+function isActiveUnsupportedBrowserTab(tab, preferredTabId = null) {
+  const url = String(tab?.url || '');
+  return Boolean(
+    tab?.active &&
+    tab.id !== preferredTabId &&
+    !isExtensionPageTab(tab) &&
+    (!url || /^(about:|chrome:|edge:|devtools:)/i.test(url))
   );
 }
 
@@ -1811,12 +1938,20 @@ function isUsablePanelTab(tab) {
  * Options pages are extension tabs, so the active tab at click time is not a
  * valid side-panel host; prefer the active web tab in the same window instead.
  * @param {number|null} preferredTabId - Optional requested tab id.
+ * @param {{rejectUnsupportedActive?: boolean}} [options]
  * @returns {Promise<number|null>} A side-panel-capable tab id.
  */
-async function resolvePanelTabId(preferredTabId = null) {
+async function resolvePanelTabId(preferredTabId = null, options = {}) {
   let tabs = await chrome.tabs.query({ lastFocusedWindow: true });
   let preferred = tabs.find((tab) => tab.id === preferredTabId);
   let candidate = [preferred, ...tabs.filter((tab) => tab.active), ...tabs].find(isUsablePanelTab);
+
+  if (
+    options.rejectUnsupportedActive &&
+    tabs.some((tab) => isActiveUnsupportedBrowserTab(tab, preferredTabId))
+  ) {
+    return null;
+  }
 
   // An Options page may be opened in a separate extension window. If that
   // window has no web tab, fall back to any regular tab in the browser.
@@ -1977,27 +2112,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!extensionPageSender) {
       return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
     }
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs[0] && tabs[0].id) {
-        const result = await executeTabContentExtraction(tabs[0].id);
-        sendResponse({
-          action: 'loadContentResponse',
-          success: result.success,
-          isPdf: result.isPdf || false,
-          pdfUrl: result.pdfUrl || null,
-          content: result.content || result.data,
-          title: result.title,
-          siteName: result.siteName,
-          byline: result.byline,
-          excerpt: result.excerpt,
-          lang: result.lang,
-          url: result.url,
-          platform: result.platform || null,
-          platformInfo: result.platformInfo || null,
-          readStrategy: result.readStrategy || 'auto',
-          screenshot: result.screenshot || null,
-          error: result.error,
-        });
+        executeTabContentExtraction(tabs[0].id)
+          .then((result) => {
+            sendResponse({
+              action: 'loadContentResponse',
+              success: result.success,
+              isPdf: result.isPdf || false,
+              pdfUrl: result.pdfUrl || null,
+              content: result.content || result.data,
+              title: result.title,
+              siteName: result.siteName,
+              byline: result.byline,
+              excerpt: result.excerpt,
+              lang: result.lang,
+              url: result.url,
+              platform: result.platform || null,
+              platformInfo: result.platformInfo || null,
+              readStrategy: result.readStrategy || 'auto',
+              screenshot: result.screenshot || null,
+              error: result.error,
+            });
+          })
+          .catch((error) => {
+            console.error('Background: Failed to load tab content:', error.message);
+            sendResponse({
+              action: 'loadContentResponse',
+              success: false,
+              error: friendlyRuntimeErrorMessage(error),
+              readStrategy: 'auto',
+            });
+          });
       } else {
         sendResponse({
           action: 'loadContentResponse',
@@ -2013,27 +2159,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!extensionPageSender) {
       return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
     }
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs[0] && tabs[0].id) {
-        const result = await executeTabContentExtraction(tabs[0].id);
-        sendResponse({
-          action: 'tabContentResponse',
-          success: result.success,
-          isPdf: result.isPdf || false,
-          pdfUrl: result.pdfUrl || null,
-          content: result.content || result.data,
-          title: result.title,
-          siteName: result.siteName,
-          byline: result.byline,
-          excerpt: result.excerpt,
-          lang: result.lang,
-          url: result.url,
-          platform: result.platform || null,
-          platformInfo: result.platformInfo || null,
-          readStrategy: result.readStrategy || 'auto',
-          screenshot: result.screenshot || null,
-          error: result.error,
-        });
+        executeTabContentExtraction(tabs[0].id)
+          .then((result) => {
+            sendResponse({
+              action: 'tabContentResponse',
+              success: result.success,
+              isPdf: result.isPdf || false,
+              pdfUrl: result.pdfUrl || null,
+              content: result.content || result.data,
+              title: result.title,
+              siteName: result.siteName,
+              byline: result.byline,
+              excerpt: result.excerpt,
+              lang: result.lang,
+              url: result.url,
+              platform: result.platform || null,
+              platformInfo: result.platformInfo || null,
+              readStrategy: result.readStrategy || 'auto',
+              screenshot: result.screenshot || null,
+              error: result.error,
+            });
+          })
+          .catch((error) => {
+            console.error('Background: Failed to read tab content:', error.message);
+            sendResponse({
+              action: 'tabContentResponse',
+              success: false,
+              error: friendlyRuntimeErrorMessage(error),
+              readStrategy: 'auto',
+            });
+          });
       } else {
         sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
       }
@@ -2273,10 +2430,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
           effectiveConfig.pageActions = false;
           effectiveConfig.webSearch = false;
+        } else if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
+          const sourceTabId = await resolvePanelTabId(sender?.tab?.id ?? null, {
+            rejectUnsupportedActive: true,
+          });
+          if (sourceTabId == null) {
+            throw new Error('Act needs an active web page. Open a web page and try again.');
+          }
+          effectiveConfig.sourceTabId = sourceTabId;
         }
         return runOrchestrator.startRun(effectiveConfig, ownerToken);
       })
-      .then((runId) => sendResponse({ runId, ownerToken }))
+      .then((runId) =>
+        sendResponse({
+          runId,
+          ownerToken,
+          sourceTabId: runOrchestrator.getRun(runId)?.sourceTabId ?? null,
+        })
+      )
       .catch((error) => sendResponse({ error: error.message }));
     return true;
   }
@@ -2286,15 +2457,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!isAuthorizedRunRequest(request, sender)) {
       return rejectUnauthorizedMessage(sendResponse, 'Run execution is not authorized.');
     }
-    runOrchestrator
-      .execute(runId, requestConfig)
-      .then(() => {
-        sendResponse({ success: true });
-      })
-      .catch((error) => {
-        sendResponse({ error: error.message });
-      });
-    return true;
+    // A run can span many model turns, approvals, navigations, and tab
+    // recoveries. Do not hold the runtime message channel open for that whole
+    // lifetime: Chrome may close a long-lived channel when the side panel or
+    // service-worker event is recycled, even though the run is still active.
+    // Terminal state is delivered through orchestratorEvent and persisted in
+    // the run journal; this response only acknowledges that execution was
+    // accepted by the worker.
+    if (!runOrchestrator.getRun(runId)) {
+      sendResponse({ error: `Run ${runId} not found` });
+      return false;
+    }
+    if (!requestConfig || typeof requestConfig !== 'object') {
+      sendResponse({ error: 'A valid run configuration is required.' });
+      return false;
+    }
+    void runOrchestrator.execute(runId, requestConfig).catch((error) => {
+      console.error('Background: Run execution failed after acknowledgement:', error);
+    });
+    sendResponse({ success: true, accepted: true });
+    return false;
   }
 
   if (request.action === 'executeTool') {

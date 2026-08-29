@@ -16,8 +16,10 @@ export const PAGE_DOM_CAPS = Object.freeze({
   maxPayloadBytes: 64 * 1024,
 });
 
-const SENSITIVE_PATTERN =
+const SENSITIVE_INPUT_PATTERN =
   /password|passcode|one[-_ ]?time|otp|2fa|secret|token|api[-_ ]?key|credit|card|cvv|cvc|ssn|social security/i;
+const SENSITIVE_CONTROL_PATTERN =
+  /password|passcode|one[-_ ]?time|otp|2fa|secret|token|api[-_ ]?key|credit\s+card|debit\s+card|card\s+number|cvv|cvc|ssn|social security/i;
 const CONTROL_TAGS = new Set([
   'a',
   'button',
@@ -56,6 +58,9 @@ function escapePageDisplay(value) {
 export function isSensitivePageElement(element = {}) {
   const type = String(element.type || '').toLowerCase();
   const autocomplete = String(element.autocomplete || '').toLowerCase();
+  const tag = String(element.tag || element.tagName || '').toLowerCase();
+  const valueBearing =
+    element.editable === true || ['input', 'textarea', 'select', 'option'].includes(tag);
   const descriptor = [
     element.tag,
     element.name,
@@ -74,7 +79,7 @@ export function isSensitivePageElement(element = {}) {
     autocomplete.includes('current-password') ||
     autocomplete.includes('new-password') ||
     autocomplete.includes('one-time-code') ||
-    SENSITIVE_PATTERN.test(descriptor)
+    (valueBearing ? SENSITIVE_INPUT_PATTERN : SENSITIVE_CONTROL_PATTERN).test(descriptor)
   );
 }
 

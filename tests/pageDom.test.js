@@ -109,6 +109,15 @@ describe('pageDom', () => {
     expect(isSensitivePageElement({ tag: 'button', text: 'Save draft' })).toBe(false);
   });
 
+  it('does not classify ordinary card navigation as a sensitive control', () => {
+    expect(
+      isSensitivePageElement({ tag: 'a', role: 'link', label: 'Video Cards', text: 'Video Cards' })
+    ).toBe(false);
+    expect(isSensitivePageElement({ tag: 'a', role: 'link', label: 'Credit card payments' })).toBe(
+      true
+    );
+  });
+
   it('redacts query strings and fragments from page-action URLs', () => {
     expect(sanitizePageActionUrl('https://example.com/path?token=secret&id=42#fragment')).toBe(
       'https://example.com/path'

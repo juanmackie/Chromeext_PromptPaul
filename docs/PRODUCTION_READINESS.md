@@ -14,7 +14,6 @@ This checklist keeps those rules practical and reviewable.
 
 - Validate and bound user input at every external boundary.
 - Keep user credentials in Chrome storage. Build-only secrets must come from platform secret management; do not rely only on environment variables. Never commit secrets or place them in logs, DOM fields, events, backups, or LLM payloads.
-- The release demo credential is a deliberate public, quota-limited exception. Treat it as exposed, never use it for private data, and rotate it independently.
 - Use the existing sanitizer for untrusted HTML and the existing validators for URLs, profiles, tools, skills, and page actions.
 - Keep modules cohesive, names descriptive, and functions easy to test. Split a large file when its responsibilities diverge; do not split only to meet a line count.
 - Use ASD-STE100 Simplified Technical English in new documentation and comments.

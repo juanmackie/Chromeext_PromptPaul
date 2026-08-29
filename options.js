@@ -49,13 +49,12 @@ const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
 const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
 const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
 
-// Starter configuration for first-time users. A deliberately public, quota-limited
-// demo key may be injected into release builds by build.js; source checkouts stay
-// credential-free and require the user to configure their own key.
-const STARTER_MISTRAL_ENDPOINT = 'https://api.mistral.ai/v1/chat/completions';
-const STARTER_MISTRAL_API_KEY = '';
-const STARTER_MISTRAL_MODEL = 'mistral-small-latest';
-const STARTER_MISTRAL_SYSTEM_PROMPT = 'You are a helpful assistant.';
+// Starter configuration for first-time users. OpenRouter's free router provides
+// a quick start, but users must configure their own API key.
+const STARTER_OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const STARTER_OPENROUTER_API_KEY = '';
+const STARTER_OPENROUTER_MODEL = 'openrouter/free';
+const STARTER_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 // Assigned in DOMContentLoaded; invoked from async load/save flows so the
 // dirty trackers re-baseline after storage-backed fields are populated.
@@ -229,7 +228,7 @@ async function ensureCodexProfile(profileId) {
       apiKey: '',
       modelName: '',
       reasoningLevel: DEFAULT_CODEX_REASONING_LEVEL,
-      systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
+      systemPrompt: STARTER_SYSTEM_PROMPT,
       lastUpdated: new Date().toLocaleString(),
     };
     profiles.push(profile);
@@ -980,10 +979,10 @@ function loadOptions() {
         id: 'default',
         name: 'Default',
         provider: 'api',
-        llmEndpoint: STARTER_MISTRAL_ENDPOINT,
-        apiKey: STARTER_MISTRAL_API_KEY,
-        modelName: STARTER_MISTRAL_MODEL,
-        systemPrompt: STARTER_MISTRAL_SYSTEM_PROMPT,
+        llmEndpoint: STARTER_OPENROUTER_ENDPOINT,
+        apiKey: STARTER_OPENROUTER_API_KEY,
+        modelName: STARTER_OPENROUTER_MODEL,
+        systemPrompt: STARTER_SYSTEM_PROMPT,
         lastUpdated: new Date().toLocaleString(),
       };
       const normalizedDefaultProfile = normalizeProfileRecord(defaultProfile);
@@ -1388,9 +1387,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (revertButton) {
     revertButton.addEventListener('click', () => {
       // Get default values (these are defined in loadOptions)
-      const defaultEndpoint = STARTER_MISTRAL_ENDPOINT;
-      const defaultModelName = STARTER_MISTRAL_MODEL;
-      pendingDefaultApiKey = STARTER_MISTRAL_API_KEY;
+      const defaultEndpoint = STARTER_OPENROUTER_ENDPOINT;
+      const defaultModelName = STARTER_OPENROUTER_MODEL;
+      pendingDefaultApiKey = STARTER_OPENROUTER_API_KEY;
 
       // Set default values in the input fields
       document.getElementById('llmEndpoint').value = defaultEndpoint;

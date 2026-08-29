@@ -40,11 +40,21 @@
           <li>Open the <strong>side panel</strong> and start chatting.</li>
           <li>Use context menus or the sidebar buttons for quick actions.</li>
         </ol>
-        <p class="text-secondary-emphasis small mb-3">
-          Source checkouts are credential-free. A release build may contain a deliberately public,
-          quota-limited demo credential; do not use it for private or production data, and replace
-          it with your own key.
-        </p>
+        <div class="alert alert-primary small mb-3" role="note">
+          <strong>Need a free starting point?</strong>
+          Create an API key on
+          <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer"
+            >OpenRouter</a
+          >, set the endpoint to
+          <code class="text-break">https://openrouter.ai/api/v1/chat/completions</code>, and choose
+          <code>openrouter/free</code> or another
+          <a
+            href="https://openrouter.ai/collections/free-models"
+            target="_blank"
+            rel="noopener noreferrer"
+            >free model</a
+          >. (Quality may vary with less capable models.)
+        </div>
         <div class="d-flex align-items-center gap-2 setup-status mb-3">
           <span class="material-symbols-outlined setup-status-icon" id="setup-status-icon"
             >rocket_launch</span

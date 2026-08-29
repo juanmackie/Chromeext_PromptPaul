@@ -158,6 +158,23 @@
       return response;
     },
 
+    async startRunWithoutSource(extraConfig = {}) {
+      const response = await sendRuntimeMessage({
+        action: 'startRun',
+        config: {
+          pageActions: true,
+          tool_choice: 'auto',
+          messages: [],
+          ...extraConfig,
+        },
+      });
+      if (response?.runId) {
+        runTokens.set(String(response.runId), response.ownerToken || '');
+        sourceTabs.set(String(response.runId), response.sourceTabId ?? null);
+      }
+      return response;
+    },
+
     getConfirmation(runId) {
       return pendingConfirmations.get(String(runId)) || null;
     },
@@ -175,7 +192,7 @@
         requestId: request.requestId,
         ownerToken: runTokens.get(String(runId)) || '',
         resume: Boolean(resume),
-        sourceTabId: sourceTabs.get(String(runId)) || null,
+        sourceTabId: sourceTabs.has(String(runId)) ? sourceTabs.get(String(runId)) : null,
       });
       if (response?.success) pendingManualInterventions.delete(String(runId));
       return response;
@@ -191,7 +208,9 @@
         ownerToken: runTokens.get(String(runId)) || '',
         approved: Boolean(approved),
         approveAll: Boolean(approveAll),
-        sourceTabId: sourceTabs.get(String(runId)) || (await getTabId(targetUrl)),
+        sourceTabId: sourceTabs.has(String(runId))
+          ? sourceTabs.get(String(runId))
+          : await getTabId(targetUrl),
       });
       if (response?.success) pendingConfirmations.delete(String(runId));
       return response;

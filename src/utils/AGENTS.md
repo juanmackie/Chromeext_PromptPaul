@@ -41,10 +41,10 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `suggestionStorage.js` caps stored suggestions at 60 and enforces command and prompt length limits.
 - `toolChoiceBuilder.js` is shared by chat and background paths; keep payload behavior provider-compatible.
 - `runState.js` must stay DOM-light (element-like object contract) so it remains unit-testable without a browser, and its state list must match the `[data-run-state]` styles in `ui-primitives.css`.
-- Page snapshot/policy helpers must remain deterministic and unit-testable in Node; snapshot data is bounded and sensitive-field values are never returned.
+- Page snapshot/policy helpers must remain deterministic and unit-testable in Node; snapshot data is bounded and sensitive-field values are never returned. Sensitivity matching must distinguish value-bearing controls from ordinary navigation labels (for example, “Video Cards”).
 - Privileged background messages must require an extension-page sender; content-script requests must bind to the sender tab; run mutations must include the opaque owner token issued at run start.
 - Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`.
-- Page-state fingerprints and tab arguments must stay bounded, deterministic, and safe to log. New tab origins are approved by the orchestrator, not by model-provided flags.
+- Page-state fingerprints and tab arguments must stay bounded, deterministic, and safe to log. Safe HTTP(S) tab origins are admitted by the bounded Act lease; model-provided flags cannot bypass ownership or policy.
 - Scope/diff metrics are evaluation data only. They may expose region IDs, indices, counts, and byte sizes, but never credentials, raw page history, or screenshots.
 
 ## Work Guidance
