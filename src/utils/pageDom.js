@@ -10,6 +10,7 @@ export const PAGE_DOM_CAPS = Object.freeze({
   maxAttributeChars: 120,
   maxInputChars: 2_000,
   maxScrollPages: 5,
+  maxUrlChars: 2_048,
   // Total serialized snapshot budget (content + elements array). A control set
   // can otherwise reach 200 records with many 120-character fields, far beyond
   // the content-only cap.
@@ -184,10 +185,14 @@ export function sanitizePageActionUrl(rawUrl) {
     const parsed = new URL(value);
     parsed.search = '';
     parsed.hash = '';
-    return parsed.href;
+    const availablePathChars = Math.max(0, PAGE_DOM_CAPS.maxUrlChars - parsed.origin.length);
+    return `${parsed.origin}${parsed.pathname.slice(0, availablePathChars)}`.slice(
+      0,
+      PAGE_DOM_CAPS.maxUrlChars
+    );
   } catch (_) {
     // Unparseable value: strip any query/fragment by hand and bound the result.
-    return value.split(/[?#]/, 1)[0].slice(0, 2_048);
+    return value.split(/[?#]/, 1)[0].slice(0, PAGE_DOM_CAPS.maxUrlChars);
   }
 }
 

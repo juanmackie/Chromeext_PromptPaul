@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   isValidHttpUrl,
   formatToolRequestError,
+  BACKUP_LOCAL_KEYS,
+  BACKUP_SYNC_KEYS,
   normalizeBackupPayload,
   normalizeProfileRecord,
   normalizeToolDefinition,
@@ -110,6 +112,20 @@ describe('validation helpers', () => {
     expect(result.value.local.profiles[0].apiKey).toBe('');
     expect(result.value.local.promptPaulTools[0].httpMethod).toBe('');
     expect(result.warnings).toHaveLength(2);
+  });
+
+  it('validates the Light, Dark, and System theme preference', () => {
+    expect(BACKUP_SYNC_KEYS).toContain('themePreference');
+    expect(normalizeBackupPayload({ sync: { themePreference: 'system' } }).valid).toBe(true);
+    expect(normalizeBackupPayload({ sync: { themePreference: 'sepia' } }).valid).toBe(false);
+  });
+
+  it('preserves the persistent notch preference in backups', () => {
+    expect(BACKUP_LOCAL_KEYS).toContain('notchEnabled');
+    const result = normalizeBackupPayload({ local: { notchEnabled: true } });
+
+    expect(result.valid).toBe(true);
+    expect(result.value.local.notchEnabled).toBe(true);
   });
 
   it('does not restore the transient Act permission from a backup', () => {

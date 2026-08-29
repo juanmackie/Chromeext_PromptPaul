@@ -9,6 +9,8 @@
 - `page-actions.spec.js` owns the page-action integration cases, including approved link navigation, owned-tab link opening, and hostile content-script message rejection.
 - `page-action-evaluation.spec.js` owns real-browser execution of browser-safe corpus cases, bounded receipt/failure/action/prompt metrics, and live snapshot scope/diff measurement. Restricted-page and Hermes provider boundaries remain in the unit evaluation matrix.
 - `chat-actions.spec.js` owns real-browser selected-text chat action coverage.
+- `notch.spec.js` owns browser-page notch enablement, isolation, accessibility state, selection gating, live disable coverage, and the user-gesture-bound All actions handoff.
+- `theme.spec.js` owns Light/Dark/System selector coverage and live system-preference changes.
 - `browserTestSupport.js` owns browser launch, fixture-server, extension-worker, and test cleanup helpers.
 - `extension-harness.html` and `extension-harness.js` own the extension-page bridge used by tests.
 - `fixtures/` owns credential-free local representatives of form and compose pages.

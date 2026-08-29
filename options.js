@@ -61,6 +61,7 @@ const STARTER_SYSTEM_PROMPT = 'You are a helpful assistant.';
 let markAllTrackersClean = null;
 let markGroundingTrackerClean = null;
 let markPageActionsTrackerClean = null;
+let markNotchTrackerClean = null;
 let refreshSetupStatus = null;
 let pendingDefaultApiKey = null;
 let codexLoginPollTimer = null;
@@ -1078,8 +1079,7 @@ document.addEventListener('DOMContentLoaded', () => {
         getValue: (el) => String(Boolean(el && el.checked)),
       },
       {
-        element: document.getElementById('darkThemeToggle'),
-        getValue: (el) => String(Boolean(el && el.checked)),
+        element: document.getElementById('themePreference'),
       },
     ],
     { onChange: () => syncDirtyBanner() }
@@ -1110,9 +1110,25 @@ document.addEventListener('DOMContentLoaded', () => {
     ],
     { onChange: () => syncDirtyBanner() }
   );
-  const allTrackers = [connectionTracker, privacyTracker, groundingTracker, pageActionsTracker];
+  const notchTracker = createDirtyTracker(
+    [
+      {
+        element: document.getElementById('notchEnabledToggle'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+    ],
+    { onChange: () => syncDirtyBanner() }
+  );
+  const allTrackers = [
+    connectionTracker,
+    privacyTracker,
+    groundingTracker,
+    pageActionsTracker,
+    notchTracker,
+  ];
   markGroundingTrackerClean = () => groundingTracker.markClean();
   markPageActionsTrackerClean = () => pageActionsTracker.markClean();
+  markNotchTrackerClean = () => notchTracker.markClean();
   function syncDirtyBanner() {
     const dirty = allTrackers.some((tracker) => tracker.isDirty());
     if (unsavedBanner) unsavedBanner.hidden = !dirty;
@@ -1381,6 +1397,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupBackupHandlers(); // Add call to setup backup handlers
   setupGroundingHandlers(); // Brave web search key
   setupPageActionHandlers();
+  setupNotchHandlers();
 
   // Add event listener for the Revert button
   const revertButton = document.getElementById('revertDefaultsButton');
@@ -1526,10 +1543,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // SECTION 2: Theme Settings (Sync Storage)
   // ============================================================
 
-  // Dark Theme Toggle
-  const darkThemeToggle = document.getElementById('darkThemeToggle');
-  if (darkThemeToggle) {
-    setupThemeToggle(darkThemeToggle);
+  // Theme preference selector
+  const themePreference = document.getElementById('themePreference');
+  if (themePreference) {
+    setupThemeToggle(themePreference);
   }
 
   // Listen for storage changes
@@ -3312,6 +3329,45 @@ function setupGroundingHandlers() {
 
   // Load initial state
   updateKeyStatus();
+}
+
+/**
+ * Setup the persistent browser-page notch preference.
+ */
+function setupNotchHandlers() {
+  const toggle = document.getElementById('notchEnabledToggle');
+  const saveButton = document.getElementById('saveNotch');
+  const status = document.getElementById('notchSaveStatus');
+  if (!toggle) return;
+
+  chrome.storage.local.get(['notchEnabled'], (result) => {
+    toggle.checked = result.notchEnabled === true;
+    if (status) status.textContent = toggle.checked ? 'Notch is on.' : 'Notch is off.';
+  });
+
+  toggle.addEventListener('change', () => {
+    announceDirtyChange(true);
+    if (status) status.textContent = 'Unsaved changes — click Save Notch Settings.';
+  });
+
+  saveButton?.addEventListener('click', () => {
+    chrome.storage.local.set({ notchEnabled: toggle.checked }, () => {
+      if (chrome.runtime.lastError) {
+        showStatus(
+          'Failed to save notch settings: ' + chrome.runtime.lastError.message,
+          true,
+          true
+        );
+        flashSaveFeedback(saveButton, true);
+        return;
+      }
+      if (status) status.textContent = toggle.checked ? 'Notch is on.' : 'Notch is off.';
+      showStatus('Notch settings saved.', false, true);
+      flashSaveFeedback(saveButton, false);
+      markNotchTrackerClean?.();
+      announceDirtyChange(false);
+    });
+  });
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import { sanitizePageActionUrl } from '../utils/pageDom.js';
 
-const MAX_OWNED_TABS = 8;
+const MAX_OWNED_TABS = 12;
 
 /**
  * Keep tab metadata small and free of query strings or fragments.
@@ -39,6 +39,10 @@ export class PageTabController {
 
   disposeRun(runId) {
     this.runs.delete(String(runId));
+  }
+
+  getOwnedTabIds(runId) {
+    return Array.from(this.runs.get(String(runId))?.ownedTabIds || []);
   }
 
   _get(runId) {

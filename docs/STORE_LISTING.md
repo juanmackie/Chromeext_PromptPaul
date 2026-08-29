@@ -38,6 +38,7 @@ YouTube workflows can include transcript context and visual moments when availab
 
 **A clearer composer**
 The composer keeps your working context visible:
+
 - Selected text, media, and page content appear in a context tray
 - Context can be detached without clearing the conversation
 - Quick actions appear when they are relevant

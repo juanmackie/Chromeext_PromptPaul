@@ -130,6 +130,14 @@ describe('pageDom', () => {
     expect(sanitizePageActionUrl('')).toBe('');
   });
 
+  it('bounds long page-action URLs without retaining query data', () => {
+    const url = `https://example.com/${'x'.repeat(5_000)}?token=secret`;
+    const sanitized = sanitizePageActionUrl(url);
+
+    expect(sanitized.length).toBeLessThanOrEqual(PAGE_DOM_CAPS.maxUrlChars);
+    expect(sanitized).not.toContain('token');
+  });
+
   it('normalizes snapshot URLs to origin/path only', () => {
     const snapshot = normalizePageSnapshot({
       snapshotId: 'snap-url',

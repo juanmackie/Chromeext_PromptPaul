@@ -12,11 +12,19 @@ describe('PageTaskMemory', () => {
     expect(normalizePageTaskNote({ text: 'Use the API key from the page' })).toMatchObject({
       valid: false,
     });
+    expect(
+      normalizePageTaskNote({ text: 'Record the bank account and routing number' })
+    ).toMatchObject({
+      valid: false,
+    });
+    expect(normalizePageTaskNote({ text: 'The recovery code was displayed' })).toMatchObject({
+      valid: false,
+    });
     const run = { pageActions: { notes: [] } };
-    for (let index = 0; index < 40; index += 1) {
+    for (let index = 0; index < 60; index += 1) {
       recordPageTaskNote(run, `${index} ${'x'.repeat(900)}`, 7);
     }
-    expect(run.pageActions.notes).toHaveLength(32);
+    expect(run.pageActions.notes).toHaveLength(48);
     expect(run.pageActions.notes.at(-1).text.length).toBeLessThanOrEqual(800);
     expect(buildPageTaskMemoryPrompt(run.pageActions.notes)).toContain('TASK MEMORY');
   });
@@ -52,7 +60,7 @@ describe('PageTaskMemory', () => {
       content: `${index} ${'x'.repeat(12_000)}`,
     }));
     const compacted = compactPageTaskHistory(messages);
-    expect(JSON.stringify(compacted).length).toBeLessThan(180_000);
+    expect(JSON.stringify(compacted).length).toBeLessThan(240_000);
     expect(compacted[0].content).toContain('Older task context omitted');
   });
 });

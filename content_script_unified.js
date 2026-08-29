@@ -1188,13 +1188,13 @@
   const PAGE_ACTION_MAX_ATTRIBUTE_CHARS = 120;
   const PAGE_ACTION_MAX_INPUT_CHARS = 2000;
   // The orchestrator applies separate observation/navigation/mutation budgets.
-  // This per-document cap matches the combined orchestrator ceilings (64
-  // observations + 24 navigations + 16 mutations) and resets with each
-  // document/session.
-  const PAGE_ACTION_MAX_ACTIONS = 104;
+  // This per-document cap matches their combined ceilings (192 observations +
+  // 72 navigations + 48 mutations) and resets with each document/session.
+  const PAGE_ACTION_MAX_ACTIONS = 312;
   // Total serialized snapshot budget (content + elements array); matches
   // PAGE_DOM_CAPS.maxPayloadBytes in src/utils/pageDom.js.
   const PAGE_ACTION_MAX_PAYLOAD_BYTES = 64 * 1024;
+  const PAGE_ACTION_MAX_URL_CHARS = 2048;
   const PAGE_ACTION_VIEWPORT_MARGIN = 400;
   const PAGE_ACTION_SETTLE_QUIET_MS = 100;
   const PAGE_ACTION_SETTLE_MAX_MS = 1_000;
@@ -1202,16 +1202,19 @@
   let pageActionSnapshotCounter = 0;
 
   function sanitizePageActionUrl(value) {
+    const rawValue = String(value || '');
     try {
-      const parsed = new URL(String(value || ''));
+      const parsed = new URL(rawValue);
       parsed.search = '';
       parsed.hash = '';
-      return parsed.href;
+      const availablePathChars = Math.max(0, PAGE_ACTION_MAX_URL_CHARS - parsed.origin.length);
+      return `${parsed.origin}${parsed.pathname.slice(0, availablePathChars)}`.slice(
+        0,
+        PAGE_ACTION_MAX_URL_CHARS
+      );
     } catch (_) {
       // Unparseable value: strip any query/fragment by hand and bound the result.
-      return String(value || '')
-        .split(/[?#]/, 1)[0]
-        .slice(0, 2048);
+      return rawValue.split(/[?#]/, 1)[0].slice(0, PAGE_ACTION_MAX_URL_CHARS);
     }
   }
 
@@ -1591,10 +1594,7 @@
         scrollContainers,
         metrics: { buildMs: Math.round(performance.now() - startedAt) },
       };
-      if (
-        utf8ByteLengthOf(JSON.stringify(payload)) <= PAGE_ACTION_MAX_PAYLOAD_BYTES ||
-        boundedRecords.length === 0
-      ) {
+      if (utf8ByteLengthOf(JSON.stringify(payload)) <= PAGE_ACTION_MAX_PAYLOAD_BYTES) {
         break;
       }
       boundedRecords = boundedRecords.slice(0, boundedRecords.length - 1);

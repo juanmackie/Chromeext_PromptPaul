@@ -2137,6 +2137,66 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
   });
 
+  it('retains the refreshed source snapshot after opening a link in the background', async () => {
+    const linkSnapshot = (snapshotId) => ({
+      ...makeSnapshot(),
+      snapshotId,
+      elements: [
+        ...makeSnapshot().elements,
+        {
+          index: 2,
+          tag: 'a',
+          role: 'link',
+          label: 'Open report',
+          text: 'Open report',
+          href: 'https://reports.example/report',
+          target: '_blank',
+        },
+      ],
+    });
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: linkSnapshot('page-snap-1') }
+          : {
+              success: true,
+              linkUrl: 'https://reports.example/report',
+              snapshot: linkSnapshot('page-snap-2'),
+              actionReceipt: {
+                disposition: 'delivered_verified',
+                evidence: { kind: 'link_resolved' },
+              },
+            },
+      pageTabExecutor: async (_runId, actionName, args) => ({
+        actionName,
+        targetTabId: 7,
+        openedTabId: 12,
+        tab: { tabId: 12, url: args.url },
+      }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({
+      pageActions: true,
+      pageActionsMultiTab: true,
+      sourceTabId: 7,
+      tool_choice: 'auto',
+    });
+    await orch.executeTool(runId, makeCall('background-state', 'page_get_state', {}));
+
+    const result = await orch.executeTool(
+      runId,
+      makeCall('background-open', 'page_open_link', {
+        snapshotId: 'page-snap-1',
+        index: 2,
+        background: true,
+      })
+    );
+
+    expect(result.result.actionReceipt).toMatchObject({ disposition: 'delivered_verified' });
+    expect(orch.activeRuns.get(runId).pageActions.targetTabId).toBe(7);
+    expect(orch.activeRuns.get(runId).pageActions.snapshot.snapshotId).toBe('page-snap-2');
+  });
+
   it('approves every policy-allowed page action for the rest of the run when requested', async () => {
     const events = [];
     const orch = new RunOrchestrator(createStubSkillManager(), {
@@ -2944,7 +3004,7 @@ describe('RunOrchestrator page actions', () => {
     });
     orch._emitEvent = () => {};
     const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
-    for (let index = 0; index < 64; index += 1) {
+    for (let index = 0; index < 192; index += 1) {
       const result = await orch.executeTool(
         runId,
         makeCall(`scroll-${index}`, 'page_scroll', { direction: 'down' })
@@ -2953,7 +3013,7 @@ describe('RunOrchestrator page actions', () => {
     }
     const exhausted = await orch.executeTool(
       runId,
-      makeCall('scroll-64', 'page_scroll', { direction: 'down' })
+      makeCall('scroll-192', 'page_scroll', { direction: 'down' })
     );
     expect(exhausted.result).toMatchObject({ error: 'PAGE_ACTION_LIMIT', budget: 'observation' });
     expect(orch.activeRuns.get(runId).pageActions.budgets.mutation).toBe(0);

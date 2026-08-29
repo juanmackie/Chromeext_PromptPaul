@@ -57,7 +57,8 @@ test('expands and collapses the prompt input', async () => {
     expect(expandedInputBox).not.toBeNull();
     expect(sendButtonBox).not.toBeNull();
     expect(clearButtonBox).not.toBeNull();
-    expect(expandedInputBox.width).toBeGreaterThan(collapsedInputBox.width);
+    expect(expandedInputBox.height).toBeGreaterThan(collapsedInputBox.height);
+    expect(expandedInputBox.width).toBeGreaterThanOrEqual(collapsedInputBox.width);
     expect(sendButtonBox.y).toBeGreaterThanOrEqual(expandedInputBox.y + expandedInputBox.height);
     expect(clearButtonBox.y).toBeGreaterThanOrEqual(expandedInputBox.y + expandedInputBox.height);
 

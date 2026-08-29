@@ -42,6 +42,7 @@ export const RESERVED_TOOL_NAMES = Object.freeze([
   'page_request_user_input',
   'page_pause_for_user',
   'page_record_note',
+  'page_replan',
 ]);
 export const ALLOWED_TOOL_METHODS = Object.freeze(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
 
@@ -60,11 +61,12 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'webSearchEnabled',
   'pageActionsTrustedMode',
   'pageActionsMultiTabEnabled',
+  'notchEnabled',
   'pinnedQuickActions',
   'customSiteSuggestions',
 ]);
 
-export const BACKUP_SYNC_KEYS = Object.freeze(['darkTheme']);
+export const BACKUP_SYNC_KEYS = Object.freeze(['darkTheme', 'themePreference']);
 
 /**
  * Validate that a string is a valid URL.
@@ -337,12 +339,18 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
         'voiceInputEnabled',
         'webSearchEnabled',
         'pageActionsEnabled',
+        'notchEnabled',
         'pageActionsTrustedMode',
         'pageActionsMultiTabEnabled',
         'darkTheme',
       ].includes(key)
     ) {
       if (typeof value !== 'boolean') return { valid: false, error: `${key} must be boolean.` };
+      result[key] = value;
+    } else if (key === 'themePreference') {
+      if (!['light', 'dark', 'system'].includes(value)) {
+        return { valid: false, error: 'themePreference must be light, dark, or system.' };
+      }
       result[key] = value;
     } else if (['analyticsRotateAt', 'voiceInputPermissionLastChecked'].includes(key)) {
       if (!Number.isFinite(value)) return { valid: false, error: `${key} must be numeric.` };

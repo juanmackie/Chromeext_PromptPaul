@@ -61,6 +61,17 @@ describe('PageTabController', () => {
     expect(opened).toMatchObject({ openedTabId: 2, targetTabId: 2, ready: true });
   });
 
+  it('returns owned tab IDs for run cleanup', async () => {
+    await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://other.example/path',
+      background: true,
+    });
+
+    expect(controller.getOwnedTabIds('run-1')).toEqual([1, 2]);
+    controller.disposeRun('run-1');
+    expect(controller.getOwnedTabIds('run-1')).toEqual([]);
+  });
+
   it('quarantines a failed tab and selects another owned tab', async () => {
     await controller.execute('run-1', 'page_open_tab', {
       url: 'https://other.example/path',

@@ -4,14 +4,15 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 - `background.js` - service worker, context menus, storage orchestration, and message routing
 - `chat.js` - side panel chat interface
-- `options.js` - settings, instructions, tools, and skills management
+- `options.js` - settings, instructions, tools, skills, and notch management
 
 ## System Layers
 
 ### Browser Layer
 
+- `content_script_notch.js` renders the optional top-centered browser-viewport quick-action notch in an isolated Shadow DOM
 - Content scripts extract page content and page metadata
-- The background worker coordinates context menu actions and permissions
+- The background worker coordinates context menu actions, notch requests, and permissions
 - The side panel displays chat, page actions, and loaded content
 
 ### Chat Layer
@@ -54,20 +55,22 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 ### Options Layer
 
 - `src/options/OptionsUI.js` setup status, dirty tracking, unsaved-changes guard, and credential masking helpers
+- The Top Notch section persists `notchEnabled` with an explicit save and participates in the combined unsaved-changes guard
 
 ### Shared UI
 
 - `theme.css` theme tokens including semantic feedback colors (success/warning/info/running)
+- `themeUtils.js` three-state Light/Dark/System preference handling, effective-theme application, and system-preference changes
 - `ui-primitives.css` shared primitives (buttons, chips, badges, trays, sections, run indicators)
 
 ## Data Flow
 
 ### Page content
 
-1. The user loads a page into the side panel
+1. The user loads a page into the side panel or chooses **Summarize page** from the enabled notch
 2. The content script extracts text and metadata
-3. The background worker returns the extracted payload
-4. `chat.js` trims the content to the current budget
+3. The background worker validates the sender tab and returns a bounded extracted payload
+4. `chat.js` trims the content to the current budget and composes a structured request
 5. The user asks follow-up questions against that page context
 
 ### Skill usage
@@ -111,20 +114,29 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 ### Storage import and external tool boundaries
 
-1. Options export filters to supported local/sync backup keys; API credentials remain subject to the existing backup warning, while Codex subscription tokens are never exported.
+1. Options export filters to supported local/sync backup keys, including the Light/Dark/System `themePreference`; API credentials remain subject to the existing backup warning, while Codex subscription tokens are never exported.
 2. Backup restore validates supported storage keys and nested profiles/tools before writing; unknown keys are skipped, and restored Codex profiles require reauthentication.
 3. Custom tools remain user-configured HTTP(S) endpoints, but save, import, profile/runtime resolution, and execution share the same method/name/URL validation.
 4. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged.
-5. Privileged runtime messages require an extension-page sender; content-script extraction is bound to its own tab, and run mutations require the opaque owner token issued at run start.
-6. Source checkouts and release builds remain credential-free; connection credentials are provided by the user in Options.
+5. Privileged runtime messages require an extension-page sender; content-script extraction and notch actions are bound to their own tab, and run mutations require the opaque owner token issued at run start.
+6. The notch bridge accepts only its fixed action allowlist, bounds selected/page text, and never receives provider credentials.
+7. Source checkouts and release builds remain credential-free; connection credentials are provided by the user in Options.
+
+### Browser-page Top Notch (optional)
+
+1. `notchEnabled` is a persistent local boolean and defaults to `false`; Options saves it explicitly. Open pages observe storage changes and mount or remove the notch without a reload.
+2. The all-pages notch content script runs only in the top frame, mounts one fixed browser-viewport host, and uses Shadow DOM plus accessible labels, focus states, Escape handling, and reduced-motion support.
+3. The collapsed notch exposes a compact toggle. Its expanded action list offers chat, the full action menu, bounded page summarization, selected-text explanation, and Options. Selection actions remain disabled until the page has a current bounded selection.
+4. Notch messages are accepted only from an injected content script with a valid sender tab. The background worker checks the fixed action allowlist, rejects unsupported pages, bounds payloads, and starts `chrome.sidePanel.open()` synchronously inside the message handler before any tab or extraction await. It then routes actions through `openChatWithContext`, `sendPanelMessage`, and the existing structured prompt composition.
+5. The notch is browser-page scoped and top-centered. Chrome internal pages, extension pages, and the Chrome Web Store do not receive a usable action surface, and the extension cannot provide an OS-wide desktop overlay.
 
 ### Current-Page Actions (optional)
 
 1. The side-panel **Act** toggle stores `pageActionsEnabled` in session storage, defaults to `false`, and consumes it for one run; it is a run permission, not a request to act. Options separately persists `pageActionsTrustedMode`, also default `false`.
-2. `chat.js` passes `pageActions: true` only for opted-in runs with a supported source tab. The Act lease includes owned-tab tools; the old `pageActionsMultiTab` field is accepted for compatibility but is not a second permission. `RunOrchestrator` forces the first page-action tool turn through `page_get_state`; later mutations still require policy evaluation and approval. Tabs are owned by the run, capped at eight, and opened/switched tabs pass a bounded document/bridge readiness check. Safe HTTP(S) navigation across origins does not create a per-site prompt. A failed tab is quarantined so the run can continue on another healthy tab or report partial progress; after a user reload, a fresh `page_get_state` can re-probe the failed source tab. If the active target tab changes documents during a live run, the orchestrator adopts the supported destination and forces a fresh inspection. `page_request_user_input` asks one bounded, non-secret clarification. `page_pause_for_user` pauses for a safe manual step and requires explicit Resume. `page_record_note` stores bounded untrusted observations for long tasks and rejects secret, credential, and payment wording.
+2. `chat.js` passes `pageActions: true` only for opted-in runs with a supported source tab. The Act lease includes owned-tab tools; the old `pageActionsMultiTab` field is accepted for compatibility but is not a second permission. `RunOrchestrator` forces the first page-action tool turn through `page_get_state`; later mutations still require policy evaluation and approval. Tabs are owned by the run, capped at twelve, and opened/switched tabs pass a bounded document/bridge readiness check. Safe HTTP(S) navigation across origins does not create a per-site prompt. A failed tab is quarantined so the run can continue on another healthy tab or report partial progress; after a user reload, a fresh `page_get_state` can re-probe the failed source tab. If the active target tab changes documents during a live run, the orchestrator adopts the supported destination and forces a fresh inspection. `page_request_user_input` asks one bounded, non-secret clarification. `page_pause_for_user` pauses for a safe manual step and requires explicit Resume. `page_record_note` stores bounded untrusted observations for long tasks and rejects secret, credential, and payment wording. Long instructions activate the session-only sub-goal planner, which exposes `page_replan` for bounded replacement plans.
 3. The all-pages content script creates an on-demand, bounded semantic snapshot with indexed controls and a run-scoped `snapshotId`; text is marked as untrusted reference data and password/OTP/credential/payment values are masked or omitted.
 4. Mutating actions require the current snapshot ID and are routed by `background.js` to the selected owned tab. `background.js` waits for the new document and content-script bridge before returning a new-tab result, and the orchestrator clears the old snapshot and forces `page_get_state` before another mutation. Unexpected active-tab navigation is recovered the same way; a stale mutation is skipped, while an action interrupted after delivery is marked unverified and is never blindly repeated. A disconnected bridge quarantines only its tab instead of terminating the run.
-5. `pageActionPolicy.js` classifies targets and enforces default confirmation, trusted-mode limits, hard blocks, separate observation/navigation/mutation budgets (64/24/16), and DOM-only behavior. There is no selector, coordinate, arbitrary JavaScript, or main-world escape hatch; validated HTTP(S) links may transition the current tab without per-origin permission, while `_blank` links use the owned-tab `page_open_link` tool. Sensitive detection is element-aware so ordinary labels such as “Video Cards” are not mistaken for payment fields.
+5. `pageActionPolicy.js` classifies targets and enforces default confirmation, trusted-mode limits, hard blocks, separate observation/navigation/mutation budgets (192/72/48), and DOM-only behavior. There is no selector, coordinate, arbitrary JavaScript, or main-world escape hatch; validated HTTP(S) links may transition the current tab without per-origin permission, while `_blank` links use the owned-tab `page_open_link` tool. Sensitive detection is element-aware so ordinary labels such as “Video Cards” are not mistaken for payment fields.
 6. Mutations return bounded action receipts: `not_delivered`, `delivered_unverified`, or `delivered_verified`. Input, select, checkbox, and observed navigation postconditions can be verified. An unverified mutation is not retried automatically; the same unchanged mutation is blocked until the page is inspected again. Confirmable actions emit bounded `page_action_confirmation` events. The side panel renders Approve/Deny cards with an explicit “Approve all this session” option for every policy-allowed action; that session approval is scoped to the live run, while hard-blocked controls remain unavailable. Decisions are matched to the live run and opaque confirmation ID, and timeout/stop/error paths clear pending UI and content-script state.
 7. The page-actions system-prompt block is directive: when the user's request is achievable on the current page, the model must inspect, act, re-inspect after each mutation, and summarize what it did. A run may use only its owned tabs and must switch before acting on another tab; background tabs do not retarget the active target. Safe HTTP(S) navigation crosses origins without a per-site prompt, while writes and risky controls remain gated. Opened tabs return only after readiness is verified, and a failed tab is skipped with a bounded recovery result. `page_record_note` keeps short untrusted facts while old snapshots are compacted before provider calls. Unexpected active-tab changes discard the stale snapshot and require `page_get_state`, after which the model continues the same request. `_blank` links use `page_open_link`. The model can pause only for a safe user-only step; Resume clears the content-script session and forces a fresh `page_get_state`. The model never fakes an action. An empty snapshot result tells the model the page has nothing actionable and to ask the user to open the target page. Scope/diff measurements remain test-only until reliability and safety evidence supports a later public tool.
 8. The evaluation contract is credential-free and bounded. `tests/page-action-evaluation.json` defines 11 cases; unit execution covers API, Codex, Hermes, and restricted-page boundaries, while the browser evaluator runs the browser-safe cases against local fixtures. It records only result, receipt disposition, postcondition evidence, failure code, action count, prompt size, and scope metrics. Live scope measurements use indexed semantic regions and snapshot diffs; they never accept model-supplied selectors or return raw values.

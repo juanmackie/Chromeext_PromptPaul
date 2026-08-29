@@ -51,7 +51,11 @@ import {
   PROOFREAD_PROMPT,
   composeUserPrompt,
 } from './src/prompts.js';
-import { renderSiteSuggestions, executePresetAnalysis } from './src/chat/ChatPageActions.js';
+import {
+  buildSmartPromptRequest,
+  renderSiteSuggestions,
+  executePresetAnalysis,
+} from './src/chat/ChatPageActions.js';
 import {
   consumePageActionsEnabled,
   restorePageActionsEnabled,
@@ -1263,8 +1267,89 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
+  function applyNotchOpenActions(request) {
+    if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
+    if (request.actionId) lastProcessedPanelActionId = request.actionId;
+
+    tabId = request.tabId;
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+    const actionMenu = document.getElementById('quick-actions-more');
+    if (actionMenu && actionMenu.getAttribute('aria-expanded') !== 'true') actionMenu.click();
+    return true;
+  }
+
+  function applyNotchSelectionAction(request) {
+    if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
+    if (request.actionId) lastProcessedPanelActionId = request.actionId;
+
+    const text = String(request.selectedText || '')
+      .trim()
+      .slice(0, 20_000);
+    if (!text) {
+      loadingManager.showToast('Select text first.', 'warning');
+      return false;
+    }
+
+    selectedText = text;
+    tabId = request.tabId;
+    refreshSelectedTextActionState();
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+    void runSelectedTextPrompt(
+      buildExplainPrompt('selected text'),
+      'auto',
+      'explain selected text'
+    );
+    return true;
+  }
+
+  function applyNotchPageAction(request) {
+    if (request.actionId && request.actionId === lastProcessedPanelActionId) return false;
+    if (request.actionId) lastProcessedPanelActionId = request.actionId;
+
+    const response = request.pageData || {};
+    if (response.isPdf) {
+      tabId = request.tabId;
+      chatMainArea.classList.remove('hidden');
+      oneoffInstructionArea.classList.add('hidden');
+      void executePagePresetMode('summary');
+      return true;
+    }
+    if (!response.success || !response.content) {
+      loadingManager.showToast(response.error || 'No page content was available.', 'error');
+      return false;
+    }
+
+    const metadata = {
+      title: response.title,
+      siteName: response.siteName,
+      byline: response.byline,
+      url: response.url,
+      type: response.type,
+    };
+    const promptRequest = buildSmartPromptRequest(
+      'summary',
+      String(response.content).slice(0, 200_000),
+      metadata,
+      PRESET_MODES
+    );
+    tabId = request.tabId;
+    chatMainArea.classList.remove('hidden');
+    oneoffInstructionArea.classList.add('hidden');
+    chatUI.addMessage('System', 'Summarizing page…');
+    void makeApiCall(promptRequest, 'auto');
+    return true;
+  }
+
   function consumePendingPanelAction(pendingAction) {
-    const pendingPanelActions = ['setSelectedText', 'setMediaForAnalysis'];
+    const pendingPanelActions = [
+      'setSelectedText',
+      'setMediaForAnalysis',
+      'notchOpenActions',
+      'notchSelectionAction',
+      'notchPageAction',
+    ];
     if (!pendingAction || !pendingPanelActions.includes(pendingAction.action)) {
       return;
     }
@@ -1288,6 +1373,12 @@ document.addEventListener('DOMContentLoaded', () => {
       consumed = applySetSelectedTextAction(pendingAction);
     } else if (pendingAction.action === 'setMediaForAnalysis') {
       consumed = applySetMediaForAnalysisAction(pendingAction);
+    } else if (pendingAction.action === 'notchOpenActions') {
+      consumed = applyNotchOpenActions(pendingAction);
+    } else if (pendingAction.action === 'notchSelectionAction') {
+      consumed = applyNotchSelectionAction(pendingAction);
+    } else if (pendingAction.action === 'notchPageAction') {
+      consumed = applyNotchPageAction(pendingAction);
     }
 
     if (chrome.storage?.session) {
@@ -1363,6 +1454,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
       }
       const consumed = applySetSelectedTextAction(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
+      return true;
+    } else if (request.action === 'notchOpenActions') {
+      if (isPanelAction) {
+        if (sendResponse) sendResponse({ success: true, ignored: true });
+        return true;
+      }
+      const consumed = applyNotchOpenActions(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
+      return true;
+    } else if (request.action === 'notchSelectionAction') {
+      if (isPanelAction) {
+        if (sendResponse) sendResponse({ success: true, ignored: true });
+        return true;
+      }
+      const consumed = applyNotchSelectionAction(request);
+      if (sendResponse) sendResponse({ success: true, ignored: !consumed });
+      return true;
+    } else if (request.action === 'notchPageAction') {
+      if (isPanelAction) {
+        if (sendResponse) sendResponse({ success: true, ignored: true });
+        return true;
+      }
+      const consumed = applyNotchPageAction(request);
       if (sendResponse) sendResponse({ success: true, ignored: !consumed });
       return true;
     } else if (request.action === 'setMediaForAnalysis') {
@@ -1539,6 +1654,9 @@ document.addEventListener('DOMContentLoaded', () => {
           */
           case 'page_action_warning':
             updatePageActionActivity(chatArea, { ...event, state: 'warning' });
+            break;
+          case 'page_action_notice':
+            updatePageActionActivity(chatArea, { ...event, state: 'notice' });
             break;
           case 'page_user_input_request':
           case 'page_manual_intervention_request':

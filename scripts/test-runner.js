@@ -458,6 +458,41 @@ function runUnitTests(runner) {
     });
   });
 
+  runner.test('Optional notch is registered and isolated', () => {
+    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const notchScript = manifest.content_scripts?.find((entry) =>
+      entry.js?.includes('content_script_notch.js')
+    );
+    if (!notchScript || !notchScript.matches?.includes('<all_urls>')) {
+      throw new Error('Manifest is missing the browser-page notch content script');
+    }
+    const notch = readFileSafe('content_script_notch.js');
+    if (!notch.includes("attachShadow({ mode: 'open' })")) {
+      throw new Error('Notch must use Shadow DOM isolation');
+    }
+    if (!notch.includes("const STORAGE_KEY = 'notchEnabled'")) {
+      throw new Error('Notch must use the persistent notchEnabled preference');
+    }
+    if (!notch.includes('extension context invalidated') || !notch.includes('try {')) {
+      throw new Error('Notch runtime messaging must handle invalidated extension contexts');
+    }
+  });
+
+  runner.test('Notch actions use an allowlisted sender-bound bridge', () => {
+    const background = readFileSafe('background.js');
+    for (const token of [
+      'const NOTCH_ACTIONS = new Set([',
+      "'openActions',",
+      'isContentScriptSender(sender, extensionOrigin)',
+      'requestMatchesSenderTab(sender, request?.tabId)',
+      'NOTCH_MAX_PAGE_CHARS',
+    ]) {
+      if (!background.includes(token)) {
+        throw new Error(`Notch bridge missing security guard: ${token}`);
+      }
+    }
+  });
+
   runner.test('Manifest scopes Outlook compose adapter to Outlook hosts', () => {
     const manifest = JSON.parse(readFileSafe('manifest.json'));
     const outlookScript = manifest.content_scripts?.find(
@@ -984,6 +1019,9 @@ function runIntegrationTests(runner) {
       'unsaved-banner',
       'savePrivacy',
       'saveGrounding',
+      'themePreference',
+      'notchEnabledToggle',
+      'saveNotch',
     ]) {
       if (!content.includes(`id="${id}"`)) {
         throw new Error(`options.html missing setup/save surface: ${id}`);
@@ -1676,6 +1714,7 @@ function runIntegrationTests(runner) {
       'background.js',
       'chat.js',
       'content_script_unified.js',
+      'content_script_notch.js',
       'input-controls.js',
       'content_script_outlook_compose.js',
       'loadingManager.js',

@@ -45,6 +45,21 @@ describe('pageActionPolicy', () => {
     expect(normalizePageTabActionArgs('page_open_tab', { url: 'javascript:alert(1)' }).valid).toBe(
       false
     );
+    expect(
+      normalizePageTabActionArgs('page_open_tab', { url: { toString: () => 'https://safe.test' } })
+    ).toMatchObject({
+      valid: false,
+    });
+    expect(
+      normalizePageTabActionArgs('page_open_tab', {
+        url: `https://example.com/${'x'.repeat(2_048)}`,
+      })
+    ).toMatchObject({ valid: false });
+    expect(
+      normalizePageTabActionArgs('page_open_tab', {
+        url: `https://example.com/${'é'.repeat(1_000)}`,
+      })
+    ).toMatchObject({ valid: false });
     expect(normalizePageTabActionArgs('page_switch_tab', { tabId: 4 })).toEqual({
       valid: true,
       value: { tabId: 4 },

@@ -347,17 +347,16 @@
 
           <details class="options-disclosure mt-2">
             <summary>Appearance</summary>
-            <div class="form-check form-switch pt-3">
-              <input class="form-check-input" type="checkbox" id="darkThemeToggle" />
-              <label class="form-check-label" for="darkThemeToggle">
-                <span
-                  class="material-symbols-outlined align-middle"
-                  style="font-size: 1rem"
-                  id="darkThemeIcon"
-                  >brightness_2</span
-                >
-                Dark theme
-              </label>
+            <div class="pt-3">
+              <label class="form-label" for="themePreference">Theme</label>
+              <select id="themePreference" class="form-select" aria-describedby="themeHelp">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+              <div id="themeHelp" class="form-text">
+                System follows your browser or operating system preference.
+              </div>
             </div>
           </details>
 
@@ -1268,6 +1267,48 @@ What this skill does and when to use it.
             Save Page Action Settings
           </button>
           <span id="pageActionsSaveStatus" class="small text-secondary-emphasis"></span>
+        </div>
+      </section>
+
+      <!-- Top Notch Section -->
+      <section class="card mb-4 p-4">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary">dock_to_left</span>
+          <h2 class="fs-5 fw-semibold mb-0">Top Notch</h2>
+          <span class="ext-badge section-capability-badge">Optional</span>
+        </div>
+        <hr
+          class="my-2 mb-3"
+          style="
+            height: 2px;
+            background: linear-gradient(90deg, var(--bs-primary), var(--bs-border-color));
+            border: none;
+            opacity: 1;
+          "
+        />
+        <p class="text-secondary-emphasis small">
+          Show a compact Prompt Paul notch at the top of supported web pages. It stays out of the
+          page layout and provides quick access to chat, page summaries, selected-text actions, and
+          settings. The notch is browser-page scoped; it does not appear over other desktop
+          applications or Chrome internal pages.
+        </p>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="notchEnabledToggle" />
+          <label class="form-check-label" for="notchEnabledToggle">Enable the top notch</label>
+        </div>
+        <div class="form-text mb-3">
+          Default: off. Save this setting to update open web pages and future tabs.
+        </div>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <button type="button" id="saveNotch" class="btn btn-primary">
+            <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
+            Save Notch Settings
+          </button>
+          <span
+            id="notchSaveStatus"
+            class="small text-secondary-emphasis"
+            aria-live="polite"
+          ></span>
         </div>
       </section>
 

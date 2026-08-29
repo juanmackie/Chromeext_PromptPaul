@@ -28,6 +28,134 @@ test.afterAll(async () => {
 });
 
 test.describe('page-agent-style page actions', () => {
+  test('completes a multi-step owned-tab planner flow without persistent storage writes', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const source = await context.newPage();
+    const sourceUrl = fixtureUrl(fixtureServer, 'form.html');
+    await source.goto(sourceUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      await expect
+        .poll(() => harness.evaluate(async () => chrome.storage.local.get(['profiles'])))
+        .toMatchObject({ profiles: expect.any(Array) });
+      const storageBefore = await harness.evaluate(async () => ({
+        local: await chrome.storage.local.get(null),
+        sync: await chrome.storage.sync.get(null),
+      }));
+      const started = await harness.evaluate(
+        ({ url }) =>
+          window.pageActionHarness.startRun(url, true, {
+            messages: [
+              {
+                role: 'user',
+                content:
+                  '1. Inspect the source form\n2. Open an owned tab\n3. Inspect the owned tab\n4. Fill the form\n5. Record the completed result',
+              },
+            ],
+          }),
+        { url: sourceUrl }
+      );
+      expect(started.runId, JSON.stringify(started)).toBeTruthy();
+      runId = started.runId;
+
+      const sourceState = await harness.evaluate(
+        (id) => window.pageActionHarness.executeTool(id, 'planner-state', 'page_get_state', {}),
+        runId
+      );
+      expect(sourceState.result?.snapshot, JSON.stringify(sourceState)).toBeTruthy();
+
+      const opened = await harness.evaluate(
+        ({ id, url }) =>
+          window.pageActionHarness.executeTool(id, 'planner-open', 'page_open_tab', {
+            url,
+            background: false,
+          }),
+        { id: runId, url: sourceUrl }
+      );
+      expect(opened.result?.ready, JSON.stringify(opened)).toBe(true);
+      const openedTabId = opened.result.openedTabId;
+      expect(openedTabId).toBeTruthy();
+
+      const switched = await harness.evaluate(
+        ({ id, tabId }) =>
+          window.pageActionHarness.executeTool(id, 'planner-switch', 'page_switch_tab', { tabId }),
+        { id: runId, tabId: openedTabId }
+      );
+      expect(switched.result?.targetTabId).toBe(openedTabId);
+
+      const ownedState = await harness.evaluate(
+        (id) =>
+          window.pageActionHarness.executeTool(id, 'planner-owned-state', 'page_get_state', {}),
+        runId
+      );
+      const field = ownedState.result.snapshot.elements.find(
+        (element) => element.editable === true
+      );
+      expect(field).toBeTruthy();
+
+      await harness.evaluate(
+        ({ id, snapshotId, index }) => (
+          void window.pageActionHarness.executeTool(id, 'planner-input', 'page_input', {
+            snapshotId,
+            index,
+            text: 'Planner browser interaction',
+          }),
+          true
+        ),
+        { id: runId, snapshotId: ownedState.result.snapshot.snapshotId, index: field.index }
+      );
+      await expect
+        .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
+        .toMatchObject({ action: 'page_input' });
+      expect(
+        await harness.evaluate(
+          ({ url, id }) => window.pageActionHarness.resolveConfirmation(url, id, true, false),
+          { url: sourceUrl, id: runId }
+        )
+      ).toMatchObject({ success: true });
+      await expect
+        .poll(() =>
+          harness.evaluate(
+            (id) => window.pageActionHarness.getToolResult(id, 'planner-input'),
+            runId
+          )
+        )
+        .toMatchObject({ result: { actionReceipt: { disposition: 'delivered_verified' } } });
+
+      const finalState = await harness.evaluate(
+        (id) =>
+          window.pageActionHarness.executeTool(id, 'planner-final-state', 'page_get_state', {}),
+        runId
+      );
+      const finalField = finalState.result.snapshot.elements.find(
+        (element) => element.editable === true
+      );
+      await harness.evaluate(
+        ({ id }) =>
+          window.pageActionHarness.executeTool(id, 'planner-note', 'page_record_note', {
+            text: 'The owned-tab form was completed successfully.',
+          }),
+        { id: runId }
+      );
+      expect(finalField).toBeTruthy();
+
+      const storageAfter = await harness.evaluate(async () => ({
+        local: await chrome.storage.local.get(null),
+        sync: await chrome.storage.sync.get(null),
+      }));
+      expect(storageAfter.local).toEqual(storageBefore.local);
+      expect(storageAfter.sync).toEqual(storageBefore.sync);
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('bridges to the content script and interacts with indexed snapshot elements', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);

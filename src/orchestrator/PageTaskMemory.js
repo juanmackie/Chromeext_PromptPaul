@@ -6,13 +6,13 @@
 import { capPageText } from '../utils/pageDom.js';
 
 export const PAGE_TASK_MEMORY_CAPS = Object.freeze({
-  maxNotes: 32,
+  maxNotes: 48,
   maxNoteChars: 800,
-  maxHistoryChars: 180_000,
+  maxHistoryChars: 240_000,
 });
 
 const SENSITIVE_NOTE_PATTERN =
-  /password|passcode|one[-_ ]?time|otp|2fa|secret|api[-_ ]?key|access[-_ ]?token|bearer|\btoken\b|credential|payment|credit\s+card|debit\s+card|card\s+number|cvv|cvc|ssn|social security/i;
+  /password|passcode|one[-_ ]?time|otp|2fa|secret|api[-_ ]?key|access[-_ ]?token|bearer|\btoken\b|credential|payment|credit\s+card|debit\s+card|card\s+number|cvv|cvc|ssn|social security|\bpin\b|bank\s+account|routing\s+number|account\s+number|security\s+answer|recovery\s+(?:code|key)|backup\s+code/i;
 
 /**
  * Normalize a model-supplied task note. Notes are treated as untrusted

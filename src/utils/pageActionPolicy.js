@@ -147,18 +147,29 @@ export function normalizePageTabActionArgs(actionName, args = {}) {
   }
   const tabId = Number(args.tabId);
   if (actionName === 'page_open_tab') {
+    if (
+      typeof args.url !== 'string' ||
+      !args.url.trim() ||
+      args.url.length > PAGE_DOM_CAPS.maxUrlChars
+    ) {
+      return { valid: false, error: 'A bounded http(s) URL is required.' };
+    }
     let url;
     try {
-      url = new URL(String(args.url || '').trim());
+      url = new URL(args.url.trim());
     } catch (_) {
       return { valid: false, error: 'A valid http(s) URL is required.' };
     }
     if (!['http:', 'https:'].includes(url.protocol)) {
       return { valid: false, error: 'Only http(s) tab URLs are allowed.' };
     }
+    const normalizedUrl = `${url.origin}${url.pathname}`;
+    if (normalizedUrl.length > PAGE_DOM_CAPS.maxUrlChars) {
+      return { valid: false, error: 'The normalized http(s) URL is too long.' };
+    }
     return {
       valid: true,
-      value: { url: `${url.origin}${url.pathname}`, background: args.background === true },
+      value: { url: normalizedUrl, background: args.background === true },
     };
   }
   if (!Number.isInteger(tabId) || tabId < 1) {

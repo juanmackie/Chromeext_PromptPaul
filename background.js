@@ -62,6 +62,15 @@ const DENYLIST = [
   'ssid',
 ];
 const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
+const NOTCH_ACTIONS = new Set([
+  'openChat',
+  'openActions',
+  'summarizePage',
+  'explainSelection',
+  'openOptions',
+]);
+const NOTCH_MAX_SELECTION_CHARS = 20_000;
+const NOTCH_MAX_PAGE_CHARS = 200_000;
 const HERMES_API_KEYS_KEY = 'hermesApiKeys';
 const HERMES_SESSIONS_KEY = 'hermesSessions';
 const HERMES_SESSION_KEYS_KEY = 'hermesSessionKeys';
@@ -1395,7 +1404,14 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
   pageTabExecutor: (runId, actionName, args, options = {}) =>
     pageTabController.execute(runId, actionName, { ...args, signal: options.signal }),
   pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
-  pageTabRunDisposer: (runId) => pageTabController.disposeRun(runId),
+  pageTabRunDisposer: (runId) => {
+    const ownedTabIds = pageTabController.getOwnedTabIds(runId);
+    return Promise.all(
+      ownedTabIds.map((tabId) =>
+        pageActionExecutor(tabId, 'clearPageActionSession', {}, { runId }).catch(() => undefined)
+      )
+    ).finally(() => pageTabController.disposeRun(runId));
+  },
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
 });
@@ -1478,9 +1494,12 @@ function openChatInTab() {
  * website deep links (chrome.runtime.onMessageExternal).
  * @param {Object} context - { tabId, selectedText, mediaUrl, mediaType,
  *   instruction }.
+ * @param {Object} [options] - Internal routing options.
+ * @param {Promise<void>} [options.panelOpenPromise] - A panel-open promise
+ *   started inside the user-gesture handler.
  * @returns {Promise<Object>} { success, mode } result.
  */
-async function openChatWithContext(context = {}) {
+async function openChatWithContext(context = {}, options = {}) {
   const {
     tabId,
     selectedText = '',
@@ -1493,7 +1512,8 @@ async function openChatWithContext(context = {}) {
     return { success: false, error: 'No tab context for deep link' };
   }
 
-  await chrome.sidePanel.open({ tabId });
+  if (options.panelOpenPromise) await options.panelOpenPromise;
+  else await chrome.sidePanel.open({ tabId });
   const actionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   // Media context: preserve the attachment (and optional instruction).
@@ -1681,6 +1701,10 @@ async function rebuildUnifiedMenus() {
 chrome.runtime.onInstalled.addListener(async (details) => {
   await queueMenuRebuild('onInstalled');
   if (details.reason === 'install') {
+    const existing = await chrome.storage.local.get(['notchEnabled']);
+    if (typeof existing.notchEnabled === 'undefined') {
+      await chrome.storage.local.set({ notchEnabled: false });
+    }
     chrome.tabs.create({ url: chrome.runtime.getURL('options.html?firstRun=1') });
   }
 });
@@ -1695,6 +1719,17 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
   if (namespace === 'local' && changes.instructions) {
     // Use the queue to prevent race conditions
     await queueMenuRebuild('instructions-changed');
+  }
+  if (namespace === 'local' && changes.notchEnabled) {
+    const enabled = changes.notchEnabled.newValue === true;
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs) {
+        if (!Number.isInteger(tab.id)) continue;
+        chrome.tabs.sendMessage(tab.id, { action: 'notchPreferenceChanged', enabled }, () => {
+          void chrome.runtime.lastError;
+        });
+      }
+    });
   }
 });
 
@@ -2017,8 +2052,127 @@ async function resolveStoredRunConfig(config) {
   };
 }
 
+/**
+ * Send a notch action after its panel-open operation has started synchronously.
+ * @param {string} action - Chat-side action name.
+ * @param {number} tabId - Sender tab ID.
+ * @param {Object} [payload] - Bounded action payload.
+ * @param {Promise<void>|null} [panelOpenPromise] - Existing gesture-bound open.
+ * @returns {Promise<Object>} Panel delivery result.
+ */
+async function createNotchPanelAction(action, tabId, payload = {}, panelOpenPromise = null) {
+  const actionId = `notch-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  if (panelOpenPromise) await panelOpenPromise;
+  else await chrome.sidePanel.open({ tabId });
+  return sendPanelMessage({ action, ...payload, tabId, actionId });
+}
+
+/**
+ * Handle the small, allowlisted action surface exposed by the browser-page notch.
+ * Content-script requests are always bound to the sender tab.
+ * @param {Object} request - Runtime request from the notch content script.
+ * @param {Object} sender - Runtime sender descriptor.
+ * @returns {Promise<Object>}
+ */
+async function handleNotchAction(request, sender) {
+  const extensionOrigin = getExtensionOrigin();
+  if (
+    !isContentScriptSender(sender, extensionOrigin) ||
+    !requestMatchesSenderTab(sender, request?.tabId)
+  ) {
+    return { success: false, error: 'Notch actions must come from their page.' };
+  }
+
+  const action = String(request?.notchAction || '');
+  if (!NOTCH_ACTIONS.has(action)) {
+    return { success: false, error: 'Unsupported notch action.' };
+  }
+
+  const tabId = sender.tab.id;
+  if (!isUsablePanelTab(sender.tab)) {
+    return { success: false, error: 'Prompt Paul is not available on this page.' };
+  }
+  const panelOpenPromise = action === 'openOptions' ? null : chrome.sidePanel.open({ tabId });
+  const tab = await chrome.tabs.get(tabId);
+  if (!isUsablePanelTab(tab)) {
+    if (panelOpenPromise) await panelOpenPromise.catch(() => {});
+    return { success: false, error: 'Prompt Paul is not available on this page.' };
+  }
+
+  if (action === 'openOptions') {
+    await chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
+    return { success: true };
+  }
+
+  if (action === 'openChat') {
+    return openChatWithContext({ tabId }, { panelOpenPromise });
+  }
+
+  if (action === 'openActions') {
+    const result = await createNotchPanelAction('notchOpenActions', tabId, {}, panelOpenPromise);
+    return { success: true, queued: result.queuedFallback };
+  }
+
+  if (action === 'explainSelection') {
+    const selectedText = String(request?.selectedText || '')
+      .trim()
+      .slice(0, NOTCH_MAX_SELECTION_CHARS);
+    if (!selectedText) return { success: false, error: 'Select text first.' };
+    const result = await createNotchPanelAction(
+      'notchSelectionAction',
+      tabId,
+      { selectedText },
+      panelOpenPromise
+    );
+    return { success: true, queued: result.queuedFallback };
+  }
+
+  const pageData = await executeTabContentExtraction(tabId);
+  if (pageData?.isPdf) {
+    const result = await createNotchPanelAction(
+      'notchPageAction',
+      tabId,
+      {
+        pageData: {
+          success: true,
+          isPdf: true,
+          pdfUrl: sanitizePageActionUrl(pageData.pdfUrl || tab.url || ''),
+          title: String(pageData.title || tab.title || '').slice(0, 300),
+        },
+      },
+      panelOpenPromise
+    );
+    return { success: true, queued: result.queuedFallback };
+  }
+  if (!pageData?.success || !pageData.content) {
+    return { success: false, error: pageData?.error || 'No page content was available.' };
+  }
+  const boundedPageData = {
+    success: true,
+    content: String(pageData.content).slice(0, NOTCH_MAX_PAGE_CHARS),
+    title: String(pageData.title || '').slice(0, 300),
+    siteName: String(pageData.siteName || '').slice(0, 120),
+    byline: String(pageData.byline || '').slice(0, 240),
+    url: sanitizePageActionUrl(pageData.url || tab.url || ''),
+    type: String(pageData.type || '').slice(0, 80),
+  };
+  const result = await createNotchPanelAction(
+    'notchPageAction',
+    tabId,
+    { pageData: boundedPageData },
+    panelOpenPromise
+  );
+  return { success: true, queued: result.queuedFallback };
+}
+
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action === 'notchAction') {
+    handleNotchAction(request, sender)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
   const extensionOrigin = getExtensionOrigin();
   const extensionPageSender = isExtensionSender(sender, extensionOrigin);
 

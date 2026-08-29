@@ -18,6 +18,7 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 - Trim loaded content to stay within context limits
 - Store settings locally with opt-in anonymous analytics
 - Open the chat from the toolbar icon, context menus, the Options page, or website deep links
+- Use an optional browser-viewport top notch for quick page, selection, chat, and settings actions
 
 ## Install
 
@@ -43,19 +44,28 @@ cd Chromeext_PromptPaul
    - When a key is configured and the toggle is on, the model may search the web when current, verifiable, or time-sensitive information would improve the answer — search is a permission, not a mandate, so the model can still answer directly
    - The selected endpoint/model must support function calling; otherwise grounding will be disabled for that request
 4. Optionally set a system prompt and create custom instructions
-5. Optional: enable **Trusted page actions** in Options if you want allowed low/medium-risk page actions to skip individual approvals. It is off by default and never enables JavaScript, arbitrary browser control, password/OTP/payment fields, or destructive/security actions.
-6. Save each section explicitly — Connection, Privacy, Web Search, and Page Actions each have their own Save button. Stored API keys stay masked in the form and are only read on demand; you will be warned if you close the page with unsaved changes.
+5. Choose **Light**, **Dark**, or **System** in Appearance. System follows your browser or operating system preference.
+6. Optional: enable **Trusted page actions** in Options if you want allowed low/medium-risk page actions to skip individual approvals. It is off by default and never enables JavaScript, arbitrary browser control, password/OTP/payment fields, or destructive/security actions.
+7. Optional: enable **Top Notch** in Options. The notch is off by default and appears only inside supported browser pages; it is not an OS-wide overlay.
+8. Save each section explicitly — Connection, Privacy, Web Search, Page Actions, and Top Notch each have their own Save button. Stored API keys stay masked in the form and are only read on demand; you will be warned if you close the page with unsaved changes.
 
 > **Privacy note:** When Web Search is enabled, a model-generated query may derive from your prompt, conversation, selected text, page content, or media context and is sent to Brave. The full conversation is not sent unless represented in that query. The key is stored locally and never included in LLM payloads, analytics, or logs.
 
 ## Use
+
+### Browser-page Top Notch
+
+- Open Options and enable **Top Notch**, then save the section.
+- On supported web pages, expand the top-centered Prompt Paul notch for **Open chat**, **All actions**, **Summarize page**, **Explain selection**, or **Settings**.
+- The notch uses an isolated Shadow DOM and does not change page layout. It is hidden by default and does not run on browser-internal or extension pages.
+- Page and selection content is sent only after you choose the matching action. Content-script requests are bound to their sender tab and use the existing side-panel chat flow.
 
 ### Side panel Page Actions toggle
 
 - Click **Act** to opt the next run into bounded page and owned-tab semantic actions. Act resets after that run and when the browser session ends.
 - Prompt Paul can inspect a bounded DOM snapshot and, when appropriate, click, fill, select, or scroll standard controls in the current tab, then open and switch among tabs it created for that run.
 - Page text is untrusted reference data. Passwords, OTPs, credentials, payment fields, security/account controls, destructive actions, unsafe links, JavaScript, and unsupported visual interactions are blocked or confirmation-gated. Valid HTTP(S) links can run through `page_click`; `_blank` links use `page_open_link` under the same Act lease. Safe navigation across sites does not create a second permission prompt.
-- Act can own up to eight tabs for one run. New tabs are readiness-checked before inspection; background tabs do not retarget the task, and a disconnected tab is skipped so the run can continue elsewhere. If the user reloads the failed source tab, the next fresh inspection can re-probe it. Long tasks use separate observation/navigation/mutation budgets and can record short untrusted notes with `page_record_note`.
+- Act can own up to twelve tabs for one run. New tabs are readiness-checked before inspection; background tabs do not retarget the task, and a disconnected tab is skipped so the run can continue elsewhere. If the user reloads the failed source tab, the next fresh inspection can re-probe it. Long tasks use separate observation/navigation/mutation budgets (192/72/48), a session-only sub-goal planner, bounded replanning, and short untrusted notes with `page_record_note`. Planner runs show one activation notice, request one initial approval, then auto-approve only low-risk non-navigation actions; high-risk and navigation actions remain confirmation-gated.
 - Ordinary state-changing actions require approval by default. The Options trusted mode only skips allowed low/medium-risk approvals.
 - If the active page changes after a snapshot, Prompt Paul discards the stale snapshot, inspects the current page, and continues the request. It never acts on stale targets.
 - Mutations report `not_delivered`, `delivered_unverified`, or `delivered_verified`; an unverified mutation is not repeated until the page is inspected again.
