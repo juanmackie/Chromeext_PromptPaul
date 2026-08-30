@@ -482,7 +482,9 @@ function runUnitTests(runner) {
     if (
       !notch.includes('notchActRunState') ||
       !notch.includes('startDictation') ||
-      !notch.includes('notch-act-form')
+      !notch.includes('notch-act-form') ||
+      !notch.includes('THEME_PREFERENCE_KEY') ||
+      !notch.includes("data-theme='light'")
     ) {
       throw new Error('Notch must expose Act activity and dictation controls');
     }

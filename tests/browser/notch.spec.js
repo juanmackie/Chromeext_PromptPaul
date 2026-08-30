@@ -39,6 +39,12 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await harness.evaluate(
       () =>
         new Promise((resolve) =>
+          chrome.storage.sync.set({ themePreference: 'light', darkTheme: false }, resolve)
+        )
+    );
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
           chrome.storage.local.set(
             {
               instructions: [
@@ -68,6 +74,25 @@ test('shows an isolated quick-action notch when enabled', async () => {
 
     const host = target.locator('[data-prompt-paul-notch-host]');
     await expect(host).toHaveCount(1);
+    const notchShell = host.locator('.notch-shell');
+    await expect(notchShell).toHaveAttribute('data-theme', 'light');
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.sync.set({ themePreference: 'dark', darkTheme: true }, resolve)
+        )
+    );
+    await expect(notchShell).toHaveAttribute('data-theme', 'dark');
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.sync.set({ themePreference: 'system', darkTheme: false }, resolve)
+        )
+    );
+    await target.emulateMedia({ colorScheme: 'dark' });
+    await expect(notchShell).toHaveAttribute('data-theme', 'dark');
+    await target.emulateMedia({ colorScheme: 'light' });
+    await expect(notchShell).toHaveAttribute('data-theme', 'light');
     const hostBox = await host.boundingBox();
     expect(hostBox).not.toBeNull();
     expect(hostBox.x + hostBox.width / 2).toBeCloseTo(640, 0);

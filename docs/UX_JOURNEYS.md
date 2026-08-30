@@ -91,7 +91,7 @@ Steps:
 
 1. Open Options, leave **Top Notch** off, and confirm no notch appears on a normal web page.
 2. Enable the setting and click **Save Notch Settings**. Open pages mount the top-centered notch without changing their layout.
-3. Expand the notch with the keyboard or pointer. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, and top-edge styling.
+3. Expand the notch with the keyboard or pointer. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, theme-matched Light/Dark/System styling, and top-edge appearance.
 4. If custom prompts are pinned, confirm the notch shows them in pin order and caps the visible list at four items. Choose a pinned prompt and confirm it runs against the current selection, current page, or active conversation through the existing chat action flow.
 5. Choose **Dictate**, grant microphone access if needed, speak one instruction, and confirm the instruction is sent when dictation ends. Confirm the same action works with **Act** enabled.
 6. Enable **Act** and confirm its floating task field appears. Submit a harmless page task and confirm the task uses the bounded page-action run path.

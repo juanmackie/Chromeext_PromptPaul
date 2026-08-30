@@ -7,6 +7,9 @@
   if (window.top !== window || document.querySelector('[data-prompt-paul-notch-host]')) return;
 
   const STORAGE_KEY = 'notchEnabled';
+  const THEME_PREFERENCE_KEY = 'themePreference';
+  const LEGACY_DARK_THEME_KEY = 'darkTheme';
+  const SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)';
   const PINNED_ACTIONS_KEY = 'pinnedQuickActions';
   const INSTRUCTIONS_KEY = 'instructions';
   const HOST_ATTRIBUTE = 'data-prompt-paul-notch-host';
@@ -78,6 +81,8 @@
   let dictationListening = false;
   let dictationFinalText = '';
   let dictationHadError = false;
+  let themePreference = 'light';
+  const systemThemeMediaQuery = window.matchMedia?.(SYSTEM_THEME_QUERY) || null;
 
   const styleText = `
     :host {
@@ -87,8 +92,6 @@
       left: 50%;
       z-index: 2147483640;
       display: block;
-      color: #f5f7fa;
-      color-scheme: dark;
       font-family: "Geist Mono", "JetBrains Mono", "SF Mono", "Monaco", monospace;
       transform: translateX(-50%);
     }
@@ -100,18 +103,69 @@
     .notch-shell {
       --notch-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
       --notch-surface: rgba(10, 12, 16, 0.96);
+      --notch-surface-deep: rgba(14, 16, 21, 0.98);
+      --notch-surface-top: rgba(5, 7, 10, 0.98);
       --notch-surface-raised: rgba(25, 28, 35, 0.78);
+      --notch-surface-hover: rgba(255, 255, 255, 0.08);
       --notch-edge: rgba(255, 255, 255, 0.12);
+      --notch-edge-soft: rgba(255, 255, 255, 0.08);
+      --notch-ink: #f5f7fa;
+      --notch-ink-strong: #ffffff;
+      --notch-ink-muted: rgba(245, 247, 250, 0.82);
+      --notch-ink-subtle: rgba(245, 247, 250, 0.58);
+      --notch-ink-faint: rgba(245, 247, 250, 0.4);
+      --notch-brand: #818cf8;
+      --notch-brand-bright: #a5b4fc;
+      --notch-brand-soft: rgba(129, 140, 248, 0.14);
+      --notch-brand-border: rgba(129, 140, 248, 0.68);
+      --notch-brand-border-soft: rgba(129, 140, 248, 0.5);
+      --notch-brand-foreground: #ffffff;
+      --notch-surface-pinned: rgba(255, 255, 255, 0.04);
+      --notch-shadow: rgba(0, 0, 0, 0.3);
+      --notch-shadow-soft: rgba(0, 0, 0, 0.16);
+      --notch-error: #ffb4ab;
       display: flex;
       flex-direction: column;
       align-items: center;
       width: 184px;
       pointer-events: none;
+      color: var(--notch-ink);
+      color-scheme: dark;
       font-family: "Geist Mono", "JetBrains Mono", "SF Mono", "Monaco", monospace;
       font-size: 13px;
       font-variant-numeric: tabular-nums;
       line-height: 1.3;
       transition: width 420ms var(--notch-spring);
+    }
+
+    .notch-shell[data-theme='light'] {
+      --notch-surface: rgba(255, 255, 255, 0.98);
+      --notch-surface-deep: rgba(248, 248, 252, 0.98);
+      --notch-surface-top: rgba(248, 247, 252, 0.98);
+      --notch-surface-raised: rgba(245, 244, 251, 0.92);
+      --notch-surface-hover: rgba(80, 70, 229, 0.08);
+      --notch-edge: rgba(67, 56, 202, 0.2);
+      --notch-edge-soft: rgba(67, 56, 202, 0.12);
+      --notch-ink: #1a1a2e;
+      --notch-ink-strong: #1a1a2e;
+      --notch-ink-muted: rgba(26, 26, 46, 0.82);
+      --notch-ink-subtle: rgba(26, 26, 46, 0.58);
+      --notch-ink-faint: rgba(26, 26, 46, 0.42);
+      --notch-brand: #5046e5;
+      --notch-brand-bright: #6366f1;
+      --notch-brand-soft: rgba(80, 70, 229, 0.12);
+      --notch-brand-border: rgba(80, 70, 229, 0.5);
+      --notch-brand-border-soft: rgba(80, 70, 229, 0.35);
+      --notch-brand-foreground: #ffffff;
+      --notch-surface-pinned: rgba(80, 70, 229, 0.05);
+      --notch-shadow: rgba(31, 25, 79, 0.2);
+      --notch-shadow-soft: rgba(31, 25, 79, 0.12);
+      --notch-error: #b42318;
+      color-scheme: light;
+    }
+
+    .notch-shell[data-theme='dark'] {
+      color-scheme: dark;
     }
 
     .notch-shell[data-expanded='true'] {
@@ -136,8 +190,8 @@
       border: 1px solid var(--notch-edge);
       border-top: 0;
       border-radius: 0 0 16px 16px;
-      background: linear-gradient(180deg, rgba(5, 7, 10, 0.98), var(--notch-surface));
-      box-shadow: 0 7px 22px rgba(0, 0, 0, 0.16), inset 0 1px rgba(255, 255, 255, 0.06);
+      background: linear-gradient(180deg, var(--notch-surface-top), var(--notch-surface));
+      box-shadow: 0 7px 22px var(--notch-shadow-soft), inset 0 1px var(--notch-edge-soft);
       backdrop-filter: blur(20px) saturate(1.25);
       transition: height 420ms var(--notch-spring), border-radius 520ms var(--notch-spring),
         box-shadow 220ms ease;
@@ -149,7 +203,7 @@
       min-height: 29px;
       border-color: transparent;
       border-radius: 0;
-      box-shadow: inset 0 -1px rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 -1px var(--notch-edge-soft);
     }
 
     .notch-toggle,
@@ -170,17 +224,17 @@
       padding: 0 4px;
       border-radius: 12px;
       background: transparent;
-      color: #f5f7fa;
+      color: var(--notch-ink);
     }
 
     .notch-toggle:hover,
     .notch-toggle:focus-visible {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--notch-surface-hover);
     }
 
     .notch-toggle:hover .notch-mark,
     .notch-toggle:focus-visible .notch-mark {
-      border-color: #0a84ff;
+      border-color: var(--notch-brand);
     }
 
     .notch-sr-only {
@@ -197,7 +251,7 @@
     .notch-toggle:focus-visible,
     .notch-close:focus-visible,
     .notch-action:focus-visible {
-      outline: 2px solid #0a84ff;
+      outline: 2px solid var(--notch-brand);
       outline-offset: 2px;
     }
 
@@ -210,7 +264,7 @@
     }
 
     .notch-toggle-name {
-      color: rgba(245, 247, 250, 0.82);
+      color: var(--notch-ink-muted);
       font-size: 10px;
       font-weight: 650;
       letter-spacing: 0.015em;
@@ -221,9 +275,9 @@
       place-items: center;
       width: 15px;
       height: 15px;
-      border: 1px solid rgba(10, 132, 255, 0.78);
+      border: 1px solid var(--notch-brand-border);
       border-radius: 47% 53% 44% 56%;
-      color: #6bb6ff;
+      color: var(--notch-brand-bright);
       font-size: 0;
       line-height: 1;
     }
@@ -242,8 +296,8 @@
       height: 4px;
       margin: 0;
       border-radius: 50%;
-      background: #0a84ff;
-      box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.14);
+      background: var(--notch-brand);
+      box-shadow: 0 0 0 3px var(--notch-brand-soft);
     }
 
     .notch-panel {
@@ -253,8 +307,8 @@
       border: 1px solid var(--notch-edge);
       border-top: 0;
       border-radius: 0 0 20px 20px;
-      background: linear-gradient(180deg, var(--notch-surface), rgba(14, 16, 21, 0.98));
-      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
+      background: linear-gradient(180deg, var(--notch-surface), var(--notch-surface-deep));
+      box-shadow: 0 18px 44px var(--notch-shadow);
       backdrop-filter: blur(24px) saturate(1.2);
     }
 
@@ -318,7 +372,7 @@
 
     .notch-title {
       display: block;
-      color: #f5f7fa;
+      color: var(--notch-ink);
       font-size: 14px;
       font-weight: 650;
       letter-spacing: -0.01em;
@@ -327,7 +381,7 @@
     .notch-kicker {
       display: block;
       margin-top: 2px;
-      color: rgba(245, 247, 250, 0.55);
+      color: var(--notch-ink-subtle);
       font-size: 10px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -341,21 +395,21 @@
       padding: 0;
       border-radius: 8px;
       background: transparent;
-      color: rgba(245, 247, 250, 0.6);
+      color: var(--notch-ink-subtle);
       font-size: 18px;
       line-height: 1;
     }
 
     .notch-close:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: var(--notch-surface-hover);
+      color: var(--notch-ink-strong);
     }
 
     .notch-site-row {
       gap: 7px;
       min-width: 0;
       margin-bottom: 10px;
-      color: rgba(245, 247, 250, 0.58);
+      color: var(--notch-ink-subtle);
       font-size: 10px;
     }
 
@@ -364,7 +418,7 @@
       height: 6px;
       flex: 0 0 auto;
       border-radius: 50%;
-      background: #0a84ff;
+      background: var(--notch-brand);
     }
 
     .notch-site {
@@ -389,10 +443,10 @@
       width: 100%;
       min-height: 35px;
       padding: 7px 8px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--notch-edge);
       border-radius: 9px;
       background: var(--notch-surface-raised);
-      color: #f5f7fa;
+      color: var(--notch-ink);
       text-align: left;
       transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
     }
@@ -442,9 +496,9 @@
 
     .notch-utility-action.notch-dictation-active,
     .notch-utility-action.notch-act-enabled {
-      border-color: rgba(10, 132, 255, 0.68);
-      background: rgba(10, 132, 255, 0.14);
-      color: #fff;
+      border-color: var(--notch-brand-border);
+      background: var(--notch-brand-soft);
+      color: var(--notch-ink-strong);
     }
 
     .notch-act-form {
@@ -452,10 +506,10 @@
       gap: 6px;
       margin-top: 7px;
       padding: 5px;
-      border: 1px solid rgba(10, 132, 255, 0.5);
+      border: 1px solid var(--notch-brand-border-soft);
       border-radius: 10px;
-      background: rgba(5, 7, 10, 0.5);
-      box-shadow: 0 0 16px rgba(10, 132, 255, 0.12);
+      background: var(--notch-surface-top);
+      box-shadow: 0 0 16px var(--notch-brand-soft);
     }
 
     .notch-act-form[hidden] {
@@ -470,13 +524,13 @@
       border: 0;
       outline: none;
       background: transparent;
-      color: #f5f7fa;
+      color: var(--notch-ink);
       font: inherit;
       font-size: 11px;
     }
 
     .notch-act-input::placeholder {
-      color: rgba(245, 247, 250, 0.4);
+      color: var(--notch-ink-faint);
     }
 
     .notch-act-submit {
@@ -488,13 +542,13 @@
       padding: 0;
       border: 0;
       border-radius: 7px;
-      background: #0a84ff;
-      color: #fff;
+      background: var(--notch-brand);
+      color: var(--notch-brand-foreground);
       cursor: pointer;
     }
 
     .notch-act-submit:hover {
-      background: #3d9bff;
+      background: var(--notch-brand-bright);
     }
 
     .notch-act-submit .notch-action-icon {
@@ -508,7 +562,7 @@
       gap: 6px;
       margin-top: 8px;
       padding-top: 8px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid var(--notch-edge-soft);
     }
 
     .notch-secondary-actions .notch-action {
@@ -519,8 +573,8 @@
     }
 
     .notch-action:hover:not(:disabled) {
-      border-color: rgba(10, 132, 255, 0.6);
-      background: rgba(10, 132, 255, 0.12);
+      border-color: var(--notch-brand-border);
+      background: var(--notch-brand-soft);
       transform: translateX(2px);
     }
 
@@ -539,7 +593,7 @@
       width: 21px;
       height: 21px;
       flex: 0 0 auto;
-      color: #6bb6ff;
+      color: var(--notch-brand-bright);
     }
 
     .notch-action-icon svg {
@@ -559,7 +613,7 @@
 
     .notch-action-label {
       gap: 6px;
-      color: #f5f7fa;
+      color: var(--notch-ink);
       font-size: 11px;
       font-weight: 600;
     }
@@ -568,7 +622,7 @@
       display: none;
       overflow: hidden;
       margin-top: 2px;
-      color: rgba(245, 247, 250, 0.52);
+      color: var(--notch-ink-subtle);
       font-size: 10px;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -581,7 +635,7 @@
     .notch-pinned-section {
       margin-top: 11px;
       padding-top: 10px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid var(--notch-edge-soft);
     }
 
     .notch-pinned-section[hidden] {
@@ -593,7 +647,7 @@
       align-items: center;
       justify-content: space-between;
       margin: 0 2px 6px;
-      color: rgba(245, 247, 250, 0.56);
+      color: var(--notch-ink-subtle);
       font-size: 9px;
       font-weight: 650;
       letter-spacing: 0.1em;
@@ -601,7 +655,7 @@
     }
 
     .notch-section-count {
-      color: rgba(245, 247, 250, 0.36);
+      color: var(--notch-ink-faint);
       font-variant-numeric: tabular-nums;
       letter-spacing: 0.03em;
     }
@@ -615,31 +669,31 @@
     .notch-pinned-action {
       min-height: 34px;
       padding: 6px 8px;
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--notch-surface-pinned);
     }
 
     .notch-pinned-action .notch-action-icon {
       width: 19px;
       height: 19px;
-      color: #a7d3ff;
+      color: var(--notch-brand-bright);
     }
 
     .notch-pinned-more {
       margin: 6px 2px 0;
-      color: rgba(245, 247, 250, 0.4);
+      color: var(--notch-ink-faint);
       font-size: 9px;
     }
 
     .notch-feedback {
       min-height: 15px;
       margin: 10px 2px 0;
-      color: rgba(245, 247, 250, 0.56);
+      color: var(--notch-ink-subtle);
       font-size: 10px;
       line-height: 1.35;
     }
 
     .notch-feedback[data-tone="error"] {
-      color: #ffb4ab;
+      color: var(--notch-error);
     }
 
     @media (prefers-reduced-motion: no-preference) {
@@ -715,6 +769,46 @@
       }
     }
   `;
+
+  function normalizeThemePreference(preference, legacyDarkTheme = false) {
+    if (['light', 'dark', 'system'].includes(preference)) return preference;
+    return legacyDarkTheme === true ? 'dark' : 'light';
+  }
+
+  function applyThemePreference(preference, legacyDarkTheme = false) {
+    themePreference = normalizeThemePreference(preference, legacyDarkTheme);
+    const isDark =
+      themePreference === 'dark' ||
+      (themePreference === 'system' && Boolean(systemThemeMediaQuery?.matches));
+    const shell = shadow?.querySelector('.notch-shell');
+    if (!shell) return;
+    shell.dataset.themePreference = themePreference;
+    shell.dataset.theme = isDark ? 'dark' : 'light';
+  }
+
+  function loadThemePreference() {
+    try {
+      chrome.storage.sync.get(
+        { [THEME_PREFERENCE_KEY]: '', [LEGACY_DARK_THEME_KEY]: false },
+        (result) => {
+          if (chrome.runtime.lastError) return;
+          applyThemePreference(result?.[THEME_PREFERENCE_KEY], result?.[LEGACY_DARK_THEME_KEY]);
+        }
+      );
+    } catch (_) {
+      // Keep the light fallback if sync storage is unavailable.
+    }
+  }
+
+  function handleSystemThemeChange() {
+    if (themePreference === 'system') applyThemePreference('system');
+  }
+
+  if (systemThemeMediaQuery?.addEventListener) {
+    systemThemeMediaQuery.addEventListener('change', handleSystemThemeChange);
+  } else if (systemThemeMediaQuery?.addListener) {
+    systemThemeMediaQuery.addListener(handleSystemThemeChange);
+  }
 
   const icons = {
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H11l-4.5 3v-3H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z"/><path d="M7 10h10M7 13h6"/></svg>',
@@ -1118,7 +1212,7 @@
     shadow = host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `
       <style>${styleText}</style>
-      <div class="notch-shell" data-expanded="false">
+      <div class="notch-shell" data-expanded="false" data-theme="light" data-theme-preference="light">
         <div class="notch-rail">
           <button class="notch-toggle" type="button" aria-expanded="false" aria-controls="notch-panel" title="Open Prompt Paul notch">
             <span class="notch-toggle-content">
@@ -1212,6 +1306,8 @@
       </div>
     `;
     document.documentElement.appendChild(host);
+    applyThemePreference(themePreference);
+    loadThemePreference();
     const site = shadow.querySelector('.notch-site');
     if (site) site.textContent = siteLabel();
 
@@ -1253,6 +1349,13 @@
   });
 
   storageListener = (changes, area) => {
+    if (area === 'sync' && (changes[THEME_PREFERENCE_KEY] || changes[LEGACY_DARK_THEME_KEY])) {
+      const preference = changes[THEME_PREFERENCE_KEY]
+        ? changes[THEME_PREFERENCE_KEY].newValue
+        : changes[LEGACY_DARK_THEME_KEY]?.newValue;
+      applyThemePreference(preference, changes[LEGACY_DARK_THEME_KEY]?.newValue);
+      return;
+    }
     if (area !== 'local') return;
     if (changes[STORAGE_KEY]) {
       applyEnabled(changes[STORAGE_KEY].newValue === true);
