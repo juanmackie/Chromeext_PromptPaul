@@ -442,6 +442,71 @@ describe('RunOrchestrator Hermes current-turn context', () => {
     expect(events.map((event) => event.type)).toContain('tool_complete');
   });
 
+  it('reports a failed client tool to the gateway instead of abandoning the stream', async () => {
+    const submitted = [];
+    const transport = {
+      getSessionKey: async () => 'memory-key',
+      getStoredSession: async () => 'session-1',
+      startRun: async () => ({ runId: 'remote-run', sessionId: 'session-1' }),
+      streamRun: async (_profile, _runId, options) => {
+        await options.onEvent({
+          type: 'client_tool.request',
+          tool_call_id: 'call-err',
+          name: 'page_scroll',
+          arguments: '{"direction":"down"}',
+        });
+        await options.onEvent({ type: 'run.completed', output: 'Recovered answer.' });
+      },
+      submitToolResult: async (_profile, _runId, toolCallId, result) => {
+        submitted.push({ toolCallId, result });
+      },
+    };
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      hermesTransport: transport,
+      pageActionExecutor: async () => {
+        throw new Error('Synthetic page action failure.');
+      },
+    });
+    orch._emitEvent = () => {};
+    orch._finalizeTextResponse = async () => {};
+    const run = makeHermesRun({
+      conversationHistory: [{ role: 'user', content: 'Act on the page.' }],
+      pageActions: {
+        enabled: true,
+        multiTabEnabled: false,
+        trustedMode: false,
+        budgets: { observation: 0, navigation: 0, mutation: 0 },
+        budgetWarnings: new Set(),
+        notes: [],
+        unavailableTabs: new Set(),
+        targetTabId: 7,
+        allowedOrigins: new Set(),
+      },
+      hermes: {
+        remoteRunId: null,
+        sessionId: null,
+        sessionKey: '',
+        pendingApproval: null,
+        clientToolsEnabled: true,
+        clientToolResults: new Map(),
+      },
+    });
+    orch.activeRuns.set(run.id, run);
+
+    await orch._executeHermes(run);
+
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0].toolCallId).toBe('call-err');
+    expect(submitted[0].result).toEqual({
+      success: false,
+      result: {
+        error: 'CLIENT_TOOL_FAILED',
+        message: 'Synthetic page action failure.',
+      },
+    });
+    expect(run.accumulatedText).toBe('Recovered answer.');
+  });
+
   it('applies structured output recovered from run-status polling', () => {
     const orch = new RunOrchestrator(createStubSkillManager());
     const events = [];

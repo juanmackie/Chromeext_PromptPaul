@@ -318,6 +318,9 @@ describe('executable page-action evaluation matrix', () => {
       success: true,
       snapshot: snapshot(),
     }));
+    const hermesFailure = {
+      result: { error: expected('hermes-page-actions-disabled').failureCode },
+    };
     await expect(
       hermesOrch.startRun({
         provider: 'hermes',
@@ -326,15 +329,7 @@ describe('executable page-action evaluation matrix', () => {
         tool_choice: 'auto',
       })
     ).rejects.toThrow(/client-tool protocol/i);
-    records.push(
-      record(
-        'hermes-page-actions-disabled',
-        'hermes',
-        { result: { error: 'HERMES_CLIENT_TOOLS_UNAVAILABLE' } },
-        0,
-        0
-      )
-    );
+    records.push(record('hermes-page-actions-disabled', 'hermes', hermesFailure, 0, 0));
 
     expect(new Set(records.map((entry) => entry.caseId))).toEqual(
       new Set(corpus.map((entry) => entry.id))

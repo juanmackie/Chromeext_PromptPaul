@@ -3298,23 +3298,52 @@ class RunOrchestrator {
         run.hermes.clientToolResults ||= new Map();
         let result = run.hermes.clientToolResults.get(toolCallId);
         if (!result) {
-          if (this._isHermesClientToolName(toolName)) {
-            result = await this.executeTool(run.id, toolCall);
-          } else {
+          try {
+            if (this._isHermesClientToolName(toolName)) {
+              result = await this.executeTool(run.id, toolCall);
+            } else {
+              result = {
+                success: true,
+                result: {
+                  error: 'UNKNOWN_CAPABILITY',
+                  message: 'This client tool is not available to Hermes.',
+                },
+              };
+            }
+          } catch (toolError) {
+            // Abort propagates so the run can stop cleanly. Any other failure
+            // must still reach the gateway as a tool result, or the remote run
+            // stays blocked waiting for an answer that never arrives.
+            if (toolError instanceof DOMException && toolError.name === 'AbortError') {
+              throw toolError;
+            }
             result = {
-              success: true,
+              success: false,
               result: {
-                error: 'UNKNOWN_CAPABILITY',
-                message: 'This client tool is not available to Hermes.',
+                error: 'CLIENT_TOOL_FAILED',
+                message: String(toolError?.message || 'The client tool failed.').slice(0, 240),
               },
             };
           }
           run.hermes.clientToolResults.set(toolCallId, result);
         }
 
-        await this.hermesTransport.submitToolResult(profile, started.runId, toolCallId, result, {
-          sessionKey,
-        });
+        try {
+          await this.hermesTransport.submitToolResult(profile, started.runId, toolCallId, result, {
+            sessionKey,
+          });
+        } catch (submitError) {
+          if (submitError instanceof DOMException && submitError.name === 'AbortError') {
+            throw submitError;
+          }
+          // The gateway did not accept the result. Surface it and let the
+          // existing status-polling recovery report the remote outcome.
+          throw new Error(
+            `Hermes did not accept the client-tool result: ${
+              submitError?.message || 'submission failed.'
+            }`
+          );
+        }
         this._emitEvent(run.id, {
           type: 'tool_complete',
           capability: 'hermes_client',

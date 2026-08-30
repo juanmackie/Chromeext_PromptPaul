@@ -144,7 +144,7 @@
     "fixture": "form.html",
     "operation": "page_get_state",
     "expected": "error",
-    "failureCode": "PAGE_ACTIONS_DISABLED",
+    "failureCode": "HERMES_CLIENT_TOOLS_UNAVAILABLE",
     "providers": ["hermes"],
     "sensitive": false
   }
