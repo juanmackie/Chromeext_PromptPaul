@@ -192,6 +192,27 @@ export async function startRun(runConfig) {
 }
 
 /**
+ * Resume an Act run only after an explicit user action in the recovery card.
+ * The background worker reads the checkpoint and re-resolves the saved profile.
+ * @param {object} checkpoint
+ * @returns {Promise<{runId: string, sourceTabId: number|null}>}
+ */
+export async function resumeActRun(checkpoint) {
+  const checkpointRunId = String(checkpoint?.runId || '').trim();
+  if (!checkpointRunId) throw new Error('The Act checkpoint is invalid.');
+  const response = await chrome.runtime.sendMessage({
+    action: 'resumeActRun',
+    checkpointRunId,
+  });
+  if (!response?.success || !response.runId || !response.ownerToken) {
+    throw new Error(response?.error || 'The Act checkpoint could not be resumed.');
+  }
+  runOwnerTokens.set(response.runId, response.ownerToken);
+  await setActiveRun(response.runId, response.sourceTabId ?? checkpoint.sourceTabId ?? null);
+  return { runId: response.runId, sourceTabId: response.sourceTabId ?? null };
+}
+
+/**
  * Return the opaque token for a run-owned runtime request.
  * @param {string} runId - Active run ID.
  * @returns {string} Opaque owner token, or an empty string when unavailable.

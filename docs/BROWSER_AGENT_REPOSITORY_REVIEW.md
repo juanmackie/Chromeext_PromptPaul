@@ -2,7 +2,7 @@
 
 **Review date:** 2026-08-20  
 **Scope:** Prompt Paul Chrome extension only  
-**Deliverable:** Review and ranked recommendations. The review phase was advisory; the four recommendations below were later implemented and verified in Prompt Paul.
+**Deliverable:** Review and ranked recommendations. The review phase was advisory; the four recommendations below were later implemented and verified in Prompt Paul. The focused Act security and license closeout is recorded in [ACT_SECURITY_LICENSE_REVIEW.md](ACT_SECURITY_LICENSE_REVIEW.md).
 
 ## Executive result
 
@@ -23,12 +23,12 @@ Do not copy an upstream runtime, browser daemon, Chromium fork, arbitrary JavaSc
 
 ## Implementation status
 
-| Recommendation                     | Current Prompt Paul status                                                                                                                                               | Verification                                                                                                                          |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Verified action receipts           | Implemented in the orchestrator and content-script action results. Receipts include bounded action-specific evidence and block unchanged unverified retries.             | Unit behavior tests and real-browser evaluation cases for verified input, false success, and repeated mutation.                       |
-| Local manual intervention          | Implemented through `page_pause_for_user`, explicit Resume, snapshot invalidation, fresh inspection, policy checks, secret filtering, and abort cleanup.                 | Orchestrator behavior tests and real-browser pause/resume coverage.                                                                   |
-| Browser-task evaluation corpus     | Implemented as an 11-case credential-free corpus. Browser-safe cases run against local fixtures; API/Codex/Hermes and restricted-page boundaries run in the unit matrix. | `npm run test:browser` and behavior tests record bounded results, receipts, evidence, failure codes, action counts, and prompt sizes. |
-| Progressive scope/diff measurement | Implemented as a test-only utility and browser-harness measurement over indexed semantic regions and live snapshots.                                                     | Real-browser verified-input evaluation proves non-empty scoped diffs and bounded byte metrics.                                        |
+| Recommendation                     | Current Prompt Paul status                                                                                                                                              | Verification                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Verified action receipts           | Implemented in the orchestrator and content-script action results. Receipts include bounded action-specific evidence and block unchanged unverified retries.            | Unit behavior tests and real-browser evaluation cases for verified input, false success, and repeated mutation.                       |
+| Local manual intervention          | Implemented through `page_pause_for_user`, explicit Resume, snapshot invalidation, fresh inspection, policy checks, secret filtering, and abort cleanup.                | Orchestrator behavior tests and real-browser pause/resume coverage.                                                                   |
+| Browser-task evaluation corpus     | Implemented as a 15-case credential-free corpus. Browser-safe cases run against local fixtures; API/Codex/Hermes and restricted-page boundaries run in the unit matrix. | `npm run test:browser` and behavior tests record bounded results, receipts, evidence, failure codes, action counts, and prompt sizes. |
+| Progressive scope/diff measurement | Implemented as a bounded runtime `scopeDiff` result plus browser-harness measurement over indexed semantic regions and live snapshots.                                  | Unit and real-browser evaluation proves bounded, selector-free diffs and non-empty changes.                                           |
 
 The implementation keeps the original safety decisions: no model-supplied selectors, arbitrary JavaScript, CDP/debugger access, network capture, remote browser sessions, stored raw browsing memory, or Hermes page actions.
 
@@ -63,7 +63,7 @@ Use existing fresh snapshots, target checks, policy, journals, and abort paths. 
 
 **Safety rule:** Never blindly retry `delivered_unverified` state-changing actions. Ask for approval or stop. A second click can submit a form or repeat a purchase.
 
-**Disposition:** Implemented as a clean-room adaptation; retain focused security review before release.
+**Disposition:** Implemented as a clean-room adaptation; the focused security review is complete. Future direct reuse still needs a separate review.
 
 ### 2. Add a local manual-intervention checkpoint
 
@@ -75,7 +75,7 @@ Use existing fresh snapshots, target checks, policy, journals, and abort paths. 
 
 The checkpoint must not bypass policy. It must not route a prohibited purchase, destructive operation, credential change, or security action to the user as a workaround. Do not accept passwords, OTPs, recovery codes, or payment data in chat or run events. Never auto-resume.
 
-**Disposition:** Implemented as a local checkpoint; retain focused UX, privacy, and security review before release.
+**Disposition:** Implemented as a local checkpoint; the focused UX, privacy, and security review is complete.
 
 ### 3. Build a browser-task evaluation corpus
 
@@ -108,7 +108,9 @@ Record task result, action disposition, postcondition evidence, action count, pr
 
 **Prompt Paul adaptation:** First measure named semantic regions and bounded diffs in the evaluation harness. If useful, expose only indexed regions produced by the content script. Do not let the model send CSS, XPath, or arbitrary selectors as a scope. Re-run policy, masking, stale checks, and target identity for every action.
 
-**Disposition:** Measured in the test harness. Keep it test-only until a later evaluation shows a safety or reliability gain for a public tool.
+Prompt Paul now exposes a bounded `scopeDiff` on successful non-navigation mutations. It contains only indexed metadata, changed flags, counts, and snapshot identity. Richer region and byte-size measurements remain evaluation-only.
+
+**Disposition:** Implemented as a bounded selector-free runtime result; the focused security review is complete.
 
 ## Repository findings
 
@@ -140,7 +142,7 @@ The four HN items were read through the official HN API on 2026-08-20. The stori
 - AGPL-3.0 sources: BrowserOS, Skyvern, and Pane. Do not copy their code into the extension without a separate legal decision and human review. This review recommends concepts only.
 - XAgent uses a custom source license. Do not copy code or distinctive implementation text. See the pinned [license](https://github.com/XorbitsAI/XAgent/blob/1ef3ff6c09603347eaa593fa65c16ed2fd9c7cbb/LICENSE).
 
-License classification is not legal advice. Human review is required before any direct reuse or distribution.
+License classification is not legal advice. A focused license review is complete for this implementation. Any future direct reuse or distribution needs a new review.
 
 ## Explicitly rejected for Prompt Paul
 
@@ -175,6 +177,23 @@ This review did not establish independent evidence for:
 
 These items need a controlled experiment or human review. They are not adoption recommendations.
 
+## Follow-up verification of later research input
+
+The later research report was checked against the package registry and project sources before implementation:
+
+- `@htekdev/agent-harness` was not found at the claimed npm scope. Do not adopt an unverified package.
+- `@qhn/pi-goal` exists, but it is a Pi extension rather than a browser-runtime library and is outside this extension's architecture.
+- No exact `Open Multi Agent` package was identified. Related packages such as `open-multi-agent-kit` and `@open-multi-agent/core` are multi-agent application frameworks, not a narrow MV3 runtime dependency, and were not adopted.
+- `dom-agent` was not found as an npm package. The located GitHub `ticuong78/dom-agent` project is a Node/TypeScript DOM-diff utility under GPL-3.0, not the claimed Rust/Wasm semantic-tree library.
+- `dom-semantic-tree` was not found in the npm registry. No source was identified that supports the claimed Rust/Wasm implementation.
+- `open-web-bridge` exists as a MIT package, but its Node/Chromium bridge architecture does not fit pure MV3 and is rejected.
+- `dom-accessibility-api` 0.7.1 exists under MIT and was vendored as `libs/dom-accessibility-api.js`. It implements accessible-name/description algorithms; it is not used as a complete role engine.
+- LangGraph.js exists under MIT and documents StateGraph, interrupts, and checkpointers. Its concepts informed explicit-resume state handling, but the runtime dependency was not adopted.
+- Effect exists under MIT and Dexie exists under Apache-2.0. Neither was adopted; Prompt Paul uses a small retry helper and Chrome session storage instead.
+- WAInjectBench has no stated repository license, WASP is CC BY-NC 4.0 for its main materials, and ST-WebAgentBench is Apache-2.0. Prompt Paul uses clean-room evaluation cases and does not redistribute the first two projects.
+
+The registry and source checks do not establish production suitability. Maintenance, bundle impact, browser policy, privacy, and license review remain required for future dependencies.
+
 ## Release and follow-up gate
 
 The implemented changes use existing modules and pass the relevant automated gates. Keep the following checks for release review and any future public page-action capability:
@@ -186,6 +205,6 @@ The implemented changes use existing modules and pass the relevant automated gat
 5. `npm run validate` and `npm run smoke`;
 6. `npm run test:browser` for browser-runtime changes;
 7. manual unpacked-extension checks for consent, accessibility, restricted pages, and fail-closed behavior;
-8. human security and license review for browser-control, authentication, external-service, user-data, permission, or direct-code-reuse changes.
+8. recorded security and license review for browser-control, authentication, external-service, user-data, permission, or direct-code-reuse changes.
 
-The review phase changed only documentation. The later implementation passed `npm run validate`, `npm run test:browser` (14/14), `npm run build`, formatting, lint, and `git diff --check`; human security and license review remains required before production release.
+The review phase changed only documentation. The later implementation passed `npm run validate`, `npm run test:browser`, `npm run build`, formatting, lint, `npm audit --audit-level=high --omit=optional`, `npm run verify:licenses`, and `git diff --check`. The focused Act review is complete; publication approval remains a separate release operation.

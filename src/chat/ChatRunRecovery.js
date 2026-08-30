@@ -1,7 +1,9 @@
 /**
- * @fileoverview Session-backed run journal helpers for side-panel reconnects.
+ * @fileoverview Session-backed run journal and Act checkpoint recovery helpers.
  * @module ChatRunRecovery
  */
+
+import { listPageActionCheckpoints } from '../utils/pageActionCheckpoint.js';
 
 const ACTIVE_RUN_KEY = 'promptPaulActiveRunV1';
 
@@ -46,7 +48,7 @@ export async function loadActiveRunJournal() {
     runId: pointer.runId,
   });
   if (!response?.success || !response.journal) return null;
-  return { pointer, journal: response.journal };
+  return { pointer, journal: response.journal, active: response.active === true };
 }
 
 /**
@@ -54,48 +56,92 @@ export async function loadActiveRunJournal() {
  * @param {HTMLElement|null} chatArea
  * @param {object|null} recovery
  * @param {Function} [onDismiss]
+ * @param {Function} [onResume]
  * @returns {HTMLElement|null}
  */
-export function renderRunRecoveryNotice(chatArea, recovery, onDismiss) {
-  if (!chatArea || !recovery?.journal) return null;
+export function renderRunRecoveryNotice(chatArea, recovery, onDismiss, onResume) {
+  if (!chatArea || (!recovery?.journal && !recovery?.checkpoint)) return null;
   const existing = chatArea.querySelector('[data-run-recovery]');
   if (existing) return existing;
 
-  const { journal } = recovery;
+  const { journal, checkpoint } = recovery;
   const card = document.createElement('div');
   card.className = 'message system-message run-recovery-notice';
   card.dataset.runRecovery = 'true';
   card.setAttribute('role', 'status');
 
   const title = document.createElement('strong');
-  title.textContent = journal.terminal ? 'Previous run recovered' : 'Run reconnect available';
+  title.textContent = checkpoint
+    ? 'Interrupted Act task available'
+    : journal.terminal
+      ? 'Previous run recovered'
+      : 'Run reconnect available';
   card.appendChild(title);
 
   const detail = document.createElement('p');
-  const objective = String(journal.objective || '').trim();
-  const status = String(journal.status || 'unknown');
-  detail.textContent = objective
-    ? `${status}: ${objective.slice(0, 220)}`
-    : `${status}: activity restored from the background worker.`;
+  const objective = String(journal?.objective || checkpoint?.instruction || '').trim();
+  const status = String(journal?.status || 'paused');
+  detail.textContent = checkpoint
+    ? `${status}: Act paused before a page action was confirmed delivered. Resume will inspect the page first.`
+    : objective
+      ? `${status}: ${objective.slice(0, 220)}`
+      : `${status}: activity restored from the background worker.`;
   card.appendChild(detail);
+
+  if (checkpoint) {
+    const warning = document.createElement('p');
+    warning.textContent =
+      'The previous mutation may have been delivered. Prompt Paul will not repeat it automatically.';
+    card.appendChild(warning);
+  }
 
   const dismiss = document.createElement('button');
   dismiss.type = 'button';
   dismiss.className = 'btn btn-outline-secondary btn-sm';
-  dismiss.textContent = journal.terminal ? 'Dismiss' : 'Keep visible';
+  dismiss.textContent = checkpoint || !journal?.terminal ? 'Keep visible' : 'Dismiss';
   dismiss.addEventListener('click', () => {
-    if (journal.terminal) void clearActiveRun();
+    if (journal?.terminal && !checkpoint) void clearActiveRun();
     onDismiss?.(card);
   });
   card.appendChild(dismiss);
+
+  if (checkpoint && typeof onResume === 'function') {
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.className = 'btn btn-primary btn-sm';
+    resume.textContent = 'Resume Act';
+    resume.addEventListener('click', async () => {
+      resume.disabled = true;
+      dismiss.disabled = true;
+      try {
+        await onResume?.(checkpoint, card);
+      } catch (_) {
+        resume.disabled = false;
+        dismiss.disabled = false;
+      }
+    });
+    card.appendChild(resume);
+  }
   chatArea.appendChild(card);
   return card;
 }
 
-export async function restoreRunJournal(chatArea) {
+export async function loadActRecovery() {
+  const recovery = await loadActiveRunJournal();
+  const checkpoints = await listPageActionCheckpoints();
+  const checkpoint = recovery?.active
+    ? null
+    : checkpoints
+        .filter((entry) => ['in_flight', 'uncertain_delivery'].includes(entry?.status))
+        .sort((left, right) => Number(right.savedAt || 0) - Number(left.savedAt || 0))[0] || null;
+  if (!recovery && !checkpoint) return null;
+  return { ...(recovery || {}), checkpoint };
+}
+
+export async function restoreRunJournal(chatArea, onResume) {
   try {
-    const recovery = await loadActiveRunJournal();
-    if (recovery) renderRunRecoveryNotice(chatArea, recovery);
+    const recovery = await loadActRecovery();
+    if (recovery) renderRunRecoveryNotice(chatArea, recovery, null, onResume);
   } catch (error) {
     console.warn('Chat: run journal recovery failed:', error.message);
   }

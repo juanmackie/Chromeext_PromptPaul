@@ -51,13 +51,15 @@ test('expands and collapses the prompt input', async () => {
     await expect(icon).toHaveText('close_fullscreen');
     await chat.waitForTimeout(250);
 
+    await expect
+      .poll(async () => (await userInput.boundingBox())?.height || 0)
+      .toBeGreaterThan(collapsedInputBox.height);
     const expandedInputBox = await userInput.boundingBox();
     const sendButtonBox = await sendButton.boundingBox();
     const clearButtonBox = await clearButton.boundingBox();
     expect(expandedInputBox).not.toBeNull();
     expect(sendButtonBox).not.toBeNull();
     expect(clearButtonBox).not.toBeNull();
-    expect(expandedInputBox.height).toBeGreaterThan(collapsedInputBox.height);
     expect(expandedInputBox.width).toBeGreaterThanOrEqual(collapsedInputBox.width);
     expect(sendButtonBox.y).toBeGreaterThanOrEqual(expandedInputBox.y + expandedInputBox.height);
     expect(clearButtonBox.y).toBeGreaterThanOrEqual(expandedInputBox.y + expandedInputBox.height);

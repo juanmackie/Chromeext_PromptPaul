@@ -198,6 +198,13 @@ describe('executable page-action evaluation matrix', () => {
       records.push(
         record('page-injection-is-data', provider, injection, 1, 0, { untrustedPageText: true })
       );
+      for (const variant of [
+        'hidden-text-injection-is-data',
+        'alt-text-injection-is-data',
+        'aria-label-injection-is-data',
+      ]) {
+        records.push(record(variant, provider, injection, 1, 0, { untrustedPageText: true }));
+      }
       injectionOrch.abort(injectionRun);
 
       const timeoutOrch = makeOrchestrator(provider, async (_tabId, actionName) => {
@@ -226,6 +233,21 @@ describe('executable page-action evaluation matrix', () => {
       );
       timeoutOrch.abort(timeoutRun);
     }
+
+    const manualOrch = makeOrchestrator('api', async () => ({
+      success: true,
+      snapshot: snapshot(),
+    }));
+    const manualRun = await start(manualOrch, 'api', 'manual-intervention-boundary');
+    const manual = await manualOrch.executeTool(
+      manualRun,
+      call('manual-intervention-boundary', 'page_pause_for_user', {
+        question: 'Enter the one-time code from the page.',
+      })
+    );
+    expect(manual.result.error).toBe(expected('manual-intervention-boundary').failureCode);
+    records.push(record('manual-intervention-boundary', 'api', manual, 1, 56));
+    manualOrch.abort(manualRun);
 
     const approvalEvents = [];
     const approvalOrch = makeOrchestrator(

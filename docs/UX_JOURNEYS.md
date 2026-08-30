@@ -135,11 +135,16 @@ Steps:
 8. After a mutation, check the activity result: `delivered_verified` includes
    bounded postcondition evidence; `delivered_unverified` stops repeat attempts
    until a fresh inspection; `not_delivered` reports that no supported effect was
-   observed.
+   observed. Successful non-navigation mutations may also show bounded
+   selector-free scope/diff evidence.
+9. Restart the extension worker during an in-flight mutation. Confirm the
+   recovery card does not resume automatically, warns that delivery is
+   uncertain, and offers **Resume Act** only as an explicit user action. Resume
+   starts a fresh run and performs `page_get_state` before any mutation.
 
 Verification: axes 1 (no secret/action leakage), 3 (approval card themes), 4
-(snapshot refresh, session approval, manual intervention, receipts, and abort
-cleanup), 5 (Act-off parity and trusted-mode limits).
+(snapshot refresh, session approval, manual intervention, receipts, checkpoint
+resume, and abort cleanup), 5 (Act-off parity and trusted-mode limits).
 
 ## Options surface checks
 

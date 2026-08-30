@@ -29,12 +29,17 @@ import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
+import { waitForRetry } from './src/utils/retryBackoff.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
 import { HermesTransport } from './src/orchestrator/HermesTransport.js';
 import { createKeyedOperationLock } from './src/utils/keyedOperationLock.js';
+import {
+  clearPageActionCheckpoint,
+  getPageActionCheckpoint,
+} from './src/utils/pageActionCheckpoint.js';
 import {
   isContentScriptSender,
   isExtensionSender,
@@ -1051,10 +1056,15 @@ const pingPageActionContentScript = (tabId) =>
  * @param {number} tabId
  * @returns {Promise<boolean>}
  */
-const verifyPageActionConnection = async (tabId) => {
+const verifyPageActionConnection = async (tabId, signal) => {
   const first = await pingPageActionContentScript(tabId);
   if (first.connected) return true;
-  await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_PING_RETRY_DELAY_MS));
+  await waitForRetry(0, {
+    baseMs: PAGE_ACTION_PING_RETRY_DELAY_MS,
+    maxMs: PAGE_ACTION_PING_RETRY_DELAY_MS,
+    jitter: 0,
+    signal,
+  });
   return (await pingPageActionContentScript(tabId)).connected;
 };
 
@@ -1085,7 +1095,12 @@ const injectPageActionContentScript = (tabId) =>
       chrome.scripting.executeScript(
         {
           target: { tabId },
-          files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+          files: [
+            'libs/readability.js',
+            'libs/turndown.js',
+            'libs/dom-accessibility-api.js',
+            'content_script_unified.js',
+          ],
         },
         () => {
           if (chrome.runtime.lastError) {
@@ -1117,6 +1132,7 @@ const ensurePageActionContentScript = async (tabId, signal) => {
   const deadline = Date.now() + PAGE_ACTION_READY_TIMEOUT_MS;
   let injected = false;
   let lastError = null;
+  let attempt = 0;
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
     let tab;
@@ -1128,7 +1144,7 @@ const ensurePageActionContentScript = async (tabId, signal) => {
     }
     const url = String(tab?.url || tab?.pendingUrl || '').trim();
     if (url && getCurrentPageSupport(url).available) {
-      if (await verifyPageActionConnection(Number(tabId))) return true;
+      if (await verifyPageActionConnection(Number(tabId), signal)) return true;
       // A content script may be absent because this tab was created after the
       // match decision. Inject once after the document commits, then continue
       // polling until the bridge answers.
@@ -1146,7 +1162,12 @@ const ensurePageActionContentScript = async (tabId, signal) => {
       error.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
       throw error;
     }
-    await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_READY_POLL_MS));
+    await waitForRetry(attempt++, {
+      baseMs: PAGE_ACTION_READY_POLL_MS,
+      maxMs: 1_200,
+      jitter: 0.15,
+      signal,
+    });
   }
   const error = new Error(
     'The Prompt Paul content script did not become ready in time. Reload the tab and try again.'
@@ -1217,6 +1238,7 @@ const getPageActionTabUrl = async (tabId) => {
  */
 const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
   const deadline = Date.now() + PAGE_ACTION_NAVIGATION_TIMEOUT_MS;
+  let attempt = 0;
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
 
@@ -1234,7 +1256,12 @@ const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
       if (connected.connected) return { url: currentUrl };
     }
 
-    await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_NAVIGATION_POLL_MS));
+    await waitForRetry(attempt++, {
+      baseMs: PAGE_ACTION_NAVIGATION_POLL_MS,
+      maxMs: 1_000,
+      jitter: 0.15,
+      signal,
+    });
   }
 
   const error = new Error('The approved page navigation did not complete in time.');
@@ -1251,11 +1278,17 @@ const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
  */
 const waitForPageActionBridge = async (tabId, signal) => {
   const deadline = Date.now() + PAGE_ACTION_NAVIGATION_TIMEOUT_MS;
+  let attempt = 0;
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
     const connected = await pingPageActionContentScript(tabId);
     if (connected.connected) return;
-    await new Promise((resolve) => setTimeout(resolve, PAGE_ACTION_NAVIGATION_POLL_MS));
+    await waitForRetry(attempt++, {
+      baseMs: PAGE_ACTION_NAVIGATION_POLL_MS,
+      maxMs: 1_000,
+      jitter: 0.15,
+      signal,
+    });
   }
   const error = new Error('The page did not reconnect to page actions in time.');
   error.code = 'PAGE_ACTION_TIMEOUT';
@@ -1886,7 +1919,12 @@ async function executeTabContentExtraction(tabId) {
             chrome.scripting.executeScript(
               {
                 target: { tabId: tabId },
-                files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+                files: [
+                  'libs/readability.js',
+                  'libs/turndown.js',
+                  'libs/dom-accessibility-api.js',
+                  'content_script_unified.js',
+                ],
               },
               () => {
                 if (chrome.runtime.lastError) {
@@ -2754,6 +2792,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'resumeActRun') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse, 'Act resume must come from Prompt Paul.');
+    }
+    Promise.resolve()
+      .then(async () => {
+        const checkpointRunId = String(request.checkpointRunId || '').trim();
+        const checkpoint = await getPageActionCheckpoint(checkpointRunId);
+        if (!checkpoint) throw new Error('The Act checkpoint is no longer available.');
+        if (!checkpoint.sourceTabId || !checkpoint.profileId) {
+          throw new Error('The Act checkpoint is missing its saved page or connection.');
+        }
+        const instruction =
+          checkpoint.instruction ||
+          'Continue the interrupted Act task after inspecting the current page.';
+        const effectiveConfig = await resolveStoredRunConfig({
+          profileId: checkpoint.profileId,
+          pageActions: true,
+          pageActionsMultiTab: true,
+          sourceTabId: checkpoint.sourceTabId,
+          tool_choice: 'auto',
+          webSearch: false,
+          messages: [{ role: 'user', content: instruction }],
+          actCheckpoint: checkpoint,
+        });
+        const ownerToken = uuidv4();
+        const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
+        await clearPageActionCheckpoint(checkpointRunId);
+        return {
+          runId,
+          ownerToken,
+          sourceTabId: runOrchestrator.getRun(runId)?.sourceTabId ?? null,
+        };
+      })
+      .then((result) => sendResponse({ success: true, resumed: true, ...result }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === 'executeRun') {
     const { runId, requestConfig } = request;
     if (!isAuthorizedRunRequest(request, sender)) {
@@ -2926,7 +3003,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((result) => {
         const journals = result?.[key] || {};
         const requested = request.runId ? journals[request.runId] : null;
-        sendResponse({ success: true, journal: requested || null });
+        sendResponse({
+          success: true,
+          journal: requested || null,
+          active: Boolean(request.runId && runOrchestrator.getRun(request.runId)),
+        });
       })
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "smoke": "node scripts/smoke-check.js",
+    "verify:licenses": "node scripts/verify-vendored-licenses.js",
     "check": "npm run smoke",
     "lint": "eslint . --ext .js",
     "test": "node scripts/test-runner.js",
@@ -22,7 +23,7 @@
     "build:prod": "node scripts/build.js --prod",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "validate": "npm run lint && npm run format:check && npm run test && npm run test:behavior && npm run smoke",
+    "validate": "npm run lint && npm run format:check && npm run test && npm run test:behavior && npm run smoke && npm run verify:licenses",
     "ci": "npm run validate && npm run build:prod"
   },
   "devDependencies": {
