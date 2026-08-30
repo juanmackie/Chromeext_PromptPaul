@@ -308,6 +308,14 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('runResilience module structure valid', () => {
+    checkModule('src/utils/runResilience.js', [
+      'function classifyProviderError',
+      'function compactConversationHistory',
+      'function detectRepeatedOutput',
+    ]);
+  });
+
   runner.test('runState module structure valid', () => {
     checkModule('src/utils/runState.js', [
       'const RUN_STATES',

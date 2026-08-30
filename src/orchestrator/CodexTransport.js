@@ -5,6 +5,7 @@
 
 import { CODEX_API_ENDPOINT } from '../utils/codexAuth.js';
 import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
+import { createTimeoutSignal, redactProviderErrorMessage } from '../utils/runResilience.js';
 
 function toResponsesContent(content, role) {
   if (typeof content === 'string') {
@@ -116,41 +117,57 @@ export async function* streamCodexResponse({
   body,
   endpoint = CODEX_API_ENDPOINT,
   signal,
+  timeoutMs,
   fetchImpl = fetch,
 }) {
-  const response = await fetchImpl(endpoint, {
-    method: 'POST',
-    headers: createCodexHeaders({ accessToken, accountId, sessionId }),
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!response.ok) {
-    const error = new Error(
-      `Codex API error ${response.status}: ${await readBoundedResponseText(response)}`
-    );
-    error.status = response.status;
-    throw error;
-  }
-  if (!response.body?.getReader) throw new Error('Codex returned a response without a stream.');
+  const requestTimeout = createTimeoutSignal(signal, timeoutMs);
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: createCodexHeaders({ accessToken, accountId, sessionId }),
+      body: JSON.stringify(body),
+      signal: requestTimeout.signal,
+    });
+    if (!response.ok) {
+      const error = new Error(
+        `Codex API error ${response.status}: ${redactProviderErrorMessage(await readBoundedResponseText(response))}`
+      );
+      error.status = response.status;
+      error.provider = true;
+      throw error;
+    }
+    if (!response.body?.getReader) throw new Error('Codex returned a response without a stream.');
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') continue;
-      try {
-        yield JSON.parse(data);
-      } catch (_) {
-        // Ignore keep-alive or incomplete SSE frames.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
+        try {
+          yield JSON.parse(data);
+        } catch (_) {
+          // Ignore keep-alive or incomplete SSE frames.
+        }
       }
     }
+  } catch (error) {
+    if (requestTimeout.timedOut && !signal?.aborted) {
+      const timeoutError = new Error('Provider request timed out.');
+      timeoutError.code = 'provider_timeout';
+      timeoutError.provider = true;
+      throw timeoutError;
+    }
+    if (error?.name !== 'AbortError') error.provider = true;
+    throw error;
+  } finally {
+    requestTimeout.cleanup();
   }
 }

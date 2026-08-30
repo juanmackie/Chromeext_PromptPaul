@@ -4,9 +4,11 @@
  */
 
 import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
+import { createTimeoutSignal, redactProviderErrorMessage } from '../utils/runResilience.js';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 const MAX_EVENT_BYTES = 512 * 1024;
+const HERMES_REQUEST_TIMEOUT_MS = 30_000;
 const HERMES_APPROVAL_CHOICES = Object.freeze(['once', 'session', 'always', 'deny']);
 const REQUIRED_CAPABILITIES = Object.freeze([
   'run_submission',
@@ -323,6 +325,22 @@ export class HermesTransport {
     return response;
   }
 
+  async _requestWithTimeout(options, timeoutMs = HERMES_REQUEST_TIMEOUT_MS) {
+    const requestTimeout = createTimeoutSignal(options.signal, timeoutMs);
+    try {
+      return await this._request({ ...options, signal: requestTimeout.signal });
+    } catch (error) {
+      if (requestTimeout.timedOut && !options.signal?.aborted) {
+        const timeoutError = new Error('Hermes request timed out.');
+        timeoutError.code = 'provider_timeout';
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      requestTimeout.cleanup();
+    }
+  }
+
   async _safeError(response, fallback) {
     let detail = '';
     let errorCode = '';
@@ -351,15 +369,7 @@ export class HermesTransport {
       detail = '';
     }
 
-    const safeDetail = String(detail)
-      .replace(/[\r\n\t]+/g, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .replace(
-        /((?:api[_ -]?key|authorization|token|secret|password)\s*[:=]\s*)[^,;\s]+/gi,
-        '$1[redacted]'
-      )
-      .trim()
-      .slice(0, 400);
+    const safeDetail = redactProviderErrorMessage(detail);
     const error = new Error(
       `${fallback} (HTTP ${response.status})${safeDetail ? `: ${safeDetail}` : '.'}`
     );
@@ -369,13 +379,13 @@ export class HermesTransport {
   }
 
   async getCapabilities(profile) {
-    const response = await this._request({ profile, route: '/v1/capabilities' });
+    const response = await this._requestWithTimeout({ profile, route: '/v1/capabilities' });
     if (!response.ok) throw await this._safeError(response, 'Hermes capability discovery failed');
     return response.json();
   }
 
   async checkConnection(profile) {
-    const response = await this._request({ profile, route: '/health' });
+    const response = await this._requestWithTimeout({ profile, route: '/health' });
     let healthWarning = null;
     if (!response.ok && response.status !== 503) {
       throw await this._safeError(response, 'Hermes health check failed');
@@ -408,7 +418,7 @@ export class HermesTransport {
   }
 
   async ensureSession(profile) {
-    const response = await this._request({
+    const response = await this._requestWithTimeout({
       profile,
       route: '/api/sessions',
       method: 'POST',
@@ -478,7 +488,7 @@ export class HermesTransport {
     const normalizedSessionId = asString(sessionId);
     if (!normalizedSessionId) return false;
 
-    const response = await this._request({
+    const response = await this._requestWithTimeout({
       profile,
       route: `/api/sessions/${encodeURIComponent(normalizedSessionId)}`,
       method: 'PATCH',
@@ -525,7 +535,7 @@ export class HermesTransport {
         ? { client_tools: clientTools }
         : {}),
     };
-    const response = await this._request({
+    const response = await this._requestWithTimeout({
       profile,
       route: '/v1/runs',
       method: 'POST',
@@ -541,7 +551,7 @@ export class HermesTransport {
   }
 
   async getRunStatus(profile, runId, { sessionKey = '', signal } = {}) {
-    const response = await this._request({
+    const response = await this._requestWithTimeout({
       profile,
       route: `/v1/runs/${encodeURIComponent(runId)}`,
       sessionKey,
@@ -609,30 +619,42 @@ export class HermesTransport {
   }
 
   async stopRun(profile, runId, { sessionKey = '' } = {}) {
-    const response = await this._request({
-      profile,
-      route: `/v1/runs/${encodeURIComponent(runId)}/stop`,
-      method: 'POST',
-      body: {},
-      sessionKey,
-    });
-    if (!response.ok && response.status !== 404) {
-      throw await this._safeError(response, 'Hermes stop request failed');
+    const requestTimeout = createTimeoutSignal(null, 15_000);
+    try {
+      const response = await this._request({
+        profile,
+        route: `/v1/runs/${encodeURIComponent(runId)}/stop`,
+        method: 'POST',
+        body: {},
+        sessionKey,
+        signal: requestTimeout.signal,
+      });
+      if (!response.ok && response.status !== 404) {
+        throw await this._safeError(response, 'Hermes stop request failed');
+      }
+      return true;
+    } catch (error) {
+      if (requestTimeout.timedOut) throw new Error('Hermes stop request timed out.');
+      throw error;
+    } finally {
+      requestTimeout.cleanup();
     }
-    return true;
   }
 
   async respondToApproval(profile, runId, choice, { sessionKey = '' } = {}) {
     if (!HERMES_APPROVAL_CHOICES.includes(choice)) {
       throw new Error('Hermes approval choice is invalid.');
     }
-    const response = await this._request({
-      profile,
-      route: `/v1/runs/${encodeURIComponent(runId)}/approval`,
-      method: 'POST',
-      body: { choice },
-      sessionKey,
-    });
+    const response = await this._requestWithTimeout(
+      {
+        profile,
+        route: `/v1/runs/${encodeURIComponent(runId)}/approval`,
+        method: 'POST',
+        body: { choice },
+        sessionKey,
+      },
+      15_000
+    );
     if (!response.ok) throw await this._safeError(response, 'Hermes approval response failed');
     return true;
   }

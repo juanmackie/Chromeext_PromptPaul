@@ -43,6 +43,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/utils/validation.js` owns HTTP(S)-only endpoint validation, custom-tool/profile normalization, and bounded backup restore validation
 - `src/utils/runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages
 - `src/utils/streamSafety.js` bounds provider SSE buffers and error-body reads
+- `src/utils/runResilience.js` classifies provider failures, applies reasoning-model timeout floors, compacts long conversation histories, redacts provider error labels, and stops repetitive output
 - `src/utils/codexAuth.js` owns the profile-local ChatGPT device-code login, token refresh, and secret-free status bridge. `src/orchestrator/CodexTransport.js` converts Prompt Paul history/tools to the ChatGPT Codex Responses wire and parses its stream.
 - `src/orchestrator/HermesTransport.js` owns the authenticated Hermes gateway routes, session creation, bounded SSE parsing, and server approval requests. Hermes credentials and session pointers stay in the background worker.
 - `src/utils/modelDiscovery.js` owns background-only `/models` requests. API profiles use the configured compatible endpoint, while Codex profiles use the authenticated Codex backend route and receive model-specific reasoning metadata.
@@ -94,15 +95,16 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 1. `ChatAPI.js` reads the selected profile and keeps the opaque run owner token in memory
 2. The background worker re-resolves the saved profile and configured tools before starting a run, so provider credentials and endpoints are not accepted from an untrusted message
 3. `executeRun` acknowledges acceptance immediately; long-running execution is detached from the sender's message channel and completion is delivered through ordered `orchestratorEvent` messages plus the bounded session journal
-4. Shared routing helpers validate the endpoint, key, and model
-5. Media requests can reroute to a vision-capable profile when needed
-6. Options creates or selects the `Codex` profile after successful subscription sign-in, then loads the provider model list and persists the selected model/reasoning level
+4. Non-Hermes runs use a 500-provider-call and 30-minute default ceiling, issue one toolless wrap-up call at the limit, retry transient provider failures with backoff, compact the middle of oversized histories, and apply model-aware request timeouts. Duplicate public execution is ignored while a run is already active.
+5. Shared routing helpers validate the endpoint, key, and model
+6. Media requests can reroute to a vision-capable profile when needed
+7. Options creates or selects the `Codex` profile after successful subscription sign-in, then loads the provider model list and persists the selected model/reasoning level
 
 ### Hermes gateway provider (optional)
 
 1. Options stores a Hermes profile with a loopback gateway endpoint and optional Hermes profile slug. The API key is stored in the background-owned `hermesApiKeys` map and is not included in profile records or backups.
 2. `background.js` validates the stored profile, checks `/health` and `/v1/capabilities`, requires the advertised run submission/status/SSE/stop/approval features, and starts Hermes runs through `RunOrchestrator`.
-3. `HermesTransport` creates or reuses one opaque Hermes session per profile and local conversation identity, sends bounded `conversation_history` plus the latest structured user input, recovers only explicit `session_not_found` run failures, and observes `/v1/runs/{id}/events` through a bounded SSE parser.
+3. `HermesTransport` creates or reuses one opaque Hermes session per profile and local conversation identity, sends bounded `conversation_history` plus the latest structured user input, recovers only explicit `session_not_found` run failures, uses bounded control-plane request timeouts, and observes `/v1/runs/{id}/events` through a bounded SSE parser.
 4. Hermes message, reasoning, server-tool, approval, completion, failure, and cancellation events are adapted to the existing `orchestratorEvent` vocabulary. Server tools stay owned by Hermes; Prompt Paul does not execute their payloads.
 5. Prompt Paul renders Hermes approval cards, ties decisions to the pending opaque approval ID, and sends only validated approval choices back through the background worker. Hermes Act is capability-gated: the gateway must advertise `run_client_tools` and `POST /v1/runs/{run_id}/tool-result`; client calls reuse the bounded page-action policy, approvals, ownership, and receipts.
 
@@ -111,7 +113,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 1. `RunOrchestrator` separates structured and inline reasoning from answer text and records provider completion reasons without forwarding hidden reasoning in terminal metadata
 2. Reasoning-capable provider requests reserve explicit output capacity for the final answer
 3. Codex model metadata supplies the Options thinking-level choices; the selected level is sent as `reasoning.effort`
-4. A reasoning-only response receives at most one text-only recovery request with tools disabled
+4. Empty responses receive at most one text-only recovery request with tools disabled; repeated long output is stopped before it can flood the chat
 5. `ChatGrounding` shows the token-budget warning only when the provider confirms a token-limit completion; otherwise it uses a neutral no-answer message
 
 ### Storage import and external tool boundaries

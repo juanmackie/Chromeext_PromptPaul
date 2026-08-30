@@ -16,6 +16,17 @@ import { createThinkParser } from '../utils/inlineReasoning.js';
 import { MAX_TOOL_ARGUMENTS_BYTES, normalizeToolDefinition } from '../utils/validation.js';
 import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
 import {
+  RUN_RESILIENCE_DEFAULTS,
+  classifyProviderError,
+  compactConversationHistory,
+  createTimeoutSignal,
+  detectRepeatedOutput,
+  getProviderTimeoutMs,
+  isRetryableProviderError,
+  redactProviderErrorMessage,
+} from '../utils/runResilience.js';
+import { waitForRetry } from '../utils/retryBackoff.js';
+import {
   PAGE_ACTION_RISKS,
   evaluatePageActionPolicy,
   isPageActionName,
@@ -59,6 +70,11 @@ const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
 const MAX_TOOL_CALL_RETRIES = 3;
 const THINKING_BUDGET_TOKENS = 2048;
+const BUDGET_WRAP_UP_PROMPT =
+  'The run is at its limit. Stop using tools and provide the best concise final answer now. ' +
+  'State any unfinished work or limitation clearly.';
+const REPETITION_ERROR =
+  'The model returned repetitive output and the response was stopped. Retry the request.';
 const PAGE_ACTION_TAB_FAILURE_CODES = new Set([
   'PAGE_ACTION_NO_CONTENT_SCRIPT',
   'PAGE_ACTION_MESSAGE_FAILED',
@@ -103,6 +119,13 @@ function isTokenLimitReason(reason) {
   );
 }
 
+function clampRunOption(value, fallback, min, max) {
+  const normalized = Number(value);
+  return Number.isFinite(normalized)
+    ? Math.min(max, Math.max(min, Math.floor(normalized)))
+    : fallback;
+}
+
 class RunOrchestrator {
   constructor(skillManager, options = {}) {
     this.skillManager = skillManager;
@@ -133,6 +156,32 @@ class RunOrchestrator {
     this.codexAuthProvider = options.codexAuthProvider;
     this.hermesTransport = options.hermesTransport || null;
     this.hermesClientToolsProvider = options.hermesClientToolsProvider;
+    this.runResilience = {
+      maxIterations: clampRunOption(
+        options.maxIterations,
+        RUN_RESILIENCE_DEFAULTS.maxIterations,
+        1,
+        1_000
+      ),
+      runBudgetMs: clampRunOption(
+        options.runBudgetMs,
+        RUN_RESILIENCE_DEFAULTS.runBudgetMs,
+        30_000,
+        24 * 60 * 60 * 1_000
+      ),
+      maxProviderRetries: clampRunOption(
+        options.maxProviderRetries,
+        RUN_RESILIENCE_DEFAULTS.maxProviderRetries,
+        0,
+        5
+      ),
+      requestTimeoutMs: clampRunOption(
+        options.requestTimeoutMs,
+        RUN_RESILIENCE_DEFAULTS.requestTimeoutMs,
+        1_000,
+        30 * 60 * 1_000
+      ),
+    };
     this.activeRuns = new Map(); // runId -> RunState
     this.hermesProfileRuns = new Map(); // profileId -> active runId
     this.toolExecutions = new Set(); // Set of "runId:toolCallId"
@@ -331,18 +380,37 @@ class RunOrchestrator {
   }
 
   _shouldRecoverEmptyResponse(run) {
-    return Boolean(
-      !run.recoveryAttempted &&
-      run.hasReasoning &&
-      !run.accumulatedText.trim() &&
-      !run.activeToolCall &&
-      !(run.activeToolCalls && run.activeToolCalls.size > 0)
-    );
+    if (
+      run.recoveryAttempted ||
+      run.accumulatedText.trim() ||
+      run.activeToolCall ||
+      (run.activeToolCalls && run.activeToolCalls.size > 0)
+    ) {
+      return false;
+    }
+    const resilience = run.resilience;
+    if (!resilience) return run.hasReasoning;
+    const signature = [
+      run.config?.provider || run.completionProvider || '',
+      run.config?.modelName || '',
+      run.completionReason || '',
+    ].join('|');
+    resilience.emptyStreak =
+      resilience.emptySignature === signature ? resilience.emptyStreak + 1 : 1;
+    resilience.emptySignature = signature;
+    // One bounded recovery is useful; a repeated deterministic empty response
+    // must not turn into an unbounded paid retry loop.
+    return resilience.emptyStreak < 2;
   }
 
   _prepareEmptyResponseRecovery(run) {
     run.recoveryAttempted = true;
-    run.conversationHistory.push({ role: 'user', content: EMPTY_REASONING_RECOVERY_PROMPT });
+    run.conversationHistory.push({
+      role: 'user',
+      content: run.hasReasoning
+        ? EMPTY_REASONING_RECOVERY_PROMPT
+        : 'The previous response was empty. Provide the final answer now without using tools.',
+    });
     run.accumulatedText = '';
     run.activeToolCall = null;
     run.activeToolCalls = null;
@@ -350,6 +418,16 @@ class RunOrchestrator {
     run.thinkParser = createThinkParser();
     run.completionReason = null;
     run.completionUsage = null;
+    run.outputSafetyCheckLength = 0;
+  }
+
+  async _executeEmptyResponseRecovery(run, executeRecovery) {
+    this._prepareEmptyResponseRecovery(run);
+    if (run.resilience && !this._claimProviderCall(run)) {
+      await this._finishAtRunLimit(run);
+      return;
+    }
+    await executeRecovery();
   }
 
   _applyOpenAIOutputBudget(body, modelName) {
@@ -491,6 +569,24 @@ class RunOrchestrator {
       eventJournal: [],
       startedAt: Date.now(),
       journalUpdatedAt: Date.now(),
+      objective: String(
+        config.messages?.find?.((message) => message?.role === 'user')?.content || ''
+      ).slice(0, 4_000),
+      executeInProgress: false,
+      resilience: {
+        apiCallCount: 0,
+        maxIterations: this.runResilience.maxIterations,
+        runBudgetMs: this.runResilience.runBudgetMs,
+        deadlineAt: Date.now() + this.runResilience.runBudgetMs,
+        graceCall: false,
+        wrapUp: false,
+        wrapUpNotice: false,
+        providerRetries: 0,
+        contextRecoveryAttempted: false,
+        contextCompactions: 0,
+        emptySignature: '',
+        emptyStreak: 0,
+      },
       status: 'ready',
       abortController: new AbortController(),
     };
@@ -510,12 +606,108 @@ class RunOrchestrator {
     return runId;
   }
 
+  _claimProviderCall(run) {
+    const state = run.resilience;
+    const now = Date.now();
+    const warningAt = run.startedAt + state.runBudgetMs * 0.8;
+    if (now >= warningAt) state.wrapUpNotice = true;
+
+    const exhausted = state.apiCallCount >= state.maxIterations || now >= state.deadlineAt;
+    if (!exhausted) {
+      state.apiCallCount += 1;
+      return true;
+    }
+    if (state.graceCall) return false;
+
+    state.graceCall = true;
+    state.wrapUp = true;
+    state.apiCallCount += 1;
+    run.conversationHistory.push({ role: 'user', content: BUDGET_WRAP_UP_PROMPT });
+    return true;
+  }
+
+  _finishAtRunLimit(run) {
+    if (!run.accumulatedText.trim()) {
+      run.accumulatedText =
+        'The task reached its run limit before a final answer was available. Retry to continue.';
+    }
+    return this._finalizeTextResponse(run);
+  }
+
+  _compactProviderHistory(run, maxTokens = RUN_RESILIENCE_DEFAULTS.maxHistoryTokens) {
+    if (!run?.resilience) return false;
+    const result = compactConversationHistory(run.conversationHistory, maxTokens);
+    if (!result.compacted) return false;
+    run.conversationHistory = result.messages;
+    run.resilience.contextCompactions += 1;
+    return true;
+  }
+
+  _markProviderError(error, status = null) {
+    if (!error || error.code === 'REPETITIVE_OUTPUT') return error;
+    error.provider = true;
+    if (status != null && error.status == null) error.status = status;
+    return error;
+  }
+
+  _checkOutputSafety(run, force = false) {
+    const outputLength = run.accumulatedText.length;
+    if (!force && (outputLength < 120 || outputLength - (run.outputSafetyCheckLength || 0) < 512)) {
+      return;
+    }
+    run.outputSafetyCheckLength = outputLength;
+    const repetition = detectRepeatedOutput(run.accumulatedText);
+    if (!repetition) return;
+    const error = new Error(REPETITION_ERROR);
+    error.code = 'REPETITIVE_OUTPUT';
+    error.repetition = repetition;
+    throw error;
+  }
+
+  async _recoverProviderError(run, error) {
+    if (
+      !run ||
+      !this.activeRuns.has(run.id) ||
+      run.config?.provider === 'hermes' ||
+      !error?.provider ||
+      error?.name === 'AbortError'
+    ) {
+      return false;
+    }
+    const kind = classifyProviderError(error);
+    if (kind === 'context_overflow' && !run.resilience.contextRecoveryAttempted) {
+      run.resilience.contextRecoveryAttempted = true;
+      this._compactProviderHistory(run, 24_000);
+      return this.activeRuns.has(run.id);
+    }
+    if (
+      !isRetryableProviderError(kind) ||
+      run.accumulatedText.trim() ||
+      run.activeToolCall ||
+      (run.activeToolCalls && run.activeToolCalls.size > 0) ||
+      run.resilience.providerRetries >= this.runResilience.maxProviderRetries
+    ) {
+      return false;
+    }
+    const attempt = run.resilience.providerRetries;
+    run.resilience.providerRetries += 1;
+    await waitForRetry(attempt, {
+      baseMs: 250,
+      maxMs: 4_000,
+      jitter: 0.2,
+      signal: run.abortController.signal,
+    });
+    return this.activeRuns.has(run.id);
+  }
+
   /**
    * Execute LLM request
    */
-  async execute(runId, requestConfig) {
+  async execute(runId, requestConfig, internalContinuation = false) {
     const run = this.activeRuns.get(runId);
     if (!run) throw new Error(`Run ${runId} not found`);
+    if (run.executeInProgress && !internalContinuation) return;
+    if (!internalContinuation) run.executeInProgress = true;
 
     run.status = 'streaming';
     run.accumulatedText = '';
@@ -530,6 +722,7 @@ class RunOrchestrator {
     run.tokenLimitReached = false;
     run.recoveryAttempted = false;
     run.recoverySucceeded = false;
+    run.outputSafetyCheckLength = 0;
     // Per-turn parser that strips inline <think>…</think> reasoning from the answer
     // stream (used by the OpenAI-style path; harmless no-op for Anthropic).
     run.thinkParser = createThinkParser();
@@ -551,6 +744,10 @@ class RunOrchestrator {
           return clean;
         });
       run.conversationHistory.push(...newMessages);
+      if (!run.objective) {
+        const firstUserMessage = newMessages.find((message) => message.role === 'user');
+        run.objective = String(firstUserMessage?.content || '').slice(0, 4_000);
+      }
       requestConfig.messages = [];
     }
 
@@ -582,8 +779,14 @@ class RunOrchestrator {
         return;
       }
 
-      // Build tools with skill injection
-      const tools = await this._buildTools(run);
+      if (!this._claimProviderCall(run)) {
+        await this._finishAtRunLimit(run);
+        return;
+      }
+
+      // Build tools with skill injection. The grace call is deliberately
+      // toolless so budget exhaustion cannot trigger another side effect.
+      const tools = run.resilience.wrapUp ? [] : await this._buildTools(run);
 
       // Execute based on provider
       if (run.config.provider === 'codex') {
@@ -593,22 +796,36 @@ class RunOrchestrator {
       } else {
         await this._executeOpenAI(run, tools);
       }
+      run.resilience.providerRetries = 0;
 
       // Carry web-search source metadata through to the terminal event.
       run._webSearchMetadata = this._getWebSearchMetadata(run);
     } catch (error) {
+      let finalError = error;
+      try {
+        if (await this._recoverProviderError(run, finalError)) {
+          return this.execute(runId, { continueConversation: true }, true);
+        }
+      } catch (recoveryError) {
+        finalError = recoveryError;
+      }
       // Handle abort errors gracefully (intentional cancellations)
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (finalError instanceof DOMException && finalError.name === 'AbortError') {
         console.log(`[Orchestrator] Run ${runId} aborted by user`);
         this._terminateRun(runId, { type: 'aborted' });
         return;
       }
       console.error(
         `[Orchestrator] Execute error:`,
-        error.name ? `${error.name}: ${error.message}` : error.message || error
+        finalError.name
+          ? `${finalError.name}: ${finalError.message}`
+          : finalError.message || finalError
       );
-      this._terminateRun(runId, { type: 'error', error: error.message || String(error) });
-      throw error;
+      this._terminateRun(runId, {
+        type: 'error',
+        error: finalError.message || String(finalError),
+      });
+      throw finalError;
     }
   }
 
@@ -638,6 +855,7 @@ class RunOrchestrator {
       run.pageActions.pendingManualIntervention = null;
     }
     if (abortSignal) run.abortController.abort();
+    run.executeInProgress = false;
     const ownedTabCleanupAvailable =
       run.pageActions?.multiTabEnabled && typeof this.pageTabRunDisposer === 'function';
     if (run.pageActions?.enabled && run.sourceTabId && !ownedTabCleanupAvailable) {
@@ -2394,7 +2612,7 @@ class RunOrchestrator {
     run.activeToolCall = null;
 
     // Trigger next LLM call
-    return this.execute(runId, { continueConversation: true });
+    return this.execute(runId, { continueConversation: true }, true);
   }
 
   /**
@@ -2404,11 +2622,17 @@ class RunOrchestrator {
     const run = this.activeRuns.get(runId);
     if (run?.config?.provider === 'hermes' && run.hermes?.remoteRunId && this.hermesTransport) {
       const profile = this._getHermesProfile(run.config);
-      if (run.status === 'stopping') return true;
+      if (run.status === 'stopping' && run.hermes.stopRequested) return true;
+      const previousStatus = run.status;
       run.status = 'stopping';
-      await this.hermesTransport.stopRun(profile, run.hermes.remoteRunId, {
-        sessionKey: run.hermes.sessionKey,
-      });
+      try {
+        await this.hermesTransport.stopRun(profile, run.hermes.remoteRunId, {
+          sessionKey: run.hermes.sessionKey,
+        });
+      } catch (error) {
+        run.status = previousStatus;
+        throw error;
+      }
       run.hermes.stopRequested = true;
       // Keep the run and profile lock until Hermes reports a terminal state.
       // The active SSE stream or status recovery path will perform teardown.
@@ -2858,6 +3082,7 @@ class RunOrchestrator {
       forcedUserToolSatisfied: true,
     };
 
+    if (run.resilience?.wrapUp) return 'none';
     if (run.pageActions?.planner?.completedAt) {
       return run.pageActions.finalVerificationCompleted ? 'none' : 'page_get_state';
     }
@@ -2904,6 +3129,11 @@ class RunOrchestrator {
   _buildSystemPrompt(run, eligibleSkills) {
     const parts = [CORE_INSTRUCTIONS];
     if (run.config.systemPrompt) parts.push(run.config.systemPrompt);
+    if (run.resilience?.wrapUpNotice) {
+      parts.push(
+        'RUN BUDGET: This task is near its time or iteration limit. Finish the current work, avoid unnecessary tool calls, and provide a concise summary with any limitation.'
+      );
+    }
 
     // Grounding instructions are phase-aware. Before search, the model may
     // choose the tool. After the slot is consumed, the model must use the
@@ -3268,6 +3498,7 @@ class RunOrchestrator {
       if (!normalized) return;
       if (normalized.type === 'content') {
         run.accumulatedText += normalized.data;
+        this._checkOutputSafety(run);
         this._emitEvent(run.id, normalized);
       } else if (normalized.type === 'reasoning') {
         run.hasReasoning = true;
@@ -3379,6 +3610,7 @@ class RunOrchestrator {
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') throw error;
+      if (error?.code === 'REPETITIVE_OUTPUT') throw error;
       streamError = error;
     }
 
@@ -3463,6 +3695,7 @@ class RunOrchestrator {
     run.completionProvider = 'codex';
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
     const systemPrompt = this._buildSystemPrompt(run, eligibleSkills);
+    this._compactProviderHistory(run);
     const body = buildCodexRequest({
       modelName: run.config.modelName,
       systemPrompt,
@@ -3472,21 +3705,27 @@ class RunOrchestrator {
       reasoningLevel: run.config.reasoningLevel,
     });
 
-    for await (const event of streamCodexResponse({
-      accessToken: auth.accessToken,
-      accountId: auth.accountId,
-      sessionId: run.id,
-      body,
-      signal: run.abortController.signal,
-    })) {
-      this._processCodexEvent(run, event);
+    try {
+      for await (const event of streamCodexResponse({
+        accessToken: auth.accessToken,
+        accountId: auth.accountId,
+        sessionId: run.id,
+        body,
+        signal: run.abortController.signal,
+        timeoutMs: getProviderTimeoutMs(run.config.modelName, this.runResilience.requestTimeoutMs),
+      })) {
+        this._processCodexEvent(run, event);
+      }
+    } catch (error) {
+      throw this._markProviderError(error);
     }
 
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
     } else if (allowRecovery && this._shouldRecoverEmptyResponse(run)) {
-      this._prepareEmptyResponseRecovery(run);
-      await this._executeCodex(run, [], { allowRecovery: false, recovery: true });
+      await this._executeEmptyResponseRecovery(run, () =>
+        this._executeCodex(run, [], { allowRecovery: false, recovery: true })
+      );
     } else {
       if (recovery && run.accumulatedText.trim()) run.recoverySucceeded = true;
       await this._finalizeTextResponse(run);
@@ -3500,6 +3739,7 @@ class RunOrchestrator {
       const delta = String(event.delta || '');
       if (delta) {
         run.accumulatedText += delta;
+        this._checkOutputSafety(run);
         this._emitEvent(run.id, { type: 'content', data: delta });
       }
       return;
@@ -3579,6 +3819,7 @@ class RunOrchestrator {
     // requestConfig.messages absorbed in execute()).
     const eligibleSkills = this.skillManager.getEligibleSnapshot();
     const systemPrompt = this._buildSystemPrompt(run, eligibleSkills);
+    this._compactProviderHistory(run);
     const messages = run.conversationHistory
       .filter((m) => m.role !== 'system')
       .map((m) => ({ ...m }));
@@ -3600,15 +3841,30 @@ class RunOrchestrator {
           : { type: 'function', function: { name: effectiveToolChoice } };
     }
 
-    const response = await fetch(llmEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-      signal: run.abortController.signal,
-    });
+    const requestTimeout = createTimeoutSignal(
+      run.abortController.signal,
+      getProviderTimeoutMs(modelName, this.runResilience.requestTimeoutMs)
+    );
+    let response;
+    try {
+      response = await fetch(llmEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: requestTimeout.signal,
+      });
+    } catch (error) {
+      requestTimeout.cleanup();
+      if (requestTimeout.timedOut && !run.abortController.signal.aborted) {
+        const timeoutError = new Error('Provider request timed out.');
+        timeoutError.code = 'provider_timeout';
+        throw this._markProviderError(timeoutError);
+      }
+      throw this._markProviderError(error);
+    }
 
     if (!response.ok) {
       const errorText = await readBoundedResponseText(response);
@@ -3616,34 +3872,50 @@ class RunOrchestrator {
         run.webSearch?.enabled && (response.status === 400 || response.status === 422)
           ? ' The selected endpoint may not support function calling; disable Web grounding or choose a tool-capable model.'
           : '';
-      throw new Error(`API error ${response.status}: ${errorText}${toolHint}`);
+      const error = new Error(
+        `API error ${response.status}: ${redactProviderErrorMessage(errorText)}${toolHint}`
+      );
+      requestTimeout.cleanup();
+      throw this._markProviderError(error, response.status);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    try {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        buffer = appendBoundedSseBuffer(buffer, decoder.decode(value, { stream: true }));
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
 
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') continue;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') continue;
 
-        try {
-          const parsed = JSON.parse(data);
-          await this._processOpenAIChunk(run, parsed);
-        } catch (e) {
-          console.warn('[Orchestrator] Failed to parse chunk:', e.message);
+          try {
+            const parsed = JSON.parse(data);
+            await this._processOpenAIChunk(run, parsed);
+          } catch (error) {
+            if (error?.code === 'REPETITIVE_OUTPUT') throw error;
+            console.warn('[Orchestrator] Failed to parse chunk:', error.message);
+          }
         }
       }
+    } catch (error) {
+      if (requestTimeout.timedOut && !run.abortController.signal.aborted) {
+        const timeoutError = new Error('Provider request timed out.');
+        timeoutError.code = 'provider_timeout';
+        throw this._markProviderError(timeoutError);
+      }
+      throw this._markProviderError(error);
+    } finally {
+      requestTimeout.cleanup();
     }
 
     // Drain any tail held back while waiting on a possible inline-think tag.
@@ -3654,6 +3926,7 @@ class RunOrchestrator {
     }
     if (tail.content) {
       run.accumulatedText += tail.content;
+      this._checkOutputSafety(run);
       this._emitEvent(run.id, { type: 'content', data: tail.content });
     }
 
@@ -3663,8 +3936,9 @@ class RunOrchestrator {
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
     } else if (allowRecovery && this._shouldRecoverEmptyResponse(run)) {
-      this._prepareEmptyResponseRecovery(run);
-      await this._executeOpenAI(run, [], { allowRecovery: false, recovery: true });
+      await this._executeEmptyResponseRecovery(run, () =>
+        this._executeOpenAI(run, [], { allowRecovery: false, recovery: true })
+      );
     } else {
       if (recovery && run.accumulatedText.trim()) run.recoverySucceeded = true;
       await this._finalizeTextResponse(run);
@@ -3742,6 +4016,7 @@ class RunOrchestrator {
     run.completionProvider = 'anthropic';
 
     const reasoningEnabled = modelSupportsReasoning(modelName);
+    this._compactProviderHistory(run);
 
     const body = {
       model: modelName.replace('anthropic:', ''),
@@ -3833,8 +4108,9 @@ class RunOrchestrator {
     if (run.activeToolCall || (run.activeToolCalls && run.activeToolCalls.size > 0)) {
       await this._finalizeToolCall(run);
     } else if (allowRecovery && this._shouldRecoverEmptyResponse(run)) {
-      this._prepareEmptyResponseRecovery(run);
-      await this._executeAnthropic(run, [], { allowRecovery: false, recovery: true });
+      await this._executeEmptyResponseRecovery(run, () =>
+        this._executeAnthropic(run, [], { allowRecovery: false, recovery: true })
+      );
     } else {
       if (recovery && run.accumulatedText.trim()) run.recoverySucceeded = true;
       await this._finalizeTextResponse(run);
@@ -3872,6 +4148,7 @@ class RunOrchestrator {
       }
       if (content) {
         run.accumulatedText += content;
+        this._checkOutputSafety(run);
         this._emitEvent(run.id, { type: 'content', data: content });
       }
     }
@@ -3941,6 +4218,7 @@ class RunOrchestrator {
     if (event.type === 'content_block_delta') {
       if (event.delta.type === 'text_delta') {
         run.accumulatedText += event.delta.text;
+        this._checkOutputSafety(run);
         this._emitEvent(run.id, { type: 'content', data: event.delta.text });
       } else if (event.delta.type === 'thinking_delta') {
         if (!run.thinkingBlock) run.thinkingBlock = { thinking: '', signature: '' };
@@ -4000,6 +4278,12 @@ class RunOrchestrator {
         ? [run.activeToolCall]
         : [];
     if (toolCalls.length === 0) return;
+    if (run.resilience?.wrapUp) {
+      run.activeToolCall = null;
+      run.activeToolCalls?.clear?.();
+      await this._finishAtRunLimit(run);
+      return;
+    }
 
     const assistantMessage = {
       role: 'assistant',
@@ -4092,7 +4376,7 @@ class RunOrchestrator {
     run.activeToolCall = null;
     run.activeToolCalls?.clear?.();
     if (this.activeRuns.has(run.id)) {
-      await this.execute(run.id, { continueConversation: true });
+      await this.execute(run.id, { continueConversation: true }, true);
     }
   }
 
@@ -4145,6 +4429,12 @@ class RunOrchestrator {
    * Finalize text response
    */
   async _finalizeTextResponse(run) {
+    try {
+      this._checkOutputSafety(run, true);
+    } catch (error) {
+      this._terminateRun(run.id, { type: 'error', error: error.message }, { run });
+      return;
+    }
     run.status = 'complete';
 
     // Don't persist an empty assistant turn (reasoning-only response with no
@@ -4255,9 +4545,16 @@ class RunOrchestrator {
       startedAt: run.startedAt || null,
       updatedAt: run.journalUpdatedAt || Date.now(),
       eventSequence: run.eventSequence || 0,
-      objective: String(
-        run.config?.messages?.find?.((message) => message?.role === 'user')?.content || ''
-      ).slice(0, 4_000),
+      objective: String(run.objective || '').slice(0, 4_000),
+      resilience: run.resilience
+        ? {
+            apiCallCount: Number(run.resilience.apiCallCount || 0),
+            maxIterations: Number(run.resilience.maxIterations || 0),
+            runBudgetMs: Number(run.resilience.runBudgetMs || 0),
+            wrapUp: Boolean(run.resilience.wrapUp),
+            contextCompactions: Number(run.resilience.contextCompactions || 0),
+          }
+        : null,
       pageActions: run.pageActions
         ? {
             enabled: Boolean(run.pageActions.enabled),

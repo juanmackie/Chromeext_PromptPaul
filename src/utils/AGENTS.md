@@ -28,6 +28,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `keyedOperationLock.js` owns small per-key runtime locks used to serialize Hermes session-key creation and reject overlapping session resets.
 - `runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages.
 - `streamSafety.js` owns bounded SSE buffers and provider error-body reads.
+- `runResilience.js` owns bounded provider retry classification, reasoning-model request timeout floors, deterministic conversation compaction, run-output repetition checks, and safe provider error labels.
 - `pageDom.js` owns bounded semantic snapshot normalization, optional readable-content bounds, element masking, safe display formatting, and snapshot identity checks for current-page actions.
 - `pageActionPolicy.js` owns page-action argument validation, risk classification, hard blocks, trusted-mode decisions, and confirmation metadata. It also validates the separate bounded tab tools. It must never authorize arbitrary JavaScript or unowned tabs.
 - `pageActionCheckpoint.js` owns bounded session-only Act mutation checkpoints and explicit-recovery metadata. It never stores DOM, page text, notes, credentials, or raw values.
@@ -45,7 +46,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `runState.js` must stay DOM-light (element-like object contract) so it remains unit-testable without a browser, and its state list must match the `[data-run-state]` styles in `ui-primitives.css`.
 - Page snapshot/policy helpers must remain deterministic and unit-testable in Node; snapshot data is bounded and sensitive-field values are never returned. Sensitivity matching must distinguish value-bearing controls from ordinary navigation labels (for example, “Video Cards”).
 - Privileged background messages must require an extension-page sender; content-script requests must bind to the sender tab; run mutations must include the opaque owner token issued at run start.
-- Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`.
+- Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`. Provider errors shown to users must also use the bounded redaction helper from `runResilience.js`.
 - Page-state fingerprints and tab arguments must stay bounded, deterministic, and safe to log. Safe HTTP(S) tab origins are admitted by the bounded Act lease; model-provided flags cannot bypass ownership or policy.
 - Scope/diff output may be included in a mutation result only as bounded selector-free metadata: indices, flags, counts, and snapshot IDs. Region byte sizes remain evaluation data. The helper must never expose credentials, raw page history, or screenshots.
 
