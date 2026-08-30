@@ -149,6 +149,9 @@
       flex-direction: column;
       align-items: center;
       width: 184px;
+      isolation: isolate;
+      opacity: 0.98;
+      background-color: var(--notch-surface);
       pointer-events: none;
       color: var(--notch-ink);
       color-scheme: dark;
@@ -235,6 +238,7 @@
 
     .notch-rail,
     .notch-panel {
+      background-color: var(--notch-surface);
       pointer-events: auto;
     }
 
