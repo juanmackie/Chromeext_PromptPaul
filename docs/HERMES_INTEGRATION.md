@@ -43,7 +43,7 @@ Hermes approval requests appear as cards in the side panel. Prompt Paul binds ea
 
 ## Current limitation
 
-Hermes server tools work through the released API. Prompt Paul custom HTTP tools are intentionally not registered for Hermes runs because the gateway owns tool execution. Prompt Paul page actions are disabled in Hermes mode until Hermes exposes a stable client-tool result protocol. The extension does not simulate browser actions through prompt text.
+Hermes server tools work through the released API. Prompt Paul custom HTTP tools remain gateway-owned and are not registered for Hermes runs. Hermes Act uses an explicit client-tool contract: the gateway must advertise `features.run_client_tools: true` and `endpoints.run_tool_result` as `POST /v1/runs/{run_id}/tool-result`. Prompt Paul sends bounded Act definitions in `client_tools`, receives `client_tool.request` SSE events, executes only the allowlisted page tools, and posts the result with the opaque `tool_call_id`. All existing policy, approval, tab-ownership, budget, and receipt checks still apply. The extension rejects Hermes Act runs when the gateway does not advertise this contract; it does not simulate browser actions through prompt text.
 
 Prompt Paul forwards the core instructions, saved profile instructions, and only
 the explicitly requested instruction-based Prompt Paul skill to Hermes. Hermes
@@ -57,6 +57,7 @@ dispatch is not available for Hermes.
 - **Endpoint required after typing a URL:** click **Save Settings** before testing. A new or
   changed endpoint is not sent directly from the Options form to the background gateway check.
 - **Unsupported gateway:** upgrade Hermes to a version whose `/v1/capabilities` advertises `run_submission`, `run_status`, `run_events_sse`, `run_stop`, and the approval feature (advertised as `run_approval` or, on released 0.20.x gateways, `run_approval_response`). Session route errors are separate because session creation is not performed by the connection test.
+- **Hermes Act unavailable:** the gateway must also advertise `features.run_client_tools: true` and `endpoints.run_tool_result` with `method: "POST"` and `path: "/v1/runs/{run_id}/tool-result"`. Hermes Agent v0.18.2 does not advertise or implement this contract. Upgrade or patch the gateway first; until then, use an API/Codex profile for browser Act or attach the email content to the chat.
 - **Dashboard port used by mistake:** the API gateway and the dashboard run on separate ports. Enter the API gateway port, not the dashboard port, or the connection test can report `Hermes capability discovery failed (HTTP 503): Auth provider 'nous' unreachable` when the dashboard answers API routes. See `HERMES_TROUBLESHOOTING.md`.
 - **Approval not visible after restart:** reopen the side panel. Prompt Paul never auto-approves a request.
 - **Images rejected:** confirm that the Hermes gateway advertises multimodal input support.

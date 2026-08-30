@@ -1,3 +1,8 @@
+/**
+ * @fileoverview Consolidated content extraction script. Includes Readability,
+ *   Turndown, YouTube transcript extraction, and message listening.
+ * @module contentScriptUnified
+ */
 // content_script_unified.js - Consolidated content extraction script
 // Includes: Readability, Turndown, YouTube Transcript extraction, and Message Listening
 

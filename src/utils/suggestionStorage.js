@@ -1,3 +1,7 @@
+/**
+ * @fileoverview Normalizes and caps custom site suggestions for Prompt Paul.
+ * @module suggestionStorage
+ */
 const STORAGE_KEY = 'customSiteSuggestions';
 const MAX_SUGGESTIONS = 60;
 const MAX_COMMAND_LENGTH = 80;

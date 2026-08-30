@@ -102,7 +102,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 2. `background.js` validates the stored profile, checks `/health` and `/v1/capabilities`, requires the advertised run submission/status/SSE/stop/approval features, and starts Hermes runs through `RunOrchestrator`.
 3. `HermesTransport` creates or reuses one opaque Hermes session per profile and local conversation identity, sends bounded `conversation_history` plus the latest structured user input, recovers only explicit `session_not_found` run failures, and observes `/v1/runs/{id}/events` through a bounded SSE parser.
 4. Hermes message, reasoning, server-tool, approval, completion, failure, and cancellation events are adapted to the existing `orchestratorEvent` vocabulary. Server tools stay owned by Hermes; Prompt Paul does not execute their payloads.
-5. Prompt Paul renders Hermes approval cards, ties decisions to the pending opaque approval ID, and sends only validated approval choices back through the background worker. Act/page actions remain disabled until Hermes exposes a documented client-tool result protocol.
+5. Prompt Paul renders Hermes approval cards, ties decisions to the pending opaque approval ID, and sends only validated approval choices back through the background worker. Hermes Act is capability-gated: the gateway must advertise `run_client_tools` and `POST /v1/runs/{run_id}/tool-result`; client calls reuse the bounded page-action policy, approvals, ownership, and receipts.
 
 ### Reasoning responses
 

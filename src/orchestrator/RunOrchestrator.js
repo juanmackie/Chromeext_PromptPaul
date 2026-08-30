@@ -30,7 +30,11 @@ import {
 import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../utils/pageDom.js';
 import { buildHermesTurn } from '../utils/hermesContext.js';
 import { buildCodexRequest, streamCodexResponse } from './CodexTransport.js';
-import { extractHermesOutputText, normalizeHermesEvent } from './HermesTransport.js';
+import {
+  extractHermesOutputText,
+  normalizeHermesEvent,
+  supportsHermesClientTools,
+} from './HermesTransport.js';
 import {
   buildPageTaskMemoryPrompt,
   compactPageTaskHistory,
@@ -122,6 +126,7 @@ class RunOrchestrator {
       });
     this.codexAuthProvider = options.codexAuthProvider;
     this.hermesTransport = options.hermesTransport || null;
+    this.hermesClientToolsProvider = options.hermesClientToolsProvider;
     this.activeRuns = new Map(); // runId -> RunState
     this.hermesProfileRuns = new Map(); // profileId -> active runId
     this.toolExecutions = new Set(); // Set of "runId:toolCallId"
@@ -299,8 +304,20 @@ class RunOrchestrator {
       normalizedToolChoice !== 'web_search'
         ? normalizedToolChoice
         : null;
+    let hermesClientToolsEnabled = false;
+    if (config.provider === 'hermes' && config.pageActions) {
+      if (typeof this.hermesClientToolsProvider !== 'function') {
+        throw new Error('Hermes Act requires a gateway with the documented client-tool protocol.');
+      }
+      const capability = await this.hermesClientToolsProvider(config);
+      hermesClientToolsEnabled = capability === true || supportsHermesClientTools(capability);
+      if (!hermesClientToolsEnabled) {
+        throw new Error(
+          'Hermes gateway does not advertise the client-tool protocol required for Act.'
+        );
+      }
+    }
     const pageActionsEnabled = Boolean(
-      config.provider !== 'hermes' &&
       config.pageActions &&
       config.sourceTabId &&
       (!this.pageActionAvailabilityProvider ||
@@ -375,6 +392,8 @@ class RunOrchestrator {
         sessionKey: '',
         stopRequested: false,
         pendingApproval: null,
+        clientToolsEnabled: hermesClientToolsEnabled,
+        clientToolResults: new Map(),
       },
       toolChoiceState: {
         original: normalizedToolChoice,
@@ -2804,16 +2823,10 @@ class RunOrchestrator {
   }
 
   _buildHermesInstructions(run) {
-    const parts = [CORE_INSTRUCTIONS, String(run.config.systemPrompt || '').trim()];
-    if (run.config.requestedSkill) {
-      const skill = this.skillManager.resolveSkill(run.config.requestedSkill);
-      if (skill) {
-        parts.push(this._formatSkillBlock(skill));
-      } else {
-        console.warn(`[Orchestrator] Requested skill '${run.config.requestedSkill}' not found`);
-      }
-    }
-    return parts.filter(Boolean).join('\n\n');
+    // Hermes receives the same Act instructions as the local providers when
+    // the gateway has opted into client tools. The tool declaration remains a
+    // separate structured field on the run request.
+    return this._buildSystemPrompt(run, []).trim();
   }
 
   async _waitForHermesRun(profile, remoteRunId, sessionKey, signal, initialError) {
@@ -2880,12 +2893,25 @@ class RunOrchestrator {
    * @returns {Promise<void>}
    * @private
    */
+  _isHermesClientToolName(name) {
+    return Boolean(
+      isPageActionName(name) ||
+      isPageTabActionName(name) ||
+      isPageUserInputActionName(name) ||
+      isPageManualInterventionActionName(name) ||
+      name === 'page_record_note' ||
+      name === 'page_replan'
+    );
+  }
+
   async _executeHermes(run) {
     if (!this.hermesTransport) {
       throw new Error('Hermes support is not available in this build.');
     }
-    if (run.pageActions?.enabled) {
-      throw new Error('Act is not available with Hermes until the gateway supports browser tools.');
+    if (run.pageActions?.enabled && !run.hermes?.clientToolsEnabled) {
+      throw new Error(
+        'Hermes gateway does not advertise the client-tool protocol required for Act.'
+      );
     }
 
     const profile = this._getHermesProfile(run.config);
@@ -2926,6 +2952,14 @@ class RunOrchestrator {
 
     const hermesTurn = this._getHermesTurn(run);
     const instructions = this._buildHermesInstructions(run);
+    const clientTools = run.pageActions?.enabled
+      ? [
+          ...this._getPageActionTools(),
+          ...this._getPageUserInputTools(),
+          ...this._getPageTaskMemoryTools(),
+          ...(run.pageActions.multiTabEnabled ? this._getPageTabTools() : []),
+        ]
+      : [];
 
     let started;
     try {
@@ -2935,6 +2969,7 @@ class RunOrchestrator {
         sessionId,
         instructions,
         model: String(run.config.modelName || '').trim(),
+        clientTools,
         sessionKey,
         signal: run.abortController.signal,
       });
@@ -2950,6 +2985,7 @@ class RunOrchestrator {
         sessionId,
         instructions,
         model: String(run.config.modelName || '').trim(),
+        clientTools,
         sessionKey,
         signal: run.abortController.signal,
       });
@@ -2977,6 +3013,59 @@ class RunOrchestrator {
         if (normalized.output !== undefined)
           this._applyHermesRecoveredOutput(run, normalized.output);
         this._recordCompletionUsage(run, normalized.usage);
+      } else if (normalized.type === 'hermes_client_tool_call') {
+        const toolCall = normalized.toolCall;
+        const toolCallId = String(toolCall?.id || '').trim();
+        const toolName = String(toolCall?.function?.name || '').trim();
+        if (!toolCallId || !toolName) {
+          throw new Error('Hermes returned an invalid client-tool request.');
+        }
+
+        this._emitEvent(run.id, {
+          type: 'tool_start',
+          capability: 'hermes_client',
+          toolCall: {
+            id: toolCallId,
+            type: 'client_tool',
+            function: { name: toolName },
+          },
+        });
+
+        run.hermes.clientToolResults ||= new Map();
+        let result = run.hermes.clientToolResults.get(toolCallId);
+        if (!result) {
+          if (this._isHermesClientToolName(toolName)) {
+            result = await this.executeTool(run.id, toolCall);
+          } else {
+            result = {
+              success: true,
+              result: {
+                error: 'UNKNOWN_CAPABILITY',
+                message: 'This client tool is not available to Hermes.',
+              },
+            };
+          }
+          run.hermes.clientToolResults.set(toolCallId, result);
+        }
+
+        await this.hermesTransport.submitToolResult(profile, started.runId, toolCallId, result, {
+          sessionKey,
+        });
+        this._emitEvent(run.id, {
+          type: 'tool_complete',
+          capability: 'hermes_client',
+          toolCall: {
+            id: toolCallId,
+            type: 'client_tool',
+            function: { name: toolName },
+          },
+          result: {
+            success: result?.success === true,
+            summary: String(
+              result?.result?.message || result?.result?.error || 'Client tool completed.'
+            ).slice(0, 240),
+          },
+        });
       } else if (normalized.type === 'hermes_approval_required') {
         run.hermes.pendingApproval = normalized;
         this._emitEvent(run.id, normalized);

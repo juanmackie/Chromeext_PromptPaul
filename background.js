@@ -33,7 +33,7 @@ import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDet
 import { PageTabController } from './src/orchestrator/PageTabController.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
-import { HermesTransport } from './src/orchestrator/HermesTransport.js';
+import { HermesTransport, supportsHermesClientTools } from './src/orchestrator/HermesTransport.js';
 import { createKeyedOperationLock } from './src/utils/keyedOperationLock.js';
 import {
   isContentScriptSender,
@@ -66,6 +66,7 @@ const NOTCH_ACTIONS = new Set([
   'openChat',
   'openActions',
   'summarizePage',
+  'prepareDictation',
   'explainSelection',
   'runPinnedInstruction',
   'sendInstruction',
@@ -74,7 +75,10 @@ const NOTCH_ACTIONS = new Set([
 const NOTCH_MAX_SELECTION_CHARS = 20_000;
 const NOTCH_MAX_PAGE_CHARS = 200_000;
 const NOTCH_MAX_INSTRUCTION_CHARS = 20_000;
+const NOTCH_DICTATION_LEASE_KEY = 'notchDictationPanelLease';
+const NOTCH_DICTATION_LEASE_MS = 10 * 60 * 1000;
 const activeNotchRunTabs = new Map();
+const activeNotchDictationLeases = new Map();
 const HERMES_API_KEYS_KEY = 'hermesApiKeys';
 const HERMES_SESSIONS_KEY = 'hermesSessions';
 const HERMES_SESSION_KEYS_KEY = 'hermesSessionKeys';
@@ -1397,6 +1401,15 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
 const runOrchestrator = new RunOrchestrator(skillManager, {
   codexAuthProvider: (profileId) => codexAuthManager.getValidAuth(profileId),
   hermesTransport,
+  hermesClientToolsProvider: async (config) => {
+    const capabilities = await hermesTransport.getCapabilities({
+      id: config?.profileId,
+      hermesEndpoint: getHermesEndpoint(config),
+      hermesProfile: config?.hermesProfile,
+      hermesRemoteConfirmed: config?.hermesRemoteConfirmed === true,
+    });
+    return supportsHermesClientTools(capabilities) ? capabilities : false;
+  },
   userToolExecutor: (tool, args) =>
     callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
   webSearchStatusProvider: async () => Boolean(await getBraveSearchApiKey()),
@@ -2119,6 +2132,66 @@ async function createNotchPanelAction(action, tabId, payload = {}, panelOpenProm
 }
 
 /**
+ * Stores a short-lived lease for a panel opened during the dictation gesture.
+ * @param {number} tabId - Sender tab ID.
+ * @returns {Promise<string>} Opaque lease token.
+ */
+async function createNotchDictationLease(tabId) {
+  const lease = {
+    token: `dictation-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`,
+    expiresAt: Date.now() + NOTCH_DICTATION_LEASE_MS,
+  };
+  activeNotchDictationLeases.set(tabId, lease);
+  try {
+    const result = await chrome.storage.session.get(NOTCH_DICTATION_LEASE_KEY);
+    const leases =
+      result?.[NOTCH_DICTATION_LEASE_KEY] && typeof result[NOTCH_DICTATION_LEASE_KEY] === 'object'
+        ? { ...result[NOTCH_DICTATION_LEASE_KEY] }
+        : {};
+    leases[String(tabId)] = lease;
+    await chrome.storage.session.set({ [NOTCH_DICTATION_LEASE_KEY]: leases });
+  } catch (_) {
+    // The in-memory lease still covers the current service-worker lifetime.
+  }
+  return lease.token;
+}
+
+/**
+ * Consumes a panel lease without opening the panel again.
+ * @param {number} tabId - Sender tab ID.
+ * @param {string} token - Opaque lease token.
+ * @returns {Promise<boolean>} True when the lease is valid and unused.
+ */
+async function consumeNotchDictationLease(tabId, token) {
+  let lease = activeNotchDictationLeases.get(tabId) || null;
+  if (!lease) {
+    try {
+      const result = await chrome.storage.session.get(NOTCH_DICTATION_LEASE_KEY);
+      lease = result?.[NOTCH_DICTATION_LEASE_KEY]?.[String(tabId)] || null;
+    } catch (_) {
+      lease = null;
+    }
+  }
+
+  const valid = Boolean(lease?.token === token && lease.expiresAt > Date.now());
+  activeNotchDictationLeases.delete(tabId);
+  try {
+    const result = await chrome.storage.session.get(NOTCH_DICTATION_LEASE_KEY);
+    const leases =
+      result?.[NOTCH_DICTATION_LEASE_KEY] && typeof result[NOTCH_DICTATION_LEASE_KEY] === 'object'
+        ? { ...result[NOTCH_DICTATION_LEASE_KEY] }
+        : {};
+    if (leases[String(tabId)]?.token === token) {
+      delete leases[String(tabId)];
+      await chrome.storage.session.set({ [NOTCH_DICTATION_LEASE_KEY]: leases });
+    }
+  } catch (_) {
+    // A consumed in-memory lease cannot be reused in this worker.
+  }
+  return valid;
+}
+
+/**
  * Handle the small, allowlisted action surface exposed by the browser-page notch.
  * Content-script requests are always bound to the sender tab.
  * @param {Object} request - Runtime request from the notch content script.
@@ -2143,7 +2216,18 @@ async function handleNotchAction(request, sender) {
   if (!isUsablePanelTab(sender.tab)) {
     return { success: false, error: 'Prompt Paul is not available on this page.' };
   }
-  const panelOpenPromise = action === 'openOptions' ? null : chrome.sidePanel.open({ tabId });
+  const requestedDictationToken =
+    action === 'sendInstruction' && typeof request?.dictationPanelToken === 'string'
+      ? request.dictationPanelToken.trim()
+      : '';
+  const panelAlreadyOpen = requestedDictationToken
+    ? await consumeNotchDictationLease(tabId, requestedDictationToken)
+    : false;
+  if (requestedDictationToken && !panelAlreadyOpen) {
+    return { success: false, error: 'The dictation session expired. Start dictation again.' };
+  }
+  const panelOpenPromise =
+    action === 'openOptions' || panelAlreadyOpen ? null : chrome.sidePanel.open({ tabId });
   const tab = await chrome.tabs.get(tabId);
   if (!isUsablePanelTab(tab)) {
     if (panelOpenPromise) await panelOpenPromise.catch(() => {});
@@ -2153,6 +2237,11 @@ async function handleNotchAction(request, sender) {
   if (action === 'openOptions') {
     await chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
     return { success: true };
+  }
+
+  if (action === 'prepareDictation') {
+    await panelOpenPromise;
+    return { success: true, panelToken: await createNotchDictationLease(tabId) };
   }
 
   if (action === 'openChat') {
@@ -2251,7 +2340,7 @@ async function handleNotchAction(request, sender) {
         includePageContext: request?.includePageContext === true,
         act: request?.act === true,
       },
-      panelOpenPromise
+      panelAlreadyOpen ? Promise.resolve() : panelOpenPromise
     );
     return { success: true, queued: result.queuedFallback };
   }
@@ -2657,6 +2746,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               result?.capabilities && typeof result.capabilities === 'object'
                 ? Object.keys(result.capabilities).length
                 : 0,
+            clientToolsAvailable: supportsHermesClientTools(result?.capabilities),
           },
         });
       })
@@ -2730,7 +2820,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (hermesSessionResetLock.isLocked(effectiveConfig.profileId)) {
             throw new Error('Hermes New chat is still resetting the previous session.');
           }
-          effectiveConfig.pageActions = false;
+          if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
+            const sourceTabId = await resolvePanelTabId(sender?.tab?.id ?? null, {
+              rejectUnsupportedActive: true,
+            });
+            if (sourceTabId == null) {
+              throw new Error('Act needs an active web page. Open a web page and try again.');
+            }
+            effectiveConfig.sourceTabId = sourceTabId;
+          }
           effectiveConfig.webSearch = false;
         } else if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
           const sourceTabId = await resolvePanelTabId(sender?.tab?.id ?? null, {

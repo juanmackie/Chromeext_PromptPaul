@@ -15,6 +15,9 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'run_stop',
   'run_approval',
 ]);
+const HERMES_CLIENT_TOOL_FEATURE = 'run_client_tools';
+const HERMES_CLIENT_TOOL_RESULT_ROUTE = '/v1/runs/{run_id}/tool-result';
+const MAX_CLIENT_TOOL_RESULT_BYTES = 512 * 1024;
 
 // Released Hermes API servers (0.20.x) advertise the approval feature as
 // `run_approval_response` in /v1/capabilities even though the Hermes docs and
@@ -53,6 +56,26 @@ export function getMissingHermesCapabilities(capabilities) {
   const features = capabilities?.features;
   if (!features || typeof features !== 'object') return [...REQUIRED_CAPABILITIES];
   return REQUIRED_CAPABILITIES.filter((name) => !advertisesFeature(features, name));
+}
+
+/**
+ * Return true when a gateway advertises the Prompt Paul client-tool contract.
+ * Client tools are optional so ordinary Hermes runs remain compatible with
+ * gateways that only execute server-side tools.
+ * @param {object|null|undefined} capabilities - Capability discovery payload.
+ * @returns {boolean}
+ */
+export function supportsHermesClientTools(capabilities) {
+  const features = capabilities?.features;
+  const endpoint = capabilities?.endpoints?.run_tool_result;
+  return Boolean(
+    features &&
+    typeof features === 'object' &&
+    features[HERMES_CLIENT_TOOL_FEATURE] === true &&
+    endpoint &&
+    String(endpoint.method || '').toUpperCase() === 'POST' &&
+    endpoint.path === HERMES_CLIENT_TOOL_RESULT_ROUTE
+  );
 }
 
 /**
@@ -176,6 +199,21 @@ export function normalizeHermesEvent(event) {
     return typeof reasoning === 'string' && reasoning
       ? { type: 'reasoning', data: reasoning }
       : null;
+  }
+  if (type === 'client_tool.request') {
+    const toolCallId = asString(payload?.tool_call_id || payload?.toolCallId || payload?.id);
+    const name = asString(payload?.name || payload?.tool_name);
+    const rawArguments = payload?.arguments ?? payload?.args ?? {};
+    const argumentsText =
+      typeof rawArguments === 'string' ? rawArguments : JSON.stringify(rawArguments);
+    return {
+      type: 'hermes_client_tool_call',
+      toolCall: {
+        id: toolCallId,
+        type: 'function',
+        function: { name, arguments: argumentsText || '{}' },
+      },
+    };
   }
   if (type === 'tool.started') {
     return {
@@ -470,6 +508,7 @@ export class HermesTransport {
       sessionId,
       instructions = '',
       model = '',
+      clientTools = [],
       sessionKey = '',
       signal,
     }
@@ -482,6 +521,9 @@ export class HermesTransport {
       ...(sessionId ? { session_id: sessionId } : {}),
       ...(instructions ? { instructions } : {}),
       ...(model ? { model } : {}),
+      ...(Array.isArray(clientTools) && clientTools.length > 0
+        ? { client_tools: clientTools }
+        : {}),
     };
     const response = await this._request({
       profile,
@@ -593,5 +635,36 @@ export class HermesTransport {
     });
     if (!response.ok) throw await this._safeError(response, 'Hermes approval response failed');
     return true;
+  }
+
+  /**
+   * Submit one result for a gateway-requested client tool call.
+   * @param {object} profile - Hermes profile configuration.
+   * @param {string} runId - Remote Hermes run ID.
+   * @param {string} toolCallId - Opaque gateway tool-call ID.
+   * @param {object} result - Bounded Prompt Paul tool result.
+   * @param {{sessionKey?: string}} [options]
+   * @returns {Promise<object>} Gateway acknowledgement.
+   */
+  async submitToolResult(profile, runId, toolCallId, result, { sessionKey = '' } = {}) {
+    const normalizedRunId = asString(runId);
+    const normalizedToolCallId = asString(toolCallId);
+    if (!normalizedRunId || !normalizedToolCallId) {
+      throw new Error('Hermes client-tool result requires run and tool-call IDs.');
+    }
+    const body = { tool_call_id: normalizedToolCallId, result };
+    const encoded = JSON.stringify(body);
+    if (new TextEncoder().encode(encoded).byteLength > MAX_CLIENT_TOOL_RESULT_BYTES) {
+      throw new Error('Hermes client-tool result is too large.');
+    }
+    const response = await this._request({
+      profile,
+      route: `/v1/runs/${encodeURIComponent(normalizedRunId)}/tool-result`,
+      method: 'POST',
+      body,
+      sessionKey,
+    });
+    if (!response.ok) throw await this._safeError(response, 'Hermes client-tool result failed');
+    return response.json().catch(() => ({}));
   }
 }

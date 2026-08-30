@@ -58,6 +58,7 @@
   const ACTIONS = Object.freeze({
     OPEN_CHAT: 'openChat',
     OPEN_ACTIONS: 'openActions',
+    PREPARE_DICTATION: 'prepareDictation',
     SUMMARIZE_PAGE: 'summarizePage',
     EXPLAIN_SELECTION: 'explainSelection',
     RUN_PINNED_INSTRUCTION: 'runPinnedInstruction',
@@ -78,6 +79,7 @@
   let glowRunId = null;
   let actEnabled = false;
   let dictationRecognition = null;
+  let dictationPanelReady = null;
   let dictationListening = false;
   let dictationFinalText = '';
   let dictationHadError = false;
@@ -92,7 +94,7 @@
       left: 50%;
       z-index: 2147483640;
       display: block;
-      font-family: "Geist Mono", "JetBrains Mono", "SF Mono", "Monaco", monospace;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       transform: translateX(-50%);
     }
 
@@ -101,65 +103,53 @@
     }
 
     .notch-shell {
-      --notch-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
-      --notch-surface: #0a0c10;
-      --notch-surface-deep: #0e1015;
-      --notch-surface-top: #05070a;
-      --notch-surface-raised: #191c23;
-      --notch-surface-hover: rgba(255, 255, 255, 0.08);
-      --notch-edge: rgba(255, 255, 255, 0.12);
-      --notch-edge-soft: rgba(255, 255, 255, 0.08);
-      --notch-ink: #f5f7fa;
+      --notch-spring: cubic-bezier(0.22, 1, 0.36, 1);
+      --notch-surface: rgba(12, 14, 19, 0.97);
+      --notch-surface-deep: #0b0d12;
+      --notch-surface-top: #151821;
+      --notch-surface-raised: rgba(255, 255, 255, 0.055);
+      --notch-surface-hover: rgba(255, 255, 255, 0.095);
+      --notch-edge: rgba(255, 255, 255, 0.115);
+      --notch-edge-soft: rgba(255, 255, 255, 0.065);
+      --notch-ink: #f5f6f8;
       --notch-ink-strong: #ffffff;
-      --notch-ink-muted: rgba(245, 247, 250, 0.82);
-      --notch-ink-subtle: rgba(245, 247, 250, 0.58);
-      --notch-ink-faint: rgba(245, 247, 250, 0.4);
-      --notch-brand: #818cf8;
-      --notch-brand-bright: #a5b4fc;
-      --notch-brand-soft: rgba(129, 140, 248, 0.14);
-      --notch-brand-border: rgba(129, 140, 248, 0.68);
-      --notch-brand-border-soft: rgba(129, 140, 248, 0.5);
-      --notch-ai-cyan: #67e8f9;
-      --notch-ai-violet: #c4b5fd;
-      --notch-energy-gradient: linear-gradient(
-        112deg,
-        var(--notch-brand) 0%,
-        var(--notch-brand-bright) 43%,
-        var(--notch-ai-cyan) 78%,
-        var(--notch-ai-violet) 100%
+      --notch-ink-muted: rgba(245, 246, 248, 0.76);
+      --notch-ink-subtle: rgba(245, 246, 248, 0.52);
+      --notch-ink-faint: rgba(245, 246, 248, 0.34);
+      --notch-brand: #8b8df8;
+      --notch-brand-bright: #b5b6ff;
+      --notch-brand-soft: rgba(139, 141, 248, 0.14);
+      --notch-brand-border: rgba(139, 141, 248, 0.52);
+      --notch-brand-border-soft: rgba(139, 141, 248, 0.3);
+      --notch-ai-cyan: #7dd3e8;
+      --notch-ai-violet: #b6a6e8;
+      --notch-energy-gradient: linear-gradient(100deg, #777af0, #a99ce9 54%, #71c5dc);
+      --notch-energy-soft: radial-gradient(
+        circle at 18% -30%,
+        rgba(139, 141, 248, 0.14),
+        transparent 46%
       );
-      --notch-energy-soft: linear-gradient(
-        112deg,
-        rgba(129, 140, 248, 0.12),
-        rgba(103, 232, 249, 0.05) 68%,
-        transparent 100%
-      );
-      --notch-mark-fill: radial-gradient(
-        circle at 72% 28%,
-        var(--notch-ai-cyan),
-        transparent 48%
-      );
+      --notch-mark-fill: radial-gradient(circle at 68% 28%, #9de3f0, transparent 42%);
       --notch-brand-foreground: #ffffff;
-      --notch-surface-pinned: #141821;
-      --notch-shadow: rgba(0, 0, 0, 0.3);
-      --notch-shadow-soft: rgba(0, 0, 0, 0.16);
+      --notch-surface-pinned: rgba(255, 255, 255, 0.038);
+      --notch-shadow: rgba(2, 4, 10, 0.48);
+      --notch-shadow-soft: rgba(2, 4, 10, 0.28);
       --notch-error: #ffb4ab;
       position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
-      width: 184px;
+      width: 172px;
       isolation: isolate;
-      opacity: 0.98;
-      background-color: var(--notch-surface);
       pointer-events: none;
       color: var(--notch-ink);
       color-scheme: dark;
-      font-family: "Geist Mono", "JetBrains Mono", "SF Mono", "Monaco", monospace;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 13px;
       font-variant-numeric: tabular-nums;
-      line-height: 1.3;
-      transition: width 420ms var(--notch-spring);
+      line-height: 1.35;
+      filter: drop-shadow(0 14px 26px var(--notch-shadow-soft));
+      transition: width 460ms var(--notch-spring), filter 240ms ease;
     }
 
     .notch-shell::before {
@@ -183,47 +173,36 @@
     }
 
     .notch-shell[data-theme='light'] {
-      --notch-surface: #ffffff;
-      --notch-surface-deep: #f8f8fc;
-      --notch-surface-top: #f8f7fc;
-      --notch-surface-raised: #f5f4fb;
-      --notch-surface-hover: rgba(80, 70, 229, 0.08);
-      --notch-edge: rgba(67, 56, 202, 0.2);
-      --notch-edge-soft: rgba(67, 56, 202, 0.12);
-      --notch-ink: #1a1a2e;
-      --notch-ink-strong: #1a1a2e;
-      --notch-ink-muted: rgba(26, 26, 46, 0.82);
-      --notch-ink-subtle: rgba(26, 26, 46, 0.58);
-      --notch-ink-faint: rgba(26, 26, 46, 0.42);
-      --notch-brand: #5046e5;
-      --notch-brand-bright: #6366f1;
-      --notch-brand-soft: rgba(80, 70, 229, 0.12);
-      --notch-brand-border: rgba(80, 70, 229, 0.5);
-      --notch-brand-border-soft: rgba(80, 70, 229, 0.35);
-      --notch-ai-cyan: #0891b2;
-      --notch-ai-violet: #7c3aed;
-      --notch-energy-gradient: linear-gradient(
-        112deg,
-        var(--notch-brand) 0%,
-        var(--notch-brand-bright) 43%,
-        var(--notch-ai-cyan) 78%,
-        var(--notch-ai-violet) 100%
+      --notch-surface: rgba(250, 250, 252, 0.96);
+      --notch-surface-deep: #f4f4f7;
+      --notch-surface-top: #ffffff;
+      --notch-surface-raised: rgba(31, 35, 48, 0.045);
+      --notch-surface-hover: rgba(79, 70, 200, 0.085);
+      --notch-edge: rgba(31, 35, 48, 0.12);
+      --notch-edge-soft: rgba(31, 35, 48, 0.075);
+      --notch-ink: #171821;
+      --notch-ink-strong: #0d0e14;
+      --notch-ink-muted: rgba(23, 24, 33, 0.72);
+      --notch-ink-subtle: rgba(23, 24, 33, 0.5);
+      --notch-ink-faint: rgba(23, 24, 33, 0.34);
+      --notch-brand: #5d5fc7;
+      --notch-brand-bright: #4f51bb;
+      --notch-brand-soft: rgba(93, 95, 199, 0.1);
+      --notch-brand-border: rgba(93, 95, 199, 0.38);
+      --notch-brand-border-soft: rgba(93, 95, 199, 0.24);
+      --notch-ai-cyan: #348aa0;
+      --notch-ai-violet: #7662b4;
+      --notch-energy-gradient: linear-gradient(100deg, #5d5fc7, #806ab9 54%, #398da3);
+      --notch-energy-soft: radial-gradient(
+        circle at 18% -30%,
+        rgba(93, 95, 199, 0.1),
+        transparent 46%
       );
-      --notch-energy-soft: linear-gradient(
-        112deg,
-        rgba(80, 70, 229, 0.08),
-        rgba(8, 145, 178, 0.035) 68%,
-        transparent 100%
-      );
-      --notch-mark-fill: radial-gradient(
-        circle at 72% 28%,
-        var(--notch-ai-cyan),
-        transparent 48%
-      );
+      --notch-mark-fill: radial-gradient(circle at 68% 28%, #72c6d8, transparent 42%);
       --notch-brand-foreground: #ffffff;
-      --notch-surface-pinned: #f4f3fb;
-      --notch-shadow: rgba(31, 25, 79, 0.2);
-      --notch-shadow-soft: rgba(31, 25, 79, 0.12);
+      --notch-surface-pinned: rgba(31, 35, 48, 0.035);
+      --notch-shadow: rgba(31, 35, 48, 0.2);
+      --notch-shadow-soft: rgba(31, 35, 48, 0.12);
       --notch-error: #b42318;
       color-scheme: light;
     }
@@ -233,7 +212,8 @@
     }
 
     .notch-shell[data-expanded='true'] {
-      width: min(360px, calc(100vw - 20px));
+      width: min(390px, calc(100vw - 24px));
+      filter: drop-shadow(0 22px 42px var(--notch-shadow));
     }
 
     .notch-rail,
@@ -248,26 +228,25 @@
       align-items: center;
       justify-content: center;
       width: 100%;
-      height: 31px;
-      min-height: 31px;
-      padding: 3px 7px 4px;
-      overflow: visible;
+      height: 37px;
+      min-height: 37px;
+      padding: 4px 7px;
+      overflow: hidden;
       border: 1px solid var(--notch-edge);
       border-top: 0;
-      border-radius: 0 0 16px 16px;
+      border-radius: 0 0 19px 19px;
       background: var(--notch-energy-soft),
         linear-gradient(180deg, var(--notch-surface-top), var(--notch-surface));
-      box-shadow: 0 7px 22px var(--notch-shadow-soft), inset 0 1px var(--notch-edge-soft);
-      backdrop-filter: blur(20px) saturate(1.25);
-      transition: height 420ms var(--notch-spring), border-radius 520ms var(--notch-spring),
-        box-shadow 220ms ease;
+      box-shadow: inset 0 -1px var(--notch-edge-soft), inset 0 1px rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(24px) saturate(1.25);
+      transition: height 460ms var(--notch-spring), border-radius 460ms var(--notch-spring),
+        border-color 220ms ease, background-color 220ms ease;
     }
 
     .notch-shell[data-expanded='true'] .notch-rail {
-      width: 100%;
-      height: 29px;
-      min-height: 29px;
-      border-color: transparent;
+      height: 42px;
+      min-height: 42px;
+      border-bottom-color: transparent;
       border-radius: 0;
       box-shadow: inset 0 -1px var(--notch-edge-soft);
     }
@@ -286,11 +265,16 @@
       align-items: center;
       justify-content: center;
       width: 100%;
-      height: 18px;
-      padding: 0 4px;
-      border-radius: 12px;
+      height: 28px;
+      padding: 0 8px;
+      border-radius: 14px;
       background: transparent;
       color: var(--notch-ink);
+      transition: background-color 180ms ease, transform 180ms ease;
+    }
+
+    .notch-toggle:active {
+      transform: scale(0.985);
     }
 
     .notch-toggle:hover,
@@ -325,43 +309,51 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 7px;
+      gap: 8px;
       width: 100%;
     }
 
     .notch-toggle-name {
       color: var(--notch-ink-muted);
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 650;
-      letter-spacing: 0.015em;
+      letter-spacing: -0.005em;
     }
 
     .notch-mark {
+      position: relative;
       display: grid;
       place-items: center;
-      width: 15px;
-      height: 15px;
+      width: 19px;
+      height: 19px;
       border: 1px solid var(--notch-brand-border);
-      border-radius: 47% 53% 44% 56%;
+      border-radius: 7px;
       background: var(--notch-mark-fill), var(--notch-brand-soft);
       color: var(--notch-brand-bright);
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.16), 0 0 14px var(--notch-brand-soft);
       font-size: 0;
       line-height: 1;
+      transform: rotate(-3deg);
+      transition: transform 240ms var(--notch-spring), border-color 180ms ease;
+    }
+
+    .notch-toggle:hover .notch-mark {
+      transform: rotate(3deg) scale(1.04);
     }
 
     .notch-mark::before {
-      width: 5px;
-      height: 5px;
+      width: 7px;
+      height: 7px;
       content: '';
-      border-radius: 46% 54% 58% 42%;
+      border-radius: 2px 5px 3px 5px;
       background: currentColor;
-      transform: rotate(-14deg);
+      transform: rotate(18deg);
     }
 
     .notch-status {
-      width: 4px;
-      height: 4px;
-      margin: 0;
+      width: 5px;
+      height: 5px;
+      margin-left: 1px;
       border-radius: 50%;
       background: var(--notch-brand);
       box-shadow: 0 0 0 3px var(--notch-brand-soft);
@@ -372,19 +364,19 @@
       box-shadow: 0 0 0 4px var(--notch-brand-soft), 0 0 12px var(--notch-brand);
       animation: notch-signal 1.1s ease-in-out infinite;
     }
-    }
 
     .notch-panel {
       width: 100%;
       margin: 0;
-      padding: 13px;
+      padding: 14px 14px 15px;
+      overflow: hidden;
       border: 1px solid var(--notch-edge);
       border-top: 0;
-      border-radius: 0 0 20px 20px;
+      border-radius: 0 0 24px 24px;
       background: var(--notch-energy-soft),
         linear-gradient(180deg, var(--notch-surface), var(--notch-surface-deep));
-      box-shadow: 0 18px 44px var(--notch-shadow);
-      backdrop-filter: blur(24px) saturate(1.2);
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(28px) saturate(1.22);
     }
 
     .notch-panel[hidden] {
@@ -442,37 +434,45 @@
     .notch-header {
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 10px;
+      margin-bottom: 9px;
+      padding: 0 2px;
     }
 
     .notch-title {
       display: block;
-      color: var(--notch-ink);
-      font-size: 14px;
-      font-weight: 650;
-      letter-spacing: -0.01em;
+      color: var(--notch-ink-strong);
+      font-size: 17px;
+      font-weight: 680;
+      letter-spacing: -0.035em;
+      line-height: 1.1;
     }
 
     .notch-kicker {
       display: block;
-      margin-top: 2px;
+      margin-top: 4px;
       color: var(--notch-ink-subtle);
       font-size: 10px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.015em;
     }
 
     .notch-close {
       display: grid;
       place-items: center;
-      width: 27px;
-      height: 27px;
-      padding: 0;
-      border-radius: 8px;
-      background: transparent;
+      width: 30px;
+      height: 30px;
+      padding: 0 0 2px;
+      border: 1px solid var(--notch-edge-soft);
+      border-radius: 10px;
+      background: var(--notch-surface-raised);
       color: var(--notch-ink-subtle);
-      font-size: 18px;
+      font-size: 19px;
       line-height: 1;
+      transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+    }
+
+    .notch-close:active {
+      transform: scale(0.94);
     }
 
     .notch-close:hover {
@@ -483,9 +483,16 @@
     .notch-site-row {
       gap: 7px;
       min-width: 0;
-      margin-bottom: 10px;
+      width: fit-content;
+      max-width: 100%;
+      margin-bottom: 11px;
+      padding: 5px 8px;
+      border: 1px solid var(--notch-edge-soft);
+      border-radius: 9px;
+      background: var(--notch-surface-raised);
       color: var(--notch-ink-subtle);
       font-size: 10px;
+      font-weight: 550;
     }
 
     .notch-site-dot {
@@ -494,6 +501,7 @@
       flex: 0 0 auto;
       border-radius: 50%;
       background: var(--notch-brand);
+      box-shadow: 0 0 8px var(--notch-brand);
     }
 
     .notch-site {
@@ -504,35 +512,40 @@
 
     .notch-actions {
       display: grid;
-      gap: 6px;
+      gap: 7px;
     }
 
     .notch-primary-actions {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .notch-action {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
       width: 100%;
-      min-height: 35px;
-      padding: 7px 8px;
-      border: 1px solid var(--notch-edge);
-      border-radius: 9px;
+      min-height: 39px;
+      padding: 8px 10px;
+      border: 1px solid var(--notch-edge-soft);
+      border-radius: 12px;
       background: var(--notch-surface-raised);
       color: var(--notch-ink);
       text-align: left;
-      transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+      transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease,
+        box-shadow 180ms ease;
     }
 
     .notch-primary-actions .notch-action {
-      min-height: 54px;
-      flex-direction: column;
-      justify-content: center;
-      gap: 5px;
-      padding: 7px 4px;
-      text-align: center;
+      min-height: 52px;
+      padding: 9px 11px;
+    }
+
+    .notch-primary-actions .notch-action:first-child {
+      grid-column: 1 / -1;
+      min-height: 58px;
+      border-color: var(--notch-brand-border-soft);
+      background: linear-gradient(105deg, var(--notch-brand-soft), var(--notch-surface-raised));
     }
 
     .notch-primary-actions .notch-action-copy {
@@ -540,11 +553,14 @@
     }
 
     .notch-primary-actions .notch-action-label {
-      justify-content: center;
       overflow: hidden;
-      font-size: 10px;
+      font-size: 11px;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .notch-primary-actions .notch-action-hint {
+      display: block;
     }
 
     .notch-utility-actions {
@@ -649,12 +665,14 @@
 
     .notch-action:hover:not(:disabled) {
       border-color: var(--notch-brand-border);
-      background: var(--notch-brand-soft);
-      transform: translateX(2px);
+      background: var(--notch-surface-hover);
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.06), 0 7px 18px var(--notch-shadow-soft);
+      transform: translateY(-1px);
     }
 
     .notch-action:active:not(:disabled) {
-      transform: translateX(1px) scale(0.99);
+      box-shadow: none;
+      transform: translateY(1px) scale(0.985);
     }
 
     .notch-action:disabled {
@@ -665,20 +683,22 @@
     .notch-action-icon {
       display: grid;
       place-items: center;
-      width: 21px;
-      height: 21px;
+      width: 28px;
+      height: 28px;
       flex: 0 0 auto;
+      border-radius: 9px;
+      background: var(--notch-brand-soft);
       color: var(--notch-brand-bright);
     }
 
     .notch-action-icon svg {
-      width: 17px;
-      height: 17px;
+      width: 16px;
+      height: 16px;
       fill: none;
       stroke: currentColor;
       stroke-linecap: round;
       stroke-linejoin: round;
-      stroke-width: 1.7;
+      stroke-width: 1.75;
     }
 
     .notch-action-copy {
@@ -690,7 +710,8 @@
       gap: 6px;
       color: var(--notch-ink);
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 640;
+      letter-spacing: -0.01em;
     }
 
     .notch-action-hint {
@@ -698,7 +719,8 @@
       overflow: hidden;
       margin-top: 2px;
       color: var(--notch-ink-subtle);
-      font-size: 10px;
+      font-size: 9px;
+      line-height: 1.25;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -708,8 +730,8 @@
     }
 
     .notch-pinned-section {
-      margin-top: 11px;
-      padding-top: 10px;
+      margin-top: 12px;
+      padding-top: 11px;
       border-top: 1px solid var(--notch-edge-soft);
     }
 
@@ -721,11 +743,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin: 0 2px 6px;
+      margin: 0 3px 7px;
       color: var(--notch-ink-subtle);
       font-size: 9px;
-      font-weight: 650;
-      letter-spacing: 0.1em;
+      font-weight: 700;
+      letter-spacing: 0.075em;
       text-transform: uppercase;
     }
 
@@ -742,14 +764,14 @@
     }
 
     .notch-pinned-action {
-      min-height: 34px;
-      padding: 6px 8px;
+      min-height: 40px;
+      padding: 6px 9px;
       background: var(--notch-surface-pinned);
     }
 
     .notch-pinned-action .notch-action-icon {
-      width: 19px;
-      height: 19px;
+      width: 25px;
+      height: 25px;
       color: var(--notch-brand-bright);
     }
 
@@ -771,15 +793,6 @@
       color: var(--notch-error);
     }
 
-    @media (prefers-reduced-motion: no-preference) {
-      .notch-rail {
-        animation: notch-breathe 9s ease-in-out infinite;
-      }
-
-      .notch-shell[data-expanded='true'] .notch-rail {
-        animation: none;
-      }
-    }
 
     @keyframes notch-energy-flow {
       from {
@@ -800,28 +813,20 @@
       }
     }
 
-    @keyframes notch-breathe {
-      0%,
-      100% {
-        border-radius: 0 0 19px 23px;
-      }
-      50% {
-        border-radius: 0 0 23px 18px;
-      }
-    }
-
     @keyframes notch-unfold {
       from {
         opacity: 0;
-        transform: translateY(-14px) scaleY(0.86);
+        clip-path: inset(0 5% 100% 5% round 0 0 20px 20px);
+        transform: translateY(-8px) scale(0.97);
         transform-origin: top center;
       }
-      60% {
+      45% {
         opacity: 1;
       }
       to {
         opacity: 1;
-        transform: translateY(0) scaleY(1);
+        clip-path: inset(0 0 0 0 round 0 0 24px 24px);
+        transform: translateY(0) scale(1);
         transform-origin: top center;
       }
     }
@@ -1080,9 +1085,42 @@
     label.textContent = dictationListening ? 'Send' : 'Dictate';
   }
 
+  function prepareDictationPanel() {
+    const ready = new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(
+          { action: 'notchAction', notchAction: ACTIONS.PREPARE_DICTATION },
+          (response) => {
+            if (chrome.runtime.lastError || !response?.success || !response.panelToken) {
+              setFeedback(
+                response?.error || 'Prompt Paul could not open. Try the extension icon.',
+                'error'
+              );
+              resolve(null);
+              return;
+            }
+            resolve(String(response.panelToken));
+          }
+        );
+      } catch (error) {
+        const message = String(error?.message || error);
+        setFeedback(
+          /extension context invalidated/i.test(message)
+            ? 'Reload this page to reconnect Prompt Paul.'
+            : 'Prompt Paul could not open. Try the extension icon.',
+          'error'
+        );
+        resolve(null);
+      }
+    });
+    dictationPanelReady = ready;
+    return ready;
+  }
+
   function cancelDictation() {
     const recognition = dictationRecognition;
     dictationRecognition = null;
+    dictationPanelReady = null;
     dictationListening = false;
     dictationFinalText = '';
     dictationHadError = false;
@@ -1150,7 +1188,7 @@
       }
     };
 
-    recognition.onend = () => {
+    recognition.onend = async () => {
       if (dictationRecognition !== recognition) return;
       dictationRecognition = null;
       dictationListening = false;
@@ -1163,15 +1201,20 @@
         if (!hadError) setFeedback('No instruction heard.', 'error');
         return;
       }
+      const panelToken = await dictationPanelReady;
+      if (!panelToken) return;
+      dictationPanelReady = null;
       sendAction(ACTIONS.SEND_INSTRUCTION, {
         textPrompt: text,
         act: actEnabled,
+        dictationPanelToken: panelToken,
         includePageContext: true,
       });
     };
 
     try {
       recognition.start();
+      prepareDictationPanel();
     } catch (_) {
       cancelDictation();
       setFeedback('Dictation could not start.', 'error');
@@ -1332,8 +1375,8 @@
         <section id="notch-panel" class="notch-panel" role="dialog" aria-label="Prompt Paul quick actions" hidden>
           <div class="notch-header">
             <div>
-              <span class="notch-title">Prompt Paul</span>
-              <span class="notch-kicker">Quick actions</span>
+              <span class="notch-title">Quick actions</span>
+              <span class="notch-kicker">Prompt Paul · current page</span>
             </div>
             <button class="notch-close" type="button" title="Collapse notch" aria-label="Collapse notch">×</button>
           </div>

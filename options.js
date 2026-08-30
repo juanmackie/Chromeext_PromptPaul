@@ -1622,10 +1622,14 @@ document.getElementById('testHermesButton')?.addEventListener('click', async () 
     });
     if (!response?.success) throw new Error(response?.error || 'Hermes connection failed.');
     const healthWarning = response.result?.healthWarning?.message;
+    const clientToolsAvailable = response.result?.clientToolsAvailable === true;
     if (status) {
+      const actStatus = clientToolsAvailable
+        ? ' Act is available.'
+        : ' Act requires a Hermes gateway with client-tool support.';
       status.textContent = healthWarning
-        ? `Connected to Hermes. ${healthWarning}`
-        : 'Connected to Hermes.';
+        ? `Connected to Hermes. ${healthWarning}${actStatus}`
+        : `Connected to Hermes.${actStatus}`;
     }
   } catch (error) {
     if (status) status.textContent = error.message;

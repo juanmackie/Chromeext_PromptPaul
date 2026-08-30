@@ -296,19 +296,23 @@ describe('executable page-action evaluation matrix', () => {
       success: true,
       snapshot: snapshot(),
     }));
-    const hermesRun = await hermesOrch.startRun({
-      provider: 'hermes',
-      pageActions: true,
-      sourceTabId: 7,
-      tool_choice: 'auto',
-    });
-    const hermes = await hermesOrch.executeTool(
-      hermesRun,
-      call('hermes-page-actions-disabled', 'page_get_state')
+    await expect(
+      hermesOrch.startRun({
+        provider: 'hermes',
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+      })
+    ).rejects.toThrow(/client-tool protocol/i);
+    records.push(
+      record(
+        'hermes-page-actions-disabled',
+        'hermes',
+        { result: { error: 'HERMES_CLIENT_TOOLS_UNAVAILABLE' } },
+        0,
+        0
+      )
     );
-    expect(hermes.result.error).toBe(expected('hermes-page-actions-disabled').failureCode);
-    records.push(record('hermes-page-actions-disabled', 'hermes', hermes, 0, 0));
-    hermesOrch.abort(hermesRun);
 
     expect(new Set(records.map((entry) => entry.caseId))).toEqual(
       new Set(corpus.map((entry) => entry.id))

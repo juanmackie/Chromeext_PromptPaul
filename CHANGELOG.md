@@ -22,6 +22,7 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 
 ### New Features
 
+- **Hermes Act client-tool bridge**: Hermes profiles can use bounded browser actions when the gateway advertises `run_client_tools` and the `/v1/runs/{run_id}/tool-result` endpoint. Unsupported gateways remain safe and report the required upgrade instead of silently ignoring Act.
 - **Long-running Act resilience**: one default-off Act permission now owns up to eight tabs for a run. Opened and switched tabs wait for a ready content-script bridge, safe HTTP(S) navigation does not prompt once per origin, disconnected tabs are quarantined so work can continue elsewhere, and observation/navigation/mutation budgets plus bounded task notes and history compaction keep sustained tasks under control.
 - **Verified page-action receipts**: State-changing actions now report `not_delivered`, `delivered_unverified`, or `delivered_verified` with bounded action-specific evidence. Unverified mutations cannot be repeated until the page is inspected again.
 - **Local manual intervention**: `page_pause_for_user` lets the user complete a safe step in the visible tab. Resume is explicit, invalidates the old snapshot, and requires fresh inspection. Passwords, OTPs, recovery codes, and payment data remain outside chat and run events.

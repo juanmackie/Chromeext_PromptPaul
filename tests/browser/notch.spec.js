@@ -120,6 +120,90 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await expect(host.locator('.notch-pinned-action').nth(1)).toContainText('Proofread text');
     await expect(host.locator('.notch-pinned-more')).toHaveText('+ 1 more in All actions');
     await expect(host.locator('.notch-dictation-action')).toBeVisible();
+    const targetTabId = await harness.evaluate(
+      (targetUrl) =>
+        new Promise((resolve) =>
+          chrome.tabs.query({}, (tabs) =>
+            resolve(tabs.find((tab) => tab.url === targetUrl)?.id || null)
+          )
+        ),
+      target.url()
+    );
+    expect(targetTabId).not.toBeNull();
+    await harness.evaluate(
+      (tabId) =>
+        new Promise((resolve, reject) =>
+          chrome.scripting.executeScript(
+            {
+              target: { tabId },
+              world: 'ISOLATED',
+              func: () => {
+                class MockSpeechRecognition {
+                  constructor() {
+                    this.onresult = null;
+                    this.onerror = null;
+                    this.onend = null;
+                  }
+
+                  start() {
+                    self.__notchMockRecognition = this;
+                  }
+
+                  stop() {
+                    this.onend?.();
+                  }
+                }
+
+                self.SpeechRecognition = MockSpeechRecognition;
+                self.webkitSpeechRecognition = MockSpeechRecognition;
+              },
+            },
+            (results) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
+              resolve(results);
+            }
+          )
+        ),
+      targetTabId
+    );
+    await host.locator('.notch-dictation-action').click();
+    await target.waitForTimeout(6_000);
+    await harness.evaluate(
+      (tabId) =>
+        new Promise((resolve, reject) =>
+          chrome.scripting.executeScript(
+            {
+              target: { tabId },
+              world: 'ISOLATED',
+              func: () => {
+                const recognition = self.__notchMockRecognition;
+                const result = [{ transcript: 'Summarize this page' }];
+                result.isFinal = true;
+                recognition?.onresult?.({ resultIndex: 0, results: [result] });
+                recognition?.onend?.();
+              },
+            },
+            (results) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
+              resolve(results);
+            }
+          )
+        ),
+      targetTabId
+    );
+    await target.waitForTimeout(500);
+    await expect(host.locator('.notch-feedback')).not.toContainText(
+      'may only be called in response to a user gesture'
+    );
+    await expect(host.locator('.notch-panel')).toBeHidden();
+    await toggle.click();
+    await expect(host.locator('.notch-panel')).toBeVisible();
     const actToggle = host.locator('.notch-act-toggle');
     const actForm = host.locator('.notch-act-form');
     await expect(actToggle).toHaveAttribute('aria-pressed', 'false');
@@ -131,16 +215,6 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await expect(actToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(actForm).toBeHidden();
 
-    const targetTabId = await harness.evaluate(
-      (targetUrl) =>
-        new Promise((resolve) =>
-          chrome.tabs.query({}, (tabs) =>
-            resolve(tabs.find((tab) => tab.url === targetUrl)?.id || null)
-          )
-        ),
-      target.url()
-    );
-    expect(targetTabId).not.toBeNull();
     await harness.evaluate(
       (tabId) =>
         new Promise((resolve) =>

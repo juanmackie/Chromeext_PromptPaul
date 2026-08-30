@@ -7,6 +7,7 @@ import {
   normalizeHermesEndpoint,
   normalizeHermesEvent,
   parseHermesEventData,
+  supportsHermesClientTools,
 } from '../src/orchestrator/HermesTransport.js';
 
 describe('HermesTransport', () => {
@@ -49,6 +50,24 @@ describe('HermesTransport', () => {
     expect(getMissingHermesCapabilities({})).toHaveLength(5);
   });
 
+  it('detects the documented Hermes client-tool capability contract', () => {
+    const capabilities = {
+      features: {
+        run_client_tools: true,
+      },
+      endpoints: {
+        run_tool_result: { method: 'POST', path: '/v1/runs/{run_id}/tool-result' },
+      },
+    };
+    expect(supportsHermesClientTools(capabilities)).toBe(true);
+    expect(
+      supportsHermesClientTools({
+        ...capabilities,
+        endpoints: { run_tool_result: { method: 'POST', path: '/wrong' } },
+      })
+    ).toBe(false);
+  });
+
   it('accepts the released gateway run_approval_response feature name', () => {
     expect(
       getMissingHermesCapabilities({
@@ -78,6 +97,21 @@ describe('HermesTransport', () => {
     expect(normalizeHermesEvent({ type: 'message.delta', delta: 'Hello' })).toEqual({
       type: 'content',
       data: 'Hello',
+    });
+    expect(
+      normalizeHermesEvent({
+        type: 'client_tool.request',
+        tool_call_id: 'call-1',
+        name: 'page_get_state',
+        arguments: {},
+      })
+    ).toEqual({
+      type: 'hermes_client_tool_call',
+      toolCall: {
+        id: 'call-1',
+        type: 'function',
+        function: { name: 'page_get_state', arguments: '{}' },
+      },
     });
     expect(
       normalizeHermesEvent({ type: 'approval.request', approval_id: 'a1', summary: 'Run' })
@@ -174,6 +208,34 @@ describe('HermesTransport', () => {
     ).toBe(true);
     expect(calls[0].init.headers.Authorization).toBe('Bearer secret-key');
     expect(calls[0].init.headers['X-Hermes-Session-Key']).toBeUndefined();
+  });
+
+  it('submits a bounded client-tool result without exposing credentials', async () => {
+    let request;
+    const transport = new HermesTransport({
+      credentialProvider: async () => 'secret-key',
+      fetchImpl: async (url, init) => {
+        request = { url, init };
+        return { ok: true, status: 200, json: async () => ({ accepted: true }) };
+      },
+    });
+
+    await expect(
+      transport.submitToolResult(
+        { id: 'p1', hermesEndpoint: 'http://127.0.0.1:8642' },
+        'run-1',
+        'call-1',
+        { success: true, result: { snapshot: 'bounded' } },
+        { sessionKey: 'memory-key' }
+      )
+    ).resolves.toEqual({ accepted: true });
+    expect(request.url).toBe('http://127.0.0.1:8642/v1/runs/run-1/tool-result');
+    expect(JSON.parse(request.init.body)).toEqual({
+      tool_call_id: 'call-1',
+      result: { success: true, result: { snapshot: 'bounded' } },
+    });
+    expect(request.init.headers.Authorization).toBe('Bearer secret-key');
+    expect(request.init.headers['X-Hermes-Session-Key']).toBe('memory-key');
   });
 
   it('includes a bounded gateway error detail without exposing credentials', async () => {

@@ -203,6 +203,29 @@ curl -sS -H "Authorization: Bearer $API_SERVER_KEY" \
 When `/v1/capabilities` returns `200` with the required run features, test the
 Prompt Paul connection again.
 
+### `Hermes Act is unavailable`
+
+Hermes Act requires the optional client-tool contract in addition to the normal
+run features. Confirm that `/v1/capabilities` contains:
+
+```json
+{
+  "features": { "run_client_tools": true },
+  "endpoints": {
+    "run_tool_result": {
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/tool-result"
+    }
+  }
+}
+```
+
+Hermes Agent v0.18.2 does not provide this contract. Upgrade or patch the
+Hermes gateway. Prompt Paul keeps ordinary Hermes chat available, but rejects
+an Act-enabled Hermes run until the capability is present. For immediate Gmail
+work, use an API/Codex profile with Act enabled and remain signed in to Gmail;
+Prompt Paul will not enter passwords, OTPs, or recovery codes.
+
 ### `unsupported_gateway`
 
 The gateway responded to health and capability discovery, but its

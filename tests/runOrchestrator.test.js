@@ -373,6 +373,75 @@ describe('RunOrchestrator Hermes current-turn context', () => {
     expect(submitted[1].history).toEqual([]);
   });
 
+  it('executes a Hermes client-tool request through the existing page-action boundary', async () => {
+    const submitted = [];
+    let startedOptions;
+    const events = [];
+    const transport = {
+      getSessionKey: async () => 'memory-key',
+      getStoredSession: async () => 'session-1',
+      startRun: async (_profile, options) => {
+        startedOptions = options;
+        return { runId: 'remote-run', sessionId: 'session-1' };
+      },
+      streamRun: async (_profile, _runId, options) => {
+        await options.onEvent({
+          type: 'client_tool.request',
+          tool_call_id: 'call-1',
+          name: 'page_get_state',
+          arguments: {},
+        });
+        await options.onEvent({ type: 'run.completed', output: 'Found the page.' });
+      },
+      submitToolResult: async (_profile, _runId, toolCallId, result) => {
+        submitted.push({ toolCallId, result });
+      },
+    };
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      hermesTransport: transport,
+      pageActionExecutor: async () => ({
+        snapshot: { url: 'https://mail.google.com', header: 'Gmail', elements: [] },
+      }),
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    orch._finalizeTextResponse = async () => {};
+    const run = makeHermesRun({
+      sourceTabId: 7,
+      conversationHistory: [{ role: 'user', content: 'Inspect Gmail.' }],
+      pageActions: {
+        enabled: true,
+        multiTabEnabled: false,
+        trustedMode: false,
+        budgets: { observation: 0, navigation: 0, mutation: 0 },
+        budgetWarnings: new Set(),
+        notes: [],
+        unavailableTabs: new Set(),
+        targetTabId: 7,
+        allowedOrigins: new Set(),
+      },
+      hermes: {
+        remoteRunId: null,
+        sessionId: null,
+        sessionKey: '',
+        pendingApproval: null,
+        clientToolsEnabled: true,
+        clientToolResults: new Map(),
+      },
+    });
+    orch.activeRuns.set(run.id, run);
+
+    await orch._executeHermes(run);
+
+    expect(startedOptions.clientTools.map((tool) => tool.function.name)).toContain(
+      'page_get_state'
+    );
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0].toolCallId).toBe('call-1');
+    expect(submitted[0].result.result.snapshot.url).toBe('https://mail.google.com/');
+    expect(events.map((event) => event.type)).toContain('tool_start');
+    expect(events.map((event) => event.type)).toContain('tool_complete');
+  });
+
   it('applies structured output recovered from run-status polling', () => {
     const orch = new RunOrchestrator(createStubSkillManager());
     const events = [];
@@ -549,6 +618,38 @@ describe('RunOrchestrator Hermes current-turn context', () => {
 });
 
 describe('RunOrchestrator Hermes tool boundaries', () => {
+  it('rejects Hermes Act before creating a run without client-tool support', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      hermesClientToolsProvider: async () => false,
+    });
+
+    await expect(
+      orch.startRun({ provider: 'hermes', pageActions: true, sourceTabId: 7 })
+    ).rejects.toThrow(/client-tool protocol/i);
+    expect(orch.activeRuns.size).toBe(0);
+  });
+
+  it('enables Hermes Act only after the gateway capability contract passes', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      hermesClientToolsProvider: async () => ({
+        features: { run_client_tools: true },
+        endpoints: {
+          run_tool_result: { method: 'POST', path: '/v1/runs/{run_id}/tool-result' },
+        },
+      }),
+      pageActionAvailabilityProvider: async () => true,
+    });
+
+    const runId = await orch.startRun({
+      provider: 'hermes',
+      pageActions: true,
+      sourceTabId: 7,
+    });
+    expect(orch.getRun(runId).pageActions.enabled).toBe(true);
+    expect(orch.getRun(runId).hermes.clientToolsEnabled).toBe(true);
+    orch.activeRuns.delete(runId);
+  });
+
   it('does not register Prompt Paul custom tools for Hermes runs', async () => {
     const tool = {
       name: 'lookup',
