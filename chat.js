@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Reads a PDF in the chat page via pdf.js and feeds the text into the chat.
-  async function loadPdfContent(response, loadingToast) {
+  async function loadPdfContent(response, loadingToast, followUpInstruction = '') {
     loadingManager.hideToast(loadingToast);
     const pdfToast = loadingManager.showToast('Reading PDF…', 'info');
     try {
@@ -443,6 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
           `Note: only the first 300 pages were read (PDF has ${numPages} pages).`
         );
       }
+      if (followUpInstruction) void makeApiCall(followUpInstruction, 'auto');
     } catch (pdfError) {
       loadingManager.hideToast(pdfToast);
       console.error('Chat.js: Add page button - PDF failed:', pdfError.message);
@@ -1298,6 +1299,42 @@ document.addEventListener('DOMContentLoaded', () => {
     const selected = String(request.selectedText || '')
       .trim()
       .slice(0, 20_000);
+    const pageData = request.pageData || {};
+    if (request.includePageContext === true) {
+      if (pageData.isPdf && pageData.pdfUrl) {
+        void (async () => {
+          if (request.act === true) await setPageActionsEnabled(true);
+          await loadPdfContent(pageData, null, textPrompt);
+        })();
+        return true;
+      }
+      if (!pageData.success || !pageData.content) {
+        loadingManager.showToast('No page content was available for dictation.', 'error');
+        return false;
+      }
+      const metadata = {
+        title: pageData.title,
+        siteName: pageData.siteName,
+        byline: pageData.byline,
+        url: pageData.url,
+        type: pageData.type,
+      };
+      void (async () => {
+        if (request.act === true) await setPageActionsEnabled(true);
+        await makeApiCall(
+          {
+            instruction: textPrompt,
+            context: {
+              type: 'page_content',
+              text: String(pageData.content).slice(0, 200_000),
+              metadata,
+            },
+          },
+          'auto'
+        );
+      })();
+      return true;
+    }
     if (selected && request.act !== true) {
       chatMainArea.classList.remove('hidden');
       oneoffInstructionArea.classList.add('hidden');

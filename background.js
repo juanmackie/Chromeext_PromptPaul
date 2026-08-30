@@ -2214,10 +2214,43 @@ async function handleNotchAction(request, sender) {
     const selectedText = String(request?.selectedText || '')
       .trim()
       .slice(0, NOTCH_MAX_SELECTION_CHARS);
+    let pageData = null;
+    if (request?.includePageContext === true) {
+      const extracted = await executeTabContentExtraction(tabId);
+      if (extracted?.isPdf) {
+        pageData = {
+          isPdf: true,
+          pdfUrl: sanitizePageActionUrl(extracted.pdfUrl || tab.url || ''),
+          title: String(extracted.title || tab.title || '').slice(0, 300),
+        };
+      } else if (extracted?.success && extracted.content) {
+        pageData = {
+          success: true,
+          content: String(extracted.content).slice(0, NOTCH_MAX_PAGE_CHARS),
+          title: String(extracted.title || tab.title || '').slice(0, 300),
+          siteName: String(extracted.siteName || '').slice(0, 120),
+          byline: String(extracted.byline || '').slice(0, 240),
+          url: sanitizePageActionUrl(extracted.url || tab.url || ''),
+          type: String(extracted.type || '').slice(0, 80),
+        };
+      }
+      if (!pageData) {
+        return {
+          success: false,
+          error: extracted?.error || 'No page content was available for dictation.',
+        };
+      }
+    }
     const result = await createNotchPanelAction(
       'notchInstructionAction',
       tabId,
-      { textPrompt, selectedText, act: request?.act === true },
+      {
+        textPrompt,
+        selectedText: pageData ? '' : selectedText,
+        pageData,
+        includePageContext: request?.includePageContext === true,
+        act: request?.act === true,
+      },
       panelOpenPromise
     );
     return { success: true, queued: result.queuedFallback };

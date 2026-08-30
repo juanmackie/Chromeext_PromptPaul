@@ -93,7 +93,7 @@ Steps:
 2. Enable the setting and click **Save Notch Settings**. Open pages mount the top-centered notch without changing their layout.
 3. Expand the notch with the keyboard or pointer. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, theme-matched Light/Dark/System styling, and top-edge appearance.
 4. If custom prompts are pinned, confirm the notch shows them in pin order and caps the visible list at four items. Choose a pinned prompt and confirm it runs against the current selection, current page, or active conversation through the existing chat action flow.
-5. Choose **Dictate**, grant microphone access if needed, speak one instruction, and confirm the instruction is sent when dictation ends. Confirm the same action works with **Act** enabled.
+5. Choose **Dictate**, grant microphone access if needed, speak one instruction, and confirm the instruction is sent with the bounded current page as context when dictation ends. Confirm the same page-context behavior works with **Act** enabled.
 6. Enable **Act** and confirm its floating task field appears. Submit a harmless page task and confirm the task uses the bounded page-action run path.
 7. While the task is changing the page, confirm only the target page shows the temporary on-brand blue border glow. Confirm the glow clears when the action completes, errors, or stops.
 8. Use **Summarize**. The background validates the sender tab, bounds the extracted page content, and routes the structured summary request into the side panel.

@@ -501,6 +501,7 @@ function runUnitTests(runner) {
       !notch.includes('notchActRunState') ||
       !notch.includes('startDictation') ||
       !notch.includes('notch-act-form') ||
+      !notch.includes('includePageContext') ||
       !notch.includes('THEME_PREFERENCE_KEY') ||
       !notch.includes("data-theme='light'") ||
       !notch.includes('notch-energy-flow') ||
@@ -524,6 +525,7 @@ function runUnitTests(runner) {
       'notchInstructionAction',
       'pageActionActivityHandler',
       'NOTCH_MAX_INSTRUCTION_CHARS',
+      'includePageContext',
       'isContentScriptSender(sender, extensionOrigin)',
       'requestMatchesSenderTab(sender, request?.tabId)',
       'NOTCH_MAX_PAGE_CHARS',
@@ -802,6 +804,21 @@ function runUnitTests(runner) {
     }
     if (chat.slice(mismatchStart, mismatchEnd).includes('chrome.storage.session.remove')) {
       throw new Error('chat.js must not delete a pending action rejected by another panel');
+    }
+  });
+
+  runner.test('notch dictation attaches bounded page context', () => {
+    const notch = readFileSafe('content_script_notch.js');
+    const chat = readFileSafe('chat.js');
+    const background = readFileSafe('background.js');
+    for (const token of [
+      'includePageContext: true',
+      'request.includePageContext === true',
+      "type: 'page_content'",
+    ]) {
+      if (!notch.includes(token) && !chat.includes(token) && !background.includes(token)) {
+        throw new Error(`Notch dictation page-context guard missing: ${token}`);
+      }
     }
   });
 

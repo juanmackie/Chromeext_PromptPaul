@@ -102,10 +102,10 @@
 
     .notch-shell {
       --notch-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
-      --notch-surface: rgba(10, 12, 16, 0.96);
-      --notch-surface-deep: rgba(14, 16, 21, 0.98);
-      --notch-surface-top: rgba(5, 7, 10, 0.98);
-      --notch-surface-raised: rgba(25, 28, 35, 0.78);
+      --notch-surface: #0a0c10;
+      --notch-surface-deep: #0e1015;
+      --notch-surface-top: #05070a;
+      --notch-surface-raised: #191c23;
       --notch-surface-hover: rgba(255, 255, 255, 0.08);
       --notch-edge: rgba(255, 255, 255, 0.12);
       --notch-edge-soft: rgba(255, 255, 255, 0.08);
@@ -140,7 +140,7 @@
         transparent 48%
       );
       --notch-brand-foreground: #ffffff;
-      --notch-surface-pinned: rgba(255, 255, 255, 0.04);
+      --notch-surface-pinned: #141821;
       --notch-shadow: rgba(0, 0, 0, 0.3);
       --notch-shadow-soft: rgba(0, 0, 0, 0.16);
       --notch-error: #ffb4ab;
@@ -180,10 +180,10 @@
     }
 
     .notch-shell[data-theme='light'] {
-      --notch-surface: rgba(255, 255, 255, 0.98);
-      --notch-surface-deep: rgba(248, 248, 252, 0.98);
-      --notch-surface-top: rgba(248, 247, 252, 0.98);
-      --notch-surface-raised: rgba(245, 244, 251, 0.92);
+      --notch-surface: #ffffff;
+      --notch-surface-deep: #f8f8fc;
+      --notch-surface-top: #f8f7fc;
+      --notch-surface-raised: #f5f4fb;
       --notch-surface-hover: rgba(80, 70, 229, 0.08);
       --notch-edge: rgba(67, 56, 202, 0.2);
       --notch-edge-soft: rgba(67, 56, 202, 0.12);
@@ -218,7 +218,7 @@
         transparent 48%
       );
       --notch-brand-foreground: #ffffff;
-      --notch-surface-pinned: rgba(80, 70, 229, 0.05);
+      --notch-surface-pinned: #f4f3fb;
       --notch-shadow: rgba(31, 25, 79, 0.2);
       --notch-shadow-soft: rgba(31, 25, 79, 0.12);
       --notch-error: #b42318;
@@ -1159,7 +1159,11 @@
         if (!hadError) setFeedback('No instruction heard.', 'error');
         return;
       }
-      sendAction(ACTIONS.SEND_INSTRUCTION, { textPrompt: text, act: actEnabled });
+      sendAction(ACTIONS.SEND_INSTRUCTION, {
+        textPrompt: text,
+        act: actEnabled,
+        includePageContext: true,
+      });
     };
 
     try {
@@ -1236,7 +1240,7 @@
     if (
       notchAction === ACTIONS.EXPLAIN_SELECTION ||
       notchAction === ACTIONS.RUN_PINNED_INSTRUCTION ||
-      notchAction === ACTIONS.SEND_INSTRUCTION
+      (notchAction === ACTIONS.SEND_INSTRUCTION && payload.includePageContext !== true)
     ) {
       payload.selectedText = getSelectedText();
     }
