@@ -91,6 +91,18 @@ describe('pageDom', () => {
     expect(snapshot.content).not.toContain('<script>');
   });
 
+  it('keeps readable Markdown bounded inside the snapshot budget', () => {
+    const snapshot = normalizePageSnapshot({
+      snapshotId: 'snap-readable',
+      readableContent: '# Heading\n\n' + 'content '.repeat(PAGE_DOM_CAPS.maxReadableContentChars),
+    });
+
+    expect(snapshot.readableContent.length).toBeLessThanOrEqual(
+      PAGE_DOM_CAPS.maxReadableContentChars
+    );
+    expect(snapshot.readableContent).toContain('# Heading');
+  });
+
   it('checks snapshot identity fail-closed', () => {
     expect(isCurrentSnapshot('snap-1', 'snap-1')).toBe(true);
     expect(isCurrentSnapshot('snap-1', 'snap-2')).toBe(false);

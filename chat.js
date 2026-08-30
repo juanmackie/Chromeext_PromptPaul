@@ -26,6 +26,7 @@ import {
   startRun,
   executeRun,
   abortRun,
+  resumeActRun,
   getRunAuth,
   clearRunOwnerToken,
   selectOptimalProfile,
@@ -920,6 +921,33 @@ document.addEventListener('DOMContentLoaded', () => {
     sendButton.disabled = true;
     clearButton.textContent = 'Stop';
     setRunState(inputArea, RUN_STATES.STREAMING);
+  }
+
+  async function resumeActCheckpoint(checkpoint, recoveryCard) {
+    if (!checkpoint || isResponseBusy()) {
+      loadingManager.showToast('A response is already in progress.', 'warning');
+      return;
+    }
+    if (!beginResponseRun()) return;
+    try {
+      const instruction = String(checkpoint.instruction || '').trim();
+      if (instruction && !instruction.startsWith('[Sensitive task detail omitted.]')) {
+        chatUI.addMessage('User', formatUserMessageForDisplay(instruction));
+        streamState.addMessageToHistory({ role: 'user', content: instruction });
+      }
+      const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
+      streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
+      beginRunUi();
+      const resumed = await resumeActRun(checkpoint);
+      streamState.setRunId(resumed.runId);
+      streamState.setSourceTabId(resumed.sourceTabId);
+      setPageActionsRunActive(true);
+      recoveryCard?.remove();
+      await executeRun(resumed.runId, []);
+    } catch (error) {
+      handleRunFailure(error, 'resumeActCheckpoint');
+      throw error;
+    }
   }
 
   // Shared failure cleanup for both run entry points.
@@ -2247,6 +2275,7 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.setRunId(await startRun(runConfig));
       runStarted = true;
       streamState.setSourceTabId(runConfig.sourceTabId);
+      if (pageActionsEnabled) setPageActionsRunActive(true);
 
       await executeRun(
         streamState.getRunId(),
@@ -2438,6 +2467,7 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.setRunId(await startRun(runConfig));
       runStarted = true;
       streamState.setSourceTabId(runConfig.sourceTabId);
+      if (pageActionsEnabled) setPageActionsRunActive(true);
 
       await executeRun(
         streamState.getRunId(),
@@ -2654,9 +2684,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial rendering of pinned actions
   renderPinnedActions();
 
-  // Rehydrate only the bounded activity journal after a side-panel reconnect.
-  // The user must send a new request before any page action can run again.
-  void restoreRunJournal(chatArea);
+  // Rehydrate bounded activity and an optional Act checkpoint after a
+  // side-panel reconnect. Checkpoint actions resume only after explicit Resume.
+  void restoreRunJournal(chatArea, resumeActCheckpoint);
 
   // Voice input functionality
   const voiceToggleButton = document.getElementById('voice-toggle-button');

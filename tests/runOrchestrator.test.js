@@ -2055,6 +2055,11 @@ describe('RunOrchestrator page actions', () => {
       disposition: 'delivered_verified',
       evidence: { kind: 'input_value_match', matched: true, changed: undefined },
     });
+    expect(result.result.scopeDiff).toMatchObject({
+      requiresFreshSnapshot: expect.any(Boolean),
+      changedCount: expect.any(Number),
+      regions: expect.any(Array),
+    });
   });
 
   it('blocks a same-mutation retry after an unverified receipt', async () => {

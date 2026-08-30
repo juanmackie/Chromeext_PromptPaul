@@ -41,7 +41,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - `ChatPageActions.js` returns structured `{instruction, context}` prompt request objects via `buildSmartPromptRequest`; callers pass these to `makeApiCall` which calls `composeUserPrompt` from `src/prompts.js`.
 - Composer surfaces (`#context-tray`, `#quick-actions-row`, `#page-context-strip`) are the single visible context surface near the composer; `ChatComposer.js` keeps their visibility synchronized with strip state and the run-state contract from `src/utils/runState.js`.
 - Inline recovery buttons (Stop/Retry/Edit/Continue) must route through the canonical run entry points (`stopApiRequest`, `runSelectedTextPrompt`, `makeApiCall`); Continue always builds on `previous_response` context, never on a stale sticky selection.
-- Run reconnect UI may show only bounded journal metadata. It must never resume page actions automatically after a side-panel or worker restart.
+- Run reconnect UI may show only bounded journal metadata. If a session-only Act checkpoint exists, it may offer an explicit Resume action. Resume starts a fresh owned run, clears stale page state, and forces `page_get_state`; it must never resume page actions automatically after a side-panel or worker restart.
 
 ## Work Guidance
 

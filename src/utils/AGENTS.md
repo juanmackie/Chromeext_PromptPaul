@@ -28,9 +28,11 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `keyedOperationLock.js` owns small per-key runtime locks used to serialize Hermes session-key creation and reject overlapping session resets.
 - `runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages.
 - `streamSafety.js` owns bounded SSE buffers and provider error-body reads.
-- `pageDom.js` owns bounded semantic snapshot normalization, element masking, safe display formatting, and snapshot identity checks for current-page actions.
+- `pageDom.js` owns bounded semantic snapshot normalization, optional readable-content bounds, element masking, safe display formatting, and snapshot identity checks for current-page actions.
 - `pageActionPolicy.js` owns page-action argument validation, risk classification, hard blocks, trusted-mode decisions, and confirmation metadata. It also validates the separate bounded tab tools. It must never authorize arbitrary JavaScript or unowned tabs.
-- `pageActionScopeDiff.js` owns non-public, bounded indexed-region and snapshot-diff metrics for the page-action evaluation harness. It must not accept model-supplied selectors or expose raw page values.
+- `pageActionCheckpoint.js` owns bounded session-only Act mutation checkpoints and explicit-recovery metadata. It never stores DOM, page text, notes, credentials, or raw values.
+- `retryBackoff.js` owns bounded exponential delays with jitter for bridge and navigation recovery; it must not retry uncertain mutations.
+- `pageActionScopeDiff.js` owns bounded indexed-region and snapshot-diff helpers. Runtime mutation results may expose only selector-free indices, flags, counts, and snapshot IDs; richer region and byte-size measurements remain evaluation-only. It must never accept model-supplied selectors or expose raw page values.
 - Link targets are bounded to HTTP(S) origin/path metadata in `pageDom.js`; `page_click` handles approved same-tab links and `page_open_link` handles indexed owned-tab links. Query strings and fragments stay out of model-visible snapshots.
 
 ## Local Contracts
@@ -45,7 +47,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - Privileged background messages must require an extension-page sender; content-script requests must bind to the sender tab; run mutations must include the opaque owner token issued at run start.
 - Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`.
 - Page-state fingerprints and tab arguments must stay bounded, deterministic, and safe to log. Safe HTTP(S) tab origins are admitted by the bounded Act lease; model-provided flags cannot bypass ownership or policy.
-- Scope/diff metrics are evaluation data only. They may expose region IDs, indices, counts, and byte sizes, but never credentials, raw page history, or screenshots.
+- Scope/diff output may be included in a mutation result only as bounded selector-free metadata: indices, flags, counts, and snapshot IDs. Region byte sizes remain evaluation data. The helper must never expose credentials, raw page history, or screenshots.
 
 ## Work Guidance
 

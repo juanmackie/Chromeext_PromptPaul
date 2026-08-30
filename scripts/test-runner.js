@@ -172,7 +172,14 @@ function runUnitTests(runner) {
   runner.test('ChatAPI module structure valid', () => {
     checkModule('src/chat/ChatAPI.js', []);
     const content = readFileSafe('src/chat/ChatAPI.js');
-    const requiredFunctions = ['getApiConfig', 'getTools', 'startRun', 'executeRun', 'abortRun'];
+    const requiredFunctions = [
+      'getApiConfig',
+      'getTools',
+      'startRun',
+      'resumeActRun',
+      'executeRun',
+      'abortRun',
+    ];
     for (const fn of requiredFunctions) {
       if (
         !content.includes(`export async function ${fn}`) &&
@@ -271,6 +278,26 @@ function runUnitTests(runner) {
 
   runner.test('validation module structure valid', () => {
     checkModule('src/utils/validation.js');
+  });
+
+  runner.test('Act recovery utility modules are valid', () => {
+    checkModule('src/utils/retryBackoff.js', ['function getRetryDelay', 'function waitForRetry']);
+    checkModule('src/utils/pageActionCheckpoint.js', [
+      'function savePageActionCheckpoint',
+      'function clearPageActionCheckpoint',
+      'function listPageActionCheckpoints',
+    ]);
+    const checkpoint = readFileSafe('src/utils/pageActionCheckpoint.js');
+    for (const token of [
+      'chrome.storage.session',
+      'maxRecords',
+      'maxGoals',
+      'Sensitive task detail',
+    ]) {
+      if (!checkpoint.includes(token)) {
+        throw new Error(`Act checkpoint utility is missing its bound: ${token}`);
+      }
+    }
   });
 
   runner.test('contextBudget module structure valid', () => {
@@ -1296,6 +1323,7 @@ function runIntegrationTests(runner) {
       'hermesApiKeys',
       'hermesSessions',
       'hermesSessionKeys',
+      'promptPaulActCheckpointsV1',
     ];
     const sources = [
       'options.js',
@@ -1303,6 +1331,7 @@ function runIntegrationTests(runner) {
       'chat.js',
       'src/chat/ChatVoice.js',
       'src/utils/suggestionStorage.js',
+      'src/utils/pageActionCheckpoint.js',
     ]
       .map(readFileSafe)
       .join('\n');
@@ -1475,6 +1504,7 @@ function runIntegrationTests(runner) {
       "request.action === 'captureScreenshot'",
       "request.action === 'getTabContent'",
       "request.action === 'startRun'",
+      "request.action === 'resumeActRun'",
       "request.action === 'executeRun'",
       "request.action === 'executeTool'",
       "request.action === 'abortRun'",
@@ -1538,6 +1568,9 @@ function runIntegrationTests(runner) {
       'pageActionSessions',
       'PAGE_ACTION_MAX_ELEMENTS',
       'PAGE_ACTION_MAX_PAYLOAD_BYTES',
+      'PAGE_ACTION_MAX_READABLE_CONTENT_CHARS',
+      'buildPageActionReadableContent',
+      'computeAccessibleName',
       'pageActionPing',
       'sanitizePageActionUrl',
       'clearPageActionHighlight',
@@ -1566,6 +1599,10 @@ function runIntegrationTests(runner) {
       "state: 'error'",
       'page_pause_for_user',
       'actionReceipt',
+      'scopeDiff',
+      '_savePageActionCheckpoint',
+      'finalVerificationCompleted',
+      '_restoreActCheckpoint',
     ]) {
       if (!orchestrator.includes(token))
         throw new Error(`Orchestrator missing page-action contract: ${token}`);
@@ -1587,7 +1624,12 @@ function runIntegrationTests(runner) {
       if (!policy.includes(token))
         throw new Error(`Page-action policy missing safety contract: ${token}`);
     }
+    const accessibilityLicense = readFileSafe('libs/dom-accessibility-api.LICENSE.md');
+    if (!accessibilityLicense.includes('MIT License')) {
+      throw new Error('Vendored dom-accessibility-api is missing its MIT license record');
+    }
     for (const token of [
+      'libs/dom-accessibility-api.js',
       'pageActionPing',
       'PAGE_ACTION_NO_CONTENT_SCRIPT',
       'PAGE_ACTION_TIMEOUT',

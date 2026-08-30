@@ -6,6 +6,7 @@
 export const PAGE_DOM_CAPS = Object.freeze({
   maxElements: 120,
   maxSnapshotChars: 16_000,
+  maxReadableContentChars: 8_000,
   maxElementTextChars: 240,
   maxAttributeChars: 120,
   maxInputChars: 2_000,
@@ -257,6 +258,7 @@ export function normalizePageSnapshot(input = {}) {
     title: capPageText(input.title, 240),
     header: capPageText(input.header, 1_000),
     footer: capPageText(input.footer, 1_000),
+    readableContent: capSnapshotText(input.readableContent, PAGE_DOM_CAPS.maxReadableContentChars),
     fingerprint: capPageText(input.fingerprint || '', 128),
     scroll: input.scroll && typeof input.scroll === 'object' ? input.scroll : undefined,
     scrollContainers: Array.isArray(input.scrollContainers)

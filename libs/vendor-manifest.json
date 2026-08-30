@@ -1,0 +1,93 @@
+{
+  "libraries": {
+    "bootstrap": {
+      "version": "5.3.3",
+      "license": "MIT",
+      "source": "https://github.com/twbs/bootstrap/releases/tag/v5.3.3",
+      "bundle": "libs/bootstrap.bundle.min.js",
+      "bundleSha256": "3c06f37595fa4f366dea7dda2c897dfe59d049156edf06a0407b4b952b71d8b6",
+      "licenseMarker": "Licensed under MIT"
+    },
+    "dom-accessibility-api": {
+      "version": "0.7.1",
+      "license": "MIT",
+      "source": "https://registry.npmjs.org/dom-accessibility-api/-/dom-accessibility-api-0.7.1.tgz",
+      "repository": "https://github.com/eps1lon/dom-accessibility-api",
+      "bundle": "libs/dom-accessibility-api.js",
+      "bundleSha256": "d81e0b48d3ae06d23b1386c72b6f6edb86894ffe59c7fb7d705dad5c1190cd80",
+      "licenseFile": "libs/dom-accessibility-api.LICENSE.md",
+      "licenseSha256": "0ffe67fe630169de46df2d29dc18f5857b4c98f0f95b0cd9e3c21fef51f9a9b8"
+    },
+    "dompurify": {
+      "version": "3.2.6",
+      "license": "Apache-2.0 / MPL-2.0",
+      "source": "https://github.com/cure53/DOMPurify/releases/tag/3.2.6",
+      "bundle": "libs/dompurify.min.js",
+      "bundleSha256": "68f9773ad2c920d42cee504036e3621c756f45928fe3eb7a6bc8d6b413039760",
+      "licenseMarker": "Released under the Apache license 2.0 and Mozilla Public License 2.0"
+    },
+    "highlight.js": {
+      "version": "11.9.0",
+      "license": "BSD-3-Clause",
+      "source": "https://github.com/highlightjs/highlight.js/releases/tag/11.9.0",
+      "bundle": "libs/highlight.min.js",
+      "bundleSha256": "196522f14fcf28945c8c2066e4aee24a79de2ce2312d6082a4ec6095f5ed7644",
+      "licenseMarker": "License: BSD-3-Clause"
+    },
+    "pdfjs": {
+      "version": "6.0.227",
+      "license": "Apache-2.0",
+      "source": "https://github.com/mozilla/pdf.js/releases/tag/v6.0.227",
+      "bundles": [
+        {
+          "file": "libs/pdf.min.mjs",
+          "sha256": "71ab6d3ace0b285cc1feaf88f943b84238bf875f7a005674ac448a78940913bd"
+        },
+        {
+          "file": "libs/pdf.worker.min.mjs",
+          "sha256": "9e3b3b7da0760e8468f4b20490cceab481a96b700803a96c46b0bb00d2e3741e"
+        }
+      ],
+      "licenseMarker": "Licensed under the Apache License, Version 2.0"
+    },
+    "readability": {
+      "version": "vendored-existing",
+      "license": "Apache-2.0",
+      "source": "https://github.com/mozilla/readability",
+      "bundle": "libs/readability.js",
+      "bundleSha256": "051fe2b8f07c8ef2ad0be40dcf25e174d021d6a86d8ac91c1bd4e3a27c613643",
+      "licenseMarker": "Licensed under the Apache License, Version 2.0"
+    },
+    "turndown": {
+      "version": "vendored-existing",
+      "license": "MIT",
+      "source": "https://github.com/mixmark-io/turndown",
+      "bundle": "libs/turndown.js",
+      "bundleSha256": "9b3c8b97e5572bb63e14e20c75f49ef7cbe128aec96c90b5b9c8d3c7c6eee7a6",
+      "licenseMarker": "The MIT License (MIT)"
+    }
+  },
+  "benchmarkRecords": {
+    "WAInjectBench": {
+      "license": "No stated repository license",
+      "source": "docs/BROWSER_AGENT_REPOSITORY_REVIEW.md",
+      "licenseReviewed": true,
+      "redistributed": false,
+      "use": "Clean-room case ideas only"
+    },
+    "WASP": {
+      "license": "CC BY-NC 4.0",
+      "source": "docs/BROWSER_AGENT_REPOSITORY_REVIEW.md",
+      "licenseReviewed": true,
+      "redistributed": false,
+      "use": "Clean-room case ideas only"
+    },
+    "ST-WebAgentBench": {
+      "license": "Apache-2.0",
+      "source": "docs/BROWSER_AGENT_REPOSITORY_REVIEW.md",
+      "licenseReviewed": true,
+      "redistributed": false,
+      "use": "Clean-room case ideas only"
+    }
+  }
+}

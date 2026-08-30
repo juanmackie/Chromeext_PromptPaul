@@ -24,7 +24,7 @@ This checklist keeps those rules practical and reviewable.
 - Run `npm run validate` and `npm run smoke` when relevant.
 - Run `npm run test:browser` for browser-runtime or page-action changes. The CI browser job runs the complete unpacked-extension suite with headed Chromium under Xvfb, including the executable page-action evaluation and live snapshot scope/diff checks.
 - Run `npm audit --audit-level=high --omit=optional` before release.
-- Review authentication, user data, external API, and page-action changes for security before production deployment. For page actions, review receipt evidence, manual-intervention boundaries, prompt-injection handling, sensitive-field masking, restricted-page behavior, and the rule that scope/diff measurements remain test-only. Do not describe the extension as production-ready until these reviews and the required browser/provider checks are complete.
+- Review authentication, user data, external API, and page-action changes for security before production deployment. For this Act change, the focused review is recorded in [ACT_SECURITY_LICENSE_REVIEW.md](ACT_SECURITY_LICENSE_REVIEW.md). Review receipt evidence, session checkpoints, explicit-resume boundaries, prompt-injection handling, sensitive-field masking, restricted-page behavior, and the rule that runtime scope/diff output stays indexed, bounded, and selector-free. Do not describe the extension as production-ready until these reviews and the required browser/provider checks are complete.
 - Update the nearest DOX contract when behavior, structure, workflow, or quality requirements change.
 
 ## Page-action release gates
@@ -32,8 +32,9 @@ This checklist keeps those rules practical and reviewable.
 - Every state-changing action must return a bounded delivery disposition and action-specific postcondition evidence when verification is safe.
 - `delivered_unverified` mutations must not be retried automatically.
 - Manual intervention must stay local to the visible tab, require explicit Resume, invalidate the old snapshot, and never collect secrets in chat or events.
-- The credential-free 11-case corpus must pass its unit/provider matrix, and browser-safe cases must pass against local fixtures with bounded metrics.
-- Scope/diff output must remain indexed, bounded, selector-free, and test-only.
+- The credential-free 15-case corpus must pass its unit/provider matrix, and browser-safe cases must pass against local fixtures with bounded result, policy, consistency, and scope metrics.
+- Runtime scope/diff output must remain indexed, bounded, and selector-free. Region and byte-size measurements remain evaluation-only.
+- Session checkpoints must contain only bounded metadata, expire on terminal cleanup, and offer explicit Resume without automatic action replay.
 
 ## Current review risks
 

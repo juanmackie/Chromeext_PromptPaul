@@ -9,11 +9,13 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - `build.js` owns manifest validation, build directory recreation, source file copying, source directory copying, and build metadata generation.
 - `test-runner.js` owns structural tests, regression guards, manifest checks, and skill checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
 - `smoke-check.js` owns the cheapest manifest and vendored dependency sanity checks.
+- `verify-vendored-licenses.js` owns reproducible local hash and license-record checks for vendored libraries.
 
 ## Local Contracts
 
 - Scripts are CommonJS Node scripts and assume `process.cwd()` is the repository root.
 - `build.js` writes generated output to `dist/`; `dist/` is not source of truth. Builds copy the credential-free starter profile; connection credentials remain user-provided.
+- `verify-vendored-licenses.js` must stay offline and verify every entry in `libs/vendor-manifest.json`.
 - `build.js` copies root manifest-referenced files and the `src`, `libs`, and `skills` directories.
 - `test-runner.js` is intentionally structural and should guard contracts that are easy to regress without a browser.
 - `smoke-check.js` must remain cheap enough to run often.
@@ -34,6 +36,7 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - Run `npm run test` after changing `test-runner.js` or source contracts it checks.
 - Run `npm run smoke` after changing `smoke-check.js`, manifest references, or vendored dependency assumptions.
 - Run `npm run build` after changing `build.js`.
+- Run `npm run verify:licenses` after changing a vendored library or its license record.
 
 ## Child DOX Index
 

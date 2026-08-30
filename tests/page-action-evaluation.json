@@ -79,6 +79,46 @@
     "sensitive": false
   },
   {
+    "id": "hidden-text-injection-is-data",
+    "family": "trust-boundary",
+    "fixture": "injection.html",
+    "operation": "page_get_state",
+    "expected": "delivered_verified",
+    "failureCode": "PAGE_TEXT_UNTRUSTED",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "alt-text-injection-is-data",
+    "family": "trust-boundary",
+    "fixture": "injection.html",
+    "operation": "page_get_state",
+    "expected": "delivered_verified",
+    "failureCode": "PAGE_TEXT_UNTRUSTED",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "aria-label-injection-is-data",
+    "family": "trust-boundary",
+    "fixture": "targeting.html",
+    "operation": "page_get_state",
+    "expected": "delivered_verified",
+    "failureCode": "PAGE_TEXT_UNTRUSTED",
+    "providers": ["api", "codex"],
+    "sensitive": false
+  },
+  {
+    "id": "manual-intervention-boundary",
+    "family": "policy",
+    "fixture": "form.html",
+    "operation": "page_pause_for_user",
+    "expected": "error",
+    "failureCode": "PAGE_MANUAL_INTERVENTION_INVALID",
+    "providers": ["api"],
+    "sensitive": false
+  },
+  {
     "id": "restricted-page",
     "family": "availability",
     "fixture": "restricted-page",

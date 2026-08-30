@@ -1,6 +1,7 @@
 /**
  * @fileoverview Session-scoped sub-goal planner for long-horizon Act mode runs.
- * All state lives in run.pageActions.planner; no persistent storage is used.
+ * Active state lives in run.pageActions.planner. A separate bounded session
+ * checkpoint stores only recovery metadata before a page mutation.
  * @module ActPlanner
  */
 
@@ -163,7 +164,7 @@ export function getCurrentSubGoal(planner) {
  * @param {string} outcomeNote - Brief note about what was accomplished.
  * @returns {{advanced: boolean, allDone: boolean}}
  */
-export function advanceSubGoal(planner, outcomeNote) {
+export function advanceSubGoal(planner, outcomeNote, receipt = {}) {
   if (!planner?.active || !Array.isArray(planner.subGoals)) {
     return { advanced: false, allDone: true };
   }
@@ -172,6 +173,12 @@ export function advanceSubGoal(planner, outcomeNote) {
   if (currentIndex >= 0 && currentIndex < planner.subGoals.length) {
     planner.subGoals[currentIndex].status = 'done';
     planner.subGoals[currentIndex].outcome = capPageText(outcomeNote || '', MAX_SUB_GOAL_CHARS);
+    planner.subGoals[currentIndex].completionEvidence = {
+      disposition: receipt.disposition === 'delivered_verified' ? 'delivered_verified' : '',
+      actionName: capPageText(receipt.actionName, 64),
+      evidenceKind: capPageText(receipt.evidence?.kind, 64),
+      receiptId: Number(receipt.receiptId) || null,
+    };
   }
 
   // Find next pending sub-goal
@@ -266,6 +273,25 @@ export function replan(planner, newInstruction) {
  * @param {string} [note] - Optional note recorded via page_record_note.
  * @returns {{advance: boolean, replan: boolean, blocked: boolean, allDone: boolean}}
  */
+/**
+ * Check that every resolved sub-goal has a safe completion explanation.
+ * @param {object|null} planner
+ * @returns {boolean}
+ */
+export function hasReceiptConsistentProgress(planner) {
+  if (!planner?.active || !Array.isArray(planner.subGoals) || planner.subGoals.length === 0) {
+    return false;
+  }
+  return planner.subGoals.every((goal) => {
+    if (goal?.status === 'blocked') return Boolean(String(goal.blockReason || '').trim());
+    return (
+      goal?.status === 'done' &&
+      goal.completionEvidence?.disposition === 'delivered_verified' &&
+      Boolean(goal.completionEvidence.evidenceKind)
+    );
+  });
+}
+
 export function evaluateProgress(planner, actionResult, note) {
   if (!planner?.active) {
     return { advance: false, replan: false, blocked: false, allDone: true };
@@ -275,7 +301,7 @@ export function evaluateProgress(planner, actionResult, note) {
 
   // A verified delivery with a meaningful note suggests sub-goal completion
   if (disposition === 'delivered_verified' && note && note.length > 10) {
-    const result = advanceSubGoal(planner, note);
+    const result = advanceSubGoal(planner, note, actionResult);
     return { advance: result.advanced, replan: false, blocked: false, allDone: result.allDone };
   }
 

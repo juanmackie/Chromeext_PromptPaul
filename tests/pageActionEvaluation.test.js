@@ -9,6 +9,7 @@ import {
   evaluatePageActionPolicy,
   normalizePageManualInterventionArgs,
 } from '../src/utils/pageActionPolicy.js';
+import { summarizeEvaluationRecords } from './pageActionEvaluationMetrics.mjs';
 
 const REQUIRED_CASES = [
   'verified-input',
@@ -19,6 +20,10 @@ const REQUIRED_CASES = [
   'approval-timeout',
   'abort-pending-approval',
   'page-injection-is-data',
+  'hidden-text-injection-is-data',
+  'alt-text-injection-is-data',
+  'aria-label-injection-is-data',
+  'manual-intervention-boundary',
   'restricted-page',
   'sensitive-control',
   'hermes-page-actions-disabled',
@@ -77,6 +82,43 @@ describe('page-action evaluation corpus', () => {
     expect(
       normalizePageManualInterventionArgs({ question: 'Enter the one-time code.' }).valid
     ).toBe(false);
+  });
+
+  it('reports policy-safe completion, risk, pass-k, and failure metrics', () => {
+    const records = [
+      {
+        caseId: 'task',
+        provider: 'api',
+        consistencyGroup: 'stable',
+        result: 'complete',
+        policyViolation: false,
+      },
+      {
+        caseId: 'task',
+        provider: 'api',
+        consistencyGroup: 'stable',
+        result: 'complete',
+        policyViolation: false,
+      },
+      {
+        caseId: 'task',
+        provider: 'api',
+        consistencyGroup: 'stale',
+        result: 'error',
+        failureCode: 'PAGE_STATE_STALE',
+      },
+      { caseId: 'unsafe', provider: 'api', result: 'complete', policyViolation: true },
+    ];
+    expect(summarizeEvaluationRecords(records, { passK: 2 })).toMatchObject({
+      total: 4,
+      completed: 3,
+      policyViolations: 1,
+      completionUnderPolicyRate: 0.5,
+      riskRatio: 0.25,
+      passK: 2,
+      passKConsistency: 1,
+      failureCodeHistogram: { PAGE_STATE_STALE: 1 },
+    });
   });
 
   it('keeps Hermes outside the client page-action provider matrix', () => {

@@ -28,6 +28,7 @@ import {
   normalizePageManualInterventionArgs,
 } from '../utils/pageActionPolicy.js';
 import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../utils/pageDom.js';
+import { buildIndexedPageRegions, diffPageActionSnapshots } from '../utils/pageActionScopeDiff.js';
 import { buildHermesTurn } from '../utils/hermesContext.js';
 import { buildCodexRequest, streamCodexResponse } from './CodexTransport.js';
 import {
@@ -42,9 +43,14 @@ import {
   recordPageTaskNote,
 } from './PageTaskMemory.js';
 import {
+  clearPageActionCheckpoint,
+  savePageActionCheckpoint,
+} from '../utils/pageActionCheckpoint.js';
+import {
   buildPlannerPromptBlock,
   createPlannerState,
   evaluateProgress,
+  hasReceiptConsistentProgress,
   MAX_PLANNER_INSTRUCTION_CHARS,
   replan,
 } from './ActPlanner.js';
@@ -194,6 +200,78 @@ class RunOrchestrator {
    * @param {object} run
    * @returns {{ enabled: boolean, attempts: number, sources: Array }}
    */
+  _restoreActCheckpoint(run, checkpoint) {
+    if (!run?.pageActions?.enabled || !checkpoint || typeof checkpoint !== 'object') return;
+    const planner = run.pageActions.planner;
+    if (planner?.active && Array.isArray(checkpoint.planner?.subGoals)) {
+      const goals = checkpoint.planner.subGoals
+        .slice(0, 8)
+        .map((goal) => ({
+          description: String(goal?.description || '').slice(0, 200),
+          status: ['pending', 'in_progress', 'done', 'blocked'].includes(goal?.status)
+            ? goal.status
+            : 'pending',
+          blockReason: String(goal?.blockReason || '').slice(0, 200),
+          attemptCount: Math.max(0, Math.floor(Number(goal?.attempts) || 0)),
+          completionEvidence:
+            goal?.completionEvidence && typeof goal.completionEvidence === 'object'
+              ? {
+                  disposition: String(goal.completionEvidence.disposition || '').slice(0, 32),
+                  actionName: String(goal.completionEvidence.actionName || '').slice(0, 64),
+                  evidenceKind: String(goal.completionEvidence.evidenceKind || '').slice(0, 64),
+                  receiptId: Number(goal.completionEvidence.receiptId) || null,
+                }
+              : null,
+        }))
+        .filter((goal) => goal.description.length > 5);
+      if (goals.length > 0) {
+        planner.subGoals = goals;
+        planner.currentSubGoalIndex = Math.min(
+          Math.max(0, Math.floor(Number(checkpoint.planner.currentSubGoalIndex) || 0)),
+          goals.length - 1
+        );
+        planner.replanCount = Math.min(
+          3,
+          Math.max(0, Math.floor(Number(checkpoint.planner.replanCount) || 0))
+        );
+        planner.autoApproval = false;
+        planner.autoApprovalPending = true;
+        planner.pendingReceipt = null;
+      }
+    }
+    const budgets = checkpoint.budgets || {};
+    run.pageActions.budgets = {
+      observation: Math.min(
+        PAGE_ACTION_BUDGETS.observation,
+        Math.max(0, Math.floor(Number(budgets.observation) || 0))
+      ),
+      navigation: Math.min(
+        PAGE_ACTION_BUDGETS.navigation,
+        Math.max(0, Math.floor(Number(budgets.navigation) || 0))
+      ),
+      mutation: Math.min(
+        PAGE_ACTION_BUDGETS.mutation,
+        Math.max(0, Math.floor(Number(budgets.mutation) || 0))
+      ),
+    };
+    run.pageActions.actions = Object.values(run.pageActions.budgets).reduce(
+      (total, count) => total + count,
+      0
+    );
+    run.pageActions.sessionApproval = false;
+    run.pageActions.snapshot = null;
+    run.pageActions.documentUrl = null;
+    run.pageActions.lastActionHash = '';
+    run.pageActions.lastActionReceipt = null;
+    run.pageActions.finalVerificationCompleted = false;
+    run.pageActions.recoveryCheckpoint = {
+      actionName: String(checkpoint.actionName || '').slice(0, 64),
+      toolCallId: String(checkpoint.toolCallId || '').slice(0, 128),
+      evidence: 'unknown_delivery_after_worker_restart',
+      savedAt: Number(checkpoint.savedAt) || null,
+    };
+  }
+
   _getWebSearchMetadata(run) {
     if (!run?.webSearch?.enabled) return null;
     const attempts = Number(run.webSearch.attempts || 0);
@@ -289,6 +367,9 @@ class RunOrchestrator {
    * Start a new run with unique ID
    */
   async startRun(config, ownerToken = '') {
+    const resumeCheckpoint = config?.actCheckpoint || null;
+    config = { ...config };
+    delete config.actCheckpoint;
     if (config.webSearch && this.webSearchStatusProvider) {
       const configured = await this.webSearchStatusProvider();
       if (!configured) {
@@ -372,6 +453,7 @@ class RunOrchestrator {
         repeatedActionCount: 0,
         loopWarnings: 0,
         snapshot: null,
+        finalVerificationCompleted: false,
         pendingConfirmation: null,
         pendingUserInput: null,
         pendingManualIntervention: null,
@@ -415,6 +497,7 @@ class RunOrchestrator {
 
     this.activeRuns.set(runId, runState);
     this._initializeActPlanner(runState);
+    this._restoreActCheckpoint(runState, resumeCheckpoint);
 
     if (runState.pageActions.multiTabEnabled) {
       this.pageTabRunRegistrar?.(runId, runState.sourceTabId);
@@ -563,6 +646,9 @@ class RunOrchestrator {
       );
     }
     this._emitEvent(runId, event);
+    void clearPageActionCheckpoint(runId).catch((error) =>
+      console.warn(`[Orchestrator] Could not clear Act checkpoint: ${error.message}`)
+    );
     this._cleanupToolExecutions(runId);
     this.pageTabRunDisposer?.(runId);
     if (run.config?.provider === 'hermes') {
@@ -833,6 +919,99 @@ class RunOrchestrator {
 
   _isPageActionTerminalError() {
     return false;
+  }
+
+  _getPageActionInstruction(run) {
+    const plannerInstruction = run?.pageActions?.planner?.originalInstruction;
+    if (plannerInstruction) return String(plannerInstruction).slice(0, 2_000);
+    const messages = Array.isArray(run?.conversationHistory) ? run.conversationHistory : [];
+    const latest = [...messages].reverse().find((message) => message?.role === 'user');
+    const content =
+      typeof latest?.content === 'string'
+        ? latest.content
+        : Array.isArray(latest?.content)
+          ? latest.content
+              .filter((part) => part?.type === 'text' || part?.type === 'input_text')
+              .map((part) => String(part.text || part.content || ''))
+              .join(' ')
+          : '';
+    const separator = content.indexOf('\n\n--- ');
+    return (separator >= 0 ? content.slice(0, separator) : content).slice(0, 2_000);
+  }
+
+  async _savePageActionCheckpoint(run, actionName, toolCall, actionHash) {
+    if (!run?.pageActions?.enabled || !this._isPageActionMutation(actionName)) return;
+    const planner = run.pageActions.planner;
+    await savePageActionCheckpoint({
+      runId: run.id,
+      sourceTabId: Number(run.sourceTabId) || null,
+      targetTabId: Number(run.pageActions.targetTabId || run.sourceTabId) || null,
+      profileId: run.config?.profileId,
+      provider: run.config?.provider,
+      instruction: this._getPageActionInstruction(run),
+      actionName,
+      toolCallId: toolCall?.id,
+      actionHash,
+      snapshotId: run.pageActions.snapshot?.snapshotId,
+      status: 'in_flight',
+      savedAt: Date.now(),
+      budgets: run.pageActions.budgets,
+      planner: planner
+        ? {
+            active: planner.active,
+            currentSubGoalIndex: planner.currentSubGoalIndex,
+            replanCount: planner.replanCount,
+            subGoals: planner.subGoals,
+            notesCount: run.pageActions.notes?.length || 0,
+          }
+        : null,
+      receipt: run.pageActions.lastActionReceipt,
+    });
+  }
+
+  async _settlePageActionCheckpoint(run, actionName, toolCall, actionHash, receipt) {
+    if (!run?.id) return;
+    if (actionName === 'page_get_state') {
+      await clearPageActionCheckpoint(run.id);
+      return;
+    }
+    if (!this._isPageActionMutation(actionName)) return;
+    if (receipt?.disposition === 'delivered_unverified') {
+      await savePageActionCheckpoint({
+        runId: run.id,
+        sourceTabId: Number(run.sourceTabId) || null,
+        targetTabId: Number(run.pageActions.targetTabId || run.sourceTabId) || null,
+        profileId: run.config?.profileId,
+        provider: run.config?.provider,
+        instruction: this._getPageActionInstruction(run),
+        actionName,
+        toolCallId: toolCall?.id,
+        actionHash,
+        snapshotId: run.pageActions.snapshot?.snapshotId,
+        status: 'uncertain_delivery',
+        savedAt: Date.now(),
+        budgets: run.pageActions.budgets,
+        planner: run.pageActions.planner
+          ? {
+              active: run.pageActions.planner.active,
+              currentSubGoalIndex: run.pageActions.planner.currentSubGoalIndex,
+              replanCount: run.pageActions.planner.replanCount,
+              subGoals: run.pageActions.planner.subGoals,
+              notesCount: run.pageActions.notes?.length || 0,
+            }
+          : null,
+        receipt,
+      });
+      return;
+    }
+    await clearPageActionCheckpoint(run.id);
+  }
+
+  _isPageActionMutation(actionName) {
+    if (isPageActionName(actionName)) {
+      return !['page_get_state', 'page_scroll'].includes(actionName);
+    }
+    return isPageTabActionName(actionName) && actionName !== 'page_list_tabs';
   }
 
   _recordPlannerActionResult(run, actionName, outcome) {
@@ -1179,6 +1358,7 @@ class RunOrchestrator {
         actionName,
         index: args.index ?? null,
         option: args.option ?? null,
+        textHash: args.text ? pageStateHash(args.text) : '',
         targetLabel: actionTarget?.label || actionTarget?.name || actionTarget?.tag || '',
         targetText: actionTarget?.text || '',
         targetChecked: actionTarget?.checked ?? null,
@@ -1320,6 +1500,7 @@ class RunOrchestrator {
     const budgetBucket = this._pageActionBudgetBucket(actionName, target, policy);
     const budget = this._consumePageActionBudget(run, budgetBucket, actionName);
     if (!budget.ok) return budget;
+    if (isMutation) await this._savePageActionCheckpoint(run, actionName, toolCall, actionHash);
     this._emitEvent(run.id, {
       type: 'page_action_state',
       state: 'running',
@@ -1417,6 +1598,34 @@ class RunOrchestrator {
       );
       result.actionReceipt = receipt;
       if (isMutation) run.pageActions.lastActionReceipt = receipt;
+      if (isMutation && previousSnapshot && normalizedSnapshot) {
+        result.scopeDiff = {
+          ...diffPageActionSnapshots(previousSnapshot, normalizedSnapshot),
+          regions: buildIndexedPageRegions(normalizedSnapshot),
+        };
+      }
+      if (actionName === 'page_get_state' && run.pageActions.planner?.completedAt) {
+        const verificationReceipt = result?.actionReceipt;
+        const receiptConsistent = hasReceiptConsistentProgress(run.pageActions.planner);
+        if (
+          verificationReceipt?.disposition === 'delivered_verified' &&
+          receiptConsistent &&
+          result?.snapshot
+        ) {
+          run.pageActions.finalVerificationCompleted = true;
+          run.pageActions.planner.finalVerificationEvidence = {
+            disposition: 'delivered_verified',
+            evidenceKind: String(verificationReceipt.evidence?.kind || '').slice(0, 64),
+          };
+        } else {
+          result.finalVerification = {
+            verified: false,
+            reason: receiptConsistent
+              ? 'A fresh verified snapshot is required before the final summary.'
+              : 'Resolved sub-goals lack verified completion evidence; do not finalize the task.',
+          };
+        }
+      }
 
       if (actionName === 'page_get_state' && result?.snapshot && !result.snapshot.actionableHint) {
         const elementCount = Array.isArray(result.snapshot.elements)
@@ -1446,6 +1655,13 @@ class RunOrchestrator {
         result.tabId = Number(run.pageActions.targetTabId || run.sourceTabId || 0) || null;
       }
       run.pageActions.navigationPending = false;
+      await this._settlePageActionCheckpoint(
+        run,
+        actionName,
+        toolCall,
+        actionHash,
+        result?.actionReceipt
+      );
     } catch (error) {
       run.pageActions.navigationPending = false;
       const tabFailure = this._isPageActionTabFailure(error);
@@ -1575,6 +1791,16 @@ class RunOrchestrator {
         actionName
       );
       if (!budget.ok) return budget;
+      const actionHash = pageStateHash(
+        JSON.stringify({
+          actionName,
+          index: args.index,
+          snapshotId: args.snapshotId,
+          target: target.label || target.name || target.tag || '',
+          fingerprint: run.pageActions.snapshot?.fingerprint || '',
+        })
+      );
+      await this._savePageActionCheckpoint(run, actionName, toolCall, actionHash);
       this._emitEvent(run.id, {
         type: 'page_action_state',
         state: 'running',
@@ -1645,6 +1871,13 @@ class RunOrchestrator {
         if (resolved?.actionReceipt && typeof resolved.actionReceipt === 'object') {
           result.actionReceipt = resolved.actionReceipt;
         }
+        await this._settlePageActionCheckpoint(
+          run,
+          actionName,
+          toolCall,
+          actionHash,
+          result.actionReceipt
+        );
         this._emitEvent(run.id, {
           type: 'page_action_state',
           state: 'complete',
@@ -1720,6 +1953,8 @@ class RunOrchestrator {
       actionName
     );
     if (!budget.ok) return budget;
+    const actionHash = pageStateHash(JSON.stringify({ actionName, args }));
+    await this._savePageActionCheckpoint(run, actionName, toolCall, actionHash);
     this._emitEvent(run.id, { type: 'page_action_state', state: 'running', action: actionName });
     try {
       const result = await this.pageTabExecutor(runId, actionName, args, {
@@ -1772,6 +2007,13 @@ class RunOrchestrator {
           run.pageActions.snapshot = null;
         }
       }
+      await this._settlePageActionCheckpoint(
+        run,
+        actionName,
+        toolCall,
+        actionHash,
+        result?.actionReceipt
+      );
       this._emitEvent(run.id, { type: 'page_action_state', state: 'complete', action: actionName });
       return { success: true, result };
     } catch (error) {
@@ -2503,9 +2745,12 @@ class RunOrchestrator {
         ]
       : [];
 
-    // Once the planner has resolved every sub-goal, force a text-only final
-    // response instead of allowing another tool turn to continue the run.
-    if (run.pageActions?.planner?.completedAt) return [];
+    // Once the planner has resolved every sub-goal, force one final fresh
+    // inspection before allowing the text-only final response.
+    if (run.pageActions?.planner?.completedAt) {
+      if (run.pageActions.finalVerificationCompleted) return [];
+      return pageTools.filter((tool) => tool.function?.name === 'page_get_state');
+    }
 
     // Act mode owns the first turn: the model must inspect the current page
     // before any custom tool, search, or mutation can run. Returning only the
@@ -2613,7 +2858,9 @@ class RunOrchestrator {
       forcedUserToolSatisfied: true,
     };
 
-    if (run.pageActions?.planner?.completedAt) return 'none';
+    if (run.pageActions?.planner?.completedAt) {
+      return run.pageActions.finalVerificationCompleted ? 'none' : 'page_get_state';
+    }
 
     // A specifically forced user tool runs first, exactly once.
     if (run.pageActions?.enabled && !run.pageActions?.snapshot) {
@@ -2762,6 +3009,23 @@ class RunOrchestrator {
         PAGE_ACTION_BUDGETS
       );
       if (plannerBlock) parts.push(plannerBlock);
+      if (run.pageActions.planner.completedAt && !run.pageActions.finalVerificationCompleted) {
+        parts.push(
+          'FINAL VERIFICATION: Before the final answer, call page_get_state once more. Use the fresh ' +
+            'snapshot and the verified action receipts to summarize what actually happened. Do not ' +
+            'perform another mutation during this verification pass.'
+        );
+      }
+    }
+
+    if (run.pageActions?.recoveryCheckpoint) {
+      const checkpoint = run.pageActions.recoveryCheckpoint;
+      parts.push(
+        'ACT RECOVERY: This run was explicitly resumed after the worker restarted while a page ' +
+          `action (${checkpoint.actionName || 'unknown'}) had uncertain delivery. ` +
+          'Do not repeat that action automatically. Call page_get_state first, compare the current ' +
+          'state with the user goal, and ask for approval again before any state-changing action.'
+      );
     }
 
     if (run.pageActions?.enabled) parts.push(`TAB SCOPE: ${tabScope}`);
@@ -3974,6 +4238,15 @@ class RunOrchestrator {
             documentUrl: run.pageActions.documentUrl || null,
             fingerprint: run.pageActions.snapshot?.fingerprint || null,
             loopWarnings: Number(run.pageActions.loopWarnings || 0),
+            recovery: run.pageActions.recoveryCheckpoint
+              ? {
+                  actionName: String(run.pageActions.recoveryCheckpoint.actionName || '').slice(
+                    0,
+                    64
+                  ),
+                  evidence: 'unknown_delivery_after_worker_restart',
+                }
+              : null,
           }
         : null,
       events: run.eventJournal || [],

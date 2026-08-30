@@ -1189,6 +1189,7 @@
   // contract, and keeping one page runtime avoids competing DOM indexes.
   const PAGE_ACTION_MAX_ELEMENTS = 120;
   const PAGE_ACTION_MAX_SNAPSHOT_CHARS = 16000;
+  const PAGE_ACTION_MAX_READABLE_CONTENT_CHARS = 8000;
   const PAGE_ACTION_MAX_TEXT_CHARS = 240;
   const PAGE_ACTION_MAX_ATTRIBUTE_CHARS = 120;
   const PAGE_ACTION_MAX_INPUT_CHARS = 2000;
@@ -1275,6 +1276,17 @@
     );
   }
 
+  function getPageActionAccessibleName(element) {
+    const computeAccessibleName = globalThis.PromptPaulDomAccessibility?.computeAccessibleName;
+    if (typeof computeAccessibleName !== 'function') return '';
+    try {
+      return capPageActionText(computeAccessibleName(element), PAGE_ACTION_MAX_ATTRIBUTE_CHARS);
+    } catch (_) {
+      // The heuristic label fallback remains available for unusual page DOMs.
+      return '';
+    }
+  }
+
   function isPageActionInInspectionBand(element) {
     if (!element || element.tagName.toLowerCase() === 'option') return true;
     const rect = element.getBoundingClientRect();
@@ -1301,6 +1313,8 @@
         .join(' ');
       if (label.trim()) return capPageActionText(label, PAGE_ACTION_MAX_ATTRIBUTE_CHARS);
     }
+    const accessibleName = getPageActionAccessibleName(element);
+    if (accessibleName) return accessibleName;
     const labelledBy = element.getAttribute('aria-labelledby');
     if (labelledBy) {
       const label = labelledBy
@@ -1336,6 +1350,28 @@
       autocomplete.includes('one-time-code') ||
       pattern.test(`${label} ${text} ${element.getAttribute('name') || ''}`)
     );
+  }
+
+  function buildPageActionReadableContent() {
+    if (!turndownService || !document.body) return '';
+    const clone = document.body.cloneNode(true);
+    clone
+      .querySelectorAll(
+        'script, style, noscript, img, picture, video, audio, iframe, svg, canvas, map, object, embed, input, textarea, select, option, [contenteditable="true"], [hidden], [aria-hidden="true"]'
+      )
+      .forEach((element) => element.remove());
+    clone.querySelectorAll('[href]').forEach((element) => {
+      const safeHref = getPageActionLinkMetadata(element)?.safeHref;
+      if (safeHref) element.setAttribute('href', safeHref);
+      else element.removeAttribute('href');
+    });
+    return turndownService
+      .turndown(clone.innerHTML)
+      .replace(/\b(?:\d[ -]*?){13,19}\b/gu, '[REDACTED_NUMBER]')
+      .replace(/\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/gu, '[REDACTED_ID]')
+      .replace(/\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}\b/giu, '[REDACTED_TOKEN]')
+      .trim()
+      .slice(0, PAGE_ACTION_MAX_READABLE_CONTENT_CHARS);
   }
 
   function getPageActionFingerprint(element) {
@@ -1524,6 +1560,7 @@
     // origin/path is sent to the model.
     const url = sanitizePageActionUrl(window.location.href);
     const title = capPageActionText(document.title || '', 240);
+    const readableContent = buildPageActionReadableContent();
     const scrollContainers = Array.from(
       document.querySelectorAll('[data-scroll-container], main, section, article, nav, aside, div')
     )
@@ -1588,6 +1625,7 @@
         header,
         content,
         footer,
+        readableContent,
         elements,
         fingerprint,
         scroll: {
@@ -1617,6 +1655,7 @@
       header,
       content,
       footer,
+      readableContent,
       elements,
       fingerprint,
       scroll: {

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Network Recovery Fixture</title>
+  </head>
+  <body>
+    <main>
+      <button id="load" type="button">Load server result</button>
+      <p id="status">Ready</p>
+    </main>
+    <script>
+      document.getElementById('load').addEventListener('click', async () => {
+        const status = document.getElementById('status');
+        try {
+          const response = await fetch('/task-result.json');
+          if (!response.ok) throw new Error('server failure');
+          status.textContent = await response.text();
+        } catch (_) {
+          status.textContent = 'The server result was unavailable.';
+        }
+      });
+    </script>
+  </body>
+</html>

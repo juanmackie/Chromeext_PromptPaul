@@ -63,6 +63,9 @@ describe('ActPlanner', () => {
 
     expect(result.advance).toBe(true);
     expect(planner.subGoals[0].status).toBe('done');
+    expect(planner.subGoals[0].completionEvidence).toMatchObject({
+      disposition: 'delivered_verified',
+    });
     expect(planner.currentSubGoalIndex).toBe(1);
     expect(planner.subGoals[1].status).toBe('in_progress');
   });
@@ -307,9 +310,86 @@ describe('RunOrchestrator ActPlanner integration', () => {
     });
     expect(run.pageActions.planner.pendingReceipt).toBeUndefined();
 
+    run.pageActions.planner.subGoals.forEach((goal) => {
+      goal.status = 'blocked';
+      goal.blockReason = 'Not needed for this test';
+    });
     run.pageActions.planner.completedAt = Date.now();
+    expect((await orchestrator._buildTools(run)).map((tool) => tool.function.name)).toEqual([
+      'page_get_state',
+    ]);
+    expect(orchestrator._getEffectiveToolChoice(run)).toBe('page_get_state');
+    run.pageActions.finalVerificationCompleted = true;
     expect(await orchestrator._buildTools(run)).toEqual([]);
     expect(orchestrator._getEffectiveToolChoice(run)).toBe('none');
+  });
+
+  it('requires a fresh inspection before the planner can finish', async () => {
+    const orchestrator = new RunOrchestrator(createSkillManager(), {
+      pageActionExecutor: async () => ({
+        success: true,
+        snapshot: { snapshotId: 'final-state', url: 'https://example.test' },
+      }),
+    });
+    orchestrator._emitEvent = () => {};
+    const runId = await orchestrator.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
+    });
+    const run = orchestrator.getRun(runId);
+    run.pageActions.snapshot = { snapshotId: 'old-state', url: 'https://example.test' };
+    run.pageActions.planner.subGoals.forEach((goal) => {
+      goal.status = 'blocked';
+      goal.blockReason = 'Test completion evidence';
+    });
+    run.pageActions.planner.completedAt = Date.now();
+
+    expect(orchestrator._getEffectiveToolChoice(run)).toBe('page_get_state');
+    const result = await orchestrator.executeTool(runId, {
+      id: 'final-verification',
+      function: { name: 'page_get_state', arguments: '{}' },
+    });
+
+    expect(result.result.actionReceipt.disposition).toBe('delivered_verified');
+    expect(run.pageActions.finalVerificationCompleted).toBe(true);
+    expect(await orchestrator._buildTools(run)).toEqual([]);
+    expect(orchestrator._getEffectiveToolChoice(run)).toBe('none');
+  });
+
+  it('rejects final verification without receipt-consistent progress', async () => {
+    const orchestrator = new RunOrchestrator(createSkillManager(), {
+      pageActionExecutor: async () => ({
+        success: true,
+        snapshot: { snapshotId: 'final-state', url: 'https://example.test' },
+      }),
+    });
+    orchestrator._emitEvent = () => {};
+    const runId = await orchestrator.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
+    });
+    const run = orchestrator.getRun(runId);
+    run.pageActions.planner.subGoals.forEach((goal) => {
+      goal.status = 'done';
+      goal.completionEvidence = {
+        disposition: 'delivered_unverified',
+        evidenceKind: 'action_dispatched',
+      };
+    });
+    run.pageActions.planner.completedAt = Date.now();
+
+    const result = await orchestrator.executeTool(runId, {
+      id: 'invalid-final-verification',
+      function: { name: 'page_get_state', arguments: '{}' },
+    });
+
+    expect(run.pageActions.finalVerificationCompleted).toBe(false);
+    expect(result.result.finalVerification).toMatchObject({ verified: false });
+    expect((await orchestrator._buildTools(run)).map((tool) => tool.function.name)).toEqual([
+      'page_get_state',
+    ]);
   });
 
   it('rejects non-string replacement plans at the runtime boundary', async () => {
