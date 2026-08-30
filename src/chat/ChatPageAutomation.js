@@ -144,11 +144,11 @@ export function updatePageActionActivity(chatArea, event = {}) {
     list.appendChild(item);
   }
   const action = String(event.action || 'page action').replace(/^page_/, '');
-  const target = event.target?.label ? ` — ${event.target.label}` : '';
+  const target = event.target?.label ? `, ${event.target.label}` : '';
   const state = event.state || (event.type === 'page_action_warning' ? 'warning' : 'updated');
   const disposition = String(event.receipt?.disposition || '').replaceAll('_', ' ');
-  const receiptText = disposition ? ` — ${disposition}` : '';
-  item.textContent = `${action}${target}: ${state}${receiptText}${event.message ? ` — ${event.message}` : ''}`;
+  const receiptText = disposition ? `, ${disposition}` : '';
+  item.textContent = `${action}${target}: ${state}${receiptText}${event.message ? `, ${event.message}` : ''}`;
   while (list.children.length > 12) list.removeChild(list.firstElementChild);
   chatArea.scrollTop = chatArea.scrollHeight;
   return card;
@@ -238,7 +238,7 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
     const tabId = Number.isInteger(event.activeTab.tabId)
       ? `tab ${event.activeTab.tabId}`
       : 'active tab';
-    activeTab.textContent = `Active ${tabId}${activeTitle ? ` — ${activeTitle}` : ''}${
+    activeTab.textContent = `Active ${tabId}${activeTitle ? `, ${activeTitle}` : ''}${
       activeOrigin ? ` (${activeOrigin})` : ''
     }`;
     card.appendChild(activeTab);
@@ -296,10 +296,10 @@ function applyPageActionsToggle(element, enabled) {
   element.dataset.runActive = String(pageActionsRunActive);
   element.disabled = pageActionsRunActive;
   element.title = pageActionsRunActive
-    ? 'Act is running — page actions stay enabled for this run'
+    ? 'Act is running. Page actions stay enabled for this run.'
     : active
-      ? 'Page actions are on — click to disable bounded page and tab actions'
-      : 'Page actions are off — click to enable bounded page and tab actions';
+      ? 'Page actions are on. Click to disable bounded page and tab actions.'
+      : 'Page actions are off. Click to enable bounded page and tab actions.';
 }
 
 /**

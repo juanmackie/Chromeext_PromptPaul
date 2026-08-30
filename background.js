@@ -381,7 +381,7 @@ async function sendPanelMessage(payload) {
     }
   }
 
-  // All retries failed — queue for later consumption
+  // All retries failed: queue for later consumption
   const queued = await queuePendingPanelAction(payload);
   if (!queued) {
     console.warn(
@@ -1056,7 +1056,7 @@ const PAGE_ACTION_READY_POLL_MS = 300;
 
 /**
  * Ping the page-action content script on a tab with a bounded timeout.
- * Resolves to { connected } — never throws.
+ * Resolves to { connected }: never throws.
  * @param {number} tabId
  * @returns {Promise<{connected: boolean}>}
  */
@@ -1908,7 +1908,7 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
   }
 }
 
-// Registry for built-in tool implementations — now handled by RunOrchestrator
+// Registry for built-in tool implementations: now handled by RunOrchestrator
 
 async function isPdfTab(tab) {
   if (isLikelyPdfUrl(tab?.url, tab?.title)) return true;
@@ -3024,7 +3024,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'pageActionDecision') {
     // Sender/run ownership validation: approval decisions must come from a
     // Prompt Paul extension page (the side panel), and the supplied source tab
-    // must match the run's source tab — the opaque confirmation ID alone is
+    // must match the run's source tab: the opaque confirmation ID alone is
     // not enough to authorize an action.
     const decisionRun = runOrchestrator.activeRuns.get(request.runId);
     if (!extensionPageSender || !isAuthorizedRunRequest(request, sender)) {

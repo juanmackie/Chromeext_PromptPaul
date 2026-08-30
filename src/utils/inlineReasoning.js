@@ -6,7 +6,7 @@
  * Instead they stream their chain-of-thought inline in `content`, wrapped in
  * `<think>…</think>` (or `<thinking>…</thinking>`) tags. This parser pulls that
  * thinking out of the answer stream so it can be routed to the reasoning panel,
- * while normal text — including HTML like `<!DOCTYPE html>` — passes through
+ * while normal text: including HTML like `<!DOCTYPE html>`: passes through
  * untouched.
  *
  * @module inlineReasoning

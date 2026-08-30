@@ -306,7 +306,7 @@ export function evaluateProgress(planner, actionResult, note) {
   }
 
   // Unverified delivery may still represent progress; don't auto-advance
-  // but don't block either — let the model decide via notes.
+  // but don't block either: let the model decide via notes.
   if (disposition === 'delivered_unverified') {
     return { advance: false, replan: false, blocked: false, allDone: false };
   }

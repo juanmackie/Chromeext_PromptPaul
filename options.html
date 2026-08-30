@@ -36,7 +36,10 @@
           <h2 class="fs-5 fw-semibold mb-0">Get Started</h2>
         </div>
         <ol class="setup-steps mb-3">
-          <li>Connect your model below — endpoint, API key, and model name.</li>
+          <li>
+            Choose a connection type below. API profiles use an endpoint, API key, and model. Codex
+            uses ChatGPT sign-in. Hermes uses a gateway URL and optional key.
+          </li>
           <li>Open the <strong>side panel</strong> and start chatting.</li>
           <li>Use context menus or the sidebar buttons for quick actions.</li>
         </ol>
@@ -170,7 +173,7 @@
                 <button
                   type="button"
                   class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
-                  data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTPS URL."
+                  data-tooltip="The API endpoint URL for your language model service. Must be a valid HTTP(S) URL."
                   aria-label="Help"
                 >
                   <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
@@ -396,9 +399,9 @@
           </label>
         </div>
         <div class="form-text mt-0 mb-3">
-          Event-only telemetry via Umami: instruction name, model name, and tool names used. No page
-          URLs/titles/content or identifiers. A random instance ID rotates monthly. You can disable
-          anytime.
+          Event-only telemetry via Umami: instruction name, model name, and tool names used, plus a
+          rotating pseudonymous instance ID. No page URLs, titles, content, prompts, keys, or
+          credentials are sent. You can disable analytics anytime.
         </div>
 
         <div class="form-check form-switch mb-3">
@@ -1333,8 +1336,9 @@ What this skill does and when to use it.
         />
         <p class="text-secondary-emphasis small">
           Export or import supported extension data (profiles, skills, tools, instructions, and
-          settings) in a single file. <strong>Backup files do not contain credentials</strong>
-          &mdash; configure API access again after restoring.
+          settings) in a single file.
+          <strong>Backup files do not contain credentials.</strong> Configure API access again after
+          restoring.
         </p>
         <div class="d-flex gap-2">
           <button type="button" id="exportAllData" class="btn btn-primary">

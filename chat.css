@@ -1,6 +1,6 @@
 /* Chat-specific styles - Theme variables are now imported from theme.css */
 
-/* Material Symbols Outlined font — bundled locally (no external CDN dependency) */
+/* Material Symbols Outlined font: bundled locally (no external CDN dependency) */
 @font-face {
   font-family: 'Material Symbols Outlined';
   font-style: normal;

@@ -120,12 +120,17 @@ describe('validation helpers', () => {
     expect(normalizeBackupPayload({ sync: { themePreference: 'sepia' } }).valid).toBe(false);
   });
 
-  it('preserves the persistent notch preference in backups', () => {
+  it('preserves the persistent notch preference and position in backups', () => {
     expect(BACKUP_LOCAL_KEYS).toContain('notchEnabled');
-    const result = normalizeBackupPayload({ local: { notchEnabled: true } });
+    expect(BACKUP_LOCAL_KEYS).toContain('notchPosition');
+    const result = normalizeBackupPayload({
+      local: { notchEnabled: true, notchPosition: 72.5 },
+    });
 
     expect(result.valid).toBe(true);
     expect(result.value.local.notchEnabled).toBe(true);
+    expect(result.value.local.notchPosition).toBe(72.5);
+    expect(normalizeBackupPayload({ local: { notchPosition: 101 } }).valid).toBe(false);
   });
 
   it('does not restore the transient Act permission from a backup', () => {

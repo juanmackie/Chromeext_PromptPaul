@@ -26,17 +26,17 @@ Initial findings:
 
 Expected implementation targets after plan approval:
 
-- `content_script_unified.js` — add a bounded, on-demand interactive DOM snapshot/index and semantic click/input/select/scroll handlers; keep existing Readability/video/PDF extraction unchanged. Keep this in the classic all-pages content-script runtime rather than adding a second competing extractor.
-- `background.js` — route run-scoped page-control requests to the originating tab, validate tab/page support, and resolve confirmation responses without exposing arbitrary browser control.
-- `src/orchestrator/RunOrchestrator.js` — register/authorize page capabilities, track a page-action session, enforce step/action limits and policy, emit structured activity/confirmation events, and abort pending actions safely.
-- `src/utils/pageDom.js` (new) — pure flat-tree dehydration/indexing/formatting helpers (consumed by the content-script adapter or kept structurally mirrored there), attribute/text caps, semantic element classification, and safe target metadata that can be unit-tested independently.
-- `src/utils/pageActionPolicy.js` (new) — action schemas, risk classification, hard blocks, trusted-mode policy, and bounded text/target validation.
-- `src/chat/ChatUI.js` and `src/chat/ChatComposer.js` — render page-action activity and approval cards using existing sanitized UI/run-state primitives.
-- `chat.js`, `chat.html`, `chat.css` — pass the current source tab/run mode, add an explicit Page Actions opt-in/control, and handle approve/deny responses without growing the entry point beyond its existing guard.
-- `options.html`, `options.js`, `src/options/OptionsUI.js` — add the trusted-mode preference and clear warning/disable controls; keep default-off behavior and credential masking.
-- `manifest.json` — likely no new permission for single-tab DOM control; verify current `scripting`, host, and content-script coverage before changing it.
-- `tests/pageDom.test.js`, `tests/pageActionPolicy.test.js`, and `tests/runOrchestrator.test.js` — pure DOM/policy coverage plus orchestration/confirmation/abort behavior.
-- `scripts/test-runner.js`, `docs/ARCHITECTURE.md`, `README.md`, `CHANGELOG.md`, and applicable `AGENTS.md` files — structural guards, setup/privacy/safety documentation, and DOX contracts.
+- `content_script_unified.js`: add a bounded, on-demand interactive DOM snapshot/index and semantic click/input/select/scroll handlers; keep existing Readability/video/PDF extraction unchanged. Keep this in the classic all-pages content-script runtime rather than adding a second competing extractor.
+- `background.js`: route run-scoped page-control requests to the originating tab, validate tab/page support, and resolve confirmation responses without exposing arbitrary browser control.
+- `src/orchestrator/RunOrchestrator.js`: register/authorize page capabilities, track a page-action session, enforce step/action limits and policy, emit structured activity/confirmation events, and abort pending actions safely.
+- `src/utils/pageDom.js` (new): pure flat-tree dehydration/indexing/formatting helpers (consumed by the content-script adapter or kept structurally mirrored there), attribute/text caps, semantic element classification, and safe target metadata that can be unit-tested independently.
+- `src/utils/pageActionPolicy.js` (new): action schemas, risk classification, hard blocks, trusted-mode policy, and bounded text/target validation.
+- `src/chat/ChatUI.js` and `src/chat/ChatComposer.js`: render page-action activity and approval cards using existing sanitized UI/run-state primitives.
+- `chat.js`, `chat.html`, `chat.css`: pass the current source tab/run mode, add an explicit Page Actions opt-in/control, and handle approve/deny responses without growing the entry point beyond its existing guard.
+- `options.html`, `options.js`, `src/options/OptionsUI.js`: add the trusted-mode preference and clear warning/disable controls; keep default-off behavior and credential masking.
+- `manifest.json`: likely no new permission for single-tab DOM control; verify current `scripting`, host, and content-script coverage before changing it.
+- `tests/pageDom.test.js`, `tests/pageActionPolicy.test.js`, and `tests/runOrchestrator.test.js`: pure DOM/policy coverage plus orchestration/confirmation/abort behavior.
+- `scripts/test-runner.js`, `docs/ARCHITECTURE.md`, `README.md`, `CHANGELOG.md`, and applicable `AGENTS.md` files: structural guards, setup/privacy/safety documentation, and DOX contracts.
 
 ## Reuse
 
@@ -49,19 +49,19 @@ Prompt Paul already supplies most of the surrounding product plumbing:
 
 Page-Agent ideas worth adapting:
 
-- `PageController.getBrowserState()` and `flatTreeToString()` — index interactive nodes and retain useful `role`, `name`, `placeholder`, `aria-*`, `value`, `checked`, `contenteditable`, and semantic landmark information while capping text/attributes.
-- `PageController`'s async, isolated action methods — model actions by stable per-snapshot indices, refresh state after each mutation, and never let the model submit CSS/JS selectors directly.
-- `PageAgentCore`'s `statuschange`/`activity`/`historychange` split — map this to existing run events instead of exposing hidden chain-of-thought.
-- Page-Agent's `ask_user`, allowlist/blocklist, data transformation, visual mask, abort-signal, and max-step concepts — adapt them to explicit Prompt Paul confirmation cards, a DOM-only policy, snapshot masking, and existing abort lifecycle.
+- `PageController.getBrowserState()` and `flatTreeToString()`: index interactive nodes and retain useful `role`, `name`, `placeholder`, `aria-*`, `value`, `checked`, `contenteditable`, and semantic landmark information while capping text/attributes.
+- `PageController`'s async, isolated action methods: model actions by stable per-snapshot indices, refresh state after each mutation, and never let the model submit CSS/JS selectors directly.
+- `PageAgentCore`'s `statuschange`/`activity`/`historychange` split: map this to existing run events instead of exposing hidden chain-of-thought.
+- Page-Agent's `ask_user`, allowlist/blocklist, data transformation, visual mask, abort-signal, and max-step concepts: adapt them to explicit Prompt Paul confirmation cards, a DOM-only policy, snapshot masking, and existing abort lifecycle.
 
 Explicitly defer or skip: Page-Agent's full `PageAgentCore`/macro-tool loop, `execute_javascript`, `TabsController`/tab groups, main-world token bridge, `/llms.txt` fetching, visual/canvas automation, and direct vendoring of its TypeScript packages.
 
 Upstream references used for this mapping:
 
-- [`PageController.ts`](https://github.com/alibaba/page-agent/blob/main/packages/page-controller/src/PageController.ts) and [`dom/index.ts`](https://github.com/alibaba/page-agent/blob/main/packages/page-controller/src/dom/index.ts) — browser state, dehydration, indexed controls, and semantic attributes.
-- [`PageAgentCore.ts`](https://github.com/alibaba/page-agent/blob/main/packages/core/src/PageAgentCore.ts) and [`tools/index.ts`](https://github.com/alibaba/page-agent/blob/main/packages/core/src/tools/index.ts) — loop, abort signal, activity/history events, ask-user, tool permissions, and the explicit JavaScript risk.
-- [`extension_api.md`](https://github.com/alibaba/page-agent/blob/main/packages/extension/docs/extension_api.md) and the extension controllers — token-gated main-world bridge and multi-tab architecture intentionally deferred here.
-- [Page-Agent security/permissions docs](https://alibaba.github.io/page-agent/docs/advanced/security-permissions/) and [MIT license](https://github.com/alibaba/page-agent/blob/main/LICENSE) — allowlist/blocklist, masking, confirmation guidance, and reuse obligations.
+- [`PageController.ts`](https://github.com/alibaba/page-agent/blob/main/packages/page-controller/src/PageController.ts) and [`dom/index.ts`](https://github.com/alibaba/page-agent/blob/main/packages/page-controller/src/dom/index.ts): browser state, dehydration, indexed controls, and semantic attributes.
+- [`PageAgentCore.ts`](https://github.com/alibaba/page-agent/blob/main/packages/core/src/PageAgentCore.ts) and [`tools/index.ts`](https://github.com/alibaba/page-agent/blob/main/packages/core/src/tools/index.ts): loop, abort signal, activity/history events, ask-user, tool permissions, and the explicit JavaScript risk.
+- [`extension_api.md`](https://github.com/alibaba/page-agent/blob/main/packages/extension/docs/extension_api.md) and the extension controllers: token-gated main-world bridge and multi-tab architecture intentionally deferred here.
+- [Page-Agent security/permissions docs](https://alibaba.github.io/page-agent/docs/advanced/security-permissions/) and [MIT license](https://github.com/alibaba/page-agent/blob/main/LICENSE): allowlist/blocklist, masking, confirmation guidance, and reuse obligations.
 
 ## Capability fit
 

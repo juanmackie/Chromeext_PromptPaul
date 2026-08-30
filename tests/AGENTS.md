@@ -10,7 +10,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `page-action-evaluation.json`, `pageActionEvaluation.test.js`, and `pageActionEvaluationExecution.test.js` own the credential-free browser-action evaluation corpus, schema guards, provider matrix, and bounded metric execution.
 - `hermesTransport.test.js` covers Hermes endpoint validation, capability/error handling, approval choices, output adaptation, and event adaptation without real credentials or a live gateway.
 - `runtimeAuthorization.test.js` covers extension sender, content-script tab, and opaque run-owner checks without Chrome runtime state.
-- `validation.test.js` covers persistence and validation of the `notchEnabled` backup preference and `themePreference` values.
+- `validation.test.js` covers persistence and validation of the `notchEnabled` and bounded `notchPosition` backup preferences and `themePreference` values.
 - `streamSafety.test.js` covers bounded SSE buffers and provider error-body reads.
 - `mediaFetch.test.js` covers public-media URL rejection, response MIME checks, and streamed size limits.
 - `domSanitizer.test.js` covers fail-closed HTML escaping when DOMPurify is unavailable.

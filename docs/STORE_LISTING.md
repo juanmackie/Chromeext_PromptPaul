@@ -1,4 +1,4 @@
-# Chrome Web Store Listing — Prompt Paul
+# Chrome Web Store Listing - Prompt Paul
 
 Source of truth for the public Chrome Web Store listing. Update this file whenever the store listing changes, and keep the "What's new" entry aligned with the latest release section in `CHANGELOG.md`.
 
@@ -16,13 +16,13 @@ A clearer composer-led chat experience with visible context attachments, context
 
 ## Description
 
-**Prompt Paul — Context-aware AI in the browser**
+**Prompt Paul - Context-aware AI in the browser**
 
 Short feedback loops for selected text, without ceremony.
 
 Prompt Paul keeps AI assistance close to the page you are already working on. Select text, load page context, right-click media, or open the side panel and start a focused conversation.
 
-Bring your own model endpoint—including OpenAI-compatible cloud providers, routing services, or local setups—and configure the endpoint, API key, and model that fit your workflow.
+Bring your own model endpoint, including OpenAI-compatible cloud providers, routing services, or local setups. API profiles use an endpoint, API key, and model; Codex uses ChatGPT sign-in; Hermes uses a gateway URL and optional key.
 
 ### What it does
 
@@ -33,8 +33,7 @@ Analyze, explain, proofread, summarize, or run a custom instruction against sele
 Load the current page into the side panel, ask follow-up questions, and keep the page context attached to the conversation.
 
 **Media-aware prompts**
-Work with images, video, and audio when your model supports multimodal input. Right-click, ask, and get a response.
-YouTube workflows can include transcript context and visual moments when available.
+Work with images, video, and audio when your provider and model support them. Codex connections in this release support text and images; video and audio require a compatible API profile. Right-click media, ask, and get a response. YouTube workflows can include transcript context and visual moments when available.
 
 **A clearer composer**
 The composer keeps your working context visible:
@@ -48,15 +47,15 @@ The composer keeps your working context visible:
 Save repeatable workflows for emails, meeting notes, captions, research summaries, code explanations, product descriptions, and support replies.
 
 **Tools and Agent Skills**
-Use configured tools and OpenClaw-compatible Agent Skills when a plain chat response is not enough.
+Use configured custom HTTP tools and OpenClaw-compatible Agent Skills with API-key or Codex connections. Hermes runs use tools owned by the gateway.
 
 **Optional web search**
-Enable web search grounding when current or verifiable information would improve the answer. Responses that use search include a Sources section.
+Enable web search grounding for API-key or Codex connections when current or verifiable information would improve the answer. Responses that use search include a Sources section. The selected model must support function calling.
 
 ### Privacy
 
 Prompt Paul stores your configuration locally in Chrome and only sends selected text, page content, media, or instructions when you explicitly ask it to process them.
 
-API keys stay in Chrome storage. Analytics is opt-in and disabled by default.
+API keys stay in Chrome storage. Analytics is opt-in and disabled by default; if enabled, it sends coarse event labels and a rotating pseudonymous instance ID, not page content, prompts, keys, or credentials.
 
-No tab switching. No ceremony. Just a short loop from context to answer.
+No ceremony. Just a short loop from context to answer.

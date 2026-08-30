@@ -43,7 +43,7 @@ export async function selectOptimalProfile(profiles, selectedProfileId, mediaDat
     return { config: currentProfile, rerouted: false };
   }
 
-  // No media or no profiles — use current
+  // No media or no profiles: use current
   if (!profiles.length || !currentProfile) {
     return { config: currentProfile, rerouted: false };
   }
@@ -57,7 +57,7 @@ export async function selectOptimalProfile(profiles, selectedProfileId, mediaDat
     return { config: visionProfile, rerouted: true };
   }
 
-  // No vision-capable profile found — use current and still allow the attempt
+  // No vision-capable profile found: use current and still allow the attempt
   return { config: currentProfile, rerouted: false };
 }
 

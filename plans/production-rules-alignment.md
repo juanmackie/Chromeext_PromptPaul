@@ -31,11 +31,11 @@ Review the current Prompt Paul repository against `C:\Users\juanm\Documents\GitH
 
 ## Files to modify
 
-- `options.js`, `background.js`, `src/utils/validation.js`, `src/utils/profileRouting.js` — credential/demo onboarding, shared endpoint/tool validation, safe logging, and backup restore boundaries.
-- `scripts/test-runner.js`, `tests/` — regression guards and focused tests for validation, imports/backups, and security-sensitive behavior.
-- `package.json`, `package-lock.json`, `.github/workflows/ci.yml` — dependency remediation and required behavior-test/security gates.
-- `README.md`, `CHANGELOG.md`, `docs/DEVELOPMENT.md`, `docs/ARCHITECTURE.md`, `options.html`, applicable `AGENTS.md` files — accurate demo credential, compatibility, analytics, backup, and workflow documentation.
-- `plans/production-rules-alignment.md` — review findings and implementation checklist during planning.
+- `options.js`, `background.js`, `src/utils/validation.js`, `src/utils/profileRouting.js`: credential/demo onboarding, shared endpoint/tool validation, safe logging, and backup restore boundaries.
+- `scripts/test-runner.js`, `tests/`: regression guards and focused tests for validation, imports/backups, and security-sensitive behavior.
+- `package.json`, `package-lock.json`, `.github/workflows/ci.yml`: dependency remediation and required behavior-test/security gates.
+- `README.md`, `CHANGELOG.md`, `docs/DEVELOPMENT.md`, `docs/ARCHITECTURE.md`, `options.html`, applicable `AGENTS.md` files: accurate demo credential, compatibility, analytics, backup, and workflow documentation.
+- `plans/production-rules-alignment.md`: review findings and implementation checklist during planning.
 
 ## Reuse
 

@@ -95,8 +95,46 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await expect(notchShell).toHaveAttribute('data-theme', 'light');
     const hostBox = await host.boundingBox();
     expect(hostBox).not.toBeNull();
-    expect(hostBox.x + hostBox.width / 2).toBeCloseTo(640, 0);
+    const initialCenter = hostBox.x + hostBox.width / 2;
+    expect(initialCenter).toBeCloseTo(640, 0);
     expect(hostBox.y).toBeLessThan(50);
+
+    const rail = host.locator('.notch-rail');
+    const dragRailBox = await rail.boundingBox();
+    expect(dragRailBox).not.toBeNull();
+    await target.mouse.move(
+      dragRailBox.x + dragRailBox.width / 2,
+      dragRailBox.y + dragRailBox.height / 2
+    );
+    await target.mouse.down();
+    await target.mouse.move(
+      dragRailBox.x + dragRailBox.width / 2 + 220,
+      dragRailBox.y + dragRailBox.height / 2,
+      { steps: 5 }
+    );
+    await target.mouse.up();
+    await expect
+      .poll(async () => {
+        const box = await host.boundingBox();
+        return box ? box.x + box.width / 2 : 0;
+      })
+      .toBeGreaterThan(initialCenter + 100);
+    const storedPosition = await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.get('notchPosition', (result) => resolve(result.notchPosition))
+        )
+    );
+    expect(storedPosition).toBeGreaterThan(50);
+    await target.reload();
+    await expect(host).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const box = await host.boundingBox();
+        return box ? box.x + box.width / 2 : 0;
+      })
+      .toBeGreaterThan(initialCenter + 100);
+
     const toggle = host.locator('.notch-toggle');
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await toggle.click();

@@ -1,5 +1,5 @@
 /**
- * Theme toggle sidebar button — CSP-safe helper.
+ * Theme toggle sidebar button: CSP-safe helper.
  * Loaded as a regular (non-inline) script so Chrome extension CSP allows it.
  */
 (function () {

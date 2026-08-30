@@ -9,7 +9,7 @@
 import { readBoundedResponseText } from './streamSafety.js';
 
 /**
- * Fixed endpoint — never accept a caller-supplied URL.
+ * Fixed endpoint: never accept a caller-supplied URL.
  * Brave recommends the LLM Context endpoint for agent grounding:
  * https://api-dashboard.search.brave.com/documentation/services/llm-context
  * @const {string}
@@ -58,7 +58,7 @@ export const Freshness = Object.freeze({
 });
 
 /**
- * Validate a single source URL — only HTTP(S) allowed.
+ * Validate a single source URL: only HTTP(S) allowed.
  * @param {string} url
  * @returns {boolean}
  */

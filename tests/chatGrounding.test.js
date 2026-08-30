@@ -164,7 +164,7 @@ describe('buildFinalResponseBody', () => {
         exhausted: true,
         reason: 'length',
       })
-    ).toBe('⚠️ No final answer — the model used its token budget thinking.');
+    ).toBe('⚠️ No final answer. The model used its token budget thinking.');
   });
 
   it('does not claim token exhaustion without confirmed completion metadata', () => {

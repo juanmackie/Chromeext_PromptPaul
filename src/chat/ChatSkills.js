@@ -116,17 +116,17 @@ export function parseCommand(message, availableSkills) {
     if (foundSkill) {
       return { type: 'skill', skillName: foundSkill.name, body: remaining.trim() };
     }
-    // Unknown skill name — pass through
+    // Unknown skill name: pass through
     return { type: null, skillName: null, body: message };
   }
 
-  // /<skill-name> [body] — per-skill command (alias, only for user-invocable skills)
+  // /<skill-name> [body]: per-skill command (alias, only for user-invocable skills)
   const foundSkill = resolveSkillName(cmd, availableSkills);
   if (foundSkill && foundSkill.userInvocable !== false) {
     return { type: 'skill', skillName: foundSkill.name, body: body.trim() };
   }
 
-  // Unknown slash command — pass through as normal message
+  // Unknown slash command: pass through as normal message
   return { type: null, skillName: null, body: message };
 }
 
@@ -296,8 +296,8 @@ export function formatSkillsList(availableSkills, slashCommands = []) {
   if (slashCommands.length > 0) {
     cmdList =
       '\n\n**Commands:**\n' +
-      slashCommands.map((c) => `- \`/${c.name}\` — ${c.description}`).join('\n');
-    cmdList += '\n- `/skill <name> [input]` — invoke any skill by name';
+      slashCommands.map((c) => `- \`/${c.name}\`: ${c.description}`).join('\n');
+    cmdList += '\n- `/skill <name> [input]`: invoke any skill by name';
   }
 
   return `📚 Available skills:\n${list}${cmdList}`;

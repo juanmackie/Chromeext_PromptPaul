@@ -1,5 +1,5 @@
 /**
- * @fileoverview Shared prompt builders — single source of truth for all prompt strings.
+ * @fileoverview Shared prompt builders: single source of truth for all prompt strings.
  *
  * Every prompt entry point (sidebar, context menu, media analysis) imports from here.
  * When a prompt needs updating, change it in one place.
@@ -31,7 +31,7 @@ export function buildSummarizePrompt(contextLabel, includeMediaGuidance = false)
 }
 
 /**
- * Proofread prompt — fixed, no parameters.
+ * Proofread prompt: fixed, no parameters.
  */
 export const PROOFREAD_PROMPT =
   'Proofread the following content for spelling, grammar, punctuation, and clarity issues. Fix all errors and return the corrected text followed by a brief bullet list of changes made.';
@@ -154,7 +154,7 @@ export function composeUserPrompt(promptRequest) {
 }
 
 /**
- * Context menu command prompts — maps command IDs to prompt strings.
+ * Context menu command prompts: maps command IDs to prompt strings.
  * Used by background.js for right-click context menu dispatch.
  */
 export const CONTEXT_MENU_PROMPTS = {

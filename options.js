@@ -174,7 +174,7 @@ function showStatus(message, isError = false, isToast = false) {
     // Show status div message when isToast is false
     const status = document.getElementById('status');
     if (!status) {
-      // No inline status element on this page — fall back to a toast so the
+      // No inline status element on this page. Fall back to a toast so the
       // message is still surfaced instead of throwing on a null element.
       loadingManager.showToast(message, isError ? 'error' : 'success');
       return;
@@ -319,7 +319,7 @@ function updateReasoningOptions(profileId, modelId, savedLevel = '') {
   levels.forEach((level) => {
     const option = document.createElement('option');
     option.value = level.value;
-    option.textContent = level.description ? `${level.label} — ${level.description}` : level.label;
+    option.textContent = level.description ? `${level.label}: ${level.description}` : level.label;
     select.appendChild(option);
   });
   select.value = levels.some((level) => level.value === current)
@@ -1031,6 +1031,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : profile.provider === 'hermes'
               ? Boolean(getHermesEndpoint(profile))
               : Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
+        provider: profile.provider,
         model: profile.modelName,
         endpointHost: endpointHost(
           profile.provider === 'hermes' ? getHermesEndpoint(profile) : profile.llmEndpoint
@@ -1042,6 +1043,7 @@ document.addEventListener('DOMContentLoaded', () => {
           .then((response) => {
             renderSetupStatus(setupStatusText, setupStatusIcon, {
               connected: response?.status?.connected === true,
+              provider: 'codex',
               model: profile.modelName,
               endpointHost: 'ChatGPT subscription',
             });
@@ -1177,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Persist on explicit save (Save Privacy Settings button)
     analyticsConsentToggle.addEventListener('change', () => {
       announceDirtyChange(true);
-      showStatus('Privacy changes are pending — click Save Privacy Settings.', false, true);
+      showStatus('Privacy changes are pending. Click Save Privacy Settings.', false, true);
     });
   }
 
@@ -1315,7 +1317,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     voiceInputEnabledToggle.addEventListener('change', () => {
       announceDirtyChange(true);
-      showStatus('Voice input changes are pending — click Save Privacy Settings.', false, true);
+      showStatus('Voice input changes are pending. Click Save Privacy Settings.', false, true);
     });
 
     const savePrivacyButton = document.getElementById('savePrivacy');
@@ -3442,7 +3444,7 @@ function setupGroundingHandlers() {
           finish(chrome.runtime.lastError)
         );
       } else if (wasConfigured) {
-        // Masked field with no new value — keep the existing stored key.
+        // Masked field with no new value. Keep the existing stored key.
         finish(null);
       } else {
         showStatus('Enter a Brave Search API key or remove the existing one.', true, true);
@@ -3456,7 +3458,7 @@ function setupGroundingHandlers() {
     keyInput.addEventListener('input', () => {
       if (keyInput.dataset.configured === 'true') delete keyInput.dataset.configured;
       if (keyStatus) {
-        keyStatus.textContent = 'Unsaved changes — click Save Web Search Settings.';
+        keyStatus.textContent = 'Unsaved changes. Click Save Web Search Settings.';
       }
       announceDirtyChange(true);
     });
@@ -3482,7 +3484,7 @@ function setupNotchHandlers() {
 
   toggle.addEventListener('change', () => {
     announceDirtyChange(true);
-    if (status) status.textContent = 'Unsaved changes — click Save Notch Settings.';
+    if (status) status.textContent = 'Unsaved changes. Click Save Notch Settings.';
   });
 
   saveButton?.addEventListener('click', () => {
@@ -3522,7 +3524,7 @@ function setupPageActionHandlers() {
 
   toggle.addEventListener('change', () => {
     announceDirtyChange(true);
-    if (status) status.textContent = 'Unsaved changes — click Save Page Action Settings.';
+    if (status) status.textContent = 'Unsaved changes. Click Save Page Action Settings.';
   });
 
   saveButton?.addEventListener('click', () => {

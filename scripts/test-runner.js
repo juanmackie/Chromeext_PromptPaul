@@ -566,9 +566,11 @@ function runUnitTests(runner) {
       !notch.includes('THEME_PREFERENCE_KEY') ||
       !notch.includes("data-theme='light'") ||
       !notch.includes('notch-energy-flow') ||
-      !notch.includes('notch-signal')
+      !notch.includes('notch-signal') ||
+      !notch.includes("const POSITION_STORAGE_KEY = 'notchPosition'") ||
+      !notch.includes('beginNotchDrag')
     ) {
-      throw new Error('Notch must expose Act activity and dictation controls');
+      throw new Error('Notch must expose Act activity, dictation, and drag controls');
     }
     if (!notch.includes('extension context invalidated') || !notch.includes('try {')) {
       throw new Error('Notch runtime messaging must handle invalidated extension contexts');
@@ -1370,6 +1372,7 @@ function runIntegrationTests(runner) {
       'webSearchEnabled',
       'pageActionsEnabled',
       'pageActionsTrustedMode',
+      'notchPosition',
       'pinnedQuickActions',
       'customSiteSuggestions',
       'hermesApiKeys',
@@ -1384,6 +1387,7 @@ function runIntegrationTests(runner) {
       'src/chat/ChatVoice.js',
       'src/utils/suggestionStorage.js',
       'src/utils/pageActionCheckpoint.js',
+      'content_script_notch.js',
     ]
       .map(readFileSafe)
       .join('\n');

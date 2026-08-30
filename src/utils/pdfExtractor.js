@@ -14,7 +14,7 @@ let pdfjsLibPromise = null;
 
 /**
  * Lazily load the bundled pdf.js ESM build and point it at the bundled worker.
- * Kept out of the chat startup path — only loaded the first time a PDF is read.
+ * Kept out of the chat startup path: only loaded the first time a PDF is read.
  * @returns {Promise<object>} the pdfjs library namespace.
  */
 function loadPdfJs() {
@@ -31,7 +31,7 @@ function loadPdfJs() {
  * Read a URL's bytes as an ArrayBuffer.
  *
  * Local (file://) PDFs are fetched with XMLHttpRequest because Chrome's Fetch
- * API does not support the "file" scheme — `fetch('file://…')` always throws
+ * API does not support the "file" scheme: `fetch('file://…')` always throws
  * `URL scheme "file" is not supported`, even when the extension has "Allow
  * access to file URLs" enabled. XHR honors that permission and works.
  *

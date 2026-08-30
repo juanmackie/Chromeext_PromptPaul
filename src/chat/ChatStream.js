@@ -25,12 +25,12 @@ export class StreamStateManager {
     this.accumulatedStreamedText = '';
     this.activeStreamingToolCall = null;
 
-    // Streaming render buffer — accumulates deltas and flushes at 60fps
+    // Streaming render buffer: accumulates deltas and flushes at 60fps
     this._renderBuffer = '';
     this._renderQueued = false;
     this._chatAreaRef = null;
 
-    // Reasoning ("thinking") stream — rendered into a separate panel above the answer
+    // Reasoning ("thinking") stream: rendered into a separate panel above the answer
     this.currentReasoningContentElement = null;
     this.accumulatedReasoningText = '';
     this._reasoningBuffer = '';

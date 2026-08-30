@@ -74,8 +74,8 @@ function applyToggleState(el, enabled) {
   if (!el) return;
   el.setAttribute('aria-pressed', String(enabled));
   el.title = enabled
-    ? 'Web search is on — click to disable grounding'
-    : 'Web search is off — click to enable grounding';
+    ? 'Web search is on. Click to disable grounding.'
+    : 'Web search is off. Click to enable grounding.';
 }
 
 /**
@@ -182,7 +182,7 @@ export function buildFinalResponseBody(eventContent, streamedText, sources, comp
   if (!content.trim()) {
     if (reasoningObserved) {
       displayContent = completion?.exhausted
-        ? '⚠️ No final answer — the model used its token budget thinking.'
+        ? '⚠️ No final answer. The model used its token budget thinking.'
         : '⚠️ The model returned reasoning but no final answer. Try again or choose a different model.';
     } else if (completion?.reason) {
       displayContent =

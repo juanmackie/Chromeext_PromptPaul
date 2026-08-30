@@ -4,7 +4,7 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 
 ## What It Does
 
-- Process selected text, images, video, and audio from the browser
+- Process selected text, images, video, and audio from the browser when the configured provider and model support them
 - Load page content into a side panel chat
 - Attach `.txt` / `.md` / `.csv` / `.json` documents as bounded text context (converted locally, never uploaded as raw files)
 - Structured extraction for Reddit threads, GitHub repository/issue pages, and RSS/Atom feed URLs, plus YouTube transcripts
@@ -16,7 +16,7 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 - Opt into guarded natural-language actions on the current page (inspect, click, fill, select, scroll)
 - Receive bounded action receipts and safe recovery when a page action is not verified
 - Trim loaded content to stay within context limits
-- Store settings locally with opt-in anonymous analytics
+- Store settings locally with opt-in analytics that send coarse event labels and a rotating pseudonymous instance ID
 - Open the chat from the toolbar icon, context menus, the Options page, or website deep links
 - Use an optional browser-viewport top notch for quick page, selection, chat, and settings actions
 
@@ -37,17 +37,17 @@ cd Chromeext_PromptPaul
 ## Configure
 
 1. Open the extension Options page
-2. Follow the **Get Started** banner: source checkouts seed an OpenRouter-compatible endpoint with the `openrouter/free` model, but require your own API key. See [OpenRouter's API keys](https://openrouter.ai/keys) and [free models](https://openrouter.ai/collections/free-models) to get started; free-model quality may vary. You can also choose **Codex subscription (ChatGPT)** and use **Sign in with ChatGPT**; a successful sign-in creates/selects a **Codex** profile, loads the available models, and exposes the model-specific thinking level. Codex credentials stay background-owned and are not included in backups. Replace the starter settings with your own endpoint, API key, or connected ChatGPT profile, then click **Open Chat** to start in the side panel.
+2. Follow the **Get Started** banner. API profiles use an OpenRouter-compatible endpoint, API key, and model. Source checkouts seed the `openrouter/free` model but require your own API key. See [OpenRouter's API keys](https://openrouter.ai/keys) and [free models](https://openrouter.ai/collections/free-models) to get started; free-model quality may vary. You can instead choose **Codex subscription (ChatGPT)** and use **Sign in with ChatGPT**, or choose **Hermes Agent gateway** and enter its gateway URL and optional key. A successful Codex sign-in creates/selects a **Codex** profile, loads available models, and exposes the model-specific thinking level. Codex credentials stay background-owned and are not included in backups. Replace the starter settings with your own connection details, then click **Open Chat** to start in the side panel.
 3. Configure Web Search Grounding (optional):
    - Enable the **Web** toggle in the side panel to allow grounding
    - Add a Brave Search API key on the Options page (see [Brave's current plans and terms](https://brave.com/search/api/))
-   - When a key is configured and the toggle is on, the model may search the web when current, verifiable, or time-sensitive information would improve the answer — search is a permission, not a mandate, so the model can still answer directly
-   - The selected endpoint/model must support function calling; otherwise grounding will be disabled for that request
+   - When a key is configured and the toggle is on, the model may search the web when current, verifiable, or time-sensitive information would improve the answer - search is a permission, not a mandate, so the model can still answer directly
+   - Web grounding is available for API-key and Codex connections. The selected endpoint/model must support function calling; otherwise grounding will be disabled for that request
 4. Optionally set a system prompt and create custom instructions
 5. Choose **Light**, **Dark**, or **System** in Appearance. System follows your browser or operating system preference.
 6. Optional: enable **Trusted page actions** in Options if you want allowed low/medium-risk page actions to skip individual approvals. It is off by default and never enables JavaScript, arbitrary browser control, password/OTP/payment fields, or destructive/security actions.
 7. Optional: enable **Top Notch** in Options. The notch is off by default and appears only inside supported browser pages; it is not an OS-wide overlay.
-8. Save each section explicitly — Connection, Privacy, Web Search, Page Actions, and Top Notch each have their own Save button. Stored API keys stay masked in the form and are only read on demand; you will be warned if you close the page with unsaved changes.
+8. Save each section explicitly - Connection, Privacy, Web Search, Page Actions, and Top Notch each have their own Save button. Stored API keys stay masked in the form and are only read on demand; you will be warned if you close the page with unsaved changes.
 
 > **Privacy note:** When Web Search is enabled, a model-generated query may derive from your prompt, conversation, selected text, page content, or media context and is sent to Brave. The full conversation is not sent unless represented in that query. The key is stored locally and never included in LLM payloads, analytics, or logs.
 
@@ -59,7 +59,7 @@ cd Chromeext_PromptPaul
 - On supported web pages, expand the top-centered Prompt Paul notch for **Open chat**, **Summarize**, **Explain**, **Dictate**, **Act**, **All actions**, or **Settings**.
 - Saved pinned prompts appear in a compact section, in the order you pinned them. Choose one to run it against the current selection, the current page on a new chat, or the active conversation; up to four are shown so the notch stays focused.
 - **Dictate** listens for one instruction and sends it when speech ends, automatically attaching the bounded current page as context (rather than the current selection or prior conversation). **Act** reveals a small task field; submitting it enables the bounded page-action run for that task only.
-- While Act performs a page action, the target page gets a temporary blue border glow. The notch follows the saved Light/Dark/System theme preference, including live system-theme changes. It uses an isolated Shadow DOM, blends into the top edge of the browser page, and does not change page layout.
+- While Act performs a page action, the target page gets a temporary blue border glow. The notch follows the saved Light/Dark/System theme preference, including live system-theme changes. Drag its top rail left or right to move it out of the way; its horizontal position is remembered. It uses an isolated Shadow DOM, blends into the top edge of the browser page, and does not change page layout.
 - Page, selection, pinned-prompt, dictation, and Act task content is sent only after you choose the matching action. Content-script requests are bound to their sender tab and use the existing side-panel chat flow.
 
 ### Side panel Page Actions toggle
@@ -131,16 +131,16 @@ npm run audit
 
 ## API Compatibility
 
-Prompt Paul works with OpenAI-compatible endpoints, including Mistral, OpenAI, and compatible local or proxy-backed providers.
+Prompt Paul works with OpenAI-compatible endpoints, including Mistral, OpenAI, compatible local or proxy-backed providers, and the official Anthropic API format when the configured endpoint is on Anthropic's API domain.
 
 ## Privacy
 
 - API keys and settings stay in Chrome storage
 - When **Act** is enabled, bounded DOM/page metadata is sent to the configured LLM endpoint for that run. Page text is treated as untrusted data and sensitive field values are masked or omitted.
 - Action receipts expose only bounded status and postcondition evidence. The evaluation harness stores counts and sizes, not credentials, raw page history, or screenshots.
-- Anonymous analytics are opt-in and disabled by default
-- Analytics sends only coarse event labels such as instruction name, model name, and tool names
-- No page URLs, page titles, page content, API keys, or prompt text are sent to analytics
+- Analytics are opt-in and disabled by default
+- When enabled, analytics sends only coarse event labels such as instruction name, model name, and tool names, plus a rotating pseudonymous instance ID
+- No page URLs, page titles, page content, API keys, credentials, or prompt text are sent to analytics
 - Browser-internal pages and the Chrome Web Store are blocked before extraction or page actions
 - Page content is only sent when you explicitly invoke processing; page actions are separately opt-in through **Act**
 

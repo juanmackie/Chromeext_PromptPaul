@@ -285,7 +285,7 @@ export function readFileAsDocumentText(file) {
 /**
  * Classify and read a dropped file into a ready-to-send attachment plan.
  * Documents (.txt/.md/.csv/.json) become bounded text context; everything else
- * follows the existing base64 media pipeline. Pure data out — no UI side effects.
+ * follows the existing base64 media pipeline. Pure data out: no UI side effects.
  * @param {File} file File object from a drop event.
  * @returns {Promise<{kind:'invalid',error:string}|{kind:'document',preview:Object,instruction:string,text:string}|{kind:'media',mediaData:Object,instruction:string}>}
  */

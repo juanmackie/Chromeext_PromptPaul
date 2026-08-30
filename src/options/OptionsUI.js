@@ -9,7 +9,7 @@
  */
 
 /** Masked placeholder shown in credential fields when a key is configured. */
-export const MASKED_KEY_PLACEHOLDER = '•••••••••••••• (configured — leave blank to keep)';
+export const MASKED_KEY_PLACEHOLDER = '•••••••••••••• (configured; leave blank to keep)';
 
 /**
  * Creates a dirty tracker over a set of form fields.
@@ -249,7 +249,7 @@ export function flashSaveFeedback(button, isError) {
  * Renders the chat-led setup status line.
  * @param {Object} statusText - Element to fill with the status message.
  * @param {Object} statusIcon - Optional icon element (material symbol text).
- * @param {Object} status - Status data: { connected, model, endpointHost }.
+ * @param {Object} status - Status data: { connected, provider, model, endpointHost }.
  */
 export function renderSetupStatus(statusText, statusIcon, status) {
   if (!statusText) return;
@@ -257,10 +257,22 @@ export function renderSetupStatus(statusText, statusIcon, status) {
   let message;
   let icon = 'pending';
   if (data.connected) {
-    message = `Connected — ${data.model || 'model'} via ${data.endpointHost || 'endpoint'}. Open the side panel and start chatting.`;
+    if (data.provider === 'codex') {
+      message = 'Connected to your ChatGPT subscription. Open the side panel and start chatting.';
+    } else if (data.provider === 'hermes') {
+      message = 'Connected to the Hermes gateway. Open the side panel and start chatting.';
+    } else {
+      message = `Connected: ${data.model || 'model'} via ${data.endpointHost || 'endpoint'}. Open the side panel and start chatting.`;
+    }
     icon = 'check_circle';
+  } else if (data.provider === 'codex') {
+    message = 'Not connected yet. Sign in with ChatGPT below to start.';
+    icon = 'rocket_launch';
+  } else if (data.provider === 'hermes') {
+    message = 'Not connected yet. Add and save a Hermes gateway URL below to start.';
+    icon = 'rocket_launch';
   } else {
-    message = 'Not connected yet — add your LLM endpoint, API key, and model below to start.';
+    message = 'Not connected yet. Add your LLM endpoint, API key, and model below to start.';
     icon = 'rocket_launch';
   }
   statusText.textContent = message;

@@ -819,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedTextRemoveButton.addEventListener('click', () => {
       clearSelectedTextState();
       loadingManager.showToast(
-        'Selected text detached — actions now continue the conversation',
+        'Selected text detached: actions now continue the conversation',
         'info'
       );
     });
@@ -1744,7 +1744,7 @@ document.addEventListener('DOMContentLoaded', () => {
             break;
           case 'content':
             if (streamState.getCurrentStreamingContentElement() && event.data) {
-              // First answer token after reasoning — collapse the thinking panel.
+              // First answer token after reasoning: collapse the thinking panel.
               if (streamState.getReasoningContentElement()) {
                 chatUI.finalizeReasoningPanel(
                   streamState.getCurrentStreamingMessageDiv(),
@@ -1823,7 +1823,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             break;
           /*
-              `❌ Page action failed: ${event.action} ${label} — ${event.error || 'the page did not respond.'}`
+              `❌ Page action failed: ${event.action} ${label}: ${event.error || 'the page did not respond.'}`
           */
           case 'page_action_warning':
             updatePageActionActivity(chatArea, { ...event, state: 'warning' });
@@ -2389,7 +2389,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
           }
         } catch (e) {
-          // routing failure is non-fatal — fall back to current config
+          // routing failure is non-fatal: fall back to current config
         }
       }
 
@@ -2572,7 +2572,7 @@ document.addEventListener('DOMContentLoaded', () => {
         instructionInput.value = '';
         // Keep the selection sticky so further sidebar prompts can reuse it.
       } else if (hasConversation()) {
-        // No selection/media, but a conversation exists — run as a follow-up.
+        // No selection/media, but a conversation exists: run as a follow-up.
         const promptRequest = {
           instruction: effectiveInstruction,
           context: {

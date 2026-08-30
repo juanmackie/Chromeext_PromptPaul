@@ -7,6 +7,9 @@
   if (window.top !== window || document.querySelector('[data-prompt-paul-notch-host]')) return;
 
   const STORAGE_KEY = 'notchEnabled';
+  const POSITION_STORAGE_KEY = 'notchPosition';
+  const DEFAULT_NOTCH_POSITION = 50;
+  const DRAG_THRESHOLD_PX = 4;
   const THEME_PREFERENCE_KEY = 'themePreference';
   const LEGACY_DARK_THEME_KEY = 'darkTheme';
   const SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)';
@@ -84,6 +87,12 @@
   let dictationFinalText = '';
   let dictationHadError = false;
   let themePreference = 'light';
+  let notchPosition = DEFAULT_NOTCH_POSITION;
+  let notchPositionDirty = false;
+  let dragState = null;
+  let dragClickSuppressed = false;
+  let dragClickResetTimer = null;
+  let notchResizeObserver = null;
   const systemThemeMediaQuery = window.matchMedia?.(SYSTEM_THEME_QUERY) || null;
 
   const styleText = `
@@ -225,6 +234,8 @@
     .notch-rail {
       position: relative;
       display: flex;
+      cursor: grab;
+      touch-action: none;
       align-items: center;
       justify-content: center;
       width: 100%;
@@ -241,6 +252,10 @@
       backdrop-filter: blur(24px) saturate(1.25);
       transition: height 460ms var(--notch-spring), border-radius 460ms var(--notch-spring),
         border-color 220ms ease, background-color 220ms ease;
+    }
+
+    .notch-rail:active {
+      cursor: grabbing;
     }
 
     .notch-shell[data-expanded='true'] .notch-rail {
@@ -871,6 +886,57 @@
     }
   `;
 
+  function normalizeNotchPosition(position) {
+    const numericPosition = Number(position);
+    if (!Number.isFinite(numericPosition)) return DEFAULT_NOTCH_POSITION;
+    return Math.min(100, Math.max(0, numericPosition));
+  }
+
+  function applyNotchPosition(position = notchPosition) {
+    notchPosition = normalizeNotchPosition(position);
+    if (!host) return;
+
+    const width = host.getBoundingClientRect().width || 172;
+    const viewportWidth = window.innerWidth || 1;
+    const sideSpace = Math.max(0, (viewportWidth - width) / 2);
+    const edgePadding = Math.min(12, sideSpace);
+    const minimumCenter = width / 2 + edgePadding;
+    const maximumCenter = viewportWidth - minimumCenter;
+    const requestedCenter = (notchPosition / 100) * viewportWidth;
+    const center =
+      maximumCenter < minimumCenter
+        ? viewportWidth / 2
+        : Math.min(maximumCenter, Math.max(minimumCenter, requestedCenter));
+
+    host.style.left = `${center}px`;
+    host.style.transform = 'translateX(-50%)';
+  }
+
+  function persistNotchPosition() {
+    try {
+      chrome.storage.local.set({ [POSITION_STORAGE_KEY]: notchPosition });
+    } catch (_) {
+      // The extension context may be unavailable while the page is closing.
+    }
+  }
+
+  function updateNotchPositionFromDrag(center) {
+    const viewportWidth = window.innerWidth || 1;
+    notchPositionDirty = true;
+    applyNotchPosition((center / viewportWidth) * 100);
+  }
+
+  function loadNotchPosition() {
+    try {
+      chrome.storage.local.get([POSITION_STORAGE_KEY], (result) => {
+        if (chrome.runtime.lastError || notchPositionDirty) return;
+        applyNotchPosition(result?.[POSITION_STORAGE_KEY]);
+      });
+    } catch (_) {
+      // Keep the default position if local storage is unavailable.
+    }
+  }
+
   function normalizeThemePreference(preference, legacyDarkTheme = false) {
     if (['light', 'dark', 'system'].includes(preference)) return preference;
     return legacyDarkTheme === true ? 'dark' : 'light';
@@ -928,6 +994,67 @@
     return String(window.getSelection?.()?.toString() || '')
       .trim()
       .slice(0, MAX_SELECTION_CHARS);
+  }
+
+  function removeNotchDragListeners() {
+    window.removeEventListener('pointermove', handleNotchDragMove, true);
+    window.removeEventListener('pointerup', endNotchDrag, true);
+    window.removeEventListener('pointercancel', endNotchDrag, true);
+  }
+
+  function endNotchDrag(event) {
+    if (!dragState || (event && event.pointerId !== dragState.pointerId)) return;
+    const moved = dragState.moved;
+    dragState = null;
+    removeNotchDragListeners();
+    if (!moved) return;
+
+    persistNotchPosition();
+    dragClickSuppressed = true;
+    clearTimeout(dragClickResetTimer);
+    dragClickResetTimer = window.setTimeout(() => {
+      dragClickSuppressed = false;
+      dragClickResetTimer = null;
+    }, 0);
+  }
+
+  function handleNotchDragMove(event) {
+    if (!dragState || event.pointerId !== dragState.pointerId) return;
+    const delta = event.clientX - dragState.startX;
+    if (!dragState.moved && Math.abs(delta) < DRAG_THRESHOLD_PX) return;
+    dragState.moved = true;
+    event.preventDefault();
+    updateNotchPositionFromDrag(dragState.startCenter + delta);
+  }
+
+  function beginNotchDrag(event) {
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const rect = host?.getBoundingClientRect();
+    if (!rect) return;
+    dragState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startCenter: rect.left + rect.width / 2,
+      moved: false,
+    };
+    window.addEventListener('pointermove', handleNotchDragMove, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener('pointerup', endNotchDrag, true);
+    window.addEventListener('pointercancel', endNotchDrag, true);
+  }
+
+  function cancelNotchDrag() {
+    dragState = null;
+    removeNotchDragListeners();
+    clearTimeout(dragClickResetTimer);
+    dragClickResetTimer = null;
+    dragClickSuppressed = false;
+  }
+
+  function handleViewportResize() {
+    applyNotchPosition(notchPosition);
   }
 
   function siteLabel() {
@@ -1339,6 +1466,10 @@
     collapseTimer = null;
     cancelDictation();
     actEnabled = false;
+    cancelNotchDrag();
+    notchResizeObserver?.disconnect();
+    notchResizeObserver = null;
+    window.removeEventListener('resize', handleViewportResize);
     if (selectionListener) document.removeEventListener('selectionchange', selectionListener);
     if (documentClickListener) document.removeEventListener('click', documentClickListener, true);
     if (keydownListener) document.removeEventListener('keydown', keydownListener, true);
@@ -1369,7 +1500,7 @@
               <span class="notch-toggle-name">Prompt Paul</span>
               <span class="notch-status" aria-hidden="true"></span>
             </span>
-            <span class="notch-sr-only">Open Prompt Paul quick actions</span>
+            <span class="notch-sr-only">Open Prompt Paul quick actions. Drag horizontally to move the notch.</span>
           </button>
         </div>
         <section id="notch-panel" class="notch-panel" role="dialog" aria-label="Prompt Paul quick actions" hidden>
@@ -1455,12 +1586,29 @@
       </div>
     `;
     document.documentElement.appendChild(host);
+    notchPositionDirty = false;
+    applyNotchPosition();
+    loadNotchPosition();
+    if (window.ResizeObserver) {
+      notchResizeObserver = new window.ResizeObserver(() => applyNotchPosition(notchPosition));
+      notchResizeObserver.observe(host);
+    }
+    window.addEventListener('resize', handleViewportResize);
     applyThemePreference(themePreference);
     loadThemePreference();
     const site = shadow.querySelector('.notch-site');
     if (site) site.textContent = siteLabel();
 
-    shadow.querySelector('.notch-toggle')?.addEventListener('click', () => setExpanded(!expanded));
+    const rail = shadow.querySelector('.notch-rail');
+    rail?.addEventListener('pointerdown', beginNotchDrag);
+    shadow.querySelector('.notch-toggle')?.addEventListener('click', (event) => {
+      if (dragClickSuppressed) {
+        event.preventDefault();
+        dragClickSuppressed = false;
+        return;
+      }
+      setExpanded(!expanded);
+    });
     shadow.querySelector('.notch-close')?.addEventListener('click', () => setExpanded(false));
     shadow.querySelectorAll('[data-notch-action]').forEach((button) => {
       button.addEventListener('click', () => sendAction(button.dataset.notchAction));
@@ -1493,7 +1641,8 @@
     else destroy();
   }
 
-  chrome.storage.local.get([STORAGE_KEY], (result) => {
+  chrome.storage.local.get([STORAGE_KEY, POSITION_STORAGE_KEY], (result) => {
+    notchPosition = normalizeNotchPosition(result?.[POSITION_STORAGE_KEY]);
     applyEnabled(result?.[STORAGE_KEY] === true);
   });
 
@@ -1508,6 +1657,9 @@
     if (area !== 'local') return;
     if (changes[STORAGE_KEY]) {
       applyEnabled(changes[STORAGE_KEY].newValue === true);
+    }
+    if (changes[POSITION_STORAGE_KEY]) {
+      applyNotchPosition(changes[POSITION_STORAGE_KEY].newValue);
     }
     if (changes[PINNED_ACTIONS_KEY] || changes[INSTRUCTIONS_KEY]) {
       void renderPinnedActions();

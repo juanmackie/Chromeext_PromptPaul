@@ -19,7 +19,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `codexAuth.js` owns background-only device-code sign-in, refresh, profile-local credential storage, and secret-free status responses. OAuth records are excluded from backup keys.
 - `modelDiscovery.js` owns background-only API and Codex `/models` requests and normalizes safe model/reasoning metadata for the Options page. Codex requests include the client-version query/header required by the subscription route. It never returns credentials.
 - `runtimeErrors.js` owns runtime error classification and friendly messages.
-- `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. Backup normalization strips provider and search credentials before export or restore.
+- `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. Backup normalization strips provider and search credentials and bounds the persisted notch position before export or restore.
 - `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. The session-scoped `pageActionsEnabled` Act permission is not part of local backup/export data.
 - `debounce.js` owns debounce and throttle helpers.
 - `braveSearch.js` owns the bounded Brave LLM Context API client, HTTP(S)-only source normalization, byte budgeting, caller-abort handling, and safe `NO_RESULTS` errors when no usable sources remain.

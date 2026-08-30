@@ -27,7 +27,7 @@ function refreshStatus(statusElement, modeElement, reasoningElement) {
     const profiles = Array.isArray(result.profiles) ? result.profiles : [];
     const selectedProfile = profiles.find((profile) => profile.id === result.lastSelectedProfileId);
     const profile = selectedProfile || profiles.find((candidate) => candidate.id === 'default');
-    const mode = profile ? formatMode(profile.provider) : '—';
+    const mode = profile ? formatMode(profile.provider) : ' - ';
     const reasoning = formatReasoning(profile?.reasoningLevel);
 
     modeElement.textContent = mode;

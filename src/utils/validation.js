@@ -62,6 +62,7 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'pageActionsTrustedMode',
   'pageActionsMultiTabEnabled',
   'notchEnabled',
+  'notchPosition',
   'pinnedQuickActions',
   'customSiteSuggestions',
 ]);
@@ -350,6 +351,11 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
     } else if (key === 'themePreference') {
       if (!['light', 'dark', 'system'].includes(value)) {
         return { valid: false, error: 'themePreference must be light, dark, or system.' };
+      }
+      result[key] = value;
+    } else if (key === 'notchPosition') {
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return { valid: false, error: 'notchPosition must be a number from 0 to 100.' };
       }
       result[key] = value;
     } else if (['analyticsRotateAt', 'voiceInputPermissionLastChecked'].includes(key)) {

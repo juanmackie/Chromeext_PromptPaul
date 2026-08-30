@@ -196,7 +196,7 @@ class ChatUI {
 
   /**
    * Collapse the reasoning panel and replace its summary with an elapsed-time label.
-   * Idempotent — safe to call multiple times.
+   * Idempotent: safe to call multiple times.
    * @param {HTMLElement} messageDiv
    * @param {number|null} elapsedMs
    */
@@ -379,7 +379,7 @@ class ChatUI {
       }
       if (mediaData.truncated) detailParts.push('truncated to fit the context budget');
       detail.textContent = detailParts.length
-        ? `${detailParts.join(', ')} — ready for analysis`
+        ? `${detailParts.join(', ')}: ready for analysis`
         : 'Ready for analysis';
     }
 
