@@ -160,6 +160,11 @@ body.dark-theme label {
   color: var(--ext-foreground) !important;
 }
 
+body.dark-theme .page-header h1 {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+}
+
 body.dark-theme input,
 body.dark-theme textarea {
   background-color: var(--ext-input) !important;
@@ -323,7 +328,11 @@ body {
   font-size: 2rem;
   font-weight: 700;
   margin: 0;
+  background: var(--ext-gradient-ai);
+  background-clip: text;
+  -webkit-background-clip: text;
   color: var(--ext-primary);
+  -webkit-text-fill-color: transparent;
 }
 .subtitle {
   color: var(--ext-muted-foreground);

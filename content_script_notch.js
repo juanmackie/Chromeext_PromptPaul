@@ -119,11 +119,32 @@
       --notch-brand-soft: rgba(129, 140, 248, 0.14);
       --notch-brand-border: rgba(129, 140, 248, 0.68);
       --notch-brand-border-soft: rgba(129, 140, 248, 0.5);
+      --notch-ai-cyan: #67e8f9;
+      --notch-ai-violet: #c4b5fd;
+      --notch-energy-gradient: linear-gradient(
+        112deg,
+        var(--notch-brand) 0%,
+        var(--notch-brand-bright) 43%,
+        var(--notch-ai-cyan) 78%,
+        var(--notch-ai-violet) 100%
+      );
+      --notch-energy-soft: linear-gradient(
+        112deg,
+        rgba(129, 140, 248, 0.12),
+        rgba(103, 232, 249, 0.05) 68%,
+        transparent 100%
+      );
+      --notch-mark-fill: radial-gradient(
+        circle at 72% 28%,
+        var(--notch-ai-cyan),
+        transparent 48%
+      );
       --notch-brand-foreground: #ffffff;
       --notch-surface-pinned: rgba(255, 255, 255, 0.04);
       --notch-shadow: rgba(0, 0, 0, 0.3);
       --notch-shadow-soft: rgba(0, 0, 0, 0.16);
       --notch-error: #ffb4ab;
+      position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -136,6 +157,26 @@
       font-variant-numeric: tabular-nums;
       line-height: 1.3;
       transition: width 420ms var(--notch-spring);
+    }
+
+    .notch-shell::before {
+      position: absolute;
+      top: 0;
+      left: 10%;
+      right: 10%;
+      z-index: 2;
+      height: 2px;
+      border-radius: 0 0 4px 4px;
+      background: var(--notch-energy-gradient);
+      content: '';
+      opacity: 0.78;
+      pointer-events: none;
+    }
+
+    .notch-shell[data-act-running='true']::before {
+      background-size: 220% 100%;
+      animation: notch-energy-flow 2.4s linear infinite;
+      opacity: 0.94;
     }
 
     .notch-shell[data-theme='light'] {
@@ -156,6 +197,26 @@
       --notch-brand-soft: rgba(80, 70, 229, 0.12);
       --notch-brand-border: rgba(80, 70, 229, 0.5);
       --notch-brand-border-soft: rgba(80, 70, 229, 0.35);
+      --notch-ai-cyan: #0891b2;
+      --notch-ai-violet: #7c3aed;
+      --notch-energy-gradient: linear-gradient(
+        112deg,
+        var(--notch-brand) 0%,
+        var(--notch-brand-bright) 43%,
+        var(--notch-ai-cyan) 78%,
+        var(--notch-ai-violet) 100%
+      );
+      --notch-energy-soft: linear-gradient(
+        112deg,
+        rgba(80, 70, 229, 0.08),
+        rgba(8, 145, 178, 0.035) 68%,
+        transparent 100%
+      );
+      --notch-mark-fill: radial-gradient(
+        circle at 72% 28%,
+        var(--notch-ai-cyan),
+        transparent 48%
+      );
       --notch-brand-foreground: #ffffff;
       --notch-surface-pinned: rgba(80, 70, 229, 0.05);
       --notch-shadow: rgba(31, 25, 79, 0.2);
@@ -190,7 +251,8 @@
       border: 1px solid var(--notch-edge);
       border-top: 0;
       border-radius: 0 0 16px 16px;
-      background: linear-gradient(180deg, var(--notch-surface-top), var(--notch-surface));
+      background: var(--notch-energy-soft),
+        linear-gradient(180deg, var(--notch-surface-top), var(--notch-surface));
       box-shadow: 0 7px 22px var(--notch-shadow-soft), inset 0 1px var(--notch-edge-soft);
       backdrop-filter: blur(20px) saturate(1.25);
       transition: height 420ms var(--notch-spring), border-radius 520ms var(--notch-spring),
@@ -277,6 +339,7 @@
       height: 15px;
       border: 1px solid var(--notch-brand-border);
       border-radius: 47% 53% 44% 56%;
+      background: var(--notch-mark-fill), var(--notch-brand-soft);
       color: var(--notch-brand-bright);
       font-size: 0;
       line-height: 1;
@@ -298,6 +361,13 @@
       border-radius: 50%;
       background: var(--notch-brand);
       box-shadow: 0 0 0 3px var(--notch-brand-soft);
+      transition: transform 180ms ease, box-shadow 180ms ease;
+    }
+
+    .notch-shell[data-act-running='true'] .notch-status {
+      box-shadow: 0 0 0 4px var(--notch-brand-soft), 0 0 12px var(--notch-brand);
+      animation: notch-signal 1.1s ease-in-out infinite;
+    }
     }
 
     .notch-panel {
@@ -307,7 +377,8 @@
       border: 1px solid var(--notch-edge);
       border-top: 0;
       border-radius: 0 0 20px 20px;
-      background: linear-gradient(180deg, var(--notch-surface), var(--notch-surface-deep));
+      background: var(--notch-energy-soft),
+        linear-gradient(180deg, var(--notch-surface), var(--notch-surface-deep));
       box-shadow: 0 18px 44px var(--notch-shadow);
       backdrop-filter: blur(24px) saturate(1.2);
     }
@@ -706,6 +777,25 @@
       }
     }
 
+    @keyframes notch-energy-flow {
+      from {
+        background-position: 0% 50%;
+      }
+      to {
+        background-position: 100% 50%;
+      }
+    }
+
+    @keyframes notch-signal {
+      0%,
+      100% {
+        transform: scale(0.9);
+      }
+      50% {
+        transform: scale(1.25);
+      }
+    }
+
     @keyframes notch-breathe {
       0%,
       100% {
@@ -758,6 +848,8 @@
 
     @media (prefers-reduced-motion: reduce) {
       .notch-shell,
+      .notch-shell::before,
+      .notch-status,
       .notch-action,
       .notch-panel,
       .notch-panel .notch-header,
@@ -845,14 +937,17 @@
 
   function setActGlow(active, runId) {
     const nextRunId = String(runId || '');
+    const shell = shadow?.querySelector('.notch-shell');
     if (!active) {
       if (glowRunId && nextRunId && glowRunId !== nextRunId) return;
+      shell?.setAttribute('data-act-running', 'false');
       glowHost?.remove();
       glowHost = null;
       glowRunId = null;
       return;
     }
     if (!nextRunId) return;
+    shell?.setAttribute('data-act-running', 'true');
     if (!glowHost) {
       glowHost = document.createElement('div');
       glowHost.setAttribute(ACT_GLOW_HOST_ATTRIBUTE, '');
@@ -1200,8 +1295,11 @@
     documentClickListener = null;
     keydownListener = null;
     host?.remove();
+    glowHost?.remove();
     host = null;
     shadow = null;
+    glowHost = null;
+    glowRunId = null;
     expanded = false;
   }
 

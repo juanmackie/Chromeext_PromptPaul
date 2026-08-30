@@ -343,6 +343,24 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('theme.css exposes restrained AI energy tokens', () => {
+    const content = readFileSafe('theme.css');
+    for (const token of [
+      '--ext-ai-cyan',
+      '--ext-ai-violet',
+      '--ext-gradient-ai',
+      '--ext-gradient-ai-soft',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`theme.css missing AI energy token: ${token}`);
+      }
+      const occurrences = content.split(token).length - 1;
+      if (occurrences < 3) {
+        throw new Error(`theme.css AI energy token lacks dark/system parity: ${token}`);
+      }
+    }
+  });
+
   runner.test('prompts module exposes structured prompt composition', () => {
     checkModule('src/prompts.js', ['function composeUserPrompt']);
     const content = readFileSafe('src/prompts.js');
@@ -484,7 +502,9 @@ function runUnitTests(runner) {
       !notch.includes('startDictation') ||
       !notch.includes('notch-act-form') ||
       !notch.includes('THEME_PREFERENCE_KEY') ||
-      !notch.includes("data-theme='light'")
+      !notch.includes("data-theme='light'") ||
+      !notch.includes('notch-energy-flow') ||
+      !notch.includes('notch-signal')
     ) {
       throw new Error('Notch must expose Act activity and dictation controls');
     }

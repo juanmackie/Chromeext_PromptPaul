@@ -69,7 +69,7 @@ body {
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background-color: var(--ext-sidebar);
+  background: linear-gradient(180deg, var(--ext-ai-haze), transparent 28%), var(--ext-sidebar);
   padding: 12px 6px;
   align-items: center;
   box-sizing: border-box;
@@ -86,7 +86,7 @@ body {
   width: 24px;
   height: 1px;
   margin: 8px 0;
-  background: var(--ext-sidebar-border);
+  background: var(--ext-gradient-ai);
   opacity: 0.45;
 }
 
@@ -161,8 +161,10 @@ body {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--ext-primary);
-  box-shadow: 0 0 0 2px var(--ext-sidebar);
+  background: var(--ext-gradient-ai);
+  box-shadow:
+    0 0 0 2px var(--ext-sidebar),
+    0 0 12px var(--ext-ai-shadow);
 }
 
 .quick-actions-menu {
@@ -320,11 +322,14 @@ body {
   box-sizing: border-box;
   border: 1px solid var(--ext-sidebar-border);
   border-left: 2px solid var(--ext-sidebar-accent);
-  background: var(--ext-card);
+  background: var(--ext-gradient-ai-soft), var(--ext-card);
   color: var(--ext-card-foreground);
   font-family: var(--ext-font-family);
   text-align: center;
   cursor: help;
+  box-shadow:
+    var(--ext-shadow-sm),
+    0 8px 22px var(--ext-ai-shadow);
   pointer-events: none;
 }
 
@@ -477,13 +482,22 @@ body {
   background-color: var(--ext-background); /* Ensure chat container also uses theme */
 }
 
+.chat-container::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse 68% 28% at 52% 0%, var(--ext-ai-haze), transparent 72%);
+  content: '';
+  pointer-events: none;
+}
+
 /* Dark Theme - Unified clean overrides */
 body.dark-theme #chat-area {
   background-color: var(--ext-background);
 }
 
 body.dark-theme .llm-message {
-  background-color: var(--ext-card);
+  background: var(--ext-gradient-ai-soft), var(--ext-card);
   color: var(--ext-card-foreground);
   border-color: var(--ext-border);
 }
@@ -541,6 +555,9 @@ body.dark-theme ::selection {
   min-width: 0;
   padding: 56px 12px calc(var(--chat-input-area-height, 150px) + 20px);
   box-sizing: border-box;
+  background:
+    radial-gradient(ellipse 72% 24% at 54% 0%, var(--ext-ai-haze), transparent 72%),
+    var(--ext-background);
 }
 
 #chat-area::-webkit-scrollbar {
@@ -567,7 +584,7 @@ body.dark-theme ::selection {
   flex-direction: column;
   gap: var(--attachment-strip-gap);
   padding: 0.45rem 0.5rem 0.65rem;
-  background-color: var(--ext-card);
+  background: linear-gradient(180deg, var(--ext-ai-haze), transparent 58%), var(--ext-card);
   position: fixed;
   bottom: 0;
   left: var(--quick-actions-sidebar-width);
@@ -575,7 +592,9 @@ body.dark-theme ::selection {
   width: auto;
   box-sizing: border-box;
   border-top: 2px solid var(--ext-border);
-  box-shadow: 0 -4px 0px 0px var(--ext-shadow-color);
+  box-shadow:
+    0 -4px 0px 0px var(--ext-shadow-color),
+    0 -14px 28px var(--ext-ai-shadow);
   z-index: var(--ext-z-dropdown);
   pointer-events: auto !important;
   min-width: 0;
@@ -828,6 +847,7 @@ body.run-capabilities-subtle #quick-actions-sidebar {
   padding: 0.6rem 5rem 0.6rem 1rem;
   border: 2px solid var(--ext-border);
   border-radius: 4px;
+  background: var(--ext-gradient-ai-soft), var(--ext-input);
   box-shadow: var(--ext-shadow-sm);
   pointer-events: auto !important;
   font-family: var(--ext-font-family);
@@ -900,17 +920,20 @@ body.run-capabilities-subtle #quick-actions-sidebar {
 }
 
 .llm-message {
-  background-color: var(--ext-card);
+  background: var(--ext-gradient-ai-soft), var(--ext-card);
   color: var(--ext-card-foreground);
   align-self: flex-start;
   border: 1px solid var(--ext-border);
+  box-shadow:
+    var(--ext-shadow),
+    0 10px 26px var(--ext-ai-shadow);
 }
 
 /* Collapsible reasoning / "thinking" panel above the answer */
 .reasoning-section {
   margin-bottom: 0.6rem;
   padding: 0.4rem 0.6rem;
-  background: var(--ext-muted);
+  background: var(--ext-gradient-ai-soft), var(--ext-muted);
   border: 1px solid var(--ext-border);
   border-left: 3px solid var(--ext-primary);
   border-radius: 4px;

@@ -95,17 +95,31 @@
   --ext-transition-fast: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --ext-transition-slow: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Gradients - Indigo Energy */
-  --ext-gradient-header: linear-gradient(
-    90deg,
+  /* Gradients - AI Energy */
+  --ext-ai-cyan: #06b6d4;
+  --ext-ai-violet: #8b5cf6;
+  --ext-ai-haze: rgba(99, 102, 241, 0.07);
+  --ext-ai-shadow: rgba(67, 56, 202, 0.14);
+  --ext-gradient-ai: linear-gradient(
+    112deg,
     var(--ext-primary) 0%,
-    var(--ext-primary-bright) 100%
+    var(--ext-primary-bright) 43%,
+    var(--ext-ai-cyan) 78%,
+    var(--ext-ai-violet) 100%
   );
+  --ext-gradient-ai-soft: linear-gradient(
+    112deg,
+    color-mix(in srgb, var(--ext-primary) 16%, transparent),
+    color-mix(in srgb, var(--ext-ai-cyan) 8%, transparent) 68%,
+    transparent 100%
+  );
+  --ext-gradient-header: var(--ext-gradient-ai);
   --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
   --ext-gradient-sharp: linear-gradient(
-    90deg,
+    112deg,
     var(--ext-primary) 0%,
-    var(--ext-primary-deep) 60%,
+    var(--ext-primary-deep) 48%,
+    var(--ext-ai-cyan) 78%,
     transparent 100%
   );
 
@@ -148,6 +162,13 @@
   --ext-ring: #a5b4fc;
   --ext-shadow-color: #312e81;
 
+  /* AI energy accents keep the existing indigo identity while adding a
+     restrained cyan/violet tail to active and loading surfaces. */
+  --ext-ai-cyan: #67e8f9;
+  --ext-ai-violet: #c4b5fd;
+  --ext-ai-haze: rgba(129, 140, 248, 0.1);
+  --ext-ai-shadow: rgba(49, 46, 129, 0.24);
+
   /* Chart Colors - Dark Theme - Indigo Variations */
   --ext-chart-1: #818cf8;
   --ext-chart-2: #a5b4fc;
@@ -185,16 +206,26 @@
   --ext-sidebar-ring: #a5b4fc;
 
   /* Gradients - Dark Theme */
-  --ext-gradient-header: linear-gradient(
-    90deg,
+  --ext-gradient-ai: linear-gradient(
+    112deg,
     var(--ext-primary) 0%,
-    var(--ext-primary-bright) 100%
+    var(--ext-primary-bright) 43%,
+    var(--ext-ai-cyan) 78%,
+    var(--ext-ai-violet) 100%
   );
+  --ext-gradient-ai-soft: linear-gradient(
+    112deg,
+    color-mix(in srgb, var(--ext-primary) 18%, transparent),
+    color-mix(in srgb, var(--ext-ai-cyan) 10%, transparent) 68%,
+    transparent 100%
+  );
+  --ext-gradient-header: var(--ext-gradient-ai);
   --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
   --ext-gradient-sharp: linear-gradient(
-    90deg,
+    112deg,
     var(--ext-primary) 0%,
-    var(--ext-primary-deep) 60%,
+    var(--ext-primary-deep) 48%,
+    var(--ext-ai-cyan) 78%,
     transparent 100%
   );
 }
@@ -225,6 +256,10 @@
     --ext-input: #1e1e35;
     --ext-ring: #a5b4fc;
     --ext-shadow-color: #312e81;
+    --ext-ai-cyan: #67e8f9;
+    --ext-ai-violet: #c4b5fd;
+    --ext-ai-haze: rgba(129, 140, 248, 0.1);
+    --ext-ai-shadow: rgba(49, 46, 129, 0.24);
     --ext-sidebar: #0a0a1a;
     --ext-sidebar-foreground: #e8e6f0;
     --ext-sidebar-primary: #818cf8;
@@ -233,16 +268,26 @@
     --ext-sidebar-accent-foreground: #0a0a1a;
     --ext-sidebar-border: #312e81;
     --ext-sidebar-ring: #a5b4fc;
-    --ext-gradient-header: linear-gradient(
-      90deg,
+    --ext-gradient-ai: linear-gradient(
+      112deg,
       var(--ext-primary) 0%,
-      var(--ext-primary-bright) 100%
+      var(--ext-primary-bright) 43%,
+      var(--ext-ai-cyan) 78%,
+      var(--ext-ai-violet) 100%
     );
+    --ext-gradient-ai-soft: linear-gradient(
+      112deg,
+      color-mix(in srgb, var(--ext-primary) 18%, transparent),
+      color-mix(in srgb, var(--ext-ai-cyan) 10%, transparent) 68%,
+      transparent 100%
+    );
+    --ext-gradient-header: var(--ext-gradient-ai);
     --ext-gradient-focus: linear-gradient(90deg, var(--ext-primary) 0%, transparent 100%);
     --ext-gradient-sharp: linear-gradient(
-      90deg,
+      112deg,
       var(--ext-primary) 0%,
-      var(--ext-primary-deep) 60%,
+      var(--ext-primary-deep) 48%,
+      var(--ext-ai-cyan) 78%,
       transparent 100%
     );
 

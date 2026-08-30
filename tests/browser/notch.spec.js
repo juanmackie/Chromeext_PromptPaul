@@ -156,6 +156,7 @@ test('shows an isolated quick-action notch when enabled', async () => {
       targetTabId
     );
     await expect(target.locator('[data-prompt-paul-act-glow]')).toHaveCount(1);
+    await expect(notchShell).toHaveAttribute('data-act-running', 'true');
     await harness.evaluate(
       (tabId) =>
         new Promise((resolve) =>
@@ -171,6 +172,7 @@ test('shows an isolated quick-action notch when enabled', async () => {
       targetTabId
     );
     await expect(target.locator('[data-prompt-paul-act-glow]')).toHaveCount(0);
+    await expect(notchShell).toHaveAttribute('data-act-running', 'false');
 
     await host.locator('[data-notch-action="openActions"]').click();
     await expect(host.locator('.notch-panel')).toBeHidden();

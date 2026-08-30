@@ -220,7 +220,7 @@
   padding: 0.45rem 0.6rem;
   border: 2px solid var(--ext-border);
   border-radius: var(--ext-radius-interactive);
-  background-color: var(--ext-muted);
+  background: var(--ext-gradient-ai-soft), var(--ext-muted);
   box-shadow: var(--ext-shadow-sm);
 }
 
@@ -280,7 +280,7 @@
 .ext-section {
   border: 2px solid var(--ext-border);
   border-radius: var(--ext-radius);
-  background-color: var(--ext-card);
+  background: var(--ext-gradient-ai-soft), var(--ext-card);
   color: var(--ext-card-foreground);
   box-shadow: var(--ext-shadow);
 }
@@ -330,7 +330,7 @@
 
 [data-run-state='running'] .ext-run-indicator,
 [data-run-state='streaming'] .ext-run-indicator {
-  background-color: var(--ext-running);
+  background: var(--ext-gradient-ai);
   border-color: var(--ext-running);
   animation: ext-run-pulse 1.2s ease-in-out infinite;
 }
@@ -384,9 +384,12 @@
 
 [data-run-state='running'] .ext-run-banner,
 [data-run-state='streaming'] .ext-run-banner {
-  background-color: var(--ext-running-muted);
+  background: var(--ext-gradient-ai-soft), var(--ext-running-muted);
   border-color: var(--ext-running);
   color: var(--ext-foreground);
+  box-shadow:
+    var(--ext-shadow-sm),
+    0 8px 22px var(--ext-ai-shadow);
 }
 
 [data-run-state='stopping'] .ext-run-banner {
