@@ -144,7 +144,7 @@ describe('chat document attachments', () => {
       const plan = await prepareDroppedFile(makeFile({ name: 'data.csv', size: 8 }));
       expect(plan.kind).toBe('document');
       expect(plan.text).toBe('a,b\n1,2');
-      expect(plan.instruction).toContain('data.csv');
+      expect(plan.instruction).toBe('Analyze this attached document.');
       expect(plan.preview).toMatchObject({ type: 'text', name: 'data.csv', lineCount: 2 });
       expect(JSON.stringify(plan)).not.toContain('base64');
     });
@@ -166,7 +166,8 @@ describe('chat document attachments', () => {
       const plan = await prepareDroppedFile(makeFile({ name: 'shot.png', type: 'image/png' }));
       expect(plan.kind).toBe('media');
       expect(plan.mediaData).toMatchObject({ type: 'image', mimeType: 'image/png' });
-      expect(plan.instruction).toBe('Analyze this Image: shot.png');
+      expect(plan.instruction).toBe('Analyze this Image.');
+      expect(plan.mediaData.textPrompt).toBe('Analyze this Image.');
     });
   });
 });

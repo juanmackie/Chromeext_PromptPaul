@@ -234,11 +234,6 @@ export function validateDroppedFile(file) {
  * @param {File} file - File to read
  * @returns {Promise<{ base64: string, mimeType: string, name: string }>}
  */
-/**
- * Read a dropped file as base64 data URL.
- * @param {File} file - File to read
- * @returns {Promise<{ base64: string, mimeType: string, name: string }>}
- */
 export function readBlobAsBase64(blob, name = 'clipboard-image') {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -315,7 +310,7 @@ export async function prepareDroppedFile(file) {
         truncated: doc.truncated,
         lineCount: doc.text.split('\n').length,
       },
-      instruction: `Analyze this attached document: ${doc.name}`,
+      instruction: 'Analyze this attached document.',
       text: doc.text,
     };
   }
@@ -326,16 +321,17 @@ export async function prepareDroppedFile(file) {
     : file.type.startsWith('audio/')
       ? MediaType.AUDIO
       : MediaType.IMAGE;
+  const instruction = `Analyze this ${getMediaDisplayName(mediaType)}.`;
   const mediaData = {
     type: mediaType,
     mimeType: fileData.mimeType,
     base64: fileData.base64,
-    textPrompt: `Analyze this ${mediaType}: ${fileData.name}`,
+    textPrompt: instruction,
   };
   return {
     kind: 'media',
     mediaData,
-    instruction: `Analyze this ${getMediaDisplayName(mediaType)}: ${fileData.name}`,
+    instruction,
   };
 }
 

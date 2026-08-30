@@ -12,6 +12,9 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `runtimeAuthorization.test.js` covers extension sender, content-script tab, and opaque run-owner checks without Chrome runtime state.
 - `validation.test.js` covers persistence and validation of the `notchEnabled` backup preference and `themePreference` values.
 - `streamSafety.test.js` covers bounded SSE buffers and provider error-body reads.
+- `mediaFetch.test.js` covers public-media URL rejection, response MIME checks, and streamed size limits.
+- `domSanitizer.test.js` covers fail-closed HTML escaping when DOMPurify is unavailable.
+- `prompts.test.js` covers untrusted context and metadata boundaries; `chatDocuments.test.js` covers filename separation from document instructions.
 - `hermesContext.test.js` covers bounded Hermes history, page-context retention, current-turn handling, and historical media redaction.
 - `chatHermes.test.js` covers approval-card settlement; `keyedOperationLock.test.js` covers per-profile session reset and session-key concurrency primitives.
 - `chatRuntimeMessage.test.js` covers the acknowledgement-only long-run bridge and transient runtime-channel error wording.

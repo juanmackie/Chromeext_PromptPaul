@@ -4,6 +4,7 @@ import {
   parseFrontmatter,
   validateMetadata,
   generateSkillMarkdown,
+  MAX_SKILL_MARKDOWN_CHARS,
 } from '../src/utils/skillParser.js';
 
 describe('skillParser', () => {
@@ -41,6 +42,12 @@ describe('skillParser', () => {
       const result = parseSkillMarkdown(md);
       expect(result.valid).toBe(false);
       expect(result.error).toMatch(/requires YAML frontmatter/);
+    });
+
+    it('rejects oversized skill documents before parsing', () => {
+      const result = parseSkillMarkdown('x'.repeat(MAX_SKILL_MARKDOWN_CHARS + 1));
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('exceeds');
     });
 
     it('rejects skill with missing closing ---', () => {

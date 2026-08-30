@@ -118,6 +118,7 @@ npm run test:behavior
 npm run test:browser
 npm run smoke
 npm run validate
+npm run audit
 ```
 
 ### Docs

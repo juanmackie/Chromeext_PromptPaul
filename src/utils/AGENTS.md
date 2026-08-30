@@ -13,7 +13,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `permissionGuards.js` owns restricted URL and host permission checks.
 - `actionCards.js` owns inferred site-specific prompt cards.
 - `suggestionStorage.js` owns custom site suggestion persistence and normalization.
-- `skillParser.js` owns canonical Agent Skills frontmatter parsing, metadata validation, and Markdown generation.
+- `skillParser.js` owns canonical Agent Skills frontmatter parsing, metadata validation, Markdown generation, and the 100,000-character SKILL.md body limit.
 - `toolChoiceBuilder.js` owns tool choice normalization and provider payload formatting.
 - `profileRouting.js` owns profile usability and vision-model selection helpers.
 - `codexAuth.js` owns background-only device-code sign-in, refresh, profile-local credential storage, and secret-free status responses. OAuth records are excluded from backup keys.
@@ -23,6 +23,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. The session-scoped `pageActionsEnabled` Act permission is not part of local backup/export data.
 - `debounce.js` owns debounce and throttle helpers.
 - `braveSearch.js` owns the bounded Brave LLM Context API client, HTTP(S)-only source normalization, byte budgeting, caller-abort handling, and safe `NO_RESULTS` errors when no usable sources remain.
+- `mediaFetch.js` owns public-media URL validation and bounded response-body reads used before background base64 conversion.
 - `pdfDetection.js` owns PDF URL hints, built-in Chrome viewer source unwrapping, response-header detection, and bounded signature probing for extensionless PDF endpoints.
 - `runState.js` owns the standardized run/feedback state vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) and the `data-run-state`/`aria-busy` DOM contract shared by chat and options.
 - `keyedOperationLock.js` owns small per-key runtime locks used to serialize Hermes session-key creation and reject overlapping session resets.
@@ -38,7 +39,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 
 ## Local Contracts
 
-- Helpers should be browser-safe and avoid hidden side effects except for modules whose purpose is storage.
+- Helpers should be browser-safe and avoid hidden side effects except for modules whose purpose is storage. Sanitizer fallback behavior must escape HTML instead of returning partially sanitized markup when DOMPurify is unavailable.
 - `skillParser.js` must stay aligned with the skill specification in root AGENTS.md.
 - `permissionGuards.js` is the central place for blocked browser page behavior.
 - `suggestionStorage.js` caps stored suggestions at 60 and enforces command and prompt length limits.
@@ -47,6 +48,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - Page snapshot/policy helpers must remain deterministic and unit-testable in Node; snapshot data is bounded and sensitive-field values are never returned. Sensitivity matching must distinguish value-bearing controls from ordinary navigation labels (for example, “Video Cards”).
 - Privileged background messages must require an extension-page sender; content-script requests must bind to the sender tab; run mutations must include the opaque owner token issued at run start.
 - Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`. Provider errors shown to users must also use the bounded redaction helper from `runResilience.js`.
+- Media response reads must use `mediaFetch.js`; private hosts, redirects, timeouts, and oversized bodies must fail closed.
 - Page-state fingerprints and tab arguments must stay bounded, deterministic, and safe to log. Safe HTTP(S) tab origins are admitted by the bounded Act lease; model-provided flags cannot bypass ownership or policy.
 - Scope/diff output may be included in a mutation result only as bounded selector-free metadata: indices, flags, counts, and snapshot IDs. Region byte sizes remain evaluation data. The helper must never expose credentials, raw page history, or screenshots.
 

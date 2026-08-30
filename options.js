@@ -23,12 +23,14 @@ import {
 } from './src/utils/validation.js';
 import {
   generateSkillMarkdown,
+  MAX_SKILL_MARKDOWN_CHARS,
   parseSkillMarkdown,
   validateMetadata,
 } from './src/utils/skillParser.js';
 import { setupThemeToggle } from './themeUtils.js';
 import { escapeHtml } from './src/utils/domSanitizer.js';
 import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileRouting.js';
+import { readBoundedResponseText } from './src/utils/streamSafety.js';
 import {
   applyCredentialMask,
   createDirtyTracker,
@@ -70,6 +72,12 @@ const modelMetadataByProfile = new Map();
 const CUSTOM_MODEL_VALUE = '__custom__';
 const DEFAULT_CODEX_REASONING_LEVEL = 'medium';
 const HERMES_API_KEYS_KEY = 'hermesApiKeys';
+const MAX_INSTRUCTION_NAME_CHARS = 256;
+const MAX_INSTRUCTION_CONTENT_CHARS = 20_000;
+const MAX_INSTRUCTION_TAG_CHARS = 2_000;
+const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_IMPORTED_RECORDS = 500;
+const MAX_SKILL_METADATA_CHARS = 20_000;
 
 function createUniqueId(prefix) {
   const id =
@@ -1696,18 +1704,10 @@ function setupInstructionHandlers() {
   let currentPinnedQuickActions = new Set();
   let instructionSearchQuery = '';
 
-  function escapeHtml(value) {
-    return String(value || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   function normalizeInstructionId(value, fallback) {
     const cleaned = String(value || '')
       .trim()
+      .slice(0, 256)
       .toLowerCase()
       .replace(/[^a-z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '')
@@ -1726,10 +1726,18 @@ function setupInstructionHandlers() {
 
   function parseTags(value) {
     if (Array.isArray(value)) {
-      return value.map((tag) => String(tag || '').trim()).filter(Boolean);
+      return value
+        .slice(0, 64)
+        .map((tag) =>
+          String(tag || '')
+            .trim()
+            .slice(0, 40)
+        )
+        .filter(Boolean);
     }
 
     return String(value || '')
+      .slice(0, MAX_INSTRUCTION_TAG_CHARS)
       .split(/[,;\n|]+/g)
       .map((tag) => tag.trim())
       .filter(Boolean);
@@ -1754,24 +1762,50 @@ function setupInstructionHandlers() {
     if (!instruction || typeof instruction !== 'object') return null;
     const name = String(instruction.name || '').trim();
     const content = String(instruction.content || '').trim();
-    if (!name || !content) return null;
+    if (
+      !name ||
+      !content ||
+      name.length > MAX_INSTRUCTION_NAME_CHARS ||
+      content.length > MAX_INSTRUCTION_CONTENT_CHARS
+    ) {
+      return null;
+    }
     const tags = normalizeInstructionTags(instruction.tags || []);
-    const modalities =
-      Array.isArray(instruction.modalities) && instruction.modalities.length > 0
-        ? instruction.modalities
-        : ['text'];
-    const createdAt = instruction.createdAt || instruction.lastUpdated || new Date().toISOString();
+    const allowedModalities = new Set(['text', 'image', 'video', 'audio']);
+    const modalities = Array.isArray(instruction.modalities)
+      ? [
+          ...new Set(instruction.modalities.slice(0, 16).map((value) => String(value).trim())),
+        ].filter((value) => allowedModalities.has(value))
+      : [];
+    const normalizedToolChoice = Array.isArray(instruction.tool_choice)
+      ? instruction.tool_choice
+          .slice(0, 16)
+          .map((value) => String(value).trim().slice(0, 64))
+          .filter(Boolean)
+          .slice(0, 16)
+      : typeof instruction.tool_choice === 'string'
+        ? instruction.tool_choice.trim().slice(0, 64)
+        : '';
+    const createdAt =
+      typeof instruction.createdAt === 'string' && instruction.createdAt.trim()
+        ? instruction.createdAt.trim().slice(0, 128)
+        : typeof instruction.lastUpdated === 'string' && instruction.lastUpdated.trim()
+          ? instruction.lastUpdated.trim().slice(0, 128)
+          : new Date().toISOString();
+    const lastUpdated =
+      typeof instruction.lastUpdated === 'string' && instruction.lastUpdated.trim()
+        ? instruction.lastUpdated.trim().slice(0, 128)
+        : createdAt;
     const fallbackId = `inst_${hashString(`${name}\n${content}\n${createdAt}`)}`;
     return {
-      ...instruction,
       id: normalizeInstructionId(instruction.id, fallbackId),
       name,
       content,
       tags,
-      tool_choice: instruction.tool_choice || 'none',
-      modalities,
+      tool_choice: normalizedToolChoice || 'none',
+      modalities: modalities.length > 0 ? modalities : ['text'],
       createdAt,
-      lastUpdated: instruction.lastUpdated || createdAt,
+      lastUpdated,
     };
   }
 
@@ -2028,47 +2062,49 @@ function setupInstructionHandlers() {
         showStatus('Instruction name and content are required.', true);
         return;
       }
+      if (
+        instructionName.length > MAX_INSTRUCTION_NAME_CHARS ||
+        instructionContent.length > MAX_INSTRUCTION_CONTENT_CHARS
+      ) {
+        showStatus(
+          `Instruction name must be ${MAX_INSTRUCTION_NAME_CHARS} characters or less and content must be ${MAX_INSTRUCTION_CONTENT_CHARS} characters or less.`,
+          true
+        );
+        return;
+      }
 
       chrome.storage.local.get(['instructions'], (result) => {
-        let instructions = result.instructions || [];
+        const existingInstructions = (Array.isArray(result.instructions) ? result.instructions : [])
+          .map(normalizeInstructionRecord)
+          .filter(Boolean)
+          .slice(0, MAX_IMPORTED_RECORDS);
         const now = new Date().toISOString();
-
-        if (instructionId) {
-          // Update existing instruction
-          instructions = instructions.map((inst) => {
-            if (inst.id === instructionId) {
-              return {
-                ...inst,
-                name: instructionName,
-                content: instructionContent,
-                tags,
-                tool_choice: toolChoiceValue || 'none', // Save as string
-                modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
-                lastUpdated: now,
-              };
-            }
-            return inst;
-          });
-          showStatus('Instruction updated.');
-        } else {
-          // Add new instruction
-          const newInstruction = {
-            id: createUniqueId('inst'),
-            name: instructionName,
-            content: instructionContent,
-            tags,
-            tool_choice: toolChoiceValue || 'none', // Save as string
-            modalities: modalities.length > 0 ? modalities : ['text'], // Default to text
-            createdAt: now,
-            lastUpdated: now,
-          };
-          instructions.push(newInstruction);
-          showStatus('Instruction added.');
+        const existingInstruction = existingInstructions.find((inst) => inst.id === instructionId);
+        const savedInstruction = normalizeInstructionRecord({
+          id: instructionId || createUniqueId('inst'),
+          name: instructionName,
+          content: instructionContent,
+          tags,
+          tool_choice: toolChoiceValue || 'none',
+          modalities,
+          createdAt: existingInstruction?.createdAt || now,
+          lastUpdated: now,
+        });
+        if (!savedInstruction) {
+          showStatus('Instruction could not be saved.', true);
+          return;
         }
 
-        chrome.storage.local.set({ instructions: instructions }, () => {
-          refreshInstructions(); // Reload the table
-          resetInstructionForm(); // Clear the form after saving without confirmation
+        const instructions = instructionId
+          ? existingInstructions.map((inst) =>
+              inst.id === instructionId ? savedInstruction : inst
+            )
+          : [...existingInstructions, savedInstruction].slice(-MAX_IMPORTED_RECORDS);
+        showStatus(instructionId ? 'Instruction updated.' : 'Instruction added.');
+
+        chrome.storage.local.set({ instructions }, () => {
+          refreshInstructions();
+          resetInstructionForm();
         });
       });
     });
@@ -2144,15 +2180,30 @@ function setupInstructionHandlers() {
     if (!file) {
       return;
     }
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      showStatus('Instruction import file is too large.', true);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const importData = JSON.parse(e.target.result);
         if (importData.version === 1 && Array.isArray(importData.instructions)) {
+          if (importData.instructions.length > MAX_IMPORTED_RECORDS) {
+            showStatus(`Import contains more than ${MAX_IMPORTED_RECORDS} instructions.`, true);
+            return;
+          }
           // Simple merge strategy: add new instructions, update existing by ID
           chrome.storage.local.get(['instructions'], (result) => {
-            let existingInstructions = result.instructions || [];
-            const importedInstructions = importData.instructions;
+            const existingInstructions = (
+              Array.isArray(result.instructions) ? result.instructions : []
+            )
+              .map(normalizeInstructionRecord)
+              .filter(Boolean)
+              .slice(0, MAX_IMPORTED_RECORDS);
+            const importedInstructions = importData.instructions
+              .map(normalizeInstructionRecord)
+              .filter(Boolean);
 
             importedInstructions.forEach((importedInst) => {
               const existingIndex = existingInstructions.findIndex(
@@ -2161,8 +2212,9 @@ function setupInstructionHandlers() {
               if (existingIndex > -1) {
                 // Update existing instruction
                 existingInstructions[existingIndex] = {
-                  ...existingInstructions[existingIndex],
                   ...importedInst,
+                  createdAt:
+                    existingInstructions[existingIndex].createdAt || importedInst.createdAt,
                   lastUpdated: new Date().toISOString(),
                 };
               } else {
@@ -2176,10 +2228,13 @@ function setupInstructionHandlers() {
               }
             });
 
-            chrome.storage.local.set({ instructions: existingInstructions }, () => {
-              showStatus('Instructions imported successfully.');
-              refreshInstructions(); // Reload the table
-            });
+            chrome.storage.local.set(
+              { instructions: existingInstructions.slice(-MAX_IMPORTED_RECORDS) },
+              () => {
+                showStatus('Instructions imported successfully.');
+                refreshInstructions();
+              }
+            );
           });
         } else {
           showStatus('Invalid import file format.', true);
@@ -2544,6 +2599,20 @@ function setupSkillHandlers() {
   const saveSkillBtn = document.getElementById('saveSkill');
   const clearSkillFormBtn = document.getElementById('clearSkillForm');
 
+  function normalizeStoredSkill(skill) {
+    if (!skill || typeof skill !== 'object' || typeof skill.skillMd !== 'string') return null;
+    const parsed = parseSkillMarkdown(skill.skillMd);
+    if (!parsed.valid) return null;
+    return {
+      name: parsed.metadata.name,
+      skillMd: skill.skillMd,
+      lastUpdated:
+        typeof skill.lastUpdated === 'string'
+          ? skill.lastUpdated.trim().slice(0, 128)
+          : new Date().toISOString(),
+    };
+  }
+
   // Load and display skills
   function loadSkills() {
     // Load built-in skills first
@@ -2557,7 +2626,12 @@ function setupSkillHandlers() {
     // Load custom skills
     const customSkillsPromise = new Promise((resolve) => {
       chrome.storage.local.get(['customSkills'], (result) => {
-        resolve(result.customSkills || []);
+        resolve(
+          (Array.isArray(result.customSkills) ? result.customSkills : [])
+            .map(normalizeStoredSkill)
+            .filter(Boolean)
+            .slice(0, MAX_IMPORTED_RECORDS)
+        );
       });
     });
 
@@ -2682,6 +2756,10 @@ function setupSkillHandlers() {
       let customMetadata = null;
       const metadataInput = document.getElementById('skillMetadata');
       if (metadataInput && metadataInput.value.trim()) {
+        if (metadataInput.value.length > MAX_SKILL_METADATA_CHARS) {
+          showStatus(`Metadata must be ${MAX_SKILL_METADATA_CHARS} characters or less.`, true);
+          return;
+        }
         if (!isValidJson(metadataInput.value.trim())) {
           showStatus('Metadata must be valid JSON object.', true);
           return;
@@ -2701,6 +2779,17 @@ function setupSkillHandlers() {
 
       if (!name || !description || !content) {
         showStatus('All fields are required.', true);
+        return;
+      }
+      if (
+        name.length > 64 ||
+        description.length > 1_024 ||
+        content.length > MAX_SKILL_MARKDOWN_CHARS
+      ) {
+        showStatus(
+          `Skill name, description, or content exceeds the supported size limit (${MAX_SKILL_MARKDOWN_CHARS} characters for content).`,
+          true
+        );
         return;
       }
 
@@ -2734,9 +2823,16 @@ function setupSkillHandlers() {
           disableModelInvocation,
         },
       });
+      if (skillMd.length > MAX_SKILL_MARKDOWN_CHARS) {
+        showStatus(`Generated SKILL.md exceeds ${MAX_SKILL_MARKDOWN_CHARS} characters.`, true);
+        return;
+      }
 
       chrome.storage.local.get(['customSkills'], (result) => {
-        let customSkills = result.customSkills || [];
+        let customSkills = (Array.isArray(result.customSkills) ? result.customSkills : [])
+          .map(normalizeStoredSkill)
+          .filter(Boolean)
+          .slice(0, MAX_IMPORTED_RECORDS);
         // Check if updating
         const existingIndex = customSkills.findIndex((s) => s.name === name);
 
@@ -2755,10 +2851,13 @@ function setupSkillHandlers() {
           showStatus('Skill added.');
         }
 
-        chrome.storage.local.set({ customSkills }, () => {
-          loadSkills();
-          clearSkillForm();
-        });
+        chrome.storage.local.set(
+          { customSkills: customSkills.slice(-MAX_IMPORTED_RECORDS) },
+          () => {
+            loadSkills();
+            clearSkillForm();
+          }
+        );
       });
     });
   }
@@ -2838,6 +2937,10 @@ function setupSkillHandlers() {
     importFile.addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
+      if (file.size > MAX_IMPORT_FILE_BYTES) {
+        showStatus('Skill import file is too large.', true);
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
@@ -2848,10 +2951,17 @@ function setupSkillHandlers() {
             showStatus('Invalid skill file format. Expected a v2 skills export.', true);
             return;
           }
+          if (imported.skills.length > MAX_IMPORTED_RECORDS) {
+            showStatus(`Import contains more than ${MAX_IMPORTED_RECORDS} skills.`, true);
+            return;
+          }
           skillsToImport = imported.skills;
 
           chrome.storage.local.get(['customSkills'], (result) => {
-            let customSkills = result.customSkills || [];
+            let customSkills = (Array.isArray(result.customSkills) ? result.customSkills : [])
+              .map(normalizeStoredSkill)
+              .filter(Boolean)
+              .slice(0, MAX_IMPORTED_RECORDS);
             let importCount = 0;
             let invalidCount = 0;
 
@@ -2871,7 +2981,10 @@ function setupSkillHandlers() {
               const skillToSave = {
                 name: parsed.metadata.name,
                 skillMd: canonicalMarkdown,
-                lastUpdated: newSkill.lastUpdated || new Date().toISOString(),
+                lastUpdated:
+                  typeof newSkill.lastUpdated === 'string'
+                    ? newSkill.lastUpdated.trim().slice(0, 128)
+                    : new Date().toISOString(),
               };
 
               const idx = customSkills.findIndex((s) => s.name === skillToSave.name);
@@ -2883,6 +2996,7 @@ function setupSkillHandlers() {
               importCount++;
             });
 
+            customSkills = customSkills.slice(-MAX_IMPORTED_RECORDS);
             chrome.storage.local.set({ customSkills }, () => {
               const invalidMsg = invalidCount > 0 ? ` (${invalidCount} skipped as invalid)` : '';
               showStatus(`Imported ${importCount} skills${invalidMsg}.`);
@@ -2909,6 +3023,15 @@ function setupSkillHandlers() {
       return;
     }
 
+    async function readSkillMarkdown(response) {
+      const contentLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(contentLength) && contentLength > MAX_SKILL_MARKDOWN_CHARS) {
+        return null;
+      }
+      const skillMd = await readBoundedResponseText(response, MAX_SKILL_MARKDOWN_CHARS);
+      return skillMd.endsWith(' [truncated]') ? null : skillMd;
+    }
+
     // Helper function to fetch skill from GitHub with multiple path/branch fallback
     async function fetchSkillFromGitHub(owner, repo, skillName) {
       const branches = ['main', 'master'];
@@ -2921,7 +3044,7 @@ function setupSkillHandlers() {
           try {
             const response = await fetch(rawUrl);
             if (response.ok) {
-              const skillMd = await response.text();
+              const skillMd = await readSkillMarkdown(response);
               if (skillMd && skillMd.trim().length > 0) {
                 console.log(`[Skills Import] Found skill at: ${rawUrl}`);
                 return { skillMd, url: rawUrl };
@@ -2950,11 +3073,13 @@ function setupSkillHandlers() {
           const masterTreeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
           const masterResponse = await fetch(masterTreeUrl);
           if (!masterResponse.ok) return null;
-          const masterTree = await masterResponse.json();
+          const masterTree = JSON.parse(
+            await readBoundedResponseText(masterResponse, MAX_IMPORT_FILE_BYTES)
+          );
           return await findSkillInTree(owner, repo, masterTree, skillName, 'master');
         }
 
-        const tree = await treeResponse.json();
+        const tree = JSON.parse(await readBoundedResponseText(treeResponse, MAX_IMPORT_FILE_BYTES));
         return await findSkillInTree(owner, repo, tree, skillName, 'main');
       } catch (e) {
         console.error('[Skills Import] API search failed:', e);
@@ -2972,7 +3097,8 @@ function setupSkillHandlers() {
           const response = await fetch(rawUrl);
           if (!response.ok) continue;
 
-          const content = await response.text();
+          const content = await readSkillMarkdown(response);
+          if (!content) continue;
 
           // Parse frontmatter to get skill name
           const nameMatch = content.match(/^---\s*\n[\s\S]*?name:\s*(.+?)\s*\n/);
@@ -3000,8 +3126,7 @@ function setupSkillHandlers() {
     importBtn.addEventListener('click', async () => {
       const url = urlInput.value.trim();
       if (!url) {
-        statusEl.textContent =
-          '<span style="color: var(--ext-destructive);">Please enter a skills.sh URL</span>';
+        statusEl.textContent = 'Please enter a skills.sh URL';
         return;
       }
 
@@ -3009,8 +3134,7 @@ function setupSkillHandlers() {
       // Also support: https://skills.sh/{owner}/{repo}/{skill-name}/
       const urlMatch = url.match(/^https?:\/\/skills\.sh\/([^/]+)\/([^/]+)\/([^/]+)\/?$/);
       if (!urlMatch) {
-        statusEl.textContent =
-          '<span style="color: var(--ext-destructive);">Invalid URL format. Use: https://skills.sh/owner/repo/skill-name</span>';
+        statusEl.textContent = 'Invalid URL format. Use: https://skills.sh/owner/repo/skill-name';
         return;
       }
 
@@ -3034,8 +3158,7 @@ function setupSkillHandlers() {
 
         const { skillMd } = fetchResult;
 
-        statusEl.textContent =
-          '<span style="color: var(--ext-muted-foreground);">Found skill, saving...</span>';
+        statusEl.textContent = 'Found skill, saving...';
 
         // Parse the skill markdown
         const parsed = parseSkillMarkdown(skillMd);
@@ -3047,7 +3170,12 @@ function setupSkillHandlers() {
         const customSkillsResult = await new Promise((resolve) => {
           chrome.storage.local.get(['customSkills'], resolve);
         });
-        const existingCustomSkills = customSkillsResult.customSkills || [];
+        const existingCustomSkills = (
+          Array.isArray(customSkillsResult.customSkills) ? customSkillsResult.customSkills : []
+        )
+          .map(normalizeStoredSkill)
+          .filter(Boolean)
+          .slice(0, MAX_IMPORTED_RECORDS);
         const existingIndex = existingCustomSkills.findIndex(
           (s) => s.name === parsed.metadata.name
         );
@@ -3074,7 +3202,10 @@ function setupSkillHandlers() {
         }
 
         await new Promise((resolve) => {
-          chrome.storage.local.set({ customSkills: existingCustomSkills }, resolve);
+          chrome.storage.local.set(
+            { customSkills: existingCustomSkills.slice(-MAX_IMPORTED_RECORDS) },
+            resolve
+          );
         });
 
         statusEl.innerHTML =

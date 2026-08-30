@@ -4,7 +4,6 @@
  */
 
 const PAGE_ACTIONS_ENABLED_KEY = 'pageActionsEnabled';
-const PAGE_ACTIONS_MULTI_TAB_KEY = 'pageActionsMultiTabEnabled';
 const PAGE_ACTIONS_STORAGE = 'session';
 
 let pageActionsToggleElement = null;
@@ -96,41 +95,6 @@ export function restorePageActionsEnabled() {
       }
       storage.set({ [PAGE_ACTIONS_ENABLED_KEY]: true }, resolve);
     });
-  });
-}
-
-export function isPageActionsMultiTabEnabled() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([PAGE_ACTIONS_MULTI_TAB_KEY], (result) => {
-      resolve(Boolean(result?.[PAGE_ACTIONS_MULTI_TAB_KEY]));
-    });
-  });
-}
-
-function applyMultiTabToggle(element, enabled) {
-  if (!element) return;
-  element.setAttribute('aria-pressed', String(enabled));
-  element.title = enabled
-    ? 'Owned-tab actions are on — safe navigation is covered by Act'
-    : 'Owned-tab actions are off — enable Act for tab scope';
-}
-
-export function initPageActionsMultiTabToggle(toggleElement, loadingManagerRef) {
-  if (!toggleElement) return;
-  isPageActionsMultiTabEnabled().then((enabled) => applyMultiTabToggle(toggleElement, enabled));
-  toggleElement.addEventListener('click', async () => {
-    const next = toggleElement.getAttribute('aria-pressed') !== 'true';
-    await chrome.storage.local.set({ [PAGE_ACTIONS_MULTI_TAB_KEY]: next });
-    applyMultiTabToggle(toggleElement, next);
-    loadingManagerRef?.showToast?.(
-      next ? 'Legacy owned-tab setting enabled.' : 'Legacy owned-tab setting disabled.',
-      'info'
-    );
-  });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[PAGE_ACTIONS_MULTI_TAB_KEY]) {
-      applyMultiTabToggle(toggleElement, Boolean(changes[PAGE_ACTIONS_MULTI_TAB_KEY].newValue));
-    }
   });
 }
 
@@ -528,9 +492,3 @@ export function cancelPageActionConfirmations(chatArea) {
     card.setAttribute('aria-label', 'Page action confirmation cancelled');
   });
 }
-
-export const pageActionStorageKeys = Object.freeze({
-  enabled: PAGE_ACTIONS_ENABLED_KEY,
-  multiTab: PAGE_ACTIONS_MULTI_TAB_KEY,
-  trustedMode: 'pageActionsTrustedMode',
-});

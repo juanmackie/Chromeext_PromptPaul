@@ -27,14 +27,9 @@ export function sanitizeHtml(html) {
   if (typeof DOMPurify !== 'undefined' && DOMPurify.sanitize) {
     return DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true } });
   }
-
-  const fallback = document.createElement('template');
-  fallback.innerHTML = rawHtml;
-  const forbidden = fallback.content.querySelectorAll(
-    'script, style, iframe, object, embed, link, meta, base, form, input, button'
-  );
-  forbidden.forEach((node) => node.remove());
-  return fallback.innerHTML;
+  // Do not return partially sanitized markup when DOMPurify is unavailable.
+  // Escaping is less expressive, but it cannot create executable HTML.
+  return escapeHtml(rawHtml);
 }
 
 /**

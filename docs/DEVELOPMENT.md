@@ -42,7 +42,7 @@ npm run test
 npm run smoke
 npm run test:browser
 npm run validate
-npm audit --audit-level=high --omit=optional
+npm run audit
 ```
 
 ## Working Loop
@@ -52,7 +52,7 @@ npm audit --audit-level=high --omit=optional
 3. Make the change in source and add readable tests for the common and failure cases.
 4. Run the full local gate: `npm run validate` (lint, formatting, structural tests, behavior tests, and smoke checks).
 5. Run `npm run smoke` again when manifest or vendored dependencies changed.
-6. Run `npm audit --audit-level=high --omit=optional` before release.
+6. Run `npm run audit` before release; CI runs the same dependency gate before browser and build jobs.
 7. Run `npm run verify:licenses` after vendored-library changes.
 8. Build with `npm run build`.
 9. Reload the unpacked extension in Chrome.

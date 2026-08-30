@@ -27,7 +27,7 @@ jobs:
         run: npm run validate
 
       - name: Run dependency audit
-        run: npm audit --audit-level=high --omit=optional
+        run: npm run audit
 
   browser:
     runs-on: ubuntu-latest

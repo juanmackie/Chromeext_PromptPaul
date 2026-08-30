@@ -15,18 +15,9 @@ import { friendlyRuntimeErrorMessage } from '../utils/runtimeErrors.js';
 
 export function buildSmartPromptRequest(presetKey, content, metadata, presetModes) {
   const preset = presetModes[presetKey] || presetModes.summary;
-  let prompt = preset.prompt;
-
-  if (metadata.siteName === 'YouTube' || metadata.type?.includes('youtube')) {
-    prompt += `\n\nThis is a video titled "${metadata.title}" from channel "${metadata.byline}".`;
-  } else if (metadata.url?.includes('github.com') || metadata.url?.includes('gitlab.com')) {
-    prompt += `\n\nThis is code from "${metadata.title}".`;
-  } else if (metadata.byline) {
-    prompt += `\n\nThis is an article titled "${metadata.title}" by ${metadata.byline}.`;
-  }
 
   return {
-    instruction: prompt,
+    instruction: preset.prompt,
     context: {
       type: 'page_content',
       text: content,

@@ -29,6 +29,7 @@ import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
+import { isSafeMediaUrl, MEDIA_FETCH_TIMEOUT_MS, readMediaBlob } from './src/utils/mediaFetch.js';
 import { waitForRetry } from './src/utils/retryBackoff.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
@@ -427,20 +428,27 @@ function getMimeTypeFromUrl(url) {
 }
 
 /**
- * Fetches media from a URL and converts it to base64 encoding.
+ * Fetches media from a public URL and converts it to base64 encoding.
  * @param {string} url - The URL of the media to fetch.
  * @returns {Promise<{base64:string,mimeType:string}>} Base64 encoded string and MIME type.
- * @throws {Error} If the fetch fails or the media cannot be read.
+ * @throws {Error} If the URL, fetch, or media size is invalid.
  */
 async function fetchMediaAsBase64(url) {
+  if (!isSafeMediaUrl(url)) throw new Error('Media URL must be a public HTTP(S) URL.');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MEDIA_FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      redirect: 'error',
+      signal: controller.signal,
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
     }
 
-    const blob = await response.blob();
+    const blob = await readMediaBlob(response);
     const mimeType = response.headers.get('content-type') || getMimeTypeFromUrl(url);
 
     return new Promise((resolve, reject) => {
@@ -457,8 +465,11 @@ async function fetchMediaAsBase64(url) {
       reader.readAsDataURL(blob);
     });
   } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Media request timed out.');
     console.error('Error fetching media:', error);
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -478,7 +489,7 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 // Unified context menu click handler for all modalities
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   // Validate tab exists and has a valid ID (tab.id is -1 for side panel, devtools, chrome:// URLs)
-  if (!tab || tab.id === -1 || tab.id === undefined) {
+  if (!info || typeof info !== 'object' || !tab || !Number.isInteger(tab.id) || tab.id < 0) {
     console.warn('Context menu invoked from invalid tab context - ignoring');
     return;
   }
@@ -489,19 +500,32 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Detect media context
     const isMediaContext =
       info.mediaType === 'image' || info.mediaType === 'video' || info.mediaType === 'audio';
-    const mediaUrl = info.srcUrl || '';
-    const mediaType = info.mediaType || 'text';
+    const mediaUrl = typeof info.srcUrl === 'string' ? info.srcUrl.trim().slice(0, 2_048) : '';
+    const mediaType = ['image', 'video', 'audio'].includes(info.mediaType)
+      ? info.mediaType
+      : 'text';
 
-    // Normalize selection text to avoid undefined
-    let originalSelectionText = info.selectionText || '';
+    // Normalize selection text to avoid undefined and unbounded payloads.
+    let originalSelectionText = String(info.selectionText || '')
+      .trim()
+      .slice(0, NOTCH_MAX_SELECTION_CHARS);
     let promptContent = originalSelectionText;
+    let promptContextType = isMediaContext
+      ? originalSelectionText
+        ? 'selected_text'
+        : 'media'
+      : originalSelectionText
+        ? 'selected_text'
+        : 'page_content';
 
     // Fetch tab content only if we have no media and no selection
     if (!isMediaContext && !originalSelectionText) {
       try {
         const tabDataResponse = await executeTabContentExtraction(tab.id);
         if (tabDataResponse && tabDataResponse.success) {
-          promptContent = tabDataResponse.content || tabDataResponse.data || '';
+          promptContent = String(tabDataResponse.content || tabDataResponse.data || '')
+            .trim()
+            .slice(0, NOTCH_MAX_PAGE_CHARS);
         }
       } catch (error) {
         console.error('Background: Exception while fetching tab content:', error.message);
@@ -621,7 +645,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
             ...mediaData,
             actionType: 'custom',
             instructionId: instructionId,
-            textPrompt: isMediaContext ? null : `${instruction.content}\n\n${promptContent}`,
+            promptRequest: {
+              instruction: instruction.content,
+              context: { type: promptContextType, text: promptContent },
+            },
           },
           tabId: tab.id,
         });
@@ -654,7 +681,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           ...mediaData,
           actionType: actionType,
           instructionId: null,
-          textPrompt: isMediaContext ? null : `${commandMap[info.menuItemId]}:\n\n${promptContent}`,
+          promptRequest: {
+            instruction: commandMap[info.menuItemId],
+            context: { type: promptContextType, text: promptContent },
+          },
         },
         tabId: tab.id,
       });
@@ -1557,33 +1587,44 @@ async function openChatWithContext(context = {}, options = {}) {
     mediaUrl = '',
     mediaType = 'image',
     instruction = '',
-  } = context;
+  } = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+  const normalizedTabId = Number.isInteger(tabId) && tabId >= 0 ? tabId : null;
+  const normalizedSelectedText =
+    typeof selectedText === 'string' ? selectedText.trim().slice(0, NOTCH_MAX_SELECTION_CHARS) : '';
+  const normalizedMediaUrl = typeof mediaUrl === 'string' ? mediaUrl.trim() : '';
+  const normalizedInstruction =
+    typeof instruction === 'string' ? instruction.trim().slice(0, NOTCH_MAX_INSTRUCTION_CHARS) : '';
+  const normalizedMediaType = ['image', 'video', 'audio'].includes(mediaType) ? mediaType : 'image';
 
-  if (!tabId) {
-    return { success: false, error: 'No tab context for deep link' };
+  if (normalizedTabId === null) {
+    return { success: false, error: 'No valid tab context for deep link' };
   }
+  if (normalizedMediaUrl && !isSafeMediaUrl(normalizedMediaUrl)) {
+    return { success: false, error: 'Media URL must be a public HTTP(S) URL.' };
+  }
+  const tabIdForContext = normalizedTabId;
 
   if (options.panelOpenPromise) await options.panelOpenPromise;
-  else await chrome.sidePanel.open({ tabId });
+  else await chrome.sidePanel.open({ tabId: tabIdForContext });
   const actionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  // Media context: preserve the attachment (and optional instruction).
-  if (mediaUrl) {
+  // Media context: preserve the attachment and keep selected text structured.
+  if (normalizedMediaUrl) {
     let mediaData;
     try {
-      const media = await fetchMediaAsBase64(mediaUrl);
+      const media = await fetchMediaAsBase64(normalizedMediaUrl);
       mediaData = {
-        type: mediaType,
+        type: normalizedMediaType,
         base64: media.base64,
-        url: mediaUrl,
+        url: normalizedMediaUrl,
         mimeType: media.mimeType,
       };
     } catch (error) {
       mediaData = {
-        type: mediaType,
+        type: normalizedMediaType,
         base64: null,
-        url: mediaUrl,
-        mimeType: getMimeTypeFromUrl(mediaUrl),
+        url: normalizedMediaUrl,
+        mimeType: getMimeTypeFromUrl(normalizedMediaUrl),
         error: error.message,
       };
     }
@@ -1591,11 +1632,16 @@ async function openChatWithContext(context = {}, options = {}) {
       action: 'setMediaForAnalysis',
       mediaData: {
         ...mediaData,
-        actionType: instruction ? 'custom' : null,
+        actionType: normalizedInstruction ? 'custom' : null,
         instructionId: null,
-        textPrompt: instruction ? `${instruction}\n\n${selectedText || ''}`.trim() : null,
+        promptRequest: {
+          instruction: normalizedInstruction || 'Analyze the attached media.',
+          context: normalizedSelectedText
+            ? { type: 'selected_text', text: normalizedSelectedText }
+            : { type: 'media' },
+        },
       },
-      tabId,
+      tabId: tabIdForContext,
     });
     return { success: true, mode: 'media' };
   }
@@ -1603,10 +1649,10 @@ async function openChatWithContext(context = {}, options = {}) {
   // Text/selection context (instruction rides along as the initial prompt).
   await sendPanelMessage({
     action: 'setSelectedText',
-    selectedText: selectedText || '',
+    selectedText: normalizedSelectedText,
     fromStartChat: true,
-    textPrompt: instruction || null,
-    tabId,
+    textPrompt: normalizedInstruction || null,
+    tabId: tabIdForContext,
     actionId,
   });
   return { success: true, mode: 'text' };
@@ -2480,7 +2526,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!extensionPageSender) {
       return rejectUnauthorizedMessage(sendResponse, 'Chat opening must come from Prompt Paul.');
     }
-    const context = request.context || {};
+    const context =
+      request.context && typeof request.context === 'object' && !Array.isArray(request.context)
+        ? request.context
+        : {};
     const requestedTabId = context.tabId || request.tabId || sender.tab?.id;
     resolvePanelTabId(requestedTabId)
       .then(async (tabId) => {
@@ -3130,13 +3179,17 @@ chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => 
     sendResponse({ success: false, error: 'Unsupported external action' });
     return;
   }
-  const context = request.context || {};
-  const resolveTab =
-    context.tabId || sender.tab?.id
-      ? Promise.resolve(context.tabId || sender.tab?.id)
-      : chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]?.id);
-  resolveTab
-    .then((tabId) => openChatWithContext({ ...context, tabId }))
+  const context =
+    request.context && typeof request.context === 'object' && !Array.isArray(request.context)
+      ? request.context
+      : {};
+  const externalTabId =
+    Number.isInteger(sender?.tab?.id) && sender.tab.id >= 0 ? sender.tab.id : null;
+  if (externalTabId === null) {
+    sendResponse({ success: false, error: 'External chat links must come from a browser tab.' });
+    return false;
+  }
+  openChatWithContext({ ...context, tabId: externalTabId })
     .then((result) => sendResponse(result))
     .catch((error) => sendResponse({ success: false, error: error.message }));
   return true;

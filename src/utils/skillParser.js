@@ -10,6 +10,7 @@
 const MAX_NAME_LENGTH = 64;
 const MAX_DESCRIPTION_LENGTH = 1024;
 const MAX_COMPATIBILITY_LENGTH = 500;
+export const MAX_SKILL_MARKDOWN_CHARS = 100_000;
 
 /**
  * Parses SKILL.md frontmatter and body according to Agent Skills conventions.
@@ -23,6 +24,14 @@ export function parseSkillMarkdown(markdown, options = {}) {
     return {
       valid: false,
       error: 'Empty or invalid markdown content',
+      metadata: null,
+      instructions: null,
+    };
+  }
+  if (markdown.length > MAX_SKILL_MARKDOWN_CHARS) {
+    return {
+      valid: false,
+      error: `SKILL.md exceeds ${MAX_SKILL_MARKDOWN_CHARS} characters`,
       metadata: null,
       instructions: null,
     };

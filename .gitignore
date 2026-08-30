@@ -18,9 +18,14 @@ yarn-error.log*
 
 # Ignore Claude AI
 .claude/
+.pi-subagents/
+
+# Ignore local vibe-coding rule copies
+vibe-coding-rules*.md
 
 # Ignore local plan documents
 PLAN.md
+plan.md
 plans/
 
 # Ignore local agent state and release archives

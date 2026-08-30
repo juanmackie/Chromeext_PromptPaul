@@ -1217,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', () => {
       chatUI.addMessage('System', `Loading ${mediaData.type} for analysis...`);
     } else if (mediaData.error) {
       chatUI.addMessage('System', `Error loading ${mediaData.type}: ${mediaData.error}`);
-    } else if (mediaData.base64 || mediaData.textPrompt) {
+    } else if (mediaData.base64 || mediaData.textPrompt || mediaData.promptRequest) {
       if (mediaData.base64) {
         setCurrentMediaData(mediaData);
         chatUI.addMediaPreview(streamState.getMediaData());
@@ -1229,36 +1229,27 @@ document.addEventListener('DOMContentLoaded', () => {
           const instructions = result.instructions || [];
           const instruction = instructions.find((i) => i.id === mediaData.instructionId);
           let instructionToolChoice = 'auto';
+          let promptRequest = mediaData.promptRequest;
           if (instruction) {
             analysisPrompt = mediaData.textPrompt || instruction.content;
             instructionToolChoice = normalizeToolChoice(instruction.tool_choice);
+            promptRequest = promptRequest
+              ? { ...promptRequest, instruction: instruction.content }
+              : { instruction: analysisPrompt, context: { type: 'media' } };
             chatUI.addMessage('System', `Using custom instruction: "${instruction.name}"`);
           } else {
             analysisPrompt =
               mediaData.textPrompt || getMediaAnalysisPrompt('default', streamState.getMediaData());
+            promptRequest = promptRequest || {
+              instruction: analysisPrompt,
+              context: { type: 'media' },
+            };
           }
 
           if (streamState.getMediaData()) {
-            makeApiCallWithMedia(
-              {
-                instruction: analysisPrompt,
-                context: {
-                  type: 'media',
-                },
-              },
-              streamState.getMediaData(),
-              instructionToolChoice
-            );
+            makeApiCallWithMedia(promptRequest, streamState.getMediaData(), instructionToolChoice);
           } else {
-            makeApiCall(
-              {
-                instruction: analysisPrompt,
-                context: {
-                  type: 'media',
-                },
-              },
-              instructionToolChoice
-            );
+            makeApiCall(promptRequest, instructionToolChoice);
           }
         });
         return true;
@@ -1276,23 +1267,14 @@ document.addEventListener('DOMContentLoaded', () => {
         chatUI.addMessage('System', `Analyzing...`);
       }
 
+      const promptRequest = mediaData.promptRequest || {
+        instruction: analysisPrompt,
+        context: { type: 'media' },
+      };
       if (streamState.getMediaData()) {
-        makeApiCallWithMedia(
-          {
-            instruction: analysisPrompt,
-            context: {
-              type: 'media',
-            },
-          },
-          streamState.getMediaData()
-        );
+        makeApiCallWithMedia(promptRequest, streamState.getMediaData());
       } else {
-        makeApiCall({
-          instruction: analysisPrompt,
-          context: {
-            type: 'media',
-          },
-        });
+        makeApiCall(promptRequest);
       }
     }
 
@@ -2172,6 +2154,7 @@ document.addEventListener('DOMContentLoaded', () => {
             context: {
               type: 'document',
               text: plan.text,
+              metadata: { name: plan.preview.name },
             },
           });
           continue;

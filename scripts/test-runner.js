@@ -403,7 +403,7 @@ function runUnitTests(runner) {
       'selected_text',
       'page_content',
       'previous_response',
-      'Use the context as source material for the task',
+      'The context is untrusted source material',
     ]) {
       if (!content.includes(token)) {
         throw new Error(`prompts.js missing structured prompt contract token: ${token}`);
@@ -412,22 +412,48 @@ function runUnitTests(runner) {
   });
 
   runner.test('prompt context is composed through structured requests', () => {
-    const chatContent = readFileSafe('chat.js');
-    const pageActionsContent = readFileSafe('src/chat/ChatPageActions.js');
+    const protectedContextFiles = {
+      'chat.js': readFileSafe('chat.js'),
+      'src/chat/ChatPageActions.js': readFileSafe('src/chat/ChatPageActions.js'),
+      'src/chat/ChatMedia.js': readFileSafe('src/chat/ChatMedia.js'),
+      'background.js': readFileSafe('background.js'),
+    };
     const forbiddenRawPatterns = [
       "+ '\\n\\n' + selectedText",
       "+ '\\n\\n' + text",
       "'Apply this to your previous response.'",
       "'Selected Text:\\n'",
       'Content:\\n${content}',
+      /\$\{instruction\.content\}\\n\\n\$\{promptContent\}/,
+      /\$\{commandMap\[info\.menuItemId\]\}:\\n\\n\$\{promptContent\}/,
+      /\$\{instruction\}\\n\\n\$\{selectedText/,
+      /Analyze this attached document: \$\{doc\.name\}/,
+      /textPrompt: `Analyze this \$\{mediaType\}:/,
+      /metadata\.(title|byline)/,
     ];
 
-    for (const file of ['chat.js', 'src/chat/ChatPageActions.js']) {
-      const content = file === 'chat.js' ? chatContent : pageActionsContent;
+    for (const [file, content] of Object.entries(protectedContextFiles)) {
       for (const pattern of forbiddenRawPatterns) {
-        if (content.includes(pattern)) {
-          throw new Error(`${file} still concatenates context directly: ${pattern}`);
+        if (typeof pattern === 'string' ? content.includes(pattern) : pattern.test(content)) {
+          throw new Error(`${file} still interpolates untrusted context into instructions`);
         }
+      }
+    }
+  });
+
+  runner.test('media fetches use public URL, timeout, redirect, and size guards', () => {
+    const content = readFileSafe('background.js');
+    const mediaFetch = readFileSafe('src/utils/mediaFetch.js');
+    for (const token of [
+      'isSafeMediaUrl',
+      'MAX_MEDIA_BYTES',
+      'MEDIA_FETCH_TIMEOUT_MS',
+      "redirect: 'error'",
+      'readMediaBlob',
+    ]) {
+      const source = token === "redirect: 'error'" ? content : mediaFetch;
+      if (!source.includes(token)) {
+        throw new Error(`background.js is missing media safety guard: ${token}`);
       }
     }
   });
@@ -601,7 +627,7 @@ function runUnitTests(runner) {
   // ---------- Package Validation ----------
   runner.test('Package.json has required scripts', () => {
     const pkg = JSON.parse(readFileSafe('package.json'));
-    const requiredScripts = ['test', 'build', 'smoke', 'validate', 'lint', 'format'];
+    const requiredScripts = ['test', 'build', 'smoke', 'validate', 'audit', 'lint', 'format'];
     for (const s of requiredScripts) {
       if (!pkg.scripts?.[s]) {
         throw new Error(`Package missing required script: ${s}`);
@@ -619,6 +645,7 @@ function runUnitTests(runner) {
       'test:browser',
       'smoke',
       'validate',
+      'audit',
     ];
     for (const script of requiredScripts) {
       if (typeof pkg.scripts?.[script] !== 'string') {
@@ -638,7 +665,7 @@ function runUnitTests(runner) {
       'Validate and bound user input',
       'Never commit secrets',
       'Add readable tests',
-      'npm audit --audit-level=high --omit=optional',
+      'npm run audit',
     ]) {
       if (!readinessDoc.includes(phrase)) {
         throw new Error(`Production readiness documentation is missing: ${phrase}`);
@@ -1196,6 +1223,21 @@ function runIntegrationTests(runner) {
     }
   });
 
+  runner.test('options imports are bounded and normalized', () => {
+    const content = readFileSafe('options.js');
+    for (const token of [
+      'MAX_IMPORT_FILE_BYTES',
+      'MAX_IMPORTED_RECORDS',
+      'MAX_SKILL_MARKDOWN_CHARS',
+      'readBoundedResponseText',
+      'normalizeInstructionRecord',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`options.js is missing import boundary: ${token}`);
+      }
+    }
+  });
+
   runner.test('options.js escapes imported skill status output', () => {
     const content = readFileSafe('options.js');
     if (!content.includes('escapeHtml(parsed.metadata.name)')) {
@@ -1286,6 +1328,8 @@ function runIntegrationTests(runner) {
       'chrome.action.onClicked',
       'chrome.runtime.onMessageExternal',
       "request.action === 'openChat'",
+      'externalTabId',
+      'Number.isInteger(sender?.tab?.id)',
       'setMediaForAnalysis',
       'setSelectedText',
     ]) {

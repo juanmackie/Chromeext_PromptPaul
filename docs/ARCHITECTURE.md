@@ -24,7 +24,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/chat/ChatMedia.js` prepares image, video, and audio requests
 - `src/chat/ChatStream.js` tracks streaming state and history
 - `src/chat/ChatPageActions.js` renders page-aware quick actions and preset prompts
-- `src/chat/ChatPageAutomation.js` owns the default-off Act toggle, sanitized page-action approval cards, and reconnect notices; legacy Tabs helpers remain only for compatibility
+- `src/chat/ChatPageAutomation.js` owns the default-off Act toggle, sanitized page-action approval cards, and reconnect notices; the legacy multi-tab field remains runtime compatibility only
 - `src/chat/ChatRunRecovery.js` stores the opaque active-run pointer and renders bounded session journal status after reconnect
 - `src/chat/ChatComposer.js` composer-led UI: context tray, contextual quick actions, and inline Stop/Retry/Edit/Continue recovery
 - `src/chat/ChatStream.js` owns the local conversation identity so provider switches can continue the visible transcript safely
@@ -43,6 +43,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/utils/validation.js` owns HTTP(S)-only endpoint validation, custom-tool/profile normalization, and bounded backup restore validation
 - `src/utils/runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages
 - `src/utils/streamSafety.js` bounds provider SSE buffers and error-body reads
+- `src/utils/mediaFetch.js` validates public media URLs and bounds media response reads
 - `src/utils/runResilience.js` classifies provider failures, applies reasoning-model timeout floors, compacts long conversation histories, redacts provider error labels, and stops repetitive output
 - `src/utils/codexAuth.js` owns the profile-local ChatGPT device-code login, token refresh, and secret-free status bridge. `src/orchestrator/CodexTransport.js` converts Prompt Paul history/tools to the ChatGPT Codex Responses wire and parses its stream.
 - `src/orchestrator/HermesTransport.js` owns the authenticated Hermes gateway routes, session creation, bounded SSE parsing, and server approval requests. Hermes credentials and session pointers stay in the background worker.
@@ -87,8 +88,9 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 1. All prompt paths return structured `{instruction, context}` request objects
 2. `composeUserPrompt` from `src/prompts.js` combines instruction and context into a single user message
-3. Context boundaries (e.g. `--- Selected text ---`) mark where external content begins and ends
-4. Media payloads are attached separately in `makeApiCallWithMedia`, not inlined in the text prompt
+3. Context boundaries (e.g. `--- Selected text ---`) mark where external content begins and ends; instruction/context text is bounded and context is explicitly treated as untrusted source material
+4. Page metadata and document names travel as bounded context metadata, never as instructions
+5. Media payloads are attached separately in `makeApiCallWithMedia`, not inlined in the text prompt
 
 ### Profile routing
 
@@ -121,10 +123,13 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 1. Options export filters to supported local/sync backup keys, including the Light/Dark/System `themePreference`; API credentials remain subject to the existing backup warning, while Codex subscription tokens are never exported.
 2. Backup restore validates supported storage keys and nested profiles/tools before writing; unknown keys are skipped, and restored Codex profiles require reauthentication.
 3. Custom tools remain user-configured HTTP(S) endpoints, but save, import, profile/runtime resolution, and execution share the same method/name/URL validation.
-4. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged.
-5. Privileged runtime messages require an extension-page sender; content-script extraction and notch actions are bound to their own tab, and run mutations require the opaque owner token issued at run start.
-6. The notch bridge accepts only its fixed action allowlist, bounds selected/page text, and never receives provider credentials.
-7. Source checkouts and release builds remain credential-free; connection credentials are provided by the user in Options.
+4. External media URLs use public HTTP(S)-only validation, reject private hosts and non-media responses/redirects, and enforce timeout and response-size limits before conversion.
+5. Instruction and skill imports enforce file/item/body bounds and persist only normalized instruction fields.
+6. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged.
+7. Privileged runtime messages require an extension-page sender; content-script extraction and notch actions are bound to their own tab, and run mutations require the opaque owner token issued at run start.
+8. Website deep links bind context to the external sender tab instead of accepting a caller-supplied target tab.
+9. The notch bridge accepts only its fixed action allowlist, bounds selected/page text, and never receives provider credentials.
+10. Source checkouts and release builds remain credential-free; connection credentials are provided by the user in Options.
 
 ### Browser-page Top Notch (optional)
 
@@ -163,6 +168,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 - `scripts/build.js` copies the extension into `dist/`
 - `scripts/test-runner.js` checks module structure and key regression guards
+- `npm run audit` runs the high-severity dependency gate used by CI and release builds
 - `scripts/smoke-check.js` performs the cheapest end-to-end sanity check
 - `npm run test:browser` runs every unpacked-extension spec in `tests/browser/` against a real headed Chromium-family browser and exercises the content-script bridge, selected-text actions, the executable page-action corpus, live scope/diff measurement, privileged-message rejection, indexed compose controls, interrupted connections, timeout, active-tab navigation recovery, and service-worker restart paths; set `PROMPT_PAUL_BROWSER=chrome|edge` to target an installed branded browser. Chrome 137+ and equivalent Edge builds use the browser-level CDP Extensions domain to load the unpacked directory. CI runs this suite under Xvfb.
 
