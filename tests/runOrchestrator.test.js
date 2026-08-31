@@ -2648,6 +2648,82 @@ describe('RunOrchestrator page actions', () => {
     expect(actionCalls).toBe(1);
   });
 
+  it('counts only delivered mutations for the repeat guard', async () => {
+    let failDispatch = true;
+    let failureCode = 'PAGE_STATE_STALE';
+    let mutationCalls = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        mutationCalls += 1;
+        if (failDispatch) {
+          const error = new Error('The target was replaced before dispatch.');
+          error.code = failureCode;
+          throw error;
+        }
+        return {
+          success: true,
+          snapshot: makeSnapshot(),
+          actionReceipt: {
+            disposition: 'delivered_verified',
+            evidence: { kind: 'synthetic_no_change' },
+          },
+        };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('repeat-state-1', 'page_get_state', {}));
+
+    for (const [attempt, code] of ['PAGE_STATE_STALE', 'PAGE_TARGET_OBSCURED'].entries()) {
+      failureCode = code;
+      await expect(
+        orch.executeTool(
+          runId,
+          makeCall(`repeat-failed-input-${attempt}`, 'page_input', {
+            snapshotId: 'page-snap-1',
+            index: 0,
+            text: 'same input',
+          })
+        )
+      ).rejects.toMatchObject({ code });
+    }
+    expect(orch.activeRuns.get(runId).pageActions.repeatedActionCount).toBe(0);
+
+    failDispatch = false;
+    const first = await orch.executeTool(
+      runId,
+      makeCall('repeat-delivered-1', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'same input',
+      })
+    );
+    const second = await orch.executeTool(
+      runId,
+      makeCall('repeat-delivered-2', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'same input',
+      })
+    );
+    const third = await orch.executeTool(
+      runId,
+      makeCall('repeat-delivered-3', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'same input',
+      })
+    );
+
+    expect(first.result.actionReceipt.disposition).toBe('delivered_verified');
+    expect(second.result.actionReceipt.disposition).toBe('delivered_verified');
+    expect(third.result.error).toBe('PAGE_ACTION_LOOP_DETECTED');
+    expect(orch.activeRuns.get(runId).pageActions.repeatedActionCount).toBe(2);
+    expect(mutationCalls).toBe(4);
+  });
+
   it('hints the model when page_get_state returns an empty page with no controls', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async () => ({

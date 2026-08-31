@@ -121,11 +121,17 @@ npm run validate
 npm run audit
 ```
 
+`npm run build:dev` creates the local-only `dist-dev/` diagnostics build. See
+[docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for the enable, disable, and trace
+collection workflow. Production builds are written to `dist/`.
+
 ### Docs
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
+- [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
+- [docs/FEATURE_REVIEW.md](docs/FEATURE_REVIEW.md)
 - [docs/BROWSER_AGENT_REPOSITORY_REVIEW.md](docs/BROWSER_AGENT_REPOSITORY_REVIEW.md)
 - [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md)
 
@@ -143,6 +149,7 @@ Prompt Paul works with OpenAI-compatible endpoints, including Mistral, OpenAI, c
 - No page URLs, page titles, page content, API keys, credentials, or prompt text are sent to analytics
 - Browser-internal pages and the Chrome Web Store are blocked before extraction or page actions
 - Page content is only sent when you explicitly invoke processing; page actions are separately opt-in through **Act**
+- Development diagnostics exist only in the local `dist-dev/` build, are disabled by default, expire after one hour, stay in session storage, and are never sent to analytics or external services
 
 ## Permissions
 

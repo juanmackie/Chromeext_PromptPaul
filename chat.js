@@ -28,6 +28,7 @@ import {
   abortRun,
   resumeActRun,
   getRunAuth,
+  setRunOwnerToken,
   clearRunOwnerToken,
   selectOptimalProfile,
 } from './src/chat/ChatAPI.js';
@@ -69,10 +70,22 @@ import {
   updatePageActionActivity,
   handlePageUserInputRequest,
 } from './src/chat/ChatPageAutomation.js';
-import { clearActiveRun, restoreRunJournal } from './src/chat/ChatRunRecovery.js';
+import {
+  clearActiveRun,
+  loadActiveRunJournal,
+  restoreRunJournal,
+} from './src/chat/ChatRunRecovery.js';
 import * as hermesChat from './src/chat/ChatHermes.js';
 import { initQuickActionsMenu } from './src/chat/ChatActionMenu.js';
 import { readCurrentPageSelection } from './src/chat/ChatSelection.js';
+import {
+  initializeDevDiagnostics,
+  installDevErrorHandlers,
+  recordDevDiagnostic,
+} from './src/utils/devDiagnostics.js';
+
+void initializeDevDiagnostics('chat');
+installDevErrorHandlers('chat');
 // ── Lazy Module Loaders ───────────────────────────────────────────
 // Non-critical modules are loaded on demand to reduce initial startup cost.
 /** @type {import('./src/chat/ChatSkills.js') | null} */
@@ -124,6 +137,10 @@ function formatUserMessageForDisplay(message) {
   return `${firstLine.slice(0, maxInlineLength)}…`;
 }
 document.addEventListener('DOMContentLoaded', () => {
+  recordDevDiagnostic('chat_loaded', {
+    href: window.location.href,
+    userAgent: navigator.userAgent,
+  });
   const chatArea = document.getElementById('chat-area');
   const userInput = document.getElementById('user-input');
   const sendButton = document.getElementById('send-button');
@@ -837,6 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initChatModelStatus({
     statusElement: document.getElementById('sidebar-model-status'),
     modeElement: document.getElementById('sidebar-mode-value'),
+    modelElement: document.getElementById('sidebar-model-value'),
     reasoningElement: document.getElementById('sidebar-reasoning-value'),
   });
 
@@ -921,6 +939,31 @@ document.addEventListener('DOMContentLoaded', () => {
     sendButton.disabled = true;
     clearButton.textContent = 'Stop';
     setRunState(inputArea, RUN_STATES.STREAMING);
+  }
+
+  async function watchActiveRun(recovery) {
+    const latestRecovery = (await loadActiveRunJournal()) || recovery;
+    if (!latestRecovery?.active) throw new Error('This run is no longer active.');
+    if (isResponseBusy()) {
+      loadingManager.showToast('A response is already in progress.', 'warning');
+      throw new Error('A response is already in progress.');
+    }
+    const runId = String(
+      latestRecovery.pointer?.runId || latestRecovery.journal?.runId || ''
+    ).trim();
+    const ownerToken = String(latestRecovery.ownerToken || '');
+    if (!runId || !ownerToken || !setRunOwnerToken(runId, ownerToken)) {
+      throw new Error('Run reconnect authorization was not established. Reload Prompt Paul.');
+    }
+    const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
+    streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
+    streamState.setRunId(runId);
+    streamState.setSourceTabId(
+      latestRecovery.pointer?.sourceTabId ?? latestRecovery.journal?.sourceTabId ?? null
+    );
+    streamState.setNextOrchestratorEventSequence(latestRecovery.journal?.eventSequence || 0);
+    setPageActionsRunActive(latestRecovery.journal?.pageActions?.enabled === true);
+    beginRunUi();
   }
 
   async function resumeActCheckpoint(checkpoint, recoveryCard) {
@@ -2669,7 +2712,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Rehydrate bounded activity and an optional Act checkpoint after a
   // side-panel reconnect. Checkpoint actions resume only after explicit Resume.
-  void restoreRunJournal(chatArea, resumeActCheckpoint);
+  void restoreRunJournal(chatArea, resumeActCheckpoint, watchActiveRun);
 
   // Voice input functionality
   const voiceToggleButton = document.getElementById('voice-toggle-button');

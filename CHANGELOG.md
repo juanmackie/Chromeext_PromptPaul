@@ -38,6 +38,7 @@ A coordinated, composer-led refinement of the whole extension, shipped together:
 
 ### Security and Reliability
 
+- Added a development-only, opt-in diagnostics build. `npm run build:dev` creates `dist-dev/` with structured run, provider, runtime-message, content-script, and Act traces; `npm run build:prod` replaces the tracer with no-op variants.
 - Removed the retired starter credential and release-time demo-key injection path; source and release builds now require user-provided connection credentials.
 - Added shared HTTP(S)-only validation for profiles and custom tools, validated backup restore data, and removed sensitive custom-tool endpoint/error logging.
 - Updated transitive development dependencies to versions with no current high-severity audit findings.

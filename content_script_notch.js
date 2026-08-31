@@ -471,6 +471,18 @@
       letter-spacing: 0.015em;
     }
 
+    .notch-model-status {
+      max-width: 100%;
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--notch-ink-muted);
+      font-size: 9px;
+      font-weight: 650;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .notch-close {
       display: grid;
       place-items: center;
@@ -1063,6 +1075,54 @@
       .slice(0, 120);
   }
 
+  function formatProfileMode(provider) {
+    const normalizedProvider = String(provider || '')
+      .trim()
+      .toLowerCase();
+    if (normalizedProvider === 'codex') return 'Codex';
+    if (normalizedProvider === 'hermes') return 'Hermes';
+    if (normalizedProvider === 'api') return 'API';
+    return normalizedProvider ? normalizedProvider.toUpperCase() : 'API';
+  }
+
+  function formatProfileModel(modelName) {
+    const normalizedModel = String(modelName || '').trim();
+    return normalizedModel || 'Not set';
+  }
+
+  function formatProfileReasoning(level) {
+    const normalizedLevel = String(level || '')
+      .trim()
+      .toLowerCase();
+    return normalizedLevel || 'Auto';
+  }
+
+  function refreshProfileStatus() {
+    const status = shadow?.querySelector('.notch-model-status');
+    if (!status) return;
+    try {
+      chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+        if (chrome.runtime.lastError || !status.isConnected) return;
+        const profiles = Array.isArray(result?.profiles) ? result.profiles : [];
+        const profile =
+          profiles.find((candidate) => candidate.id === result?.lastSelectedProfileId) ||
+          profiles.find((candidate) => candidate.id === 'default');
+        const mode = profile ? formatProfileMode(profile.provider) : ' - ';
+        const model = formatProfileModel(profile?.modelName);
+        const reasoning = formatProfileReasoning(profile?.reasoningLevel);
+        const summary = `${mode} · ${model} · ${reasoning}`;
+        status.textContent = summary;
+        status.title = `Current mode: ${mode}. Model: ${model}. Reasoning level: ${reasoning}.`;
+        status.setAttribute(
+          'aria-label',
+          `Current mode: ${mode}, model: ${model}, reasoning level: ${reasoning}`
+        );
+      });
+    } catch (_) {
+      // Keep the initial status if local storage is unavailable.
+    }
+  }
+
   function setFeedback(message, tone = '') {
     const feedback = shadow?.querySelector('.notch-feedback');
     if (!feedback) return;
@@ -1508,6 +1568,12 @@
             <div>
               <span class="notch-title">Quick actions</span>
               <span class="notch-kicker">Prompt Paul · current page</span>
+              <span
+                class="notch-model-status"
+                aria-label="Current mode, model, and reasoning level"
+                title="Current mode, model, and reasoning level"
+                >Loading model…</span
+              >
             </div>
             <button class="notch-close" type="button" title="Collapse notch" aria-label="Collapse notch">×</button>
           </div>
@@ -1598,6 +1664,7 @@
     loadThemePreference();
     const site = shadow.querySelector('.notch-site');
     if (site) site.textContent = siteLabel();
+    refreshProfileStatus();
 
     const rail = shadow.querySelector('.notch-rail');
     rail?.addEventListener('pointerdown', beginNotchDrag);
@@ -1660,6 +1727,9 @@
     }
     if (changes[POSITION_STORAGE_KEY]) {
       applyNotchPosition(changes[POSITION_STORAGE_KEY].newValue);
+    }
+    if (changes.profiles || changes.lastSelectedProfileId) {
+      refreshProfileStatus();
     }
     if (changes[PINNED_ACTIONS_KEY] || changes[INSTRUCTIONS_KEY]) {
       void renderPinnedActions();

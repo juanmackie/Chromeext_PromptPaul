@@ -316,7 +316,7 @@ body {
   top: 8px;
   right: 8px;
   z-index: 60;
-  width: 44px;
+  width: 72px;
   margin: 0;
   padding: 6px 3px 7px;
   box-sizing: border-box;
@@ -357,6 +357,13 @@ body {
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.sidebar-model-value {
+  max-height: 2.2em;
+  text-transform: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .sidebar-status-divider {

@@ -47,6 +47,15 @@ test('shows an isolated quick-action notch when enabled', async () => {
         new Promise((resolve) =>
           chrome.storage.local.set(
             {
+              profiles: [
+                {
+                  id: 'default',
+                  provider: 'api',
+                  modelName: 'openrouter/free',
+                  reasoningLevel: 'high',
+                },
+              ],
+              lastSelectedProfileId: 'default',
               instructions: [
                 { id: 'pinned-summarize', name: 'Summarize cleanly', content: 'Summarize this.' },
                 { id: 'pinned-proofread', name: 'Proofread text', content: 'Proofread this.' },
@@ -76,6 +85,9 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await expect(host).toHaveCount(1);
     const notchShell = host.locator('.notch-shell');
     await expect(notchShell).toHaveAttribute('data-theme', 'light');
+    await expect(notchShell.locator('.notch-model-status')).toHaveText(
+      'API · openrouter/free · high'
+    );
     await harness.evaluate(
       () =>
         new Promise((resolve) =>

@@ -159,6 +159,7 @@ function runUnitTests(runner) {
       'quick-actions-row',
       'page-context-strip',
       'page-context-remove-button',
+      'sidebar-model-value',
     ]) {
       if (!content.includes(`id="${id}"`)) {
         throw new Error(`chat.html missing composer surface: ${id}`);
@@ -274,6 +275,34 @@ function runUnitTests(runner) {
 
   runner.test('toolChoiceBuilder module structure valid', () => {
     checkModule('src/utils/toolChoiceBuilder.js');
+  });
+
+  runner.test('development diagnostics module is build-gated and bounded', () => {
+    checkModule('src/utils/devDiagnostics.js');
+    const content = readFileSafe('src/utils/devDiagnostics.js');
+    for (const token of [
+      'promptPaulDevDiagnosticsConfigV1',
+      'promptPaulDevDiagnosticsV1',
+      'MAX_TOTAL_CHARS',
+      'SECRET_KEY_PATTERN',
+      'options.persist',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`devDiagnostics.js missing contract token: ${token}`);
+      }
+    }
+    const production = readFileSafe('src/utils/devDiagnostics.prod.js');
+    if (production.includes('console.debug') || production.includes('chrome.storage.session')) {
+      throw new Error('Production diagnostics module must remain a no-op');
+    }
+    for (const file of [
+      'content_script_diagnostics.prod.js',
+      'content_script_page_diagnostics.prod.js',
+    ]) {
+      if (readFileSafe(file).includes('sendMessage')) {
+        throw new Error(`${file} must remain a no-op`);
+      }
+    }
   });
 
   runner.test('validation module structure valid', () => {
@@ -535,6 +564,19 @@ function runUnitTests(runner) {
         throw new Error(`Manifest references missing file: ${file}`);
       }
     });
+  });
+
+  runner.test('Development diagnostics content bridges are wired', () => {
+    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const pageBridge = manifest.content_scripts?.find((entry) =>
+      entry.js?.includes('content_script_page_diagnostics.js')
+    );
+    if (!pageBridge || pageBridge.world !== 'MAIN' || pageBridge.run_at !== 'document_start') {
+      throw new Error('Manifest must load the main-world diagnostics bridge at document start');
+    }
+    if (!readFileSafe('content_script_diagnostics.js').includes("action: 'devDiagnostic'")) {
+      throw new Error('Isolated diagnostics bridge must forward structured records');
+    }
   });
 
   runner.test('Optional notch is registered and isolated', () => {
@@ -1799,6 +1841,9 @@ function runIntegrationTests(runner) {
       'validateManifest',
       'createBuildDir',
       'copyFiles',
+      'hasDevFlag',
+      'hasProdFlag',
+      'installDiagnosticsVariant',
       'generateBuildMetadata',
     ];
     for (const elem of required) {
@@ -1832,6 +1877,8 @@ function runIntegrationTests(runner) {
       'AGENTS.md',
       'docs/ARCHITECTURE.md',
       'docs/DEVELOPMENT.md',
+      'docs/DIAGNOSTICS.md',
+      'docs/FEATURE_REVIEW.md',
       'docs/PRODUCTION_READINESS.md',
       'docs/SKILL_EXAMPLES.md',
     ];
@@ -1870,6 +1917,10 @@ function runIntegrationTests(runner) {
       'background.js',
       'chat.js',
       'content_script_unified.js',
+      'content_script_diagnostics.js',
+      'content_script_diagnostics.prod.js',
+      'content_script_page_diagnostics.js',
+      'content_script_page_diagnostics.prod.js',
       'content_script_notch.js',
       'input-controls.js',
       'content_script_outlook_compose.js',

@@ -12,6 +12,8 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `runtimeAuthorization.test.js` covers extension sender, content-script tab, and opaque run-owner checks without Chrome runtime state.
 - `validation.test.js` covers persistence and validation of the `notchEnabled` and bounded `notchPosition` backup preferences and `themePreference` values.
 - `streamSafety.test.js` covers bounded SSE buffers and provider error-body reads.
+- `devDiagnostics.test.js` covers credential-shaped redaction and diagnostic payload bounds; it never enables browser tracing or uses real credentials.
+- `chatModelStatus.test.js` covers the sidebar model-name formatting fallback.
 - `mediaFetch.test.js` covers public-media URL rejection, response MIME checks, and streamed size limits.
 - `domSanitizer.test.js` covers fail-closed HTML escaping when DOMPurify is unavailable.
 - `prompts.test.js` covers untrusted context and metadata boundaries; `chatDocuments.test.js` covers filename separation from document instructions.
@@ -26,7 +28,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - Tests must preserve the root extension contracts and must not use real credentials or private services.
 - Evaluation cases must use local fixtures or explicit platform-boundary labels and must not retain secrets, raw page history, or unbounded screenshots.
 - Scope/diff evaluation must use indexed semantic regions and bounded change metadata. It must never accept model-supplied selectors or return raw field values.
-- Page-action tests must cover bounded fingerprints, repeated-action loop blocking, automatic active-tab document recovery, same-tab and owned-tab link navigation under the single Act lease, opened-tab readiness, tab-local bridge quarantine, separate action budgets, bounded task notes/history compaction, and journal-safe event behavior.
+- Page-action tests must cover bounded fingerprints, repeated-action loop blocking, automatic active-tab document recovery, same-tab and owned-tab link navigation under the single Act lease, opened-tab readiness, tab-local bridge quarantine, separate action budgets, bounded task notes/history compaction, and journal-safe event behavior. Development diagnostics tests must preserve the production no-op build variant and credential redaction.
 - Browser fixtures represent Gmail/Outlook compose surfaces locally; they are not production pages.
 - `tests/browser/page-action-evaluation.spec.js` executes browser-safe evaluation cases and records bounded result, receipt, action-count, prompt-size, and failure-code metrics without persisting page data.
 

@@ -46,10 +46,23 @@ import {
   setVoiceInputSettings as setStoredVoiceInputSettings,
   isMicrophonePermissionDenied,
 } from './src/chat/ChatVoice.js';
+import {
+  initializeDevDiagnostics,
+  installDevErrorHandlers,
+  recordDevDiagnostic,
+} from './src/utils/devDiagnostics.js';
+
+void initializeDevDiagnostics('options');
+installDevErrorHandlers('options');
 
 const VOICE_INPUT_ENABLED_KEY = 'voiceInputEnabled';
 const VOICE_INPUT_PERMISSION_STATE_KEY = 'voiceInputPermissionState';
 const VOICE_INPUT_PERMISSION_LAST_CHECKED_KEY = 'voiceInputPermissionLastChecked';
+
+recordDevDiagnostic('options_loaded', {
+  href: window.location.href,
+  userAgent: navigator.userAgent,
+});
 
 // Starter configuration for first-time users. OpenRouter's free router provides
 // a quick start, but users must configure their own API key.

@@ -234,6 +234,116 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('re-resolves recreated controls and records obscured delivery generically', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'dynamic-page.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const initial = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_get_state'),
+        targetUrl
+      );
+      const dynamicTarget = initial.snapshot.elements.find(
+        (element) => element.label === 'Run dynamic action'
+      );
+      expect(dynamicTarget).toBeTruthy();
+
+      await target.evaluate(() => window.replaceDynamicTarget());
+      const rebound = await harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url: targetUrl, snapshotId: initial.snapshot.snapshotId, index: dynamicTarget.index }
+      );
+      expect(rebound.actionReceipt).toMatchObject({
+        disposition: 'delivered_unverified',
+        evidence: { kind: 'action_dispatched' },
+      });
+      await expect(target.locator('#status')).toHaveText('Dynamic action completed');
+
+      const current = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_get_state'),
+        targetUrl
+      );
+      const currentTarget = current.snapshot.elements.find(
+        (element) => element.label === 'Run dynamic action'
+      );
+      await target.evaluate(() => window.coverDynamicTarget());
+      const covered = await harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url: targetUrl, snapshotId: current.snapshot.snapshotId, index: currentTarget.index }
+      );
+      expect(covered.actionReceipt).toMatchObject({
+        disposition: 'delivered_unverified',
+        evidence: { kind: 'action_dispatched', covered: true },
+      });
+      await expect(target.locator('#status')).toHaveText('Dynamic action completed');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('reattaches a fresh panel to an active run and exposes Watch run', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+    let chat;
+
+    try {
+      const started = await harness.evaluate(
+        ({ url }) => window.pageActionHarness.startRun(url, false, { messages: [] }),
+        { url: targetUrl }
+      );
+      expect(started.runId, JSON.stringify(started)).toBeTruthy();
+      runId = started.runId;
+      await harness.evaluate(
+        ({ runId, sourceTabId }) =>
+          chrome.storage.session.set({
+            promptPaulActiveRunV1: {
+              runId,
+              sourceTabId,
+              savedAt: Date.now(),
+            },
+          }),
+        { runId, sourceTabId: started.sourceTabId }
+      );
+
+      const chatUrl = await harness.evaluate(() => chrome.runtime.getURL('chat.html'));
+      chat = await context.newPage();
+      await chat.goto(chatUrl);
+      const recovery = chat.locator('[data-run-recovery]');
+      await expect(recovery).toContainText('Run reconnect available');
+      const watch = recovery.locator('button', { hasText: 'Watch run' });
+      await expect(watch).toBeVisible();
+      await watch.click();
+      await expect(recovery).toHaveCount(0);
+      await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'streaming');
+      await expect(chat.locator('#send-button')).toBeDisabled();
+    } finally {
+      await chat?.close().catch(() => {});
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('offers explicit Act resume for an interrupted checkpoint without auto-running', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -1085,6 +1195,59 @@ test.describe('page-agent-style page actions', () => {
       );
       expect(destinationState.result?.snapshot, JSON.stringify(destinationState)).toBeTruthy();
       expect(destinationState.result.snapshot.url).toContain('/landing.html');
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('reuses an owned tab when the same destination is opened again', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    const destinationUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      const inspected = await harness.evaluate(
+        ({ url }) => window.pageActionHarness.startRun(url, true),
+        { url: targetUrl }
+      );
+      runId = inspected.runId;
+      const first = await harness.evaluate(
+        ({ runId, url }) =>
+          window.pageActionHarness.executeTool(runId, 'reuse-open-1', 'page_open_tab', {
+            url: `${url}?filter=books`,
+            background: true,
+          }),
+        { runId, url: destinationUrl }
+      );
+      expect(first.result?.ready, JSON.stringify(first)).toBe(true);
+      expect(first.result?.reused).toBeUndefined();
+
+      const second = await harness.evaluate(
+        ({ runId, url }) =>
+          window.pageActionHarness.executeTool(runId, 'reuse-open-2', 'page_open_tab', {
+            url: `${url}?filter=newest`,
+          }),
+        { runId, url: destinationUrl }
+      );
+      expect(second.result, JSON.stringify(second)).toMatchObject({
+        openedTabId: first.result.openedTabId,
+        ready: true,
+        reused: true,
+      });
+      const tabs = await harness.evaluate(
+        (id) => window.pageActionHarness.executeTool(id, 'reuse-tabs', 'page_list_tabs', {}),
+        runId
+      );
+      const destinationTabs = tabs.result.tabs.filter((tab) => tab.url.includes('/links.html'));
+      expect(destinationTabs).toHaveLength(1);
     } finally {
       await abortRun(harness, runId);
       await context.close();

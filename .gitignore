@@ -45,6 +45,7 @@ Prompt-Paul-*.zip
 
 # Ignore build output
 dist/
+dist-dev/
 
 # Ignore IDE project files
 .idea/
@@ -57,3 +58,4 @@ coverage/
 
 # Ignore Playwright artifacts
 test-results/
+artifacts/

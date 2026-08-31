@@ -12,6 +12,38 @@ const { chromium, expect } = require('@playwright/test');
 
 const repoRoot = path.resolve(__dirname, '../..');
 const fixtureRoot = path.join(__dirname, 'fixtures');
+let diagnosticsCaptureIndex = 0;
+
+function shouldCaptureDiagnostics() {
+  return process.env.PROMPT_PAUL_CAPTURE_DIAGNOSTICS === 'true';
+}
+
+function diagnosticsDirectory() {
+  return path.resolve(
+    process.env.PROMPT_PAUL_DIAGNOSTICS_DIR ||
+      path.join(repoRoot, 'artifacts', 'browser-diagnostics')
+  );
+}
+
+async function captureBrowserDiagnostics(context) {
+  if (!shouldCaptureDiagnostics()) return;
+  const workers = context.serviceWorkers();
+  for (const worker of workers) {
+    if (!(await isPromptPaulWorker(worker))) continue;
+    try {
+      const trace = await worker.evaluate(async () => globalThis.promptPaulDevDiagnostics?.get?.());
+      fs.mkdirSync(diagnosticsDirectory(), { recursive: true });
+      const fileName = `trace-${process.pid}-${String(++diagnosticsCaptureIndex).padStart(3, '0')}.json`;
+      fs.writeFileSync(
+        path.join(diagnosticsDirectory(), fileName),
+        JSON.stringify(trace || { schemaVersion: 1, entries: [] }, null, 2)
+      );
+    } catch (_) {
+      // The worker may be gone during browser shutdown; test cleanup remains best effort.
+    }
+    return;
+  }
+}
 
 function browserLaunchOptions(userDataDir) {
   return {
@@ -72,6 +104,11 @@ async function launchTestBrowser(userDataDir) {
       userDataDir,
       browserLaunchOptions(userDataDir)
     );
+    const closeContext = context.close.bind(context);
+    context.close = async () => {
+      await captureBrowserDiagnostics(context);
+      await closeContext();
+    };
     return { context };
   }
 
@@ -115,6 +152,7 @@ async function launchTestBrowser(userDataDir) {
   const context = browser.contexts()[0];
   const closeContext = context.close.bind(context);
   context.close = async () => {
+    await captureBrowserDiagnostics(context);
     await closeContext();
     await browser.close();
     if (process.platform === 'win32') {
@@ -182,6 +220,16 @@ async function openHarness(context) {
   const harness = await context.newPage();
   await harness.goto(`chrome-extension://${extensionId}/tests/browser/extension-harness.html`);
   await expect(harness.locator('#status')).toHaveAttribute('data-ready', 'true');
+  if (shouldCaptureDiagnostics()) {
+    await harness.evaluate(async () => {
+      await chrome.storage.session.set({
+        promptPaulDevDiagnosticsConfigV1: {
+          enabled: true,
+          expiresAt: Date.now() + 24 * 60 * 60 * 1_000,
+        },
+      });
+    });
+  }
   return harness;
 }
 

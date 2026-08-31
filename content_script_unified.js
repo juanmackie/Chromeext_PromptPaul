@@ -7,6 +7,14 @@
 // Includes: Readability, Turndown, YouTube Transcript extraction, and Message Listening
 
 (function () {
+  const devTrace = (event, data = {}) => {
+    try {
+      window.__PROMPT_PAUL_DEV_TRACE__?.(event, data);
+    } catch (_) {
+      // Development diagnostics must never affect page behavior.
+    }
+  };
+
   // --- 1. SETUP & UTILS ---
 
   // Prevent multiple registrations
@@ -1073,6 +1081,13 @@
     const pageSignals = collectPageSignals(url, platformInfo, bodyText);
     const readStrategy = determineReadStrategy(pageSignals);
     const requestScreenshot = needsScreenshot();
+    devTrace('content_extraction_started', {
+      url,
+      platform: platformInfo?.platform || null,
+      bodyChars: bodyText.length,
+      readStrategy,
+      requestScreenshot,
+    });
 
     let screenshotData = null;
     if (requestScreenshot && typeof chrome !== 'undefined' && chrome.runtime) {
@@ -1090,6 +1105,12 @@
     if (isVideoSite(url)) {
       const videoResult = await extractVideo();
       if (videoResult) {
+        devTrace('content_extraction_completed', {
+          url,
+          source: 'video',
+          success: true,
+          contentChars: String(videoResult.data || '').length,
+        });
         return {
           ...videoResult,
           platform: platformInfo?.platform || null,
@@ -1117,6 +1138,14 @@
 
     // 3. Handle edge cases where one fails
     if (!chosen) {
+      devTrace('content_extraction_completed', {
+        url,
+        success: false,
+        source: null,
+        readabilityAvailable: Boolean(readabilityResult),
+        fallbackAvailable: Boolean(fallbackResult),
+        adapterAvailable: Boolean(adapterCandidate),
+      });
       return {
         success: false,
         error: 'Extraction failed',
@@ -1141,6 +1170,14 @@
       }
     }
 
+    devTrace('content_extraction_completed', {
+      url,
+      source: chosen.source,
+      success: true,
+      contentChars: String(finalCandidate.data || '').length,
+      score: chosen.score,
+      reason: chosen.reason,
+    });
     return {
       ...finalCandidate,
       platform: platformInfo?.platform || null,
@@ -1697,17 +1734,28 @@
       throw error;
     }
     const record = session.records[Number(args.index)];
-    if (
-      !record ||
-      !record.ref?.isConnected ||
-      !isPageActionControl(record.ref) ||
-      record.fingerprint !== getPageActionFingerprint(record.ref)
-    ) {
-      const error = new Error('The target is no longer available. Call page_get_state again.');
-      error.code = 'PAGE_STATE_STALE';
-      throw error;
+    const current =
+      record?.ref?.isConnected &&
+      isPageActionControl(record.ref) &&
+      record.fingerprint === getPageActionFingerprint(record.ref);
+    if (current) return record;
+
+    // Modern pages frequently replace controls without changing their
+    // semantic identity. Rebind to the current DOM node instead of making
+    // every virtual-DOM rerender look like a failed action.
+    const rebound = record
+      ? collectPageActionElements().find(
+          (candidate) => candidate.fingerprint === record.fingerprint
+        )
+      : null;
+    if (rebound) {
+      record.ref = rebound.ref;
+      return record;
     }
-    return record;
+
+    const error = new Error('The target is no longer available. Call page_get_state again.');
+    error.code = 'PAGE_STATE_STALE';
+    throw error;
   }
 
   function dispatchPageActionInput(element, text) {
@@ -1779,17 +1827,14 @@
       clientY: Math.round(rect.top + Math.max(1, Math.min(rect.height / 2, rect.height - 1))),
     };
     const top = document.elementFromPoint(point.clientX, point.clientY);
-    if (top && top !== element && !element.contains(top)) {
-      const error = new Error('The target is covered by another page element.');
-      error.code = 'PAGE_TARGET_OBSCURED';
-      throw error;
-    }
+    const covered = Boolean(top && top !== element && !element.contains(top));
     element.focus({ preventScroll: true });
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
       const EventCtor = type.startsWith('pointer') ? PointerEvent : MouseEvent;
       element.dispatchEvent(new EventCtor(type, { bubbles: true, cancelable: true, ...point }));
     }
     element.click();
+    return covered;
   }
 
   function buildPageActionReceipt(disposition, kind, details = {}) {
@@ -1803,6 +1848,7 @@
           : {}),
         ...(typeof details.matched === 'boolean' ? { matched: details.matched } : {}),
         ...(typeof details.changed === 'boolean' ? { changed: details.changed } : {}),
+        ...(typeof details.covered === 'boolean' ? { covered: details.covered } : {}),
       },
     };
   }
@@ -1893,6 +1939,7 @@
       const element = record.ref;
       const tag = element.tagName.toLowerCase();
       let actionReceipt = buildPageActionReceipt('delivered_unverified', 'action_dispatched');
+      let covered = false;
       if (action === 'page_open_link') {
         const link = getPageActionLinkMetadata(element);
         if (!link?.href) {
@@ -1931,7 +1978,7 @@
           error.code = 'PAGE_NAVIGATION_NEW_TAB';
           throw error;
         }
-        dispatchPageActionClick(element);
+        covered = dispatchPageActionClick(element);
       } else if (action === 'page_input') {
         const text = String(request.args?.text || '');
         if (!text || text.length > PAGE_ACTION_MAX_INPUT_CHARS)
@@ -1980,9 +2027,16 @@
       if (action === 'page_click' && checkedChanged) {
         actionReceipt = buildPageActionReceipt('delivered_verified', 'checked_state', {
           changed: true,
+          covered,
         });
       } else if (action === 'page_click' && navigationChanged) {
-        actionReceipt = buildPageActionReceipt('delivered_verified', 'navigation_observed');
+        actionReceipt = buildPageActionReceipt('delivered_verified', 'navigation_observed', {
+          covered,
+        });
+      } else if (action === 'page_click' && covered) {
+        actionReceipt = buildPageActionReceipt('delivered_unverified', 'action_dispatched', {
+          covered: true,
+        });
       }
       return {
         success: true,
@@ -2007,6 +2061,11 @@
   let _pendingTabContentRequest = false;
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    devTrace('content_message_received', {
+      action: request?.action,
+      runId: request?.runId,
+      pageAction: request?.pageAction,
+    });
     if (request.action === 'pageActionPing') {
       // Lightweight handshake: proves the page-action content script is
       // connected and responsive so the background can fail fast instead of
@@ -2017,14 +2076,33 @@
 
     if (request.action === 'pageAction') {
       executePageAction(request)
-        .then((result) => sendResponse(result))
-        .catch((error) =>
+        .then((result) => {
+          devTrace('content_page_action_completed', {
+            action: request.pageAction,
+            runId: request.runId,
+            success: result?.success !== false,
+            error: result?.error,
+            code: result?.code,
+            snapshotId: result?.snapshot?.snapshotId,
+            elementCount: Array.isArray(result?.snapshot?.elements)
+              ? result.snapshot.elements.length
+              : 0,
+            actionReceipt: result?.actionReceipt,
+          });
+          sendResponse(result);
+        })
+        .catch((error) => {
+          devTrace('content_page_action_error', {
+            action: request.pageAction,
+            runId: request.runId,
+            error,
+          });
           sendResponse({
             success: false,
             error: error.message,
             code: error.code || 'PAGE_ACTION_FAILED',
-          })
-        );
+          });
+        });
       return true;
     }
 

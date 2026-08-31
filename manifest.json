@@ -34,23 +34,31 @@
         "https://outlook.live.com/*",
         "https://outlook.cloud.microsoft/*"
       ],
-      "js": ["content_script_outlook_compose.js"],
+      "js": ["content_script_diagnostics.js", "content_script_outlook_compose.js"],
       "all_frames": true
     },
     {
       "matches": ["*://*/*.pdf", "file://*/*.pdf"],
-      "js": ["pdfContentScript.js"],
+      "js": ["content_script_diagnostics.js", "pdfContentScript.js"],
       "all_frames": true
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content_script_notch.js"],
+      "js": ["content_script_diagnostics.js", "content_script_notch.js"],
       "all_frames": false,
       "run_at": "document_idle"
     },
     {
       "matches": ["<all_urls>"],
+      "js": ["content_script_page_diagnostics.js"],
+      "all_frames": false,
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
       "js": [
+        "content_script_diagnostics.js",
         "libs/readability.js",
         "libs/turndown.js",
         "libs/dom-accessibility-api.js",

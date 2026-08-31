@@ -14,13 +14,19 @@ const fs = require('fs');
 const path = require('path');
 
 const repoRoot = process.cwd();
-const buildDir = path.join(repoRoot, 'dist');
 const srcDir = repoRoot;
 
 // Parse command line arguments
 const args = process.argv.slice(2);
-const isDev = args.includes('--dev');
-const isProd = args.includes('--prod') || !isDev;
+const hasDevFlag = args.includes('--dev');
+const hasProdFlag = args.includes('--prod');
+if (hasDevFlag && hasProdFlag) {
+  console.error('❌ Choose either --dev or --prod, not both.');
+  process.exit(1);
+}
+const isDev = hasDevFlag;
+const isProd = hasProdFlag || !isDev;
+const buildDir = path.join(repoRoot, isDev ? 'dist-dev' : 'dist');
 
 console.log(`🚀 Building Prompt Paul (${isProd ? 'production' : 'development'})...\n`);
 
@@ -147,6 +153,8 @@ function copyFiles(manifest) {
     'themeUtils.js',
     'theme-toggle.js',
     'content_script_unified.js',
+    'content_script_diagnostics.js',
+    'content_script_page_diagnostics.js',
     'pdfContentScript.js',
     // Shared stylesheets referenced by extension pages
     'theme.css',
@@ -226,10 +234,30 @@ function copyFiles(manifest) {
 /**
  * Generate build metadata
  */
+function installDiagnosticsVariant() {
+  const moduleTarget = path.join(buildDir, 'src', 'utils', 'devDiagnostics.js');
+  const moduleProduction = path.join(srcDir, 'src', 'utils', 'devDiagnostics.prod.js');
+  if (isProd) fs.copyFileSync(moduleProduction, moduleTarget);
+  fs.rmSync(path.join(buildDir, 'src', 'utils', 'devDiagnostics.prod.js'), { force: true });
+
+  const contentTarget = path.join(buildDir, 'content_script_diagnostics.js');
+  const contentProduction = path.join(srcDir, 'content_script_diagnostics.prod.js');
+  if (isProd) fs.copyFileSync(contentProduction, contentTarget);
+
+  const pageTarget = path.join(buildDir, 'content_script_page_diagnostics.js');
+  const pageProduction = path.join(srcDir, 'content_script_page_diagnostics.prod.js');
+  if (isProd) fs.copyFileSync(pageProduction, pageTarget);
+  console.log(`  ✓ Diagnostics variant: ${isProd ? 'excluded' : 'development trace available'}`);
+}
+
+/**
+ * Generate build metadata
+ */
 function generateBuildMetadata() {
   const metadata = {
     buildTime: new Date().toISOString(),
     buildType: isProd ? 'production' : 'development',
+    diagnostics: isProd ? 'excluded' : 'available',
     version: readJson('package.json').version,
     commit: process.env.GITHUB_SHA || 'local',
     branch: process.env.GITHUB_REF || 'local',
@@ -260,6 +288,7 @@ function main() {
   // Copy files
   console.log('📦 Copying files...');
   copyFiles(manifest);
+  installDiagnosticsVariant();
   console.log('');
 
   // Generate metadata

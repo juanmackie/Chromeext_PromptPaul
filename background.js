@@ -47,6 +47,26 @@ import {
   isRunOwner,
   requestMatchesSenderTab,
 } from './src/utils/runtimeAuthorization.js';
+import {
+  clearDevDiagnostics,
+  disableDevDiagnostics,
+  enableDevDiagnostics,
+  getDevDiagnostics,
+  getDevDiagnosticsStatus,
+  initializeDevDiagnostics,
+  installDevErrorHandlers,
+  recordDevDiagnostic,
+  recordRemoteDevDiagnostic,
+} from './src/utils/devDiagnostics.js';
+
+void initializeDevDiagnostics('background');
+installDevErrorHandlers('background');
+globalThis.promptPaulDevDiagnostics = {
+  enable: enableDevDiagnostics,
+  disable: disableDevDiagnostics,
+  clear: clearDevDiagnostics,
+  get: getDevDiagnostics,
+};
 
 // ===== Umami Analytics Module (privacy-first, opt-in) =====
 const UMAMI_ENDPOINT = 'https://cloud.umami.is/api/send';
@@ -495,7 +515,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 
   try {
-    await chrome.sidePanel.open({ tabId: tab.id });
+    await openSidePanelForTab(tab.id, tab.windowId);
 
     // Detect media context
     const isMediaContext =
@@ -1130,6 +1150,7 @@ const injectPageActionContentScript = (tabId) =>
         {
           target: { tabId },
           files: [
+            'content_script_diagnostics.js',
             'libs/readability.js',
             'libs/turndown.js',
             'libs/dom-accessibility-api.js',
@@ -1380,7 +1401,21 @@ const sendPageActionMessage = (tabId, message, signal) =>
   });
 
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
+  const startedAt = Date.now();
+  recordDevDiagnostic('page_action_executor_start', {
+    runId: options.runId,
+    tabId,
+    action: actionName,
+    expectNavigation: options.expectNavigation === true,
+  });
   if (!tabId) {
+    recordDevDiagnostic('page_action_executor_rejected', {
+      runId: options.runId,
+      tabId,
+      action: actionName,
+      code: 'PAGE_ACTION_NO_TAB',
+      durationMs: Date.now() - startedAt,
+    });
     const error = new Error('No supported source tab is available for page actions.');
     error.code = 'PAGE_ACTION_NO_TAB';
     throw error;
@@ -1404,6 +1439,42 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
 
   try {
     const response = await sendPageActionMessage(tabId, message, options.signal);
+    recordDevDiagnostic(
+      'page_action_message_response_detail',
+      {
+        runId: options.runId,
+        tabId,
+        action: actionName,
+        response,
+        durationMs: Date.now() - startedAt,
+      },
+      { persist: false }
+    );
+    recordDevDiagnostic('page_action_message_response', {
+      runId: options.runId,
+      tabId,
+      action: actionName,
+      response: {
+        success: response?.success,
+        error: response?.error,
+        code: response?.code,
+        navigated: Boolean(response?.navigated),
+        navigationUrl: sanitizePageActionUrl(response?.navigationUrl || ''),
+        snapshot: response?.snapshot
+          ? {
+              snapshotId: response.snapshot.snapshotId,
+              fingerprint: response.snapshot.fingerprint,
+              url: sanitizePageActionUrl(response.snapshot.url || ''),
+              elementCount: Array.isArray(response.snapshot.elements)
+                ? response.snapshot.elements.length
+                : 0,
+            }
+          : null,
+        actionReceipt: response?.actionReceipt || null,
+        scopeDiff: response?.scopeDiff || null,
+      },
+      durationMs: Date.now() - startedAt,
+    });
 
     const responseUrl = sanitizePageActionUrl(response?.snapshot?.url || '');
     if (responseUrl && previousUrl && responseUrl !== previousUrl) {
@@ -1425,6 +1496,13 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     }
     return response;
   } catch (error) {
+    recordDevDiagnostic('page_action_executor_error', {
+      runId: options.runId,
+      tabId,
+      action: actionName,
+      error,
+      durationMs: Date.now() - startedAt,
+    });
     // A full document navigation commonly closes the content-script message
     // port before it can reply. If the URL changed, wait for the new bridge and
     // return a recoverable transition even when the action was not pre-approved
@@ -1534,13 +1612,28 @@ function removeAllMenus() {
 }
 
 /**
+ * Open the side panel for a tab's browser window.
+ * @param {number} tabId - Tab used to resolve the window when needed.
+ * @param {number|null} [windowId] - Known window ID, preferably from the sender tab.
+ * @returns {Promise<void>}
+ */
+async function openSidePanelForTab(tabId, windowId = null) {
+  const resolvedWindowId = Number.isInteger(windowId)
+    ? windowId
+    : (await chrome.tabs.get(tabId))?.windowId;
+  if (!Number.isInteger(resolvedWindowId)) throw new Error('The tab window could not be resolved.');
+  await chrome.sidePanel.open({ windowId: resolvedWindowId });
+}
+
+/**
  * Opens the side panel for a tab and forwards selected text into it.
  * @param {number} tabId - Source tab ID.
  * @param {string} selectedText - Selected text to send.
+ * @param {number|null} [windowId] - Known source window ID.
  * @returns {Promise<void>}
  */
-async function openPromptPaulForSelection(tabId, selectedText) {
-  await chrome.sidePanel.open({ tabId });
+async function openPromptPaulForSelection(tabId, selectedText, windowId = null) {
+  await openSidePanelForTab(tabId, windowId);
   await sendPanelMessage({
     action: 'setSelectedText',
     selectedText: selectedText || '',
@@ -1583,12 +1676,14 @@ function openChatInTab() {
 async function openChatWithContext(context = {}, options = {}) {
   const {
     tabId,
+    windowId = null,
     selectedText = '',
     mediaUrl = '',
     mediaType = 'image',
     instruction = '',
   } = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
   const normalizedTabId = Number.isInteger(tabId) && tabId >= 0 ? tabId : null;
+  const normalizedWindowId = Number.isInteger(windowId) ? windowId : null;
   const normalizedSelectedText =
     typeof selectedText === 'string' ? selectedText.trim().slice(0, NOTCH_MAX_SELECTION_CHARS) : '';
   const normalizedMediaUrl = typeof mediaUrl === 'string' ? mediaUrl.trim() : '';
@@ -1605,7 +1700,7 @@ async function openChatWithContext(context = {}, options = {}) {
   const tabIdForContext = normalizedTabId;
 
   if (options.panelOpenPromise) await options.panelOpenPromise;
-  else await chrome.sidePanel.open({ tabId: tabIdForContext });
+  else await openSidePanelForTab(tabIdForContext, normalizedWindowId);
   const actionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   // Media context: preserve the attachment and keep selected text structured.
@@ -1664,7 +1759,7 @@ chrome.action.onClicked.addListener(async (tab) => {
     return;
   }
   try {
-    await openChatWithContext({ tabId: tab.id });
+    await openChatWithContext({ tabId: tab.id, windowId: tab.windowId });
   } catch (error) {
     console.error('Background: Failed to open chat from toolbar action:', error);
   }
@@ -2211,7 +2306,7 @@ async function resolveStoredRunConfig(config) {
 async function createNotchPanelAction(action, tabId, payload = {}, panelOpenPromise = null) {
   const actionId = `notch-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   if (panelOpenPromise) await panelOpenPromise;
-  else await chrome.sidePanel.open({ tabId });
+  else await openSidePanelForTab(tabId);
   return sendPanelMessage({ action, ...payload, tabId, actionId });
 }
 
@@ -2311,7 +2406,9 @@ async function handleNotchAction(request, sender) {
     return { success: false, error: 'The dictation session expired. Start dictation again.' };
   }
   const panelOpenPromise =
-    action === 'openOptions' || panelAlreadyOpen ? null : chrome.sidePanel.open({ tabId });
+    action === 'openOptions' || panelAlreadyOpen
+      ? null
+      : openSidePanelForTab(tabId, sender.tab.windowId);
   const tab = await chrome.tabs.get(tabId);
   if (!isUsablePanelTab(tab)) {
     if (panelOpenPromise) await panelOpenPromise.catch(() => {});
@@ -2329,7 +2426,7 @@ async function handleNotchAction(request, sender) {
   }
 
   if (action === 'openChat') {
-    return openChatWithContext({ tabId }, { panelOpenPromise });
+    return openChatWithContext({ tabId, windowId: sender.tab.windowId }, { panelOpenPromise });
   }
 
   if (action === 'runPinnedInstruction') {
@@ -2488,6 +2585,24 @@ async function handleNotchAction(request, sender) {
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action === 'devDiagnostic') {
+    const extensionOrigin = getExtensionOrigin();
+    const authorized =
+      isExtensionSender(sender, extensionOrigin) ||
+      (isContentScriptSender(sender, extensionOrigin) &&
+        (request.tabId == null || requestMatchesSenderTab(sender, request.tabId)));
+    if (!authorized) return rejectUnauthorizedMessage(sendResponse);
+    sendResponse({ success: recordRemoteDevDiagnostic(request.entry) });
+    return false;
+  }
+  if (request?.action === 'devDiagnosticsStatus') {
+    const extensionOrigin = getExtensionOrigin();
+    const authorized =
+      isExtensionSender(sender, extensionOrigin) || isContentScriptSender(sender, extensionOrigin);
+    if (!authorized) return rejectUnauthorizedMessage(sendResponse);
+    sendResponse(getDevDiagnosticsStatus());
+    return false;
+  }
   if (request?.action === 'notchAction') {
     handleNotchAction(request, sender)
       .then(sendResponse)
@@ -2496,6 +2611,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   const extensionOrigin = getExtensionOrigin();
   const extensionPageSender = isExtensionSender(sender, extensionOrigin);
+  recordDevDiagnostic('runtime_message_received', {
+    action: request?.action,
+    sender: {
+      extensionPage: extensionPageSender,
+      contentScript: isContentScriptSender(sender, extensionOrigin),
+      tabId: sender?.tab?.id || null,
+      frameId: sender?.frameId || 0,
+    },
+    requestKeys: request && typeof request === 'object' ? Object.keys(request).sort() : [],
+  });
 
   if (request.action === 'openPromptPaulFromSelection') {
     if (
@@ -2512,7 +2637,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return false;
     }
 
-    openPromptPaulForSelection(tabId, selectedText)
+    openPromptPaulForSelection(tabId, selectedText, sender.tab.windowId)
       .then(() => sendResponse({ success: true }))
       .catch((error) => {
         console.error('Background: Failed to open Prompt Paul from selection:', error);
@@ -3150,10 +3275,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((result) => {
         const journals = result?.[key] || {};
         const requested = request.runId ? journals[request.runId] : null;
+        const activeRun = request.runId ? runOrchestrator.getRun(request.runId) : null;
         sendResponse({
           success: true,
-          journal: requested || null,
-          active: Boolean(request.runId && runOrchestrator.getRun(request.runId)),
+          journal: activeRun ? runOrchestrator.getRunJournal(request.runId) : requested || null,
+          active: Boolean(activeRun),
+          ...(activeRun?.ownerToken ? { ownerToken: activeRun.ownerToken } : {}),
         });
       })
       .catch((error) => sendResponse({ success: false, error: error.message }));

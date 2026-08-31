@@ -1,5 +1,5 @@
 /**
- * @fileoverview Renders the current chat mode and reasoning level in the sidebar.
+ * @fileoverview Renders the current chat mode, model, and reasoning level in the sidebar.
  * @module ChatModelStatus
  */
 
@@ -20,7 +20,12 @@ function formatReasoning(level) {
   return normalizedLevel || 'Auto';
 }
 
-function refreshStatus(statusElement, modeElement, reasoningElement) {
+export function formatModel(modelName) {
+  const normalizedModel = String(modelName || '').trim();
+  return normalizedModel || 'Not set';
+}
+
+function refreshStatus(statusElement, modeElement, reasoningElement, modelElement) {
   chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
     if (chrome.runtime.lastError) return;
 
@@ -28,11 +33,17 @@ function refreshStatus(statusElement, modeElement, reasoningElement) {
     const selectedProfile = profiles.find((profile) => profile.id === result.lastSelectedProfileId);
     const profile = selectedProfile || profiles.find((candidate) => candidate.id === 'default');
     const mode = profile ? formatMode(profile.provider) : ' - ';
+    const model = formatModel(profile?.modelName);
     const reasoning = formatReasoning(profile?.reasoningLevel);
 
     modeElement.textContent = mode;
+    modelElement.textContent = model;
     reasoningElement.textContent = reasoning;
-    statusElement.title = `Current mode: ${mode}. Reasoning level: ${reasoning}.`;
+    statusElement.title = `Current mode: ${mode}. Model: ${model}. Reasoning level: ${reasoning}.`;
+    statusElement.setAttribute(
+      'aria-label',
+      `Current mode: ${mode}, model: ${model}, reasoning level: ${reasoning}`
+    );
   });
 }
 
@@ -42,11 +53,17 @@ function refreshStatus(statusElement, modeElement, reasoningElement) {
  * @param {HTMLElement} elements.statusElement - Status wrapper.
  * @param {HTMLElement} elements.modeElement - Mode value element.
  * @param {HTMLElement} elements.reasoningElement - Reasoning value element.
+ * @param {HTMLElement} elements.modelElement - Model value element.
  */
-export function initChatModelStatus({ statusElement, modeElement, reasoningElement }) {
-  if (!statusElement || !modeElement || !reasoningElement) return;
+export function initChatModelStatus({
+  statusElement,
+  modeElement,
+  reasoningElement,
+  modelElement,
+}) {
+  if (!statusElement || !modeElement || !reasoningElement || !modelElement) return;
 
-  const refresh = () => refreshStatus(statusElement, modeElement, reasoningElement);
+  const refresh = () => refreshStatus(statusElement, modeElement, reasoningElement, modelElement);
   refresh();
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.profiles || changes.lastSelectedProfileId)) {

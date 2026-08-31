@@ -35,6 +35,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `pageActionCheckpoint.js` owns bounded session-only Act mutation checkpoints and explicit-recovery metadata. It never stores DOM, page text, notes, credentials, or raw values.
 - `retryBackoff.js` owns bounded exponential delays with jitter for bridge and navigation recovery; it must not retry uncertain mutations.
 - `pageActionScopeDiff.js` owns bounded indexed-region and snapshot-diff helpers. Runtime mutation results may expose only selector-free indices, flags, counts, and snapshot IDs; richer region and byte-size measurements remain evaluation-only. It must never accept model-supplied selectors or expose raw page values.
+- `devDiagnostics.js` owns the development-only, opt-in diagnostics trace, session storage bounds, credential-shaped redaction, and extension-page error capture. `devDiagnostics.prod.js` is the production no-op replacement selected by `scripts/build.js`.
 - Link targets are bounded to HTTP(S) origin/path metadata in `pageDom.js`; `page_click` handles approved same-tab links and `page_open_link` handles indexed owned-tab links. Query strings and fragments stay out of model-visible snapshots.
 
 ## Local Contracts
@@ -46,6 +47,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `toolChoiceBuilder.js` is shared by chat and background paths; keep payload behavior provider-compatible.
 - `runState.js` must stay DOM-light (element-like object contract) so it remains unit-testable without a browser, and its state list must match the `[data-run-state]` styles in `ui-primitives.css`.
 - Page snapshot/policy helpers must remain deterministic and unit-testable in Node; snapshot data is bounded and sensitive-field values are never returned. Sensitivity matching must distinguish value-bearing controls from ordinary navigation labels (for example, “Video Cards”).
+- Development diagnostics may record richer local troubleshooting payloads only in `dist-dev/`; credential-shaped fields and values must still be redacted, records must stay session-scoped and bounded, and production must use the no-op replacement.
 - Privileged background messages must require an extension-page sender; content-script requests must bind to the sender tab; run mutations must include the opaque owner token issued at run start.
 - Provider SSE buffers and error response bodies must use the bounded helpers in `streamSafety.js`. Provider errors shown to users must also use the bounded redaction helper from `runResilience.js`.
 - Media response reads must use `mediaFetch.js`; private hosts, redirects, timeouts, and oversized bodies must fail closed.

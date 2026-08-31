@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dynamic Page Fixture</title>
+    <style>
+      #dynamic-target {
+        display: block;
+        width: 220px;
+        height: 48px;
+        margin: 120px auto;
+      }
+
+      #cover {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        background: rgb(0 0 0 / 10%);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Dynamic controls</h1>
+      <p id="status">Idle</p>
+      <button id="dynamic-target" type="button">Run dynamic action</button>
+    </main>
+    <script>
+      const status = document.getElementById('status');
+
+      function installTarget() {
+        const target = document.createElement('button');
+        target.id = 'dynamic-target';
+        target.type = 'button';
+        target.textContent = 'Run dynamic action';
+        target.addEventListener('click', () => {
+          status.textContent = 'Dynamic action completed';
+        });
+        return target;
+      }
+
+      document.getElementById('dynamic-target').addEventListener('click', () => {
+        status.textContent = 'Dynamic action completed';
+      });
+
+      window.replaceDynamicTarget = () => {
+        document.getElementById('dynamic-target').replaceWith(installTarget());
+      };
+
+      window.coverDynamicTarget = () => {
+        const cover = document.createElement('div');
+        cover.id = 'cover';
+        document.body.appendChild(cover);
+      };
+    </script>
+  </body>
+</html>

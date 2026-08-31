@@ -74,6 +74,37 @@ test('expands and collapses the prompt input', async () => {
   }
 });
 
+test('shows the selected mode, model, and reasoning level', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  await harness.evaluate(() =>
+    chrome.storage.local.set({
+      profiles: [
+        {
+          id: 'default',
+          provider: 'api',
+          modelName: 'openrouter/free',
+          reasoningLevel: 'high',
+        },
+      ],
+      lastSelectedProfileId: 'default',
+    })
+  );
+  const extensionId = new URL(harness.url()).hostname;
+  const chat = await context.newPage();
+  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
+  try {
+    await expect(chat.locator('#sidebar-mode-value')).toHaveText('API');
+    await expect(chat.locator('#sidebar-model-value')).toHaveText('openrouter/free');
+    await expect(chat.locator('#sidebar-reasoning-value')).toHaveText('high');
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
 test('captures the live page selection when Analyze is clicked', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
   const { context } = await launchTestBrowser(userDataDir);

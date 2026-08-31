@@ -14,7 +14,7 @@ cd Chromeext_PromptPaul
 npm install
 ```
 
-Load the unpacked extension from `chrome://extensions/` and point Chrome at this repository or the `dist/` folder after building. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options.
+Load the unpacked extension from `chrome://extensions/` and point Chrome at this repository or the `dist/` folder after building. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options. For detailed local troubleshooting, build and load `dist-dev/`; see [Development Diagnostics](DIAGNOSTICS.md).
 
 ## Project Layout
 
@@ -80,9 +80,12 @@ When you add a new module:
 
 ## Debugging
 
+- Build the diagnostics variant with `npm run build:dev` and load `dist-dev/`; production builds use a no-op diagnostics implementation.
+- Enable tracing from the service-worker console with `await promptPaulDevDiagnostics.enable()` and disable it with `await promptPaulDevDiagnostics.disable()`.
+- Collect records with `copy(JSON.stringify(await promptPaulDevDiagnostics.get(), null, 2))`.
 - Background logs: `chrome://extensions/` -> Inspect views
 - Side panel logs: open the side panel and inspect the page
-- Content script logs: inspect the active tab; page-action snapshots, receipts, manual-intervention events, and action errors are bounded and never include credential values. Scope/diff metrics expose only region IDs, indices, counts, and byte sizes.
+- Content script logs: inspect the active tab; development tracing captures bounded content-script and main-world page errors, console messages, page-action bridge responses, receipts, and recovery events. Credential-shaped values remain redacted.
 
 ## Code Style
 

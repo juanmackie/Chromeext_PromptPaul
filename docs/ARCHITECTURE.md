@@ -11,6 +11,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 ### Browser Layer
 
 - `content_script_notch.js` renders the optional top-centered browser-viewport quick-action notch in an isolated Shadow DOM
+- `content_script_diagnostics.js` relays development diagnostics from isolated content scripts, while `content_script_page_diagnostics.js` observes main-world page errors and console output only in development builds
 - Content scripts extract page content and page metadata
 - The background worker coordinates context menu actions, notch requests, and permissions
 - The side panel displays chat, page actions, and loaded content
@@ -55,6 +56,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/utils/retryBackoff.js` bounded exponential backoff with jitter for bridge and navigation recovery
 - `src/utils/pageActionScopeDiff.js` bounded selector-free indexed-region and snapshot-diff helpers
 - `src/utils/runState.js` standardized run/feedback state vocabulary (`data-run-state`) shared by chat and options
+- `src/utils/devDiagnostics.js` opt-in development trace storage, credential-shaped redaction, bounded records, and extension-page error capture; production builds replace it with a no-op module
 
 ### Options Layer
 
@@ -125,7 +127,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 3. Custom tools remain user-configured HTTP(S) endpoints, but save, import, profile/runtime resolution, and execution share the same method/name/URL validation.
 4. External media URLs use public HTTP(S)-only validation, reject private hosts and non-media responses/redirects, and enforce timeout and response-size limits before conversion.
 5. Instruction and skill imports enforce file/item/body bounds and persist only normalized instruction fields.
-6. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged.
+6. Custom-tool diagnostics expose only safe status/error codes; endpoint URLs, query strings, credentials, and remote response bodies are not logged. The separate development diagnostics build may record richer local troubleshooting data, but it remains session-scoped, bounded, opt-in, and redacts credential-shaped values.
 7. Privileged runtime messages require an extension-page sender; content-script extraction and notch actions are bound to their own tab, and run mutations require the opaque owner token issued at run start.
 8. Website deep links bind context to the external sender tab instead of accepting a caller-supplied target tab.
 9. The notch bridge accepts only its fixed action allowlist, bounds selected/page text, and never receives provider credentials.
@@ -166,7 +168,8 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 ## Build and Test
 
-- `scripts/build.js` copies the extension into `dist/`
+- `scripts/build.js` copies the production extension into `dist/` and the opt-in diagnostics extension into `dist-dev/`; production replaces the diagnostics module and content-script bridge with no-op variants
+- `docs/DIAGNOSTICS.md` documents the development-only full-feature trace workflow
 - `scripts/test-runner.js` checks module structure and key regression guards
 - `npm run audit` runs the high-severity dependency gate used by CI and release builds
 - `scripts/smoke-check.js` performs the cheapest end-to-end sanity check

@@ -13,8 +13,9 @@ import { renderMarkdown } from '../utils/domSanitizer.js';
 
 /**
  * Stream state manager - tracks streaming and API call state.
- * Each side panel instance owns its own in-memory state; Chrome destroys
- * the panel page on tab switch, so no cross-tab persistence is needed.
+ * Each side panel instance owns its own in-memory state; the window-scoped
+ * panel normally survives tab switches, while the bounded run journal restores
+ * state if the panel page is closed or reloaded.
  */
 export class StreamStateManager {
   constructor() {
@@ -238,6 +239,18 @@ export class StreamStateManager {
   resetOrchestratorEventOrdering() {
     this.nextOrchestratorEventSequence = 1;
     this.pendingOrchestratorEvents.clear();
+  }
+
+  /**
+   * Start event ordering after a bounded journal replay during reconnect.
+   * @param {number} sequence - Last sequence already represented by the journal.
+   */
+  setNextOrchestratorEventSequence(sequence) {
+    const next = Number(sequence) + 1;
+    if (Number.isInteger(next) && next > 0) {
+      this.nextOrchestratorEventSequence = next;
+      this.pendingOrchestratorEvents.clear();
+    }
   }
 
   /**

@@ -48,6 +48,14 @@ describe('StreamStateManager orchestrator event ordering', () => {
     expect(state.queueOrchestratorEvent(terminal)).toEqual([second, terminal]);
   });
 
+  it('starts after the last sequence represented by a reconnect journal', () => {
+    const state = new StreamStateManager();
+    state.setNextOrchestratorEventSequence(4);
+    const event = { type: 'tool_ready', sequence: 5 };
+
+    expect(state.queueOrchestratorEvent(event)).toEqual([event]);
+  });
+
   it('passes through events from legacy senders without sequence metadata', () => {
     const state = new StreamStateManager();
     const event = { type: 'content', data: 'Hello' };

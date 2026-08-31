@@ -222,6 +222,18 @@ export function getRunOwnerToken(runId) {
 }
 
 /**
+ * Adopt an owner token returned for an active run during panel reconnect.
+ * @param {string} runId - Active run ID.
+ * @param {string} ownerToken - Opaque owner token from the background worker.
+ * @returns {boolean} True when the token was stored.
+ */
+export function setRunOwnerToken(runId, ownerToken) {
+  if (!runId || typeof ownerToken !== 'string' || !ownerToken) return false;
+  runOwnerTokens.set(String(runId), ownerToken);
+  return true;
+}
+
+/**
  * Release the opaque owner token after a terminal run event is rendered.
  * Execution acknowledgements are intentionally non-terminal so long-running
  * runs can outlive the side-panel message channel.

@@ -9,6 +9,7 @@ describe('PageTabController', () => {
     tabs = new Map([
       [1, { id: 1, title: 'Source', url: 'https://example.com/start?secret=1', active: true }],
     ]);
+    let nextTabId = 2;
     globalThis.chrome = {
       tabs: {
         get: vi.fn(async (tabId) => {
@@ -17,7 +18,7 @@ describe('PageTabController', () => {
           return tab;
         }),
         create: vi.fn(async ({ url, active }) => {
-          const tab = { id: 2, title: 'Opened', url, active };
+          const tab = { id: nextTabId++, title: 'Opened', url, active };
           tabs.set(tab.id, tab);
           return tab;
         }),
@@ -59,6 +60,72 @@ describe('PageTabController', () => {
     });
     expect(readiness).toHaveBeenCalledWith(2, undefined);
     expect(opened).toMatchObject({ openedTabId: 2, targetTabId: 2, ready: true });
+  });
+
+  it('reuses an owned tab for the same destination instead of duplicating it', async () => {
+    const first = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/inbox?filter=goodreads',
+      background: true,
+    });
+    expect(first.reused).toBeUndefined();
+    const second = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/inbox?filter=newest',
+    });
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect(second).toMatchObject({
+      openedTabId: 2,
+      targetTabId: 2,
+      ready: true,
+      reused: true,
+    });
+    expect(controller.getOwnedTabIds('run-1')).toEqual([1, 2]);
+  });
+
+  it('reuses the source tab when the destination matches its current page', async () => {
+    const reused = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://example.com/start#section',
+    });
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
+    expect(reused).toMatchObject({ openedTabId: 1, targetTabId: 1, reused: true });
+  });
+
+  it('opens a new tab when the destination path differs', async () => {
+    await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/inbox',
+      background: true,
+    });
+    const other = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/message/1',
+      background: true,
+    });
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(2);
+    expect(other.reused).toBeUndefined();
+    expect(other.openedTabId).toBe(3);
+  });
+
+  it('keeps the ready/tabError contract when a reused tab fails readiness', async () => {
+    const failing = new PageTabController({
+      ensureTabReady: vi.fn(async (tabId) => {
+        const error = new Error('bridge not ready');
+        error.code = 'PAGE_ACTION_TIMEOUT';
+        throw error;
+      }),
+    });
+    failing.registerRun('run-2', 1);
+    await failing.execute('run-2', 'page_open_tab', {
+      url: 'https://mail.example/inbox',
+      background: true,
+    });
+    const reused = await failing.execute('run-2', 'page_open_tab', {
+      url: 'https://mail.example/inbox?label=books',
+    });
+    expect(reused).toMatchObject({
+      openedTabId: 2,
+      targetTabId: 2,
+      ready: false,
+      reused: true,
+      tabError: { code: 'PAGE_ACTION_TIMEOUT', message: 'bridge not ready' },
+    });
   });
 
   it('returns owned tab IDs for run cleanup', async () => {

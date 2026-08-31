@@ -22,6 +22,23 @@ function safeTab(tab) {
   };
 }
 
+/**
+ * Normalized comparison key for tab destinations: origin + path, ignoring query
+ * strings and fragments so changing mail/search filters still match the tab
+ * that already shows the destination. Returns '' for non-HTTP(S) URLs.
+ * @param {unknown} url
+ * @returns {string}
+ */
+function destinationKey(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch (_) {
+    return '';
+  }
+}
+
 export class PageTabController {
   constructor(options = {}) {
     this.runs = new Map();
@@ -88,6 +105,56 @@ export class PageTabController {
     }
 
     if (actionName === 'page_open_tab') {
+      // Idempotent opens: when an owned tab already shows the requested
+      // destination, adopt it instead of creating a duplicate. This keeps
+      // multi-page tasks in one tab even if the model re-requests the open.
+      const requestedKey = destinationKey(args.url);
+      if (requestedKey) {
+        for (const tabId of state.ownedTabIds) {
+          let existing;
+          try {
+            existing = await chrome.tabs.get(tabId);
+          } catch (_) {
+            state.ownedTabIds.delete(tabId);
+            continue;
+          }
+          if (destinationKey(existing?.url) !== requestedKey) continue;
+          const foreground = args.background !== true;
+          if (foreground) state.targetTabId = tabId;
+          let ready = true;
+          let readinessError = null;
+          if (this.ensureTabReady) {
+            try {
+              await this.ensureTabReady(tabId, args.signal);
+              state.tabStates.set(tabId, { status: 'ready', failures: 0 });
+            } catch (error) {
+              ready = false;
+              readinessError = error;
+              const current = state.tabStates.get(tabId) || { failures: 0 };
+              state.tabStates.set(tabId, {
+                status: 'unavailable',
+                failures: Number(current.failures || 0) + 1,
+                code: error?.code || 'PAGE_TAB_UNAVAILABLE',
+              });
+            }
+          }
+          return {
+            tab: safeTab(existing),
+            openedTabId: tabId,
+            targetTabId: state.targetTabId,
+            ready,
+            reused: true,
+            ...(readinessError
+              ? {
+                  tabError: {
+                    code: readinessError.code || 'PAGE_TAB_UNAVAILABLE',
+                    message: readinessError.message,
+                  },
+                }
+              : {}),
+          };
+        }
+      }
       if (state.ownedTabIds.size >= MAX_OWNED_TABS) {
         const error = new Error(`A run may own at most ${MAX_OWNED_TABS} tabs.`);
         error.code = 'PAGE_TAB_LIMIT';

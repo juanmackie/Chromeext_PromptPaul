@@ -48,7 +48,12 @@ export async function loadActiveRunJournal() {
     runId: pointer.runId,
   });
   if (!response?.success || !response.journal) return null;
-  return { pointer, journal: response.journal, active: response.active === true };
+  return {
+    pointer,
+    journal: response.journal,
+    active: response.active === true,
+    ownerToken: response.active ? String(response.ownerToken || '') : '',
+  };
 }
 
 /**
@@ -57,9 +62,10 @@ export async function loadActiveRunJournal() {
  * @param {object|null} recovery
  * @param {Function} [onDismiss]
  * @param {Function} [onResume]
+ * @param {Function} [onWatch]
  * @returns {HTMLElement|null}
  */
-export function renderRunRecoveryNotice(chatArea, recovery, onDismiss, onResume) {
+export function renderRunRecoveryNotice(chatArea, recovery, onDismiss, onResume, onWatch) {
   if (!chatArea || (!recovery?.journal && !recovery?.checkpoint)) return null;
   const existing = chatArea.querySelector('[data-run-recovery]');
   if (existing) return existing;
@@ -95,11 +101,22 @@ export function renderRunRecoveryNotice(chatArea, recovery, onDismiss, onResume)
     card.appendChild(warning);
   }
 
+  const isActiveRun = recovery.active === true && !checkpoint && !journal?.terminal;
   const dismiss = document.createElement('button');
   dismiss.type = 'button';
   dismiss.className = 'btn btn-outline-secondary btn-sm';
-  dismiss.textContent = checkpoint || !journal?.terminal ? 'Keep visible' : 'Dismiss';
-  dismiss.addEventListener('click', () => {
+  dismiss.textContent = isActiveRun ? 'Watch run' : 'Dismiss';
+  dismiss.addEventListener('click', async () => {
+    if (isActiveRun && typeof onWatch === 'function') {
+      dismiss.disabled = true;
+      try {
+        await onWatch(recovery, card);
+        card.remove();
+      } catch (_) {
+        dismiss.disabled = false;
+      }
+      return;
+    }
     if (journal?.terminal && !checkpoint) void clearActiveRun();
     onDismiss?.(card);
   });
@@ -138,10 +155,12 @@ export async function loadActRecovery() {
   return { ...(recovery || {}), checkpoint };
 }
 
-export async function restoreRunJournal(chatArea, onResume) {
+export async function restoreRunJournal(chatArea, onResume, onWatch) {
   try {
     const recovery = await loadActRecovery();
-    if (recovery) renderRunRecoveryNotice(chatArea, recovery, null, onResume);
+    if (recovery) {
+      renderRunRecoveryNotice(chatArea, recovery, (card) => card.remove(), onResume, onWatch);
+    }
   } catch (error) {
     console.warn('Chat: run journal recovery failed:', error.message);
   }

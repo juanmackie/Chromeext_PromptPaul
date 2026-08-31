@@ -11,7 +11,7 @@ vi.mock('../loadingManager.js', () => ({
   },
 }));
 
-const { startRun, executeRun, getRunAuth, clearRunOwnerToken } =
+const { startRun, executeRun, getRunAuth, setRunOwnerToken, clearRunOwnerToken } =
   await import('../src/chat/ChatAPI.js');
 const { friendlyRuntimeErrorMessage } = await import('../src/utils/runtimeErrors.js');
 
@@ -40,6 +40,16 @@ describe('chat runtime execution bridge', () => {
     await executeRun('run-1', [{ role: 'user', content: 'long task' }]);
 
     expect(getRunAuth('run-1', 7)).toEqual({ ownerToken: 'owner-1', sourceTabId: 7 });
+  });
+
+  it('adopts an owner token for a run recovered by a fresh panel', () => {
+    expect(setRunOwnerToken('run-1', 'owner-reconnected')).toBe(true);
+    expect(getRunAuth('run-1', 7)).toEqual({
+      ownerToken: 'owner-reconnected',
+      sourceTabId: 7,
+    });
+    expect(setRunOwnerToken('', 'owner-reconnected')).toBe(false);
+    expect(setRunOwnerToken('run-2', '')).toBe(false);
   });
 
   it('translates Chrome transient channel closures into a recoverable message', () => {

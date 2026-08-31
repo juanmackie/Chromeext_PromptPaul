@@ -13,7 +13,7 @@ This checklist keeps those rules practical and reviewable.
 ## During a change
 
 - Validate and bound user input at every external boundary.
-- Keep user credentials in Chrome storage. Build-only secrets must come from platform secret management; do not rely only on environment variables. Never commit secrets or place them in logs, DOM fields, events, backups, or LLM payloads.
+- Keep user credentials in Chrome storage. Build-only secrets must come from platform secret management; do not rely only on environment variables. Never commit secrets or place them in logs, DOM fields, events, backups, or LLM payloads. Development diagnostics must be opt-in, session-scoped, bounded, and replaced by no-op implementations in production output.
 - Use the existing sanitizer for untrusted HTML and the existing validators for URLs, profiles, tools, skills, and page actions.
 - Keep modules cohesive, names descriptive, and functions easy to test. Split a large file when its responsibilities diverge; do not split only to meet a line count.
 - Use ASD-STE100 Simplified Technical English in new documentation and comments.
@@ -24,6 +24,7 @@ This checklist keeps those rules practical and reviewable.
 - Run `npm run validate` and `npm run smoke` when relevant.
 - Run `npm run test:browser` for browser-runtime or page-action changes. The CI browser job runs the complete unpacked-extension suite with headed Chromium under Xvfb, including the executable page-action evaluation and live snapshot scope/diff checks.
 - Run `npm run audit` before release. CI runs the same dependency gate before browser and build jobs.
+- Run `npm run build:prod` and verify that `dist/` reports diagnostics as `excluded`, contains no development tracer implementation, and that `dist-dev/` is never packaged or published.
 - Review authentication, user data, external API, and page-action changes for security before production deployment. For this Act change, the focused review is recorded in [ACT_SECURITY_LICENSE_REVIEW.md](ACT_SECURITY_LICENSE_REVIEW.md). Review receipt evidence, session checkpoints, explicit-resume boundaries, prompt-injection handling, sensitive-field masking, restricted-page behavior, and the rule that runtime scope/diff output stays indexed, bounded, and selector-free. Do not describe the extension as production-ready until these reviews and the required browser/provider checks are complete.
 - Update the nearest DOX contract when behavior, structure, workflow, or quality requirements change.
 
@@ -35,6 +36,7 @@ This checklist keeps those rules practical and reviewable.
 - The credential-free 15-case corpus must pass its unit/provider matrix, and browser-safe cases must pass against local fixtures with bounded result, policy, consistency, and scope metrics.
 - Runtime scope/diff output must remain indexed, bounded, and selector-free. Region and byte-size measurements remain evaluation-only.
 - Session checkpoints must contain only bounded metadata, expire on terminal cleanup, and offer explicit Resume without automatic action replay.
+- Development traces must never be sent through normal chat events or analytics. Review any local trace before sharing it because it may contain user-provided troubleshooting content.
 
 ## Current review risks
 
