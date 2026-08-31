@@ -11,6 +11,7 @@ export const PAGE_ACTION_NAMES = Object.freeze([
   'page_input',
   'page_select',
   'page_scroll',
+  'page_find_text',
 ]);
 
 export const PAGE_TAB_ACTION_NAMES = Object.freeze([
@@ -69,6 +70,12 @@ export function normalizePageActionArgs(actionName, args = {}) {
   }
 
   if (actionName === 'page_get_state') return { valid: true, value: {} };
+  if (actionName === 'page_find_text') {
+    const query = capPageText(args.query, PAGE_DOM_CAPS.maxFindQueryChars);
+    return query
+      ? { valid: true, value: { query } }
+      : { valid: false, error: 'Search text cannot be empty.' };
+  }
   if (actionName === 'page_scroll') {
     const direction = String(args.direction || (args.down === false ? 'up' : 'down')).toLowerCase();
     const pages = Number(args.pages ?? 0.5);
@@ -227,7 +234,11 @@ export function normalizePageUserInputArgs(args = {}) {
  * @returns {{risk: string, requiresConfirmation: boolean, prohibited: boolean, reason: string}}
  */
 export function classifyPageAction(target = {}, actionName = '') {
-  if (actionName === 'page_get_state' || actionName === 'page_scroll') {
+  if (
+    actionName === 'page_get_state' ||
+    actionName === 'page_scroll' ||
+    actionName === 'page_find_text'
+  ) {
     return {
       risk: PAGE_ACTION_RISKS.READ_ONLY,
       requiresConfirmation: false,

@@ -46,7 +46,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 
 ## Work Guidance
 
-- Navigation cards show bounded destination context when a state-changing control needs approval. Same-tab HTTP(S) links use `page_click`; `_blank` links use `page_open_link` under the single Act lease. Safe navigation across origins does not require a second site permission; writes and risky controls remain gated.
+- Navigation cards show bounded destination context when a state-changing control needs approval. Same-tab HTTP(S) links use `page_click`; `_blank` links use `page_open_link`, which navigates the current target by default and supports `background: true` for explicit multi-page work under the Act lease. Safe navigation across origins does not require a second site permission; writes and risky controls remain gated.
 
 - Keep DOM selection and page-level event wiring in `chat.js` unless a module already owns the behavior.
 - Keep pure formatting/parsing helpers exported for tests where possible.
@@ -72,7 +72,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 
 ## Child DOX Index
 
-- Current link contract: validated HTTP(S) same-tab links use `page_click`; `_blank` links use `page_open_link` under the single Act lease; safe cross-origin navigation does not require a second site permission.
+- Current link contract: validated HTTP(S) same-tab links use `page_click`; `_blank` links use `page_open_link` in the current target by default, with `background: true` reserved for explicit multi-page work; safe cross-origin navigation does not require a second site permission.
 
 - No child AGENTS.md files are currently needed under `src/chat/`.
 

@@ -1346,7 +1346,7 @@ class RunOrchestrator {
 
   _isPageActionMutation(actionName) {
     if (isPageActionName(actionName)) {
-      return !['page_get_state', 'page_scroll'].includes(actionName);
+      return !['page_get_state', 'page_scroll', 'page_find_text'].includes(actionName);
     }
     return isPageTabActionName(actionName) && actionName !== 'page_list_tabs';
   }
@@ -1355,7 +1355,7 @@ class RunOrchestrator {
     const planner = run?.pageActions?.planner;
     if (
       !planner?.active ||
-      ['page_get_state', 'page_scroll', 'page_list_tabs'].includes(actionName)
+      ['page_get_state', 'page_scroll', 'page_find_text', 'page_list_tabs'].includes(actionName)
     )
       return;
     const receipt = outcome?.result?.actionReceipt;
@@ -1412,6 +1412,7 @@ class RunOrchestrator {
     if (
       actionName === 'page_get_state' ||
       actionName === 'page_scroll' ||
+      actionName === 'page_find_text' ||
       actionName === 'page_list_tabs'
     ) {
       return 'observation';
@@ -1693,6 +1694,7 @@ class RunOrchestrator {
     if (
       actionName !== 'page_get_state' &&
       actionName !== 'page_scroll' &&
+      actionName !== 'page_find_text' &&
       args.snapshotId !== run.pageActions.snapshot?.snapshotId
     ) {
       return {
@@ -1704,9 +1706,11 @@ class RunOrchestrator {
       };
     }
 
-    const isMutation = !['page_get_state', 'page_scroll'].includes(actionName);
+    const isMutation = !['page_get_state', 'page_scroll', 'page_find_text'].includes(actionName);
     const actionTarget =
-      actionName === 'page_get_state' || actionName === 'page_scroll'
+      actionName === 'page_get_state' ||
+      actionName === 'page_scroll' ||
+      actionName === 'page_find_text'
         ? null
         : run.pageActions.snapshot?.elements?.[args.index];
     const actionHash = pageStateHash(
@@ -1746,10 +1750,17 @@ class RunOrchestrator {
     }
 
     const target =
-      actionName === 'page_get_state' || actionName === 'page_scroll'
+      actionName === 'page_get_state' ||
+      actionName === 'page_scroll' ||
+      actionName === 'page_find_text'
         ? null
         : run.pageActions.snapshot?.elements?.[args.index];
-    if (actionName !== 'page_get_state' && actionName !== 'page_scroll' && !target) {
+    if (
+      actionName !== 'page_get_state' &&
+      actionName !== 'page_scroll' &&
+      actionName !== 'page_find_text' &&
+      !target
+    ) {
       return {
         success: true,
         result: {
@@ -1887,7 +1898,7 @@ class RunOrchestrator {
       }
       if (documentStatus.changed) {
         this._adoptPageActionDocument(run, documentStatus.url);
-        if (actionName !== 'page_get_state') {
+        if (!['page_get_state', 'page_find_text'].includes(actionName)) {
           return this._pageActionDocumentChangedResult(run, actionName);
         }
       }
@@ -2276,10 +2287,12 @@ class RunOrchestrator {
           error.code = 'PAGE_NAVIGATION_BLOCKED';
           throw error;
         }
+        const background = args.background === true;
+        const targetTabId = run.pageActions.targetTabId || run.sourceTabId;
         const result = await this.pageTabExecutor(
           runId,
-          'page_open_tab',
-          { url: rawUrl, background: args.background === true },
+          background ? 'page_open_tab' : 'page_navigate_tab',
+          background ? { url: rawUrl, background: true } : { url: rawUrl, tabId: targetTabId },
           { signal: run.abortController.signal }
         );
         const resolvedSnapshot = resolved?.snapshot
@@ -2287,7 +2300,10 @@ class RunOrchestrator {
           : null;
         if (result?.ready === false) {
           const failure = new Error(
-            result?.tabError?.message || 'The new tab is not ready for page actions.'
+            result?.tabError?.message ||
+              (background
+                ? 'The new tab is not ready for page actions.'
+                : 'The current tab is not ready for page actions.')
           );
           failure.code = result?.tabError?.code || 'PAGE_ACTION_TAB_UNAVAILABLE';
           const recovery = this._quarantinePageActionTab(run, failure, result.openedTabId);
@@ -2300,7 +2316,9 @@ class RunOrchestrator {
               scope: 'tab',
               tabId: result.openedTabId || null,
               nextTargetTabId: recovery.nextTargetTabId,
-              message: 'The new tab did not become ready; it was skipped and the run can continue.',
+              message: background
+                ? 'The new tab did not become ready; it was skipped and the run can continue.'
+                : 'The current tab did not become ready; the run can continue with partial progress.',
               actionReceipt: {
                 disposition: 'not_delivered',
                 evidence: { kind: 'tab_unavailable' },
@@ -2973,6 +2991,20 @@ class RunOrchestrator {
       {
         type: 'function',
         function: {
+          name: 'page_find_text',
+          description: `${pageContext} Search the bounded page text without scrolling or changing the page. Use this to locate exact filters, labels, prices, or login/interstitial messages; then inspect matching controls with page_get_state before acting.`,
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', maxLength: 160 },
+            },
+            required: ['query'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
           name: 'page_click',
           description: `${pageContext} Perform the click on one indexed control to complete the task. Valid HTTP(S) same-tab links are supported; links that open a new tab must use page_open_link.`,
           parameters: {
@@ -3053,7 +3085,7 @@ class RunOrchestrator {
         function: {
           name: 'page_open_tab',
           description:
-            'Open one http(s) URL in an owned tab. The bounded Act lease permits safe navigation across sites; wait for the returned readiness status before inspecting it.',
+            'Open one http(s) URL in a separate owned tab only when the task needs multiple pages. Reuse an existing owned tab for that site when possible; wait for readiness before inspecting it.',
           parameters: {
             type: 'object',
             properties: {
@@ -3069,7 +3101,7 @@ class RunOrchestrator {
         function: {
           name: 'page_open_link',
           description:
-            'Open one indexed HTTP(S) link from the current snapshot in an owned tab. Safe navigation is covered by the Act lease; never invent a URL.',
+            'Navigate the current target tab to one indexed HTTP(S) link from the current snapshot. Use background=true only when a separate research/reference tab is genuinely needed; never invent a URL.',
           parameters: {
             type: 'object',
             properties: {
@@ -3405,11 +3437,12 @@ class RunOrchestrator {
     }
 
     const tabScope = run.pageActions?.multiTabEnabled
-      ? 'This Act lease includes bounded tabs: list, open, switch, and close only tabs owned by this run (maximum twelve). Safe HTTP(S) navigation across origins is allowed without a per-site prompt; writes, sensitive controls, downloads, and destructive actions remain gated or blocked. Work in as few tabs as possible: call page_list_tabs before opening anything; if an owned tab already shows the destination you need, keep working there instead of opening another one, and navigate the current tab in place when the destination is reachable from it. Open a new tab only when the destination differs from every tab you already have; repeated opens of the same destination reuse the existing tab instead of creating a duplicate.'
+      ? 'This Act lease includes bounded tabs: list, open, switch, and close only tabs owned by this run (maximum twelve). Work in the current target tab by default. Follow links in that tab and use page_open_link without background unless the task genuinely needs a separate page for parallel research or a retained reference. Use page_list_tabs before opening anything; page_open_tab reuses an existing destination and keeps one work tab per site, so open another tab only when separate pages are necessary. Safe HTTP(S) navigation across origins is allowed without a per-site prompt; writes, sensitive controls, downloads, and destructive actions remain gated or blocked.'
       : 'This run is limited to the current browser tab.';
     if (run.pageActions?.enabled) {
       const pageToolNames = [
         'page_get_state',
+        'page_find_text',
         'page_click',
         'page_input',
         'page_select',
@@ -3428,15 +3461,17 @@ class RunOrchestrator {
           : []),
       ].join(', ');
       const newTabLinkInstruction = run.pageActions.multiTabEnabled
-        ? 'links that open a new tab require page_open_link; it opens an owned tab and waits for that tab to become ready.'
-        : 'links that open a new tab are unavailable in this run.';
+        ? 'links marked to open a new tab use page_open_link; by default it navigates the current target tab in place. Pass background=true only when separate research or a retained reference page is genuinely needed, and wait for readiness before inspecting a newly opened tab.'
+        : 'links marked to open a new tab are unavailable in this run; use the current-tab navigation path when the destination is otherwise supported.';
       parts.push(
         'ACT MODE: Page tools are enabled and callable for this run. The tool list in this request is ' +
           'authoritative; do not claim that you lack browser or page tools. Available page tools: ' +
           pageToolNames +
           '. You can perform requests that are achievable on the current page. When a request is ' +
-          'achievable on this page, PERFORM it with the tools instead of describing steps: call ' +
-          'page_get_state first, act, re-inspect after every mutation, and continue until done. For ' +
+          'achievable on this page, PERFORM it with the tools instead of describing steps: ' +
+          'call page_get_state first, use page_find_text to locate exact criteria before scrolling when useful, ' +
+          'handle blocking popups or login walls in the current tab before other actions, then act, ' +
+          're-inspect after every mutation, and continue until done. For ' +
           'multi-item or ongoing requests, do not stop after a partial result or ask whether to continue; ' +
           'an interim progress report or next-steps menu is not completion; keep using the tools until ' +
           'the requested work is complete. Ask a question only when a real ' +

@@ -202,6 +202,46 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('finds bounded page text without scrolling or changing the page', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'find-text-run', 'page_get_state'),
+        targetUrl
+      );
+      const link = state.snapshot.elements.find((element) => element.label === 'Open same tab');
+      expect(link).toBeTruthy();
+      const found = await harness.evaluate(
+        ({ url }) =>
+          window.pageActionHarness.directAction(url, 'find-text-run', 'page_find_text', {
+            query: 'Open same tab',
+          }),
+        { url: targetUrl }
+      );
+      expect(found).toMatchObject({
+        success: true,
+        found: true,
+        elementIndices: [link.index],
+        actionReceipt: {
+          disposition: 'delivered_verified',
+          evidence: { kind: 'text_search', matched: true },
+        },
+      });
+      expect(found.matches.join(' ')).toContain('Open same tab');
+      expect(await target.url()).toBe(targetUrl);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('uses accessible names for icon controls and ARIA options', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -1130,7 +1170,7 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
-  test('opens an approved blank-target link in an owned tab', async () => {
+  test('navigates an approved blank-target link in the current tab', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
     const { context } = launched;
@@ -1138,6 +1178,7 @@ test.describe('page-agent-style page actions', () => {
     const targetUrl = fixtureUrl(fixtureServer, 'links.html');
     await target.goto(targetUrl);
     const harness = await openHarness(context);
+    const pageCount = context.pages().length;
     let runId;
 
     try {
@@ -1174,15 +1215,9 @@ test.describe('page-agent-style page actions', () => {
           )
         )
         .toMatchObject({ success: true });
-      await expect
-        .poll(() =>
-          context.pages().some((page) => page !== target && page.url().includes('/landing.html'))
-        )
-        .toBe(true);
-      const destination = context
-        .pages()
-        .find((page) => page !== target && page.url().includes('/landing.html'));
-      await expect(destination.locator('#destination')).toHaveText('Landing destination');
+      await expect.poll(() => target.url()).toContain('/landing.html');
+      expect(context.pages()).toHaveLength(pageCount);
+      await expect(target.locator('#destination')).toHaveText('Landing destination');
       const destinationState = await harness.evaluate(
         ({ runId }) =>
           window.pageActionHarness.executeTool(

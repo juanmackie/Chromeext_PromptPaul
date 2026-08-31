@@ -28,7 +28,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - Tests must preserve the root extension contracts and must not use real credentials or private services.
 - Evaluation cases must use local fixtures or explicit platform-boundary labels and must not retain secrets, raw page history, or unbounded screenshots.
 - Scope/diff evaluation must use indexed semantic regions and bounded change metadata. It must never accept model-supplied selectors or return raw field values.
-- Page-action tests must cover bounded fingerprints, repeated-action loop blocking, automatic active-tab document recovery, same-tab and owned-tab link navigation under the single Act lease, opened-tab readiness, tab-local bridge quarantine, separate action budgets, bounded task notes/history compaction, and journal-safe event behavior. Development diagnostics tests must preserve the production no-op build variant and credential redaction.
+- Page-action tests must cover bounded fingerprints, read-only `page_find_text` search, repeated-action loop blocking, automatic active-tab document recovery, same-tab and owned-tab link navigation under the single Act lease, opened-tab readiness, tab-local bridge quarantine, separate action budgets, bounded task notes/history compaction, and journal-safe event behavior. Development diagnostics tests must preserve the production no-op build variant and credential redaction.
 - Browser fixtures represent Gmail/Outlook compose surfaces locally; they are not production pages.
 - `tests/browser/page-action-evaluation.spec.js` executes browser-safe evaluation cases and records bounded result, receipt, action-count, prompt-size, and failure-code metrics without persisting page data.
 

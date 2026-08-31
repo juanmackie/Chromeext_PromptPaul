@@ -18,6 +18,10 @@ describe('pageActionPolicy', () => {
       valid: true,
       value: { direction: 'down', pages: 1 },
     });
+    expect(normalizePageActionArgs('page_find_text', { query: 'Used - Good' })).toEqual({
+      valid: true,
+      value: { query: 'Used - Good' },
+    });
   });
 
   it('rejects stale-shaped or oversized arguments before execution', () => {
@@ -33,6 +37,10 @@ describe('pageActionPolicy', () => {
       }).valid
     ).toBe(false);
     expect(normalizePageActionArgs('page_scroll', { direction: 'sideways' }).valid).toBe(false);
+    expect(normalizePageActionArgs('page_find_text', { query: ' ' })).toEqual({
+      valid: false,
+      error: 'Search text cannot be empty.',
+    });
   });
 
   it('bounds multi-tab actions to safe http(s) URLs and integer tab ids', () => {
@@ -108,6 +116,11 @@ describe('pageActionPolicy', () => {
     expect(evaluatePageActionPolicy({ actionName: 'page_scroll' })).toMatchObject({
       allowed: true,
       requiresConfirmation: false,
+    });
+    expect(evaluatePageActionPolicy({ actionName: 'page_find_text' })).toMatchObject({
+      allowed: true,
+      requiresConfirmation: false,
+      risk: PAGE_ACTION_RISKS.READ_ONLY,
     });
   });
 

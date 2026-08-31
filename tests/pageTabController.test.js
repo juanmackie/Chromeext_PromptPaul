@@ -22,6 +22,12 @@ describe('PageTabController', () => {
           tabs.set(tab.id, tab);
           return tab;
         }),
+        update: vi.fn(async (tabId, change) => {
+          const tab = tabs.get(tabId);
+          if (!tab) throw new Error('missing tab');
+          Object.assign(tab, change);
+          return tab;
+        }),
         remove: vi.fn(async (tabId) => tabs.delete(tabId)),
       },
     };
@@ -89,23 +95,98 @@ describe('PageTabController', () => {
     expect(reused).toMatchObject({ openedTabId: 1, targetTabId: 1, reused: true });
   });
 
-  it('opens a new tab when the destination path differs', async () => {
+  it('navigates the current target tab in place', async () => {
+    const navigated = await controller.execute('run-1', 'page_navigate_tab', {
+      tabId: 1,
+      url: 'https://reports.example/landing?session=secret',
+    });
+    expect(chrome.tabs.update).toHaveBeenCalledWith(1, {
+      url: 'https://reports.example/landing?session=secret',
+    });
+    expect(navigated).toMatchObject({
+      openedTabId: 1,
+      targetTabId: 1,
+      ready: true,
+      reused: true,
+      navigated: true,
+    });
+    expect((await chrome.tabs.get(1)).url).toBe('https://reports.example/landing?session=secret');
+  });
+
+  it('navigates an owned same-origin tab in place when the path differs', async () => {
     await controller.execute('run-1', 'page_open_tab', {
       url: 'https://mail.example/inbox',
       background: true,
     });
     const other = await controller.execute('run-1', 'page_open_tab', {
       url: 'https://mail.example/message/1',
+    });
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect(chrome.tabs.update).toHaveBeenCalledWith(2, {
+      url: 'https://mail.example/message/1',
+    });
+    expect(other).toMatchObject({
+      openedTabId: 2,
+      targetTabId: 2,
+      ready: true,
+      reused: true,
+      navigated: true,
+    });
+    expect(controller.getOwnedTabIds('run-1')).toEqual([1, 2]);
+  });
+
+  it('keeps one work tab per site and never hijacks the source tab', async () => {
+    // Same origin as the source tab: a work tab is created once, then reused.
+    const first = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://example.com/search',
       background: true,
     });
+    expect(first.openedTabId).toBe(2);
+    const second = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://example.com/item/9',
+      background: true,
+    });
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect(second.openedTabId).toBe(2);
+    expect(chrome.tabs.update).toHaveBeenCalledWith(2, { url: 'https://example.com/item/9' });
+    // The source tab URL is untouched.
+    expect((await chrome.tabs.get(1)).url).toBe('https://example.com/start?secret=1');
+    // A different origin still opens a new tab.
+    const third = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/inbox',
+      background: true,
+    });
+    expect(third.openedTabId).toBe(3);
     expect(chrome.tabs.create).toHaveBeenCalledTimes(2);
-    expect(other.reused).toBeUndefined();
+  });
+
+  it('skips unavailable same-origin tabs when navigating in place', async () => {
+    await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/inbox',
+      background: true,
+    });
+    controller.quarantine('run-1', 2, { code: 'PAGE_ACTION_TIMEOUT' });
+    const other = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://mail.example/message/1',
+      background: true,
+    });
     expect(other.openedTabId).toBe(3);
+    expect(chrome.tabs.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsafe in-place navigation URLs', async () => {
+    await expect(
+      controller.execute('run-1', 'page_navigate_tab', {
+        tabId: 1,
+        url: 'javascript:alert(1)',
+      })
+    ).rejects.toMatchObject({ code: 'PAGE_NAVIGATION_BLOCKED' });
+    expect(chrome.tabs.update).not.toHaveBeenCalled();
   });
 
   it('keeps the ready/tabError contract when a reused tab fails readiness', async () => {
     const failing = new PageTabController({
-      ensureTabReady: vi.fn(async (tabId) => {
+      ensureTabReady: vi.fn(async () => {
         const error = new Error('bridge not ready');
         error.code = 'PAGE_ACTION_TIMEOUT';
         throw error;

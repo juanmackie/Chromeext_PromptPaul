@@ -10,6 +10,7 @@ export const PAGE_DOM_CAPS = Object.freeze({
   maxElementTextChars: 240,
   maxAttributeChars: 120,
   maxInputChars: 2_000,
+  maxFindQueryChars: 160,
   maxScrollPages: 5,
   maxUrlChars: 2_048,
   // Total serialized snapshot budget (content + elements array). A control set

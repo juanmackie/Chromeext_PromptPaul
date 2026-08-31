@@ -12,6 +12,8 @@
 
 ### Prompt Paul UX Refinement
 
+- Act now keeps `_blank` link navigation in the current target tab by default. Separate owned tabs remain available only when explicitly requested for multi-page research or retained references.
+
 A coordinated, composer-led refinement of the whole extension, shipped together:
 
 - **Foundation**: Extended the theme token system with semantic feedback colors (`--ext-success`, `--ext-warning`, `--ext-info`, `--ext-running` + deep/bright/foreground/muted variants) across light, dark, and system-preference themes; added a shared UI primitives layer (`ui-primitives.css` with buttons, chips, badges, trays, sections, and run indicators); standardized the run/feedback state vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) in `src/utils/runState.js`, applied to the chat input area with `aria-busy` mirroring.

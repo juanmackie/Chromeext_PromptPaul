@@ -187,7 +187,7 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('ACT MODE: Page tools are enabled and callable for this run.');
     expect(prompt).toContain('The tool list in this request is authoritative');
     expect(prompt).toContain('do not claim that you lack browser or page tools');
-    expect(prompt).toContain('Available page tools: page_get_state, page_click');
+    expect(prompt).toContain('Available page tools: page_get_state, page_find_text, page_click');
     expect(prompt).toContain('PERFORM it with the tools');
     expect(prompt).toContain('call page_get_state first');
     expect(prompt).toContain('re-inspect after every mutation');
@@ -2008,6 +2008,7 @@ describe('RunOrchestrator page actions', () => {
         'page_input',
         'page_select',
         'page_scroll',
+        'page_find_text',
       ])
     );
 
@@ -2024,6 +2025,42 @@ describe('RunOrchestrator page actions', () => {
         (tool) => tool.function.name
       )
     ).not.toContain('page_get_state');
+  });
+
+  it('executes page_find_text as bounded read-only observation', async () => {
+    const calls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName, args) => {
+        calls.push({ actionName, args });
+        return {
+          success: true,
+          found: true,
+          matches: ['Used - Good Nintendo Switch Lite'],
+          elementIndices: [1],
+          actionReceipt: {
+            disposition: 'delivered_verified',
+            evidence: { kind: 'text_search', matched: true },
+          },
+        };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.snapshot = makeSnapshot();
+
+    const result = await orch.executeTool(
+      runId,
+      makeCall('find-text', 'page_find_text', { query: 'Used - Good' })
+    );
+
+    expect(result.result).toMatchObject({
+      found: true,
+      actionReceipt: { disposition: 'delivered_verified' },
+    });
+    expect(calls).toEqual([{ actionName: 'page_find_text', args: { query: 'Used - Good' } }]);
+    expect(run.pageActions.budgets).toMatchObject({ observation: 1, navigation: 0, mutation: 0 });
+    expect(run.pageActions.repeatedActionCount).toBe(0);
   });
 
   it('keeps the Act inspection tool available before a forced user tool', async () => {
@@ -2254,7 +2291,7 @@ describe('RunOrchestrator page actions', () => {
     );
   });
 
-  it('opens a blank-target link in an owned tab without exposing its query string', async () => {
+  it('navigates a blank-target link in the current tab without exposing its query string', async () => {
     const linkSnapshot = () => ({
       ...makeSnapshot(),
       elements: [
@@ -2278,7 +2315,13 @@ describe('RunOrchestrator page actions', () => {
           : { success: true, linkUrl: 'https://reports.example/report?session=secret' },
       pageTabExecutor: async (_runId, actionName, args) => {
         tabCalls.push({ actionName, args });
-        return { targetTabId: 12, tab: { tabId: 12, url: 'https://reports.example/report' } };
+        return {
+          targetTabId: args.tabId,
+          openedTabId: args.tabId,
+          tab: { tabId: args.tabId, url: 'https://reports.example/report' },
+          ready: true,
+          navigated: true,
+        };
       },
     });
     orch._emitEvent = () => {};
@@ -2298,11 +2341,11 @@ describe('RunOrchestrator page actions', () => {
       })
     );
     const result = await actionPromise;
-    expect(result.result.tab.tabId).toBe(12);
+    expect(result.result.tab.tabId).toBe(7);
     expect(tabCalls).toEqual([
       {
-        actionName: 'page_open_tab',
-        args: { url: 'https://reports.example/report?session=secret', background: false },
+        actionName: 'page_navigate_tab',
+        args: { url: 'https://reports.example/report?session=secret', tabId: 7 },
       },
     ]);
     expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();

@@ -1230,6 +1230,9 @@
   const PAGE_ACTION_MAX_TEXT_CHARS = 240;
   const PAGE_ACTION_MAX_ATTRIBUTE_CHARS = 120;
   const PAGE_ACTION_MAX_INPUT_CHARS = 2000;
+  const PAGE_ACTION_MAX_FIND_QUERY_CHARS = 160;
+  const PAGE_ACTION_MAX_FIND_RESULTS = 8;
+  const PAGE_ACTION_MAX_FIND_SNIPPET_CHARS = 280;
   // The orchestrator applies separate observation/navigation/mutation budgets.
   // This per-document cap matches their combined ceilings (192 observations +
   // 72 navigations + 48 mutations) and resets with each document/session.
@@ -1433,6 +1436,53 @@
       link?.target || '',
       link?.download === true,
     ].join('\u001f');
+  }
+
+  function findPageActionText(session, query) {
+    const boundedQuery = capPageActionText(query, PAGE_ACTION_MAX_FIND_QUERY_CHARS);
+    const normalizedQuery = boundedQuery.toLocaleLowerCase();
+    if (!normalizedQuery) {
+      const error = new Error('Search text cannot be empty.');
+      error.code = 'PAGE_ACTION_INVALID';
+      throw error;
+    }
+    const source = buildPageActionReadableContent();
+    const lowerSource = source.toLocaleLowerCase();
+    const matches = [];
+    let offset = 0;
+    while (matches.length < PAGE_ACTION_MAX_FIND_RESULTS) {
+      const matchIndex = lowerSource.indexOf(normalizedQuery, offset);
+      if (matchIndex < 0) break;
+      const start = Math.max(0, matchIndex - 100);
+      const end = Math.min(source.length, matchIndex + normalizedQuery.length + 140);
+      const snippet = capPageActionText(
+        source.slice(start, end),
+        PAGE_ACTION_MAX_FIND_SNIPPET_CHARS
+      );
+      if (snippet && !matches.includes(snippet)) matches.push(snippet);
+      offset = matchIndex + Math.max(1, normalizedQuery.length);
+    }
+    const elementIndices = session.records
+      .filter((record) =>
+        `${record.label || ''} ${record.text || ''}`.toLocaleLowerCase().includes(normalizedQuery)
+      )
+      .map((record) => record.index)
+      .slice(0, PAGE_ACTION_MAX_FIND_RESULTS);
+    const found = matches.length > 0;
+    return {
+      success: true,
+      query: capPageActionText(query, PAGE_ACTION_MAX_FIND_QUERY_CHARS),
+      found,
+      matches,
+      elementIndices,
+      snapshotId: session.snapshotId || null,
+      message: found
+        ? `Found ${matches.length} matching page-text result(s). Inspect matching controls or call page_get_state after scrolling.`
+        : 'No matching page text was found in the bounded page content.',
+      actionReceipt: buildPageActionReceipt('delivered_verified', 'text_search', {
+        matched: found,
+      }),
+    };
   }
 
   function getPageActionLinkMetadata(element) {
@@ -1864,6 +1914,9 @@
     session.actions += 1;
     if (action === 'page_get_state') {
       return { success: true, snapshot: createPageActionSnapshot(session) };
+    }
+    if (action === 'page_find_text') {
+      return findPageActionText(session, request.args?.query);
     }
     if (action === 'page_scroll') {
       const beforeScroll = {

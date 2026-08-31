@@ -39,6 +39,20 @@ function destinationKey(url) {
   }
 }
 
+/**
+ * HTTP(S) origin of a URL, or '' for unsafe/unparseable input.
+ * @param {unknown} url
+ * @returns {string}
+ */
+function destinationOrigin(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.origin : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 export class PageTabController {
   constructor(options = {}) {
     this.runs = new Map();
@@ -80,6 +94,59 @@ export class PageTabController {
     }
   }
 
+  /**
+   * Select an owned tab (foreground unless background was requested), run the
+   * readiness check, and return the reused-tab result shape.
+   * @param {object} state
+   * @param {number} tabId
+   * @param {{background?: boolean, signal?: AbortSignal}} args
+   * @param {boolean} [navigated]
+   * @returns {Promise<object>}
+   */
+  async _adoptOwnedTab(state, tabId, args, navigated = false) {
+    const foreground = args.background !== true;
+    if (foreground) state.targetTabId = tabId;
+    let ready = true;
+    let readinessError = null;
+    if (this.ensureTabReady) {
+      try {
+        await this.ensureTabReady(tabId, args.signal);
+        state.tabStates.set(tabId, { status: 'ready', failures: 0 });
+      } catch (error) {
+        ready = false;
+        readinessError = error;
+        const current = state.tabStates.get(tabId) || { failures: 0 };
+        state.tabStates.set(tabId, {
+          status: 'unavailable',
+          failures: Number(current.failures || 0) + 1,
+          code: error?.code || 'PAGE_TAB_UNAVAILABLE',
+        });
+      }
+    }
+    let tab = null;
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch (_) {
+      tab = null;
+    }
+    return {
+      tab: safeTab(tab),
+      openedTabId: tabId,
+      targetTabId: state.targetTabId,
+      ready,
+      reused: true,
+      ...(navigated ? { navigated: true } : {}),
+      ...(readinessError
+        ? {
+            tabError: {
+              code: readinessError.code || 'PAGE_TAB_UNAVAILABLE',
+              message: readinessError.message,
+            },
+          }
+        : {}),
+    };
+  }
+
   async execute(runId, actionName, args = {}) {
     const state = this._get(runId);
     if (actionName === 'page_list_tabs') {
@@ -104,12 +171,36 @@ export class PageTabController {
       };
     }
 
+    if (actionName === 'page_navigate_tab') {
+      const tabId = Number(args.tabId ?? state.targetTabId);
+      this._assertOwned(state, tabId);
+      const url = String(args.url || '').trim();
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch (_) {
+        const error = new Error('A valid http(s) navigation URL is required.');
+        error.code = 'PAGE_NAVIGATION_BLOCKED';
+        throw error;
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        const error = new Error('Only http(s) navigation URLs are allowed.');
+        error.code = 'PAGE_NAVIGATION_BLOCKED';
+        throw error;
+      }
+      await chrome.tabs.update(tabId, { url: parsed.href });
+      return this._adoptOwnedTab(state, tabId, args, true);
+    }
+
     if (actionName === 'page_open_tab') {
-      // Idempotent opens: when an owned tab already shows the requested
-      // destination, adopt it instead of creating a duplicate. This keeps
-      // multi-page tasks in one tab even if the model re-requests the open.
+      // One work tab per site: an exact destination is adopted idempotently,
+      // and any other same-origin open navigates the run's existing non-source
+      // tab in place instead of spawning another tab. Multi-page tasks (search
+      // results, product pages, filters) stay on a single tab.
       const requestedKey = destinationKey(args.url);
+      const requestedOrigin = destinationOrigin(args.url);
       if (requestedKey) {
+        let sameOriginTabId = null;
         for (const tabId of state.ownedTabIds) {
           let existing;
           try {
@@ -118,41 +209,22 @@ export class PageTabController {
             state.ownedTabIds.delete(tabId);
             continue;
           }
-          if (destinationKey(existing?.url) !== requestedKey) continue;
-          const foreground = args.background !== true;
-          if (foreground) state.targetTabId = tabId;
-          let ready = true;
-          let readinessError = null;
-          if (this.ensureTabReady) {
-            try {
-              await this.ensureTabReady(tabId, args.signal);
-              state.tabStates.set(tabId, { status: 'ready', failures: 0 });
-            } catch (error) {
-              ready = false;
-              readinessError = error;
-              const current = state.tabStates.get(tabId) || { failures: 0 };
-              state.tabStates.set(tabId, {
-                status: 'unavailable',
-                failures: Number(current.failures || 0) + 1,
-                code: error?.code || 'PAGE_TAB_UNAVAILABLE',
-              });
-            }
+          if (destinationKey(existing?.url) === requestedKey) {
+            return this._adoptOwnedTab(state, tabId, args);
           }
-          return {
-            tab: safeTab(existing),
-            openedTabId: tabId,
-            targetTabId: state.targetTabId,
-            ready,
-            reused: true,
-            ...(readinessError
-              ? {
-                  tabError: {
-                    code: readinessError.code || 'PAGE_TAB_UNAVAILABLE',
-                    message: readinessError.message,
-                  },
-                }
-              : {}),
-          };
+          if (
+            !sameOriginTabId &&
+            requestedOrigin &&
+            tabId !== state.sourceTabId &&
+            state.tabStates.get(tabId)?.status !== 'unavailable' &&
+            destinationOrigin(existing?.url) === requestedOrigin
+          ) {
+            sameOriginTabId = tabId;
+          }
+        }
+        if (sameOriginTabId) {
+          await chrome.tabs.update(sameOriginTabId, { url: args.url });
+          return this._adoptOwnedTab(state, sameOriginTabId, args, true);
         }
       }
       if (state.ownedTabIds.size >= MAX_OWNED_TABS) {

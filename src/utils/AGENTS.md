@@ -31,12 +31,12 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `streamSafety.js` owns bounded SSE buffers and provider error-body reads.
 - `runResilience.js` owns bounded provider retry classification, reasoning-model request timeout floors, deterministic conversation compaction, run-output repetition checks, and safe provider error labels.
 - `pageDom.js` owns bounded semantic snapshot normalization, optional readable-content bounds, element masking, safe display formatting, and snapshot identity checks for current-page actions.
-- `pageActionPolicy.js` owns page-action argument validation, risk classification, hard blocks, trusted-mode decisions, and confirmation metadata. It also validates the separate bounded tab tools. It must never authorize arbitrary JavaScript or unowned tabs.
+- `pageActionPolicy.js` owns page-action argument validation, including bounded read-only `page_find_text`, risk classification, hard blocks, trusted-mode decisions, and confirmation metadata. It also validates the separate bounded tab tools. It must never authorize arbitrary JavaScript or unowned tabs.
 - `pageActionCheckpoint.js` owns bounded session-only Act mutation checkpoints and explicit-recovery metadata. It never stores DOM, page text, notes, credentials, or raw values.
 - `retryBackoff.js` owns bounded exponential delays with jitter for bridge and navigation recovery; it must not retry uncertain mutations.
 - `pageActionScopeDiff.js` owns bounded indexed-region and snapshot-diff helpers. Runtime mutation results may expose only selector-free indices, flags, counts, and snapshot IDs; richer region and byte-size measurements remain evaluation-only. It must never accept model-supplied selectors or expose raw page values.
 - `devDiagnostics.js` owns the development-only, opt-in diagnostics trace, session storage bounds, credential-shaped redaction, and extension-page error capture. `devDiagnostics.prod.js` is the production no-op replacement selected by `scripts/build.js`.
-- Link targets are bounded to HTTP(S) origin/path metadata in `pageDom.js`; `page_click` handles approved same-tab links and `page_open_link` handles indexed owned-tab links. Query strings and fragments stay out of model-visible snapshots.
+- Link targets are bounded to HTTP(S) origin/path metadata in `pageDom.js`; `page_click` handles approved same-tab links and `page_open_link` handles indexed `_blank` links, navigating the current target by default or an owned background tab when explicitly requested. Query strings and fragments stay out of model-visible snapshots.
 
 ## Local Contracts
 

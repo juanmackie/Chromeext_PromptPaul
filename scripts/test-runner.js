@@ -1686,6 +1686,7 @@ function runIntegrationTests(runner) {
       'page_input',
       'page_select',
       'page_scroll',
+      'page_find_text',
       'page_request_user_input',
       'page_open_tab',
       'page_open_link',
