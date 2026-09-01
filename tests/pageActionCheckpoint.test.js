@@ -48,6 +48,13 @@ describe('pageActionCheckpoint', () => {
             blockReason: 'The safe control was not available.',
             outcome: 'The password was entered',
             attemptCount: 1,
+            completionEvidence: {
+              subGoalIndex: 0,
+              disposition: 'delivered_verified',
+              actionName: 'page_click',
+              evidenceKind: 'button_state',
+              receiptId: 1,
+            },
           },
         ],
       },
@@ -65,6 +72,7 @@ describe('pageActionCheckpoint', () => {
     expect(checkpoint.planner.subGoals[0]).toMatchObject({
       status: 'blocked',
       blockReason: 'The safe control was not available.',
+      completionEvidence: { subGoalIndex: 0, evidenceKind: 'button_state' },
     });
     expect(JSON.stringify(checkpoint)).not.toMatch(/password was entered/i);
   });

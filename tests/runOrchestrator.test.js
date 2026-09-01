@@ -1876,6 +1876,45 @@ describe('provider tool-choice payloads', () => {
     }
   });
 
+  it('attributes OpenRouter requests to the Prompt Paul app', async () => {
+    const originalFetch = global.fetch;
+    let headers;
+    global.fetch = async (_url, options) => {
+      headers = options.headers;
+      return streamingResponse({ choices: [{ delta: { content: 'answer' } }] });
+    };
+    try {
+      const orch = new RunOrchestrator(createStubSkillManager());
+      orch._emitEvent = () => {};
+      await orch._executeOpenAI(
+        {
+          id: 'openrouter-attribution',
+          config: {
+            llmEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+            apiKey: 'llm-key',
+            modelName: 'openrouter/free',
+          },
+          conversationHistory: [{ role: 'user', content: 'question' }],
+          accumulatedText: '',
+          webSearch: { enabled: false, attempted: false, attempts: 0, failed: false, sources: [] },
+          toolChoiceState: {
+            original: 'auto',
+            forcedUserTool: null,
+            forcedUserToolSatisfied: true,
+          },
+          abortController: new AbortController(),
+          loadedSkills: new Set(),
+        },
+        []
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    expect(headers['HTTP-Referer']).toBe('https://promptpaul.juanmackie.com');
+    expect(headers['X-OpenRouter-Title']).toBe('Prompt Paul');
+  });
+
   it('offers web_search with auto selection and keeps thinking on Anthropic turns', async () => {
     const originalFetch = global.fetch;
     let body;

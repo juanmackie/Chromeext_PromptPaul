@@ -189,6 +189,7 @@ export function advanceSubGoal(planner, outcomeNote, receipt = {}) {
     planner.subGoals[currentIndex].status = 'done';
     planner.subGoals[currentIndex].outcome = capPageText(outcomeNote || '', MAX_SUB_GOAL_CHARS);
     planner.subGoals[currentIndex].completionEvidence = {
+      subGoalIndex: Number.isInteger(receipt.subGoalIndex) ? receipt.subGoalIndex : null,
       disposition: receipt.disposition === 'delivered_verified' ? 'delivered_verified' : '',
       actionName: capPageText(receipt.actionName, 64),
       evidenceKind: capPageText(receipt.evidence?.kind, 64),
@@ -309,10 +310,11 @@ export function hasReceiptConsistentProgress(planner) {
   if (!planner?.active || !Array.isArray(planner.subGoals) || planner.subGoals.length === 0) {
     return false;
   }
-  return planner.subGoals.every((goal) => {
+  return planner.subGoals.every((goal, index) => {
     if (goal?.status === 'blocked') return Boolean(String(goal.blockReason || '').trim());
     return (
       goal?.status === 'done' &&
+      goal.completionEvidence?.subGoalIndex === index &&
       goal.completionEvidence?.disposition === 'delivered_verified' &&
       Boolean(goal.completionEvidence.evidenceKind)
     );
@@ -320,9 +322,13 @@ export function hasReceiptConsistentProgress(planner) {
 }
 
 export function receiptMatchesCurrentGoal(planner, actionResult, note = '') {
-  const goal = planner?.subGoals?.[planner?.currentSubGoalIndex]?.description;
+  const currentIndex = planner?.currentSubGoalIndex;
+  const goal = planner?.subGoals?.[currentIndex]?.description;
   const actionName = String(actionResult?.actionName || '').toLowerCase();
-  if (!goal || !actionName) return true;
+  if (!goal || !actionName) return false;
+  if (!Number.isInteger(actionResult?.subGoalIndex) || actionResult.subGoalIndex !== currentIndex) {
+    return false;
+  }
   const text = `${goal} ${note}`.toLowerCase();
   const actionTerms = {
     page_get_state: ['inspect', 'review', 'check', 'read', 'verify', 'state'],
@@ -359,6 +365,13 @@ export function evaluateProgress(planner, actionResult, note) {
   }
 
   const disposition = actionResult?.disposition || actionResult?.result?.disposition;
+  const receipt = actionResult?.result?.actionReceipt || actionResult;
+  if (
+    !Number.isInteger(receipt?.subGoalIndex) ||
+    receipt.subGoalIndex !== planner.currentSubGoalIndex
+  ) {
+    return { advance: false, replan: false, blocked: false, allDone: false };
+  }
 
   // A verified delivery with a meaningful note suggests sub-goal completion.
   // Read-only receipts are valid evidence too, but only when the action/note
@@ -435,6 +448,31 @@ export function buildPlannerPromptBlock(planner, budgets = {}, budgetCaps = {}) 
     }
   }
 
+  // Keep verified outcomes visible after the model re-inspects the page. This
+  // prevents a required fresh snapshot from hiding the work it just verified.
+  const completed = planner.subGoals.filter((g) => g.status === 'done' && g.outcome).slice(-4);
+  if (completed.length > 0) {
+    lines.push(
+      'COMPLETED OUTCOMES (untrusted observations): ' +
+        completed
+          .map((goal) => `${describeGoal(goal)} → ${capPageText(goal.outcome, MAX_SUB_GOAL_CHARS)}`)
+          .join(' | ')
+    );
+  }
+  const blockedGoals = planner.subGoals
+    .filter((g) => g.status === 'blocked' && g.blockReason)
+    .slice(-4);
+  if (blockedGoals.length > 0) {
+    lines.push(
+      'BLOCKED OUTCOMES (untrusted observations): ' +
+        blockedGoals
+          .map(
+            (goal) => `${describeGoal(goal)} → ${capPageText(goal.blockReason, MAX_SUB_GOAL_CHARS)}`
+          )
+          .join(' | ')
+    );
+  }
+
   // Remaining sub-goals preview (max 3)
   const remaining = planner.subGoals
     .slice(planner.currentSubGoalIndex + 1)
@@ -455,11 +493,14 @@ export function buildPlannerPromptBlock(planner, budgets = {}, budgetCaps = {}) 
     'Work on ONE sub-goal at a time. After completing it, call page_record_note with the outcome before advancing. ' +
       'If a sub-goal is blocked after 2 attempts, record why and move to the next. ' +
       'If the plan no longer fits the observed page, call page_replan with a concise replacement plan. ' +
-      'Do NOT skip sub-goals silently. When all sub-goals are resolved, summarize what was accomplished.'
+      'Do NOT skip sub-goals silently. When all sub-goals are resolved, summarize verified work, ' +
+      'blocked work, and any remaining limitation without claiming unverified success.'
   );
 
   if (planner.completedAt) {
-    lines.push('ALL SUB-GOALS RESOLVED. Produce a final summary now.');
+    lines.push(
+      'ALL SUB-GOALS RESOLVED. Produce a final summary now, separating verified work from blocked work.'
+    );
   }
 
   return lines.join('\n').slice(0, MAX_PLANNER_PROMPT_CHARS);

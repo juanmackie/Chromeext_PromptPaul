@@ -88,6 +88,9 @@ function normalizeRecord(record = {}) {
         completionEvidence:
           goal?.completionEvidence && typeof goal.completionEvidence === 'object'
             ? {
+                subGoalIndex: Number.isInteger(goal.completionEvidence.subGoalIndex)
+                  ? goal.completionEvidence.subGoalIndex
+                  : null,
                 disposition: capPageText(goal.completionEvidence.disposition, 32),
                 actionName: capPageText(goal.completionEvidence.actionName, 64),
                 evidenceKind: capPageText(goal.completionEvidence.evidenceKind, 64),

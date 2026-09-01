@@ -69,6 +69,8 @@ import {
 
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
+const OPENROUTER_APP_URL = 'https://promptpaul.juanmackie.com';
+const OPENROUTER_APP_TITLE = 'Prompt Paul';
 const MAX_TOOL_CALL_RETRIES = 3;
 const THINKING_BUDGET_TOKENS = 2048;
 const BUDGET_WRAP_UP_PROMPT =
@@ -99,6 +101,12 @@ const PAGE_ACTION_RECEIPT_DISPOSITIONS = new Set([
   'delivered_unverified',
   'delivered_verified',
 ]);
+const PLANNER_OBSERVATION_ACTIONS = new Set([
+  'page_get_state',
+  'page_find_text',
+  'page_scroll',
+  'page_list_tabs',
+]);
 const FINAL_OUTPUT_TOKENS = 6144;
 const OPENAI_REASONING_OUTPUT_TOKENS = 8192;
 const EMPTY_REASONING_RECOVERY_PROMPT =
@@ -121,6 +129,14 @@ function isTokenLimitReason(reason) {
       .trim()
       .toLowerCase()
   );
+}
+
+function isOpenRouterEndpoint(endpoint) {
+  try {
+    return new URL(endpoint).hostname === 'openrouter.ai';
+  } catch (_) {
+    return false;
+  }
 }
 
 function clampRunOption(value, fallback, min, max) {
@@ -282,6 +298,9 @@ class RunOrchestrator {
           completionEvidence:
             goal?.completionEvidence && typeof goal.completionEvidence === 'object'
               ? {
+                  subGoalIndex: Number.isInteger(goal.completionEvidence.subGoalIndex)
+                    ? goal.completionEvidence.subGoalIndex
+                    : null,
                   disposition: String(goal.completionEvidence.disposition || '').slice(0, 32),
                   actionName: String(goal.completionEvidence.actionName || '').slice(0, 64),
                   evidenceKind: String(goal.completionEvidence.evidenceKind || '').slice(0, 64),
@@ -1359,9 +1378,18 @@ class RunOrchestrator {
     if (!planner?.active) return;
     const receipt = outcome?.result?.actionReceipt;
     if (!receipt || typeof receipt !== 'object') return;
+    // Keep the latest delivered mutation attached while the model performs the
+    // required post-mutation inspection. Otherwise page_get_state replaces the
+    // useful receipt and a following note cannot advance the completed goal.
+    if (PLANNER_OBSERVATION_ACTIONS.has(actionName) && planner.pendingReceipt) return;
+    const currentSubGoalIndex = planner.currentSubGoalIndex;
+    if (Number.isInteger(receipt.subGoalIndex) && receipt.subGoalIndex !== currentSubGoalIndex) {
+      return;
+    }
     planner.pendingReceipt = {
       ...receipt,
       actionName,
+      subGoalIndex: Number.isInteger(currentSubGoalIndex) ? currentSubGoalIndex : null,
       receiptId: Number(planner.nextReceiptId || 0) + 1,
     };
     planner.nextReceiptId = planner.pendingReceipt.receiptId;
@@ -2339,6 +2367,13 @@ class RunOrchestrator {
         }
         if (resolved?.actionReceipt && typeof resolved.actionReceipt === 'object') {
           result.actionReceipt = resolved.actionReceipt;
+        } else if (!result.actionReceipt) {
+          result.actionReceipt = {
+            disposition: 'delivered_verified',
+            evidence: {
+              kind: background ? 'owned_tab_link_opened' : 'current_tab_link_navigated',
+            },
+          };
         }
         await this._settlePageActionCheckpoint(
           run,
@@ -2429,6 +2464,21 @@ class RunOrchestrator {
       const result = await this.pageTabExecutor(runId, actionName, args, {
         signal: run.abortController.signal,
       });
+      if (result && !result.actionReceipt) {
+        result.actionReceipt = {
+          disposition: result.ready === false ? 'not_delivered' : 'delivered_verified',
+          evidence: {
+            kind:
+              actionName === 'page_open_tab'
+                ? result.reused
+                  ? 'owned_tab_reused'
+                  : 'owned_tab_ready'
+                : actionName === 'page_switch_tab'
+                  ? 'owned_tab_selected'
+                  : 'owned_tab_closed',
+          },
+        };
+      }
       if (actionName === 'page_switch_tab' && result?.ready === false) {
         const failure = new Error(
           result?.tabError?.message || 'The selected tab is not ready for page actions.'
@@ -4115,14 +4165,20 @@ class RunOrchestrator {
       run.abortController.signal,
       getProviderTimeoutMs(modelName, this.runResilience.requestTimeoutMs)
     );
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    };
+    if (isOpenRouterEndpoint(llmEndpoint)) {
+      headers['HTTP-Referer'] = OPENROUTER_APP_URL;
+      headers['X-OpenRouter-Title'] = OPENROUTER_APP_TITLE;
+    }
+
     let response;
     try {
       response = await fetch(llmEndpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers,
         body: JSON.stringify(body),
         signal: requestTimeout.signal,
       });
