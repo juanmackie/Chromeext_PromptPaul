@@ -28,8 +28,10 @@ import {
 import { waitForRetry } from '../utils/retryBackoff.js';
 import {
   PAGE_ACTION_RISKS,
+  READ_ONLY_PAGE_ACTIONS,
   evaluatePageActionPolicy,
   isPageActionName,
+  isPageActionReadOnly,
   isPageTabActionName,
   isPageUserInputActionName,
   isPageManualInterventionActionName,
@@ -41,6 +43,7 @@ import {
 import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../utils/pageDom.js';
 import { buildIndexedPageRegions, diffPageActionSnapshots } from '../utils/pageActionScopeDiff.js';
 import { recordDevDiagnostic } from '../utils/devDiagnostics.js';
+import { recordEvalTrace } from '../utils/evalTrace.js';
 import { buildHermesTurn } from '../utils/hermesContext.js';
 import { buildCodexRequest, streamCodexResponse } from './CodexTransport.js';
 import {
@@ -101,12 +104,7 @@ const PAGE_ACTION_RECEIPT_DISPOSITIONS = new Set([
   'delivered_unverified',
   'delivered_verified',
 ]);
-const PLANNER_OBSERVATION_ACTIONS = new Set([
-  'page_get_state',
-  'page_find_text',
-  'page_scroll',
-  'page_list_tabs',
-]);
+const PLANNER_OBSERVATION_ACTIONS = new Set([...READ_ONLY_PAGE_ACTIONS, 'page_list_tabs']);
 const FINAL_OUTPUT_TOKENS = 6144;
 const OPENAI_REASONING_OUTPUT_TOKENS = 8192;
 const EMPTY_REASONING_RECOVERY_PROMPT =
@@ -512,12 +510,22 @@ class RunOrchestrator {
         );
       }
     }
+    const pageActionsRequested = Boolean(config.pageActions);
     const pageActionsEnabled = Boolean(
-      config.pageActions &&
+      pageActionsRequested &&
       config.sourceTabId &&
       (!this.pageActionAvailabilityProvider ||
         (await this.pageActionAvailabilityProvider(config.sourceTabId)))
     );
+    if (pageActionsRequested && !pageActionsEnabled) {
+      const error = new Error(
+        config.sourceTabId
+          ? 'Act is on, but this tab cannot host page actions. Open a regular web page and try again.'
+          : 'Act needs an active web page. Open a web page and try again.'
+      );
+      error.code = 'PAGE_ACTION_UNAVAILABLE';
+      throw error;
+    }
     const trustedPageActions = pageActionsEnabled
       ? Boolean(await this.pageActionPolicyProvider?.())
       : false;
@@ -758,6 +766,10 @@ class RunOrchestrator {
     if (!internalContinuation) run.executeInProgress = true;
 
     run.status = 'streaming';
+    recordEvalTrace(runId, {
+      kind: 'llm_turn_started',
+      prompt: run.objective,
+    });
     recordDevDiagnostic('run_execution_started', {
       runId,
       provider: run.config.provider,
@@ -1368,7 +1380,7 @@ class RunOrchestrator {
 
   _isPageActionMutation(actionName) {
     if (isPageActionName(actionName)) {
-      return !['page_get_state', 'page_scroll', 'page_find_text'].includes(actionName);
+      return !isPageActionReadOnly(actionName);
     }
     return isPageTabActionName(actionName) && actionName !== 'page_list_tabs';
   }
@@ -1436,12 +1448,7 @@ class RunOrchestrator {
   }
 
   _pageActionBudgetBucket(actionName, target, policy = {}) {
-    if (
-      actionName === 'page_get_state' ||
-      actionName === 'page_scroll' ||
-      actionName === 'page_find_text' ||
-      actionName === 'page_list_tabs'
-    ) {
+    if (isPageActionReadOnly(actionName) || actionName === 'page_list_tabs') {
       return 'observation';
     }
     if (
@@ -1624,6 +1631,13 @@ class RunOrchestrator {
       };
     }
 
+    if (actionName === 'page_wait' || actionName === 'page_batch') {
+      return {
+        disposition: 'delivered_verified',
+        evidence: { kind: 'read_only_observation', changed: Boolean(nextSnapshot) },
+      };
+    }
+
     if (unexpectedNavigation) {
       return {
         disposition: 'delivered_unverified',
@@ -1719,9 +1733,7 @@ class RunOrchestrator {
 
     const args = normalized.value;
     if (
-      actionName !== 'page_get_state' &&
-      actionName !== 'page_scroll' &&
-      actionName !== 'page_find_text' &&
+      !isPageActionReadOnly(actionName) &&
       args.snapshotId !== run.pageActions.snapshot?.snapshotId
     ) {
       return {
@@ -1733,13 +1745,10 @@ class RunOrchestrator {
       };
     }
 
-    const isMutation = !['page_get_state', 'page_scroll', 'page_find_text'].includes(actionName);
-    const actionTarget =
-      actionName === 'page_get_state' ||
-      actionName === 'page_scroll' ||
-      actionName === 'page_find_text'
-        ? null
-        : run.pageActions.snapshot?.elements?.[args.index];
+    const isMutation = !isPageActionReadOnly(actionName);
+    const actionTarget = isPageActionReadOnly(actionName)
+      ? null
+      : run.pageActions.snapshot?.elements?.[args.index];
     const actionHash = pageStateHash(
       JSON.stringify({
         actionName,
@@ -1776,18 +1785,10 @@ class RunOrchestrator {
       };
     }
 
-    const target =
-      actionName === 'page_get_state' ||
-      actionName === 'page_scroll' ||
-      actionName === 'page_find_text'
-        ? null
-        : run.pageActions.snapshot?.elements?.[args.index];
-    if (
-      actionName !== 'page_get_state' &&
-      actionName !== 'page_scroll' &&
-      actionName !== 'page_find_text' &&
-      !target
-    ) {
+    const target = isPageActionReadOnly(actionName)
+      ? null
+      : run.pageActions.snapshot?.elements?.[args.index];
+    if (!isPageActionReadOnly(actionName) && !target) {
       return {
         success: true,
         result: {
@@ -1925,7 +1926,7 @@ class RunOrchestrator {
       }
       if (documentStatus.changed) {
         this._adoptPageActionDocument(run, documentStatus.url);
-        if (!['page_get_state', 'page_find_text'].includes(actionName)) {
+        if (!isPageActionReadOnly(actionName)) {
           return this._pageActionDocumentChangedResult(run, actionName);
         }
       }
@@ -3054,6 +3055,51 @@ class RunOrchestrator {
       {
         type: 'function',
         function: {
+          name: 'page_wait',
+          description: `${pageContext} Wait for bounded asynchronous page work without changing the page. Use text when content should appear, text_gone when a loading or blocking message should disappear, or url_changed after navigation. Prefer this over fixed delays; it returns after the condition is met or the timeout expires.`,
+          parameters: {
+            type: 'object',
+            properties: {
+              condition: { type: 'string', enum: ['text', 'text_gone', 'url_changed'] },
+              text: { type: 'string', maxLength: 160 },
+              timeoutMs: { type: 'integer', minimum: 0, maximum: 10000 },
+            },
+            required: ['condition'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'page_batch',
+          description: `${pageContext} Run 2 to 4 read-only observations in sequence in one turn. Use this for compact scroll, find, wait, and snapshot workflows. It cannot contain clicks, inputs, selects, navigation, or another batch.`,
+          parameters: {
+            type: 'object',
+            properties: {
+              actions: {
+                type: 'array',
+                minItems: 2,
+                maxItems: 4,
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: {
+                      type: 'string',
+                      enum: ['page_get_state', 'page_scroll', 'page_find_text', 'page_wait'],
+                    },
+                    args: { type: 'object' },
+                  },
+                  required: ['name'],
+                },
+              },
+            },
+            required: ['actions'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
           name: 'page_click',
           description: `${pageContext} Perform the click on one indexed control to complete the task. Valid HTTP(S) same-tab links are supported; links that open a new tab must use page_open_link.`,
           parameters: {
@@ -3496,6 +3542,8 @@ class RunOrchestrator {
         'page_input',
         'page_select',
         'page_scroll',
+        'page_wait',
+        'page_batch',
         'page_request_user_input',
         'page_pause_for_user',
         'page_replan',
@@ -3519,6 +3567,8 @@ class RunOrchestrator {
           '. You can perform requests that are achievable on the current page. When a request is ' +
           'achievable on this page, PERFORM it with the tools instead of describing steps: ' +
           'call page_get_state first, use page_find_text to locate exact criteria before scrolling when useful, ' +
+          'use page_wait for expected text, disappearing loading states, or a URL change after asynchronous work instead of fixed delays, ' +
+          'use page_batch for 2–4 read-only steps such as scroll → find → get_state, then act, ' +
           'handle blocking popups or login walls in the current tab before other actions, then act, ' +
           're-inspect after every mutation, and continue until done. For ' +
           'multi-item or ongoing requests, do not stop after a partial result or ask whether to continue; ' +
@@ -4639,6 +4689,13 @@ class RunOrchestrator {
       if (!this.activeRuns.has(run.id) || run.abortController.signal.aborted) return;
       try {
         const result = await this.executeTool(run.id, toolCall);
+        recordEvalTrace(run.id, {
+          kind: 'action',
+          prompt: run.objective,
+          llmResponse: run.accumulatedText,
+          action: toolCall,
+          actionResult: result,
+        });
         if (!this.activeRuns.has(run.id) || run.abortController.signal.aborted) return;
 
         // Reset the consecutive-failure counter after a genuinely successful
@@ -4688,6 +4745,14 @@ class RunOrchestrator {
           tool_call_id: toolCall.id,
           name: toolCall.function.name,
           content: `Error: ${error.message}`,
+        });
+        recordEvalTrace(run.id, {
+          kind: 'action',
+          prompt: run.objective,
+          llmResponse: run.accumulatedText,
+          action: toolCall,
+          actionResult: { error: error.message },
+          error: error.message,
         });
         this._emitEvent(run.id, {
           type: 'tool_error',
@@ -4817,6 +4882,11 @@ class RunOrchestrator {
       });
     }
 
+    recordEvalTrace(run.id, {
+      kind: 'llm_response',
+      prompt: run.objective,
+      llmResponse: run.accumulatedText,
+    });
     const event = {
       type: 'complete',
       content: run.accumulatedText,

@@ -234,6 +234,30 @@ export function setRunOwnerToken(runId, ownerToken) {
 }
 
 /**
+ * Recover a missing owner token from the active-run journal before sending a
+ * run-scoped control request.
+ * @param {string} runId - Active run ID.
+ * @returns {Promise<boolean>} True when a usable token is available.
+ */
+export async function refreshRunOwnerToken(runId) {
+  if (!runId) return false;
+  if (getRunOwnerToken(runId)) return true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'getRunJournal',
+      runId,
+    });
+    return (
+      response?.active === true &&
+      typeof response.ownerToken === 'string' &&
+      setRunOwnerToken(runId, response.ownerToken)
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
  * Release the opaque owner token after a terminal run event is rendered.
  * Execution acknowledgements are intentionally non-terminal so long-running
  * runs can outlive the side-panel message channel.

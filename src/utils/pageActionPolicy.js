@@ -12,6 +12,16 @@ export const PAGE_ACTION_NAMES = Object.freeze([
   'page_select',
   'page_scroll',
   'page_find_text',
+  'page_wait',
+  'page_batch',
+]);
+
+export const READ_ONLY_PAGE_ACTIONS = Object.freeze([
+  'page_get_state',
+  'page_scroll',
+  'page_find_text',
+  'page_wait',
+  'page_batch',
 ]);
 
 export const PAGE_TAB_ACTION_NAMES = Object.freeze([
@@ -45,6 +55,10 @@ export function isPageActionName(value) {
   return PAGE_ACTION_NAMES.includes(String(value || ''));
 }
 
+export function isPageActionReadOnly(value) {
+  return READ_ONLY_PAGE_ACTIONS.includes(String(value || ''));
+}
+
 export function isPageTabActionName(value) {
   return PAGE_TAB_ACTION_NAMES.includes(String(value || ''));
 }
@@ -70,6 +84,54 @@ export function normalizePageActionArgs(actionName, args = {}) {
   }
 
   if (actionName === 'page_get_state') return { valid: true, value: {} };
+  if (actionName === 'page_wait') {
+    const condition = String(args.condition || '')
+      .trim()
+      .toLowerCase();
+    if (!['text', 'text_gone', 'url_changed'].includes(condition)) {
+      return { valid: false, error: 'Wait condition must be text, text_gone, or url_changed.' };
+    }
+    const timeoutMs = Number(args.timeoutMs ?? 5_000);
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > PAGE_DOM_CAPS.maxWaitMs) {
+      return {
+        valid: false,
+        error: `Wait timeout must be between 0 and ${PAGE_DOM_CAPS.maxWaitMs} milliseconds.`,
+      };
+    }
+    const text = capPageText(args.text, PAGE_DOM_CAPS.maxFindQueryChars);
+    if (condition !== 'url_changed' && !text) {
+      return { valid: false, error: 'Wait text cannot be empty for this condition.' };
+    }
+    return {
+      valid: true,
+      value: { condition, timeoutMs, ...(text ? { text } : {}) },
+    };
+  }
+  if (actionName === 'page_batch') {
+    if (!Array.isArray(args.actions) || args.actions.length < 2) {
+      return { valid: false, error: 'A page batch must contain 2 to 4 read-only actions.' };
+    }
+    if (args.actions.length > PAGE_DOM_CAPS.maxBatchActions) {
+      return {
+        valid: false,
+        error: `A page batch is limited to ${PAGE_DOM_CAPS.maxBatchActions} actions.`,
+      };
+    }
+    const actions = [];
+    for (const entry of args.actions) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return { valid: false, error: 'Each page batch item must be an action object.' };
+      }
+      const name = String(entry.name || '');
+      if (!READ_ONLY_PAGE_ACTIONS.includes(name) || name === 'page_batch') {
+        return { valid: false, error: 'Page batches support only non-nested read-only actions.' };
+      }
+      const normalized = normalizePageActionArgs(name, entry.args || {});
+      if (!normalized.valid) return normalized;
+      actions.push({ name, args: normalized.value });
+    }
+    return { valid: true, value: { actions } };
+  }
   if (actionName === 'page_find_text') {
     const query = capPageText(args.query, PAGE_DOM_CAPS.maxFindQueryChars);
     return query
@@ -234,11 +296,7 @@ export function normalizePageUserInputArgs(args = {}) {
  * @returns {{risk: string, requiresConfirmation: boolean, prohibited: boolean, reason: string}}
  */
 export function classifyPageAction(target = {}, actionName = '') {
-  if (
-    actionName === 'page_get_state' ||
-    actionName === 'page_scroll' ||
-    actionName === 'page_find_text'
-  ) {
+  if (isPageActionReadOnly(actionName)) {
     return {
       risk: PAGE_ACTION_RISKS.READ_ONLY,
       requiresConfirmation: false,
@@ -385,11 +443,13 @@ export function evaluatePageActionPolicy(input = {}) {
 
 export const pageActionPolicy = {
   PAGE_ACTION_NAMES,
+  READ_ONLY_PAGE_ACTIONS,
   PAGE_TAB_ACTION_NAMES,
   PAGE_USER_INPUT_ACTION_NAME,
   PAGE_MANUAL_INTERVENTION_ACTION_NAME,
   PAGE_ACTION_RISKS,
   isPageActionName,
+  isPageActionReadOnly,
   isPageTabActionName,
   isPageUserInputActionName,
   isPageManualInterventionActionName,

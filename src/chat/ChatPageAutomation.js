@@ -38,7 +38,7 @@ export function isPageActionsEnabled() {
 }
 
 /**
- * Arm page actions for the next run in the current browser session.
+ * Enable or disable page actions for the current browser session.
  * @param {boolean} enabled
  * @returns {Promise<void>}
  */
@@ -56,55 +56,13 @@ export function setPageActionsEnabled(enabled) {
 }
 
 /**
- * Read and consume the page-action opt-in state for one run.
- * @returns {Promise<boolean>}
- */
-export function consumePageActionsEnabled() {
-  return new Promise((resolve) => {
-    const storage = getPageActionsStorage();
-    storage.get([PAGE_ACTIONS_ENABLED_KEY], (result) => {
-      const enabled = Boolean(result?.[PAGE_ACTIONS_ENABLED_KEY]);
-      // Keep the visual Act lease active while the run is in progress even
-      // though the one-run permission is removed from session storage now.
-      pageActionsStateVersion += 1;
-      pageActionsArmed = false;
-      pageActionsRunActive = enabled;
-      renderPageActionsToggle();
-      storage.remove([PAGE_ACTIONS_ENABLED_KEY], () => resolve(enabled));
-    });
-  });
-}
-
-/**
  * Keep the sidebar Act toggle visually active for the lifetime of an
- * accepted page-action run. The permission remains one-shot in storage.
+ * accepted page-action run.
  * @param {boolean} active
  */
 export function setPageActionsRunActive(active) {
   pageActionsRunActive = Boolean(active);
   renderPageActionsToggle();
-}
-
-/**
- * Restore Act after a run fails before the background worker accepts it.
- * @returns {Promise<void>}
- */
-export function restorePageActionsEnabled() {
-  pageActionsStateVersion += 1;
-  pageActionsRunActive = false;
-  return new Promise((resolve) => {
-    const storage = getPageActionsStorage();
-    storage.get([PAGE_ACTIONS_ENABLED_KEY], (result) => {
-      const isArmed = result?.[PAGE_ACTIONS_ENABLED_KEY] !== undefined;
-      pageActionsArmed = isArmed ? Boolean(result[PAGE_ACTIONS_ENABLED_KEY]) : true;
-      renderPageActionsToggle();
-      if (isArmed) {
-        resolve();
-        return;
-      }
-      storage.set({ [PAGE_ACTIONS_ENABLED_KEY]: true }, resolve);
-    });
-  });
 }
 
 function findConfirmationCard(chatArea, confirmationId) {
@@ -353,7 +311,7 @@ function applyPageActionsToggle(element, enabled) {
   element.title = pageActionsRunActive
     ? 'Act is running. Page actions stay enabled for this run.'
     : active
-      ? 'Page actions are on. Click to disable bounded page and tab actions.'
+      ? 'Page actions are on for this browser session. Click to disable bounded page and tab actions.'
       : 'Page actions are off. Click to enable bounded page and tab actions.';
 }
 
@@ -379,8 +337,8 @@ export function initPageActionsToggle(toggleElement, loadingManagerRef) {
       renderPageActionsToggle();
       loadingManagerRef?.showToast?.(
         next
-          ? 'Page actions enabled for the next run. Risky actions still require approval.'
-          : 'Page actions disabled for the next run.',
+          ? 'Page actions enabled for this browser session. Risky actions still require approval.'
+          : 'Page actions disabled for this browser session.',
         'info'
       );
     } catch (error) {

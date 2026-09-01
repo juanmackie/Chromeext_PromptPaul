@@ -11,8 +11,14 @@ vi.mock('../loadingManager.js', () => ({
   },
 }));
 
-const { startRun, executeRun, getRunAuth, setRunOwnerToken, clearRunOwnerToken } =
-  await import('../src/chat/ChatAPI.js');
+const {
+  startRun,
+  executeRun,
+  getRunAuth,
+  refreshRunOwnerToken,
+  setRunOwnerToken,
+  clearRunOwnerToken,
+} = await import('../src/chat/ChatAPI.js');
 const { friendlyRuntimeErrorMessage } = await import('../src/utils/runtimeErrors.js');
 
 describe('chat runtime execution bridge', () => {
@@ -50,6 +56,25 @@ describe('chat runtime execution bridge', () => {
     });
     expect(setRunOwnerToken('', 'owner-reconnected')).toBe(false);
     expect(setRunOwnerToken('run-2', '')).toBe(false);
+  });
+
+  it('refreshes a missing owner token before a live approval decision', async () => {
+    chrome.runtime.sendMessage.mockResolvedValueOnce({
+      success: true,
+      active: true,
+      ownerToken: 'owner-recovered',
+    });
+
+    await expect(refreshRunOwnerToken('run-1')).resolves.toBe(true);
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      action: 'getRunJournal',
+      runId: 'run-1',
+    });
+    expect(getRunAuth('run-1', 7)).toEqual({
+      ownerToken: 'owner-recovered',
+      sourceTabId: 7,
+    });
   });
 
   it('translates Chrome transient channel closures into a recoverable message', () => {

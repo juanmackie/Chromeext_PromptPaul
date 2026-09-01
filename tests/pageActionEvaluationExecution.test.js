@@ -300,19 +300,25 @@ describe('executable page-action evaluation matrix', () => {
       async () => ({ success: true, snapshot: snapshot() }),
       { availabilityProvider: async () => false }
     );
-    const restrictedRun = await restrictedOrch.startRun({
-      provider: 'api',
-      pageActions: true,
-      sourceTabId: 7,
-      tool_choice: 'auto',
+    await expect(
+      restrictedOrch.startRun({
+        provider: 'api',
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+      })
+    ).rejects.toMatchObject({
+      code: expected('restricted-page').failureCode,
     });
-    const restricted = await restrictedOrch.executeTool(
-      restrictedRun,
-      call('restricted-page', 'page_get_state')
+    records.push(
+      record(
+        'restricted-page',
+        'api',
+        { result: { error: expected('restricted-page').failureCode } },
+        0,
+        0
+      )
     );
-    expect(restricted.result.error).toBe(expected('restricted-page').failureCode);
-    records.push(record('restricted-page', 'api', restricted, 0, 0));
-    restrictedOrch.abort(restrictedRun);
 
     const hermesOrch = makeOrchestrator('hermes', async () => ({
       success: true,

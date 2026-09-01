@@ -124,7 +124,7 @@
     "fixture": "restricted-page",
     "operation": "page_get_state",
     "expected": "error",
-    "failureCode": "PAGE_ACTIONS_DISABLED",
+    "failureCode": "PAGE_ACTION_UNAVAILABLE",
     "providers": ["api"],
     "sensitive": false
   },

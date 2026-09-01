@@ -190,6 +190,8 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('Available page tools: page_get_state, page_find_text, page_click');
     expect(prompt).toContain('PERFORM it with the tools');
     expect(prompt).toContain('call page_get_state first');
+    expect(prompt).toContain('use page_wait for expected text');
+    expect(prompt).toContain('use page_batch for 2–4 read-only steps');
     expect(prompt).toContain('re-inspect after every mutation');
     expect(prompt).toContain('If the current tab changes documents during the run');
     expect(prompt).toContain('continue the same request');
@@ -2048,22 +2050,23 @@ describe('RunOrchestrator page actions', () => {
         'page_select',
         'page_scroll',
         'page_find_text',
+        'page_wait',
+        'page_batch',
       ])
     );
 
     const restricted = new RunOrchestrator(createStubSkillManager(), {
       pageActionAvailabilityProvider: async () => false,
     });
-    const restrictedId = await restricted.startRun({
-      tool_choice: 'auto',
-      pageActions: true,
-      sourceTabId: 7,
+    await expect(
+      restricted.startRun({
+        tool_choice: 'auto',
+        pageActions: true,
+        sourceTabId: 7,
+      })
+    ).rejects.toMatchObject({
+      code: 'PAGE_ACTION_UNAVAILABLE',
     });
-    expect(
-      (await restricted._buildTools(restricted.activeRuns.get(restrictedId))).map(
-        (tool) => tool.function.name
-      )
-    ).not.toContain('page_get_state');
   });
 
   it('executes page_find_text as bounded read-only observation', async () => {
@@ -2100,6 +2103,65 @@ describe('RunOrchestrator page actions', () => {
     expect(calls).toEqual([{ actionName: 'page_find_text', args: { query: 'Used - Good' } }]);
     expect(run.pageActions.budgets).toMatchObject({ observation: 1, navigation: 0, mutation: 0 });
     expect(run.pageActions.repeatedActionCount).toBe(0);
+  });
+
+  it('executes wait and batches as read-only observations without approval', async () => {
+    const calls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName, args) => {
+        calls.push({ actionName, args });
+        if (actionName === 'page_batch') {
+          return {
+            success: true,
+            snapshot: makeSnapshot(),
+            results: [{ success: true, found: true, elementIndices: [1] }, { success: true }],
+          };
+        }
+        return {
+          success: true,
+          satisfied: true,
+          actionReceipt: {
+            disposition: 'delivered_verified',
+            evidence: { kind: 'wait_condition', matched: true },
+          },
+        };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.snapshot = makeSnapshot();
+
+    const wait = await orch.executeTool(
+      runId,
+      makeCall('wait', 'page_wait', {
+        condition: 'text',
+        text: 'Results loaded',
+        timeoutMs: 100,
+      })
+    );
+    const batch = await orch.executeTool(
+      runId,
+      makeCall('batch', 'page_batch', {
+        actions: [
+          { name: 'page_find_text', args: { query: 'Results' } },
+          { name: 'page_get_state', args: {} },
+        ],
+      })
+    );
+
+    expect(wait.result).toMatchObject({
+      satisfied: true,
+      actionReceipt: { disposition: 'delivered_verified' },
+    });
+    expect(batch.result).toMatchObject({
+      snapshot: { snapshotId: 'page-snap-1' },
+      actionReceipt: { disposition: 'delivered_verified' },
+    });
+    expect(calls.map(({ actionName }) => actionName)).toEqual(['page_wait', 'page_batch']);
+    expect(run.pageActions.budgets).toMatchObject({ observation: 2, navigation: 0, mutation: 0 });
+    expect(events.some((event) => event.type === 'page_action_confirmation')).toBe(false);
   });
 
   it('keeps the Act inspection tool available before a forced user tool', async () => {

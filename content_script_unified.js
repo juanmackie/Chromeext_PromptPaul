@@ -1233,6 +1233,8 @@
   const PAGE_ACTION_MAX_FIND_QUERY_CHARS = 160;
   const PAGE_ACTION_MAX_FIND_RESULTS = 8;
   const PAGE_ACTION_MAX_FIND_SNIPPET_CHARS = 280;
+  const PAGE_ACTION_MAX_WAIT_MS = 10_000;
+  const PAGE_ACTION_MAX_BATCH_ACTIONS = 4;
   // The orchestrator applies separate observation/navigation/mutation budgets.
   // This per-document cap matches their combined ceilings (192 observations +
   // 72 navigations + 48 mutations) and resets with each document/session.
@@ -1869,6 +1871,65 @@
     });
   }
 
+  function waitForPageActionCondition(session, args = {}) {
+    const condition = String(args.condition || '').toLowerCase();
+    const text = capPageActionText(args.text, PAGE_ACTION_MAX_FIND_QUERY_CHARS).toLocaleLowerCase();
+    if (!['text', 'text_gone', 'url_changed'].includes(condition)) {
+      const error = new Error('Wait condition must be text, text_gone, or url_changed.');
+      error.code = 'PAGE_ACTION_INVALID';
+      throw error;
+    }
+    if (condition !== 'url_changed' && !text) {
+      const error = new Error('Wait text cannot be empty for this condition.');
+      error.code = 'PAGE_ACTION_INVALID';
+      throw error;
+    }
+    const requestedTimeout = Number(args.timeoutMs ?? 5_000);
+    const timeoutMs = Math.min(
+      PAGE_ACTION_MAX_WAIT_MS,
+      Math.max(0, Number.isFinite(requestedTimeout) ? Math.floor(requestedTimeout) : 5_000)
+    );
+    const initialUrl = sanitizePageActionUrl(window.location.href);
+    const matches = () => {
+      if (condition === 'url_changed') {
+        return sanitizePageActionUrl(window.location.href) !== initialUrl;
+      }
+      const present = buildPageActionReadableContent().toLocaleLowerCase().includes(text);
+      return condition === 'text_gone' ? !present : present;
+    };
+    return new Promise((resolve) => {
+      const startedAt = performance.now();
+      const finish = (satisfied) =>
+        resolve({
+          success: true,
+          condition,
+          satisfied,
+          waitedMs: Math.min(timeoutMs, Math.round(performance.now() - startedAt)),
+          ...(session.snapshotId ? { snapshotId: session.snapshotId } : {}),
+          actionReceipt: buildPageActionReceipt('delivered_verified', 'wait_condition', {
+            matched: satisfied,
+          }),
+        });
+      if (matches() || timeoutMs === 0) {
+        finish(matches());
+        return;
+      }
+      const deadline = performance.now() + timeoutMs;
+      const poll = () => {
+        if (matches()) {
+          finish(true);
+          return;
+        }
+        if (performance.now() >= deadline) {
+          finish(false);
+          return;
+        }
+        setTimeout(poll, 250);
+      };
+      setTimeout(poll, 250);
+    });
+  }
+
   function dispatchPageActionClick(element) {
     element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
     const rect = element.getBoundingClientRect();
@@ -1903,20 +1964,75 @@
     };
   }
 
-  async function executePageAction(request) {
+  async function executePageAction(request, countAction = true) {
     const session = getPageActionSession(request.runId);
-    if (session.actions >= PAGE_ACTION_MAX_ACTIONS) {
-      const error = new Error(`Page action limit reached (${PAGE_ACTION_MAX_ACTIONS}).`);
-      error.code = 'PAGE_ACTION_LIMIT';
-      throw error;
-    }
     const action = String(request.pageAction || '');
-    session.actions += 1;
+    if (action === 'page_batch') {
+      const entries = Array.isArray(request.args?.actions) ? request.args.actions : [];
+      if (
+        entries.length < 2 ||
+        entries.length > PAGE_ACTION_MAX_BATCH_ACTIONS ||
+        entries.some(
+          (entry) =>
+            !entry ||
+            typeof entry !== 'object' ||
+            !['page_get_state', 'page_scroll', 'page_find_text', 'page_wait'].includes(
+              String(entry.name || '')
+            )
+        )
+      ) {
+        const error = new Error('A page batch must contain 2 to 4 read-only actions.');
+        error.code = 'PAGE_ACTION_INVALID';
+        throw error;
+      }
+      if (session.actions + entries.length > PAGE_ACTION_MAX_ACTIONS) {
+        const error = new Error(`Page action limit reached (${PAGE_ACTION_MAX_ACTIONS}).`);
+        error.code = 'PAGE_ACTION_LIMIT';
+        throw error;
+      }
+      session.actions += entries.length;
+      const results = [];
+      let latestSnapshot = null;
+      for (let index = 0; index < entries.length; index += 1) {
+        try {
+          const result = await executePageAction(
+            { ...request, pageAction: entries[index].name, args: entries[index].args || {} },
+            false
+          );
+          if (result?.snapshot) {
+            latestSnapshot = result.snapshot;
+            delete result.snapshot;
+          }
+          results.push(result);
+        } catch (error) {
+          return {
+            success: true,
+            results,
+            ...(latestSnapshot ? { snapshot: latestSnapshot } : {}),
+            failedAt: index,
+            error: error.message,
+            code: error.code || 'PAGE_ACTION_FAILED',
+          };
+        }
+      }
+      return { success: true, results, ...(latestSnapshot ? { snapshot: latestSnapshot } : {}) };
+    }
+    if (countAction) {
+      if (session.actions >= PAGE_ACTION_MAX_ACTIONS) {
+        const error = new Error(`Page action limit reached (${PAGE_ACTION_MAX_ACTIONS}).`);
+        error.code = 'PAGE_ACTION_LIMIT';
+        throw error;
+      }
+      session.actions += 1;
+    }
     if (action === 'page_get_state') {
       return { success: true, snapshot: createPageActionSnapshot(session) };
     }
     if (action === 'page_find_text') {
       return findPageActionText(session, request.args?.query);
+    }
+    if (action === 'page_wait') {
+      return waitForPageActionCondition(session, request.args || {});
     }
     if (action === 'page_scroll') {
       const beforeScroll = {

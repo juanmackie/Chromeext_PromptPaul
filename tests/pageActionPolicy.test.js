@@ -22,6 +22,32 @@ describe('pageActionPolicy', () => {
       valid: true,
       value: { query: 'Used - Good' },
     });
+    expect(
+      normalizePageActionArgs('page_wait', {
+        condition: 'text',
+        text: 'Results loaded',
+        timeoutMs: 2_000,
+      })
+    ).toEqual({
+      valid: true,
+      value: { condition: 'text', text: 'Results loaded', timeoutMs: 2_000 },
+    });
+    expect(
+      normalizePageActionArgs('page_batch', {
+        actions: [
+          { name: 'page_scroll', args: { direction: 'down' } },
+          { name: 'page_find_text', args: { query: 'Results' } },
+        ],
+      })
+    ).toEqual({
+      valid: true,
+      value: {
+        actions: [
+          { name: 'page_scroll', args: { direction: 'down', pages: 0.5 } },
+          { name: 'page_find_text', args: { query: 'Results' } },
+        ],
+      },
+    });
   });
 
   it('rejects stale-shaped or oversized arguments before execution', () => {
@@ -40,6 +66,41 @@ describe('pageActionPolicy', () => {
     expect(normalizePageActionArgs('page_find_text', { query: ' ' })).toEqual({
       valid: false,
       error: 'Search text cannot be empty.',
+    });
+    expect(normalizePageActionArgs('page_wait', { condition: 'text', text: 'ready' })).toEqual({
+      valid: true,
+      value: { condition: 'text', text: 'ready', timeoutMs: 5_000 },
+    });
+    expect(
+      normalizePageActionArgs('page_wait', { condition: 'text_gone', text: 'loading' })
+    ).toEqual({
+      valid: true,
+      value: { condition: 'text_gone', text: 'loading', timeoutMs: 5_000 },
+    });
+    expect(
+      normalizePageActionArgs('page_wait', { condition: 'url_changed', timeoutMs: 10_001 })
+    ).toEqual({
+      valid: false,
+      error: 'Wait timeout must be between 0 and 10000 milliseconds.',
+    });
+    expect(
+      normalizePageActionArgs('page_batch', {
+        actions: [{ name: 'page_click', args: { snapshotId: 'snap', index: 1 } }],
+      })
+    ).toEqual({
+      valid: false,
+      error: 'A page batch must contain 2 to 4 read-only actions.',
+    });
+    expect(
+      normalizePageActionArgs('page_batch', {
+        actions: [
+          { name: 'page_find_text', args: { query: 'a' } },
+          { name: 'page_click', args: { snapshotId: 'snap', index: 1 } },
+        ],
+      })
+    ).toEqual({
+      valid: false,
+      error: 'Page batches support only non-nested read-only actions.',
     });
   });
 
@@ -118,6 +179,16 @@ describe('pageActionPolicy', () => {
       requiresConfirmation: false,
     });
     expect(evaluatePageActionPolicy({ actionName: 'page_find_text' })).toMatchObject({
+      allowed: true,
+      requiresConfirmation: false,
+      risk: PAGE_ACTION_RISKS.READ_ONLY,
+    });
+    expect(evaluatePageActionPolicy({ actionName: 'page_wait' })).toMatchObject({
+      allowed: true,
+      requiresConfirmation: false,
+      risk: PAGE_ACTION_RISKS.READ_ONLY,
+    });
+    expect(evaluatePageActionPolicy({ actionName: 'page_batch' })).toMatchObject({
       allowed: true,
       requiresConfirmation: false,
       risk: PAGE_ACTION_RISKS.READ_ONLY,

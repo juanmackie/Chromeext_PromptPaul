@@ -7,8 +7,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   isPageActionsEnabled,
   setPageActionsEnabled,
-  consumePageActionsEnabled,
-  restorePageActionsEnabled,
   setPageActionsRunActive,
   initPageActionsToggle,
 } from '../src/chat/ChatPageAutomation.js';
@@ -66,30 +64,14 @@ describe('ChatPageAutomation Act permission', () => {
     await expect(setPageActionsEnabled(true)).rejects.toThrow('quota exceeded');
   });
 
-  it('consumes Act after one run so the next run starts disabled', async () => {
+  it('keeps Act enabled across runs until explicitly disabled', async () => {
     await setPageActionsEnabled(true);
-
-    expect(await consumePageActionsEnabled()).toBe(true);
-    expect(sessionState.pageActionsEnabled).toBeUndefined();
-    expect(await consumePageActionsEnabled()).toBe(false);
-  });
-
-  it('can restore Act when run setup fails before a run starts', async () => {
-    await setPageActionsEnabled(true);
-    expect(await consumePageActionsEnabled()).toBe(true);
-
-    await restorePageActionsEnabled();
 
     expect(await isPageActionsEnabled()).toBe(true);
-  });
+    expect(await isPageActionsEnabled()).toBe(true);
+    expect(sessionState.pageActionsEnabled).toBe(true);
 
-  it('does not override an explicit disable while run setup is settling', async () => {
-    await setPageActionsEnabled(true);
-    expect(await consumePageActionsEnabled()).toBe(true);
     await setPageActionsEnabled(false);
-
-    await restorePageActionsEnabled();
-
     expect(await isPageActionsEnabled()).toBe(false);
   });
 
@@ -112,14 +94,17 @@ describe('ChatPageAutomation Act permission', () => {
     await setPageActionsEnabled(true);
     expect(attributes['aria-pressed']).toBe('true');
 
-    expect(await consumePageActionsEnabled()).toBe(true);
+    setPageActionsRunActive(true);
     expect(attributes['aria-pressed']).toBe('true');
     expect(toggle.dataset.runActive).toBe('true');
     expect(toggle.disabled).toBe(true);
 
     setPageActionsRunActive(false);
-    expect(attributes['aria-pressed']).toBe('false');
+    expect(attributes['aria-pressed']).toBe('true');
     expect(toggle.dataset.runActive).toBe('false');
     expect(toggle.disabled).toBe(false);
+
+    await setPageActionsEnabled(false);
+    expect(attributes['aria-pressed']).toBe('false');
   });
 });

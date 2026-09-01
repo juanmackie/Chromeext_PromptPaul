@@ -12,6 +12,7 @@
 
 - OpenRouter requests now include Prompt Paul's app-attribution headers so usage can appear in OpenRouter app analytics and rankings.
 - Improved long-horizon Act continuity: required re-inspection keeps the verified mutation receipt available to the planner, receipts are bound to their owning sub-goal, successful owned-tab actions report bounded receipts, and planner prompts retain completed and blocked outcomes for more accurate continuation and final summaries.
+- Act now stays enabled across runs until disabled or the browser session ends, and unusable Act tabs report an actionable startup error instead of silently falling back to plain chat.
 
 ## [6.2.1] - 2026-08-31
 

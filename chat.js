@@ -29,6 +29,7 @@ import {
   abortRun,
   resumeActRun,
   getRunAuth,
+  refreshRunOwnerToken,
   setRunOwnerToken,
   clearRunOwnerToken,
   selectOptimalProfile,
@@ -60,8 +61,7 @@ import {
   executePresetAnalysis,
 } from './src/chat/ChatPageActions.js';
 import {
-  consumePageActionsEnabled,
-  restorePageActionsEnabled,
+  isPageActionsEnabled,
   setPageActionsEnabled,
   setPageActionsRunActive,
   initPageActionsToggle,
@@ -977,6 +977,11 @@ document.addEventListener('DOMContentLoaded', () => {
           chatArea,
           event,
           async (confirmationId, approved, approveAll) => {
+            if (!(await refreshRunOwnerToken(runId))) {
+              throw new Error(
+                'Run reconnect authorization was not established. Reload Prompt Paul.'
+              );
+            }
             const response = await chrome.runtime.sendMessage({
               action: 'pageActionDecision',
               runId,
@@ -1862,13 +1867,18 @@ document.addEventListener('DOMContentLoaded', () => {
               event,
               async (confirmationId, approved, approveAll) => {
                 try {
+                  if (!(await refreshRunOwnerToken(runId))) {
+                    throw new Error(
+                      'Run reconnect authorization was not established. Reload Prompt Paul.'
+                    );
+                  }
                   const response = await chrome.runtime.sendMessage({
                     action: 'pageActionDecision',
                     runId,
                     confirmationId,
                     approved,
                     approveAll,
-                    ...getRunAuth(runId, streamState.getSourceTabId()),
+                    ...getRunAuth(runId, sourceTabId ?? streamState.getSourceTabId()),
                   });
                   if (!response?.success) {
                     throw new Error(
@@ -2317,8 +2327,6 @@ document.addEventListener('DOMContentLoaded', () => {
   ) {
     if (!beginResponseRun()) return;
 
-    let pageActionsConsumed = false;
-    let runStarted = false;
     try {
       clearCurrentMediaData();
       const config = await getApiConfigCached();
@@ -2354,8 +2362,7 @@ document.addEventListener('DOMContentLoaded', () => {
       beginRunUi();
 
       const webSearchEnabled = await isWebSearchEnabled();
-      const pageActionsEnabled = await consumePageActionsEnabled();
-      pageActionsConsumed = pageActionsEnabled;
+      const pageActionsEnabled = await isPageActionsEnabled();
       const runConfig = {
         provider: config.provider || 'api',
         profileId: config.profileId || config.id,
@@ -2377,7 +2384,6 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceTabId: getRunSourceTabId(),
       };
       streamState.setRunId(await startRun(runConfig));
-      runStarted = true;
       streamState.setSourceTabId(runConfig.sourceTabId);
       if (pageActionsEnabled) setPageActionsRunActive(true);
 
@@ -2386,13 +2392,6 @@ document.addEventListener('DOMContentLoaded', () => {
         prepareRunMessages(runConfig, streamState.getConversationHistory())
       );
     } catch (error) {
-      if (pageActionsConsumed && !runStarted) {
-        try {
-          await restorePageActionsEnabled();
-        } catch (restoreError) {
-          console.warn('Chat: Could not restore Act after failed run setup.', restoreError);
-        }
-      }
       handleRunFailure(error, 'makeApiCallWithMedia');
     } finally {
       endResponseRun();
@@ -2480,8 +2479,6 @@ document.addEventListener('DOMContentLoaded', () => {
   async function makeApiCall(promptRequest = null, tool_choice = 'auto', requestedSkill = null) {
     if (!beginResponseRun()) return;
 
-    let pageActionsConsumed = false;
-    let runStarted = false;
     try {
       const config = await getApiConfigCached();
       const userMessage = composeUserPrompt(promptRequest);
@@ -2543,8 +2540,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Prepare run configuration
       const webSearchEnabled = await isWebSearchEnabled();
-      const pageActionsEnabled = await consumePageActionsEnabled();
-      pageActionsConsumed = pageActionsEnabled;
+      const pageActionsEnabled = await isPageActionsEnabled();
       const runConfig = {
         provider: effectiveConfig.provider || 'api',
         profileId: effectiveConfig.profileId || effectiveConfig.id,
@@ -2569,7 +2565,6 @@ document.addEventListener('DOMContentLoaded', () => {
       beginRunUi();
 
       streamState.setRunId(await startRun(runConfig));
-      runStarted = true;
       streamState.setSourceTabId(runConfig.sourceTabId);
       if (pageActionsEnabled) setPageActionsRunActive(true);
 
@@ -2578,13 +2573,6 @@ document.addEventListener('DOMContentLoaded', () => {
         prepareRunMessages(runConfig, streamState.getConversationHistory())
       );
     } catch (error) {
-      if (pageActionsConsumed && !runStarted) {
-        try {
-          await restorePageActionsEnabled();
-        } catch (restoreError) {
-          console.warn('Chat: Could not restore Act after failed run setup.', restoreError);
-        }
-      }
       handleRunFailure(error, 'makeApiCall');
     } finally {
       endResponseRun();

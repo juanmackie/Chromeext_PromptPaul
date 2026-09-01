@@ -293,6 +293,21 @@ test.describe('page-agent-style page actions', () => {
       );
       expect(dynamicTarget).toBeTruthy();
 
+      const batched = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'dynamic-page-batch-run', 'page_batch', {
+            actions: [
+              { name: 'page_find_text', args: { query: 'Dynamic controls' } },
+              { name: 'page_get_state', args: {} },
+            ],
+          }),
+        targetUrl
+      );
+      expect(batched.snapshot?.snapshotId).toBeTruthy();
+      expect(batched.results).toHaveLength(2);
+      expect(batched.results[0]).toMatchObject({ found: true });
+      expect(batched.results[0].snapshot).toBeUndefined();
+
       await target.evaluate(() => window.replaceDynamicTarget());
       const rebound = await harness.evaluate(
         ({ url, snapshotId, index }) =>
@@ -307,6 +322,19 @@ test.describe('page-agent-style page actions', () => {
         evidence: { kind: 'action_dispatched' },
       });
       await expect(target.locator('#status')).toHaveText('Dynamic action completed');
+      const waited = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_wait', {
+            condition: 'text',
+            text: 'Dynamic action completed',
+            timeoutMs: 1_000,
+          }),
+        targetUrl
+      );
+      expect(waited).toMatchObject({
+        satisfied: true,
+        actionReceipt: { disposition: 'delivered_verified' },
+      });
 
       const current = await harness.evaluate(
         (url) => window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_get_state'),

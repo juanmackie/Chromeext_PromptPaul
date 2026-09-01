@@ -58,6 +58,7 @@ import {
   recordDevDiagnostic,
   recordRemoteDevDiagnostic,
 } from './src/utils/devDiagnostics.js';
+import { registerEvalRunHook } from './src/utils/evalHook.js';
 
 void initializeDevDiagnostics('background');
 installDevErrorHandlers('background');
@@ -1235,7 +1236,13 @@ const ensurePageActionContentScript = async (tabId, signal) => {
 const pageActionAvailabilityProvider = async (tabId) => {
   try {
     const tab = await chrome.tabs.get(tabId);
-    if (!getCurrentPageSupport(tab?.url).available) return false;
+    if (!getCurrentPageSupport(tab?.url).available) {
+      const error = new Error(
+        'Act is on, but this page cannot host page actions. Open a regular web page and try again.'
+      );
+      error.code = 'PAGE_ACTION_UNAVAILABLE';
+      throw error;
+    }
     // The URL is supported, but page actions also need a connected content
     // script. Verify the bridge before the run starts; otherwise the forced
     // page_get_state call would fail and the orchestrator would retry it
@@ -1250,7 +1257,12 @@ const pageActionAvailabilityProvider = async (tabId) => {
       actionable.code = 'PAGE_ACTION_NO_CONTENT_SCRIPT';
       throw actionable;
     }
-    return false;
+    const actionable = new Error(
+      'Act is on, but the selected page is no longer available. Open a regular web page and try again.'
+    );
+    actionable.code = 'PAGE_ACTION_UNAVAILABLE';
+    actionable.cause = error?.message || '';
+    throw actionable;
   }
 };
 
@@ -1578,6 +1590,14 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
 // PageTabController owns tab scope; the background owns bridge readiness and
 // injection because only the service worker can use chrome.scripting safely.
 pageTabController.ensureTabReady = ensurePageActionContentScript;
+
+registerEvalRunHook({
+  getExtensionOrigin,
+  isExtensionSender,
+  resolveStoredRunConfig,
+  runOrchestrator,
+  createOwnerToken: uuidv4,
+});
 
 // ===== Menu System (Serialized Rebuild Queue) =====
 
@@ -3028,21 +3048,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     Promise.resolve()
       .then(async () => {
         const effectiveConfig = await resolveStoredRunConfig(config);
-        if (effectiveConfig.provider === 'hermes') {
-          if (hermesSessionResetLock.isLocked(effectiveConfig.profileId)) {
-            throw new Error('Hermes New chat is still resetting the previous session.');
+        if (
+          effectiveConfig.provider === 'hermes' &&
+          hermesSessionResetLock.isLocked(effectiveConfig.profileId)
+        ) {
+          throw new Error('Hermes New chat is still resetting the previous session.');
+        }
+        if (effectiveConfig.pageActions && effectiveConfig.sourceTabId != null) {
+          try {
+            await chrome.tabs.get(Number(effectiveConfig.sourceTabId));
+          } catch (_) {
+            effectiveConfig.sourceTabId = null;
           }
-          if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
-            const sourceTabId = await resolvePanelTabId(sender?.tab?.id ?? null, {
-              rejectUnsupportedActive: true,
-            });
-            if (sourceTabId == null) {
-              throw new Error('Act needs an active web page. Open a web page and try again.');
-            }
-            effectiveConfig.sourceTabId = sourceTabId;
-          }
-          effectiveConfig.webSearch = false;
-        } else if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
+        }
+        if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
           const sourceTabId = await resolvePanelTabId(sender?.tab?.id ?? null, {
             rejectUnsupportedActive: true,
           });
@@ -3051,6 +3070,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
           effectiveConfig.sourceTabId = sourceTabId;
         }
+        if (effectiveConfig.provider === 'hermes') effectiveConfig.webSearch = false;
         return runOrchestrator.startRun(effectiveConfig, ownerToken);
       })
       .then((runId) =>
