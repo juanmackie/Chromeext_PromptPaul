@@ -16,6 +16,7 @@
 import { setupThemeToggle } from './themeUtils.js';
 import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
+import { PAGE_ACTION_NAMES, PAGE_TAB_ACTION_NAMES } from './src/utils/pageActionPolicy.js';
 import { chatUI } from './src/chat/ChatUI.js';
 import { attachCopyListeners, postProcessRenderedContent } from './src/chat/ChatClipboard.js';
 import {
@@ -126,6 +127,8 @@ async function getChatMedia() {
   }
   return _chatMediaModule;
 }
+const PAGE_ACTIVITY_TOOL_NAMES = new Set([...PAGE_ACTION_NAMES, ...PAGE_TAB_ACTION_NAMES]);
+
 function renderMarkdownContent(markdown) {
   return renderMarkdown(markdown);
 }
@@ -964,6 +967,50 @@ document.addEventListener('DOMContentLoaded', () => {
     streamState.setNextOrchestratorEventSequence(latestRecovery.journal?.eventSequence || 0);
     setPageActionsRunActive(latestRecovery.journal?.pageActions?.enabled === true);
     beginRunUi();
+    for (const event of latestRecovery.journal?.events || []) {
+      if (event.type === 'page_action_state') {
+        updatePageActionActivity(chatArea, { ...event, runId });
+      } else if (event.type === 'page_action_warning' || event.type === 'page_action_notice') {
+        updatePageActionActivity(chatArea, { ...event, runId, state: event.state || 'notice' });
+      } else if (event.type === 'page_action_confirmation') {
+        renderPageActionConfirmation(
+          chatArea,
+          event,
+          async (confirmationId, approved, approveAll) => {
+            const response = await chrome.runtime.sendMessage({
+              action: 'pageActionDecision',
+              runId,
+              confirmationId,
+              approved,
+              approveAll,
+              ...getRunAuth(runId, streamState.getSourceTabId()),
+            });
+            if (!response?.success)
+              throw new Error(response?.error || 'Approval was not accepted.');
+            return response;
+          },
+          () => abortRun(runId)
+        );
+      } else if (event.type === 'page_action_decision') {
+        resolvePageActionConfirmation(chatArea, event);
+      }
+    }
+  }
+
+  function restoreTerminalRun(recovery) {
+    const event = [...(recovery?.journal?.events || [])]
+      .reverse()
+      .find((entry) => ['complete', 'error', 'aborted'].includes(entry.type));
+    if (!event) return;
+    if (event.type === 'complete' && event.content) {
+      chatUI.addMessage('LLM', event.content);
+      streamState.addMessageToHistory({ role: 'assistant', content: event.content });
+    } else if (event.type === 'aborted') {
+      chatUI.addMessage('System', 'Response stopped');
+    } else {
+      chatUI.addMessage('System', `❌ Error: ${event.error || event.message || 'The run failed.'}`);
+    }
+    void clearActiveRun();
   }
 
   async function resumeActCheckpoint(checkpoint, recoveryCard) {
@@ -1630,6 +1677,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function settleStreamingBubble(content) {
+    const messageDiv = streamState.getCurrentStreamingMessageDiv();
+    const contentElement = streamState.getCurrentStreamingContentElement();
+    if (!messageDiv || !contentElement) return false;
+    if (streamState.getReasoningContentElement()) {
+      chatUI.finalizeReasoningPanel(messageDiv, streamState.getReasoningElapsedMs());
+    }
+    contentElement.innerHTML = renderMarkdownContent(content);
+    postProcessRenderedContent(contentElement);
+    return chatUI.moveMessageToEnd(messageDiv);
+  }
+
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Capture panel's owning tab on first message (establishes identity)
     if (sender.tab?.id && panelTabId === null) {
@@ -1812,14 +1871,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     ...getRunAuth(runId, streamState.getSourceTabId()),
                   });
                   if (!response?.success) {
-                    loadingManager.showToast(
-                      'This page-action approval is no longer active.',
-                      'warning'
+                    throw new Error(
+                      response?.error || 'This page-action approval is no longer active.'
                     );
                   }
+                  return response;
                 } catch (error) {
                   console.warn('Chat: page-action decision failed:', error.message);
-                  loadingManager.showToast('Could not send the page-action decision.', 'error');
+                  loadingManager.showToast(
+                    error.message || 'Could not send the page-action decision.',
+                    'error'
+                  );
+                  throw error;
                 }
               },
               () => abortRun(runId)
@@ -1840,14 +1903,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     ...getRunAuth(runId, streamState.getSourceTabId()),
                   });
                   if (!response?.success) {
-                    loadingManager.showToast(
-                      'This Hermes approval is no longer active.',
-                      'warning'
-                    );
+                    throw new Error(response?.error || 'This Hermes approval is no longer active.');
                   }
+                  return response;
                 } catch (error) {
                   console.warn('Chat: Hermes approval failed:', error.message);
-                  loadingManager.showToast('Could not send the Hermes approval.', 'error');
+                  loadingManager.showToast(
+                    error.message || 'Could not send the Hermes approval.',
+                    'error'
+                  );
+                  throw error;
                 }
               },
               () => abortRun(runId)
@@ -1862,6 +1927,7 @@ document.addEventListener('DOMContentLoaded', () => {
           case 'page_action_state':
             updatePageActionActivity(chatArea, {
               ...event,
+              runId,
               message: event.error || event.message,
             });
             break;
@@ -1869,15 +1935,21 @@ document.addEventListener('DOMContentLoaded', () => {
               `❌ Page action failed: ${event.action} ${label}: ${event.error || 'the page did not respond.'}`
           */
           case 'page_action_warning':
-            updatePageActionActivity(chatArea, { ...event, state: 'warning' });
+            updatePageActionActivity(chatArea, { ...event, runId, state: 'warning' });
             break;
           case 'page_action_notice':
-            updatePageActionActivity(chatArea, { ...event, state: 'notice' });
+            updatePageActionActivity(chatArea, { ...event, runId, state: 'notice' });
             break;
           case 'page_user_input_request':
           case 'page_manual_intervention_request':
             event.ownerToken = getRunAuth(runId).ownerToken;
             handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
+            break;
+          case 'continuation_start':
+            streamState.startNewTurn();
+            if (streamState.getCurrentStreamingContentElement()) {
+              streamState.getCurrentStreamingContentElement().innerHTML = '';
+            }
             break;
           case 'tool_start':
             if (streamState.getReasoningContentElement()) {
@@ -1901,12 +1973,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             break;
           case 'tool_ready':
+            if (PAGE_ACTIVITY_TOOL_NAMES.has(event.toolCall?.function?.name)) break;
             chatUI.addMessage(
               'System',
               `⚙️ Executing tool: **${event.toolCall.function.name}**...`
             );
             break;
           case 'tool_complete':
+            if (PAGE_ACTIVITY_TOOL_NAMES.has(event.toolCall?.function?.name)) break;
             if (isSkillLoaderTool(event.toolCall.function.name)) {
               try {
                 clearCurrentMediaData();
@@ -2024,7 +2098,9 @@ document.addEventListener('DOMContentLoaded', () => {
           case 'aborted': {
             hermesChat.settleHermesApprovals(chatArea, 'aborted');
             cancelPageActionConfirmations(chatArea);
-            chatUI.addMessage('System', 'Response stopped');
+            if (!settleStreamingBubble('Response stopped')) {
+              chatUI.addMessage('System', 'Response stopped');
+            }
             resetRunUi(RUN_STATES.STOPPED);
 
             // Reset streaming variables
@@ -2040,7 +2116,9 @@ document.addEventListener('DOMContentLoaded', () => {
             hermesChat.settleHermesApprovals(chatArea, 'error');
             // Terminal page-action cards use the same explicit state === 'error' guard.
             cancelPageActionConfirmations(chatArea);
-            chatUI.addMessage('System', `❌ Error: ${event.error}`);
+            if (!settleStreamingBubble(`❌ Error: ${event.error}`)) {
+              chatUI.addMessage('System', `❌ Error: ${event.error}`);
+            }
             resetRunUi(RUN_STATES.ERROR);
             userInput.focus();
 
@@ -2712,7 +2790,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Rehydrate bounded activity and an optional Act checkpoint after a
   // side-panel reconnect. Checkpoint actions resume only after explicit Resume.
-  void restoreRunJournal(chatArea, resumeActCheckpoint, watchActiveRun);
+  void restoreRunJournal(chatArea, resumeActCheckpoint, watchActiveRun, restoreTerminalRun);
 
   // Voice input functionality
   const voiceToggleButton = document.getElementById('voice-toggle-button');

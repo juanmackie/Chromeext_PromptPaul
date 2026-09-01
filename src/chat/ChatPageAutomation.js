@@ -15,6 +15,11 @@ function getPageActionsStorage() {
   return chrome.storage[PAGE_ACTIONS_STORAGE];
 }
 
+function storageError() {
+  const error = chrome.runtime?.lastError;
+  return error ? new Error(error.message || 'Act permission storage failed.') : null;
+}
+
 function renderPageActionsToggle() {
   if (!pageActionsToggleElement) return;
   applyPageActionsToggle(pageActionsToggleElement, pageActionsArmed);
@@ -41,8 +46,12 @@ export function setPageActionsEnabled(enabled) {
   pageActionsStateVersion += 1;
   pageActionsArmed = Boolean(enabled);
   renderPageActionsToggle();
-  return new Promise((resolve) => {
-    getPageActionsStorage().set({ [PAGE_ACTIONS_ENABLED_KEY]: pageActionsArmed }, resolve);
+  return new Promise((resolve, reject) => {
+    getPageActionsStorage().set({ [PAGE_ACTIONS_ENABLED_KEY]: pageActionsArmed }, () => {
+      const error = storageError();
+      if (error) reject(error);
+      else resolve();
+    });
   });
 }
 
@@ -104,8 +113,9 @@ function findConfirmationCard(chatArea, confirmationId) {
   );
 }
 
-function getActivityCard(chatArea) {
-  return chatArea?.querySelector?.('[data-page-action-activity]') || null;
+function getActivityCard(chatArea, runId = '') {
+  const cards = Array.from(chatArea?.querySelectorAll?.('[data-page-action-activity]') || []);
+  return cards.find((card) => card.dataset.pageActionRunId === runId) || (runId ? null : cards[0]);
 }
 
 /**
@@ -118,11 +128,13 @@ function getActivityCard(chatArea) {
  */
 export function updatePageActionActivity(chatArea, event = {}) {
   if (!chatArea) return null;
-  let card = getActivityCard(chatArea);
+  const runId = String(event.runId || '').slice(0, 128);
+  let card = getActivityCard(chatArea, runId);
   if (!card) {
     card = document.createElement('div');
     card.className = 'message system-message page-action-activity';
     card.dataset.pageActionActivity = 'true';
+    card.dataset.pageActionRunId = runId;
     card.setAttribute('role', 'status');
     card.setAttribute('aria-live', 'polite');
     const heading = document.createElement('strong');
@@ -136,7 +148,7 @@ export function updatePageActionActivity(chatArea, event = {}) {
 
   const list = card.querySelector('.page-action-activity-list');
   if (!list) return card;
-  const key = String(event.sequence || `${event.action || 'action'}-${event.state || 'update'}`);
+  const key = `${runId}:${String(event.sequence || `${event.action || 'action'}-${event.state || 'update'}`)}`;
   let item = Array.from(list.children).find((entry) => entry.dataset.activityKey === key);
   if (!item) {
     item = document.createElement('li');
@@ -150,7 +162,8 @@ export function updatePageActionActivity(chatArea, event = {}) {
   const receiptText = disposition ? `, ${disposition}` : '';
   item.textContent = `${action}${target}: ${state}${receiptText}${event.message ? `, ${event.message}` : ''}`;
   while (list.children.length > 12) list.removeChild(list.firstElementChild);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  const remaining = chatArea.scrollHeight - chatArea.scrollTop - (chatArea.clientHeight || 0);
+  if (!Number.isFinite(remaining) || remaining <= 40) chatArea.scrollTop = chatArea.scrollHeight;
   return card;
 }
 
@@ -185,10 +198,29 @@ export function renderPageUserInputRequest(chatArea, event, onSubmit) {
   submit.type = 'button';
   submit.className = 'btn btn-primary btn-sm';
   submit.textContent = 'Send';
-  submit.addEventListener('click', () => {
+  const showError = (message) => {
+    let error = card.querySelector('.page-action-inline-error');
+    if (!error) {
+      error = document.createElement('p');
+      error.className = 'page-action-inline-error';
+      error.setAttribute('role', 'alert');
+      card.appendChild(error);
+    }
+    error.textContent = message;
+  };
+  submit.addEventListener('click', async () => {
     submit.disabled = true;
     input.disabled = true;
-    onSubmit?.(event.requestId, input.value);
+    try {
+      const response = await onSubmit?.(event.requestId, input.value);
+      if (response?.success === false)
+        throw new Error(response.error || 'The answer was not sent.');
+      card.dataset.decision = 'sent';
+    } catch (error) {
+      input.disabled = false;
+      submit.disabled = false;
+      showError(error.message || 'The answer could not be sent. Try again.');
+    }
   });
   controls.appendChild(submit);
   card.appendChild(controls);
@@ -217,11 +249,13 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
   if (!chatArea || !event?.requestId) return null;
   const existing = chatArea.querySelector(`[data-page-manual-intervention="${event.requestId}"]`);
   if (existing) return existing;
+  const previousFocus = document.activeElement;
   const card = document.createElement('div');
   card.className = 'message system-message page-action-confirmation';
   card.dataset.pageManualIntervention = event.requestId;
   card.setAttribute('role', 'alertdialog');
   card.setAttribute('aria-live', 'assertive');
+  card.setAttribute('aria-modal', 'true');
   const title = document.createElement('strong');
   title.textContent = 'Manual step needed';
   card.appendChild(title);
@@ -253,13 +287,29 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
   stop.type = 'button';
   stop.className = 'btn btn-outline-danger btn-sm';
   stop.textContent = 'Stop';
+  const showError = (message) => {
+    let error = card.querySelector('.page-action-inline-error');
+    if (!error) {
+      error = document.createElement('p');
+      error.className = 'page-action-inline-error';
+      error.setAttribute('role', 'alert');
+      card.appendChild(error);
+    }
+    error.textContent = message;
+  };
+  const restoreFocus = () => {
+    if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+  };
   const settle = (state) => {
     resume.disabled = true;
     stop.disabled = true;
     card.dataset.decision = state;
+    restoreFocus();
   };
+  card._restorePageActionFocus = restoreFocus;
   resume.addEventListener('click', async () => {
-    settle('resumed');
+    resume.disabled = true;
+    stop.disabled = true;
     try {
       const response = await chrome.runtime.sendMessage({
         action: 'pageManualInterventionResume',
@@ -268,9 +318,12 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
         ownerToken: event.ownerToken || '',
         sourceTabId,
       });
-      if (!response?.success) card.dataset.decision = 'error';
-    } catch (_) {
-      card.dataset.decision = 'error';
+      if (!response?.success) throw new Error(response?.error || 'Resume was not accepted.');
+      settle('resumed');
+    } catch (error) {
+      resume.disabled = false;
+      stop.disabled = false;
+      showError(error.message || 'Resume failed. Try again.');
     }
   });
   stop.addEventListener('click', () => {
@@ -285,7 +338,9 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
   controls.append(resume, stop);
   card.appendChild(controls);
   chatArea.appendChild(card);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  resume.focus();
+  const remaining = chatArea.scrollHeight - chatArea.scrollTop - (chatArea.clientHeight || 0);
+  if (!Number.isFinite(remaining) || remaining <= 40) chatArea.scrollTop = chatArea.scrollHeight;
   return card;
 }
 
@@ -319,14 +374,20 @@ export function initPageActionsToggle(toggleElement, loadingManagerRef) {
   });
   toggleElement.addEventListener('click', async () => {
     const next = !pageActionsArmed;
-    await setPageActionsEnabled(next);
-    renderPageActionsToggle();
-    loadingManagerRef?.showToast?.(
-      next
-        ? 'Page actions enabled for the next run. Risky actions still require approval.'
-        : 'Page actions disabled for the next run.',
-      'info'
-    );
+    try {
+      await setPageActionsEnabled(next);
+      renderPageActionsToggle();
+      loadingManagerRef?.showToast?.(
+        next
+          ? 'Page actions enabled for the next run. Risky actions still require approval.'
+          : 'Page actions disabled for the next run.',
+        'info'
+      );
+    } catch (error) {
+      pageActionsArmed = !next;
+      renderPageActionsToggle();
+      loadingManagerRef?.showToast?.(error.message || 'Could not update Act permission.', 'error');
+    }
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -353,11 +414,13 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
   const existing = findConfirmationCard(chatArea, event.confirmationId);
   if (existing) return existing;
 
+  const previousFocus = document.activeElement;
   const card = document.createElement('div');
   card.className = 'message system-message page-action-confirmation';
   card.dataset.pageActionConfirmation = event.confirmationId;
   card.setAttribute('role', 'alertdialog');
   card.setAttribute('aria-live', 'assertive');
+  card.setAttribute('aria-modal', 'true');
 
   const title = document.createElement('strong');
   title.textContent = 'Approval needed for page action';
@@ -411,29 +474,53 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
   stop.className = 'btn btn-outline-danger btn-sm';
   stop.textContent = 'Stop';
 
+  const showError = (message) => {
+    let error = card.querySelector('.page-action-inline-error');
+    if (!error) {
+      error = document.createElement('p');
+      error.className = 'page-action-inline-error';
+      error.setAttribute('role', 'alert');
+      card.appendChild(error);
+    }
+    error.textContent = message;
+  };
   const disableAll = () => {
     approve.disabled = true;
     approveAll.disabled = true;
     deny.disabled = true;
     stop.disabled = true;
   };
+  const enableAll = () => {
+    approve.disabled = false;
+    approveAll.disabled = false;
+    deny.disabled = false;
+    stop.disabled = false;
+  };
 
-  const decide = (approved, approveForSession = false) => {
+  const decide = async (approved, approveForSession = false) => {
     disableAll();
-    onDecision?.(event.confirmationId, approved, approveForSession);
-    card.dataset.decision = approveForSession
-      ? 'approved-session'
-      : approved
-        ? 'approved'
-        : 'denied';
-    card.setAttribute(
-      'aria-label',
-      approveForSession
-        ? 'Page action approved for this session'
+    try {
+      const response = await onDecision?.(event.confirmationId, approved, approveForSession);
+      if (response?.success === false)
+        throw new Error(response.error || 'Decision was not accepted.');
+      card.dataset.decision = approveForSession
+        ? 'approved-session'
         : approved
-          ? 'Page action approved'
-          : 'Page action denied'
-    );
+          ? 'approved'
+          : 'denied';
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+      card.setAttribute(
+        'aria-label',
+        approveForSession
+          ? 'Page action approved for this session'
+          : approved
+            ? 'Page action approved'
+            : 'Page action denied'
+      );
+    } catch (error) {
+      enableAll();
+      showError(error.message || 'The decision could not be sent. Try again.');
+    }
   };
   approve.addEventListener('click', () => decide(true));
   approveAll.addEventListener('click', () => decide(true, true));
@@ -442,12 +529,18 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
     disableAll();
     card.dataset.decision = 'stopped';
     card.setAttribute('aria-label', 'Page action run stopped');
+    if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
     onStop?.();
   });
   controls.append(approve, approveAll, deny, stop);
   card.appendChild(controls);
   chatArea.appendChild(card);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  card._restorePageActionFocus = () => {
+    if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+  };
+  approve.focus();
+  const remaining = chatArea.scrollHeight - chatArea.scrollTop - (chatArea.clientHeight || 0);
+  if (!Number.isFinite(remaining) || remaining <= 40) chatArea.scrollTop = chatArea.scrollHeight;
   return card;
 }
 
@@ -476,6 +569,7 @@ export function resolvePageActionConfirmation(chatArea, event) {
         ? 'Page action approved'
         : 'Page action denied'
   );
+  card._restorePageActionFocus?.();
 }
 
 /**
@@ -484,11 +578,14 @@ export function resolvePageActionConfirmation(chatArea, event) {
  */
 export function cancelPageActionConfirmations(chatArea) {
   if (!chatArea) return;
-  chatArea.querySelectorAll('[data-page-action-confirmation]').forEach((card) => {
-    card.querySelectorAll('button').forEach((button) => {
-      button.disabled = true;
+  chatArea
+    .querySelectorAll('[data-page-action-confirmation], [data-page-manual-intervention]')
+    .forEach((card) => {
+      card.querySelectorAll('button').forEach((button) => {
+        button.disabled = true;
+      });
+      card.dataset.decision = 'cancelled';
+      card.setAttribute('aria-label', 'Page action confirmation cancelled');
+      card._restorePageActionFocus?.();
     });
-    card.dataset.decision = 'cancelled';
-    card.setAttribute('aria-label', 'Page action confirmation cancelled');
-  });
 }

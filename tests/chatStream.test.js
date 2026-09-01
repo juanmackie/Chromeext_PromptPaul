@@ -65,6 +65,30 @@ describe('StreamStateManager orchestrator event ordering', () => {
 });
 
 describe('ChatUI message placement', () => {
+  it('protects the active response from transcript trimming', () => {
+    const chatArea = {
+      children: [],
+      removeChild(node) {
+        this.children.splice(this.children.indexOf(node), 1);
+        node.parentNode = null;
+      },
+    };
+    const response = { parentNode: chatArea };
+    chatArea.children.push(response);
+    for (let index = 0; index < 100; index += 1) {
+      const trace = { parentNode: chatArea };
+      chatArea.children.push(trace);
+    }
+
+    const ui = new ChatUI();
+    ui.chatArea = chatArea;
+    ui.currentStreamingMessageDiv = response;
+    ui.trimExcessMessages();
+
+    expect(chatArea.children).toHaveLength(100);
+    expect(chatArea.children).toContain(response);
+  });
+
   it('moves the completed response after tool activity', () => {
     const chatArea = {
       children: [],

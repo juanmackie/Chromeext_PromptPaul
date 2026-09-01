@@ -169,6 +169,16 @@ function showConfirmModal(message, title = 'Confirm', confirmText = 'Confirm') {
   });
 }
 
+function setChromeStorage(storageArea, values) {
+  return new Promise((resolve, reject) => {
+    storageArea.set(values, () => {
+      const error = chrome.runtime?.lastError;
+      if (error) reject(new Error(error.message || 'Storage write failed.'));
+      else resolve();
+    });
+  });
+}
+
 /**
  * Displays a status message to the user.
  * @param {string} message - The message to display.
@@ -2115,12 +2125,15 @@ function setupInstructionHandlers() {
               inst.id === instructionId ? savedInstruction : inst
             )
           : [...existingInstructions, savedInstruction].slice(-MAX_IMPORTED_RECORDS);
-        showStatus(instructionId ? 'Instruction updated.' : 'Instruction added.');
-
-        chrome.storage.local.set({ instructions }, () => {
-          refreshInstructions();
-          resetInstructionForm();
-        });
+        setChromeStorage(chrome.storage.local, { instructions })
+          .then(() => {
+            showStatus(instructionId ? 'Instruction updated.' : 'Instruction added.');
+            refreshInstructions();
+            resetInstructionForm();
+          })
+          .catch((error) => {
+            showStatus(`Instruction could not be saved: ${error.message}`, true);
+          });
       });
     });
   }
@@ -3216,11 +3229,8 @@ function setupSkillHandlers() {
           existingCustomSkills.push(newSkill);
         }
 
-        await new Promise((resolve) => {
-          chrome.storage.local.set(
-            { customSkills: existingCustomSkills.slice(-MAX_IMPORTED_RECORDS) },
-            resolve
-          );
+        await setChromeStorage(chrome.storage.local, {
+          customSkills: existingCustomSkills.slice(-MAX_IMPORTED_RECORDS),
         });
 
         statusEl.innerHTML =
@@ -3348,14 +3358,10 @@ function setupBackupHandlers() {
           // Restore only validated, supported storage keys. Credentials are
           // intentionally removed by normalizeBackupPayload.
           if (Object.keys(normalizedBackup.value.local).length > 0) {
-            await new Promise((resolve) =>
-              chrome.storage.local.set(normalizedBackup.value.local, resolve)
-            );
+            await setChromeStorage(chrome.storage.local, normalizedBackup.value.local);
           }
           if (Object.keys(normalizedBackup.value.sync).length > 0) {
-            await new Promise((resolve) =>
-              chrome.storage.sync.set(normalizedBackup.value.sync, resolve)
-            );
+            await setChromeStorage(chrome.storage.sync, normalizedBackup.value.sync);
           }
 
           if (normalizedBackup.warnings?.length > 0) {

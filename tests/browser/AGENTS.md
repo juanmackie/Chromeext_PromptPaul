@@ -25,7 +25,7 @@
 
 - Keep browser tests headed by default because extension service workers are unavailable in legacy headless Chromium.
 - Use local fixtures instead of Gmail/Outlook accounts or private data.
-- Keep evaluation output limited to result, receipt disposition, postcondition evidence, failure code, action count, prompt size, and bounded scope metrics.
+- Keep evaluation output limited to result, receipt disposition, postcondition evidence, failure code, action count, prompt size, and bounded scope metrics. The evaluation matrix uses its measured 180-second test timeout so credential-free cases do not fail from the default per-test budget; cleanup remains bounded.
 - Keep the harness limited to test observability and existing runtime message contracts; do not add production capabilities for test convenience.
 - Set `PROMPT_PAUL_CAPTURE_DIAGNOSTICS=true` to enable the development trace for each browser test and write per-test service-worker records to `PROMPT_PAUL_DIAGNOSTICS_DIR` (default `artifacts/browser-diagnostics/`). Keep this mode local and review records before sharing them.
 

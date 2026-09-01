@@ -76,6 +76,9 @@ const BUDGET_WRAP_UP_PROMPT =
   'State any unfinished work or limitation clearly.';
 const REPETITION_ERROR =
   'The model returned repetitive output and the response was stopped. Retry the request.';
+const MAX_ACT_PLANNER_CONTINUATIONS = 3;
+const ACT_PLANNER_CONTINUATION_PROMPT =
+  'Continue the Act task. The planner still has unresolved sub-goals. Use the available page tools to complete or explicitly block each remaining goal; do not give a final answer until the planner has verified progress.';
 const PAGE_ACTION_TAB_FAILURE_CODES = new Set([
   'PAGE_ACTION_NO_CONTENT_SCRIPT',
   'PAGE_ACTION_MESSAGE_FAILED',
@@ -1353,11 +1356,7 @@ class RunOrchestrator {
 
   _recordPlannerActionResult(run, actionName, outcome) {
     const planner = run?.pageActions?.planner;
-    if (
-      !planner?.active ||
-      ['page_get_state', 'page_scroll', 'page_find_text', 'page_list_tabs'].includes(actionName)
-    )
-      return;
+    if (!planner?.active) return;
     const receipt = outcome?.result?.actionReceipt;
     if (!receipt || typeof receipt !== 'object') return;
     planner.pendingReceipt = {
@@ -4696,6 +4695,39 @@ class RunOrchestrator {
     }
   }
 
+  async _continueUnresolvedActPlanner(run) {
+    const planner = run?.pageActions?.planner;
+    const needsFinalVerification =
+      planner?.completedAt && run.pageActions?.finalVerificationCompleted !== true;
+    if (
+      !planner?.active ||
+      run.resilience.wrapUp ||
+      (!needsFinalVerification && hasReceiptConsistentProgress(planner)) ||
+      (!needsFinalVerification && planner.subGoals.every((goal) => goal.status === 'blocked'))
+    ) {
+      return false;
+    }
+    const attempts = Number(run.resilience.actPlannerContinuations || 0);
+    if (attempts >= MAX_ACT_PLANNER_CONTINUATIONS) return false;
+    run.resilience.actPlannerContinuations = attempts + 1;
+    if (run.accumulatedText.trim()) {
+      run.conversationHistory.push({ role: 'assistant', content: run.accumulatedText });
+    }
+    run.conversationHistory.push({
+      role: 'user',
+      content: needsFinalVerification
+        ? 'Perform one fresh page_get_state inspection for final verification, then provide the final answer.'
+        : ACT_PLANNER_CONTINUATION_PROMPT,
+    });
+    this._emitEvent(run.id, {
+      type: 'continuation_start',
+      reason: 'unresolved_act_planner',
+      message: 'Act task still has unresolved goals; continuing with planner guidance.',
+    });
+    await this.execute(run.id, { continueConversation: true }, true);
+    return true;
+  }
+
   /**
    * Finalize text response
    */
@@ -4705,6 +4737,18 @@ class RunOrchestrator {
     } catch (error) {
       this._terminateRun(run.id, { type: 'error', error: error.message }, { run });
       return;
+    }
+    if (await this._continueUnresolvedActPlanner(run)) return;
+    const planner = run?.pageActions?.planner;
+    if (
+      planner?.active &&
+      (!hasReceiptConsistentProgress(planner) ||
+        (planner.completedAt && run.pageActions.finalVerificationCompleted !== true)) &&
+      (run.resilience.wrapUp ||
+        Number(run.resilience.actPlannerContinuations || 0) >= MAX_ACT_PLANNER_CONTINUATIONS)
+    ) {
+      run.accumulatedText =
+        `${run.accumulatedText.trim()}\n\n⚠️ Act task incomplete: the planner could not verify every sub-goal.`.trim();
     }
     run.status = 'complete';
 
@@ -4804,6 +4848,11 @@ class RunOrchestrator {
       }
     }
     if (event.type === 'complete') safe.content = String(event.content || '').slice(0, 8_000);
+    if (event.type === 'error') safe.error = redactProviderErrorMessage(event.error, 240);
+    for (const key of ['title', 'origin', 'destination', 'reason']) {
+      if (typeof event[key] === 'string') safe[key] = event[key].slice(0, 240);
+    }
+    if (event.target?.label) safe.target = { label: String(event.target.label).slice(0, 160) };
     return safe;
   }
 

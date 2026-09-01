@@ -25,6 +25,7 @@ describe('ActPlanner', () => {
   it('activates only for long or clearly multi-step instructions', () => {
     expect(shouldActivatePlanner('Click the button')).toBe(false);
     expect(shouldActivatePlanner('Click the button, then enter the title')).toBe(true);
+    expect(shouldActivatePlanner('Open inbox, label invoices')).toBe(true);
     expect(shouldActivatePlanner('a'.repeat(101))).toBe(true);
   });
 
@@ -38,6 +39,7 @@ describe('ActPlanner', () => {
     expect(goals).toHaveLength(MAX_SUB_GOALS);
     expect(goals.every((goal) => goal.status === 'pending')).toBe(true);
     expect(goals.every((goal) => goal.description.length <= MAX_SUB_GOAL_CHARS)).toBe(true);
+    expect(goals.at(-1)).toMatchObject({ overflow: true, overflowCount: 5 });
   });
 
   it('splits prose into action clauses for long-horizon instructions', () => {
@@ -68,6 +70,24 @@ describe('ActPlanner', () => {
     });
     expect(planner.currentSubGoalIndex).toBe(1);
     expect(planner.subGoals[1].status).toBe('in_progress');
+  });
+
+  it('accepts matching read-only receipts but rejects mismatched evidence', () => {
+    const planner = createPlannerState('1. Find the invoice\n2. Review the result');
+    expect(
+      evaluateProgress(
+        planner,
+        { actionName: 'page_find_text', disposition: 'delivered_verified' },
+        'Found the invoice on the page'
+      ).advance
+    ).toBe(true);
+    expect(
+      evaluateProgress(
+        planner,
+        { actionName: 'page_click', disposition: 'delivered_verified' },
+        'Clicked an unrelated control'
+      ).advance
+    ).toBe(false);
   });
 
   it('blocks a repeatedly failing sub-goal and moves on', () => {
@@ -306,9 +326,18 @@ describe('RunOrchestrator ActPlanner integration', () => {
 
     orchestrator._recordPlannerActionResult(run, 'page_list_tabs', {
       success: true,
-      result: { tabs: [{ tabId: 7 }] },
+      result: {
+        tabs: [{ tabId: 7 }],
+        actionReceipt: {
+          disposition: 'delivered_verified',
+          evidence: { kind: 'tabs_listed' },
+        },
+      },
     });
-    expect(run.pageActions.planner.pendingReceipt).toBeUndefined();
+    expect(run.pageActions.planner.pendingReceipt).toMatchObject({
+      actionName: 'page_list_tabs',
+      disposition: 'delivered_verified',
+    });
 
     run.pageActions.planner.subGoals.forEach((goal) => {
       goal.status = 'blocked';
@@ -355,6 +384,29 @@ describe('RunOrchestrator ActPlanner integration', () => {
     expect(run.pageActions.finalVerificationCompleted).toBe(true);
     expect(await orchestrator._buildTools(run)).toEqual([]);
     expect(orchestrator._getEffectiveToolChoice(run)).toBe('none');
+  });
+
+  it('continues instead of silently completing unresolved planner goals', async () => {
+    const orchestrator = new RunOrchestrator(createSkillManager());
+    orchestrator._emitEvent = vi.fn();
+    const runId = await orchestrator.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
+    });
+    const run = orchestrator.getRun(runId);
+    run.accumulatedText = 'I started the task.';
+    orchestrator.execute = vi.fn(async () => {});
+
+    await orchestrator._finalizeTextResponse(run);
+
+    expect(orchestrator.execute).toHaveBeenCalledWith(runId, { continueConversation: true }, true);
+    expect(orchestrator._emitEvent).toHaveBeenCalledWith(
+      runId,
+      expect.objectContaining({ type: 'continuation_start' })
+    );
+    expect(run.conversationHistory.at(-1).content).toContain('unresolved sub-goals');
+    expect(run.status).not.toBe('complete');
   });
 
   it('rejects final verification without receipt-consistent progress', async () => {

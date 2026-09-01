@@ -42,7 +42,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - Media and document filenames are display metadata only. `ChatMedia.js` keeps generated analysis instructions static and sends document names through bounded `document` context metadata.
 - Composer surfaces (`#context-tray`, `#quick-actions-row`, `#page-context-strip`) are the single visible context surface near the composer; `ChatComposer.js` keeps their visibility synchronized with strip state and the run-state contract from `src/utils/runState.js`.
 - Inline recovery buttons (Stop/Retry/Edit/Continue) must route through the canonical run entry points (`stopApiRequest`, `runSelectedTextPrompt`, `makeApiCall`); Continue always builds on `previous_response` context, never on a stale sticky selection.
-- Run reconnect UI may show only bounded journal metadata. An active run may offer Watch run: the fresh panel adopts the background-issued opaque owner token, starts after the journal's last event sequence, and receives subsequent events and approval cards. An active run is never started again. If a session-only Act checkpoint exists, it may offer an explicit Resume action. Resume starts a fresh owned run, clears stale page state, and forces `page_get_state`; it must never resume page actions automatically after a side-panel or worker restart.
+- Run reconnect UI may show only bounded journal metadata. An active run may offer Watch run: the fresh panel adopts the background-issued opaque owner token, replays bounded activity and approval events, starts after the journal's last event sequence, and receives subsequent events and approval cards. Terminal journal content is restored once after a completed run. An active run is never started again. If a session-only Act checkpoint exists, it may offer an explicit Resume action. Resume starts a fresh owned run, clears stale page state, and forces `page_get_state`; it must never resume page actions automatically after a side-panel or worker restart.
 
 ## Work Guidance
 
@@ -53,6 +53,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - Preserve user-friendly error messages for runtime, permission, profile, and media failures.
 - Update root docs or skill examples when chat command behavior changes.
 - New prompt paths must return structured request objects; do not concatenate raw context strings.
+- Act activity cards are scoped by run ID and preserve a reader's scroll position unless the view is already near the bottom. Page-action approval and manual-intervention cards use modal semantics, move focus into the card, wait for runtime acknowledgement before settling, and expose retryable transport errors.
 - Loading a new page replaces the prior page-context history entry and loaded-content card; detaching page context removes its local history entry without clearing the rest of the conversation.
 
 ## Verification

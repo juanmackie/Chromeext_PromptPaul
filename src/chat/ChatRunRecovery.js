@@ -63,9 +63,17 @@ export async function loadActiveRunJournal() {
  * @param {Function} [onDismiss]
  * @param {Function} [onResume]
  * @param {Function} [onWatch]
+ * @param {Function} [onTerminal]
  * @returns {HTMLElement|null}
  */
-export function renderRunRecoveryNotice(chatArea, recovery, onDismiss, onResume, onWatch) {
+export function renderRunRecoveryNotice(
+  chatArea,
+  recovery,
+  onDismiss,
+  onResume,
+  onWatch,
+  onTerminal
+) {
   if (!chatArea || (!recovery?.journal && !recovery?.checkpoint)) return null;
   const existing = chatArea.querySelector('[data-run-recovery]');
   if (existing) return existing;
@@ -117,7 +125,10 @@ export function renderRunRecoveryNotice(chatArea, recovery, onDismiss, onResume,
       }
       return;
     }
-    if (journal?.terminal && !checkpoint) void clearActiveRun();
+    if (journal?.terminal && !checkpoint) {
+      void clearActiveRun();
+      onTerminal?.(recovery);
+    }
     onDismiss?.(card);
   });
   card.appendChild(dismiss);
@@ -155,11 +166,22 @@ export async function loadActRecovery() {
   return { ...(recovery || {}), checkpoint };
 }
 
-export async function restoreRunJournal(chatArea, onResume, onWatch) {
+export async function restoreRunJournal(chatArea, onResume, onWatch, onTerminal) {
   try {
     const recovery = await loadActRecovery();
     if (recovery) {
-      renderRunRecoveryNotice(chatArea, recovery, (card) => card.remove(), onResume, onWatch);
+      if (recovery.journal?.terminal && typeof onTerminal === 'function') {
+        onTerminal(recovery);
+      } else {
+        renderRunRecoveryNotice(
+          chatArea,
+          recovery,
+          (card) => card.remove(),
+          onResume,
+          onWatch,
+          onTerminal
+        );
+      }
     }
   } catch (error) {
     console.warn('Chat: run journal recovery failed:', error.message);

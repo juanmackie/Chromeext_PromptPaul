@@ -155,9 +155,8 @@ class ChatUI {
    * @returns {boolean} Whether the message was moved.
    */
   moveMessageToEnd(messageDiv) {
-    if (!this.chatArea || !messageDiv || messageDiv.parentNode !== this.chatArea) {
-      return false;
-    }
+    if (!this.chatArea || !messageDiv) return false;
+    if (messageDiv.parentNode && messageDiv.parentNode !== this.chatArea) return false;
 
     this.chatArea.appendChild(messageDiv);
     this.chatArea.scrollTop = this.chatArea.scrollHeight;
@@ -484,11 +483,14 @@ class ChatUI {
    * Trim oldest message elements from the DOM when count exceeds MAX_VISIBLE.
    * Does NOT affect streamState conversation history (only DOM nodes).
    */
-  trimExcessMessages() {
+  trimExcessMessages(protectedMessage = this.currentStreamingMessageDiv) {
     if (!this.chatArea) return;
     while (this.chatArea.children.length > ChatUI.MAX_VISIBLE) {
-      const first = this.chatArea.firstChild;
-      if (first) this.chatArea.removeChild(first);
+      const firstRemovable = Array.from(this.chatArea.children).find(
+        (child) => child !== protectedMessage
+      );
+      if (!firstRemovable) break;
+      this.chatArea.removeChild(firstRemovable);
     }
   }
 

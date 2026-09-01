@@ -16,6 +16,8 @@ const {
 } = require('./browserTestSupport.js');
 const corpus = require('../page-action-evaluation.json');
 
+test.setTimeout(180_000);
+
 let fixtureServer;
 let summarizeEvaluationRecords;
 

@@ -10,6 +10,8 @@
 
 ## [Unreleased]
 
+## [6.2.1] - 2026-08-31
+
 ### Prompt Paul UX Refinement
 
 - Act now keeps `_blank` link navigation in the current target tab by default. Separate owned tabs remain available only when explicitly requested for multi-page research or retained references.

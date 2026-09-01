@@ -44,7 +44,7 @@ const MULTI_STEP_SIGNALS = [
 ];
 
 const ACTION_VERB_PATTERN =
-  /(?:open|go|visit|search|find|read|review|compare|check|download|create|move|save|send|fill|select|enter|click|submit|add|remove|update|copy|collect|record)\b/i;
+  /(?:open|go|visit|search|find|read|review|compare|check|download|create|move|save|send|fill|select|enter|click|submit|add|remove|update|copy|collect|record|label|archive)\b/i;
 
 /**
  * Split prose into bounded action-oriented clauses for the initial plan.
@@ -80,7 +80,10 @@ export function shouldActivatePlanner(instruction) {
   if (typeof instruction !== 'string') return false;
   const trimmed = instruction.trim();
   if (trimmed.length > PLANNER_INSTRUCTION_MIN_LENGTH) return true;
-  return MULTI_STEP_SIGNALS.some((pattern) => pattern.test(trimmed));
+  return (
+    MULTI_STEP_SIGNALS.some((pattern) => pattern.test(trimmed)) ||
+    splitInstructionIntoClauses(trimmed).length > 1
+  );
 }
 
 /**
@@ -97,10 +100,7 @@ export function generateSubGoals(instruction) {
   const numberedPattern = /(?:^|\n)\s*(?:\d+[.)-]|[-•])\s*(.+?)(?=\n\s*(?:\d+[.)-]|[-•])|$)/gi;
   const extracted = [];
   let match;
-  while (
-    (match = numberedPattern.exec(boundedInstruction)) !== null &&
-    extracted.length < MAX_SUB_GOALS
-  ) {
+  while ((match = numberedPattern.exec(boundedInstruction)) !== null) {
     const text = capPageText(match[1].trim(), MAX_SUB_GOAL_CHARS);
     if (text.length > 5) extracted.push({ description: text, status: 'pending' });
   }
@@ -109,7 +109,6 @@ export function generateSubGoals(instruction) {
   if (extracted.length === 0) {
     const clauses = splitInstructionIntoClauses(boundedInstruction);
     for (const clause of clauses) {
-      if (extracted.length >= MAX_SUB_GOALS) break;
       extracted.push({
         description: capPageText(clause, MAX_SUB_GOAL_CHARS),
         status: 'pending',
@@ -122,6 +121,22 @@ export function generateSubGoals(instruction) {
     extracted.push({
       description: capPageText(boundedInstruction, MAX_SUB_GOAL_CHARS),
       status: 'pending',
+    });
+  }
+
+  if (extracted.length > MAX_SUB_GOALS) {
+    const overflow = extracted.slice(MAX_SUB_GOALS - 1);
+    extracted.length = MAX_SUB_GOALS - 1;
+    extracted.push({
+      description: capPageText(
+        `Complete remaining requested items (${overflow.length}): ${overflow
+          .map((goal) => goal.description)
+          .join('; ')}`,
+        MAX_SUB_GOAL_CHARS
+      ),
+      status: 'pending',
+      overflow: true,
+      overflowCount: overflow.length,
     });
   }
 
@@ -253,6 +268,18 @@ export function replan(planner, newInstruction) {
   // Preserve already-completed/blocked sub-goals, replace pending ones
   const preserved = planner.subGoals.filter((g) => g.status === 'done' || g.status === 'blocked');
   const replacement = newSubGoals.slice(0, MAX_SUB_GOALS - preserved.length);
+  if (newSubGoals.length > replacement.length && replacement.length > 0) {
+    const last = replacement[replacement.length - 1];
+    const overflow = newSubGoals.slice(replacement.length);
+    last.description = capPageText(
+      `Complete remaining replanned items (${overflow.length}): ${overflow
+        .map((goal) => goal.description)
+        .join('; ')}`,
+      MAX_SUB_GOAL_CHARS
+    );
+    last.overflow = true;
+    last.overflowCount = overflow.length + Number(last.overflowCount || 0);
+  }
 
   planner.subGoals = [...preserved, ...replacement];
   planner.currentSubGoalIndex = planner.subGoals.findIndex((g) => g.status === 'pending');
@@ -292,6 +319,40 @@ export function hasReceiptConsistentProgress(planner) {
   });
 }
 
+export function receiptMatchesCurrentGoal(planner, actionResult, note = '') {
+  const goal = planner?.subGoals?.[planner?.currentSubGoalIndex]?.description;
+  const actionName = String(actionResult?.actionName || '').toLowerCase();
+  if (!goal || !actionName) return true;
+  const text = `${goal} ${note}`.toLowerCase();
+  const actionTerms = {
+    page_get_state: ['inspect', 'review', 'check', 'read', 'verify', 'state'],
+    page_find_text: ['find', 'search', 'locate', 'match'],
+    page_scroll: ['scroll', 'read', 'view'],
+    page_open_link: ['open', 'go', 'visit', 'navigate'],
+    page_click: [
+      'click',
+      'open',
+      'select',
+      'submit',
+      'send',
+      'save',
+      'create',
+      'update',
+      'delete',
+      'remove',
+      'archive',
+      'label',
+    ],
+    page_input: ['type', 'enter', 'fill', 'write'],
+    page_select: ['select', 'choose', 'pick'],
+    page_list_tabs: ['tab', 'window'],
+    page_open_tab: ['open', 'tab', 'page', 'window'],
+    page_switch_tab: ['switch', 'tab', 'page', 'window'],
+    page_close_tab: ['close', 'tab', 'page', 'window'],
+  }[actionName];
+  return !actionTerms || actionTerms.some((term) => text.includes(term));
+}
+
 export function evaluateProgress(planner, actionResult, note) {
   if (!planner?.active) {
     return { advance: false, replan: false, blocked: false, allDone: true };
@@ -299,8 +360,15 @@ export function evaluateProgress(planner, actionResult, note) {
 
   const disposition = actionResult?.disposition || actionResult?.result?.disposition;
 
-  // A verified delivery with a meaningful note suggests sub-goal completion
-  if (disposition === 'delivered_verified' && note && note.length > 10) {
+  // A verified delivery with a meaningful note suggests sub-goal completion.
+  // Read-only receipts are valid evidence too, but only when the action/note
+  // plausibly addresses the current goal.
+  if (
+    disposition === 'delivered_verified' &&
+    note &&
+    note.length > 10 &&
+    receiptMatchesCurrentGoal(planner, actionResult, note)
+  ) {
     const result = advanceSubGoal(planner, note, actionResult);
     return { advance: result.advanced, replan: false, blocked: false, allDone: result.allDone };
   }

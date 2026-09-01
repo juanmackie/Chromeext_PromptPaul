@@ -60,6 +60,12 @@ describe('ChatPageAutomation Act permission', () => {
     expect(requestedStorage).not.toContainEqual(expect.objectContaining({ area: 'local' }));
   });
 
+  it('reports Act storage failures instead of claiming success', async () => {
+    global.chrome.runtime = { lastError: { message: 'quota exceeded' } };
+
+    await expect(setPageActionsEnabled(true)).rejects.toThrow('quota exceeded');
+  });
+
   it('consumes Act after one run so the next run starts disabled', async () => {
     await setPageActionsEnabled(true);
 
