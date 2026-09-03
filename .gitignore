@@ -46,6 +46,7 @@ Prompt-Paul-*.zip
 # Ignore build output
 dist/
 dist-dev/
+dist-eval/
 
 # Ignore IDE project files
 .idea/

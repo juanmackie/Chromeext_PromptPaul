@@ -31,7 +31,7 @@ describe('ActPlanner', () => {
 
   it('decomposes numbered instructions into bounded sub-goals', () => {
     const instruction = Array.from(
-      { length: 12 },
+      { length: 17 },
       (_, index) => `${index + 1}. Do task ${index + 1}`
     ).join('\n');
     const goals = generateSubGoals(instruction);
@@ -39,7 +39,7 @@ describe('ActPlanner', () => {
     expect(goals).toHaveLength(MAX_SUB_GOALS);
     expect(goals.every((goal) => goal.status === 'pending')).toBe(true);
     expect(goals.every((goal) => goal.description.length <= MAX_SUB_GOAL_CHARS)).toBe(true);
-    expect(goals.at(-1)).toMatchObject({ overflow: true, overflowCount: 5 });
+    expect(goals.at(-1)).toMatchObject({ overflow: true, overflowCount: 6 });
   });
 
   it('splits prose into action clauses for long-horizon instructions', () => {
@@ -145,11 +145,11 @@ describe('ActPlanner', () => {
     const prompt = buildPlannerPromptBlock(
       planner,
       { observation: 2, navigation: 1, mutation: 3 },
-      { observation: 192, navigation: 72, mutation: 48 }
+      { observation: 256, navigation: 96, mutation: 64 }
     );
 
     expect(prompt).toContain('CURRENT SUB-GOAL (1/2)');
-    expect(prompt).toContain('Budget remaining: obs=190, nav=71, mut=45');
+    expect(prompt).toContain('Budget remaining: obs=254, nav=95, mut=61');
     expect(prompt.length).toBeLessThan(2000);
 
     planner.subGoals[0].status = 'done';

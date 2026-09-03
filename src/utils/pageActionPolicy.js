@@ -3,7 +3,12 @@
  * @module pageActionPolicy
  */
 
-import { PAGE_DOM_CAPS, capPageText, isSensitivePageElement } from './pageDom.js';
+import {
+  PAGE_DOM_CAPS,
+  capPageText,
+  isSensitivePageElement,
+  normalizeRegionId,
+} from './pageDom.js';
 
 export const PAGE_ACTION_NAMES = Object.freeze([
   'page_get_state',
@@ -83,7 +88,13 @@ export function normalizePageActionArgs(actionName, args = {}) {
     return { valid: false, error: 'Page action arguments must be an object.' };
   }
 
-  if (actionName === 'page_get_state') return { valid: true, value: {} };
+  if (actionName === 'page_get_state') {
+    if (args.regionId == null) return { valid: true, value: {} };
+    const regionId = normalizeRegionId(args.regionId);
+    if (!regionId)
+      return { valid: false, error: 'Region must be a content-script region-N identifier.' };
+    return { valid: true, value: { regionId } };
+  }
   if (actionName === 'page_wait') {
     const condition = String(args.condition || '')
       .trim()
@@ -102,6 +113,15 @@ export function normalizePageActionArgs(actionName, args = {}) {
     if (condition !== 'url_changed' && !text) {
       return { valid: false, error: 'Wait text cannot be empty for this condition.' };
     }
+    if (args.regionId != null) {
+      const regionId = normalizeRegionId(args.regionId);
+      if (!regionId)
+        return { valid: false, error: 'Region must be a content-script region-N identifier.' };
+      return {
+        valid: true,
+        value: { condition, timeoutMs, ...(text ? { text } : {}), regionId },
+      };
+    }
     return {
       valid: true,
       value: { condition, timeoutMs, ...(text ? { text } : {}) },
@@ -109,7 +129,7 @@ export function normalizePageActionArgs(actionName, args = {}) {
   }
   if (actionName === 'page_batch') {
     if (!Array.isArray(args.actions) || args.actions.length < 2) {
-      return { valid: false, error: 'A page batch must contain 2 to 4 read-only actions.' };
+      return { valid: false, error: 'A page batch must contain 2 to 6 read-only actions.' };
     }
     if (args.actions.length > PAGE_DOM_CAPS.maxBatchActions) {
       return {
@@ -134,9 +154,12 @@ export function normalizePageActionArgs(actionName, args = {}) {
   }
   if (actionName === 'page_find_text') {
     const query = capPageText(args.query, PAGE_DOM_CAPS.maxFindQueryChars);
-    return query
-      ? { valid: true, value: { query } }
-      : { valid: false, error: 'Search text cannot be empty.' };
+    if (!query) return { valid: false, error: 'Search text cannot be empty.' };
+    if (args.regionId == null) return { valid: true, value: { query } };
+    const regionId = normalizeRegionId(args.regionId);
+    if (!regionId)
+      return { valid: false, error: 'Region must be a content-script region-N identifier.' };
+    return { valid: true, value: { query, regionId } };
   }
   if (actionName === 'page_scroll') {
     const direction = String(args.direction || (args.down === false ? 'up' : 'down')).toLowerCase();

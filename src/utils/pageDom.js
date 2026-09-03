@@ -4,22 +4,36 @@
  */
 
 export const PAGE_DOM_CAPS = Object.freeze({
-  maxElements: 120,
-  maxSnapshotChars: 16_000,
-  maxReadableContentChars: 8_000,
-  maxElementTextChars: 240,
+  maxElements: 200,
+  maxSnapshotChars: 32_000,
+  maxReadableContentChars: 16_000,
+  maxElementTextChars: 320,
   maxAttributeChars: 120,
   maxInputChars: 2_000,
   maxFindQueryChars: 160,
   maxWaitMs: 10_000,
-  maxBatchActions: 4,
+  maxBatchActions: 6,
   maxScrollPages: 5,
   maxUrlChars: 2_048,
   // Total serialized snapshot budget (content + elements array). A control set
   // can otherwise reach 200 records with many 120-character fields, far beyond
   // the content-only cap.
-  maxPayloadBytes: 64 * 1024,
+  maxPayloadBytes: 128 * 1024,
 });
+
+export const PAGE_REGION_ID_PATTERN = /^region-\d+$/;
+
+/**
+ * Normalize a content-script-produced indexed region identifier.
+ * Only region-N values are accepted; selectors and free text are rejected.
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+export function normalizeRegionId(value) {
+  const text = String(value ?? '').trim();
+  if (!PAGE_REGION_ID_PATTERN.test(text)) return null;
+  return text.slice(0, 32);
+}
 
 const SENSITIVE_INPUT_PATTERN =
   /password|passcode|one[-_ ]?time|otp|2fa|secret|token|api[-_ ]?key|credit|card|cvv|cvc|ssn|social security/i;
@@ -255,6 +269,33 @@ export function normalizePageSnapshot(input = {}) {
   const buildContent = (list) => capSnapshotText(list.map(formatPageElement).join('\n'), maxChars);
   let content = buildContent(elements);
 
+  const regions = Array.isArray(input.regions)
+    ? input.regions
+        .slice(0, 12)
+        .map((region, regionPosition) => ({
+          id: capPageText(region?.id || `region-${regionPosition}`, 32),
+          indices: Array.isArray(region?.indices)
+            ? region.indices
+                .map((value) => Math.max(0, Math.floor(Number(value) || 0)))
+                .filter((value) => Number.isInteger(value) && value < PAGE_DOM_CAPS.maxElements)
+                .slice(0, 32)
+            : [],
+          elementCount: Math.max(0, Math.floor(Number(region?.elementCount) || 0)),
+        }))
+        .filter((region) => region.indices.length > 0)
+    : undefined;
+  const visualBoxes = Array.isArray(input.visualBoxes)
+    ? input.visualBoxes
+        .slice(0, 60)
+        .map((box) => ({
+          index: Math.max(0, Math.floor(Number(box?.index) || 0)),
+          x: Math.max(0, Math.floor(Number(box?.x) || 0)),
+          y: Math.max(0, Math.floor(Number(box?.y) || 0)),
+          width: Math.max(0, Math.floor(Number(box?.width) || 0)),
+          height: Math.max(0, Math.floor(Number(box?.height) || 0)),
+        }))
+        .filter((box) => box.width > 0 && box.height > 0)
+    : undefined;
   const payloadBase = {
     snapshotId: capPageText(input.snapshotId || '', 128),
     url: sanitizePageActionUrl(input.url),
@@ -263,6 +304,12 @@ export function normalizePageSnapshot(input = {}) {
     footer: capPageText(input.footer, 1_000),
     readableContent: capSnapshotText(input.readableContent, PAGE_DOM_CAPS.maxReadableContentChars),
     fingerprint: capPageText(input.fingerprint || '', 128),
+    regions,
+    regionId:
+      typeof input.regionId === 'string' && PAGE_REGION_ID_PATTERN.test(input.regionId)
+        ? input.regionId
+        : undefined,
+    visualBoxes,
     scroll: input.scroll && typeof input.scroll === 'object' ? input.scroll : undefined,
     scrollContainers: Array.isArray(input.scrollContainers)
       ? input.scrollContainers.slice(0, 16)
@@ -296,6 +343,8 @@ export function isCurrentSnapshot(expected, current) {
 
 export const pageDom = {
   PAGE_DOM_CAPS,
+  PAGE_REGION_ID_PATTERN,
+  normalizeRegionId,
   capPageText,
   isSensitivePageElement,
   normalizePageElement,

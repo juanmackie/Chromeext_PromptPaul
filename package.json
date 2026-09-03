@@ -21,6 +21,7 @@
     "test:browser": "playwright test tests/browser",
     "build": "node scripts/build.js",
     "build:dev": "node scripts/build.js --dev",
+    "build:eval": "node scripts/build.js --eval",
     "build:prod": "node scripts/build.js --prod",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

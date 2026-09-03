@@ -307,6 +307,7 @@ test.describe('page-agent-style page actions', () => {
       expect(batched.results).toHaveLength(2);
       expect(batched.results[0]).toMatchObject({ found: true });
       expect(batched.results[0].snapshot).toBeUndefined();
+      expect(batched.results[1].screenshot).toBeUndefined();
 
       await target.evaluate(() => window.replaceDynamicTarget());
       const rebound = await harness.evaluate(

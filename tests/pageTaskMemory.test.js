@@ -24,7 +24,7 @@ describe('PageTaskMemory', () => {
     for (let index = 0; index < 60; index += 1) {
       recordPageTaskNote(run, `${index} ${'x'.repeat(900)}`, 7);
     }
-    expect(run.pageActions.notes).toHaveLength(48);
+    expect(run.pageActions.notes).toHaveLength(60);
     expect(run.pageActions.notes.at(-1).text.length).toBeLessThanOrEqual(800);
     expect(buildPageTaskMemoryPrompt(run.pageActions.notes)).toContain('TASK MEMORY');
   });
@@ -55,12 +55,12 @@ describe('PageTaskMemory', () => {
   });
 
   it('minimizes oversized historical messages before provider calls', () => {
-    const messages = Array.from({ length: 30 }, (_, index) => ({
+    const messages = Array.from({ length: 40 }, (_, index) => ({
       role: index % 2 === 0 ? 'user' : 'assistant',
       content: `${index} ${'x'.repeat(12_000)}`,
     }));
     const compacted = compactPageTaskHistory(messages);
-    expect(JSON.stringify(compacted).length).toBeLessThan(240_000);
+    expect(JSON.stringify(compacted).length).toBeLessThan(360_000);
     expect(compacted[0].content).toContain('Older task context omitted');
   });
 });

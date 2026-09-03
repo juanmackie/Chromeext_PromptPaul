@@ -1224,24 +1224,28 @@
   // The page-action controller is deliberately kept in this classic content
   // script. Manifest content scripts do not provide a reliable module-loader
   // contract, and keeping one page runtime avoids competing DOM indexes.
-  const PAGE_ACTION_MAX_ELEMENTS = 120;
-  const PAGE_ACTION_MAX_SNAPSHOT_CHARS = 16000;
-  const PAGE_ACTION_MAX_READABLE_CONTENT_CHARS = 8000;
-  const PAGE_ACTION_MAX_TEXT_CHARS = 240;
+  const PAGE_ACTION_MAX_ELEMENTS = 200;
+  const PAGE_ACTION_MAX_SNAPSHOT_CHARS = 32000;
+  const PAGE_ACTION_MAX_READABLE_CONTENT_CHARS = 16000;
+  const PAGE_ACTION_MAX_TEXT_CHARS = 320;
   const PAGE_ACTION_MAX_ATTRIBUTE_CHARS = 120;
   const PAGE_ACTION_MAX_INPUT_CHARS = 2000;
   const PAGE_ACTION_MAX_FIND_QUERY_CHARS = 160;
   const PAGE_ACTION_MAX_FIND_RESULTS = 8;
   const PAGE_ACTION_MAX_FIND_SNIPPET_CHARS = 280;
   const PAGE_ACTION_MAX_WAIT_MS = 10_000;
-  const PAGE_ACTION_MAX_BATCH_ACTIONS = 4;
+  const PAGE_ACTION_MAX_BATCH_ACTIONS = 6;
+  const PAGE_ACTION_REGION_SIZE = 32;
+  const PAGE_ACTION_MAX_REGIONS = 12;
+  const PAGE_ACTION_OVERLAY_MAX_BADGES = 60;
+  const PAGE_ACTION_MAX_SCREENSHOT_CHARS = 750_000;
   // The orchestrator applies separate observation/navigation/mutation budgets.
-  // This per-document cap matches their combined ceilings (192 observations +
-  // 72 navigations + 48 mutations) and resets with each document/session.
-  const PAGE_ACTION_MAX_ACTIONS = 312;
+  // This per-document cap matches their combined ceilings (256 observations +
+  // 96 navigations + 64 mutations) and resets with each document/session.
+  const PAGE_ACTION_MAX_ACTIONS = 416;
   // Total serialized snapshot budget (content + elements array); matches
   // PAGE_DOM_CAPS.maxPayloadBytes in src/utils/pageDom.js.
-  const PAGE_ACTION_MAX_PAYLOAD_BYTES = 64 * 1024;
+  const PAGE_ACTION_MAX_PAYLOAD_BYTES = 128 * 1024;
   const PAGE_ACTION_MAX_URL_CHARS = 2048;
   const PAGE_ACTION_VIEWPORT_MARGIN = 400;
   const PAGE_ACTION_SETTLE_QUIET_MS = 100;
@@ -1440,7 +1444,13 @@
     ].join('\u001f');
   }
 
-  function findPageActionText(session, query) {
+  function findPageActionText(session, query, options = {}) {
+    const regionIndex = options.regionId ? parsePageActionRegionId(options.regionId) : -1;
+    if (options.regionId && regionIndex < 0) {
+      const error = new Error('Region must be a content-script region-N identifier.');
+      error.code = 'PAGE_ACTION_INVALID';
+      throw error;
+    }
     const boundedQuery = capPageActionText(query, PAGE_ACTION_MAX_FIND_QUERY_CHARS);
     const normalizedQuery = boundedQuery.toLocaleLowerCase();
     if (!normalizedQuery) {
@@ -1465,9 +1475,18 @@
       offset = matchIndex + Math.max(1, normalizedQuery.length);
     }
     const elementIndices = session.records
-      .filter((record) =>
-        `${record.label || ''} ${record.text || ''}`.toLocaleLowerCase().includes(normalizedQuery)
-      )
+      .filter((record) => {
+        if (
+          regionIndex >= 0 &&
+          (Number(record?.index) < regionIndex * PAGE_ACTION_REGION_SIZE ||
+            Number(record?.index) >= (regionIndex + 1) * PAGE_ACTION_REGION_SIZE)
+        ) {
+          return false;
+        }
+        return `${record.label || ''} ${record.text || ''}`
+          .toLocaleLowerCase()
+          .includes(normalizedQuery);
+      })
       .map((record) => record.index)
       .slice(0, PAGE_ACTION_MAX_FIND_RESULTS);
     const found = matches.length > 0;
@@ -1634,9 +1653,170 @@
     return records;
   }
 
-  function createPageActionSnapshot(session) {
+  function parsePageActionRegionId(regionId) {
+    const match = /^region-(\d+)$/.exec(String(regionId || '').trim());
+    if (!match) return -1;
+    const regionIndex = Number(match[1]);
+    if (!Number.isInteger(regionIndex) || regionIndex < 0 || regionIndex >= PAGE_ACTION_MAX_REGIONS)
+      return -1;
+    return regionIndex;
+  }
+
+  function buildPageActionRegions(records) {
+    const regions = [];
+    const total = Math.min(records.length, PAGE_ACTION_MAX_REGIONS * PAGE_ACTION_REGION_SIZE);
+    for (let regionIndex = 0; regionIndex < PAGE_ACTION_MAX_REGIONS; regionIndex += 1) {
+      const start = regionIndex * PAGE_ACTION_REGION_SIZE;
+      if (start >= total) break;
+      const indices = [];
+      for (
+        let index = start;
+        index < Math.min(start + PAGE_ACTION_REGION_SIZE, total);
+        index += 1
+      ) {
+        indices.push(records[index]?.index ?? index);
+      }
+      if (indices.length > 0) {
+        regions.push({ id: `region-${regionIndex}`, indices, elementCount: indices.length });
+      }
+    }
+    return regions;
+  }
+
+  function filterRecordsByRegion(records, regionId) {
+    const regionIndex = parsePageActionRegionId(regionId);
+    if (regionIndex < 0) return records;
+    const start = regionIndex * PAGE_ACTION_REGION_SIZE;
+    return records.filter(
+      (record) =>
+        Number(record?.index) >= start && Number(record?.index) < start + PAGE_ACTION_REGION_SIZE
+    );
+  }
+
+  function refreshPageActionIndexOverlay(records) {
+    try {
+      let container = document.getElementById('prompt-paul-act-index-overlay');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'prompt-paul-act-index-overlay';
+        container.dataset.pageAgentIgnore = 'true';
+        container.setAttribute('aria-hidden', 'true');
+        container.style.cssText = [
+          'position: fixed',
+          'inset: 0',
+          'pointer-events: none',
+          'z-index: 2147483645',
+        ].join(';');
+        document.documentElement.appendChild(container);
+      }
+      container.textContent = '';
+      const fragment = document.createDocumentFragment();
+      let placed = 0;
+      for (const record of records) {
+        if (placed >= PAGE_ACTION_OVERLAY_MAX_BADGES) break;
+        const element = record?.ref;
+        if (!element || !element.isConnected) continue;
+        let rect = null;
+        try {
+          rect = element.getBoundingClientRect();
+        } catch (_) {
+          continue;
+        }
+        if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+        if (rect.bottom < 0 || rect.top > (window.innerHeight || 0)) continue;
+        if (rect.right < 0 || rect.left > (window.innerWidth || 0)) continue;
+        const badge = document.createElement('div');
+        badge.textContent = String(record.index);
+        badge.style.cssText = [
+          'position: fixed',
+          `left: ${Math.max(0, Math.round(rect.left))}px`,
+          `top: ${Math.max(0, Math.round(rect.top))}px`,
+          'min-width: 18px',
+          'height: 18px',
+          'padding: 0 4px',
+          'background: #000000',
+          'color: #ffffff',
+          'font: 700 12px/18px system-ui, sans-serif',
+          'text-align: center',
+          'border-radius: 4px',
+          'box-sizing: border-box',
+          'pointer-events: none',
+        ].join(';');
+        fragment.appendChild(badge);
+        placed += 1;
+      }
+      container.appendChild(fragment);
+    } catch (_) {
+      // Overlay badges must never break page actions.
+    }
+  }
+
+  function clearPageActionIndexOverlay() {
+    try {
+      document.getElementById('prompt-paul-act-index-overlay')?.remove();
+    } catch (_) {
+      // Overlay cleanup is best effort.
+    }
+  }
+
+  async function capturePageActionScreenshot() {
+    if (typeof chrome === 'undefined' || !chrome.runtime) return null;
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'captureScreenshot' });
+      const dataUrl = String(response?.dataUrl || '');
+      if (
+        dataUrl.length > PAGE_ACTION_MAX_SCREENSHOT_CHARS ||
+        (!dataUrl.startsWith('data:image/png;base64,') &&
+          !dataUrl.startsWith('data:image/jpeg;base64,'))
+      ) {
+        return null;
+      }
+      return dataUrl || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function collectPageActionVisualBoxes(records) {
+    const boxes = [];
+    for (const record of records) {
+      if (boxes.length >= PAGE_ACTION_OVERLAY_MAX_BADGES) break;
+      const element = record?.ref;
+      if (!element || !element.isConnected) continue;
+      let rect = null;
+      try {
+        rect = element.getBoundingClientRect();
+      } catch (_) {
+        continue;
+      }
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      boxes.push({
+        index: Number(record.index),
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      });
+    }
+    return boxes;
+  }
+
+  function createPageActionSnapshot(session, options = {}) {
     const startedAt = performance.now();
     const records = collectPageActionElements();
+    const regions = buildPageActionRegions(records);
+    const regionId = typeof options.regionId === 'string' ? options.regionId : '';
+    const regionIndex = regionId ? parsePageActionRegionId(regionId) : -1;
+    const scopedRecords = regionId
+      ? regionIndex >= 0
+        ? filterRecordsByRegion(records, regionId)
+        : []
+      : records;
+    if (regionId && regionIndex < 0) {
+      const error = new Error('Region must be a content-script region-N identifier.');
+      error.code = 'PAGE_ACTION_INVALID';
+      throw error;
+    }
     const snapshotId = `page-${Date.now().toString(36)}-${(++pageActionSnapshotCounter).toString(36)}`;
     const scrollHeight = Math.max(
       document.documentElement.scrollHeight,
@@ -1692,7 +1872,7 @@
       records.map((record) => record.fingerprint).join('\\n'),
     ].join('\\u001e');
     const fingerprint = pageStateHash(fingerprintSource);
-    let boundedRecords = records;
+    let boundedRecords = scopedRecords;
     let content = '';
     let elements = [];
     for (;;) {
@@ -1717,6 +1897,9 @@
         readableContent,
         elements,
         fingerprint,
+        regions,
+        regionId: regionId || undefined,
+        visualBoxes: collectPageActionVisualBoxes(boundedRecords),
         scroll: {
           x: Math.max(0, Math.round(window.scrollX || 0)),
           y: Math.max(0, Math.round(window.scrollY || 0)),
@@ -1733,10 +1916,11 @@
     }
 
     session.snapshotId = snapshotId;
-    session.records = boundedRecords;
-    session.fingerprints = new Set(boundedRecords.map((record) => record.fingerprint));
+    session.records = records;
+    session.fingerprints = new Set(records.map((record) => record.fingerprint));
     session.fingerprint = fingerprint;
     session.createdAt = Date.now();
+    refreshPageActionIndexOverlay(records);
     return {
       snapshotId,
       url,
@@ -1747,6 +1931,9 @@
       readableContent,
       elements,
       fingerprint,
+      regions,
+      regionId: regionId || undefined,
+      visualBoxes: collectPageActionVisualBoxes(boundedRecords),
       scroll: {
         x: Math.max(0, Math.round(window.scrollX || 0)),
         y: Math.max(0, Math.round(window.scrollY || 0)),
@@ -1874,6 +2061,12 @@
   function waitForPageActionCondition(session, args = {}) {
     const condition = String(args.condition || '').toLowerCase();
     const text = capPageActionText(args.text, PAGE_ACTION_MAX_FIND_QUERY_CHARS).toLocaleLowerCase();
+    const regionIndex = args.regionId ? parsePageActionRegionId(args.regionId) : -1;
+    if (args.regionId && regionIndex < 0) {
+      const error = new Error('Region must be a content-script region-N identifier.');
+      error.code = 'PAGE_ACTION_INVALID';
+      throw error;
+    }
     if (!['text', 'text_gone', 'url_changed'].includes(condition)) {
       const error = new Error('Wait condition must be text, text_gone, or url_changed.');
       error.code = 'PAGE_ACTION_INVALID';
@@ -1894,7 +2087,18 @@
       if (condition === 'url_changed') {
         return sanitizePageActionUrl(window.location.href) !== initialUrl;
       }
-      const present = buildPageActionReadableContent().toLocaleLowerCase().includes(text);
+      const source =
+        regionIndex >= 0
+          ? session.records
+              .filter(
+                (record) =>
+                  Number(record?.index) >= regionIndex * PAGE_ACTION_REGION_SIZE &&
+                  Number(record?.index) < (regionIndex + 1) * PAGE_ACTION_REGION_SIZE
+              )
+              .map((record) => `${record.label || ''} ${record.text || ''}`)
+              .join(' ')
+          : buildPageActionReadableContent();
+      const present = source.toLocaleLowerCase().includes(text);
       return condition === 'text_gone' ? !present : present;
     };
     return new Promise((resolve) => {
@@ -1981,7 +2185,7 @@
             )
         )
       ) {
-        const error = new Error('A page batch must contain 2 to 4 read-only actions.');
+        const error = new Error('A page batch must contain 2 to 6 read-only actions.');
         error.code = 'PAGE_ACTION_INVALID';
         throw error;
       }
@@ -1993,6 +2197,7 @@
       session.actions += entries.length;
       const results = [];
       let latestSnapshot = null;
+      let latestScreenshot = null;
       for (let index = 0; index < entries.length; index += 1) {
         try {
           const result = await executePageAction(
@@ -2003,19 +2208,29 @@
             latestSnapshot = result.snapshot;
             delete result.snapshot;
           }
+          if (result?.screenshot) {
+            latestScreenshot = result.screenshot;
+            delete result.screenshot;
+          }
           results.push(result);
         } catch (error) {
           return {
             success: true,
             results,
             ...(latestSnapshot ? { snapshot: latestSnapshot } : {}),
+            ...(latestScreenshot ? { screenshot: latestScreenshot } : {}),
             failedAt: index,
             error: error.message,
             code: error.code || 'PAGE_ACTION_FAILED',
           };
         }
       }
-      return { success: true, results, ...(latestSnapshot ? { snapshot: latestSnapshot } : {}) };
+      return {
+        success: true,
+        results,
+        ...(latestSnapshot ? { snapshot: latestSnapshot } : {}),
+        ...(latestScreenshot ? { screenshot: latestScreenshot } : {}),
+      };
     }
     if (countAction) {
       if (session.actions >= PAGE_ACTION_MAX_ACTIONS) {
@@ -2026,10 +2241,16 @@
       session.actions += 1;
     }
     if (action === 'page_get_state') {
-      return { success: true, snapshot: createPageActionSnapshot(session) };
+      const snapshot = createPageActionSnapshot(session, { regionId: request.args?.regionId });
+      const screenshot = await capturePageActionScreenshot();
+      return {
+        success: true,
+        snapshot,
+        ...(screenshot ? { screenshot } : {}),
+      };
     }
     if (action === 'page_find_text') {
-      return findPageActionText(session, request.args?.query);
+      return findPageActionText(session, request.args?.query, { regionId: request.args?.regionId });
     }
     if (action === 'page_wait') {
       return waitForPageActionCondition(session, request.args || {});
@@ -2220,9 +2441,13 @@
 
   function clearPageActionSession(runId) {
     const session = pageActionSessions.get(String(runId || ''));
-    if (!session) return;
+    if (!session) {
+      clearPageActionIndexOverlay();
+      return;
+    }
     clearPageActionHighlight(session);
     pageActionSessions.delete(String(runId || ''));
+    if (pageActionSessions.size === 0) clearPageActionIndexOverlay();
   }
 
   // --- 7. MESSAGE LISTENER (CRITICAL FIX) ---

@@ -191,7 +191,7 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('PERFORM it with the tools');
     expect(prompt).toContain('call page_get_state first');
     expect(prompt).toContain('use page_wait for expected text');
-    expect(prompt).toContain('use page_batch for 2–4 read-only steps');
+    expect(prompt).toContain('use page_batch for 2–6 read-only steps');
     expect(prompt).toContain('re-inspect after every mutation');
     expect(prompt).toContain('If the current tab changes documents during the run');
     expect(prompt).toContain('continue the same request');
@@ -3395,7 +3395,7 @@ describe('RunOrchestrator page actions', () => {
     });
     orch._emitEvent = () => {};
     const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
-    for (let index = 0; index < 192; index += 1) {
+    for (let index = 0; index < 256; index += 1) {
       const result = await orch.executeTool(
         runId,
         makeCall(`scroll-${index}`, 'page_scroll', { direction: 'down' })
@@ -3404,7 +3404,7 @@ describe('RunOrchestrator page actions', () => {
     }
     const exhausted = await orch.executeTool(
       runId,
-      makeCall('scroll-192', 'page_scroll', { direction: 'down' })
+      makeCall('scroll-256', 'page_scroll', { direction: 'down' })
     );
     expect(exhausted.result).toMatchObject({ error: 'PAGE_ACTION_LIMIT', budget: 'observation' });
     expect(orch.activeRuns.get(runId).pageActions.budgets.mutation).toBe(0);

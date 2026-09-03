@@ -6,9 +6,9 @@
 import { utf8ByteLength } from './pageDom.js';
 
 export const PAGE_SCOPE_DIFF_CAPS = Object.freeze({
-  maxRegions: 8,
-  maxElementsPerRegion: 24,
-  maxChanges: 40,
+  maxRegions: 12,
+  maxElementsPerRegion: 32,
+  maxChanges: 64,
 });
 
 function boundedText(value, maxLength = 120) {

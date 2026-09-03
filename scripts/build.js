@@ -19,16 +19,20 @@ const srcDir = repoRoot;
 // Parse command line arguments
 const args = process.argv.slice(2);
 const hasDevFlag = args.includes('--dev');
+const hasEvalFlag = args.includes('--eval');
 const hasProdFlag = args.includes('--prod');
-if (hasDevFlag && hasProdFlag) {
-  console.error('❌ Choose either --dev or --prod, not both.');
+if (Number(hasDevFlag) + Number(hasEvalFlag) + Number(hasProdFlag) > 1) {
+  console.error('❌ Choose exactly one of --dev, --eval, or --prod.');
   process.exit(1);
 }
-const isDev = hasDevFlag;
-const isProd = hasProdFlag || !isDev;
-const buildDir = path.join(repoRoot, isDev ? 'dist-dev' : 'dist');
+const isEval = hasEvalFlag;
+const isDev = hasDevFlag || isEval;
+const isProd = hasProdFlag || (!hasDevFlag && !hasEvalFlag);
+const buildDir = path.join(repoRoot, isEval ? 'dist-eval' : isDev ? 'dist-dev' : 'dist');
 
-console.log(`🚀 Building Prompt Paul (${isProd ? 'production' : 'development'})...\n`);
+console.log(
+  `🚀 Building Prompt Paul (${isEval ? 'evaluation' : isProd ? 'production' : 'development'})...\n`
+);
 
 /**
  * Read JSON file safely
@@ -234,6 +238,20 @@ function copyFiles(manifest) {
 /**
  * Generate build metadata
  */
+function installEvalVariant() {
+  const variants = [
+    ['src/utils/evalTrace.js', 'src/utils/evalTrace.eval.js'],
+    ['src/utils/evalHook.js', 'src/utils/evalHook.eval.js'],
+  ];
+  for (const [targetRelativePath, variantRelativePath] of variants) {
+    const target = path.join(buildDir, targetRelativePath);
+    const variant = path.join(buildDir, variantRelativePath);
+    if (isEval) fs.copyFileSync(variant, target);
+    fs.rmSync(variant, { force: true });
+  }
+  console.log(`  ✓ Evaluation hook: ${isEval ? 'available' : 'excluded'}`);
+}
+
 function installDiagnosticsVariant() {
   const moduleTarget = path.join(buildDir, 'src', 'utils', 'devDiagnostics.js');
   const moduleProduction = path.join(srcDir, 'src', 'utils', 'devDiagnostics.prod.js');
@@ -256,8 +274,9 @@ function installDiagnosticsVariant() {
 function generateBuildMetadata() {
   const metadata = {
     buildTime: new Date().toISOString(),
-    buildType: isProd ? 'production' : 'development',
+    buildType: isEval ? 'evaluation' : isProd ? 'production' : 'development',
     diagnostics: isProd ? 'excluded' : 'available',
+    evalHook: isEval ? 'available' : 'excluded',
     version: readJson('package.json').version,
     commit: process.env.GITHUB_SHA || 'local',
     branch: process.env.GITHUB_REF || 'local',
@@ -289,6 +308,7 @@ function main() {
   console.log('📦 Copying files...');
   copyFiles(manifest);
   installDiagnosticsVariant();
+  installEvalVariant();
   console.log('');
 
   // Generate metadata
@@ -298,7 +318,7 @@ function main() {
   // Summary
   console.log('🎉 Build complete!');
   console.log(`   Output: ${buildDir}`);
-  console.log(`   Type: ${isProd ? 'Production' : 'Development'}`);
+  console.log(`   Type: ${isEval ? 'Evaluation' : isProd ? 'Production' : 'Development'}`);
   console.log(`   Version: ${manifest.version}`);
 
   if (isProd) {

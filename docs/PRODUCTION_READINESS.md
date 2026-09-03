@@ -24,7 +24,7 @@ This checklist keeps those rules practical and reviewable.
 - Run `npm run validate` and `npm run smoke` when relevant.
 - Run `npm run test:browser` for browser-runtime or page-action changes. The CI browser job runs the complete unpacked-extension suite with headed Chromium under Xvfb, including the executable page-action evaluation and live snapshot scope/diff checks.
 - Run `npm run audit` before release. CI runs the same dependency gate before browser and build jobs.
-- Run `npm run build:prod` and verify that `dist/` reports diagnostics as `excluded`, contains no development tracer implementation, and that `dist-dev/` is never packaged or published.
+- Run `npm run build:prod` and verify that `dist/` reports diagnostics and the eval hook as `excluded`, contains no development tracer or eval hook implementation, and that `dist-dev/` and `dist-eval/` are never packaged or published.
 - Review authentication, user data, external API, and page-action changes for security before production deployment. For this Act change, the focused review is recorded in [ACT_SECURITY_LICENSE_REVIEW.md](ACT_SECURITY_LICENSE_REVIEW.md). Review receipt evidence, session checkpoints, explicit-resume boundaries, prompt-injection handling, sensitive-field masking, restricted-page behavior, and the rule that runtime scope/diff output stays indexed, bounded, and selector-free. Do not describe the extension as production-ready until these reviews and the required browser/provider checks are complete.
 - Update the nearest DOX contract when behavior, structure, workflow, or quality requirements change.
 

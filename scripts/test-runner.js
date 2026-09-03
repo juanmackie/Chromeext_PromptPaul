@@ -305,6 +305,37 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('evaluation hook is build-gated and bounded', () => {
+    checkModule('src/utils/evalHook.js');
+    checkModule('src/utils/evalTrace.js');
+    const hook = readFileSafe('src/utils/evalHook.js');
+    const trace = readFileSafe('src/utils/evalTrace.js');
+    const evaluationHook = readFileSafe('src/utils/evalHook.eval.js');
+    const evaluationTrace = readFileSafe('src/utils/evalTrace.eval.js');
+    const build = readFileSafe('scripts/build.js');
+    if (hook.includes('TEST_RUN_TASK') || trace.includes('TEST_RUN_TASK')) {
+      throw new Error('Source evaluation interfaces must remain no-op');
+    }
+    for (const token of ['TEST_RUN_TASK', 'MAX_TASK_CHARS', 'dryRun']) {
+      if (!evaluationHook.includes(token)) {
+        throw new Error(`Evaluation hook is missing contract token: ${token}`);
+      }
+    }
+    for (const token of ['MAX_TRACE_CHARS', 'MAX_STEPS', 'SECRET_KEY_PATTERN']) {
+      if (!evaluationTrace.includes(token)) {
+        throw new Error(`Evaluation trace is missing contract token: ${token}`);
+      }
+    }
+    for (const token of ['--eval', 'dist-eval', 'installEvalVariant']) {
+      if (!build.includes(token)) {
+        throw new Error(`Build script is missing evaluation variant support: ${token}`);
+      }
+    }
+    if (!readFileSafe('.gitignore').includes('dist-eval/')) {
+      throw new Error('Generated eval output must remain ignored');
+    }
+  });
+
   runner.test('validation module structure valid', () => {
     checkModule('src/utils/validation.js');
   });

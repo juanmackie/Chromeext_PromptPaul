@@ -36,6 +36,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `retryBackoff.js` owns bounded exponential delays with jitter for bridge and navigation recovery; it must not retry uncertain mutations.
 - `pageActionScopeDiff.js` owns bounded indexed-region and snapshot-diff helpers. Runtime mutation results may expose only selector-free indices, flags, counts, and snapshot IDs; richer region and byte-size measurements remain evaluation-only. It must never accept model-supplied selectors or expose raw page values.
 - `devDiagnostics.js` owns the development-only, opt-in diagnostics trace, session storage bounds, credential-shaped redaction, and extension-page error capture. `devDiagnostics.prod.js` is the production no-op replacement selected by `scripts/build.js`.
+- `evalTrace.js` and `evalHook.js` own the no-op source interfaces for the isolated evaluation build. `*.eval.js` variants are installed only into `dist-eval/`; they record bounded public-task traces and expose direct test invocation without adding production capabilities.
 - Link targets are bounded to HTTP(S) origin/path metadata in `pageDom.js`; `page_click` handles approved same-tab links and `page_open_link` handles indexed `_blank` links, navigating the current target by default or an owned background tab when explicitly requested. Query strings and fragments stay out of model-visible snapshots.
 
 ## Local Contracts

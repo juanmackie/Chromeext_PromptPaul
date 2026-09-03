@@ -69,6 +69,12 @@ import {
   MAX_PLANNER_INSTRUCTION_CHARS,
   replan,
 } from './ActPlanner.js';
+import {
+  buildActActionCacheKey,
+  clearActActionCache,
+  getCachedActAction,
+  setCachedActAction,
+} from './ActActionCache.js';
 
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
@@ -94,10 +100,12 @@ const PAGE_ACTION_TAB_FAILURE_CODES = new Set([
   'PAGE_ACTION_INJECTION_FAILED',
 ]);
 const PAGE_ACTION_BUDGETS = Object.freeze({
-  observation: 192,
-  navigation: 72,
-  mutation: 48,
+  observation: 256,
+  navigation: 96,
+  mutation: 64,
 });
+const ACT_SCREENSHOT_MAX_BYTES = 750_000;
+const ACT_SNAPSHOT_CACHE_MS = 5_000;
 const PAGE_ACTION_BUDGET_WARNING_RATIO = 0.75;
 const PAGE_ACTION_RECEIPT_DISPOSITIONS = new Set([
   'not_delivered',
@@ -252,7 +260,7 @@ class RunOrchestrator {
         state: 'notice',
         message:
           `Long-horizon planner enabled with ${planner.subGoals.length} sub-goal${planner.subGoals.length === 1 ? '' : 's'}. ` +
-          'Approve the first state-changing action to enable low-risk automatic progress; high-risk and navigation actions still require approval.',
+          'Approve the first state-changing action to enable low and medium-risk automatic progress; high-risk and navigation actions still require approval.',
       });
     }
     recordDevDiagnostic(
@@ -285,7 +293,7 @@ class RunOrchestrator {
     const planner = run.pageActions.planner;
     if (planner?.active && Array.isArray(checkpoint.planner?.subGoals)) {
       const goals = checkpoint.planner.subGoals
-        .slice(0, 8)
+        .slice(0, 12)
         .map((goal) => ({
           description: String(goal?.description || '').slice(0, 200),
           status: ['pending', 'in_progress', 'done', 'blocked'].includes(goal?.status)
@@ -314,7 +322,7 @@ class RunOrchestrator {
           goals.length - 1
         );
         planner.replanCount = Math.min(
-          3,
+          5,
           Math.max(0, Math.floor(Number(checkpoint.planner.replanCount) || 0))
         );
         planner.autoApproval = false;
@@ -353,6 +361,91 @@ class RunOrchestrator {
       evidence: 'unknown_delivery_after_worker_restart',
       savedAt: Number(checkpoint.savedAt) || null,
     };
+  }
+
+  _storeActScreenshot(run, dataUrl, snapshotId) {
+    if (!run?.pageActions || typeof dataUrl !== 'string') return;
+    if (
+      !dataUrl.startsWith('data:image/jpeg;base64,') &&
+      !dataUrl.startsWith('data:image/png;base64,')
+    )
+      return;
+    if (dataUrl.length > ACT_SCREENSHOT_MAX_BYTES) return;
+    run.pageActions.lastScreenshot = {
+      dataUrl,
+      snapshotId: String(snapshotId || ''),
+      at: Date.now(),
+    };
+  }
+
+  _getActVisionImage(run) {
+    const shot = run?.pageActions?.lastScreenshot;
+    if (!shot?.dataUrl) return null;
+    if (
+      shot.snapshotId &&
+      run?.pageActions?.snapshot?.snapshotId &&
+      shot.snapshotId !== run.pageActions.snapshot.snapshotId
+    )
+      return null;
+    return shot.dataUrl;
+  }
+
+  _withActVisionOpenAI(messages, run) {
+    const dataUrl = this._getActVisionImage(run);
+    if (!dataUrl) return messages;
+    const next = messages.map((message) => ({ ...message }));
+    for (let index = next.length - 1; index >= 0; index -= 1) {
+      if (next[index]?.role === 'user') {
+        const prior = next[index].content;
+        const content =
+          typeof prior === 'string'
+            ? [{ type: 'text', text: prior }]
+            : Array.isArray(prior)
+              ? prior.filter((part) => part?.type !== 'image_url')
+              : [];
+        next[index] = {
+          ...next[index],
+          content: [...content, { type: 'image_url', image_url: { url: dataUrl } }],
+        };
+        break;
+      }
+    }
+    return next;
+  }
+
+  _withActVisionAnthropic(messages, run) {
+    const dataUrl = this._getActVisionImage(run);
+    if (!dataUrl) return messages;
+    const match = /^data:(image\/(?:jpeg|png));base64,(.+)$/.exec(dataUrl);
+    if (!match) return messages;
+    const next = messages.map((message) => ({ ...message }));
+    for (let index = next.length - 1; index >= 0; index -= 1) {
+      if (next[index]?.role === 'user') {
+        const prior = next[index].content;
+        const content =
+          typeof prior === 'string'
+            ? [{ type: 'text', text: prior }]
+            : Array.isArray(prior)
+              ? prior.filter((part) => part?.type !== 'image')
+              : [];
+        next[index] = {
+          ...next[index],
+          content: [
+            ...content,
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: match[1],
+                data: match[2].slice(0, ACT_SCREENSHOT_MAX_BYTES),
+              },
+            },
+          ],
+        };
+        break;
+      }
+    }
+    return next;
   }
 
   _getWebSearchMetadata(run) {
@@ -947,6 +1040,15 @@ class RunOrchestrator {
       run.pageActions.pendingManualIntervention = null;
     }
     if (abortSignal) run.abortController.abort();
+    clearActActionCache(run);
+    if (run.pageActions) run.pageActions.lastScreenshot = null;
+    recordEvalTrace(runId, {
+      kind: 'terminal',
+      prompt: run.objective,
+      terminalType: event.type,
+      llmResponse: event.content,
+      error: event.error,
+    });
     recordDevDiagnostic('run_terminated', {
       runId,
       status: event.type,
@@ -1674,6 +1776,36 @@ class RunOrchestrator {
     };
   }
 
+  _buildEvalDryRunResult(actionName, args, target, policy) {
+    const sensitive = Boolean(target?.sensitive);
+    const intendedArgs = { ...args };
+    if (sensitive && intendedArgs.text !== undefined)
+      intendedArgs.text = '[REDACTED_SENSITIVE_CONTROL]';
+    return {
+      success: true,
+      result: {
+        dryRun: true,
+        message: 'Evaluation dry-run intercepted this state-changing action before delivery.',
+        intendedAction: {
+          name: actionName,
+          args: intendedArgs,
+          target: {
+            index: args.index,
+            tag: target?.tag,
+            role: target?.role,
+            label: target?.label || target?.name || target?.tag,
+            sensitive,
+          },
+          risk: policy.risk,
+        },
+        actionReceipt: {
+          disposition: 'not_delivered',
+          evidence: { kind: 'dry_run_intercepted', risk: policy.risk },
+        },
+      },
+    };
+  }
+
   async _executePageAction(runId, actionName, toolCall) {
     const actionStartedAt = Date.now();
     const run = this.activeRuns.get(runId);
@@ -1732,6 +1864,36 @@ class RunOrchestrator {
     }
 
     const args = normalized.value;
+    if (actionName === 'page_get_state' && !args.regionId) {
+      const snapshot = run.pageActions.snapshot;
+      const cacheKey = buildActActionCacheKey({
+        actionName,
+        args,
+        origin: run.pageActions.documentUrl,
+        fingerprint: snapshot?.fingerprint || '',
+        risk: PAGE_ACTION_RISKS.READ_ONLY,
+      });
+      const cached = getCachedActAction(run, cacheKey);
+      if (
+        snapshot?.fingerprint &&
+        cached?.snapshot &&
+        Date.now() - Number(cached.createdAt || 0) <= ACT_SNAPSHOT_CACHE_MS &&
+        cached.snapshot.snapshotId === snapshot?.snapshotId
+      ) {
+        cached.hits = Number(cached.hits || 0) + 1;
+        return {
+          success: true,
+          result: {
+            snapshot: cached.snapshot,
+            cacheHit: true,
+            actionReceipt: {
+              disposition: 'delivered_verified',
+              evidence: { kind: 'snapshot_cache_hit' },
+            },
+          },
+        };
+      }
+    }
     if (
       !isPageActionReadOnly(actionName) &&
       args.snapshotId !== run.pageActions.snapshot?.snapshotId
@@ -1748,7 +1910,7 @@ class RunOrchestrator {
     const isMutation = !isPageActionReadOnly(actionName);
     const actionTarget = isPageActionReadOnly(actionName)
       ? null
-      : run.pageActions.snapshot?.elements?.[args.index];
+      : run.pageActions.snapshot?.elements?.find((element) => element?.index === args.index);
     const actionHash = pageStateHash(
       JSON.stringify({
         actionName,
@@ -1787,7 +1949,7 @@ class RunOrchestrator {
 
     const target = isPageActionReadOnly(actionName)
       ? null
-      : run.pageActions.snapshot?.elements?.[args.index];
+      : run.pageActions.snapshot?.elements?.find((element) => element?.index === args.index);
     if (!isPageActionReadOnly(actionName) && !target) {
       return {
         success: true,
@@ -1872,7 +2034,7 @@ class RunOrchestrator {
     // use the normal confirmation policy.
     const plannerAutoApproval =
       run.pageActions.planner?.autoApproval === true &&
-      policy.risk === PAGE_ACTION_RISKS.LOW &&
+      (policy.risk === PAGE_ACTION_RISKS.LOW || policy.risk === PAGE_ACTION_RISKS.MEDIUM) &&
       policy.navigation !== true;
     const requiresConfirmation =
       policy.requiresConfirmation &&
@@ -1911,6 +2073,18 @@ class RunOrchestrator {
         };
       }
       explicitlyApproved = true;
+    }
+
+    if (run.config?.evalDryRun === true && isMutation) {
+      const dryRunResult = this._buildEvalDryRunResult(actionName, args, target, policy);
+      this._emitEvent(run.id, {
+        type: 'page_action_state',
+        state: 'complete',
+        action: actionName,
+        receipt: dryRunResult.result.actionReceipt,
+        target: { label: target.label || target.name || target.tag, risk: policy.risk },
+      });
+      return dryRunResult;
     }
 
     // Bind the run to the document the model first observes. If the active tab
@@ -1975,6 +2149,10 @@ class RunOrchestrator {
           expectNavigation: expectedNavigation,
         }
       );
+      if (result?.screenshot) {
+        this._storeActScreenshot(run, result.screenshot, result.snapshot?.snapshotId);
+        delete result.screenshot;
+      }
       const reportedNavigationUrl = sanitizePageActionUrl(result?.navigationUrl || '');
       const normalizedSnapshot = result?.snapshot ? normalizePageSnapshot(result.snapshot) : null;
       const snapshotChangedDocument = Boolean(
@@ -2029,6 +2207,24 @@ class RunOrchestrator {
             // The normalized URL is already bounded; an invalid value is ignored.
           }
         }
+      }
+
+      if (actionName === 'page_get_state' && normalizedSnapshot) {
+        const cacheKey = buildActActionCacheKey({
+          actionName,
+          args,
+          origin: normalizedSnapshot.url,
+          fingerprint: normalizedSnapshot.fingerprint,
+          risk: PAGE_ACTION_RISKS.READ_ONLY,
+        });
+        setCachedActAction(run, cacheKey, {
+          actionName,
+          origin: normalizedSnapshot.url,
+          fingerprint: normalizedSnapshot.fingerprint,
+          snapshot: normalizedSnapshot,
+        });
+      } else if (actionName !== 'page_get_state') {
+        clearActActionCache(run);
       }
 
       const receipt = this._buildPageActionReceipt(
@@ -3034,19 +3230,26 @@ class RunOrchestrator {
         type: 'function',
         function: {
           name: 'page_get_state',
-          description: `${pageContext} Take a fresh snapshot of the current page. Call this before acting and again after every mutation.`,
-          parameters: { type: 'object', properties: {}, required: [] },
+          description: `${pageContext} Take a fresh snapshot of the current page. Call this before acting and again after every mutation. Pass regionId to inspect one indexed region when the snapshot lists regions; visual index badges match snapshot indices.`,
+          parameters: {
+            type: 'object',
+            properties: {
+              regionId: { type: 'string', maxLength: 32 },
+            },
+            required: [],
+          },
         },
       },
       {
         type: 'function',
         function: {
           name: 'page_find_text',
-          description: `${pageContext} Search the bounded page text without scrolling or changing the page. Use this to locate exact filters, labels, prices, or login/interstitial messages; then inspect matching controls with page_get_state before acting.`,
+          description: `${pageContext} Search the bounded page text without scrolling or changing the page. Use this to locate exact filters, labels, prices, or login/interstitial messages; then inspect matching controls with page_get_state before acting. Pass regionId to scope the search.`,
           parameters: {
             type: 'object',
             properties: {
               query: { type: 'string', maxLength: 160 },
+              regionId: { type: 'string', maxLength: 32 },
             },
             required: ['query'],
           },
@@ -3063,6 +3266,7 @@ class RunOrchestrator {
               condition: { type: 'string', enum: ['text', 'text_gone', 'url_changed'] },
               text: { type: 'string', maxLength: 160 },
               timeoutMs: { type: 'integer', minimum: 0, maximum: 10000 },
+              regionId: { type: 'string', maxLength: 32 },
             },
             required: ['condition'],
           },
@@ -3072,14 +3276,14 @@ class RunOrchestrator {
         type: 'function',
         function: {
           name: 'page_batch',
-          description: `${pageContext} Run 2 to 4 read-only observations in sequence in one turn. Use this for compact scroll, find, wait, and snapshot workflows. It cannot contain clicks, inputs, selects, navigation, or another batch.`,
+          description: `${pageContext} Run 2 to 6 read-only observations in sequence in one turn. Use this for compact scroll, find, wait, and snapshot workflows. It cannot contain clicks, inputs, selects, navigation, or another batch.`,
           parameters: {
             type: 'object',
             properties: {
               actions: {
                 type: 'array',
                 minItems: 2,
-                maxItems: 4,
+                maxItems: 6,
                 items: {
                   type: 'object',
                   properties: {
@@ -3101,12 +3305,12 @@ class RunOrchestrator {
         type: 'function',
         function: {
           name: 'page_click',
-          description: `${pageContext} Perform the click on one indexed control to complete the task. Valid HTTP(S) same-tab links are supported; links that open a new tab must use page_open_link.`,
+          description: `${pageContext} Perform the click on one indexed control to complete the task. Valid HTTP(S) same-tab links are supported; links that open a new tab must use page_open_link. Visual index badges match snapshot indices.`,
           parameters: {
             type: 'object',
             properties: {
               snapshotId: { type: 'string' },
-              index: { type: 'integer', minimum: 0, maximum: 119 },
+              index: { type: 'integer', minimum: 0, maximum: 199 },
             },
             required: ['snapshotId', 'index'],
           },
@@ -3121,7 +3325,7 @@ class RunOrchestrator {
             type: 'object',
             properties: {
               snapshotId: { type: 'string' },
-              index: { type: 'integer', minimum: 0, maximum: 119 },
+              index: { type: 'integer', minimum: 0, maximum: 199 },
               text: { type: 'string', maxLength: 2000 },
             },
             required: ['snapshotId', 'index', 'text'],
@@ -3137,8 +3341,8 @@ class RunOrchestrator {
             type: 'object',
             properties: {
               snapshotId: { type: 'string' },
-              index: { type: 'integer', minimum: 0, maximum: 119 },
-              option: { type: 'string', maxLength: 240 },
+              index: { type: 'integer', minimum: 0, maximum: 199 },
+              option: { type: 'string', maxLength: 320 },
             },
             required: ['snapshotId', 'index', 'option'],
           },
@@ -3201,7 +3405,7 @@ class RunOrchestrator {
             type: 'object',
             properties: {
               snapshotId: { type: 'string' },
-              index: { type: 'integer', minimum: 0, maximum: 119 },
+              index: { type: 'integer', minimum: 0, maximum: 199 },
               background: { type: 'boolean' },
             },
             required: ['snapshotId', 'index'],
@@ -3568,7 +3772,9 @@ class RunOrchestrator {
           'achievable on this page, PERFORM it with the tools instead of describing steps: ' +
           'call page_get_state first, use page_find_text to locate exact criteria before scrolling when useful, ' +
           'use page_wait for expected text, disappearing loading states, or a URL change after asynchronous work instead of fixed delays, ' +
-          'use page_batch for 2–4 read-only steps such as scroll → find → get_state, then act, ' +
+          'use page_batch for 2–6 read-only steps such as scroll → find → get_state, then act, ' +
+          'pass regionId to scope follow-up reads to one indexed region on large pages, ' +
+          'use the screenshot plus visual index badges with the snapshot indices to ground small or ambiguous controls, ' +
           'handle blocking popups or login walls in the current tab before other actions, then act, ' +
           're-inspect after every mutation, and continue until done. For ' +
           'multi-item or ongoing requests, do not stop after a partial result or ask whether to continue; ' +
@@ -4069,7 +4275,7 @@ class RunOrchestrator {
     const body = buildCodexRequest({
       modelName: run.config.modelName,
       systemPrompt,
-      messages: run.conversationHistory,
+      messages: this._withActVisionOpenAI(run.conversationHistory, run),
       tools,
       toolChoice: this._getEffectiveToolChoice(run),
       reasoningLevel: run.config.reasoningLevel,
@@ -4194,10 +4400,11 @@ class RunOrchestrator {
       .filter((m) => m.role !== 'system')
       .map((m) => ({ ...m }));
     messages.unshift({ role: 'system', content: systemPrompt });
+    const visionMessages = this._withActVisionOpenAI(messages, run);
 
     const body = {
       model: modelName,
-      messages,
+      messages: visionMessages,
       stream: true,
     };
     this._applyOpenAIOutputBudget(body, modelName);
@@ -4400,7 +4607,7 @@ class RunOrchestrator {
         ? THINKING_BUDGET_TOKENS + FINAL_OUTPUT_TOKENS
         : FINAL_OUTPUT_TOKENS,
       stream: true,
-      messages: this._buildAnthropicMessages(run),
+      messages: this._withActVisionAnthropic(this._buildAnthropicMessages(run), run),
     };
 
     const effectiveToolChoice = this._getEffectiveToolChoice(run);

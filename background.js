@@ -1451,13 +1451,15 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
 
   try {
     const response = await sendPageActionMessage(tabId, message, options.signal);
+    const diagnosticResponse = { ...(response || {}) };
+    delete diagnosticResponse.screenshot;
     recordDevDiagnostic(
       'page_action_message_response_detail',
       {
         runId: options.runId,
         tabId,
         action: actionName,
-        response,
+        response: diagnosticResponse,
         durationMs: Date.now() - startedAt,
       },
       { persist: false }

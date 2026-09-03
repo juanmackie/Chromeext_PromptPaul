@@ -21,6 +21,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `chatHermes.test.js` covers approval-card settlement; `keyedOperationLock.test.js` covers per-profile session reset and session-key concurrency primitives.
 - `chatRuntimeMessage.test.js` covers the acknowledgement-only long-run bridge and transient runtime-channel error wording.
 - `pageDom.test.js`, `pageActionPolicy.test.js`, and `pageTabController.test.js` cover bounded page state, policy, and owned-tab behavior.
+- `evalDryRun.test.js` covers dry-run interception of state-changing page actions without delivery; `evalHook.test.js` covers the build-gated `TEST_RUN_TASK` bridge; `evalTrace.test.js` covers bounded redacted eval trace storage.
 - `tests/browser/AGENTS.md` owns unpacked-extension Playwright coverage and local browser fixtures.
 
 ## Local Contracts

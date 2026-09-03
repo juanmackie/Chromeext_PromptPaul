@@ -89,7 +89,7 @@ describe('pageActionPolicy', () => {
       })
     ).toEqual({
       valid: false,
-      error: 'A page batch must contain 2 to 4 read-only actions.',
+      error: 'A page batch must contain 2 to 6 read-only actions.',
     });
     expect(
       normalizePageActionArgs('page_batch', {

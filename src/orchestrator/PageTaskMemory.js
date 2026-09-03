@@ -6,9 +6,9 @@
 import { capPageText } from '../utils/pageDom.js';
 
 export const PAGE_TASK_MEMORY_CAPS = Object.freeze({
-  maxNotes: 48,
+  maxNotes: 72,
   maxNoteChars: 800,
-  maxHistoryChars: 240_000,
+  maxHistoryChars: 360_000,
 });
 
 const SENSITIVE_NOTE_PATTERN =

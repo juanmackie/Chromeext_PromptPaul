@@ -8,19 +8,19 @@
 import { capPageText } from '../utils/pageDom.js';
 
 /** Maximum number of sub-goals per run. */
-export const MAX_SUB_GOALS = 8;
+export const MAX_SUB_GOALS = 12;
 
 /** Maximum character length for a single sub-goal description. */
 export const MAX_SUB_GOAL_CHARS = 200;
 
 /** Maximum replan attempts per run to prevent infinite decomposition loops. */
-export const MAX_REPLAN_COUNT = 3;
+export const MAX_REPLAN_COUNT = 5;
 
 /** Maximum instruction length accepted by planner decomposition. */
 export const MAX_PLANNER_INSTRUCTION_CHARS = 2_000;
 
 /** Maximum prompt-block length sent to the model. */
-export const MAX_PLANNER_PROMPT_CHARS = 4_000;
+export const MAX_PLANNER_PROMPT_CHARS = 6_000;
 
 /** Minimum instruction length to trigger automatic planner activation. */
 export const PLANNER_INSTRUCTION_MIN_LENGTH = 100;
@@ -483,9 +483,9 @@ export function buildPlannerPromptBlock(planner, budgets = {}, budgetCaps = {}) 
   }
 
   // Budget pacing
-  const obsRemain = Math.max(0, (budgetCaps.observation || 192) - (budgets.observation || 0));
-  const navRemain = Math.max(0, (budgetCaps.navigation || 72) - (budgets.navigation || 0));
-  const mutRemain = Math.max(0, (budgetCaps.mutation || 48) - (budgets.mutation || 0));
+  const obsRemain = Math.max(0, (budgetCaps.observation || 256) - (budgets.observation || 0));
+  const navRemain = Math.max(0, (budgetCaps.navigation || 96) - (budgets.navigation || 0));
+  const mutRemain = Math.max(0, (budgetCaps.mutation || 64) - (budgets.mutation || 0));
   lines.push(`Budget remaining: obs=${obsRemain}, nav=${navRemain}, mut=${mutRemain}`);
 
   // Instructions
