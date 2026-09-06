@@ -10,9 +10,20 @@
 
 ## [Unreleased]
 
+- **Reliability/release hardening (P1 punchlist).** Act screenshots are disabled for release behind a static `ACT_SCREENSHOTS_ENABLED=false` gate with DOM-only fallback; Act vision payloads now preserve user text and uploaded images in their original order and replace only the ephemeral screen. Pinned-instruction backups validate pins as bounded string-ID arrays so pinning never blocks export. Each Options section tracks unsaved state independently. Pending page-user-input, manual-Resume, and Hermes-approval interactions replay correctly after a side-panel reconnect. Tool/skill/profile writes report errors instead of clearing drafts on storage failure. CI now gates release artifacts on browser tests of the production output.
+- Site suggestions keep a canonical hostname key that survives add/reload/another-add/remove round-trips for both URL and bare-hostname inputs.
+- `page_find_text`, `page_wait`, and `page_batch` are now reserved names, so they cannot be redefined as custom tools.
+- Custom GET tool endpoints preserve existing query parameters and fragments; tool arguments become separate, correctly encoded parameters.
+- When rerouting an image request to a vision-capable profile, Prompt Paul now skips incomplete alternate connections, so a working current profile is never replaced by an unusable candidate.
+- Switching connection profiles in Options now requires an explicit discard when any section or instruction/tool/skill editor draft is unsaved, and the browser unload guard covers those editor drafts too, so nothing is silently lost.
+- The Options Improve Instruction action now runs through the background worker: API profiles use a bounded provider-aware request, while Codex and Hermes profiles receive an explicit capability message and never leave the original instruction overwritten.
+- The Top Notch is now edge-pinnable: a new `notchPlacement` preference (top/right/bottom/left) docks the notch to any viewport edge, and `notchPosition` becomes an edge-relative offset (horizontal for top/bottom, vertical for left/right) draggable along that axis.
+- The notch now rests as a slim pill that reveals its details panel on hover without pinning; a click pins it open so it stays on pointer-leave. Placement and pin behavior stay within the existing bounded viewport and brand color system.
+
 - OpenRouter requests now include Prompt Paul's app-attribution headers so usage can appear in OpenRouter app analytics and rankings.
 - Improved long-horizon Act continuity: required re-inspection keeps the verified mutation receipt available to the planner, receipts are bound to their owning sub-goal, successful owned-tab actions report bounded receipts, and planner prompts retain completed and blocked outcomes for more accurate continuation and final summaries.
 - Act now stays enabled across runs until disabled or the browser session ends, and unusable Act tabs report an actionable startup error instead of silently falling back to plain chat.
+- **Packaging/release hardening (P3 punchlist).** The production package now filters a review-approved development-only file set (`AGENTS.md` and derived dev-off files) out of `src`/`libs`/`skills` directory copies while preserving every runtime skill file, vendored asset, and license notice, so development instructions no longer ship. Build metadata now records the real git revision, working-tree clean/dirty status with the exact dirty paths, and a reproducible SHA-256 artifact root; a per-file `BUILD.sha256` manifest is written next to `build-metadata.json` so a downloaded candidate can be traced to its tested revision and verified byte-for-byte. Development and evaluation output remain excluded from the release package.
 
 ## [6.2.1] - 2026-08-31
 

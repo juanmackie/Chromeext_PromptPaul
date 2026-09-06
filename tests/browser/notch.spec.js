@@ -322,3 +322,137 @@ test('shows an isolated quick-action notch when enabled', async () => {
     removeUserDataDir(userDataDir);
   }
 });
+
+test('pins to a vertical edge, drags along it, and reveals details on hover', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-notch-edge-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  const options = await context.newPage();
+  const target = await context.newPage();
+
+  try {
+    await target.goto(fixtureUrl(fixtureServer, 'form.html'));
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.sync.set({ themePreference: 'light', darkTheme: false }, resolve)
+        )
+    );
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.set(
+            {
+              profiles: [
+                {
+                  id: 'default',
+                  provider: 'api',
+                  modelName: 'openrouter/free',
+                  reasoningLevel: 'high',
+                },
+              ],
+              lastSelectedProfileId: 'default',
+            },
+            resolve
+          )
+        )
+    );
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await options.locator('#notchEnabledToggle').check();
+    await options.locator('#saveNotch').click();
+    await expect(options.locator('#notchSaveStatus')).toHaveText('Notch is on.');
+
+    const host = target.locator('[data-prompt-paul-notch-host]');
+    await expect(host).toHaveCount(1);
+    const shell = host.locator('.notch-shell');
+    await expect(shell).toHaveAttribute('data-placement', 'top');
+
+    // Dock the notch to the right edge via Options and reload so it applies.
+    await options.locator('#notchPlacementSelect').selectOption('right');
+    await options.locator('#saveNotch').click();
+    await expect(options.locator('#notchSaveStatus')).toHaveText('Notch is on.');
+    await target.reload();
+    await expect(host).toHaveCount(1);
+    await expect(shell).toHaveAttribute('data-placement', 'right');
+
+    const viewportWidth = await target.evaluate(() => window.innerWidth);
+    const hostBox = await host.boundingBox();
+    expect(hostBox).not.toBeNull();
+    // The vertical pill sits flush to the right edge.
+    expect(Math.abs(hostBox.x + hostBox.width - viewportWidth)).toBeLessThanOrEqual(2);
+
+    // Drag downward along the right edge and verify it persists.
+    const rail = host.locator('.notch-rail');
+    const dragRailBox = await rail.boundingBox();
+    const initialCenterY = dragRailBox.y + dragRailBox.height / 2;
+    await target.mouse.move(
+      dragRailBox.x + dragRailBox.width / 2,
+      dragRailBox.y + dragRailBox.height / 2
+    );
+    await target.mouse.down();
+    await target.mouse.move(
+      dragRailBox.x + dragRailBox.width / 2,
+      dragRailBox.y + dragRailBox.height / 2 + 160,
+      { steps: 5 }
+    );
+    await target.mouse.up();
+    await expect
+      .poll(async () => {
+        const box = await host.boundingBox();
+        return box ? box.y + box.height / 2 : 0;
+      })
+      .toBeGreaterThan(initialCenterY + 80);
+    const storedPosition = await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.get('notchPosition', (result) => resolve(result.notchPosition))
+        )
+    );
+    expect(storedPosition).toBeGreaterThan(50);
+
+    // Clicking pins the panel open; it extends to the left of the rail.
+    const toggle = host.locator('.notch-toggle');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(host.locator('.notch-panel')).toBeVisible();
+    expect(shell).toHaveAttribute('data-pinned', 'true');
+    await target.waitForTimeout(300);
+    const railBox = await rail.boundingBox();
+    const panelBox = await host.locator('.notch-panel').boundingBox();
+    expect(panelBox).not.toBeNull();
+    // Panel opens inward, to the left of the right-anchored rail.
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(railBox.x + 2);
+
+    // Leaving while pinned keeps it open.
+    await target.mouse.move(viewportWidth - 5, 5);
+    await target.waitForTimeout(120);
+    await expect(host.locator('.notch-panel')).toBeVisible();
+
+    // Clicking again unpins and collapses.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(host.locator('.notch-panel')).toBeHidden();
+
+    // Hovering the collapsed rail reveals it without pinning.
+    await target.mouse.move(5, 5);
+    await target.waitForTimeout(120);
+    await target.mouse.move(railBox.x + railBox.width / 2, railBox.y + railBox.height / 2 + 40);
+    await target.waitForTimeout(220);
+    await expect(host.locator('.notch-panel')).toBeVisible();
+    expect(shell).toHaveAttribute('data-pinned', 'false');
+    // Moving away collapses the hover-revealed panel.
+    await target.mouse.move(viewportWidth - 5, 5);
+    await target.waitForTimeout(120);
+    await expect(host.locator('.notch-panel')).toBeHidden();
+
+    await options.locator('#notchEnabledToggle').uncheck();
+    await options.locator('#saveNotch').click();
+    await expect(options.locator('#notchSaveStatus')).toHaveText('Notch is off.');
+    await expect(host).toHaveCount(0);
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});

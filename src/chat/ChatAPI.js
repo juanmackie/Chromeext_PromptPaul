@@ -13,7 +13,11 @@
  */
 
 import { loadingManager } from '../../loadingManager.js';
-import { modelSupportsVision, resolvePreferredProfile } from '../utils/profileRouting.js';
+import {
+  modelSupportsVision,
+  resolvePreferredProfile,
+  isProfileUsable,
+} from '../utils/profileRouting.js';
 import { normalizeToolDefinition } from '../utils/validation.js';
 import { buildHermesTurn } from '../utils/hermesContext.js';
 import { setActiveRun } from './ChatRunRecovery.js';
@@ -48,8 +52,12 @@ export async function selectOptimalProfile(profiles, selectedProfileId, mediaDat
     return { config: currentProfile, rerouted: false };
   }
 
-  // Try to find a vision-capable profile
-  const visionProfile = profiles.find((p) => modelSupportsVision(p.modelName));
+  // Try to find a vision-capable, usable profile. P2-04: an incomplete
+  // alternate connection (missing endpoint/key/credentials) must never replace
+  // a working current profile for a vision reroute.
+  const visionProfile = profiles.find(
+    (p) => isProfileUsable(p) && modelSupportsVision(p.modelName)
+  );
   if (visionProfile) {
     console.log(
       `[ChatAPI] Auto-routing from "${currentProfile.modelName}" to "${visionProfile.modelName}" for vision request.`

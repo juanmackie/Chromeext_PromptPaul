@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   chatComposer,
   getContextState,
@@ -219,6 +219,75 @@ describe('initComposer controller', () => {
   it('returns a refresh function', () => {
     const { controller } = buildControllerFixtures();
     expect(typeof controller.refresh).toBe('function');
+  });
+});
+
+describe('ensureRecoveryRow prompt binding', () => {
+  function makeFakeDocument() {
+    function makeEl() {
+      return {
+        dataset: {},
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        setAttribute() {},
+        addEventListener(type, fn) {
+          this.listeners = this.listeners || {};
+          (this.listeners[type] = this.listeners[type] || []).push(fn);
+        },
+      };
+    }
+    return { createElement: (tag) => Object.assign(makeEl(), { tagName: tag }) };
+  }
+
+  it('binds each recovery row to its originating prompt, not the newest', () => {
+    const realDocument = globalThis.document;
+    globalThis.document = makeFakeDocument();
+    try {
+      const messages = [{ dataset: { prompt: 'first' }, textContent: '' }];
+      const chatArea = {
+        querySelectorAll(selector) {
+          return selector === '.user-message' ? messages : [];
+        },
+      };
+      const handlers = { onPrompt: vi.fn(), onEdit: vi.fn() };
+      const bubble1 = {
+        querySelector: () => null,
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+      };
+      // First response row is created while 'first' is the latest prompt.
+      ensureRecoveryRow(bubble1, { retry: true, edit: true }, handlers, chatArea);
+
+      // Second turn: transcript grows and a second response gets its own row.
+      messages.push({ dataset: { prompt: 'second' }, textContent: '' });
+      const bubble2 = {
+        querySelector: () => null,
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+      };
+      ensureRecoveryRow(bubble2, { retry: true, edit: true }, handlers, chatArea);
+
+      // Retry/Edit on the first answer use the first request.
+      bubble1.children[0].children[0].listeners.click[0]();
+      bubble1.children[0].children[1].listeners.click[0]();
+      expect(handlers.onPrompt).toHaveBeenCalledWith('first', 'retry');
+      expect(handlers.onEdit).toHaveBeenCalledWith('first');
+
+      // The second answer's row binds to its own request.
+      bubble2.children[0].children[0].listeners.click[0]();
+      bubble2.children[0].children[1].listeners.click[0]();
+      expect(handlers.onPrompt).toHaveBeenCalledWith('second', 'retry');
+      expect(handlers.onEdit).toHaveBeenCalledWith('second');
+    } finally {
+      globalThis.document = realDocument;
+    }
   });
 });
 

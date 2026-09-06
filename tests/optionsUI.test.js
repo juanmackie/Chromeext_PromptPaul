@@ -8,6 +8,7 @@ import {
   resolveCredentialValue,
   resolveProfileCredentialValue,
   flashSaveFeedback,
+  runErrorAwareSave,
   renderSetupStatus,
   endpointHost,
 } from '../src/options/OptionsUI.js';
@@ -153,6 +154,64 @@ describe('flashSaveFeedback', () => {
   });
 });
 
+describe('runErrorAwareSave', () => {
+  function makeButton() {
+    return { classList: { add: vi.fn(), remove: vi.fn() }, offsetWidth: 0 };
+  }
+
+  it('runs the write and surfaces success on resolve', async () => {
+    vi.useFakeTimers();
+    try {
+      const button = makeButton();
+      const notify = vi.fn();
+      const markClean = vi.fn();
+      const write = vi.fn().mockResolvedValue();
+      const onSuccess = vi.fn();
+      const handler = runErrorAwareSave({
+        button,
+        write,
+        successMessage: 'Saved.',
+        errorLabel: 'Failed',
+        notify,
+        onSuccess,
+        markClean,
+      });
+      await handler();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith('Saved.', false, true);
+      expect(button.classList.add).toHaveBeenCalledWith('is-success');
+      expect(markClean).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('surfaces the write error without marking clean', async () => {
+    vi.useFakeTimers();
+    try {
+      const button = makeButton();
+      const notify = vi.fn();
+      const markClean = vi.fn();
+      const write = vi.fn().mockRejectedValue(new Error('boom'));
+      const handler = runErrorAwareSave({
+        button,
+        write,
+        successMessage: 'Saved.',
+        errorLabel: 'Failed',
+        notify,
+        markClean,
+      });
+      await handler();
+      expect(notify).toHaveBeenCalledWith('Failed: boom', true, true);
+      expect(button.classList.add).toHaveBeenCalledWith('is-error');
+      expect(markClean).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('renderSetupStatus', () => {
   it('renders the connected state', () => {
     const text = { textContent: '' };
@@ -167,10 +226,53 @@ describe('renderSetupStatus', () => {
     expect(icon.classList.toggle).toHaveBeenCalledWith('is-connected', true);
   });
 
-  it('renders the not-connected state', () => {
+  it('renders the configured (untested) state without claiming connection', () => {
     const text = { textContent: '' };
-    renderSetupStatus(text, null, { connected: false });
-    expect(text.textContent).toContain('Not connected');
+    const icon = { textContent: '', classList: { toggle: vi.fn() } };
+    renderSetupStatus(text, icon, { configured: true, provider: 'hermes' });
+    expect(text.textContent).toContain('Configured');
+    expect(text.textContent).toContain('check');
+    expect(text.textContent).not.toContain('Connected');
+    expect(icon.classList.toggle).toHaveBeenCalledWith('is-connected', false);
+  });
+
+  it('renders a failed check with a visible retry action', () => {
+    const text = { textContent: '' };
+    const icon = { textContent: '', classList: { toggle: vi.fn() } };
+    const action = { textContent: '', classList: { add: vi.fn(), remove: vi.fn() }, onclick: null };
+    const onRetry = vi.fn();
+    renderSetupStatus(
+      text,
+      icon,
+      {
+        configured: true,
+        error: 'gateway offline',
+        provider: 'hermes',
+        onRetry,
+        retryLabel: 'Retry',
+      },
+      action
+    );
+    expect(text.textContent).toContain('failed');
+    expect(text.textContent).not.toContain('Connected');
+    expect(action.classList.remove).toHaveBeenCalledWith('d-none');
+    expect(action.textContent).toBe('Retry');
+    action.onclick();
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it('hides the action button when connected', () => {
+    const text = { textContent: '' };
+    const action = { textContent: '', classList: { add: vi.fn(), remove: vi.fn() }, onclick: null };
+    renderSetupStatus(text, null, { connected: true, provider: 'api' }, action);
+    expect(action.classList.add).toHaveBeenCalledWith('d-none');
+  });
+
+  it('renders the not-configured state', () => {
+    const text = { textContent: '' };
+    renderSetupStatus(text, null, { configured: false });
+    expect(text.textContent).toContain('Not configured');
+    expect(text.textContent).not.toContain('Connected');
   });
 });
 

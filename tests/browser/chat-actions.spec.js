@@ -96,9 +96,25 @@ test('shows the selected mode, model, and reasoning level', async () => {
   await chat.goto(`chrome-extension://${extensionId}/chat.html`);
 
   try {
+    // Settle first-run initialization deterministically: confirm opening chat
+    // neither overwrites the saved profile nor discards its reasoning level,
+    // then assert the sidebar mirrors the saved value.
+    const saved = await chat.evaluate(
+      () =>
+        new Promise((resolve) => {
+          chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
+            const profile = (result.profiles || []).find(
+              (entry) => entry.id === result.lastSelectedProfileId
+            );
+            resolve({ reasoningLevel: profile?.reasoningLevel || '' });
+          });
+        })
+    );
+    expect(saved.reasoningLevel).toBe('high');
+
     await expect(chat.locator('#sidebar-mode-value')).toHaveText('API');
     await expect(chat.locator('#sidebar-model-value')).toHaveText('openrouter/free');
-    await expect(chat.locator('#sidebar-reasoning-value')).toHaveText('high');
+    await expect(chat.locator('#sidebar-reasoning-value')).toHaveText(saved.reasoningLevel);
   } finally {
     await context.close();
     removeUserDataDir(userDataDir);

@@ -133,6 +133,21 @@ async function getHermesCredential(profileId) {
   return result?.[HERMES_API_KEYS_KEY]?.[profileId] || '';
 }
 
+async function setHermesCredential(profileId, value) {
+  const result = await chrome.storage.local.get(HERMES_API_KEYS_KEY);
+  const keys = result?.[HERMES_API_KEYS_KEY] || {};
+  keys[profileId] = value;
+  await chrome.storage.local.set({ [HERMES_API_KEYS_KEY]: keys });
+}
+
+async function removeHermesCredential(profileId) {
+  const result = await chrome.storage.local.get(HERMES_API_KEYS_KEY);
+  const keys = { ...(result?.[HERMES_API_KEYS_KEY] || {}) };
+  if (!(profileId in keys)) return;
+  delete keys[profileId];
+  await chrome.storage.local.set({ [HERMES_API_KEYS_KEY]: keys });
+}
+
 async function getHermesSession(profileId) {
   const result = await chrome.storage.local.get(HERMES_SESSIONS_KEY);
   return result?.[HERMES_SESSIONS_KEY]?.[profileId] || '';
@@ -1984,8 +1999,16 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
     finalFetchOptions.method = method;
 
     if (method === 'GET' && !isEmptyArgs) {
-      const queryParams = new URLSearchParams(finalArgs).toString();
-      finalEndpointUrl = `${finalEndpointUrl}?${queryParams}`;
+      // Build the destination with URL/URLSearchParams so an endpoint that
+      // already has a query (or a fragment) keeps its existing parameters and
+      // tool arguments become separate, correctly encoded parameters (P2-14).
+      const destination = new URL(finalEndpointUrl);
+      const params = new URLSearchParams(destination.search);
+      for (const [key, value] of Object.entries(finalArgs)) {
+        params.set(key, value);
+      }
+      destination.search = params.toString();
+      finalEndpointUrl = destination.toString();
     } else if (['POST', 'PUT', 'PATCH'].includes(method) && !isEmptyArgs) {
       finalFetchOptions.headers['Content-Type'] = 'application/json';
       finalFetchOptions.body = JSON.stringify(finalArgs);
@@ -2022,6 +2045,95 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
     }
     console.warn('Background: User tool request failed', { errorName: error.name || 'Error' });
     throw new Error(formatToolRequestError());
+  }
+}
+
+const IMPROVE_INSTRUCTION_TIMEOUT_MS = 30_000;
+const IMPROVE_INSTRUCTION_SYSTEM_PROMPT =
+  'You are an expert prompt engineer. Improve the following prompt for a large language model to be clearer, more concise, and more effective. Only return the improved prompt text, nothing else.';
+
+/**
+ * Route the Options-page Improve Instruction flow through a background-owned,
+ * provider-aware, bounded request (P2-06).
+ *
+ * The API provider gets a bounded chat-completions POST reusing the endpoint,
+ * key, and model saved for the selected profile (credentials stay background-
+ * owned). Codex and Hermes profiles receive an explicit capability message
+ * rather than a misleading "configuration incomplete" error, because their
+ * transports are streaming run pipelines rather than a single OpenAI-shaped
+ * fetch. Any timeout or transport failure rejects, so the caller leaves the
+ * original instruction untouched.
+ * @param {string} prompt - The instruction content to improve.
+ * @returns {Promise<string>} The improved instruction text.
+ */
+async function improveInstructionForProfile(prompt) {
+  if (typeof prompt !== 'string' || !prompt.trim()) {
+    throw new Error('The instruction is empty; nothing to improve.');
+  }
+  const result = await chrome.storage.local.get(['profiles', 'lastSelectedProfileId']);
+  const profiles = result.profiles || [];
+  const profileId = result.lastSelectedProfileId || 'default';
+  const storedProfile = profiles.find((entry) => entry.id === profileId);
+  if (!storedProfile) throw new Error('The selected connection profile was not found.');
+  const normalizedProfile = normalizeProfileRecord(storedProfile);
+  if (!normalizedProfile.valid) throw new Error(normalizedProfile.error);
+  const profile = normalizedProfile.value;
+
+  if (profile.provider === 'codex' || profile.provider === 'hermes') {
+    const error = new Error(
+      `Improve Instruction is not supported for ${profile.provider === 'hermes' ? 'Hermes' : 'Codex'} profiles yet. Switch to an API connection profile to use it.`
+    );
+    error.capability = 'unsupported';
+    throw error;
+  }
+
+  if (!profile.llmEndpoint || !profile.apiKey || !profile.modelName) {
+    throw new Error('API configuration is incomplete. Please set it up in settings.');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), IMPROVE_INSTRUCTION_TIMEOUT_MS);
+  try {
+    const response = await fetch(profile.llmEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${profile.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: profile.modelName,
+        messages: [
+          { role: 'system', content: IMPROVE_INSTRUCTION_SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}.`);
+    }
+    const bodyText = await readBoundedResponseText(response);
+    let responseData;
+    try {
+      responseData = JSON.parse(bodyText);
+    } catch (_) {
+      throw new Error('Invalid response format from API: not valid JSON.');
+    }
+    const content = responseData?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      throw new Error('Invalid response format from API: Missing message content.');
+    }
+    return content.trim();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('The improve request timed out. Your instruction was left unchanged.');
+    }
+    if (error.capability === 'unsupported') throw error;
+    if (error.message === 'Invalid response format from API: Missing message content.') throw error;
+    throw new Error('The improve request failed. Your instruction was left unchanged.');
   }
 }
 
@@ -2631,6 +2743,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }
+  if (request?.action === 'improveInstruction') {
+    const extensionOrigin = getExtensionOrigin();
+    if (!isExtensionSender(sender, extensionOrigin)) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
+    improveInstructionForProfile(String(request.prompt || ''))
+      .then((content) => sendResponse({ success: true, content }))
+      .catch((error) =>
+        sendResponse({
+          success: false,
+          capability: error.capability === 'unsupported' ? 'unsupported' : undefined,
+          error: error.message,
+        })
+      );
+    return true;
+  }
   const extensionOrigin = getExtensionOrigin();
   const extensionPageSender = isExtensionSender(sender, extensionOrigin);
   recordDevDiagnostic('runtime_message_received', {
@@ -2984,6 +3112,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           },
         });
       })
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'hermesKeyStatus') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
+    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
+    getHermesCredential(profileId)
+      .then((key) => sendResponse({ success: true, configured: Boolean(key) }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'hermesKeySet') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
+    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
+    if (!profileId) {
+      sendResponse({ success: false, error: 'A Hermes profile is required.' });
+      return true;
+    }
+    setHermesCredential(profileId, typeof request.value === 'string' ? request.value : '')
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'hermesKeyRemove') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
+    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
+    if (!profileId) {
+      sendResponse({ success: false, error: 'A Hermes profile is required.' });
+      return true;
+    }
+    removeHermesCredential(profileId)
+      .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
   }

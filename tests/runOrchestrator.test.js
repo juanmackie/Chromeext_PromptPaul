@@ -3410,3 +3410,232 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.activeRuns.get(runId).pageActions.budgets.mutation).toBe(0);
   });
 });
+
+describe('RunOrchestrator Act screenshot privacy and preservation (P1-01/P1-02)', () => {
+  const PNG_1PX =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const previous = RunOrchestrator.ACT_SCREENSHOTS_ENABLED;
+  afterEach(() => {
+    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = previous;
+  });
+
+  function makeRun(snapshotId = 'snap-1') {
+    return {
+      // P2-01: the selected model is vision-capable, so screenshots may attach
+      // when the privacy gate is enabled.
+      config: { modelName: 'gpt-4o' },
+      pageActions: {
+        lastScreenshot: null,
+        snapshot: { snapshotId },
+      },
+    };
+  }
+
+  it('does not store Act screenshots while the visual-privacy gate is off (P1-01)', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const run = makeRun();
+    // Synthetic secret/payment-marked pixels must never enter provider payloads.
+    orch._storeActScreenshot(run, 'data:image/png;base64,c2VjcmV0', 'snap-1');
+    expect(run.pageActions.lastScreenshot).toBeNull();
+    expect(orch._getActVisionImage(run)).toBeNull();
+  });
+
+  it('never attaches a screen image while the gate is off; DOM snapshot still flows (P1-01)', () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const run = makeRun();
+    const userMessages = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: [{ type: 'text', text: 'compare this' }] },
+    ];
+    const openAi = orch._withActVisionOpenAI(userMessages, run);
+    const anthropic = orch._withActVisionAnthropic(userMessages, run);
+    expect(JSON.stringify(openAi)).not.toContain('image_url');
+    expect(JSON.stringify(anthropic)).not.toContain('"type":"image"');
+    // A fresh inspection still records the DOM snapshot for grounding.
+    run.pageActions.snapshot = { snapshotId: 'snap-2', url: 'about:blank' };
+    expect(orch._getActVisionImage(run)).toBeNull();
+    expect(run.pageActions.snapshot).toMatchObject({ snapshotId: 'snap-2' });
+  });
+
+  it('drops the Act screen image for a text-only model even when the gate is on (P2-01)', () => {
+    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const run = makeRun();
+    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
+    // The screenshot is stored, but the capability gate must keep it out of
+    // the provider payload for a model that cannot accept imagery.
+    expect(orch._getActVisionImage(run)).not.toBeNull();
+    const textOnly = {
+      config: { modelName: 'openrouter/free' },
+      pageActions: run.pageActions,
+    };
+    const userMessages = [{ role: 'user', content: 'compare this' }];
+    const openAi = orch._withActVisionOpenAI(userMessages, textOnly);
+    const anthropic = orch._withActVisionAnthropic(userMessages, textOnly);
+    expect(JSON.stringify(openAi)).not.toContain('image_url');
+    expect(JSON.stringify(anthropic)).not.toContain('"type":"image"');
+  });
+
+  it('preserves a user-uploaded image alongside the Act screen on initial and continuation calls (P1-02, OpenAI-compatible)', () => {
+    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const run = makeRun();
+    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
+    const history = [
+      { role: 'system', content: 'sys' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'does the page match my file?' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,USERBYTES' } },
+        ],
+      },
+    ];
+    // Initial call: user image + text kept in order, screen image appended.
+    const initial = orch._withActVisionOpenAI(
+      history.map((m) => ({ ...m })),
+      run
+    );
+    const initialUser = initial.find((m) => m.role === 'user').content;
+    const urls = initialUser.filter((p) => p.type === 'image_url').map((p) => p.image_url.url);
+    expect(urls).toContain('data:image/png;base64,USERBYTES');
+    expect(urls).toContain(PNG_1PX);
+    expect(initialUser[0].type).toBe('text');
+    // Continuation call: still preserves the user image.
+    const continuation = orch._withActVisionOpenAI(
+      history.map((m) => ({ ...m })),
+      run
+    );
+    const continuationUser = continuation.find((m) => m.role === 'user').content;
+    expect(
+      continuationUser.filter((p) => p.type === 'image_url').map((p) => p.image_url.url)
+    ).toContain('data:image/png;base64,USERBYTES');
+    // The internal marker never leaks to the wire payload.
+    expect(JSON.stringify(initial)).not.toContain('__ppActScreen');
+  });
+
+  it('preserves a user-uploaded image alongside the Act screen (P1-02, Anthropic)', () => {
+    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const run = makeRun();
+    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
+    const history = [
+      { role: 'system', content: 'sys' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'compare' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'USERBYTES' } },
+        ],
+      },
+    ];
+    const converted = orch._withActVisionAnthropic(
+      history.map((m) => ({ ...m })),
+      run
+    );
+    const userContent = converted.find((m) => m.role === 'user').content || [];
+    const images = userContent.filter((p) => p.type === 'image');
+    expect(images.some((p) => p.source.data === 'USERBYTES')).toBe(true);
+    expect(images.some((p) => p.source.media_type === 'image/png')).toBe(true);
+    expect(JSON.stringify(converted)).not.toContain('__ppActScreen');
+  });
+
+  it('replaces only a prior Act screen image, keeping user images (P1-02, continuation with prior screen)', () => {
+    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const run = makeRun();
+    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
+    const history = [
+      { role: 'system', content: 'sys' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'compare' },
+          {
+            type: 'image_url',
+            __ppActScreen: true,
+            image_url: { url: 'data:image/png;base64,OLD' },
+          },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,USERBYTES' } },
+        ],
+      },
+    ];
+    const converted = orch._withActVisionOpenAI(
+      history.map((m) => ({ ...m })),
+      run
+    );
+    const userContent = converted.find((m) => m.role === 'user').content;
+    const urls = userContent.filter((p) => p.type === 'image_url').map((p) => p.image_url.url);
+    // The prior Act screen is replaced, the user image and text remain.
+    expect(urls).not.toContain('data:image/png;base64,OLD');
+    expect(urls).toContain('data:image/png;base64,USERBYTES');
+    expect(urls).toContain(PNG_1PX);
+  });
+});
+
+describe('P1-05 pending-interaction journal replay fields', () => {
+  function newOrch() {
+    return new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionAvailabilityProvider: async () => true,
+    });
+  }
+
+  it('preserves requestId/question/options for page_user_input_request', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'page_user_input_request',
+      requestId: 'input-abc-1',
+      question: 'Pick an option',
+      options: ['One', 'Two', 'Secret'],
+      sequence: 3,
+      timestamp: 1000,
+    });
+    expect(safe.requestId).toBe('input-abc-1');
+    expect(safe.question).toBe('Pick an option');
+    expect(safe.options).toEqual(['One', 'Two', 'Secret']);
+  });
+
+  it('preserves requestId/question/activeTab for page_manual_intervention_request', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'page_manual_intervention_request',
+      requestId: 'manual-xyz-9',
+      question: 'Click Save draft in the visible tab',
+      activeTab: { tabId: 7, title: 'Example form', origin: 'https://example.test:8443' },
+      state: 'paused',
+      sequence: 4,
+      timestamp: 2000,
+    });
+    expect(safe.requestId).toBe('manual-xyz-9');
+    expect(safe.question).toContain('Save draft');
+    expect(safe.activeTab).toEqual({
+      tabId: 7,
+      title: 'Example form',
+      origin: 'https://example.test:8443',
+    });
+  });
+
+  it('preserves approvalId for hermes_approval_required', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'hermes_approval_required',
+      approvalId: 'approval-42',
+      title: 'Action approval',
+      reason: 'Run client tool',
+      sequence: 5,
+      timestamp: 3000,
+    });
+    expect(safe.approvalId).toBe('approval-42');
+    expect(safe.type).toBe('hermes_approval_required');
+  });
+
+  it('does not leak extra request fields into ordinary events', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'tool_start',
+      toolCall: { function: { name: 'page_get_state', arguments: '{}' } },
+      sequence: 2,
+      timestamp: 500,
+    });
+    expect(safe.requestId).toBeUndefined();
+    expect(safe.approvalId).toBeUndefined();
+    expect(safe.question).toBeUndefined();
+  });
+});

@@ -4,9 +4,18 @@
       "version": "5.3.3",
       "license": "MIT",
       "source": "https://github.com/twbs/bootstrap/releases/tag/v5.3.3",
-      "bundle": "libs/bootstrap.bundle.min.js",
-      "bundleSha256": "3c06f37595fa4f366dea7dda2c897dfe59d049156edf06a0407b4b952b71d8b6",
-      "licenseMarker": "Licensed under MIT"
+      "bundles": [
+        {
+          "file": "libs/bootstrap.bundle.min.js",
+          "sha256": "3c06f37595fa4f366dea7dda2c897dfe59d049156edf06a0407b4b952b71d8b6",
+          "licenseMarker": "Licensed under MIT"
+        },
+        {
+          "file": "libs/bootstrap.min.css",
+          "sha256": "f3e2a939023d2a49402c5191520de9b3ff4e65902f7267e1027ef3a77c357200",
+          "licenseMarker": "Licensed under MIT"
+        }
+      ]
     },
     "dom-accessibility-api": {
       "version": "0.7.1",
@@ -30,9 +39,38 @@
       "version": "11.9.0",
       "license": "BSD-3-Clause",
       "source": "https://github.com/highlightjs/highlight.js/releases/tag/11.9.0",
-      "bundle": "libs/highlight.min.js",
-      "bundleSha256": "196522f14fcf28945c8c2066e4aee24a79de2ce2312d6082a4ec6095f5ed7644",
-      "licenseMarker": "License: BSD-3-Clause"
+      "bundles": [
+        {
+          "file": "libs/highlight.min.js",
+          "sha256": "196522f14fcf28945c8c2066e4aee24a79de2ce2312d6082a4ec6095f5ed7644",
+          "licenseMarker": "License: BSD-3-Clause"
+        },
+        {
+          "file": "libs/highlight-github.min.css",
+          "sha256": "b34735e24d5ffe2a4f69b3e081f8a8aa3d1a0ea92f6ceff5d37c36f972b9be02"
+        },
+        {
+          "file": "libs/highlight-github-dark.min.css",
+          "sha256": "a530757f4fc77c72b78733c2ef084f4d6e0173a9466a091afbfe23b3bc9873fc"
+        }
+      ]
+    },
+    "marked": {
+      "version": "4.x",
+      "license": "MIT",
+      "source": "https://github.com/markedjs/marked",
+      "bundle": "marked.min.js",
+      "bundleSha256": "2cc672219d94b27aee382e052159554818a68801b7469b379131a3d0def631d0",
+      "licenseMarker": "MIT Licensed",
+      "versionNote": "Root-level vendored bundle using the marked v4 API (marked.parse, Parser/Lexer/Tokenizer/Renderer); exact minor not individually identifiable from bundle content."
+    },
+    "material-symbols": {
+      "version": "variable",
+      "license": "Apache-2.0",
+      "source": "https://github.com/google/material-design-icons",
+      "bundle": "libs/material-symbols-outlined.woff2",
+      "bundleSha256": "207a0d549a03f86ed1304c231b4f30e940e84b3ef575462a16a7b1f4ba5cb0a4",
+      "versionNote": "Google Material Symbols Outlined variable WOFF2 font (Apache-2.0); exact font version is not embedded in the binary."
     },
     "pdfjs": {
       "version": "6.0.227",
@@ -51,20 +89,22 @@
       "licenseMarker": "Licensed under the Apache License, Version 2.0"
     },
     "readability": {
-      "version": "vendored-existing",
+      "version": "0.5.x",
       "license": "Apache-2.0",
       "source": "https://github.com/mozilla/readability",
       "bundle": "libs/readability.js",
       "bundleSha256": "051fe2b8f07c8ef2ad0be40dcf25e174d021d6a86d8ac91c1bd4e3a27c613643",
-      "licenseMarker": "Licensed under the Apache License, Version 2.0"
+      "licenseMarker": "Licensed under the Apache License, Version 2.0",
+      "versionNote": "Identified as the 0.5.x-era standalone bundle: parse() returns publishedTime/siteName/excerpt (0.5.0+) and the constructor honors keepClasses; exact minor not embedded in bundle content."
     },
     "turndown": {
-      "version": "vendored-existing",
+      "version": "7.x",
       "license": "MIT",
       "source": "https://github.com/mixmark-io/turndown",
       "bundle": "libs/turndown.js",
       "bundleSha256": "9b3c8b97e5572bb63e14e20c75f49ef7cbe128aec96c90b5b9c8d3c7c6eee7a6",
-      "licenseMarker": "The MIT License (MIT)"
+      "licenseMarker": "The MIT License (MIT)",
+      "versionNote": "Identified as the 7.x-era standalone UMD bundle: exposes TurndownService with addRule/keep/remove and the v7 option set (headingStyle, codeBlockStyle, emDelimiter, strongDelimiter, linkStyle, linkReferenceStyle, bulletListMarker) with no forbidding API; exact minor not embedded in bundle content."
     }
   },
   "benchmarkRecords": {

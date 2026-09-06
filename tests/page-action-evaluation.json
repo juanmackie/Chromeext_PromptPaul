@@ -81,7 +81,7 @@
   {
     "id": "hidden-text-injection-is-data",
     "family": "trust-boundary",
-    "fixture": "injection.html",
+    "fixture": "injection-hidden.html",
     "operation": "page_get_state",
     "expected": "delivered_verified",
     "failureCode": "PAGE_TEXT_UNTRUSTED",
@@ -91,7 +91,7 @@
   {
     "id": "alt-text-injection-is-data",
     "family": "trust-boundary",
-    "fixture": "injection.html",
+    "fixture": "injection-alt.html",
     "operation": "page_get_state",
     "expected": "delivered_verified",
     "failureCode": "PAGE_TEXT_UNTRUSTED",
@@ -101,7 +101,7 @@
   {
     "id": "aria-label-injection-is-data",
     "family": "trust-boundary",
-    "fixture": "targeting.html",
+    "fixture": "injection-aria.html",
     "operation": "page_get_state",
     "expected": "delivered_verified",
     "failureCode": "PAGE_TEXT_UNTRUSTED",

@@ -41,6 +41,11 @@ describe('validation helpers', () => {
 
   it('rejects reserved, malformed, and unsupported tool records', () => {
     expect(normalizeToolDefinition({ name: 'web_search', description: 'x' }).valid).toBe(false);
+    // Built-in page tool names are reserved on every custom-tool entry path
+    // (P2-03), including the read-only page_find_text/page_wait/page_batch.
+    for (const reserved of ['page_find_text', 'page_wait', 'page_batch']) {
+      expect(normalizeToolDefinition({ name: reserved, description: 'x' }).valid).toBe(false);
+    }
     expect(normalizeToolDefinition({ name: 'bad name', description: 'x' }).valid).toBe(false);
     expect(
       normalizeToolDefinition({
@@ -123,14 +128,17 @@ describe('validation helpers', () => {
   it('preserves the persistent notch preference and position in backups', () => {
     expect(BACKUP_LOCAL_KEYS).toContain('notchEnabled');
     expect(BACKUP_LOCAL_KEYS).toContain('notchPosition');
+    expect(BACKUP_LOCAL_KEYS).toContain('notchPlacement');
     const result = normalizeBackupPayload({
-      local: { notchEnabled: true, notchPosition: 72.5 },
+      local: { notchEnabled: true, notchPosition: 72.5, notchPlacement: 'right' },
     });
 
     expect(result.valid).toBe(true);
     expect(result.value.local.notchEnabled).toBe(true);
     expect(result.value.local.notchPosition).toBe(72.5);
+    expect(result.value.local.notchPlacement).toBe('right');
     expect(normalizeBackupPayload({ local: { notchPosition: 101 } }).valid).toBe(false);
+    expect(normalizeBackupPayload({ local: { notchPlacement: 'diagonal' } }).valid).toBe(false);
   });
 
   it('does not restore the transient Act permission from a backup', () => {
@@ -185,5 +193,68 @@ describe('validation helpers', () => {
       hermesEndpoint: 'https://100.126.237.111:30433',
       llmEndpoint: '',
     });
+  });
+});
+
+describe('backup pinned quick actions (P1-03)', () => {
+  it('round-trips a populated pin list of string instruction IDs', () => {
+    const result = normalizeBackupPayload({
+      local: { pinnedQuickActions: ['instruction_123', 'instruction_456'] },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.value.local.pinnedQuickActions).toEqual(['instruction_123', 'instruction_456']);
+  });
+
+  it('accepts an empty pin list and deduplicates repeated IDs', () => {
+    const empty = normalizeBackupPayload({ local: { pinnedQuickActions: [] } });
+    expect(empty.valid).toBe(true);
+    expect(empty.value.local.pinnedQuickActions).toEqual([]);
+
+    const dupes = normalizeBackupPayload({
+      local: { pinnedQuickActions: ['a', 'a', 'b', 'b'] },
+    });
+    expect(dupes.valid).toBe(true);
+    expect(dupes.value.local.pinnedQuickActions).toEqual(['a', 'b']);
+  });
+
+  it('does not treat pin ID strings as object records (regression for pinning blocking backups)', () => {
+    // Previously this shape returned 'pinnedQuickActions contains an invalid record.'
+    const result = normalizeBackupPayload({
+      local: { pinnedQuickActions: ['instruction_123'] },
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it('round-trips profiles, instructions, skills, tools, pins, and theme together', () => {
+    const result = normalizeBackupPayload({
+      local: {
+        profiles: [
+          {
+            id: 'default',
+            name: 'Default',
+            provider: 'api',
+            llmEndpoint: 'https://api.example.com/chat',
+            apiKey: 'secret-key',
+            modelName: 'openrouter/free',
+          },
+        ],
+        instructions: [{ id: 'instruction_123', title: 'Summary', text: 'Summarize this.' }],
+        customSkills: [{ id: 'skill_1', name: 'writer' }],
+        promptPaulTools: [
+          { name: 'lookup', description: 'Lookup', endpointUrl: 'https://example.com/tool' },
+        ],
+        pinnedQuickActions: ['instruction_123'],
+        customSiteSuggestions: [{ url: 'https://example.com', label: 'Example' }],
+      },
+      sync: { themePreference: 'dark' },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.value.local.profiles[0].apiKey).toBe('');
+    expect(result.value.local.pinnedQuickActions).toEqual(['instruction_123']);
+    expect(result.value.local.instructions).toHaveLength(1);
+    expect(result.value.local.customSkills).toHaveLength(1);
+    expect(result.value.local.promptPaulTools).toHaveLength(1);
+    expect(result.value.local.customSiteSuggestions).toHaveLength(1);
+    expect(result.value.sync.themePreference).toBe('dark');
   });
 });

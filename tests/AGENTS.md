@@ -10,7 +10,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `page-action-evaluation.json`, `pageActionEvaluation.test.js`, and `pageActionEvaluationExecution.test.js` own the credential-free browser-action evaluation corpus, schema guards, provider matrix, and bounded metric execution.
 - `hermesTransport.test.js` covers Hermes endpoint validation, capability/error handling, approval choices, output adaptation, and event adaptation without real credentials or a live gateway.
 - `runtimeAuthorization.test.js` covers extension sender, content-script tab, and opaque run-owner checks without Chrome runtime state.
-- `validation.test.js` covers persistence and validation of the `notchEnabled` and bounded `notchPosition` backup preferences and `themePreference` values.
+- `validation.test.js` covers persistence and validation of the `notchEnabled`, bounded `notchPosition`, and `notchPlacement` backup preferences and `themePreference` values.
 - `streamSafety.test.js` covers bounded SSE buffers and provider error-body reads.
 - `devDiagnostics.test.js` covers credential-shaped redaction and diagnostic payload bounds; it never enables browser tracing or uses real credentials.
 - `chatModelStatus.test.js` covers the sidebar model-name formatting fallback.
@@ -31,7 +31,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - Scope/diff evaluation must use indexed semantic regions and bounded change metadata. It must never accept model-supplied selectors or return raw field values.
 - Page-action tests must cover bounded fingerprints, read-only `page_find_text` search, repeated-action loop blocking, automatic active-tab document recovery, same-tab and owned-tab link navigation under the single Act lease, opened-tab readiness, tab-local bridge quarantine, separate action budgets, bounded task notes/history compaction, and journal-safe event behavior. Development diagnostics tests must preserve the production no-op build variant and credential redaction.
 - Browser fixtures represent Gmail/Outlook compose surfaces locally; they are not production pages.
-- `tests/browser/page-action-evaluation.spec.js` executes browser-safe evaluation cases and records bounded result, receipt, action-count, prompt-size, and failure-code metrics without persisting page data.
+- `tests/browser/page-action-evaluation.spec.js` and `tests/pageActionEvaluationExecution.test.js` provide executor-regression coverage of browser-safe evaluation cases and record bounded result, receipt, action-count, tool-argument-size, and failure-code metrics without persisting page data. Actual provider payload size, observed policy outcomes, end-state task success, latency, and repeated-run consistency are measured in the whole-task suite of `pageActionEvaluationExecution.test.js`, passing provider cases through their real wire conversion and using distinct injection fixtures (`injection-hidden.html`, `injection-alt.html`, `injection-aria.html`).
 
 ## Work Guidance
 

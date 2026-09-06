@@ -10,8 +10,10 @@
  * - Generate build metadata
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const repoRoot = process.cwd();
 const srcDir = repoRoot;
@@ -108,7 +110,25 @@ function validateManifest(manifest) {
 }
 
 /**
- * Copy directory recursively
+ * Development-only files excluded from the production package. Each entry is
+ * a review-approved pattern; production directory copies filter these out
+ * while development/evaluation builds keep them for debugging. Runtime skill
+ * files (SKILL.md, skills.json), provenance, and license notices are NOT in
+ * this set and always ship.
+ */
+const DEV_ONLY_EXCLUDES = ['AGENTS.md'];
+
+/**
+ * Return true when a file name is a development-only file excluded from the
+ * shipped production package.
+ */
+function isDevOnly(entry) {
+  return DEV_ONLY_EXCLUDES.some((pattern) => entry === pattern);
+}
+
+/**
+ * Copy directory recursively. For production builds, development-only files
+ * (DOX instructions and dev/eval variant sources) are excluded.
  */
 function copyDir(src, dest) {
   if (!fs.existsSync(dest)) {
@@ -118,6 +138,9 @@ function copyDir(src, dest) {
   const entries = fs.readdirSync(src, { withFileTypes: true });
 
   entries.forEach((entry) => {
+    if (isProd && isDevOnly(entry.name)) {
+      return;
+    }
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
 
@@ -269,20 +292,98 @@ function installDiagnosticsVariant() {
 }
 
 /**
- * Generate build metadata
+ * Run a git command, returning trimmed stdout, or null when git/HEAD is
+ * unavailable (e.g. a source archive checked out without history).
  */
+function runGit(args) {
+  try {
+    return execFileSync('git', args, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the actual git revision and working-tree cleanliness for the
+ * release trace. Falls back to the CI-provided SHA when present, then to
+ * 'unknown' when no repository is available.
+ */
+function resolveGitInfo() {
+  const commit = runGit(['rev-parse', 'HEAD']) || process.env.GITHUB_SHA || 'unknown';
+  const branch =
+    runGit(['rev-parse', '--abbrev-ref', 'HEAD']) || process.env.GITHUB_REF || 'unknown';
+  const dirty =
+    runGit(['status', '--porcelain']) !== null && runGit(['status', '--porcelain']) !== '';
+  return {
+    commit,
+    branch,
+    clean: !dirty,
+    // Full set of modified/untracked paths for a reproducible trace.
+    dirtyPaths: dirty ? (runGit(['status', '--porcelain']) || '').split('\n').filter(Boolean) : [],
+  };
+}
+
+/**
+ * Recursively collect files under a directory as relative paths.
+ */
+function collectFiles(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectFiles(abs));
+    } else {
+      out.push(path.relative(buildDir, abs));
+    }
+  }
+  return out;
+}
+
+/**
+ * Compute a reproducible SHA-256 root over the built artifact: a hash over
+ * every file's path and content. Sorting guarantees the same tree yields the
+ * same checksum regardless of copy order. Also writes a per-file checksum
+ * manifest so any downloaded candidate can be verified exactly.
+ */
+function computeArtifactChecksum() {
+  const files = collectFiles(buildDir)
+    .filter((f) => f !== 'build-metadata.json' && f !== 'BUILD.sha256')
+    .sort();
+  const fileHashes = files.map((f) => {
+    const content = fs.readFileSync(path.join(buildDir, f));
+    return `${crypto.createHash('sha256').update(content).digest('hex')}  ${f}`;
+  });
+  const root = crypto
+    .createHash('sha256')
+    .update(fileHashes.join('\n') + '\n')
+    .digest('hex');
+  return { root, fileHashes };
+}
+
 function generateBuildMetadata() {
+  const git = resolveGitInfo();
   const metadata = {
     buildTime: new Date().toISOString(),
     buildType: isEval ? 'evaluation' : isProd ? 'production' : 'development',
     diagnostics: isProd ? 'excluded' : 'available',
     evalHook: isEval ? 'available' : 'excluded',
     version: readJson('package.json').version,
-    commit: process.env.GITHUB_SHA || 'local',
-    branch: process.env.GITHUB_REF || 'local',
+    commit: git.commit,
+    branch: git.branch,
+    clean: git.clean,
+    dirtyPaths: git.dirtyPaths,
   };
 
+  // Per-file + root artifact checksum for release traceability. The recorded
+  // commit/clean status plus this root checksum let a downloaded candidate be
+  // traced to the tested revision and reproduced byte-for-byte.
+  const checksum = computeArtifactChecksum();
+  metadata.artifactSha256 = checksum.root;
+
   fs.writeFileSync(path.join(buildDir, 'build-metadata.json'), JSON.stringify(metadata, null, 2));
+  fs.writeFileSync(path.join(buildDir, 'BUILD.sha256'), checksum.fileHashes.join('\n') + '\n');
 }
 
 /**

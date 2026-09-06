@@ -967,12 +967,22 @@ document.addEventListener('DOMContentLoaded', () => {
     streamState.setNextOrchestratorEventSequence(latestRecovery.journal?.eventSequence || 0);
     setPageActionsRunActive(latestRecovery.journal?.pageActions?.enabled === true);
     beginRunUi();
+    // P1-05: replay pending user interactions so controls return after a
+    // reconnect. A terminal event observed before a pending interaction means
+    // the run already ended; do not render a stale control that can no longer
+    // be resolved. Decisions and secret arguments are never restored from the
+    // journal.
+    let replaySawTerminal = false;
     for (const event of latestRecovery.journal?.events || []) {
+      if (['complete', 'error', 'aborted'].includes(event.type)) {
+        replaySawTerminal = true;
+        continue;
+      }
       if (event.type === 'page_action_state') {
         updatePageActionActivity(chatArea, { ...event, runId });
       } else if (event.type === 'page_action_warning' || event.type === 'page_action_notice') {
         updatePageActionActivity(chatArea, { ...event, runId, state: event.state || 'notice' });
-      } else if (event.type === 'page_action_confirmation') {
+      } else if (event.type === 'page_action_confirmation' && !replaySawTerminal) {
         renderPageActionConfirmation(
           chatArea,
           event,
@@ -998,6 +1008,40 @@ document.addEventListener('DOMContentLoaded', () => {
         );
       } else if (event.type === 'page_action_decision') {
         resolvePageActionConfirmation(chatArea, event);
+      } else if (!replaySawTerminal) {
+        // Replay pending interactions through the same renderer used for live
+        // events. The owner token is re-established from the run auth, never
+        // persisted in the journal.
+        if (
+          event.type === 'page_user_input_request' ||
+          event.type === 'page_manual_intervention_request'
+        ) {
+          event.ownerToken = getRunAuth(runId).ownerToken;
+          handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
+        } else if (event.type === 'hermes_approval_required') {
+          hermesChat.renderHermesApproval(
+            chatArea,
+            event,
+            async (choice) => {
+              if (!(await refreshRunOwnerToken(runId))) {
+                throw new Error(
+                  'Run reconnect authorization was not established. Reload Prompt Paul.'
+                );
+              }
+              const response = await chrome.runtime.sendMessage({
+                action: 'hermesApprovalDecision',
+                runId,
+                approvalId: event.approvalId,
+                choice,
+                ...getRunAuth(runId, streamState.getSourceTabId()),
+              });
+              if (!response?.success)
+                throw new Error(response?.error || 'This Hermes approval is no longer active.');
+              return response;
+            },
+            () => abortRun(runId)
+          );
+        }
       }
     }
   }

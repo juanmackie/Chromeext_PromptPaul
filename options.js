@@ -38,6 +38,7 @@ import {
   announceDirtyChange,
   resolveCredentialValue,
   flashSaveFeedback,
+  runErrorAwareSave,
   renderSetupStatus,
   endpointHost,
 } from './src/options/OptionsUI.js';
@@ -73,18 +74,19 @@ const STARTER_SYSTEM_PROMPT = 'You are a helpful assistant.';
 
 // Assigned in DOMContentLoaded; invoked from async load/save flows so the
 // dirty trackers re-baseline after storage-backed fields are populated.
-let markAllTrackersClean = null;
+let markConnectionTrackerClean = null;
+let markPrivacyTrackerClean = null;
 let markGroundingTrackerClean = null;
 let markPageActionsTrackerClean = null;
 let markNotchTrackerClean = null;
 let refreshSetupStatus = null;
 let pendingDefaultApiKey = null;
+let connectionStatusDirty = false;
 let codexLoginPollTimer = null;
 let modelLoadSequence = 0;
 const modelMetadataByProfile = new Map();
 const CUSTOM_MODEL_VALUE = '__custom__';
 const DEFAULT_CODEX_REASONING_LEVEL = 'medium';
-const HERMES_API_KEYS_KEY = 'hermesApiKeys';
 const MAX_INSTRUCTION_NAME_CHARS = 256;
 const MAX_INSTRUCTION_CONTENT_CHARS = 20_000;
 const MAX_INSTRUCTION_TAG_CHARS = 2_000;
@@ -815,21 +817,21 @@ function saveOptions(e) {
   const saveButton = document.getElementById('save');
   saveButton.disabled = true;
 
-  // Save to local storage profiles
-  chrome.storage.local.get(['profiles', HERMES_API_KEYS_KEY], (result) => {
+  // Save to local storage profiles. Hermes credentials are background-owned
+  // and written via the background worker, never read or written here.
+  chrome.storage.local.get(['profiles'], (result) => {
     let profiles = result.profiles || [];
-    const hermesApiKeys = result[HERMES_API_KEYS_KEY] || {};
     let profileToUpdate = profiles.find((p) => p.id === selectedProfileId);
     const storedApiKey = profileToUpdate?.apiKey || '';
-    const storedHermesKey = hermesApiKeys[selectedProfileId] || '';
     const effectiveStoredApiKey =
-      provider === 'hermes' ? storedHermesKey : pendingDefaultApiKey || storedApiKey || '';
+      provider === 'hermes' ? '' : pendingDefaultApiKey || storedApiKey || '';
     const credentialIsConfigured = apiKeyIsMaskedConfigured || Boolean(effectiveStoredApiKey);
     const resolvedCredential = resolveCredentialValue(
       apiKeyValue,
       credentialIsConfigured,
       effectiveStoredApiKey
     );
+    profileToUpdate = profileToUpdate ? { ...profileToUpdate } : null;
     if (!profileToUpdate) {
       profileToUpdate = {
         id: selectedProfileId,
@@ -859,12 +861,6 @@ function saveOptions(e) {
       profileToUpdate.lastUpdated = new Date().toLocaleString();
     }
 
-    if (provider === 'hermes') {
-      if (resolvedCredential) hermesApiKeys[selectedProfileId] = resolvedCredential;
-    } else {
-      delete hermesApiKeys[selectedProfileId];
-    }
-
     const normalizedProfile = normalizeProfileRecord(profileToUpdate);
     if (!normalizedProfile.valid) {
       saveButton.disabled = false;
@@ -883,7 +879,6 @@ function saveOptions(e) {
     chrome.storage.local.set(
       {
         profiles: profiles,
-        [HERMES_API_KEYS_KEY]: hermesApiKeys,
         lastSelectedProfileId: selectedProfileId,
       },
       () => {
@@ -896,10 +891,44 @@ function saveOptions(e) {
         } else {
           showStatus(`Settings for profile '${profileToUpdate.name}' saved.`);
           flashSaveFeedback(saveButton, false);
+          // P2-10: keep Hermes credential writes background-owned. A nonempty
+          // typed key is stored; an explicitly cleared field removes the key;
+          // a masked (unchanged) field leaves the existing key in place.
+          let hermesKeyAction = Promise.resolve();
+          if (provider === 'hermes') {
+            if (apiKeyValue) {
+              hermesKeyAction = chrome.runtime
+                .sendMessage({
+                  action: 'hermesKeySet',
+                  profileId: selectedProfileId,
+                  value: apiKeyValue,
+                })
+                .then((res) => {
+                  if (!res?.success) throw new Error(res?.error || 'Failed to store Hermes key.');
+                });
+            } else if (!apiKeyIsMaskedConfigured) {
+              hermesKeyAction = chrome.runtime
+                .sendMessage({ action: 'hermesKeyRemove', profileId: selectedProfileId })
+                .then((res) => {
+                  if (!res?.success) throw new Error(res?.error || 'Failed to clear Hermes key.');
+                });
+            }
+          } else {
+            hermesKeyAction = chrome.runtime
+              .sendMessage({ action: 'hermesKeyRemove', profileId: selectedProfileId })
+              .then((res) => {
+                if (!res?.success) throw new Error(res?.error || 'Failed to clear Hermes key.');
+              });
+          }
+          // Hermes key sync runs after the profile record saves so the profile
+          // and its credential stay consistent even across slow storage writes.
+          hermesKeyAction.catch((error) => {
+            console.error('Options: Error syncing Hermes credential:', error);
+          });
           // Reload options to reflect changes, especially if it was a new profile or name changed
           pendingDefaultApiKey = null;
           loadOptions();
-          if (markAllTrackersClean) markAllTrackersClean();
+          if (markConnectionTrackerClean) markConnectionTrackerClean();
           if (refreshSetupStatus) refreshSetupStatus();
         }
         saveButton.disabled = false;
@@ -915,9 +944,8 @@ function saveOptions(e) {
  */
 function loadProfileSettings(profileId) {
   pendingDefaultApiKey = null;
-  chrome.storage.local.get(['profiles', HERMES_API_KEYS_KEY], (result) => {
+  chrome.storage.local.get(['profiles'], (result) => {
     const profiles = result.profiles || [];
-    const hermesApiKeys = result[HERMES_API_KEYS_KEY] || {};
     const selectedProfile =
       profiles.find((p) => p.id === profileId) || profiles.find((p) => p.id === 'default');
 
@@ -936,10 +964,21 @@ function loadProfileSettings(profileId) {
         hermesRemoteInput.checked = selectedProfile.hermesRemoteConfirmed === true;
       }
       const configuredCredential =
-        selectedProfile.provider === 'hermes'
-          ? Boolean(hermesApiKeys[selectedProfile.id])
-          : Boolean(selectedProfile.apiKey);
+        selectedProfile.provider === 'hermes' ? false : Boolean(selectedProfile.apiKey);
       applyCredentialMask(document.getElementById('apiKey'), configuredCredential);
+      // P2-10: Hermes credential status is queried from the background worker
+      // (which owns the key store) and never read from the storage map here.
+      if (selectedProfile.provider === 'hermes') {
+        chrome.runtime
+          .sendMessage({ action: 'hermesKeyStatus', profileId: selectedProfile.id })
+          .then((response) => {
+            applyCredentialMask(
+              document.getElementById('apiKey'),
+              response?.success && response.configured === true
+            );
+          })
+          .catch(() => {});
+      }
       const modelSelect = document.getElementById('modelName');
       if (modelSelect) {
         modelSelect.innerHTML = '<option value="">Loading models…</option>';
@@ -962,7 +1001,11 @@ function loadProfileSettings(profileId) {
         selectedProfile.name
       );
       updateCodexConnectionControls(selectedProfile.provider || 'api', selectedProfile.id);
-      loadAvailableModels(selectedProfile);
+      loadAvailableModels(selectedProfile).then(() => {
+        // Establish the connection baseline only after its own async load
+        // (profile fields + delayed model list) settles.
+        if (markConnectionTrackerClean) markConnectionTrackerClean();
+      });
     }
   });
 }
@@ -1038,6 +1081,73 @@ document.addEventListener('DOMContentLoaded', () => {
   // Chat-led setup status (Get Started banner)
   const setupStatusText = document.getElementById('setup-status-text');
   const setupStatusIcon = document.getElementById('setup-status-icon');
+  const setupStatusAction = document.getElementById('setup-status-action');
+  // P2-16: run a bounded Hermes connection check and only report Connected on
+  // a successful result. Never infer a verified connection from fields/endpoint
+  // alone; untested saved settings are labelled Configured instead.
+  const runHermesConnectionCheck = (profile) => {
+    renderSetupStatus(
+      setupStatusText,
+      setupStatusIcon,
+      {
+        configured: true,
+        provider: 'hermes',
+        model: profile.modelName,
+        endpointHost: endpointHost(getHermesEndpoint(profile)),
+        onRetry: () => runHermesConnectionCheck(profile),
+        retryLabel: 'Testing…',
+      },
+      setupStatusAction
+    );
+    chrome.runtime
+      .sendMessage({ action: 'testHermesConnection', profileId: profile.id })
+      .then((response) => {
+        if (response?.success) {
+          renderSetupStatus(
+            setupStatusText,
+            setupStatusIcon,
+            {
+              connected: true,
+              provider: 'hermes',
+              model: profile.modelName,
+              endpointHost: endpointHost(getHermesEndpoint(profile)),
+            },
+            setupStatusAction
+          );
+        } else {
+          renderSetupStatus(
+            setupStatusText,
+            setupStatusIcon,
+            {
+              configured: true,
+              error: response?.error || 'The Hermes gateway did not respond.',
+              provider: 'hermes',
+              model: profile.modelName,
+              endpointHost: endpointHost(getHermesEndpoint(profile)),
+              onRetry: () => runHermesConnectionCheck(profile),
+              retryLabel: 'Retry',
+            },
+            setupStatusAction
+          );
+        }
+      })
+      .catch(() => {
+        renderSetupStatus(
+          setupStatusText,
+          setupStatusIcon,
+          {
+            configured: true,
+            error: 'Could not reach the Hermes gateway.',
+            provider: 'hermes',
+            model: profile.modelName,
+            endpointHost: endpointHost(getHermesEndpoint(profile)),
+            onRetry: () => runHermesConnectionCheck(profile),
+            retryLabel: 'Retry',
+          },
+          setupStatusAction
+        );
+      });
+  };
   refreshSetupStatus = () => {
     chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
       const profiles = result.profiles || [];
@@ -1047,32 +1157,49 @@ document.addEventListener('DOMContentLoaded', () => {
           selectedProfile: profiles.find((p) => p.id === selectedId),
           defaultProfile: profiles.find((p) => p.id === 'default'),
         }) || {};
-      renderSetupStatus(setupStatusText, setupStatusIcon, {
-        connected:
-          profile.provider === 'codex'
-            ? false
-            : profile.provider === 'hermes'
-              ? Boolean(getHermesEndpoint(profile))
-              : Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName),
-        provider: profile.provider,
+      const provider = profile.provider;
+      const endpoint = provider === 'hermes' ? getHermesEndpoint(profile) : profile.llmEndpoint;
+      const configured =
+        provider === 'codex'
+          ? false
+          : provider === 'hermes'
+            ? Boolean(endpoint)
+            : Boolean(profile.llmEndpoint && profile.apiKey && profile.modelName);
+      const base = {
+        configured,
+        provider,
         model: profile.modelName,
-        endpointHost: endpointHost(
-          profile.provider === 'hermes' ? getHermesEndpoint(profile) : profile.llmEndpoint
-        ),
-      });
-      if (profile.provider === 'codex') {
+        endpointHost: endpointHost(endpoint),
+      };
+      if (provider === 'codex') {
         chrome.runtime
           .sendMessage({ action: 'codexAuthStatus', profileId: profile.id })
           .then((response) => {
-            renderSetupStatus(setupStatusText, setupStatusIcon, {
-              connected: response?.status?.connected === true,
-              provider: 'codex',
-              model: profile.modelName,
-              endpointHost: 'ChatGPT subscription',
-            });
+            renderSetupStatus(
+              setupStatusText,
+              setupStatusIcon,
+              {
+                connected: response?.status?.connected === true,
+                configured: false,
+                provider: 'codex',
+                model: profile.modelName,
+                endpointHost: 'ChatGPT subscription',
+              },
+              setupStatusAction
+            );
           })
-          .catch(() => {});
+          .catch(() =>
+            renderSetupStatus(setupStatusText, setupStatusIcon, base, setupStatusAction)
+          );
+        return;
       }
+      if (provider === 'hermes' && configured && !connectionStatusDirty) {
+        runHermesConnectionCheck(profile);
+        return;
+      }
+      // API profiles (no bounded check) and dirty/unsaved settings stay
+      // Configured; they never show a verified Connected state.
+      renderSetupStatus(setupStatusText, setupStatusIcon, base, setupStatusAction);
     });
   };
   refreshSetupStatus();
@@ -1115,7 +1242,17 @@ document.addEventListener('DOMContentLoaded', () => {
         element: document.getElementById('themePreference'),
       },
     ],
-    { onChange: () => syncDirtyBanner() }
+    {
+      onChange: () => {
+        if (refreshSetupStatus) {
+          connectionStatusDirty = connectionTracker.isDirty();
+          // Revert any stale Connected result as soon as connection settings
+          // change; the saved profile no longer matches the edited fields.
+          if (connectionStatusDirty) refreshSetupStatus();
+        }
+        syncDirtyBanner();
+      },
+    }
   );
   const privacyTracker = createDirtyTracker(
     [
@@ -1149,6 +1286,29 @@ document.addEventListener('DOMContentLoaded', () => {
         element: document.getElementById('notchEnabledToggle'),
         getValue: (el) => String(Boolean(el && el.checked)),
       },
+      {
+        element: document.getElementById('notchPlacementSelect'),
+        getValue: (el) => el?.value || 'top',
+      },
+    ],
+    { onChange: () => syncDirtyBanner() }
+  );
+  const editorDraftsTracker = createDirtyTracker(
+    [
+      { element: document.getElementById('instructionName') },
+      { element: document.getElementById('instructionContent') },
+      { element: document.getElementById('instructionTags') },
+      { element: document.getElementById('toolName') },
+      { element: document.getElementById('toolDescription') },
+      { element: document.getElementById('toolParameters') },
+      { element: document.getElementById('toolEndpointUrl') },
+      { element: document.getElementById('toolHttpMethod') },
+      { element: document.getElementById('skillName') },
+      { element: document.getElementById('skillDescription') },
+      { element: document.getElementById('skillContent') },
+      { element: document.getElementById('skillLicense') },
+      { element: document.getElementById('skillCompatibility') },
+      { element: document.getElementById('skillMetadata') },
     ],
     { onChange: () => syncDirtyBanner() }
   );
@@ -1158,7 +1318,13 @@ document.addEventListener('DOMContentLoaded', () => {
     groundingTracker,
     pageActionsTracker,
     notchTracker,
+    editorDraftsTracker,
   ];
+  markConnectionTrackerClean = () => {
+    connectionStatusDirty = false;
+    connectionTracker.markClean();
+  };
+  markPrivacyTrackerClean = () => privacyTracker.markClean();
   markGroundingTrackerClean = () => groundingTracker.markClean();
   markPageActionsTrackerClean = () => pageActionsTracker.markClean();
   markNotchTrackerClean = () => notchTracker.markClean();
@@ -1166,18 +1332,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const dirty = allTrackers.some((tracker) => tracker.isDirty());
     if (unsavedBanner) unsavedBanner.hidden = !dirty;
   }
-  markAllTrackersClean = () => allTrackers.forEach((tracker) => tracker.markClean());
   allTrackers.forEach((tracker) => tracker.attachEvents(document));
   // beforeunload must cover every tracker, not just the connection form.
   initUnsavedGuard(
     { isDirty: () => allTrackers.some((tracker) => tracker.isDirty()) },
     { confirmBeforeUnload: true }
   );
-  // Re-baseline once async storage loads finish so the banner is not shown on
-  // first paint; user edits after that flip the guard on again.
-  setTimeout(() => {
-    if (markAllTrackersClean) markAllTrackersClean();
-  }, 1000);
+  // Each section re-baselines after its own storage load (not a global timer)
+  // so a real early edit is never wiped and saving one section never clears
+  // another section's unsaved state.
 
   // Expose each help tooltip's text to assistive tech (the CSS `content`
   // tooltip isn't announced), so keyboard + screen-reader users hear the
@@ -1190,7 +1353,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Analytics consent toggle (opt-in, default OFF)
   const analyticsConsentToggle = document.getElementById('analyticsConsentToggle');
+  // Privacy fields load across two async reads (consent + voice input); only
+  // re-baseline the privacy tracker after both settle so first paint is not
+  // falsely flagged dirty.
+  let privacyBaselinePending = 0;
+  const settlePrivacyBaseline = () => {
+    privacyBaselinePending -= 1;
+    if (privacyBaselinePending <= 0 && markPrivacyTrackerClean) markPrivacyTrackerClean();
+  };
   if (analyticsConsentToggle) {
+    privacyBaselinePending += 1;
     // Initialize from storage (default true when missing)
     chrome.storage.local.get(['analyticsConsent'], (res) => {
       const consent =
@@ -1198,6 +1370,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ? !!res.analyticsConsent
           : false;
       analyticsConsentToggle.checked = consent;
+      settlePrivacyBaseline();
     });
     // Persist on explicit save (Save Privacy Settings button)
     analyticsConsentToggle.addEventListener('change', () => {
@@ -1336,7 +1509,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     };
 
-    refreshVoiceInputControls();
+    privacyBaselinePending += 1;
+    refreshVoiceInputControls().then(() => settlePrivacyBaseline());
 
     voiceInputEnabledToggle.addEventListener('change', () => {
       announceDirtyChange(true);
@@ -1345,28 +1519,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const savePrivacyButton = document.getElementById('savePrivacy');
     if (savePrivacyButton) {
-      savePrivacyButton.addEventListener('click', async () => {
-        try {
-          const consent = !!analyticsConsentToggle.checked;
-          await new Promise((resolve, reject) => {
-            chrome.storage.local.set({ analyticsConsent: consent }, () => {
-              if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-              else resolve();
+      savePrivacyButton.addEventListener(
+        'click',
+        runErrorAwareSave({
+          button: savePrivacyButton,
+          successMessage: 'Privacy settings saved.',
+          errorLabel: 'Failed to save privacy settings',
+          notify: showStatus,
+          onSuccess: () => {
+            const status = document.getElementById('privacySaveStatus');
+            if (status) status.textContent = 'Privacy settings saved.';
+          },
+          markClean: markPrivacyTrackerClean,
+          write: async () => {
+            const consent = !!analyticsConsentToggle.checked;
+            await setChromeStorage(chrome.storage.local, { analyticsConsent: consent });
+            await setStoredVoiceInputSettings({
+              [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked,
             });
-          });
-          await setStoredVoiceInputSettings({
-            [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked,
-          });
-          const status = document.getElementById('privacySaveStatus');
-          if (status) status.textContent = 'Privacy settings saved.';
-          flashSaveFeedback(savePrivacyButton, false);
-          if (typeof markAllTrackersClean === 'function') markAllTrackersClean();
-          announceDirtyChange(false);
-        } catch (error) {
-          showStatus('Failed to save privacy settings: ' + error.message, true, true);
-          flashSaveFeedback(savePrivacyButton, true);
-        }
-      });
+          },
+        })
+      );
     }
 
     testMicPermissionBtn.addEventListener('click', testMicrophonePermission);
@@ -1538,9 +1711,11 @@ document.addEventListener('DOMContentLoaded', () => {
               return;
             }
             profiles.push(normalizedNewProfile.value);
-            chrome.storage.local.set(
-              { profiles: profiles, lastSelectedProfileId: newProfileId },
-              () => {
+            setChromeStorage(chrome.storage.local, {
+              profiles: profiles,
+              lastSelectedProfileId: newProfileId,
+            })
+              .then(() => {
                 // populateProfileDropdown is called within loadOptions
                 loadOptions(); // Reload options to correctly populate and select.
                 // Explicitly set to new profile ID *after* loadOptions, as loadOptions might reset it.
@@ -1552,8 +1727,15 @@ document.addEventListener('DOMContentLoaded', () => {
                   false,
                   true
                 );
-              }
-            );
+              })
+              .catch((error) => {
+                showStatus(
+                  `Profile could not be created: ${error.message}. Your new-profile inputs were not saved.`,
+                  true,
+                  true
+                );
+                loadOptions(); // Drop the phantom in-memory profile; storage was untouched.
+              });
           });
         } else {
           // User cancelled or entered empty name, revert to last selected
@@ -1565,6 +1747,24 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
       } else {
+        // P2-05: never silently discard unsaved connection or editor drafts
+        // when switching profiles in-page. Require an explicit discard.
+        const hasUnsaved = allTrackers.some((tracker) => tracker.isDirty());
+        if (hasUnsaved) {
+          const confirmSwitch = window.confirm(
+            'You have unsaved changes in this Options section. Switch profiles and discard them?'
+          );
+          if (!confirmSwitch) {
+            // Revert the dropdown to the previously selected profile.
+            chrome.storage.local.get(['lastSelectedProfileId'], (res) => {
+              if (profileSelectElement) {
+                profileSelectElement.value = res.lastSelectedProfileId || 'default';
+                syncDeleteProfileButtonState(profileSelectElement.value);
+              }
+            });
+            return;
+          }
+        }
         chrome.storage.local.set({ lastSelectedProfileId: selectedProfileId });
         loadProfileSettings(selectedProfileId);
         if (refreshSetupStatus) refreshSetupStatus();
@@ -2013,35 +2213,28 @@ function setupInstructionHandlers() {
         if (instruction) {
           showStatus('Improving instruction...', false, true);
           try {
-            const config = await new Promise((resolve, reject) => {
-              chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], (result) => {
-                const profiles = result.profiles || [];
-                const lastSelectedProfileId = result.lastSelectedProfileId || 'default';
-                const selectedProfile = profiles.find((p) => p.id === lastSelectedProfileId);
-                if (
-                  selectedProfile &&
-                  selectedProfile.llmEndpoint &&
-                  selectedProfile.apiKey &&
-                  selectedProfile.modelName
-                ) {
-                  resolve(selectedProfile);
-                } else {
-                  reject(
-                    new Error('API configuration is incomplete. Please set it up in settings.')
-                  );
-                }
-              });
+            // P2-06: route the improvement through the background worker so the
+            // request is provider-aware, bounded, and keeps credentials
+            // background-owned. API profiles get a working flow; Codex/Hermes
+            // receive an explicit capability message. On any failure the editor
+            // is left untouched so the original instruction stays intact.
+            const response = await new Promise((resolve) => {
+              chrome.runtime.sendMessage(
+                { action: 'improveInstruction', prompt: instruction.content },
+                resolve
+              );
             });
-
-            const improvedContent = await improvePromptAPI(
-              config.llmEndpoint,
-              config.apiKey,
-              config.modelName,
-              instruction.content
-            );
+            if (!response || response.success !== true || typeof response.content !== 'string') {
+              const message =
+                response && response.capability === 'unsupported'
+                  ? response.error || 'Improve Instruction is not supported for this profile.'
+                  : (response && response.error) || 'Improve request failed.';
+              showStatus('Failed to improve instruction: ' + message, true);
+              return;
+            }
 
             document.getElementById('instructionName').value = instruction.name;
-            document.getElementById('instructionContent').value = improvedContent;
+            document.getElementById('instructionContent').value = response.content.trim();
             document.getElementById('instructionTags').value = (instruction.tags || []).join(', ');
             document.getElementById('instructionId').value = instruction.id;
 
@@ -2310,52 +2503,6 @@ function setupInstructionHandlers() {
 }
 
 // Function to call the API for prompt improvement
-async function improvePromptAPI(endpoint, apiKey, modelName, prompt) {
-  const messages = [
-    {
-      role: 'system',
-      content:
-        'You are an expert prompt engineer. Improve the following prompt for a large language model to be clearer, more concise, and more effective. Only return the improved prompt text, nothing else.',
-    },
-    { role: 'user', content: prompt },
-  ];
-
-  const apiResponse = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: modelName,
-      messages: messages,
-      temperature: 0.7,
-    }),
-  });
-
-  if (!apiResponse.ok) {
-    const errorData = await apiResponse.json().catch(() => null);
-    throw new Error(
-      `API request failed with status ${apiResponse.status}: ${
-        errorData ? JSON.stringify(errorData) : apiResponse.statusText
-      }`
-    );
-  }
-
-  const responseData = await apiResponse.json();
-  if (
-    !responseData ||
-    !responseData.choices ||
-    !responseData.choices[0] ||
-    !responseData.choices[0].message ||
-    !responseData.choices[0].message.content
-  ) {
-    throw new Error('Invalid response format from API: Missing message content.');
-  }
-
-  return responseData.choices[0].message.content.trim();
-}
-
 function isValidJson(str) {
   try {
     JSON.parse(str);
@@ -2492,7 +2639,20 @@ function setupToolHandlers() {
             }
             return tool;
           });
-          showStatus('Tool updated.');
+          setChromeStorage(chrome.storage.local, { promptPaulTools: tools })
+            .then(() => {
+              showStatus('Tool updated.');
+              loadTools(); // Reload the table
+              populateToolDropdown(); // Update tool dropdown
+              clearToolForm(); // Clear the form after saving
+            })
+            .catch((error) => {
+              showStatus(
+                `Tool could not be saved: ${error.message}. Your draft is preserved.`,
+                true
+              );
+            })
+            .finally(() => loadingManager.setButtonLoading(saveToolBtn, false));
         } else {
           // Add new tool
           const newTool = {
@@ -2506,15 +2666,21 @@ function setupToolHandlers() {
             lastUpdated: now,
           };
           tools.push(newTool);
-          showStatus('Tool added.');
+          setChromeStorage(chrome.storage.local, { promptPaulTools: tools })
+            .then(() => {
+              showStatus('Tool added.');
+              loadTools(); // Reload the table
+              populateToolDropdown(); // Update tool dropdown
+              clearToolForm(); // Clear the form after saving
+            })
+            .catch((error) => {
+              showStatus(
+                `Tool could not be saved: ${error.message}. Your draft is preserved.`,
+                true
+              );
+            })
+            .finally(() => loadingManager.setButtonLoading(saveToolBtn, false));
         }
-
-        chrome.storage.local.set({ promptPaulTools: tools }, () => {
-          loadTools(); // Reload the table
-          populateToolDropdown(); // Update tool dropdown
-          clearToolForm(); // Clear the form after saving
-          loadingManager.setButtonLoading(saveToolBtn, false);
-        });
       });
     });
   }
@@ -2563,11 +2729,19 @@ function setupToolHandlers() {
     if (!file) {
       return;
     }
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      showStatus('Tool import file is too large.', true);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const importData = JSON.parse(e.target.result);
         if (importData.version === 1 && Array.isArray(importData.tools)) {
+          if (importData.tools.length > MAX_IMPORTED_RECORDS) {
+            showStatus(`Import contains more than ${MAX_IMPORTED_RECORDS} tools.`, true);
+            return;
+          }
           // Simple merge strategy: add new tools, update existing by ID
           chrome.storage.local.get(['promptPaulTools'], (result) => {
             let existingTools = result.promptPaulTools || [];
@@ -2871,21 +3045,27 @@ function setupSkillHandlers() {
           lastUpdated: new Date().toISOString(),
         };
 
-        if (existingIndex > -1) {
+        const isUpdate = existingIndex > -1;
+        if (isUpdate) {
           customSkills[existingIndex] = newSkill;
-          showStatus('Skill updated.');
         } else {
           customSkills.push(newSkill);
-          showStatus('Skill added.');
         }
 
-        chrome.storage.local.set(
-          { customSkills: customSkills.slice(-MAX_IMPORTED_RECORDS) },
-          () => {
+        setChromeStorage(chrome.storage.local, {
+          customSkills: customSkills.slice(-MAX_IMPORTED_RECORDS),
+        })
+          .then(() => {
+            showStatus(isUpdate ? 'Skill updated.' : 'Skill added.');
             loadSkills();
             clearSkillForm();
-          }
-        );
+          })
+          .catch((error) => {
+            showStatus(
+              `Skill could not be saved: ${error.message}. Your draft is preserved.`,
+              true
+            );
+          });
       });
     });
   }
@@ -3333,6 +3513,11 @@ function setupBackupHandlers() {
     importAllFile.addEventListener('change', (event) => {
       const file = event.target.files[0];
       if (!file) return;
+      if (file.size > MAX_IMPORT_FILE_BYTES) {
+        showStatus('Backup file is too large.', true);
+        importAllFile.value = '';
+        return;
+      }
 
       if (
         !confirm(
@@ -3396,7 +3581,7 @@ function setupGroundingHandlers() {
   const keyRemove = document.getElementById('braveSearchKeyRemove');
   const keyStatus = document.getElementById('braveSearchKeyStatus');
 
-  function updateKeyStatus() {
+  function updateKeyStatus(onDone) {
     chrome.storage.local.get(['braveSearchApiKey'], (result) => {
       if (result.braveSearchApiKey) {
         const key = result.braveSearchApiKey;
@@ -3410,6 +3595,7 @@ function setupGroundingHandlers() {
         if (keyStatus) keyStatus.textContent = 'No key configured.';
         applyCredentialMask(keyInput, false, 'Paste your Brave Search API key');
       }
+      if (typeof onDone === 'function') onDone();
     });
   }
 
@@ -3446,29 +3632,27 @@ function setupGroundingHandlers() {
     saveGroundingButton.addEventListener('click', () => {
       const value = keyInput.value.trim();
       const wasConfigured = keyInput.dataset.configured === 'true';
-      const finish = (error) => {
-        if (error) {
-          showStatus('Failed to save Brave key: ' + error.message, true, true);
-          flashSaveFeedback(saveGroundingButton, true);
-          return;
-        }
-        updateKeyStatus();
-        showStatus('Brave Search API key saved.', false, true);
-        flashSaveFeedback(saveGroundingButton, false);
-        if (markGroundingTrackerClean) markGroundingTrackerClean();
-        announceDirtyChange(false);
-      };
-      if (value) {
-        chrome.storage.local.set({ braveSearchApiKey: value }, () =>
-          finish(chrome.runtime.lastError)
-        );
-      } else if (wasConfigured) {
-        // Masked field with no new value. Keep the existing stored key.
-        finish(null);
-      } else {
+      if (!value && !wasConfigured) {
         showStatus('Enter a Brave Search API key or remove the existing one.', true, true);
         flashSaveFeedback(saveGroundingButton, true);
+        return;
       }
+      runErrorAwareSave({
+        button: saveGroundingButton,
+        successMessage: 'Brave Search API key saved.',
+        errorLabel: 'Failed to save Brave key',
+        notify: showStatus,
+        onSuccess: updateKeyStatus,
+        markClean: markGroundingTrackerClean,
+        write: () => {
+          const typed = keyInput.value.trim();
+          if (typed) {
+            return setChromeStorage(chrome.storage.local, { braveSearchApiKey: typed });
+          }
+          // Masked field with no new value. Keep the existing stored key.
+          return Promise.resolve();
+        },
+      })();
     });
   }
 
@@ -3484,7 +3668,7 @@ function setupGroundingHandlers() {
   }
 
   // Load initial state
-  updateKeyStatus();
+  updateKeyStatus(() => markGroundingTrackerClean?.());
 }
 
 /**
@@ -3492,13 +3676,20 @@ function setupGroundingHandlers() {
  */
 function setupNotchHandlers() {
   const toggle = document.getElementById('notchEnabledToggle');
+  const placementSelect = document.getElementById('notchPlacementSelect');
   const saveButton = document.getElementById('saveNotch');
   const status = document.getElementById('notchSaveStatus');
   if (!toggle) return;
 
-  chrome.storage.local.get(['notchEnabled'], (result) => {
+  chrome.storage.local.get(['notchEnabled', 'notchPlacement'], (result) => {
     toggle.checked = result.notchEnabled === true;
+    if (placementSelect) {
+      placementSelect.value = ['top', 'right', 'bottom', 'left'].includes(result.notchPlacement)
+        ? result.notchPlacement
+        : 'top';
+    }
     if (status) status.textContent = toggle.checked ? 'Notch is on.' : 'Notch is off.';
+    markNotchTrackerClean?.();
   });
 
   toggle.addEventListener('change', () => {
@@ -3506,24 +3697,31 @@ function setupNotchHandlers() {
     if (status) status.textContent = 'Unsaved changes. Click Save Notch Settings.';
   });
 
-  saveButton?.addEventListener('click', () => {
-    chrome.storage.local.set({ notchEnabled: toggle.checked }, () => {
-      if (chrome.runtime.lastError) {
-        showStatus(
-          'Failed to save notch settings: ' + chrome.runtime.lastError.message,
-          true,
-          true
-        );
-        flashSaveFeedback(saveButton, true);
-        return;
-      }
-      if (status) status.textContent = toggle.checked ? 'Notch is on.' : 'Notch is off.';
-      showStatus('Notch settings saved.', false, true);
-      flashSaveFeedback(saveButton, false);
-      markNotchTrackerClean?.();
-      announceDirtyChange(false);
-    });
+  placementSelect?.addEventListener('change', () => {
+    announceDirtyChange(true);
+    if (status) status.textContent = 'Unsaved changes. Click Save Notch Settings.';
   });
+
+  saveButton?.addEventListener(
+    'click',
+    runErrorAwareSave({
+      button: saveButton,
+      successMessage: 'Notch settings saved.',
+      errorLabel: 'Failed to save notch settings',
+      notify: showStatus,
+      onSuccess: () => {
+        if (status) status.textContent = toggle.checked ? 'Notch is on.' : 'Notch is off.';
+      },
+      markClean: markNotchTrackerClean,
+      write: () => {
+        const placement = placementSelect?.value || 'top';
+        return setChromeStorage(chrome.storage.local, {
+          notchEnabled: toggle.checked,
+          notchPlacement: placement,
+        });
+      },
+    })
+  );
 }
 
 /**
@@ -3539,6 +3737,7 @@ function setupPageActionHandlers() {
     toggle.checked = result.pageActionsTrustedMode === true;
     if (status)
       status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
+    markPageActionsTrackerClean?.();
   });
 
   toggle.addEventListener('change', () => {
@@ -3546,23 +3745,20 @@ function setupPageActionHandlers() {
     if (status) status.textContent = 'Unsaved changes. Click Save Page Action Settings.';
   });
 
-  saveButton?.addEventListener('click', () => {
-    chrome.storage.local.set({ pageActionsTrustedMode: toggle.checked }, () => {
-      if (chrome.runtime.lastError) {
-        showStatus(
-          'Failed to save page-action settings: ' + chrome.runtime.lastError.message,
-          true,
-          true
-        );
-        flashSaveFeedback(saveButton, true);
-        return;
-      }
-      if (status)
-        status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
-      showStatus('Page-action settings saved.', false, true);
-      flashSaveFeedback(saveButton, false);
-      markPageActionsTrackerClean?.();
-      announceDirtyChange(false);
-    });
-  });
+  saveButton?.addEventListener(
+    'click',
+    runErrorAwareSave({
+      button: saveButton,
+      successMessage: 'Page-action settings saved.',
+      errorLabel: 'Failed to save page-action settings',
+      notify: showStatus,
+      onSuccess: () => {
+        if (status)
+          status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
+      },
+      markClean: markPageActionsTrackerClean,
+      write: () =>
+        setChromeStorage(chrome.storage.local, { pageActionsTrustedMode: toggle.checked }),
+    })
+  );
 }

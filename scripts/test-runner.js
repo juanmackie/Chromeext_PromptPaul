@@ -641,9 +641,14 @@ function runUnitTests(runner) {
       !notch.includes('notch-energy-flow') ||
       !notch.includes('notch-signal') ||
       !notch.includes("const POSITION_STORAGE_KEY = 'notchPosition'") ||
-      !notch.includes('beginNotchDrag')
+      !notch.includes("const PLACEMENT_STORAGE_KEY = 'notchPlacement'") ||
+      !notch.includes('beginNotchDrag') ||
+      !notch.includes('pointerenter') ||
+      !notch.includes('setPinned')
     ) {
-      throw new Error('Notch must expose Act activity, dictation, and drag controls');
+      throw new Error(
+        'Notch must expose Act activity, dictation, edge placement, and drag controls'
+      );
     }
     if (!notch.includes('extension context invalidated') || !notch.includes('try {')) {
       throw new Error('Notch runtime messaging must handle invalidated extension contexts');
@@ -1877,11 +1882,49 @@ function runIntegrationTests(runner) {
       'hasProdFlag',
       'installDiagnosticsVariant',
       'generateBuildMetadata',
+      'DEV_ONLY_EXCLUDES',
+      'isDevOnly',
+      'resolveGitInfo',
+      'computeArtifactChecksum',
     ];
     for (const elem of required) {
       if (!content.includes(elem)) {
         throw new Error(`Build script missing: ${elem}`);
       }
+    }
+  });
+
+  // ---------- Build Script: Packaging Allowlist (P3-02) ----------
+  runner.test('Production build excludes development-only files (P3-02)', () => {
+    const content = readFileSafe('scripts/build.js');
+    // AGENTS.md (DOX instructions) must be excluded from the shipped package.
+    if (!/DEV_ONLY_EXCLUDES\s*=\s*\[?\s*['"]AGENTS\.md['"]/.test(content)) {
+      throw new Error('DEV_ONLY_EXCLUDES must include AGENTS.md');
+    }
+    // Exclusion must be applied in the directory copy path.
+    if (!content.includes('isProd && isDevOnly(entry.name)')) {
+      throw new Error('copyDir must filter dev-only files for production builds');
+    }
+  });
+
+  // ---------- Build Script: Release Traceability (P3-03) ----------
+  runner.test('Build metadata records real git revision and artifact checksum (P3-03)', () => {
+    const content = readFileSafe('scripts/build.js');
+    // Real git revision via rev-parse, not just an env fallback.
+    if (!content.includes("runGit(['rev-parse', 'HEAD'])")) {
+      throw new Error('Build must resolve the real git revision');
+    }
+    // Clean/dirty working-tree status.
+    if (!content.includes("runGit(['status', '--porcelain'])")) {
+      throw new Error('Build must record clean/dirty working-tree status');
+    }
+    // Per-file checksum manifest plus a root artifact checksum.
+    if (!content.includes('artifactSha256') || !content.includes('BUILD.sha256')) {
+      throw new Error('Build must produce an artifact checksum manifest');
+    }
+    // Reproducibility requires deterministic ordering of the checksum input.
+    if (!content.includes('.sort()')) {
+      throw new Error('Checksum computation must sort files for reproducibility');
     }
   });
 

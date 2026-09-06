@@ -1,5 +1,7 @@
 /**
- * @fileoverview Real-browser execution for credential-free page-action evaluations.
+ * @fileoverview Real-browser executor-regression coverage for credential-free
+ * page-action evaluations. Whole-task measured metrics live in the unit
+ * whole-task suite; this spec only exercises executor delivery.
  * @module pageActionEvaluationBrowserSpec
  */
 
@@ -30,23 +32,23 @@ test.afterAll(async () => {
   await fixtureServer?.close();
 });
 
-function promptChars(args) {
+function toolArgChars(args) {
   return Math.min(4_000, JSON.stringify(args || {}).length);
 }
 
-function evaluationRecord(caseId, result, actionCount, promptSize, details = {}) {
+function evaluationRecord(caseId, result, actionCount, argSize, details = {}) {
   const payload = result?.result || {};
   const failureCode = payload.error || result?.code || result?.error || null;
   return {
     caseId,
     executionMode: 'browser-harness',
     actionCount,
-    promptChars: promptSize,
+    // Executor-regression only: bounded tool-argument size, never a prompt size.
+    toolArgChars: argSize,
     result: failureCode ? 'error' : 'complete',
     receiptDisposition: payload.actionReceipt?.disposition || null,
     postconditionEvidence: payload.actionReceipt?.evidence?.kind || null,
     failureCode,
-    policyViolation: false,
     ...details,
   };
 }
@@ -57,7 +59,7 @@ function expectedCase(id) {
   return testCase;
 }
 
-test('executes browser-safe corpus cases and records bounded results', async () => {
+test('executor-regression: executes browser-safe corpus cases and records bounded results', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-evaluation-'));
   const launched = await launchTestBrowser(userDataDir);
   const { context } = launched;
@@ -133,7 +135,7 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     );
     expect(JSON.stringify(scopeMeasurement.regions)).not.toContain('selector');
     records.push(
-      evaluationRecord(verifiedCase.id, input, 3, promptChars(inputArgs), {
+      evaluationRecord(verifiedCase.id, input, 3, toolArgChars(inputArgs), {
         toolCallCount: 3,
         scopeMetrics: scopeMeasurement.metrics,
         scopeChangedCount: scopeMeasurement.diff.changedCount,
@@ -174,12 +176,12 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     );
     expect(retry.result.error).toBe(falseSuccessCase.failureCode);
     records.push(
-      evaluationRecord(falseSuccessCase.id, firstClick, 2, promptChars(clickArgs), {
+      evaluationRecord(falseSuccessCase.id, firstClick, 2, toolArgChars(clickArgs), {
         toolCallCount: 2,
       })
     );
     records.push(
-      evaluationRecord('repeated-mutation', retry, 2, promptChars(clickArgs) * 2, {
+      evaluationRecord('repeated-mutation', retry, 2, toolArgChars(clickArgs) * 2, {
         firstReceiptDisposition: firstClick.result.actionReceipt.disposition,
         toolCallCount: 3,
       })
@@ -196,7 +198,7 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     );
     expect(staleResult.result.error).toBe(staleCase.failureCode);
     records.push(
-      evaluationRecord(staleCase.id, staleResult, 1, promptChars(staleArgs), { toolCallCount: 2 })
+      evaluationRecord(staleCase.id, staleResult, 1, toolArgChars(staleArgs), { toolCallCount: 2 })
     );
     await finish(stale.runId);
 
@@ -245,7 +247,7 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     );
     expect(sensitiveResult.result.error).toBe(sensitiveCase.failureCode);
     records.push(
-      evaluationRecord(sensitiveCase.id, sensitiveResult, 1, promptChars(sensitiveArgs), {
+      evaluationRecord(sensitiveCase.id, sensitiveResult, 1, toolArgChars(sensitiveArgs), {
         toolCallCount: 2,
       })
     );
@@ -264,7 +266,7 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     expect(timeoutPayload.error).toBe('PAGE_TAB_UNAVAILABLE');
     expect(timeoutPayload.code).toBe(timeoutCase.failureCode);
     records.push(
-      evaluationRecord(timeoutCase.id, timeoutResult, 2, promptChars(timeoutArgs), {
+      evaluationRecord(timeoutCase.id, timeoutResult, 2, toolArgChars(timeoutArgs), {
         toolCallCount: 2,
       })
     );
@@ -291,7 +293,7 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     );
     expect(approvalResult.result.error).toBe(approvalCase.failureCode);
     records.push(
-      evaluationRecord(approvalCase.id, approvalResult, 1, promptChars(approvalArgs), {
+      evaluationRecord(approvalCase.id, approvalResult, 1, toolArgChars(approvalArgs), {
         timedOut: true,
         toolCallCount: 2,
       })
@@ -332,11 +334,12 @@ test('executes browser-safe corpus cases and records bounded results', async () 
     expect(records).toHaveLength(9);
     const metrics = summarizeEvaluationRecords(records, { passK: 3 });
     expect(metrics.total).toBe(records.length);
-    expect(metrics.riskRatio).toBe(0);
+    // Executor-regression only: this suite never claims a measured policy
+    // outcome, so it must not assert a policy-based zero-risk figure.
     for (const record of records) {
       expect(record.actionCount).toBeGreaterThanOrEqual(0);
-      expect(record.promptChars).toBeGreaterThanOrEqual(0);
-      expect(record.promptChars).toBeLessThanOrEqual(4_000);
+      expect(record.toolArgChars).toBeGreaterThanOrEqual(0);
+      expect(record.toolArgChars).toBeLessThanOrEqual(4_000);
       expect(record.caseId).toMatch(/^[a-z0-9-]+$/);
     }
     console.info('page_action_evaluation', JSON.stringify({ records, metrics }));

@@ -11,6 +11,18 @@ const path = require('path');
 const { chromium, expect } = require('@playwright/test');
 
 const repoRoot = path.resolve(__dirname, '../..');
+
+/**
+ * The extension directory to load in browser tests. Defaults to the source
+ * checkout, but can point at a built production output (for example dist)
+ * via PROMPT_PAUL_LOAD_EXTENSION_DIR so release artifacts are exercised
+ * against the exact packaged files (P1-08).
+ * @returns {string}
+ */
+function extensionLoadPath() {
+  const target = process.env.PROMPT_PAUL_LOAD_EXTENSION_DIR || '';
+  return target ? path.resolve(repoRoot, target) : repoRoot;
+}
 const fixtureRoot = path.join(__dirname, 'fixtures');
 let diagnosticsCaptureIndex = 0;
 
@@ -51,8 +63,8 @@ function browserLaunchOptions(userDataDir) {
     // Keep headed mode as the default for real extension coverage.
     headless: process.env.PROMPT_PAUL_HEADLESS === 'true' ? true : false,
     args: [
-      `--disable-extensions-except=${repoRoot}`,
-      `--load-extension=${repoRoot}`,
+      `--disable-extensions-except=${extensionLoadPath()}`,
+      `--load-extension=${extensionLoadPath()}`,
       '--disable-background-networking',
       '--no-first-run',
       '--no-default-browser-check',
@@ -148,7 +160,7 @@ async function launchTestBrowser(userDataDir) {
   // security reasons. The CDP Extensions domain is the supported path for
   // loading an unpacked directory in those real browsers.
   const browserCdp = await browser.newBrowserCDPSession();
-  await browserCdp.send('Extensions.loadUnpacked', { path: repoRoot });
+  await browserCdp.send('Extensions.loadUnpacked', { path: extensionLoadPath() });
   const context = browser.contexts()[0];
   const closeContext = context.close.bind(context);
   context.close = async () => {

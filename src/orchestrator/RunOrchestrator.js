@@ -11,7 +11,7 @@
  */
 
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
-import { modelSupportsReasoning } from '../utils/profileRouting.js';
+import { modelSupportsReasoning, modelSupportsVision } from '../utils/profileRouting.js';
 import { createThinkParser } from '../utils/inlineReasoning.js';
 import { MAX_TOOL_ARGUMENTS_BYTES, normalizeToolDefinition } from '../utils/validation.js';
 import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
@@ -105,6 +105,12 @@ const PAGE_ACTION_BUDGETS = Object.freeze({
   mutation: 64,
 });
 const ACT_SCREENSHOT_MAX_BYTES = 750_000;
+// ponytail: single release gate for Act visual payloads. Kept off until a
+// reviewed image-privacy path exists (DOM masking does not redact visible
+// pixels). Turning it on requires clear user disclosure, capability gating,
+// sensitive-region exclusion, and safe embedded-content handling per P1-01.
+// Defaults to off for release; behavior tests may enable it to exercise the
+// dormant visual-conversion path.
 const ACT_SNAPSHOT_CACHE_MS = 5_000;
 const PAGE_ACTION_BUDGET_WARNING_RATIO = 0.75;
 const PAGE_ACTION_RECEIPT_DISPOSITIONS = new Set([
@@ -145,6 +151,14 @@ function isOpenRouterEndpoint(endpoint) {
   }
 }
 
+/** Drop the internal Act-screen marker from a content part before it reaches the wire. */
+function stripActScreenMarker(part) {
+  if (!part || typeof part !== 'object') return part;
+  const copy = { ...part };
+  delete copy.__ppActScreen;
+  return copy;
+}
+
 function clampRunOption(value, fallback, min, max) {
   const normalized = Number(value);
   return Number.isFinite(normalized)
@@ -153,6 +167,9 @@ function clampRunOption(value, fallback, min, max) {
 }
 
 class RunOrchestrator {
+  /** Release gate for Act visual payloads; off by default, overridable in tests. */
+  static ACT_SCREENSHOTS_ENABLED = false;
+
   constructor(skillManager, options = {}) {
     this.skillManager = skillManager;
     this.userToolExecutor = options.userToolExecutor;
@@ -364,6 +381,7 @@ class RunOrchestrator {
   }
 
   _storeActScreenshot(run, dataUrl, snapshotId) {
+    if (!(RunOrchestrator.ACT_SCREENSHOTS_ENABLED === true)) return;
     if (!run?.pageActions || typeof dataUrl !== 'string') return;
     if (
       !dataUrl.startsWith('data:image/jpeg;base64,') &&
@@ -379,6 +397,11 @@ class RunOrchestrator {
   }
 
   _getActVisionImage(run) {
+    if (!(RunOrchestrator.ACT_SCREENSHOTS_ENABLED === true)) return null;
+    // P2-01: never attach an Act screenshot when the selected model cannot
+    // accept imagery. Edges stay DOM-only (text + visual index geometry);
+    // unknown/tentative models conservatively skip the screenshot.
+    if (!modelSupportsVision(run?.config?.modelName)) return null;
     const shot = run?.pageActions?.lastScreenshot;
     if (!shot?.dataUrl) return null;
     if (
@@ -397,15 +420,20 @@ class RunOrchestrator {
     for (let index = next.length - 1; index >= 0; index -= 1) {
       if (next[index]?.role === 'user') {
         const prior = next[index].content;
-        const content =
+        const baseParts =
           typeof prior === 'string'
             ? [{ type: 'text', text: prior }]
             : Array.isArray(prior)
-              ? prior.filter((part) => part?.type !== 'image_url')
+              ? prior.filter((part) => !(part?.type === 'image_url' && part.__ppActScreen))
               : [];
+        // Preserve user text and uploaded images in their original order.
+        // Only a previously injected Act screen image is replaced.
         next[index] = {
           ...next[index],
-          content: [...content, { type: 'image_url', image_url: { url: dataUrl } }],
+          content: [
+            ...baseParts,
+            { type: 'image_url', __ppActScreen: true, image_url: { url: dataUrl } },
+          ].map(stripActScreenMarker),
         };
         break;
       }
@@ -422,25 +450,28 @@ class RunOrchestrator {
     for (let index = next.length - 1; index >= 0; index -= 1) {
       if (next[index]?.role === 'user') {
         const prior = next[index].content;
-        const content =
+        const baseParts =
           typeof prior === 'string'
             ? [{ type: 'text', text: prior }]
             : Array.isArray(prior)
-              ? prior.filter((part) => part?.type !== 'image')
+              ? prior.filter((part) => !(part?.type === 'image' && part.__ppActScreen))
               : [];
+        // Preserve user text and uploaded images in their original order.
+        // Only a previously injected Act screen image is replaced.
         next[index] = {
           ...next[index],
           content: [
-            ...content,
+            ...baseParts,
             {
               type: 'image',
+              __ppActScreen: true,
               source: {
                 type: 'base64',
                 media_type: match[1],
                 data: match[2].slice(0, ACT_SCREENSHOT_MAX_BYTES),
               },
             },
-          ],
+          ].map(stripActScreenMarker),
         };
         break;
       }
@@ -5175,6 +5206,8 @@ class RunOrchestrator {
       'actions',
       'limit',
       'toolName',
+      'requestId',
+      'approvalId',
     ]) {
       if (event[key] !== undefined) {
         safe[key] = typeof event[key] === 'string' ? event[key].slice(0, 240) : event[key];
@@ -5186,6 +5219,34 @@ class RunOrchestrator {
       if (typeof event[key] === 'string') safe[key] = event[key].slice(0, 240);
     }
     if (event.target?.label) safe.target = { label: String(event.target.label).slice(0, 160) };
+    // Preserve the bounded display fields needed to render a pending
+    // user/manual interaction after a panel reconnect. Only the opaque request
+    // id plus non-secret display text are kept; answers/decisions are never
+    // restored from the journal and must be re-submitted by the user.
+    if (
+      event.type === 'page_user_input_request' ||
+      event.type === 'page_manual_intervention_request'
+    ) {
+      if (typeof event.question === 'string') {
+        safe.question = event.question.slice(0, 600);
+      }
+      if (Array.isArray(event.options)) {
+        safe.options = event.options
+          .slice(0, 8)
+          .map((option) => (typeof option === 'string' ? option.slice(0, 120) : option));
+      }
+      if (event.activeTab) {
+        safe.activeTab = {
+          tabId: Number.isInteger(event.activeTab.tabId) ? event.activeTab.tabId : null,
+          title: String(event.activeTab.title || '')
+            .trim()
+            .slice(0, 120),
+          origin: String(event.activeTab.origin || '')
+            .trim()
+            .slice(0, 160),
+        };
+      }
+    }
     return safe;
   }
 

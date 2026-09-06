@@ -173,11 +173,13 @@ export function ensureStopButton(bubble, onStop) {
 
 /**
  * Appends the inline Retry/Edit/Continue recovery row to a message
- * (idempotent per message).
+ * (idempotent per message). The prompt is bound once at creation time to
+ * the transcript then-current, so buttons on older response bubbles re-run
+ * their own request instead of the newest one.
  * @param {Object} messageDiv - The message element to attach to.
  * @param {Object} options - Which actions to offer: { retry, edit, continue }.
  * @param {Object} handlers - { onStop, onPrompt, onEdit } callbacks.
- * @param {Object} chatArea - Chat area element (to resolve the last prompt).
+ * @param {Object} chatArea - Chat area element (to resolve the originating prompt).
  */
 export function ensureRecoveryRow(messageDiv, options, handlers, chatArea) {
   if (typeof document === 'undefined') return;
@@ -190,12 +192,14 @@ export function ensureRecoveryRow(messageDiv, options, handlers, chatArea) {
   row.setAttribute('role', 'group');
   row.setAttribute('aria-label', 'Response actions');
 
-  const prompt = () => getLastUserPrompt(chatArea);
+  // Bind the originating prompt once at creation time. Re-reading the
+  // whole transcript on every click would resolve the newest prompt, so
+  // Retry/Edit on an older response would act on an unrelated request.
+  const instruction = getLastUserPrompt(chatArea);
 
   if (options.retry !== false) {
     const retry = makeRecoveryButton('Retry', 'Re-run the last prompt');
     retry.addEventListener('click', () => {
-      const instruction = prompt();
       if (instruction && typeof handlers.onPrompt === 'function') {
         handlers.onPrompt(instruction, 'retry');
       }
@@ -206,7 +210,6 @@ export function ensureRecoveryRow(messageDiv, options, handlers, chatArea) {
   if (options.edit !== false) {
     const edit = makeRecoveryButton('Edit', 'Edit the last prompt and resend');
     edit.addEventListener('click', () => {
-      const instruction = prompt();
       if (typeof handlers.onEdit === 'function') handlers.onEdit(instruction);
     });
     row.appendChild(edit);

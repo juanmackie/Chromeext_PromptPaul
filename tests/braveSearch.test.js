@@ -15,6 +15,8 @@ import {
   Freshness,
   BraveSearchError,
   MAX_NORMALIZED_SOURCES,
+  extractBraveErrorReason,
+  isPlanRestricted,
 } from '../src/utils/braveSearch.js';
 
 /* ------------------------------------------------------------------ */
@@ -103,9 +105,72 @@ describe('executeBraveSearch HTTP error mapping', () => {
     await expect(executeBraveSearch('test', 'key')).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       status: 400,
+      cause: '{"error":"unsupported parameter"}',
+    });
+  });
+
+  it('surfaces parsed reason from a 400 JSON body', async () => {
+    mockFetch(400, '{"reason":"query text too long for this plan"}');
+    await expect(executeBraveSearch('test', 'key')).rejects.toMatchObject({
+      userMessage: expect.stringContaining('Reason: query text too long for this plan'),
+    });
+  });
+
+  it('keeps base message when 400 body has no usable reason', async () => {
+    mockFetch(400, '');
+    await expect(executeBraveSearch('test', 'key')).rejects.toMatchObject({
       userMessage:
         'Brave Search rejected the request. Try a shorter query or check the search settings.',
-      cause: '{"error":"unsupported parameter"}',
+    });
+  });
+
+  it('redacts credential-shaped text in the surfaced reason', () => {
+    expect(extractBraveErrorReason('{"message":"bad token=supersecretvalue here"}')).not.toMatch(
+      /supersecretvalue/
+    );
+    expect(extractBraveErrorReason('')).toBe('');
+    expect(extractBraveErrorReason('#$%^& invalid')).toBeTruthy();
+  });
+
+  it('extracts nested error.detail / error.code as bounded redacted text', () => {
+    const reason = extractBraveErrorReason(
+      '{"error":{"code":"OPTION_NOT_IN_PLAN","detail":"LLM Context is not included in this plan"}}'
+    );
+    expect(reason).toContain('LLM Context is not included in this plan');
+    expect(reason).not.toContain('[object Object]');
+    expect(reason.length).toBeLessThanOrEqual(300);
+  });
+
+  it('detects OPTION_NOT_IN_PLAN at nested and top level', () => {
+    expect(isPlanRestricted('{"error":{"code":"OPTION_NOT_IN_PLAN","detail":"x"}}')).toBe(true);
+    expect(isPlanRestricted('{"code":"OPTION_NOT_IN_PLAN","detail":"x"}')).toBe(true);
+    expect(isPlanRestricted('{"error":"unsupported parameter"}')).toBe(false);
+    expect(isPlanRestricted('not json at all')).toBe(false);
+    expect(isPlanRestricted('')).toBe(false);
+  });
+
+  it('surfaces the plan-restriction message for OPTION_NOT_IN_PLAN', async () => {
+    mockFetch(
+      400,
+      '{"error":{"code":"OPTION_NOT_IN_PLAN","detail":"LLM Context is not included in this plan"}}'
+    );
+    await expect(executeBraveSearch('test', 'key')).rejects.toMatchObject({
+      code: 'PLAN_RESTRICTED',
+      userMessage:
+        'Your Brave Search API plan does not include LLM Context. Use a Brave API key with LLM Context access in Options.',
+    });
+  });
+
+  it('never emits [object Object] for malformed or nested bodies', () => {
+    expect(extractBraveErrorReason('{"error":{}}')).not.toContain('[object Object]');
+    expect(extractBraveErrorReason('{"errors":[{"detail":"x"}]}')).not.toContain('[object Object]');
+    expect(extractBraveErrorReason('{')).toBeTruthy();
+  });
+
+  it('keeps BAD_REQUEST for other HTTP 400 bodies', async () => {
+    mockFetch(400, '{"error":"unsupported parameter"}');
+    await expect(executeBraveSearch('test', 'key')).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
     });
   });
 

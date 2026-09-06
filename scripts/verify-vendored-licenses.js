@@ -67,6 +67,41 @@ function verifyBenchmarkRecord(name, entry) {
   console.log(`Verified ${name} benchmark record (${entry.license})`);
 }
 
+// First-party files inside libs/ that are not third-party vendored assets.
+const FIRST_PARTY_LIBS_FILES = new Set(['libs/AGENTS.md', 'libs/vendor-manifest.json']);
+
+// Every third-party shipped asset must be covered by exactly one provenance record.
+function verifyNoUnlistedAssets(manifest) {
+  const covered = new Set();
+  for (const entry of Object.values(manifest.libraries || {})) {
+    if (entry.bundle) covered.add(entry.bundle);
+    if (Array.isArray(entry.bundles)) {
+      entry.bundles.forEach((bundle) => covered.add(bundle.file));
+    }
+    if (entry.licenseFile) covered.add(entry.licenseFile);
+  }
+
+  const candidates = fs
+    .readdirSync(path.join(repoRoot, 'libs'))
+    .filter((f) => fs.statSync(path.join(repoRoot, 'libs', f)).isFile())
+    .map((f) => path.join('libs', f));
+  // The root-level marked.min.js bundle is referenced outside libs/.
+  candidates.push('marked.min.js');
+
+  const unlisted = [];
+  for (const file of candidates) {
+    const norm = file.split(path.sep).join('/');
+    if (covered.has(norm) || FIRST_PARTY_LIBS_FILES.has(norm)) continue;
+    if (fs.existsSync(path.join(repoRoot, file))) unlisted.push(norm);
+  }
+
+  if (unlisted.length > 0) {
+    throw new Error(
+      `Unlisted vendored asset(s) not covered by libs/vendor-manifest.json: ${unlisted.join(', ')}`
+    );
+  }
+}
+
 function main() {
   const manifest = readJson(manifestPath);
   for (const [name, entry] of Object.entries(manifest.libraries || {})) {
@@ -78,6 +113,7 @@ function main() {
   if (Object.keys(manifest.libraries || {}).length === 0) {
     throw new Error('No vendored libraries are recorded');
   }
+  verifyNoUnlistedAssets(manifest);
   console.log('Vendored license verification passed.');
 }
 

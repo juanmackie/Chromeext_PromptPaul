@@ -60,11 +60,18 @@ export async function removeSuggestion(id) {
 }
 
 export function extractSiteKey(url) {
+  const input = String(url || '').trim();
+  if (!input) return null;
   try {
-    const parsed = new URL(url);
-    return parsed.hostname.replace(/^www\./, '').toLowerCase();
+    return new URL(input).hostname.replace(/^www\./, '').toLowerCase();
   } catch {
-    return null;
+    // Accept a bare hostname (for example a stored site key) by treating
+    // it as a URL; this keeps add/read/filter using one canonical form.
+    try {
+      return new URL(`https://${input}`).hostname.replace(/^www\./, '').toLowerCase();
+    } catch {
+      return null;
+    }
   }
 }
 

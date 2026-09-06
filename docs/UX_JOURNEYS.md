@@ -90,8 +90,8 @@ continuity), 5 (media analysis unchanged).
 Steps:
 
 1. Open Options, leave **Top Notch** off, and confirm no notch appears on a normal web page.
-2. Enable the setting and click **Save Notch Settings**. Open pages mount the top-centered notch without changing their layout.
-3. Expand the notch with the keyboard or pointer. Drag the top rail left or right and confirm it stays within the viewport and keeps its position after reload. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, theme-matched Light/Dark/System styling, and top-edge appearance.
+2. Enable the setting and click **Save Notch Settings**. Open pages mount the edge-pinnable notch without changing their layout.
+3. The notch rests as a slim pill: hovering it reveals the details panel without pinning, and clicking pins it open so it stays on pointer-leave. Drag the rail along its edge (left/right on top or bottom, up/down on left or right) and confirm it stays within the viewport and keeps its placement and offset after reload. Confirm the compact primary actions, focus ring, Escape-to-close behavior, reduced-motion-safe transitions, and theme-matched Light/Dark/System styling.
 4. If custom prompts are pinned, confirm the notch shows them in pin order and caps the visible list at four items. Choose a pinned prompt and confirm it runs against the current selection, current page, or active conversation through the existing chat action flow.
 5. Choose **Dictate**, grant microphone access if needed, speak one instruction, and confirm the instruction is sent with the bounded current page as context when dictation ends. Confirm the same page-context behavior works with **Act** enabled.
 6. Enable **Act** and confirm its floating task field appears. Submit a harmless page task and confirm the task uses the bounded page-action run path.
@@ -100,14 +100,15 @@ Steps:
 9. Select text on the page and confirm **Explain** becomes enabled. Run it and confirm the selected text is routed through the existing structured prompt path.
 10. Disable and save the setting. Confirm the notch is removed from the open page and does not appear in a new tab.
 
-Verification: axes 1 (preference and horizontal position persist), 2 (notch, pinned, dictated, and Act actions reach canonical chat), 3 (isolated surface and responsive narrow pages), 4 (selection/page/pinned/task context stays bounded), 5 (allowlisted actions, glow lifecycle, and restricted-page boundaries).
+Verification: axes 1 (preference, placement, and edge offset persist), 2 (notch, pinned, dictated, and Act actions reach canonical chat), 3 (isolated surface and responsive narrow pages), 4 (selection/page/pinned/task context stays bounded), 5 (allowlisted actions, glow lifecycle, and restricted-page boundaries).
 
 ## Journey 5 - Current-page semantic action
 
 Steps:
 
 1. Open a normal form or SPA and click the side-panel **Act** toggle; confirm it
-   is `aria-pressed="true"` and that the next run is the only run granted page tools.
+   is `aria-pressed="true"` and that page tools stay enabled for the session
+   until you turn them off (they do not reset after a single run).
 2. Ask Prompt Paul to inspect the page. It uses `page_get_state` and shows a
    bounded semantic snapshot; page text that contains instructions is treated as
    untrusted data.
@@ -126,8 +127,8 @@ Steps:
    payment, security, destructive, navigation, and unsupported controls remain
    blocked or confirmation-gated.
 6. Press Stop during approval or execution; the card disables, the run ends, the
-   highlight is removed, the Act toggle resets to off, and the next run starts
-   cleanly.
+   highlight is removed, and the next run starts cleanly. The **Act** toggle stays
+   enabled for the session until you turn it off or the browser session ends.
 7. When Prompt Paul shows a **Manual step needed** card for a safe user-only
    step, complete the visible consent or sign-in handoff in the active tab
    without sending secrets to chat, then choose **Resume**. Confirm that the old
@@ -163,11 +164,12 @@ resume, and abort cleanup), 5 (Act-off parity and trusted-mode limits).
   each persist on their own Save button with green flash feedback.
 - **Appearance**: choose **Light**, **Dark**, or **System**. System follows the browser or operating
   system preference and updates when that preference changes.
-- **Top Notch**: off by default; saving the toggle updates open pages. The notch keeps primary actions compact and shows up to four saved pinned prompts.
+- **Top Notch**: off by default; saving the toggle updates open pages. The notch rests as a slim pill that reveals details on hover, pins open on click, and can dock to any viewport edge; it shows up to four saved pinned prompts.
 - **Unsaved changes**: editing any field shows the warning banner; navigating
   away triggers the `beforeunload` prompt.
-- **Backup**: Full Backup exports all local data (warning discloses API keys);
-  Import restores profiles/skills/tools/instructions.
+- **Backup**: Full Backup exports supported persistent settings and restores profiles
+  **without** credentials; provider/Codex/Hermes API keys, Hermes keys, and session
+  pointers are never included in a backup or the restore file.
 
 ## WCAG AA best-effort checklist
 

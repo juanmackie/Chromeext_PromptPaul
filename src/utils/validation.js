@@ -30,6 +30,9 @@ export const RESERVED_TOOL_NAMES = Object.freeze([
   'skill_view',
   'web_search',
   'page_get_state',
+  'page_find_text',
+  'page_wait',
+  'page_batch',
   'page_click',
   'page_input',
   'page_select',
@@ -63,6 +66,7 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'pageActionsMultiTabEnabled',
   'notchEnabled',
   'notchPosition',
+  'notchPlacement',
   'pinnedQuickActions',
   'customSiteSuggestions',
 ]);
@@ -302,6 +306,23 @@ function normalizeRecordArray(value, label) {
   return { valid: true, value: records };
 }
 
+/** Pinned quick actions are bounded, deduplicated string instruction IDs. */
+function normalizePinArray(value, label) {
+  if (!Array.isArray(value) || value.length > MAX_BACKUP_ARRAY_ITEMS) {
+    return { valid: false, error: `${label} must be a bounded array.` };
+  }
+  const ids = [];
+  const seen = new Set();
+  for (const pin of value) {
+    if (typeof pin !== 'string' || !pin.trim() || pin.length > 256 || seen.has(pin)) {
+      continue;
+    }
+    seen.add(pin);
+    ids.push(pin);
+  }
+  return { valid: true, value: ids };
+}
+
 function normalizeStorageArea(area, allowedKeys, areaName) {
   if (!area || typeof area !== 'object' || Array.isArray(area)) {
     return { valid: false, error: `${areaName} storage must be an object.` };
@@ -328,12 +349,14 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
       const invalid = tools.find((entry) => !entry.valid);
       if (invalid) return { valid: false, error: invalid.error };
       result[key] = tools.map((entry) => entry.value);
-    } else if (
-      ['instructions', 'customSkills', 'pinnedQuickActions', 'customSiteSuggestions'].includes(key)
-    ) {
+    } else if (['instructions', 'customSkills', 'customSiteSuggestions'].includes(key)) {
       const records = normalizeRecordArray(value, key);
       if (!records.valid) return records;
       result[key] = records.value;
+    } else if (key === 'pinnedQuickActions') {
+      const pins = normalizePinArray(value, key);
+      if (!pins.valid) return pins;
+      result[key] = pins.value;
     } else if (
       [
         'analyticsConsent',
@@ -356,6 +379,11 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
     } else if (key === 'notchPosition') {
       if (!Number.isFinite(value) || value < 0 || value > 100) {
         return { valid: false, error: 'notchPosition must be a number from 0 to 100.' };
+      }
+      result[key] = value;
+    } else if (key === 'notchPlacement') {
+      if (!['top', 'right', 'bottom', 'left'].includes(value)) {
+        return { valid: false, error: 'notchPlacement must be top, right, bottom, or left.' };
       }
       result[key] = value;
     } else if (['analyticsRotateAt', 'voiceInputPermissionLastChecked'].includes(key)) {

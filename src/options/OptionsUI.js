@@ -246,39 +246,130 @@ export function flashSaveFeedback(button, isError) {
 }
 
 /**
+ * Wraps an error-aware section save as a click handler.
+ *
+ * Centralizes the repeated Options section-save shape (privacy, grounding,
+ * notch, page actions): run the storage write, surface success or error via
+ * the page's status/toast and button feedback, then re-baseline the dirty
+ * tracker and clear the dirty flag. The storage write itself stays in the
+ * caller so each section keeps its own keys and schema.
+ *
+ * @param {Object} section - Save descriptor.
+ * @param {Function} section.write - Async write returning a Promise; rejects on error.
+ * @param {string} section.successMessage - Toast shown on success.
+ * @param {string} section.errorLabel - Prefix for the error toast.
+ * @param {Function} section.notify - (message, isError, isToast) page status reporter.
+ * @param {Function} [section.onSuccess] - Optional page-specific post-save state update.
+ * @param {Function} [section.markClean] - Optional tracker re-baseline.
+ * @param {Object} [section.button] - Save button for transient feedback.
+ * @returns {Function} Event handler for the section's save button.
+ */
+export function runErrorAwareSave(section) {
+  const { write, successMessage, errorLabel, notify, button } = section;
+  const onSuccess = section.onSuccess;
+  const markClean = section.markClean;
+  return async () => {
+    try {
+      await write();
+      if (typeof onSuccess === 'function') onSuccess();
+      notify(successMessage, false, true);
+      flashSaveFeedback(button, false);
+      announceDirtyChange(false);
+      if (typeof markClean === 'function') markClean();
+    } catch (err) {
+      notify(`${errorLabel}: ${(err && err.message) || 'Storage write failed.'}`, true, true);
+      flashSaveFeedback(button, true);
+    }
+  };
+}
+
+/**
  * Renders the chat-led setup status line.
  * @param {Object} statusText - Element to fill with the status message.
  * @param {Object} statusIcon - Optional icon element (material symbol text).
  * @param {Object} status - Status data: { connected, provider, model, endpointHost }.
  */
-export function renderSetupStatus(statusText, statusIcon, status) {
+function applyStatusState(statusText, statusIcon, status, connected) {
+  statusText.textContent = status.message;
+  if (statusIcon) {
+    statusIcon.textContent = status.icon || 'pending';
+    statusIcon.classList.toggle('is-connected', connected);
+  }
+}
+
+/**
+ * Renders the chat-led setup status line.
+ *
+ * Distinguishes a verified connection from configured-but-untested settings:
+ * `status.connected` is true only after a successful bounded connection check;
+ * otherwise `status.configured` indicates saved settings that still need a
+ * check and `status.error` surfaces a failed check with a retry action.
+ *
+ * @param {Object} statusText - Element to fill with the status message.
+ * @param {Object} statusIcon - Optional icon element (material symbol text).
+ * @param {Object} status - Status data: { connected, configured, error, provider, model, endpointHost, retryLabel, onRetry }.
+ * @param {Object} [actionEl] - Optional button element shown for failed/untested states.
+ */
+export function renderSetupStatus(statusText, statusIcon, status, actionEl) {
   if (!statusText) return;
   const data = status || {};
-  let message;
-  let icon = 'pending';
+  const provider = data.provider;
+  let state;
   if (data.connected) {
-    if (data.provider === 'codex') {
-      message = 'Connected to your ChatGPT subscription. Open the side panel and start chatting.';
-    } else if (data.provider === 'hermes') {
-      message = 'Connected to the Hermes gateway. Open the side panel and start chatting.';
+    if (provider === 'codex') {
+      state = {
+        icon: 'check_circle',
+        message: 'Connected to your ChatGPT subscription. Open the side panel and start chatting.',
+      };
+    } else if (provider === 'hermes') {
+      state = {
+        icon: 'check_circle',
+        message: 'Connected to the Hermes gateway. Open the side panel and start chatting.',
+      };
     } else {
-      message = `Connected: ${data.model || 'model'} via ${data.endpointHost || 'endpoint'}. Open the side panel and start chatting.`;
+      state = {
+        icon: 'check_circle',
+        message: `Connected: ${data.model || 'model'} via ${data.endpointHost || 'endpoint'}. Open the side panel and start chatting.`,
+      };
     }
-    icon = 'check_circle';
-  } else if (data.provider === 'codex') {
-    message = 'Not connected yet. Sign in with ChatGPT below to start.';
-    icon = 'rocket_launch';
-  } else if (data.provider === 'hermes') {
-    message = 'Not connected yet. Add and save a Hermes gateway URL below to start.';
-    icon = 'rocket_launch';
+  } else if (data.error) {
+    state = {
+      icon: 'error',
+      message: `Connection check failed: ${data.error}.`,
+    };
+  } else if (data.configured) {
+    state = {
+      icon: 'check',
+      message:
+        'Configured - saved settings are ready to verify. Run a connection check to confirm they work.',
+    };
+  } else if (provider === 'codex') {
+    state = {
+      icon: 'rocket_launch',
+      message: 'Not connected yet. Sign in with ChatGPT below to start.',
+    };
+  } else if (provider === 'hermes') {
+    state = {
+      icon: 'rocket_launch',
+      message: 'Not configured yet. Add and save a Hermes gateway URL below to start.',
+    };
   } else {
-    message = 'Not connected yet. Add your LLM endpoint, API key, and model below to start.';
-    icon = 'rocket_launch';
+    state = {
+      icon: 'rocket_launch',
+      message: 'Not configured yet. Add your LLM endpoint, API key, and model below to start.',
+    };
   }
-  statusText.textContent = message;
-  if (statusIcon) {
-    statusIcon.textContent = icon;
-    statusIcon.classList.toggle('is-connected', Boolean(data.connected));
+  applyStatusState(statusText, statusIcon, state, Boolean(data.connected));
+  if (actionEl) {
+    if (!data.connected && (data.error || data.configured) && typeof data.onRetry === 'function') {
+      const label = data.retryLabel || (data.error ? 'Retry' : 'Check connection');
+      actionEl.textContent = label;
+      actionEl.classList.remove('d-none');
+      actionEl.onclick = data.onRetry;
+    } else {
+      actionEl.classList.add('d-none');
+      actionEl.onclick = null;
+    }
   }
 }
 

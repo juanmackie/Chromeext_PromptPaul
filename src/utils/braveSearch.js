@@ -7,6 +7,7 @@
  */
 
 import { readBoundedResponseText } from './streamSafety.js';
+import { redactProviderErrorMessage } from './runResilience.js';
 
 /**
  * Fixed endpoint: never accept a caller-supplied URL.
@@ -82,6 +83,64 @@ export function maskApiKey(key, visible = 4) {
   if (!key) return '';
   if (key.length <= visible + 4) return key.slice(0, 2) + '…' + key.slice(-2);
   return key.slice(0, visible) + '…' + key.slice(-visible);
+}
+
+/**
+ * Pull a short, safe reason out of a Brave error response body so the user
+ * sees why a 400 was rejected. Handles plain-text, flat JSON, and nested
+ * `error.detail` / `error.code` bodies (Brave's structured plan errors).
+ * Bounded and credential-redacted; never returns '[object Object]'.
+ * @param {string} body
+ * @returns {string}
+ */
+export function extractBraveErrorReason(body) {
+  if (!body) return '';
+  let raw = '';
+  try {
+    const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+    if (parsed && typeof parsed === 'object') {
+      const err = parsed.error && typeof parsed.error === 'object' ? parsed.error : null;
+      const nestedDetail = err && typeof err.detail === 'string' ? err.detail : '';
+      const nestedCode = err && typeof err.code === 'string' ? err.code : '';
+      raw =
+        parsed.reason ||
+        parsed.message ||
+        parsed.detail ||
+        (typeof parsed.error === 'string' ? parsed.error : '') ||
+        nestedDetail ||
+        nestedCode ||
+        (parsed.errors && Array.isArray(parsed.errors)
+          ? parsed.errors
+              .map((e) => (typeof e === 'string' ? e : e && e.detail ? e.detail : ''))
+              .filter(Boolean)
+              .join('; ')
+          : '');
+    }
+  } catch {
+    raw = body;
+  }
+  return redactProviderErrorMessage(raw, 300);
+}
+
+/**
+ * Detect Brave's structured "LLM Context not included in this plan"
+ * restriction from a (possibly nested) error body.
+ * @param {string} body
+ * @returns {boolean}
+ */
+export function isPlanRestricted(body) {
+  if (!body) return false;
+  try {
+    const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+    if (!parsed || typeof parsed !== 'object') return false;
+    const err = parsed.error && typeof parsed.error === 'object' ? parsed.error : null;
+    return Boolean(
+      parsed.code === 'OPTION_NOT_IN_PLAN' ||
+      (err && typeof err.code === 'string' && err.code === 'OPTION_NOT_IN_PLAN')
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -219,8 +278,17 @@ export async function executeBraveSearch(query, apiKey, options = {}) {
     }
 
     if (response.status === 400) {
+      if (isPlanRestricted(body)) {
+        throw new BraveSearchError(
+          'Your Brave Search API plan does not include LLM Context. Use a Brave API key with LLM Context access in Options.',
+          { code: 'PLAN_RESTRICTED', status: response.status, cause: body.slice(0, 1000) }
+        );
+      }
+      const reason = extractBraveErrorReason(body);
+      const suffix = reason ? ` Reason: ${reason}` : '';
       throw new BraveSearchError(
-        'Brave Search rejected the request. Try a shorter query or check the search settings.',
+        'Brave Search rejected the request. Try a shorter query or check the search settings.' +
+          suffix,
         {
           code: 'BAD_REQUEST',
           status: response.status,

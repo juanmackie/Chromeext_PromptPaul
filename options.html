@@ -65,6 +65,11 @@
           <span id="setup-status-text" class="text-secondary-emphasis small"
             >Checking your connection…</span
           >
+          <button
+            type="button"
+            id="setup-status-action"
+            class="btn btn-outline-secondary btn-sm d-none"
+          ></button>
         </div>
         <button type="button" id="openChatButton" class="btn btn-primary">
           <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">forum</span>
@@ -1302,6 +1307,18 @@ What this skill does and when to use it.
         <div class="form-check form-switch mb-3">
           <input class="form-check-input" type="checkbox" id="notchEnabledToggle" />
           <label class="form-check-label" for="notchEnabledToggle">Enable the top notch</label>
+        </div>
+        <div class="mb-3">
+          <label class="form-label d-block" for="notchPlacementSelect">Notch edge</label>
+          <select class="form-select" id="notchPlacementSelect">
+            <option value="top">Top</option>
+            <option value="right">Right</option>
+            <option value="bottom">Bottom</option>
+            <option value="left">Left</option>
+          </select>
+          <div class="form-text">
+            Which viewport edge the notch docks to. Drag the rail along that edge to set its offset.
+          </div>
         </div>
         <div class="form-text mb-3">
           Default: off. Save this setting to update open web pages and future tabs.

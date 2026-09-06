@@ -10,7 +10,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 ### Browser Layer
 
-- `content_script_notch.js` renders the optional top-centered browser-viewport quick-action notch in an isolated Shadow DOM
+- `content_script_notch.js` renders the optional edge-pinnable browser-viewport quick-action notch in an isolated Shadow DOM
 - `content_script_diagnostics.js` relays development diagnostics from isolated content scripts, while `content_script_page_diagnostics.js` observes main-world page errors and console output only in development builds
 - Content scripts extract page content and page metadata
 - The background worker coordinates context menu actions, notch requests, and permissions
@@ -137,11 +137,11 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 ### Browser-page Top Notch (optional)
 
 1. `notchEnabled` is a persistent local boolean and defaults to `false`; Options saves it explicitly. Open pages observe storage changes and mount or remove the notch without a reload.
-2. The all-pages notch content script runs only in the top frame, mounts one fixed browser-viewport host, follows the saved Light/Dark/System theme preference (including live system changes), and uses Shadow DOM plus accessible labels, focus states, Escape handling, and reduced-motion support. Its bounded horizontal viewport position is persisted and changes through top-rail dragging.
+2. The all-pages notch content script runs only in the top frame, mounts one fixed browser-viewport host, follows the saved Light/Dark/System theme preference (including live system changes), and uses Shadow DOM plus accessible labels, focus states, Escape handling, and reduced-motion support. Its bounded position persists: `notchPlacement` (top/right/bottom/left) picks the anchored edge and `notchPosition` (0-100) sets the offset along that edge, changeable by dragging the rail along that axis.
 3. The collapsed notch exposes a compact top-edge toggle. Its expanded surface keeps primary actions tight, offers bounded page summarization and selected-text explanation, renders up to four saved pinned prompts in pin order, and provides one-turn dictation plus an explicit Act task field. Dictation always requests the bounded current page context, while pinned prompts use the current bounded selection first, current page content for a new conversation, or the active conversation when one exists. Act submission enables page actions for the browser session until the user disables them or the session ends; selection actions remain disabled until the page has a current bounded selection.
 4. Notch messages are accepted only from an injected content script with a valid sender tab. The background worker checks the fixed action allowlist, validates pinned instruction IDs and bounded dictated/task text, rejects unsupported pages, bounds payloads, and starts `chrome.sidePanel.open()` synchronously inside the message handler before any tab or extraction await. It then routes actions through `openChatWithContext`, `sendPanelMessage`, and the existing structured prompt composition.
 5. During an Act page-action event, the background notifies the current target tab and the notch content script renders a temporary three-pixel blue border glow. The glow is cleared on action completion/error and run termination; the border is viewport-only because extensions cannot style browser chrome.
-6. The notch is browser-page scoped and starts top-centered; users can drag it horizontally without moving page layout. Chrome internal pages, extension pages, and the Chrome Web Store do not receive a usable action surface, and the extension cannot provide an OS-wide desktop overlay.
+6. The notch is browser-page scoped and can dock to any of the four viewport edges; users drag it along that edge without moving page layout. Chrome internal pages, extension pages, and the Chrome Web Store do not receive a usable action surface, and the extension cannot provide an OS-wide desktop overlay.
 
 ### Current-Page Actions (optional)
 
