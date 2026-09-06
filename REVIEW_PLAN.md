@@ -127,7 +127,7 @@ Evidence: [CI](.github/workflows/ci.yml), [browser loader](tests/browser/browser
 - Fix: build once, exercise production output in an isolated browser, and publish/upload the release candidate only after all required gates pass. Keep the internal test harness separate from the shipped artifact. Align the local release command with CI.
 - Acceptance: a failed browser check prevents release-candidate publication; production startup, settings, chat, page extraction, and safe Act smoke tests run against the exact packaged files.
 
-**Resolution: Mostly done; dedicated production smoke follow-up.** `tests/browser/browserTestSupport.js` now resolves the extension load path from `PROMPT_PAUL_LOAD_EXTENSION_DIR` (defaults to the source checkout), so the loader can exercise a built `dist/`. CI's browser job now builds production output and runs browser tests against `dist/`, and the flow uploads the `dist/` artifact only from the `build` job that `needs: [validate, browser]`, so a failed browser check blocks release-candidate publication. `npm run ci` and the new `npm run test:browser:prod` include this prod-output browser gate. Limitation: the existing browser specs load a test-only harness page (`tests/browser/extension-harness.html`) that is intentionally not shipped in `dist/`, so those specs cannot run unchanged against the package; a dedicated production smoke suite that exercises only packaged surfaces (options, sidepanel chat, background startup, extraction, safe Act) against `dist/` remains the recommended follow-up.
+**Resolution: PARTIAL — wiring done, gate not yet green.** `tests/browser/browserTestSupport.js` now resolves the extension load path from `PROMPT_PAUL_LOAD_EXTENSION_DIR` (defaults to the source checkout), so the loader can exercise a built `dist/`. CI's browser job builds production output and runs browser tests against `dist/`, and the `build` job `needs: [validate, browser]` and uploads the `dist/` artifact only on success, so a failed browser check blocks release-candidate publication. `npm run ci` and the new `npm run test:browser:prod` include this prod-output browser gate. **Verified blocker:** the existing browser specs load a test-only harness (`tests/browser/extension-harness.html`) that is not shipped to `dist/` (build copies only `src`, `libs`, `skills`, `icons`), so `npm run test:browser:prod` currently fails 100% (harness `ERR_FILE_NOT_FOUND`). The vendor edit also blocks `npm run validate`/CI, so no green CI run proves the gate yet. **Still open:** ship/stage the harness or add a harness-free production smoke spec (startup, options, sidepanel chat, extraction, safe Act), make `test:browser:prod` cross-platform, fix the vendor-manifest hash, and land one green CI run showing `browser` passing against `dist/` with `build` uploading.
 
 ## P2 — Reliability and quality punchlist
 
@@ -206,6 +206,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: enforce the shared byte and record limits across every import, before FileReader/JSON parsing where possible. Normalize record types consistently.
 - Acceptance: oversized files and record counts fail promptly without modifying storage; valid boundary-size files still work.
 
+**Resolution (verified 2026-09-06): PARTIAL.** All four user-facing import paths (instructions `options.js:2399`, tools `:2727`, skills `:3145`, full restore `:3513`) enforce `MAX_IMPORT_FILE_BYTES`/`MAX_IMPORTED_RECORDS` (`options.js:93-94`) **before** `new FileReader()`/`readAsText`, reject oversized files/record counts, and normalize records (tool `normalizeToolDefinition`, skill `parseSkillMarkdown`/`MAX_SKILL_MARKDOWN_CHARS`, backup `normalizeBackupPayload`). Two consistency gaps remain: the write-back record caps on instructions/tools and the restore record cap are not all applied with the same bounds as the import-time rejection, so boundary-shape files can exceed on merge.**
+
 ### P2-08 — Make terminal recovery truncation visible
 
 **Source-confirmed · S**
@@ -214,6 +216,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 
 - Fix: record a bounded truncation flag and original length; clearly label partial recovered content. Preserve bounded source/completion metadata and use the canonical safe final renderer.
 - Acceptance: recovery of a long grounded answer does not imply completeness, does not invent missing text, and preserves available sources and limitation notices.
+
+**Resolution (verified 2026-09-06): NOT_DONE.** `RunOrchestrator._journalEvent` still stores a blind `slice(0, 8_000)` on complete content (`src/orchestrator/RunOrchestrator.js:5216`) with no truncation flag, no original-length field, and the `grounding` sources attached at emit time (`:5140-5142`) never reach the journal. `chat.js:1049-1062` (`restoreTerminalRun`) renders recovered `event.content` as a normal complete answer with no partial/limitation notice and no Sources rendering; `src/chat/ChatRunRecovery.js` has no grounding/truncation handling. All acceptance criteria unmet.
 
 ### P2-09 — Show the connection actually used for the run
 
@@ -240,6 +244,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: use background status/set/remove operations scoped to a profile. Return only configured status to UI reads. Include credential/session cleanup when deleting profiles, and verify storage access restrictions for content-script contexts.
 - Acceptance: Options can preserve, replace, and remove a key without reading saved secrets; deleting one profile affects only its credential/session records. No credential exposure exploit was demonstrated in this review.
 
+**Resolution (verified 2026-09-06): PARTIAL.** Core contract is met: `hermesApiKeys`/`hermesSessions`/`hermesSessionKeys` are read/written only from `background.js` via `getHermesCredential`/`setHermesCredential`/`removeHermesCredential` (`background.js:131-143`), exposed as `hermesKeyStatus`/`hermesKeySet`/`hermesKeyRemove` (`:3119-3158`) that require an extension-page sender and return only `{ configured }`. Options no longer touches the map — it asks `hermesKeyStatus` for the mask (`options.js:969-979`) and sends `hermesKeySet`/`hermesKeyRemove` (`:894-925`). Gaps: deleting a profile (`options.js:1548-1599`) issues no `hermesKeyRemove` and no session cleanup, so the deleted profile's key/session/session-key records orphan permanently; no behavior test covers the three key ops; `hermesKeySet` stores an unvalidated string (no length cap).
+
 ### P2-11 — Complete runtime dependency provenance and license inventory
 
 **Source-confirmed inventory gap · M**
@@ -249,6 +255,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: inventory every shipped third-party asset with exact source/version/hash and required notices; make omissions fail verification. Add the project's intended license text with correct ownership. Review upstream advisories for the resolved runtime versions.
 - Acceptance: every third-party package file maps to a provenance record; an unlisted asset fails the gate. A clean npm audit is not presented as a runtime vulnerability assessment. No specific upstream vulnerability is claimed here.
 
+**Resolution (verified 2026-09-06): DONE.** `libs/vendor-manifest.json` lists all 13 shipped third-party files (incl. the previously-missing root `marked.min.js`, the material-symbols woff2, and per-file sha256), with `versionNote` fingerprints replacing the old `vendored-existing` for readability/turndown. `scripts/verify-vendored-licenses.js:104-123` enumerates every `libs/` file plus `marked.min.js` and throws on any unlisted/non-allowlisted asset, hash mismatch, or missing metadata (verified empirically by injecting an unlisted file and corrupting a hash — both failed the gate). Root `LICENSE` exists and is tracked. Gate wired into `npm run validate` and `npm run ci`. Minor: `bootstrap.min.css` hash entry is stale relative to the working copy and fails validation locally — that specific entry needs its hash refreshed as part of the P1-08 CI fix.
+
 ### P2-12 — Replace asserted evaluation metrics with measured outcomes
 
 **Source-confirmed · M**
@@ -257,6 +265,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 
 - Fix: label the existing suite as executor regression coverage. Measure actual provider payload size, observed policy outcomes, end-state task success, latency, and repeated-run consistency in a separate whole-task suite. Use real distinct injection fixtures.
 - Acceptance: an intentionally wrong outcome fails the relevant metric; provider cases pass through their actual wire conversion; consistency is computed from repeated runs rather than empty data.
+
+**Resolution (verified 2026-09-06): PARTIAL.** Executor-regression relabeling is done (`tests/browser/page-action-evaluation.spec.js` drops the zero-risk assertion, bounds `toolArgChars`), actual provider payload bytes flow through real `buildCodexInput` (`tests/pageActionEvaluationExecution.test.js:64-67`) with a sabotage-sensitive end-state/consistency check (sabotage test fails as expected). Gaps: the observed policy outcome is still hardcoded to `denied: false` in the whole-task record, no browser-level latency/success metric is gated (only `console.info`-logged), the three distinct `injection-hidden/alt/aria.html` fixtures are mapped but never loaded by the unit suite (repo-wide grep shows no test reads them; only the combined `injection.html` is exercised), and an `AbortError` record still pushes a hardcoded `42`-char value.
 
 ### P2-13 — Remove contradictory privacy, permission, and budget instructions
 
@@ -289,6 +299,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: bind each row to its originating structured request and context identity, or expose these actions only on the latest response with clear labels.
 - Acceptance: after two turns, Retry/Edit on the first answer uses the first request; attachments and selection are not replaced with unrelated current context.
 
+**Resolution (verified 2026-09-06): PARTIAL.** `src/chat/ChatComposer.js` `ensureRecoveryRow` captures `getLastUserPrompt(chatArea)` once at row-creation time (idempotency guard keeps one row per bubble), and `syncRunState` builds each row when that bubble's own run completes, so Retry/Edit on an older bubble use that bubble's captured prompt string — covered by `tests/chatComposer.test.js` (23 passed). Gaps: only a raw prompt **string** (`messageDiv.dataset.prompt`) is bound; no structured request/context identity (request id/run id/context descriptor) is attached, and the acceptance's second half — attachments and selection not being replaced by unrelated current context — is not addressed.
+
 ### P2-16 — Distinguish configured from successfully connected
 
 **Source-confirmed wording issue · S**
@@ -297,6 +309,8 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 
 - Fix: label untested settings Configured. Show Connected only after a successful bounded connection check, with a visible result and retry action.
 - Acceptance: invalid credentials and offline endpoints never show a verified connection; stale checks are invalidated after relevant settings changes.
+
+**Resolution (verified 2026-09-06): DONE.** `src/options/OptionsUI.js` `renderSetupStatus()` distinguishes connected / error / configured / not-configured states, shows a visible Retry/Check action, and derives the icon strictly from `data.connected` (L292-374). `options.js` produces `connected: true` only from a successful bounded check (`runHermesConnectionCheck` L1088+, Codex via `codexAuthStatus`), never from nonempty fields; dirty settings stay "Configured" with a `// P2-16:` comment, and the `connectionTracker` dirty handler invalidates a stale Connected on any connection-field change. Minor residual: offline/invalid Hermes endpoints surface as "Configured" + error rather than a verified Connected, which matches the intent.
 
 ## P3 — Improvements and removals
 
@@ -308,6 +322,8 @@ Use the fixes above to centralize error-aware section storage, draft state, and 
 
 Acceptance: each behavior has one owning implementation and focused integration coverage; runtime message and storage schemas remain compatible.
 
+**Resolution (verified 2026-09-06): DONE.** `commit 6c3c1aa` centralizes error-aware section storage behind a shared save helper (`options.js` uses one `runErrorAwareSave`-style path across sections), so each behavior has a single owning implementation rather than per-section duplicates. Draft and pending-interaction recovery are routed through the shared recovery plumbing added for P1-05. Runtime message and storage schemas remain compatible; no framework migration or line-count-driven split was introduced. Small pre-deferred residuals (delete/pin and import write-backs not yet re-routed through the shared helper) remain as noted in the P1-06 and P2-07 follow-ups.
+
 ### P3-02 — Keep agent instructions out of the shipped runtime package
 
 **Source-confirmed packaging cleanup · S**
@@ -316,6 +332,8 @@ Acceptance: each behavior has one owning implementation and focused integration 
 
 Acceptance: the release archive contains only runtime files and intentional notices; no required skill or asset is lost.
 
+**Resolution (verified 2026-09-06): DONE.** `scripts/build.js` `DEV_ONLY_EXCLUDES = ['AGENTS.md']` (`:113-127`) filters AGENTS.md from the production copy of `src`, `libs`, and `skills`; eval and dev-diagnostic variants are removed from production output (`installEvalVariant`/`installDiagnosticsVariant`). Verified empirically: `node scripts/build.js --prod` leaves zero AGENTS.md in `dist/` while keeping `skills/skills.json`, both `SKILL.md` files, license/provenance, and manifest intact; no `*.eval.js` in `dist/`. A regression guard asserts this (`scripts/test-runner.js`). Minor caveat: the punchlist says "allowlist" but the implementation uses an exclude-list pattern — functionally equivalent for the current file set.
+
 ### P3-03 — Make the release traceable and repeatable
 
 **Recommendation · S**
@@ -323,6 +341,8 @@ Acceptance: the release archive contains only runtime files and intentional noti
 The local production build records commit and branch as `local`. Record the actual revision and clean/dirty status, produce an archive checksum, and make the release candidate reproducible from the recorded revision. Keep development/evaluation output excluded.
 
 Acceptance: a downloaded candidate can be traced to the tested revision and its exact artifact checksum.
+
+**Resolution (verified 2026-09-06): DONE.** `scripts/build.js` records the real git revision and clean/dirty status (no longer hardcoded `local`) and emits a per-file SHA-256 checksum alongside the build metadata, so a release candidate can be traced to the tested revision and its exact artifact hash. Development and evaluation output stay excluded from the packaged archive.
 
 ## The next two highest-ROI actions
 
