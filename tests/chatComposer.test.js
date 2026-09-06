@@ -274,17 +274,69 @@ describe('ensureRecoveryRow prompt binding', () => {
       };
       ensureRecoveryRow(bubble2, { retry: true, edit: true }, handlers, chatArea);
 
-      // Retry/Edit on the first answer use the first request.
+      // Retry/Edit on the first answer use the first request (no structured
+      // identity captured yet, so the plain prompt is passed through).
       bubble1.children[0].children[0].listeners.click[0]();
       bubble1.children[0].children[1].listeners.click[0]();
       expect(handlers.onPrompt).toHaveBeenCalledWith('first', 'retry');
-      expect(handlers.onEdit).toHaveBeenCalledWith('first');
+      expect(handlers.onEdit).toHaveBeenCalledWith('first', undefined);
 
       // The second answer's row binds to its own request.
       bubble2.children[0].children[0].listeners.click[0]();
       bubble2.children[0].children[1].listeners.click[0]();
       expect(handlers.onPrompt).toHaveBeenCalledWith('second', 'retry');
-      expect(handlers.onEdit).toHaveBeenCalledWith('second');
+      expect(handlers.onEdit).toHaveBeenCalledWith('second', undefined);
+    } finally {
+      globalThis.document = realDocument;
+    }
+  });
+
+  it('binds the originating request/context identity and replays OLD context after it changes', () => {
+    const realDocument = globalThis.document;
+    globalThis.document = makeFakeDocument();
+    try {
+      const oldRequest = {
+        instruction: 'summarize this',
+        context: { type: 'selected_text', text: 'OLD SELECTION TEXT' },
+      };
+      const messages = [{ dataset: { prompt: 'summarize this' }, textContent: '' }];
+      messages[0].requestIdentity = oldRequest;
+      const chatArea = {
+        querySelectorAll(selector) {
+          return selector === '.user-message' ? messages : [];
+        },
+      };
+      const handlers = { onPrompt: vi.fn(), onEdit: vi.fn() };
+      const bubble1 = {
+        querySelector: () => null,
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+      };
+      // First response row captures the OLD context identity at creation time.
+      ensureRecoveryRow(bubble1, { retry: true, edit: true }, handlers, chatArea);
+
+      // Second turn: the selection/context changes.
+      const newRequest = {
+        instruction: 'summarize this',
+        context: { type: 'selected_text', text: 'NEW SELECTION TEXT' },
+      };
+      const msg2 = { dataset: { prompt: 'summarize this' }, textContent: '' };
+      msg2.requestIdentity = newRequest;
+      messages.push(msg2);
+
+      // Retry on the FIRST response still replays the OLD identity, not the
+      // currently-attached NEW context.
+      bubble1.children[0].children[0].listeners.click[0]();
+      expect(handlers.onPrompt).toHaveBeenCalledTimes(1);
+      const retryPayload = handlers.onPrompt.mock.calls[0][0];
+      expect(retryPayload).toEqual({ instruction: 'summarize this', request: oldRequest });
+      expect(retryPayload.request.context.text).toBe('OLD SELECTION TEXT');
+
+      // Edit hands back the OLD request identity alongside the prompt.
+      bubble1.children[0].children[1].listeners.click[0]();
+      expect(handlers.onEdit).toHaveBeenCalledWith('summarize this', oldRequest);
     } finally {
       globalThis.document = realDocument;
     }

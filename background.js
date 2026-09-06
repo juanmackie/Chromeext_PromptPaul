@@ -37,6 +37,7 @@ import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
 import { HermesTransport, supportsHermesClientTools } from './src/orchestrator/HermesTransport.js';
 import { createKeyedOperationLock } from './src/utils/keyedOperationLock.js';
+import { validateHermesKey, removeProfileHermesState } from './src/utils/hermesKeys.js';
 import {
   clearPageActionCheckpoint,
   getPageActionCheckpoint,
@@ -3136,7 +3137,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: false, error: 'A Hermes profile is required.' });
       return true;
     }
-    setHermesCredential(profileId, typeof request.value === 'string' ? request.value : '')
+    const validation = validateHermesKey(request.value);
+    if (!validation.ok) {
+      sendResponse({ success: false, error: validation.error });
+      return true;
+    }
+    setHermesCredential(profileId, validation.value)
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;
@@ -3152,6 +3158,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     removeHermesCredential(profileId)
+      .then(() => sendResponse({ success: true }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.action === 'hermesProfileDeleted') {
+    if (!extensionPageSender) {
+      return rejectUnauthorizedMessage(sendResponse);
+    }
+    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
+    if (!profileId) {
+      sendResponse({ success: false, error: 'A Hermes profile is required.' });
+      return true;
+    }
+    removeProfileHermesState(profileId, chrome)
       .then(() => sendResponse({ success: true }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;

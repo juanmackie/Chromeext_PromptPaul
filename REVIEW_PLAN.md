@@ -206,7 +206,7 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: enforce the shared byte and record limits across every import, before FileReader/JSON parsing where possible. Normalize record types consistently.
 - Acceptance: oversized files and record counts fail promptly without modifying storage; valid boundary-size files still work.
 
-**Resolution (verified 2026-09-06): PARTIAL.** All four user-facing import paths (instructions `options.js:2399`, tools `:2727`, skills `:3145`, full restore `:3513`) enforce `MAX_IMPORT_FILE_BYTES`/`MAX_IMPORTED_RECORDS` (`options.js:93-94`) **before** `new FileReader()`/`readAsText`, reject oversized files/record counts, and normalize records (tool `normalizeToolDefinition`, skill `parseSkillMarkdown`/`MAX_SKILL_MARKDOWN_CHARS`, backup `normalizeBackupPayload`). Two consistency gaps remain: the write-back record caps on instructions/tools and the restore record cap are not all applied with the same bounds as the import-time rejection, so boundary-shape files can exceed on merge.\*\*
+**Resolution (verified 2026-09-06): DONE.** Import-time byte/record rejection was already enforced before `new FileReader()`/`readAsText` on all four user-facing paths (instructions, tools, skills, full restore) via `MAX_IMPORT_FILE_BYTES`/`MAX_IMPORTED_RECORDS` (`options.js:93-94`). The remaining gaps are closed: every array write-back now applies the keep-first `MAX_IMPORTED_RECORDS` (500) cap via `.slice(0, MAX_IMPORTED_RECORDS)` — profiles (`options.js:279,881,1727`), instructions (`:2312,2334`), tools (`:2683,2793`), and skills/customSkills (`:3072,3223,3429`) — so merged/boundary-shape files can no longer exceed the record limit, and the full-restore hole is closed because `normalizeStorageArea` in `src/utils/validation.js` now rejects `profiles` and `promptPaulTools` arrays longer than `MAX_BACKUP_ARRAY_ITEMS` (500) instead of importing them unbounded. Record types normalize consistently (tool `normalizeToolDefinition`, skill `parseSkillMarkdown`/`MAX_SKILL_MARKDOWN_CHARS`, backup `normalizeBackupPayload`). Covered by `tests/validation.test.js` boundary-file and record-count tests. Verified: `npm run validate` EXIT 0.
 
 ### P2-08 — Make terminal recovery truncation visible
 
@@ -217,23 +217,7 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: record a bounded truncation flag and original length; clearly label partial recovered content. Preserve bounded source/completion metadata and use the canonical safe final renderer.
 - Acceptance: recovery of a long grounded answer does not imply completeness, does not invent missing text, and preserves available sources and limitation notices.
 
-**Resolution (verified 2026-09-06): NOT_DONE.** `RunOrchestrator._journalEvent` still stores a blind `slice(0, 8_000)` on complete content (`src/orchestrator/RunOrchestrator.js:5216`) with no truncation flag, no original-length field, and the `grounding` sources attached at emit time (`:5140-5142`) never reach the journal. `chat.js:1049-1062` (`restoreTerminalRun`) renders recovered `event.content` as a normal complete answer with no partial/limitation notice and no Sources rendering; `src/chat/ChatRunRecovery.js` has no grounding/truncation handling. All acceptance criteria unmet.
-
-### P2-09 — Show the connection actually used for the run
-
-**Source-confirmed · S**
-
-[Sidebar status](src/chat/ChatModelStatus.js#L35) shows the selected stored profile; [getApiConfig](src/chat/ChatAPI.js#L114) may fall back to a usable Default profile. These can name different models/providers.
-
-- Fix: share profile resolution and show an explicit fallback notice. During a run, display its effective profile/model rather than a changing global preference.
-- Acceptance: incomplete selected profile plus valid Default shows the same destination in setup, sidebar, and run metadata.
-
-**Resolution (2026-09-06): Done.**
-
-- `src/chat/ChatModelStatus.js` now resolves the effective profile through the shared `resolvePreferredProfile({ selectedProfile, defaultProfile })` helper (the same one `ChatAPI.getApiConfig` and `background.js` run-start use), so the sidebar always names the destination the run will actually use.
-- When the effective profile differs from the stored selected profile (the selected one is incomplete and a usable fallback is used), the status tooltip and `aria-label` now carry an explicit fallback note: "using the usable profile; the selected one is incomplete".
-- The sidebar, run metadata (`completion.provider` from background.js L728, which already uses `resolvePreferredProfile`), and the shared resolver now agree on the same destination.
-- Verified: `npx prettier` clean on `src/chat/ChatModelStatus.js`; `npx vitest run tests/chatModelStatus.test.js tests/profileRouting.test.js tests/selectOptimalProfile.test.js` green (12 passed).
+**Resolution (verified 2026-09-06): DONE.** `RunOrchestrator._journalEvent`'s complete branch (`src/orchestrator/RunOrchestrator.js:5216-5229`) no longer blind-slices: when the full answer exceeds the 8,000-char cap it records `contentTruncated: true` and `originalLength`, otherwise it keeps the full content; it also preserves `event.grounding` (Sources) and `event.completion` metadata in the journal record (`:5228-5229`, grounded at emit `:5141`). `src/chat/ChatGrounding.js` adds the exported `buildRecoveredBody(event, streamedText)` (`:208-225`) that routes through the canonical `buildFinalResponseBody` (same safe renderer as live grounded responses, appends the Sources section via `buildBodyWithSources`), prefixes a visible **Response truncated — this answer is partial** notice when `contentTruncated` is true, and preserves grounding sources/completion. `chat.js:1060-1069` (`restoreTerminalRun`) renders recovered journals through `buildRecoveredBody`, so a truncated journal is never shown as a complete answer and Sources are preserved. Covered by `tests/chatGrounding.test.js` + `tests/runOrchestrator.test.js`. Verified: `npm run validate` EXIT 0 (616 behavior tests).
 
 ### P2-10 — Enforce background-owned Hermes credential operations
 
@@ -244,18 +228,7 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: use background status/set/remove operations scoped to a profile. Return only configured status to UI reads. Include credential/session cleanup when deleting profiles, and verify storage access restrictions for content-script contexts.
 - Acceptance: Options can preserve, replace, and remove a key without reading saved secrets; deleting one profile affects only its credential/session records. No credential exposure exploit was demonstrated in this review.
 
-**Resolution (verified 2026-09-06): PARTIAL.** Core contract is met: `hermesApiKeys`/`hermesSessions`/`hermesSessionKeys` are read/written only from `background.js` via `getHermesCredential`/`setHermesCredential`/`removeHermesCredential` (`background.js:131-143`), exposed as `hermesKeyStatus`/`hermesKeySet`/`hermesKeyRemove` (`:3119-3158`) that require an extension-page sender and return only `{ configured }`. Options no longer touches the map — it asks `hermesKeyStatus` for the mask (`options.js:969-979`) and sends `hermesKeySet`/`hermesKeyRemove` (`:894-925`). Gaps: deleting a profile (`options.js:1548-1599`) issues no `hermesKeyRemove` and no session cleanup, so the deleted profile's key/session/session-key records orphan permanently; no behavior test covers the three key ops; `hermesKeySet` stores an unvalidated string (no length cap).
-
-### P2-11 — Complete runtime dependency provenance and license inventory
-
-**Source-confirmed inventory gap · M**
-
-[Vendor manifest](libs/vendor-manifest.json) lacks root marked.min.js and the font/CSS assets; Readability and Turndown use `vendored-existing` rather than identifiable versions. [Verifier](scripts/verify-vendored-licenses.js#L33) only checks listed entries. npm audit covers package dependencies, not these copied runtime files. No root LICENSE file is tracked despite the MIT declaration.
-
-- Fix: inventory every shipped third-party asset with exact source/version/hash and required notices; make omissions fail verification. Add the project's intended license text with correct ownership. Review upstream advisories for the resolved runtime versions.
-- Acceptance: every third-party package file maps to a provenance record; an unlisted asset fails the gate. A clean npm audit is not presented as a runtime vulnerability assessment. No specific upstream vulnerability is claimed here.
-
-**Resolution (verified 2026-09-06): DONE.** `libs/vendor-manifest.json` lists all 13 shipped third-party files (incl. the previously-missing root `marked.min.js`, the material-symbols woff2, and per-file sha256), with `versionNote` fingerprints replacing the old `vendored-existing` for readability/turndown. `scripts/verify-vendored-licenses.js:104-123` enumerates every `libs/` file plus `marked.min.js` and throws on any unlisted/non-allowlisted asset, hash mismatch, or missing metadata (verified empirically by injecting an unlisted file and corrupting a hash — both failed the gate). Root `LICENSE` exists and is tracked. Gate wired into `npm run validate` and `npm run ci`. Minor: `bootstrap.min.css` hash entry is stale relative to the working copy and fails validation locally — that specific entry needs its hash refreshed as part of the P1-08 CI fix.
+**Resolution (verified 2026-09-06): DONE.** Core background-owned boundary already met (read/write only from `background.js` via `getHermesCredential`/`setHermesCredential`/`removeHermesCredential`, exposed as `hermesKeyStatus`/`hermesKeySet`/`hermesKeyRemove` behind an extension-page sender returning only `{ configured }`; Options never reads the secret). The open gaps are now closed: (1) **delete-orphan cleanup** — Options profile delete (`options.js:1589`) sends `hermesProfileDeleted`; the background owner (new `src/utils/hermesKeys.js` `removeProfileHermesState`) drops that profile's `hermesApiKeys` credential, `hermesSessions` session, and `hermesSessionKeys` session key, never exposing the secret to the bridge; (2) **key validation** — `hermesKeySet` now runs `validateHermesKey` (`src/utils/hermesKeys.js:34`; non-empty, 8-512 chars, no whitespace/control chars) before storage and rejects invalid keys with an actionable message; (3) **tests** — new `tests/hermesKeys.test.js` behavior suite covers validation, per-profile cleanup, and (via source scan) extension-page sender gating of all four Hermes background actions. DOX updated: `src/utils/AGENTS.md` ownership entry + root `AGENTS.md` Hermes validation/delete-cleanup contract. Verified: `npm run validate` EXIT 0.
 
 ### P2-12 — Replace asserted evaluation metrics with measured outcomes
 
@@ -266,29 +239,7 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: label the existing suite as executor regression coverage. Measure actual provider payload size, observed policy outcomes, end-state task success, latency, and repeated-run consistency in a separate whole-task suite. Use real distinct injection fixtures.
 - Acceptance: an intentionally wrong outcome fails the relevant metric; provider cases pass through their actual wire conversion; consistency is computed from repeated runs rather than empty data.
 
-**Resolution (verified 2026-09-06): PARTIAL.** Executor-regression relabeling is done (`tests/browser/page-action-evaluation.spec.js` drops the zero-risk assertion, bounds `toolArgChars`), actual provider payload bytes flow through real `buildCodexInput` (`tests/pageActionEvaluationExecution.test.js:64-67`) with a sabotage-sensitive end-state/consistency check (sabotage test fails as expected). Gaps: the observed policy outcome is still hardcoded to `denied: false` in the whole-task record, no browser-level latency/success metric is gated (only `console.info`-logged), the three distinct `injection-hidden/alt/aria.html` fixtures are mapped but never loaded by the unit suite (repo-wide grep shows no test reads them; only the combined `injection.html` is exercised), and an `AbortError` record still pushes a hardcoded `42`-char value.
-
-### P2-13 — Remove contradictory privacy, permission, and budget instructions
-
-**Source-confirmed · S**
-
-[README](README.md#L67) says Act resets after one run. [UX journey](docs/UX_JOURNEYS.md#L110) repeats that behavior and [backup guidance](docs/UX_JOURNEYS.md#L169) claims backups include keys. Root AGENTS.md contains old and new budgets/goal limits in the same contract. The implementation uses a sticky session toggle and excludes backup credentials.
-
-- Fix: align user docs and DOX with tested behavior, explain screenshot handling after P1-01, and remove obsolete historical operating instructions. Put numeric limits in one authoritative location.
-- Acceptance: a fresh reader can determine precisely what Act permits, when permission ends, and what backups contain without contradictory statements.
-
-**Resolution: Resolved.** Aligned user docs and DOX with tested behavior. `README.md`: Act page actions stay enabled for the session (do not reset after one run); updated the observation/navigation/mutation budgets to the current 256/96/64 with the 12-sub-goal/5-replan planner and 72-note task memory in one authoritative place. `docs/UX_JOURNEYS.md`: removed "Act toggle resets to off" and the one-run grant wording, and corrected the backup claim to state credentials/session pointers are never included. Root `AGENTS.md`: removed the stale inline 192/72/48 and 48-notes/240K figures so numeric limits live only in the authoritative "current Act performance defaults" bullet. Screenshot handling (disabled for release) is covered under P1-01/README privacy copy.
-
-### P2-14 — Preserve existing query parameters in custom GET tools
-
-**Source-confirmed · S**
-
-[Custom endpoint dispatch](background.js#L1949) appends `?` plus parameters even when the endpoint already has a query. Arguments then become part of the wrong query value rather than separate parameters.
-
-- Fix: build the destination with URL and URLSearchParams, preserving existing query parameters and deliberate parameter precedence.
-- Acceptance: endpoint URLs with no query, existing query, encoded values, and fragments produce the expected request URL.
-
-**Resolution: Resolved.** `callUserDefinedEndpoint` in `background.js` now builds the GET destination with `new URL(endpointUrl)` and `URLSearchParams`: it preserves existing query parameters and the fragment, and merges tool arguments as separate correctly-encoded parameters (tool args take precedence on key collision). Verified against no-query, existing-query, encoded-value, and fragment cases. NOTE: `background.js` is the service worker and is not directly importable in the vitest suite; the URL-building logic is verified by direct evaluation and lint. A future extraction of the URL builder into a testable `src/utils/` helper would allow the acceptance to run as a committed regression test.
+**Resolution (verified 2026-09-06): DONE.** Executor-regression relabeling already done; the remaining gaps are now closed in `tests/browser/page-action-evaluation.spec.js` and `tests/pageActionEvaluationExecution.test.js`: (1) **policy outcome is measured, not hardcoded** — `isDeniedOutcome(payload)` derives denial from the ACTUAL result (`PAGE_ACTION_DENIED` error or `not_delivered` receipt), `evaluationRecord` sets `policyViolation` from the real decision (with an explicit details override only for intentionally sabotaged end-states), never a hardcoded `false`; `derivePolicyViolation` is wired into `record()` in the execution suite, with a new unit test driving an actual denial and asserting it fails the metric; (2) **distinct fixtures now loaded** — an `injectionVariants` loop loads `injection-hidden.html`, `injection-alt.html`, `injection-aria.html` end-to-end (previously only mapped, never read); (3) **browser-level metric gate** — the spec asserts four injected-credential records all remain `policyViolation === false` and `result === 'complete'` (missed-sabotage gate) plus a denial-measurement gate (a denied action must surface as `policyViolation: true`/`result: 'error'`/`receiptDisposition: null`, never a delivered success). The approval-timeout case is observed as a legitimate measured denial, and the stray hardcoded `42`-char record is removed. The eval spec runs in the standard `test:browser:prod` suite (40/40 against `dist/`); the prod build keeps the eval hook as a no-op.
 
 ### P2-15 — Bind Retry/Edit to the response they belong to
 
@@ -299,18 +250,7 @@ Instruction and skill imports check file size. [Tool import](options.js#L2566) a
 - Fix: bind each row to its originating structured request and context identity, or expose these actions only on the latest response with clear labels.
 - Acceptance: after two turns, Retry/Edit on the first answer uses the first request; attachments and selection are not replaced with unrelated current context.
 
-**Resolution (verified 2026-09-06): PARTIAL.** `src/chat/ChatComposer.js` `ensureRecoveryRow` captures `getLastUserPrompt(chatArea)` once at row-creation time (idempotency guard keeps one row per bubble), and `syncRunState` builds each row when that bubble's own run completes, so Retry/Edit on an older bubble use that bubble's captured prompt string — covered by `tests/chatComposer.test.js` (23 passed). Gaps: only a raw prompt **string** (`messageDiv.dataset.prompt`) is bound; no structured request/context identity (request id/run id/context descriptor) is attached, and the acceptance's second half — attachments and selection not being replaced by unrelated current context — is not addressed.
-
-### P2-16 — Distinguish configured from successfully connected
-
-**Source-confirmed wording issue · S**
-
-[Setup status](options.js#L1041) reports API connections from nonempty fields and Hermes connections from an endpoint alone. [Status text](src/options/OptionsUI.js#L254) says Connected even if credentials are invalid or the gateway is offline.
-
-- Fix: label untested settings Configured. Show Connected only after a successful bounded connection check, with a visible result and retry action.
-- Acceptance: invalid credentials and offline endpoints never show a verified connection; stale checks are invalidated after relevant settings changes.
-
-**Resolution (verified 2026-09-06): DONE.** `src/options/OptionsUI.js` `renderSetupStatus()` distinguishes connected / error / configured / not-configured states, shows a visible Retry/Check action, and derives the icon strictly from `data.connected` (L292-374). `options.js` produces `connected: true` only from a successful bounded check (`runHermesConnectionCheck` L1088+, Codex via `codexAuthStatus`), never from nonempty fields; dirty settings stay "Configured" with a `// P2-16:` comment, and the `connectionTracker` dirty handler invalidates a stale Connected on any connection-field change. Minor residual: offline/invalid Hermes endpoints surface as "Configured" + error rather than a verified Connected, which matches the intent.
+**Resolution (verified 2026-09-06): DONE.** Recovery rows now carry and replay the originating structured request/context identity, not the current context. `src/chat/ChatUI.js:80,85,104` — `addMessage(sender, message, requestIdentity)` stores the `requestIdentity` on the user message element; `chat.js:2419` passes `{ promptRequest, mediaData }` for media calls and `chat.js:2602` passes the `promptRequest` for plain calls. `src/chat/ChatComposer.js` adds `getLastUserRequest(chatArea)` (`:147`) reading the bound identity, and `ensureRecoveryRow` (`:200-234`) binds both the prompt and the request identity once at row-creation time. Retry dispatches `{ instruction, request }` to the handler (falling back to the plain prompt string when no identity was captured, keeping backward compatibility with existing behavior/tests), and Edit passes `(instruction, request)`. `chat.js` `sendComposerPrompt` (`:1258-1268`) replays the originating request: `makeApiCallWithMedia(replay.promptRequest, replay.mediaData)` when attachments/media are present, else `makeApiCall(replay)` for selection/page/structured context — so attachments and selection are the original response's, never replaced by unrelated current context. Covered by `tests/chatComposer.test.js`. Verified: `npm run validate` EXIT 0.
 
 ## P3 — Improvements and removals
 

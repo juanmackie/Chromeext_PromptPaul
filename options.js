@@ -251,7 +251,7 @@ async function resolveCodexProfileId() {
 }
 
 async function ensureCodexProfile(profileId) {
-  const profiles = await getStoredProfiles();
+  let profiles = await getStoredProfiles();
   let profile = profiles.find((entry) => entry.id === profileId);
   if (!profile) {
     profile = {
@@ -275,6 +275,8 @@ async function ensureCodexProfile(profileId) {
     profile.lastUpdated = new Date().toLocaleString();
   }
 
+  // P2-07: keep the profiles write-back capped at the same bound restore accepts.
+  profiles = profiles.slice(0, MAX_IMPORTED_RECORDS);
   await new Promise((resolve, reject) => {
     chrome.storage.local.set({ profiles, lastSelectedProfileId: profileId }, () =>
       chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve()
@@ -875,6 +877,8 @@ function saveOptions(e) {
     }
     profiles[profileIndex] = normalizedProfile.value;
     profileToUpdate = normalizedProfile.value;
+    // P2-07: keep the profiles write-back capped at the same bound restore accepts.
+    profiles = profiles.slice(0, MAX_IMPORTED_RECORDS);
 
     chrome.storage.local.set(
       {
@@ -1577,22 +1581,31 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         if (confirmed) {
           const updatedProfiles = profiles.filter((p) => p.id !== selectedProfileId);
-          chrome.storage.local.set(
-            { profiles: updatedProfiles, lastSelectedProfileId: 'default' },
+          // P2-10: profile delete also clears the background-owned Hermes
+          // credential + session + session-key records for this profile id.
+          // The secret value is never sent through this message; the background
+          // owner drops every keyed record for the deleted profile.
+          chrome.runtime.sendMessage(
+            { action: 'hermesProfileDeleted', profileId: selectedProfileId },
             () => {
-              if (chrome.runtime.lastError) {
-                console.error('Error deleting profile:', chrome.runtime.lastError);
-                showStatus('Error deleting profile: ' + chrome.runtime.lastError.message, true);
-              } else {
-                showStatus(
-                  `Profile "${profileName}" deleted successfully. Switched to Default profile.`,
-                  false,
-                  true
-                );
-                loadOptions(); // This will repopulate dropdown and load default profile settings.
-              }
+              chrome.storage.local.set(
+                { profiles: updatedProfiles, lastSelectedProfileId: 'default' },
+                () => {
+                  if (chrome.runtime.lastError) {
+                    console.error('Error deleting profile:', chrome.runtime.lastError);
+                    showStatus('Error deleting profile: ' + chrome.runtime.lastError.message, true);
+                  } else {
+                    showStatus(
+                      `Profile "${profileName}" deleted successfully. Switched to Default profile.`,
+                      false,
+                      true
+                    );
+                    loadOptions(); // This will repopulate dropdown and load default profile settings.
+                  }
+                }
+              );
             }
-          );
+          ); // profile delete
         }
       });
     });
@@ -1711,6 +1724,7 @@ document.addEventListener('DOMContentLoaded', () => {
               return;
             }
             profiles.push(normalizedNewProfile.value);
+            profiles = profiles.slice(0, MAX_IMPORTED_RECORDS);
             setChromeStorage(chrome.storage.local, {
               profiles: profiles,
               lastSelectedProfileId: newProfileId,
@@ -2317,7 +2331,7 @@ function setupInstructionHandlers() {
           ? existingInstructions.map((inst) =>
               inst.id === instructionId ? savedInstruction : inst
             )
-          : [...existingInstructions, savedInstruction].slice(-MAX_IMPORTED_RECORDS);
+          : [...existingInstructions, savedInstruction].slice(0, MAX_IMPORTED_RECORDS);
         setChromeStorage(chrome.storage.local, { instructions })
           .then(() => {
             showStatus(instructionId ? 'Instruction updated.' : 'Instruction added.');
@@ -2450,7 +2464,7 @@ function setupInstructionHandlers() {
             });
 
             chrome.storage.local.set(
-              { instructions: existingInstructions.slice(-MAX_IMPORTED_RECORDS) },
+              { instructions: existingInstructions.slice(0, MAX_IMPORTED_RECORDS) },
               () => {
                 showStatus('Instructions imported successfully.');
                 refreshInstructions();
@@ -2666,6 +2680,7 @@ function setupToolHandlers() {
             lastUpdated: now,
           };
           tools.push(newTool);
+          tools = tools.slice(0, MAX_IMPORTED_RECORDS);
           setChromeStorage(chrome.storage.local, { promptPaulTools: tools })
             .then(() => {
               showStatus('Tool added.');
@@ -2775,6 +2790,7 @@ function setupToolHandlers() {
               }
             });
 
+            existingTools = existingTools.slice(0, MAX_IMPORTED_RECORDS);
             chrome.storage.local.set({ promptPaulTools: existingTools }, () => {
               showStatus('Tools imported successfully.');
               loadTools(); // Reload the table
@@ -3053,7 +3069,7 @@ function setupSkillHandlers() {
         }
 
         setChromeStorage(chrome.storage.local, {
-          customSkills: customSkills.slice(-MAX_IMPORTED_RECORDS),
+          customSkills: customSkills.slice(0, MAX_IMPORTED_RECORDS),
         })
           .then(() => {
             showStatus(isUpdate ? 'Skill updated.' : 'Skill added.');
@@ -3204,7 +3220,7 @@ function setupSkillHandlers() {
               importCount++;
             });
 
-            customSkills = customSkills.slice(-MAX_IMPORTED_RECORDS);
+            customSkills = customSkills.slice(0, MAX_IMPORTED_RECORDS);
             chrome.storage.local.set({ customSkills }, () => {
               const invalidMsg = invalidCount > 0 ? ` (${invalidCount} skipped as invalid)` : '';
               showStatus(`Imported ${importCount} skills${invalidMsg}.`);
@@ -3410,7 +3426,7 @@ function setupSkillHandlers() {
         }
 
         await setChromeStorage(chrome.storage.local, {
-          customSkills: existingCustomSkills.slice(-MAX_IMPORTED_RECORDS),
+          customSkills: existingCustomSkills.slice(0, MAX_IMPORTED_RECORDS),
         });
 
         statusEl.innerHTML =

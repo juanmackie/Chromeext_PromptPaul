@@ -77,9 +77,12 @@ class ChatUI {
    * Add a message to the chat area
    * @param {string} sender - 'User', 'Assistant', or 'System'
    * @param {string} message - Message content (can contain Markdown)
+   * @param {Object} [requestIdentity] - Originating prompt request / context
+   *   identity for User messages, bound so Retry/Edit can replay the exact
+   *   context the original response used.
    * @returns {Object} - Message element references
    */
-  addMessage(sender, message) {
+  addMessage(sender, message, requestIdentity) {
     // Ensure chat area is initialized
     if (!this.chatArea) {
       this.chatArea = document.getElementById('chat-area');
@@ -98,6 +101,7 @@ class ChatUI {
       messageDiv.classList.add('user-message');
       messageDiv.textContent = 'You: ' + message;
       messageDiv.dataset.prompt = message || '';
+      if (requestIdentity) messageDiv.requestIdentity = requestIdentity;
     } else if (sender === 'System') {
       messageDiv.classList.add('system-message');
       messageDiv.textContent = 'System: ' + message;

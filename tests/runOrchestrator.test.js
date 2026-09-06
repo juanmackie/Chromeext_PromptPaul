@@ -3639,3 +3639,52 @@ describe('P1-05 pending-interaction journal replay fields', () => {
     expect(safe.question).toBeUndefined();
   });
 });
+
+describe('P2-08 visible terminal recovery truncation', () => {
+  function newOrch() {
+    return new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionAvailabilityProvider: async () => true,
+    });
+  }
+
+  it('records contentTruncated and originalLength when a complete answer is capped', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'complete',
+      content: 'x'.repeat(8_500),
+      grounding: { enabled: true, attempts: 1, sources: [{ title: 'A', url: 'https://a.test' }] },
+      sequence: 9,
+      timestamp: 9000,
+    });
+    expect(safe.content.length).toBe(8_000);
+    expect(safe.contentTruncated).toBe(true);
+    expect(safe.originalLength).toBe(8_500);
+  });
+
+  it('preserves grounding sources and completion on a complete event with no truncation flag', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'complete',
+      content: 'short answer',
+      grounding: { enabled: true, attempts: 1, sources: [{ title: 'A', url: 'https://a.test' }] },
+      completion: { hasReasoning: true },
+      sequence: 10,
+      timestamp: 10000,
+    });
+    expect(safe.content).toBe('short answer');
+    expect(safe.contentTruncated).toBeUndefined();
+    expect(safe.grounding.sources[0].title).toBe('A');
+    expect(safe.completion.hasReasoning).toBe(true);
+  });
+
+  it('does not mark content under the cap as truncated (backward compatible)', () => {
+    const safe = newOrch()._journalEvent({
+      type: 'complete',
+      content: 'y'.repeat(4_000),
+      sequence: 11,
+      timestamp: 11000,
+    });
+    expect(safe.content.length).toBe(4_000);
+    expect(safe.contentTruncated).toBeUndefined();
+    expect(safe.originalLength).toBeUndefined();
+  });
+});

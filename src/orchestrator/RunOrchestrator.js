@@ -5213,7 +5213,22 @@ class RunOrchestrator {
         safe[key] = typeof event[key] === 'string' ? event[key].slice(0, 240) : event[key];
       }
     }
-    if (event.type === 'complete') safe.content = String(event.content || '').slice(0, 8_000);
+    if (event.type === 'complete') {
+      const fullContent = String(event.content || '');
+      if (fullContent.length > 8_000) {
+        safe.content = fullContent.slice(0, 8_000);
+        // Make truncation visible on recovery: bound the flag and the original
+        // length so a recovered long answer is never shown as a complete one.
+        safe.contentTruncated = true;
+        safe.originalLength = fullContent.length;
+      } else {
+        safe.content = fullContent;
+      }
+      // Preserve grounding/sources and completion metadata so a recovered
+      // grounded answer keeps its Sources section and reasoning status.
+      if (event.grounding) safe.grounding = event.grounding;
+      if (event.completion) safe.completion = event.completion;
+    }
     if (event.type === 'error') safe.error = redactProviderErrorMessage(event.error, 240);
     for (const key of ['title', 'origin', 'destination', 'reason']) {
       if (typeof event[key] === 'string') safe[key] = event[key].slice(0, 240);

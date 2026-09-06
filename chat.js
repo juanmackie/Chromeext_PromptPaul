@@ -38,6 +38,7 @@ import {
   isWebSearchEnabled,
   initWebSearchToggle,
   buildFinalResponseBody,
+  buildRecoveredBody,
   classifyToolExecutionResult,
 } from './src/chat/ChatGrounding.js';
 import { MediaType, getMediaAnalysisPrompt } from './src/chat/ChatMedia.js';
@@ -324,6 +325,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function refreshSelectedTextActionState() {
     updateSelectedTextActionButtons();
     updateSelectedTextChip();
+  }
+
+  // Restores the originating selected-text context into the tray so an Edit
+  // replays the same request the original response used, not the current one.
+  function applySelectedTextContext(text) {
+    selectedText = String(text || '').trim();
+    if (selectedText) {
+      activateSelectedTextActionView();
+      refreshSelectedTextActionState();
+    }
   }
 
   async function composeActionPrompt(basePrompt, actionLabel) {
@@ -1052,8 +1063,12 @@ document.addEventListener('DOMContentLoaded', () => {
       .find((entry) => ['complete', 'error', 'aborted'].includes(entry.type));
     if (!event) return;
     if (event.type === 'complete' && event.content) {
-      chatUI.addMessage('LLM', event.content);
-      streamState.addMessageToHistory({ role: 'assistant', content: event.content });
+      // Route the recovered answer through the canonical safe final renderer so
+      // a truncated journal never shows as complete and grounding sources are
+      // preserved alongside any visible partial-notice.
+      const body = buildRecoveredBody(event);
+      chatUI.addMessage('LLM', body);
+      streamState.addMessageToHistory({ role: 'assistant', content: body });
     } else if (event.type === 'aborted') {
       chatUI.addMessage('System', 'Response stopped');
     } else {
@@ -1240,6 +1255,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // Composer recovery: Continue always builds on the previous response;
   // other quick actions reuse the sticky-selection prompt path.
   async function sendComposerPrompt(instruction, actionLabel) {
+    // Retry of an earlier response carries its originating structured
+    // request/context identity (attachments, selection, page content). Replay
+    // that exact request instead of rebuilding from the (possibly changed)
+    // current context.
+    if (instruction && typeof instruction === 'object' && instruction.request) {
+      const replay = instruction.request;
+      if (replay && replay.promptRequest && replay.mediaData) {
+        await makeApiCallWithMedia(replay.promptRequest, replay.mediaData, 'auto');
+      } else {
+        await makeApiCall(replay, 'auto');
+      }
+      return;
+    }
     if (actionLabel === 'continue' && hasConversation()) {
       await makeApiCall({ instruction, context: { type: 'previous_response' } }, 'auto');
       return;
@@ -1260,7 +1288,13 @@ document.addEventListener('DOMContentLoaded', () => {
       onAnalyze: () => executePagePresetMode(lastUsedPreset),
       onMode: (modeKey) => executeSelectedTextMode(modeKey),
       onPrompt: (instruction, actionLabel) => sendComposerPrompt(instruction, actionLabel),
-      onEdit: (instruction) => {
+      onEdit: (instruction, request) => {
+        // Edit replays the ORIGINAL request context: restore the originating
+        // selection/attachment context into the composer tray alongside the
+        // prompt text so the user edits the same request that produced it.
+        if (request && request.context && request.context.type === 'selected_text') {
+          applySelectedTextContext(request.context.text);
+        }
         userInput.value = instruction || '';
         userInput.dispatchEvent(new Event('input'));
         userInput.focus();
@@ -2382,7 +2416,10 @@ document.addEventListener('DOMContentLoaded', () => {
           : tool_choice;
 
       if (userMessage) {
-        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage));
+        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage), {
+          promptRequest,
+          mediaData,
+        });
 
         // Create message content with media
         const messageContent = [{ type: 'text', text: userMessage }];
@@ -2562,7 +2599,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Add user message to history if provided
       if (userMessage) {
-        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage));
+        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage), promptRequest);
 
         if (mediaData && mediaData.type === 'image') {
           const messageContent = [

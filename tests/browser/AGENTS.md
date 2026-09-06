@@ -7,7 +7,7 @@
 ## Ownership
 
 - `page-actions.spec.js` owns the page-action integration cases, including approved link navigation, owned-tab link opening, and hostile content-script message rejection.
-- `page-action-evaluation.spec.js` owns real-browser executor-regression coverage of browser-safe corpus cases, bounded receipt/failure/action/tool-argument metrics, and live snapshot scope/diff measurement. Restricted-page and Hermes provider boundaries remain in the unit evaluation matrix.
+- `page-action-evaluation.spec.js` owns real-browser executor-regression coverage of browser-safe corpus cases, bounded receipt/failure/action/tool-argument metrics, live snapshot scope/diff measurement, distinct measured injection-fixture execution (`injection-hidden.html`, `injection-alt.html`, `injection-aria.html`), measured denial outcomes, and a browser-level metric gate that fails when an injection/sabotage fixture is missed or a denied action is recorded as delivered. Restricted-page and Hermes provider boundaries remain in the unit evaluation matrix.
 - `chat-actions.spec.js` owns real-browser selected-text chat action and sidebar model-status coverage.
 - `notch.spec.js` owns browser-page notch enablement, isolation, accessibility state, horizontal dragging and remembered position, pinned prompt rendering, Act controls, activity glow, selection gating, live disable coverage, and the user-gesture-bound All actions handoff.
 - `theme.spec.js` owns Light/Dark/System selector coverage and live system-preference changes.

@@ -8,6 +8,7 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 
 - `contextBudget.js` owns token estimation and DOM context trimming.
 - `hermesContext.js` owns bounded Hermes current-turn/history preparation, active page-context retention, and historical media redaction.
+- `hermesKeys.js` owns background-only Hermes credential validation (non-empty, 8–512 chars, no whitespace/control chars) and per-profile cleanup of `hermesApiKeys`/`hermesSessions`/`hermesSessionKeys` records on profile delete. It never exposes the secret value.
 - `readStrategy.js` owns extraction strategy selection from page signals.
 - `siteExtractors.js` owns pure bounded formatters for Reddit threads, GitHub page metadata, and RSS/Atom feeds (`SITE_EXTRACTOR_CAPS`, truncation markers, XML text normalization). The classic content script mirrors these helpers; keep both sides aligned and covered by `tests/siteExtractors.test.js`.
 - `permissionGuards.js` owns restricted URL and host permission checks.

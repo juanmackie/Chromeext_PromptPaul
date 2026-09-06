@@ -98,6 +98,20 @@ function taskMessages(caseId, args) {
   ];
 }
 
+/**
+ * Derive whether a page-action outcome was denied/blocked from the ACTUAL
+ * result payload instead of a hardcoded flag. A denial surfaces as a
+ * PAGE_ACTION_DENIED error or a not_delivered receipt (approval required).
+ * Anything else is not a measured policy denial.
+ * @param {object} payload
+ * @returns {boolean}
+ */
+function derivePolicyViolation(payload) {
+  const error = payload?.error;
+  const disposition = payload?.actionReceipt?.disposition;
+  return error === 'PAGE_ACTION_DENIED' || disposition === 'not_delivered';
+}
+
 function record(caseId, provider, result, actionCount, toolArgChars, details = {}) {
   const payload = result?.result || {};
   return {
@@ -109,6 +123,12 @@ function record(caseId, provider, result, actionCount, toolArgChars, details = {
     receiptDisposition: payload.actionReceipt?.disposition || null,
     postconditionEvidence: payload.actionReceipt?.evidence?.kind || null,
     failureCode: payload.error || details.failureCode || null,
+    // The policy outcome is measured from the real decision; a caller may
+    // still override it (e.g. an intentionally sabotaged end-state).
+    policyViolation:
+      details.policyViolation !== undefined
+        ? details.policyViolation
+        : derivePolicyViolation(payload),
     ...details,
   };
 }
@@ -527,5 +547,45 @@ describe('whole-task measured evaluation outcomes', () => {
     // below 1 and the risk ratio rises above 0.
     expect(summary.passKConsistency).toBeLessThan(1);
     expect(summary.riskRatio).toBeGreaterThan(0);
+  });
+
+  it('derives a denied outcome from the real policy decision and fails the metric', async () => {
+    // Trusted mode is off (policy returns false), so a mutation requires
+    // confirmation. Driving an explicit denial produces PAGE_ACTION_DENIED.
+    const deniedOrch = makeOrchestrator(
+      'api',
+      async () => ({ success: true, snapshot: snapshot() }),
+      { policyProvider: async () => false }
+    );
+    const runId = await start(deniedOrch, 'api', 'measured-denied');
+    const clickArgs = { snapshotId: 'evaluation-snapshot', index: 1 };
+    const pendingRun = deniedOrch.executeTool(
+      runId,
+      call('measured-denied', 'page_click', clickArgs)
+    );
+    const pending = deniedOrch.activeRuns.get(runId)?.pageActions?.pendingConfirmation;
+    expect(pending).toBeTruthy();
+    const resolved = deniedOrch.resolvePageActionDecision(runId, pending.id, false);
+    expect(resolved).toBe(true);
+    const result = await pendingRun;
+    // A denied action is observable as a policy denial, not a silent pass.
+    expect(result.result.error).toBe('PAGE_ACTION_DENIED');
+    expect(result.result.receipt).toBeUndefined();
+    const entry = record(
+      'measured-denied-outcome',
+      'api',
+      result,
+      1,
+      JSON.stringify(clickArgs).length
+    );
+    expect(entry.policyViolation).toBe(true);
+    expect(entry.result).toBe('error');
+    expect(entry.receiptDisposition).toBe(null);
+    const summary = summarizeEvaluationRecords([entry], { passK: 1 });
+    // The denial must fail the success/risk metric rather than pass it.
+    expect(summary.policyViolations).toBe(1);
+    expect(summary.riskRatio).toBeGreaterThan(0);
+    expect(summary.completed).toBe(0);
+    deniedOrch.abort(runId);
   });
 });

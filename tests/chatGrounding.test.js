@@ -9,6 +9,7 @@ import {
   formatSourcesBlock,
   buildBodyWithSources,
   buildFinalResponseBody,
+  buildRecoveredBody,
   normalizeSources,
   classifyToolExecutionResult,
 } from '../src/chat/ChatGrounding.js';
@@ -187,6 +188,45 @@ describe('buildFinalResponseBody', () => {
 
   it('does not create a warning when no completion metadata exists', () => {
     expect(buildFinalResponseBody('', '', [])).toBe('');
+  });
+});
+
+describe('buildRecoveredBody (P2-08 visible terminal recovery truncation)', () => {
+  it('shows a partial notice when the journal truncated the recovered answer', () => {
+    const body = buildRecoveredBody({
+      content: 'partial answer',
+      contentTruncated: true,
+      originalLength: 12_000,
+    });
+    expect(body).toContain('Response truncated');
+    expect(body).toContain('partial answer');
+    expect(body).toContain('this answer is partial');
+  });
+
+  it('preserves grounding Sources on a truncated recovered answer', () => {
+    const body = buildRecoveredBody({
+      content: 'partial answer',
+      contentTruncated: true,
+      grounding: {
+        enabled: true,
+        attempts: 1,
+        sources: [{ title: 'Example', url: 'https://example.test' }],
+      },
+    });
+    expect(body).toContain('**Sources:**');
+    expect(body).toContain('https://example.test');
+    expect(body).toContain('Response truncated');
+  });
+
+  it('renders an old journal without the flag as a normal complete answer', () => {
+    const body = buildRecoveredBody({ content: 'normal complete answer' });
+    expect(body).toBe('normal complete answer');
+    expect(body).not.toContain('Response truncated');
+  });
+
+  it('still renders a normal answer when truncated with empty content', () => {
+    const body = buildRecoveredBody({ contentTruncated: true, content: '' });
+    expect(body).toContain('Response truncated');
   });
 });
 

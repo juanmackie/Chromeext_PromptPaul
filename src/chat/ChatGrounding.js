@@ -194,6 +194,32 @@ export function buildFinalResponseBody(eventContent, streamedText, sources, comp
 }
 
 /**
+ * Build the recovered body for a terminal journal event replayed after a
+ * panel reconnect. When the journal truncated the original answer, prefix a
+ * visible partial-notice so the recovered content is never shown as complete.
+ * Grounding sources and completion metadata are preserved through the
+ * canonical renderer. Absence of the truncation flag renders normally, so
+ * journals written before this feature are not mislabeled.
+ *
+ * @param {*} event - The terminal event record from the run journal.
+ * @param {string} [streamedText] - Fallback streamed text (unused in recovery).
+ * @returns {string} Body text suitable for rendering and persistence.
+ */
+export function buildRecoveredBody(event, streamedText = '') {
+  const content = String(event?.content || streamedText || '');
+  const truncated = event?.contentTruncated === true;
+  const display = truncated
+    ? `⚠️ **Response truncated** — the recovered run journal kept only part of the full response, so this answer is partial.\n\n${content}`
+    : content;
+  return buildFinalResponseBody(
+    display,
+    '',
+    event?.grounding?.sources || [],
+    event?.completion || null
+  );
+}
+
+/**
  * Classify an orchestrator tool result, including errors nested inside the
  * standard `{ success, result }` execution envelope.
  * @param {*} executionResult

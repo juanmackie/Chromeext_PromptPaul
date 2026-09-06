@@ -257,4 +257,33 @@ describe('backup pinned quick actions (P1-03)', () => {
     expect(result.value.local.customSiteSuggestions).toHaveLength(1);
     expect(result.value.sync.themePreference).toBe('dark');
   });
+
+  it('restores a boundary file (exactly MAX_BACKUP_ARRAY_ITEMS records) fully', () => {
+    // A file at exactly the import bound (500) must restore without dropping records.
+    const records = Array.from({ length: 500 }, (_, i) => ({
+      id: `skill_${i}`,
+      name: `writer_${i}`,
+    }));
+    const result = normalizeBackupPayload({ local: { customSkills: records } });
+    expect(result.valid).toBe(true);
+    expect(result.value.local.customSkills).toHaveLength(500);
+  });
+
+  it('rejects restore inputs exceeding the bounded record count (P2-07)', () => {
+    // Profiles and tools must share the same bound as per-type import rejects
+    // so full restore (write-back) cannot inject more records than import accepts.
+    const manyProfiles = Array.from({ length: 501 }, (_, i) => ({
+      id: `profile_${i}`,
+      name: `Profile ${i}`,
+      provider: 'api',
+    }));
+    const manyTools = Array.from({ length: 501 }, (_, i) => ({
+      name: `tool_${i}`,
+      description: `Tool ${i}`,
+      endpointUrl: 'https://example.com/tool',
+      httpMethod: 'POST',
+    }));
+    expect(normalizeBackupPayload({ local: { profiles: manyProfiles } }).valid).toBe(false);
+    expect(normalizeBackupPayload({ local: { promptPaulTools: manyTools } }).valid).toBe(false);
+  });
 });

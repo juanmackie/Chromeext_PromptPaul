@@ -138,6 +138,20 @@ export function getLastUserPrompt(chatArea) {
 }
 
 /**
+ * Reads the structured request/context identity bound to the most recent
+ * user message (the originating prompt request object used for the response
+ * that this recovery row replays). Undefined when none was captured.
+ * @param {Object} chatArea - Chat area element.
+ * @returns {Object|undefined} The originating prompt request object or undefined.
+ */
+export function getLastUserRequest(chatArea) {
+  if (!chatArea || typeof chatArea.querySelectorAll !== 'function') return undefined;
+  const userMessages = chatArea.querySelectorAll('.user-message');
+  if (userMessages.length === 0) return undefined;
+  return userMessages[userMessages.length - 1].requestIdentity;
+}
+
+/**
  * Finds the latest assistant bubble (the current streaming bubble or the
  * most recent completed response).
  * @param {Object} chatArea - Chat area element.
@@ -173,9 +187,11 @@ export function ensureStopButton(bubble, onStop) {
 
 /**
  * Appends the inline Retry/Edit/Continue recovery row to a message
- * (idempotent per message). The prompt is bound once at creation time to
- * the transcript then-current, so buttons on older response bubbles re-run
- * their own request instead of the newest one.
+ * (idempotent per message). The originating prompt AND its structured
+ * request/context identity are bound once at creation time to the
+ * transcript then-current, so buttons on older response bubbles re-run
+ * their own request (with its original attachments/selection/page context)
+ * instead of the newest one.
  * @param {Object} messageDiv - The message element to attach to.
  * @param {Object} options - Which actions to offer: { retry, edit, continue }.
  * @param {Object} handlers - { onStop, onPrompt, onEdit } callbacks.
@@ -192,25 +208,31 @@ export function ensureRecoveryRow(messageDiv, options, handlers, chatArea) {
   row.setAttribute('role', 'group');
   row.setAttribute('aria-label', 'Response actions');
 
-  // Bind the originating prompt once at creation time. Re-reading the
-  // whole transcript on every click would resolve the newest prompt, so
-  // Retry/Edit on an older response would act on an unrelated request.
+  // Bind the originating prompt and its request/context identity once at
+  // creation time. Re-reading the whole transcript on every click would
+  // resolve the newest prompt/context, so Retry/Edit on an older response
+  // would act on the (possibly different) current request.
   const instruction = getLastUserPrompt(chatArea);
+  const request = getLastUserRequest(chatArea);
 
   if (options.retry !== false) {
-    const retry = makeRecoveryButton('Retry', 'Re-run the last prompt');
+    const retry = makeRecoveryButton('Retry', 'Re-run the original request');
     retry.addEventListener('click', () => {
-      if (instruction && typeof handlers.onPrompt === 'function') {
-        handlers.onPrompt(instruction, 'retry');
-      }
+      if (typeof handlers.onPrompt !== 'function') return;
+      // Pass the full structured request/context identity so the replay uses
+      // the ORIGINAL context, not the current (possibly changed) one. Falls
+      // back to the plain prompt when no structured identity was captured.
+      handlers.onPrompt(request ? { instruction, request } : instruction, 'retry');
     });
     row.appendChild(retry);
   }
 
   if (options.edit !== false) {
-    const edit = makeRecoveryButton('Edit', 'Edit the last prompt and resend');
+    const edit = makeRecoveryButton('Edit', 'Edit the original request and resend');
     edit.addEventListener('click', () => {
-      if (typeof handlers.onEdit === 'function') handlers.onEdit(instruction);
+      if (typeof handlers.onEdit === 'function') {
+        handlers.onEdit(instruction, request);
+      }
     });
     row.appendChild(edit);
   }
@@ -410,6 +432,7 @@ export const chatComposer = {
   getQuickActions,
   createConversationController,
   getLastUserPrompt,
+  getLastUserRequest,
   getLastAssistantBubble,
   ensureStopButton,
   ensureRecoveryRow,

@@ -339,12 +339,18 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
     const value = area[key];
     if (key === 'profiles') {
       if (!Array.isArray(value)) return { valid: false, error: 'Profiles must be an array.' };
+      if (value.length > MAX_BACKUP_ARRAY_ITEMS) {
+        return { valid: false, error: 'Profiles must be a bounded array.' };
+      }
       const profiles = value.map((profile) => normalizeProfileRecord({ ...profile, apiKey: '' }));
       const invalid = profiles.find((entry) => !entry.valid);
       if (invalid) return { valid: false, error: invalid.error };
       result[key] = profiles.map((entry) => entry.value);
     } else if (key === 'promptPaulTools') {
       if (!Array.isArray(value)) return { valid: false, error: 'Tools must be an array.' };
+      if (value.length > MAX_BACKUP_ARRAY_ITEMS) {
+        return { valid: false, error: 'Tools must be a bounded array.' };
+      }
       const tools = value.map(normalizeToolDefinition);
       const invalid = tools.find((entry) => !entry.valid);
       if (invalid) return { valid: false, error: invalid.error };
