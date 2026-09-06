@@ -1928,6 +1928,30 @@ function runIntegrationTests(runner) {
     }
   });
 
+  // ---------- Browser Harness Staging (P1-08) ----------
+  runner.test('Production-output browser gate stages a test harness (P1-08)', () => {
+    const wrapper = readFileSafe('scripts/test-browser-prod.js');
+    const staging = readFileSafe('scripts/stage-browser-harness.js');
+    // The prod runner must build, stage the harness, and point the loader at dist.
+    if (!wrapper.includes("'build.js'") || !wrapper.includes("'--prod'")) {
+      throw new Error('test:browser:prod runner must build production output');
+    }
+    if (!wrapper.includes('PROMPT_PAUL_LOAD_EXTENSION_DIR')) {
+      throw new Error('test:browser:prod runner must point the loader at dist/');
+    }
+    if (!wrapper.includes('stage-browser-harness') && !wrapper.includes('stage()')) {
+      throw new Error('test:browser:prod runner must stage the browser harness');
+    }
+    // The staging script must copy the harness files into the built output dir.
+    if (!staging.includes('extension-harness.html') || !staging.includes('extension-harness.js')) {
+      throw new Error('Harness staging must copy extension-harness.html and .js');
+    }
+    const packageJson = readFileSafe('package.json');
+    if (!/"test:browser:prod"\s*:\s*"node scripts\/test-browser-prod\.js"/.test(packageJson)) {
+      throw new Error('test:browser:prod must run the cross-platform Node wrapper');
+    }
+  });
+
   // ---------- Test Runner Self-Check ----------
   runner.test('Test runner can validate itself', () => {
     const content = readFileSafe('scripts/test-runner.js');
