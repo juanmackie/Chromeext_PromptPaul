@@ -62,6 +62,7 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'voiceInputPermissionState',
   'voiceInputPermissionLastChecked',
   'webSearchEnabled',
+  'searchProvider',
   'pageActionsTrustedMode',
   'pageActionsMultiTabEnabled',
   'notchEnabled',
@@ -380,6 +381,11 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
     } else if (key === 'themePreference') {
       if (!['light', 'dark', 'system'].includes(value)) {
         return { valid: false, error: 'themePreference must be light, dark, or system.' };
+      }
+      result[key] = value;
+    } else if (key === 'searchProvider') {
+      if (!['duckduckgo', 'brave'].includes(value)) {
+        return { valid: false, error: 'searchProvider must be duckduckgo or brave.' };
       }
       result[key] = value;
     } else if (key === 'notchPosition') {

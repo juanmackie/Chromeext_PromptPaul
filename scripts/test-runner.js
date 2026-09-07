@@ -1448,6 +1448,7 @@ function runIntegrationTests(runner) {
       'voiceInputPermissionLastChecked',
       'braveSearchApiKey',
       'webSearchEnabled',
+      'searchProvider',
       'pageActionsEnabled',
       'pageActionsTrustedMode',
       'notchPosition',

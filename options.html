@@ -1156,28 +1156,53 @@ What this skill does and when to use it.
           "
         />
         <p class="text-secondary-emphasis small">
-          Enable the sidebar <strong>Web</strong> toggle to let the LLM search the web via
-          <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer"
-            >Brave Search API</a
-          >
-          before answering. Grounding results are returned as source-cited reference material. A
-          <a
-            href="https://api-dashboard.search.brave.com/register"
-            target="_blank"
-            rel="noopener noreferrer"
-            >free Brave account</a
-          >
-          (credit card required for signup, monthly free credits included) provides the API key.
+          Enable the sidebar <strong>Web</strong> toggle to let the LLM search the web before
+          answering. Grounding results are returned as source-cited reference material. Choose a
+          provider below: <strong>DuckDuckGo</strong> needs no API key (free default), or
+          <strong>Brave Search API</strong> returns broader results but requires a key.
+        </p>
+        <p class="text-secondary-emphasis small">
+          <strong>DuckDuckGo limits:</strong> its free Instant Answer API only returns curated
+          results and is frequently empty for general queries. For fuller, reliable web search,
+          select Brave and add an API key.
         </p>
         <p class="text-secondary-emphasis small">
           <strong>Privacy:</strong> When enabled, a model-generated search query may derive from
           your prompt, conversation, selected text, page content, or media context and is sent to
-          Brave. The extension does not send the full conversation to Brave unless it is represented
-          in that query. Your Brave key is stored in Chrome storage and never included in LLM
-          request payloads, logs, or analytics.
+          the selected provider (DuckDuckGo or Brave). The extension does not send the full
+          conversation unless it is represented in that query. Your Brave key, when used, is stored
+          in Chrome storage and never included in LLM request payloads, logs, or analytics.
         </p>
 
-        <div class="mb-3">
+        <div class="mb-3" id="searchProviderGroup">
+          <label class="form-label">Search provider</label>
+          <div class="d-flex gap-4 flex-wrap">
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="searchProviderRadio"
+                id="searchProviderDuckDuckGo"
+                value="duckduckgo"
+              />
+              <label class="form-check-label" for="searchProviderDuckDuckGo">
+                DuckDuckGo <span class="text-secondary-emphasis">(free, no key)</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input
+                class="form-check-input"
+                type="radio"
+                name="searchProviderRadio"
+                id="searchProviderBrave"
+                value="brave"
+              />
+              <label class="form-check-label" for="searchProviderBrave">Brave Search API</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3" id="braveKeyGroup">
           <label for="braveSearchApiKey" class="form-label">
             Brave Search API Key
             <button
@@ -1215,24 +1240,28 @@ What this skill does and when to use it.
             <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
             Save Web Search Settings
           </button>
-          <a
-            href="https://api-dashboard.search.brave.com/app/keys"
-            target="_blank"
-            class="btn btn-outline-primary btn-sm"
-            rel="noopener noreferrer"
-          >
-            <span class="material-symbols-outlined" style="font-size: 1rem">key</span>
-            Get Your Brave API Key
-          </a>
-          <a
-            href="https://api-dashboard.search.brave.com/documentation/pricing"
-            target="_blank"
-            class="btn btn-outline-secondary btn-sm"
-            rel="noopener noreferrer"
-          >
-            <span class="material-symbols-outlined" style="font-size: 1rem">currency_exchange</span>
-            Pricing &amp; Quota Info
-          </a>
+          <span id="braveKeyLinks">
+            <a
+              href="https://api-dashboard.search.brave.com/app/keys"
+              target="_blank"
+              class="btn btn-outline-primary btn-sm"
+              rel="noopener noreferrer"
+            >
+              <span class="material-symbols-outlined" style="font-size: 1rem">key</span>
+              Get Your Brave API Key
+            </a>
+            <a
+              href="https://api-dashboard.search.brave.com/documentation/pricing"
+              target="_blank"
+              class="btn btn-outline-secondary btn-sm"
+              rel="noopener noreferrer"
+            >
+              <span class="material-symbols-outlined" style="font-size: 1rem"
+                >currency_exchange</span
+              >
+              Pricing &amp; Quota Info
+            </a>
+          </span>
         </div>
       </section>
 

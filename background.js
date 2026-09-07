@@ -28,6 +28,7 @@ import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileR
 import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
+import { executeDuckDuckGoSearch } from './src/utils/duckDuckGoSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
 import { isSafeMediaUrl, MEDIA_FETCH_TIMEOUT_MS, readMediaBlob } from './src/utils/mediaFetch.js';
 import { waitForRetry } from './src/utils/retryBackoff.js';
@@ -1069,7 +1070,33 @@ const getBraveSearchApiKey = () =>
     });
   });
 
+/** Default search provider used when no provider is stored. */
+const DEFAULT_SEARCH_PROVIDER = 'duckduckgo';
+
+/**
+ * Resolve the active search provider from storage.
+ * @returns {Promise<'duckduckgo'|'brave'>}
+ */
+const getSearchProvider = () =>
+  new Promise((resolve, reject) => {
+    chrome.storage.local.get(['searchProvider'], (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(result.searchProvider === 'brave' ? 'brave' : DEFAULT_SEARCH_PROVIDER);
+    });
+  });
+
+/**
+ * Web-search executor that dispatches to the active provider. DuckDuckGo runs
+ * keyless through the Instant Answer API; Brave requires a configured key.
+ */
 const braveSearchExecutor = async (query, options = {}) => {
+  const provider = await getSearchProvider();
+  if (provider === 'duckduckgo') {
+    return executeDuckDuckGoSearch(query, options);
+  }
   const apiKey = await getBraveSearchApiKey();
   if (!apiKey) {
     throw new BraveSearchError(
@@ -1583,7 +1610,11 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
   },
   userToolExecutor: (tool, args) =>
     callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
-  webSearchStatusProvider: async () => Boolean(await getBraveSearchApiKey()),
+  webSearchStatusProvider: async () => {
+    const provider = await getSearchProvider();
+    if (provider === 'duckduckgo') return true; // free, keyless
+    return Boolean(await getBraveSearchApiKey());
+  },
   braveSearchExecutor,
   pageActionPolicyProvider,
   pageActionAvailabilityProvider,
@@ -3002,9 +3033,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!extensionPageSender) {
       return rejectUnauthorizedMessage(sendResponse);
     }
-    chrome.storage.local.get(['braveSearchApiKey'], (result) => {
-      const configured = Boolean(result.braveSearchApiKey);
-      sendResponse({ configured });
+    chrome.storage.local.get(['searchProvider', 'braveSearchApiKey'], (result) => {
+      const provider = result.searchProvider === 'brave' ? 'brave' : DEFAULT_SEARCH_PROVIDER;
+      const configured = provider === 'duckduckgo' || Boolean(result.braveSearchApiKey);
+      sendResponse({ configured, provider });
     });
     return true;
   }

@@ -90,7 +90,7 @@ Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, 
 
 - The extension is Manifest V3 and uses `background.js` as an ES module service worker.
 - API keys, profiles, custom instructions, tools, skills, and user settings live in Chrome storage. Codex subscription credentials and Hermes gateway credentials are background-owned and keyed by profile; they are never included in profile records, run configs, events, logs, or backups.
-- The storage schema is stable: canonical keys (`profiles`, `lastSelectedProfileId`, `instructions`, `customSkills`, `promptPaulTools`, `analyticsConsent`, `analyticsInstance`, `analyticsRotateAt`, `voiceInputEnabled`, `voiceInputPermissionState`, `voiceInputPermissionLastChecked`, `braveSearchApiKey`, `webSearchEnabled`, `pageActionsEnabled`, `pageActionsTrustedMode`, `pageActionsMultiTabEnabled`, `notchEnabled`, `notchPosition`, `notchPlacement`, `themePreference`, `pinnedQuickActions`, `customSiteSuggestions`, `hermesApiKeys`, `hermesSessions`, `hermesSessionKeys`, `promptPaulActCheckpointsV1`) are pinned by regression guards. `pageActionsEnabled` is session-scoped state and is excluded from local/sync backups; all provider and search credentials, Hermes keys, and session pointers are excluded from backups; backups export only supported persistent settings and restore profiles without credentials.
+- The storage schema is stable: canonical keys (`profiles`, `lastSelectedProfileId`, `instructions`, `customSkills`, `promptPaulTools`, `analyticsConsent`, `analyticsInstance`, `analyticsRotateAt`, `voiceInputEnabled`, `voiceInputPermissionState`, `voiceInputPermissionLastChecked`, `braveSearchApiKey`, `webSearchEnabled`, `searchProvider`, `pageActionsEnabled`, `pageActionsTrustedMode`, `pageActionsMultiTabEnabled`, `notchEnabled`, `notchPosition`, `notchPlacement`, `themePreference`, `pinnedQuickActions`, `customSiteSuggestions`, `hermesApiKeys`, `hermesSessions`, `hermesSessionKeys`, `promptPaulActCheckpointsV1`) are pinned by regression guards. `pageActionsEnabled` is session-scoped state and is excluded from local/sync backups; all provider and search credentials, Hermes keys, and session pointers are excluded from backups; backups export only supported persistent settings and restore profiles without credentials.
 - Remote LLM calls happen only when the user sends a prompt or invokes an action.
 - User-supplied media URLs are restricted to bounded public HTTP(S) fetches with private-host, media-type, redirect, timeout, and response-size guards before base64 conversion.
 - Browser-internal pages, extension pages, and Chrome Web Store pages must be blocked or reported before content extraction.
@@ -298,15 +298,16 @@ When the user requests a durable behavior change, record it here or in the relev
 
 ## Web Search Grounding
 
-- Brave Search API integration via `src/utils/braveSearch.js` (LLM Context endpoint, bounded requests, normalized sources).
-- The background worker owns Brave credential reads and injects the search executor; LLM profile keys never serve as Brave credentials.
-- Sidebar toggle state and key bridge in `src/chat/ChatGrounding.js`.
+- Search providers: **Brave Search API** via `src/utils/braveSearch.js` (LLM Context endpoint, bounded requests, normalized sources, requires a key) and **DuckDuckGo** via `src/utils/duckDuckGoSearch.js` (free, keyless Instant Answer API). The `searchProvider` storage key (`'duckduckgo'` default | `'brave'`) selects the active provider; it is a plain preference included in backups, while the Brave key stays excluded.
+- The background worker owns Brave credential reads and injects the search executor; LLM profile keys never serve as Brave credentials. The injected executor in `background.js` dispatches to DuckDuckGo or Brave based on `searchProvider`.
+- DuckDuckGo's Instant Answer API only returns curated results and is frequently empty for general queries (a `WEB_SEARCH_NO_RESULTS` outcome); it never requires a key or hits the anti-bot wall the DDG HTML endpoint triggers.
+- Sidebar toggle and provider state bridge in `src/chat/ChatGrounding.js`; the web toggle enables even without a key when DuckDuckGo is active.
 - Reserved tool name `web_search` enforced in `src/chat/ChatAPI.js`, `src/orchestrator/RunOrchestrator.js`, and `options.js`.
 - Grounded completions surface a normalized, escaped first-party **Sources** section; ordinary responses omit grounding metadata when grounding is off.
 - Grounding is model-directed before use: web enabled means permission to search, not a mandate. `web_search` is offered with automatic selection alongside normal tools (or alone for `none`/a satisfied forced user tool).
-- After the single search slot is consumed, the immediate continuation is text-only and receives a phase-aware instruction to use the existing result; duplicate search calls are rejected without another Brave request.
-- Empty normalized Brave results are a safe `WEB_SEARCH_NO_RESULTS` outcome, not a successful grounded response.
-- `braveSearch.js` and grounding/provider sequencing are covered by the behavior suite.
+- After the single search slot is consumed, the immediate continuation is text-only and receives a phase-aware instruction to use the existing result; duplicate search calls are rejected without another search request.
+- Empty normalized results are a safe `WEB_SEARCH_NO_RESULTS` outcome, not a successful grounded response.
+- `braveSearch.js`, `duckDuckGoSearch.js`, and grounding/provider sequencing are covered by the behavior suite.
 
 ## Closeout: Vibe Coding Rules V7.0 Audit (historical, 2026-08-30)
 

@@ -125,6 +125,13 @@ describe('validation helpers', () => {
     expect(normalizeBackupPayload({ sync: { themePreference: 'sepia' } }).valid).toBe(false);
   });
 
+  it('preserves the search provider preference in backups', () => {
+    expect(BACKUP_LOCAL_KEYS).toContain('searchProvider');
+    expect(normalizeBackupPayload({ local: { searchProvider: 'duckduckgo' } }).valid).toBe(true);
+    expect(normalizeBackupPayload({ local: { searchProvider: 'brave' } }).valid).toBe(true);
+    expect(normalizeBackupPayload({ local: { searchProvider: 'yahoo' } }).valid).toBe(false);
+  });
+
   it('preserves the persistent notch preference and position in backups', () => {
     expect(BACKUP_LOCAL_KEYS).toContain('notchEnabled');
     expect(BACKUP_LOCAL_KEYS).toContain('notchPosition');

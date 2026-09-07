@@ -1272,7 +1272,16 @@ document.addEventListener('DOMContentLoaded', () => {
     { onChange: () => syncDirtyBanner() }
   );
   const groundingTracker = createDirtyTracker(
-    [{ element: document.getElementById('braveSearchApiKey') }],
+    [
+      { element: document.getElementById('braveSearchApiKey') },
+      {
+        element: document.getElementById('searchProviderGroup'),
+        getValue: (el) =>
+          el && el.querySelector('input[name="searchProviderRadio"]:checked')
+            ? el.querySelector('input[name="searchProviderRadio"]:checked').value
+            : '',
+      },
+    ],
     { onChange: () => syncDirtyBanner() }
   );
   const pageActionsTracker = createDirtyTracker(
@@ -3589,13 +3598,50 @@ function setupBackupHandlers() {
 }
 
 /**
- * Setup handlers for the Web Search Grounding (Brave) configuration.
+ * Setup handlers for the Web Search Grounding configuration.
  */
 function setupGroundingHandlers() {
   const keyInput = document.getElementById('braveSearchApiKey');
   const keyToggle = document.getElementById('braveSearchKeyToggle');
   const keyRemove = document.getElementById('braveSearchKeyRemove');
   const keyStatus = document.getElementById('braveSearchKeyStatus');
+  const providerDuckDuckGo = document.getElementById('searchProviderDuckDuckGo');
+  const providerBrave = document.getElementById('searchProviderBrave');
+  const braveKeyGroup = document.getElementById('braveKeyGroup');
+  const braveKeyLinks = document.getElementById('braveKeyLinks');
+
+  // Show/hide the Brave-only key field and links based on the provider.
+  function renderProviderUI(provider) {
+    const isBrave = provider === 'brave';
+    if (braveKeyGroup) braveKeyGroup.style.display = isBrave ? '' : 'none';
+    if (braveKeyLinks) braveKeyLinks.style.display = isBrave ? '' : 'none';
+  }
+
+  // Resolve the stored provider, defaulting to DuckDuckGo (free, keyless).
+  const readActiveProvider = (onDone) => {
+    chrome.storage.local.get(['searchProvider'], (result) => {
+      const provider = result.searchProvider === 'brave' ? 'brave' : 'duckduckgo';
+      if (providerDuckDuckGo) providerDuckDuckGo.checked = provider !== 'brave';
+      if (providerBrave) providerBrave.checked = provider === 'brave';
+      renderProviderUI(provider);
+      if (typeof onDone === 'function') onDone(provider);
+    });
+  };
+
+  // Persist provider selection on change.
+  function wireProviderRadios() {
+    if (!providerDuckDuckGo || !providerBrave) return;
+    for (const radio of [providerDuckDuckGo, providerBrave]) {
+      radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+        const provider = radio.value;
+        setChromeStorage(chrome.storage.local, { searchProvider: provider }).then(() => {
+          renderProviderUI(provider);
+        });
+      });
+    }
+  }
+  wireProviderRadios();
 
   function updateKeyStatus(onDone) {
     chrome.storage.local.get(['braveSearchApiKey'], (result) => {
@@ -3646,6 +3692,20 @@ function setupGroundingHandlers() {
   const saveGroundingButton = document.getElementById('saveGrounding');
   if (saveGroundingButton && keyInput) {
     saveGroundingButton.addEventListener('click', () => {
+      const isBrave =
+        (providerBrave && providerBrave.checked) || (!providerDuckDuckGo && !providerBrave);
+      // DuckDuckGo needs no credential; saving just persists the provider choice.
+      if (!isBrave) {
+        runErrorAwareSave({
+          button: saveGroundingButton,
+          successMessage: 'DuckDuckGo is your search provider.',
+          errorLabel: 'Failed to save search settings',
+          notify: showStatus,
+          markClean: markGroundingTrackerClean,
+          write: () => Promise.resolve(),
+        })();
+        return;
+      }
       const value = keyInput.value.trim();
       const wasConfigured = keyInput.dataset.configured === 'true';
       if (!value && !wasConfigured) {
@@ -3684,7 +3744,9 @@ function setupGroundingHandlers() {
   }
 
   // Load initial state
-  updateKeyStatus(() => markGroundingTrackerClean?.());
+  readActiveProvider(() => {
+    updateKeyStatus(() => markGroundingTrackerClean?.());
+  });
 }
 
 /**

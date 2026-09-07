@@ -1,9 +1,9 @@
 /**
- * @fileoverview Chat Grounding Module - Web search toggle state, Brave key status,
- * toggle element wiring, and source-safe formatting helpers.
+ * @fileoverview Chat Grounding Module - Web search toggle state, active search
+ * provider status, toggle element wiring, and source-safe formatting helpers.
  *
- * Keeps the global `webSearchEnabled` preference and Brave key status
- * coordination out of chat.js to respect the line-length guard.
+ * Keeps the global `webSearchEnabled` preference and provider status coordination
+ * out of chat.js to respect the line-length guard.
  *
  * @module ChatGrounding
  */
@@ -13,7 +13,8 @@ const WEB_SEARCH_ENABLED_KEY = 'webSearchEnabled';
 
 /**
  * Read the persisted web-search toggle state and ask the background worker
- * whether a key is configured. The side panel never reads the key itself.
+ * whether the active provider is configured (DuckDuckGo is keyless). The side
+ * panel never reads a credential itself.
  * @returns {Promise<boolean>}
  */
 export async function isWebSearchEnabled() {
@@ -24,7 +25,7 @@ export async function isWebSearchEnabled() {
   });
   if (!preferenceEnabled) return false;
 
-  const status = await getBraveKeyStatus();
+  const status = await getSearchStatus();
   return status.configured;
 }
 
@@ -40,18 +41,18 @@ function setWebSearchEnabled(enabled) {
 }
 
 /**
- * Check whether a Brave API key is configured (via background to avoid
- * credential exposure in the chat page).
- * @returns {Promise<{configured: boolean}>}
+ * Check whether the active search provider is configured (via background to
+ * avoid credential exposure in the chat page). DuckDuckGo is keyless.
+ * @returns {Promise<{configured: boolean, provider?: string}>}
  */
-function getBraveKeyStatus() {
+function getSearchStatus() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ action: 'getWebSearchStatus' }, (response) => {
       if (chrome.runtime.lastError || !response) {
         resolve({ configured: false });
         return;
       }
-      resolve({ configured: Boolean(response.configured) });
+      resolve({ configured: Boolean(response.configured), provider: response.provider });
     });
   });
 }
@@ -97,9 +98,9 @@ export function initWebSearchToggle(toggleEl, loadingManagerRef) {
     const newState = !currentlyEnabled;
 
     if (newState) {
-      const status = await getBraveKeyStatus();
+      const status = await getSearchStatus();
       if (!status.configured) {
-        loadingManagerRef.showToast('Configure a Brave Search API key in Options first', 'warning');
+        loadingManagerRef.showToast('Configure a search provider in Options first', 'warning');
         openWebSearchOptions();
         return;
       }
