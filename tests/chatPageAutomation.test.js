@@ -9,6 +9,7 @@ import {
   setPageActionsEnabled,
   setPageActionsRunActive,
   initPageActionsToggle,
+  formatPlainLanguageDisposition,
 } from '../src/chat/ChatPageAutomation.js';
 
 describe('ChatPageAutomation Act permission', () => {
@@ -106,5 +107,21 @@ describe('ChatPageAutomation Act permission', () => {
 
     await setPageActionsEnabled(false);
     expect(attributes['aria-pressed']).toBe('false');
+  });
+});
+
+describe('ChatPageAutomation plain-language delivery mapping', () => {
+  it('maps each receipt disposition to plain language', () => {
+    expect(formatPlainLanguageDisposition('delivered_verified')).toBe('Verified');
+    expect(formatPlainLanguageDisposition('delivered_unverified')).toBe(
+      'Performed - verification unavailable'
+    );
+    expect(formatPlainLanguageDisposition('not_delivered')).toBe('Not performed');
+  });
+
+  it('returns an empty string for unknown or missing dispositions', () => {
+    expect(formatPlainLanguageDisposition(undefined)).toBe('');
+    expect(formatPlainLanguageDisposition(null)).toBe('');
+    expect(formatPlainLanguageDisposition('weird')).toBe('');
   });
 });

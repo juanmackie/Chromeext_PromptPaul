@@ -118,6 +118,27 @@ const PAGE_ACTION_RECEIPT_DISPOSITIONS = new Set([
   'delivered_unverified',
   'delivered_verified',
 ]);
+
+// Bounded cardinality/length caps for the readable Act progress event. Labels
+// and target identity are always trimmed and are safe to persist in the journal.
+const PAGE_TASK_PROGRESS_STEP_LABEL_CAP = 180;
+const PAGE_TASK_PROGRESS_TARGET_LABEL_CAP = 160;
+const PAGE_TASK_PROGRESS_MAX_STEPS = 12;
+
+// Page-action event types that reflect a change in Act progress (current
+// action, planner, or a pending interaction). When one of these emits, the
+// orchestrator also emits a bounded page_task_progress event on the same
+// monotonic sequence so the readable progress card stays current.
+const PAGE_TASK_PROGRESS_TRIGGER_TYPES = new Set([
+  'page_action_state',
+  'page_action_confirmation',
+  'page_action_decision',
+  'page_user_input_request',
+  'page_manual_intervention_request',
+  'page_manual_intervention_resumed',
+  'page_action_notice',
+  'page_action_warning',
+]);
 const PLANNER_OBSERVATION_ACTIONS = new Set([...READ_ONLY_PAGE_ACTIONS, 'page_list_tabs']);
 const FINAL_OUTPUT_TOKENS = 6144;
 const OPENAI_REASONING_OUTPUT_TOKENS = 8192;
@@ -277,7 +298,7 @@ class RunOrchestrator {
         state: 'notice',
         message:
           `Long-horizon planner enabled with ${planner.subGoals.length} sub-goal${planner.subGoals.length === 1 ? '' : 's'}. ` +
-          'Approve the first state-changing action to enable low and medium-risk automatic progress; high-risk and navigation actions still require approval.',
+          'Approve the first state-changing action. After that, only low-risk, non-navigation actions auto-approve for this run; high-risk and navigation actions remain confirmation-gated.',
       });
     }
     recordDevDiagnostic(
@@ -696,6 +717,11 @@ class RunOrchestrator {
         notes: [],
         lastActionHash: '',
         lastActionReceipt: null,
+        // Read-only display state for the Act progress card. Only sanitized
+        // labels (never DOM/URLs/credentials) are tracked for emission.
+        currentActivityAction: null,
+        currentTabTitle: '',
+        currentTabOrigin: '',
         repeatedActionCount: 0,
         loopWarnings: 0,
         snapshot: null,
@@ -1109,6 +1135,9 @@ class RunOrchestrator {
         () => {}
       );
     }
+    // Emit a terminal Act progress event so the readable card reflects the
+    // final task state on the same ordered sequence just before completion.
+    if (run.pageActions?.enabled) this._emitPageTaskProgress(run);
     this._emitEvent(runId, event);
     void clearPageActionCheckpoint(runId).catch((error) =>
       console.warn(`[Orchestrator] Could not clear Act checkpoint: ${error.message}`)
@@ -1268,6 +1297,7 @@ class RunOrchestrator {
             },
           };
         }
+        this._emitPageTaskProgress(run);
         return {
           success: true,
           result: {
@@ -1313,6 +1343,7 @@ class RunOrchestrator {
             normalizedNote.value.text
           );
           run.pageActions.planner.pendingReceipt = null;
+          this._emitPageTaskProgress(run);
           if (progress.allDone) {
             console.log(`[Orchestrator] Planner: all sub-goals resolved for run ${runId}`);
           } else if (progress.advance) {
@@ -1856,6 +1887,7 @@ class RunOrchestrator {
         },
       };
     }
+    run.pageActions.currentActivityAction = actionName;
     if (run.pageActions.pendingManualIntervention) {
       return {
         success: true,
@@ -2227,6 +2259,7 @@ class RunOrchestrator {
       } else if (normalizedSnapshot) {
         run.pageActions.snapshot = normalizedSnapshot;
         result.snapshot = normalizedSnapshot;
+        this._capturePageTaskTarget(run, normalizedSnapshot);
         if (!run.pageActions.documentUrl && normalizedSnapshot.url) {
           // First observation binds the run to this document.
           run.pageActions.documentUrl = normalizedSnapshot.url;
@@ -2453,6 +2486,7 @@ class RunOrchestrator {
         },
       };
     }
+    run.pageActions.currentActivityAction = actionName;
 
     const normalized = normalizePageTabActionArgs(
       actionName,
@@ -5143,6 +5177,174 @@ class RunOrchestrator {
   }
 
   /**
+   * Build a bounded read-only snapshot of Act progress for the ordered event
+   * stream and the session journal. It carries only sanitized labels and
+   * indices: never full URLs, DOM, tool arguments, credentials, or screenshots.
+   * @param {object} run
+   * @returns {object}
+   * @private
+   */
+  _buildPageTaskProgressEvent(run) {
+    const pa = run?.pageActions;
+    const planner = pa?.planner;
+    const steps = [];
+    let hasPlanner = false;
+    if (planner?.active && Array.isArray(planner.subGoals)) {
+      hasPlanner = true;
+      const currentIndex = Number.isInteger(planner.currentSubGoalIndex)
+        ? planner.currentSubGoalIndex
+        : -1;
+      planner.subGoals.slice(0, PAGE_TASK_PROGRESS_MAX_STEPS).forEach((goal, index) => {
+        let status = 'pending';
+        if (goal?.status === 'done') status = 'completed';
+        else if (goal?.status === 'blocked') status = 'blocked';
+        else if (index === currentIndex || goal?.status === 'in_progress') status = 'current';
+        steps.push({
+          index,
+          label: String(goal?.description || '').slice(0, PAGE_TASK_PROGRESS_STEP_LABEL_CAP),
+          status,
+        });
+      });
+    }
+
+    let currentStep = null;
+    if (planner?.active && Array.isArray(planner.subGoals)) {
+      const current = planner.subGoals[planner.currentSubGoalIndex];
+      currentStep = current
+        ? String(current.description || '').slice(0, PAGE_TASK_PROGRESS_STEP_LABEL_CAP)
+        : null;
+    } else if (pa?.currentActivityAction) {
+      currentStep = String(pa.currentActivityAction).slice(0, 64);
+    }
+
+    let waiting = null;
+    let waitingRequestId = null;
+    if (pa?.pendingConfirmation) {
+      waiting = 'approval';
+      waitingRequestId = pa.pendingConfirmation.id || null;
+    } else if (pa?.pendingUserInput) {
+      waiting = 'answer';
+      waitingRequestId = pa.pendingUserInput.id || null;
+    } else if (pa?.pendingManualIntervention) {
+      waiting = 'manual';
+      waitingRequestId = pa.pendingManualIntervention.id || null;
+    }
+
+    // Sanitized target identity: a tab title or a bounded origin label. Only
+    // one preferred label is emitted; the raw URL and any page content never
+    // leave the worker.
+    let target = null;
+    const title = String(pa?.currentTabTitle || '').trim();
+    const origin = String(pa?.currentTabOrigin || '').trim();
+    if (title) target = { label: title.slice(0, PAGE_TASK_PROGRESS_TARGET_LABEL_CAP) };
+    else if (origin) {
+      target = {
+        label: origin.slice(0, PAGE_TASK_PROGRESS_TARGET_LABEL_CAP),
+        origin: true,
+      };
+    }
+
+    // Reuse the existing receipt disposition so the card can translate it into
+    // plain language. It never distinguishes one verified action from whole-
+    // task completion (handled separately via taskComplete).
+    let receipt = null;
+    const lastReceipt = pa?.lastActionReceipt;
+    if (
+      pa?.currentActivityAction &&
+      lastReceipt &&
+      PAGE_ACTION_RECEIPT_DISPOSITIONS.has(lastReceipt.disposition)
+    ) {
+      receipt = {
+        disposition: lastReceipt.disposition,
+        actionName: String(pa.currentActivityAction).slice(0, 64),
+      };
+    }
+
+    const taskComplete = hasPlanner ? Boolean(planner.completedAt) : false;
+
+    // Deterministic Act outcome facts for the recovery/outcome UI. Computed
+    // only from live run state (receipt dispositions, planner step statuses,
+    // pending interactions) and capped to bounded counts/booleans. Never DOM,
+    // URLs, tool arguments, or credentials. A true `unverified` means the last
+    // delivery could not be confirmed, so the UI must not blind-replay it.
+    const disposition = pa?.lastActionReceipt?.disposition
+      ? String(pa.lastActionReceipt.disposition).slice(0, 32)
+      : receipt?.disposition || null;
+    let completedSteps = 0;
+    let blockedSteps = 0;
+    let remainingSteps = 0;
+    for (const step of steps) {
+      if (step.status === 'completed') completedSteps += 1;
+      else if (step.status === 'blocked') blockedSteps += 1;
+      else remainingSteps += 1;
+    }
+    const outcome = {
+      status: String(run.status || 'running').slice(0, 24),
+      waiting: waiting || null,
+      taskComplete,
+      unverified: disposition === 'delivered_unverified' || disposition === 'in_flight',
+      notDelivered: disposition === 'not_delivered',
+      verified: disposition === 'delivered_verified',
+      completedSteps: Math.min(completedSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
+      blockedSteps: Math.min(blockedSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
+      remainingSteps: Math.min(remainingSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
+    };
+
+    return {
+      type: 'page_task_progress',
+      status: run.status || 'running',
+      hasPlanner,
+      steps,
+      currentStep,
+      currentAction: pa?.currentActivityAction
+        ? String(pa.currentActivityAction).slice(0, 64)
+        : null,
+      target,
+      waiting,
+      waitingRequestId,
+      receipt,
+      taskComplete,
+      outcome,
+    };
+  }
+
+  /**
+   * Emit the bounded Act progress event for a run. No-op for runs without
+   * page actions enabled.
+   * @param {object} run
+   * @returns {void}
+   * @private
+   */
+  _emitPageTaskProgress(run) {
+    if (!run?.pageActions?.enabled) return;
+    this._emitEvent(run.id, this._buildPageTaskProgressEvent(run));
+  }
+
+  /**
+   * Capture sanitized target identity (tab title / origin label) when a fresh
+   * page snapshot is observed. Full URLs and page content are never stored.
+   * @param {object} run
+   * @param {object} snapshot - normalized page snapshot exposing .title and .url
+   * @returns {void}
+   * @private
+   */
+  _capturePageTaskTarget(run, snapshot) {
+    run.pageActions.currentTabTitle = String(snapshot?.title || '')
+      .trim()
+      .slice(0, PAGE_TASK_PROGRESS_TARGET_LABEL_CAP);
+    let origin = '';
+    try {
+      origin = new URL(String(snapshot?.url || '')).origin.slice(
+        0,
+        PAGE_TASK_PROGRESS_TARGET_LABEL_CAP
+      );
+    } catch (_) {
+      origin = '';
+    }
+    run.pageActions.currentTabOrigin = origin;
+  }
+
+  /**
    * Emit event to chat.js
    */
   _emitEvent(runId, event) {
@@ -5181,6 +5383,16 @@ class RunOrchestrator {
           run.lastEmitError = { event: enrichedEvent, error: err.message, timestamp: Date.now() };
         }
       });
+    // Keep the readable Act progress card in sync with page-action activity.
+    // The progress event rides the same monotonic per-run sequence and, like
+    // every journal event, persists only its bounded safe fields.
+    if (
+      run &&
+      enrichedEvent.type !== 'page_task_progress' &&
+      PAGE_TASK_PROGRESS_TRIGGER_TYPES.has(enrichedEvent.type)
+    ) {
+      this._emitPageTaskProgress(run);
+    }
   }
 
   /**
@@ -5260,6 +5472,72 @@ class RunOrchestrator {
             .trim()
             .slice(0, 160),
         };
+      }
+    }
+    if (event.type === 'page_task_progress') {
+      // Readable Act progress is safe to persist: only sanitized indices,
+      // bounded labels, an opaque pending-interaction id, and selected fields.
+      // Full URLs, DOM, tool arguments, credentials, and screenshots never
+      // reach the journal.
+      safe.status = String(event.status || 'running').slice(0, 32);
+      safe.hasPlanner = Boolean(event.hasPlanner);
+      safe.taskComplete = Boolean(event.taskComplete);
+      if (typeof event.currentStep === 'string') {
+        safe.currentStep = event.currentStep.slice(0, 240);
+      }
+      if (typeof event.currentAction === 'string') {
+        safe.currentAction = event.currentAction.slice(0, 64);
+      }
+      if (event.target?.label) {
+        safe.target = {
+          label: String(event.target.label).slice(0, 160),
+          origin: Boolean(event.target.origin),
+        };
+      }
+      if (event.waiting) safe.waiting = String(event.waiting).slice(0, 16);
+      if (event.waitingRequestId) {
+        safe.waitingRequestId = String(event.waitingRequestId).slice(0, 64);
+      }
+      if (event.receipt?.disposition) {
+        safe.receipt = {
+          disposition: String(event.receipt.disposition).slice(0, 32),
+          actionName: String(event.receipt.actionName || '').slice(0, 64),
+        };
+      }
+      if (event.outcome && typeof event.outcome === 'object') {
+        // Deterministic outcome facts are safe: bounded booleans, an enum
+        // waiting label, and capped step counts. No DOM, URLs, or arguments.
+        safe.outcome = {
+          status: String(event.outcome.status || 'running').slice(0, 24),
+          waiting: ['approval', 'answer', 'manual'].includes(event.outcome.waiting)
+            ? event.outcome.waiting
+            : null,
+          taskComplete: Boolean(event.outcome.taskComplete),
+          unverified: Boolean(event.outcome.unverified),
+          notDelivered: Boolean(event.outcome.notDelivered),
+          verified: Boolean(event.outcome.verified),
+          completedSteps: Math.min(
+            Number(event.outcome.completedSteps) || 0,
+            PAGE_TASK_PROGRESS_MAX_STEPS
+          ),
+          blockedSteps: Math.min(
+            Number(event.outcome.blockedSteps) || 0,
+            PAGE_TASK_PROGRESS_MAX_STEPS
+          ),
+          remainingSteps: Math.min(
+            Number(event.outcome.remainingSteps) || 0,
+            PAGE_TASK_PROGRESS_MAX_STEPS
+          ),
+        };
+      }
+      if (Array.isArray(event.steps)) {
+        safe.steps = event.steps.slice(0, PAGE_TASK_PROGRESS_MAX_STEPS).map((step) => ({
+          index: Number.isInteger(step?.index) ? step.index : null,
+          label: String(step?.label || '').slice(0, PAGE_TASK_PROGRESS_STEP_LABEL_CAP),
+          status: ['pending', 'current', 'completed', 'blocked'].includes(step?.status)
+            ? step.status
+            : 'pending',
+        }));
       }
     }
     return safe;

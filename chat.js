@@ -58,7 +58,7 @@ import {
 } from './src/prompts.js';
 import {
   buildSmartPromptRequest,
-  renderSiteSuggestions,
+  buildSiteActions,
   executePresetAnalysis,
 } from './src/chat/ChatPageActions.js';
 import {
@@ -70,11 +70,13 @@ import {
   resolvePageActionConfirmation,
   cancelPageActionConfirmations,
   updatePageActionActivity,
+  updatePageTaskProgress,
   handlePageUserInputRequest,
 } from './src/chat/ChatPageAutomation.js';
 import {
   clearActiveRun,
   loadActiveRunJournal,
+  loadActRecovery,
   restoreRunJournal,
 } from './src/chat/ChatRunRecovery.js';
 import * as hermesChat from './src/chat/ChatHermes.js';
@@ -256,15 +258,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function showSiteSuggestions(url, platform = null, platformInfo = null) {
-    await renderSiteSuggestions({
+    if (!url) {
+      composer?.setSiteActions?.([]);
+      return;
+    }
+    const actions = await buildSiteActions({
       url,
       platform,
       platformInfo,
-      chatMainArea,
-      oneoffInstructionArea,
-      makeApiCall,
-      chatAreaElement: document.getElementById('chat-area'),
+      onRun: (prompt) => {
+        activateSelectedTextActionView();
+        makeApiCall(prompt);
+      },
     });
+    composer.setSiteActions(actions);
   }
 
   function activateSelectedTextActionView() {
@@ -435,7 +442,13 @@ document.addEventListener('DOMContentLoaded', () => {
     showSiteSuggestions(response.url, response.platform, response.platformInfo);
 
     lastLoadedPageContext = prepared.pageContext;
-    composer.setPageContext({ details: prepared.details });
+    composer.setPageContext({
+      title: prepared.sourceInfo,
+      details: prepared.details,
+      type:
+        response.siteName && response.siteName !== 'Unknown' ? response.siteName : 'Page content',
+      truncated: prepared.fitted.truncated,
+    });
     pageContextHistoryMessage = prepared.historyMessage;
     streamState.getConversationHistory().push(pageContextHistoryMessage);
 
@@ -888,6 +901,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastProcessedPanelActionId = null;
   let isResponseInFlight = false;
   let conversationControls = null;
+  // Terminal Act outcome facts from the latest page_task_progress event, used by
+  // the composer's recovery row so a generic Retry never blindly replays an Act
+  // run that ended with an unverified/in-flight mutation. Resets each new run.
+  let lastActOutcome = null;
   const inputArea = document.getElementById('input-area');
   let currentAttachmentPreviewUrl = null;
   const contextTray = document.getElementById('context-tray');
@@ -931,6 +948,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     isResponseInFlight = true;
+    lastActOutcome = null;
     return true;
   }
 
@@ -989,7 +1007,9 @@ document.addEventListener('DOMContentLoaded', () => {
         replaySawTerminal = true;
         continue;
       }
-      if (event.type === 'page_action_state') {
+      if (event.type === 'page_task_progress') {
+        updatePageTaskProgress(chatArea, { ...event, runId });
+      } else if (event.type === 'page_action_state') {
         updatePageActionActivity(chatArea, { ...event, runId });
       } else if (event.type === 'page_action_warning' || event.type === 'page_action_notice') {
         updatePageActionActivity(chatArea, { ...event, runId, state: event.state || 'notice' });
@@ -1082,6 +1102,7 @@ document.addEventListener('DOMContentLoaded', () => {
       loadingManager.showToast('A response is already in progress.', 'warning');
       return;
     }
+
     if (!beginResponseRun()) return;
     try {
       const instruction = String(checkpoint.instruction || '').trim();
@@ -1102,6 +1123,28 @@ document.addEventListener('DOMContentLoaded', () => {
       handleRunFailure(error, 'resumeActCheckpoint');
       throw error;
     }
+  }
+
+  // Gated Retry recovery for an Act run that ended with an unverified/in-flight
+  // mutation. Reuses the existing checkpoint/Resume path (which clears stale
+  // page state and forces page_get_state). NEVER blindly replays the mutation;
+  // when no interrupted checkpoint exists, surface the uncertainty instead.
+  async function onActFreshInspection() {
+    let checkpoint = null;
+    try {
+      const recovery = await loadActRecovery();
+      checkpoint = recovery?.checkpoint || null;
+    } catch (_) {
+      checkpoint = null;
+    }
+    if (checkpoint) {
+      await resumeActCheckpoint(checkpoint, null);
+      return;
+    }
+    loadingManager.showToast(
+      'The last page action may not have been verified. Re-running it could duplicate the change — inspect the page and start a fresh Act task instead.',
+      'warning'
+    );
   }
 
   // Shared failure cleanup for both run entry points.
@@ -1240,16 +1283,92 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Removes the loaded page context: clears state, hides the tray item, and
-  // removes the expandable content message from the chat DOM.
+  // removes the expandable content message from the chat DOM. Site
+  // suggestions are page-scoped, so they leave the composer row on detach.
   function detachPageContext(silent = false) {
     removePageContextHistory();
     lastLoadedPageContext = null;
+    composer?.setSiteActions?.([]);
     document.querySelectorAll('.loaded-content-container').forEach((container) => {
       container.remove();
     });
     composer.setPageContext(null);
     syncChatAreaHeight();
     if (!silent) loadingManager.showToast('Page content detached', 'info');
+  }
+
+  // Reuses the existing current-page loading mechanism (the same backdrop the
+  // sidebar Load-page button uses) to attach bounded page content to the tray.
+  async function loadCurrentPageContext(loadingToast = null) {
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'getLoadContent' }, (res) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(friendlyRuntimeErrorMessage(chrome.runtime.lastError.message)));
+        } else {
+          resolve(res);
+        }
+      });
+    });
+    if (!response || response.action !== 'loadContentResponse') {
+      throw new Error('Unexpected response from background script');
+    }
+    if (response.isPdf) {
+      await loadPdfContent(response, loadingToast);
+      return;
+    }
+    if (loadingToast) loadingManager.hideToast(loadingToast);
+    if (!response.success || !response.content) {
+      throw new Error(response.error || 'Content not available');
+    }
+    applyLoadedPageContent(response);
+  }
+
+  // Starter: load bounded current-page context, attach it, then summarize
+  // through the canonical page-preset flow (one click after opening the panel).
+  async function runStarterPageSummary() {
+    const toast = loadingManager.showToast('Loading page content…', 'info');
+    try {
+      await loadCurrentPageContext(toast);
+      await executePagePresetMode('summary');
+    } catch (error) {
+      if (toast) loadingManager.hideToast(toast);
+      loadingManager.showToast(friendlyRuntimeErrorMessage(error), 'error');
+    }
+  }
+
+  // Starter: attach bounded current-page context and focus the composer so
+  // the user can ask about the page without sending anything automatically.
+  async function runStarterAskPage() {
+    const toast = loadingManager.showToast('Loading page content…', 'info');
+    try {
+      await loadCurrentPageContext(toast);
+      userInput.focus();
+    } catch (error) {
+      if (toast) loadingManager.hideToast(toast);
+      loadingManager.showToast(friendlyRuntimeErrorMessage(error), 'error');
+    }
+  }
+
+  // Starts no run: toggles the sticky session Act permission and focuses the
+  // composer so the user can type an Act task. The permission stays visible in
+  // the composer context while idle via composer.setActEnabled.
+  async function toggleActStarter() {
+    let enabled;
+    try {
+      enabled = await isPageActionsEnabled();
+      await setPageActionsEnabled(!enabled);
+      composer.setActEnabled(!enabled);
+      loadingManager.showToast(
+        enabled
+          ? 'Page actions disabled for this browser session.'
+          : 'Page actions enabled for this browser session. Risky actions still require approval.',
+        'info'
+      );
+    } catch (error) {
+      loadingManager.showToast(error.message || 'Could not update Act permission.', 'error');
+      return;
+    }
+    if (!enabled) userInput.focus();
   }
 
   // Composer recovery: Continue always builds on the previous response;
@@ -1283,11 +1402,17 @@ document.addEventListener('DOMContentLoaded', () => {
     row: quickActionsRow,
     chatArea: document.getElementById('chat-area'),
     inputField: userInput,
+    overflowMenu: document.getElementById('quick-actions-menu'),
     handlers: {
       onStop: () => stopApiRequest(),
       onAnalyze: () => executePagePresetMode(lastUsedPreset),
       onMode: (modeKey) => executeSelectedTextMode(modeKey),
       onPrompt: (instruction, actionLabel) => sendComposerPrompt(instruction, actionLabel),
+      getRunActOutcome: () => lastActOutcome,
+      onActFreshInspection: () => onActFreshInspection(),
+      onPageSummary: () => void runStarterPageSummary(),
+      onAskPage: () => void runStarterAskPage(),
+      onActPage: () => void toggleActStarter(),
       onEdit: (instruction, request) => {
         // Edit replays the ORIGINAL request context: restore the originating
         // selection/attachment context into the composer tray alongside the
@@ -1301,6 +1426,15 @@ document.addEventListener('DOMContentLoaded', () => {
       },
       onDetachPage: () => detachPageContext(),
     },
+  });
+
+  // Surface the sticky session Act permission beside the composer while idle,
+  // and keep it in sync with the sidebar Act toggle and the starter action.
+  isPageActionsEnabled().then((enabled) => composer.setActEnabled(enabled));
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'session' && changes.pageActionsEnabled) {
+      composer.setActEnabled(Boolean(changes.pageActionsEnabled.newValue));
+    }
   });
 
   /**
@@ -2011,6 +2145,14 @@ document.addEventListener('DOMContentLoaded', () => {
             break;
           case 'page_action_decision':
             resolvePageActionConfirmation(chatArea, event);
+            break;
+          case 'page_task_progress':
+            updatePageTaskProgress(chatArea, { ...event, runId });
+            if (event.outcome && typeof event.outcome === 'object') {
+              // Keep the terminal Act outcome facts available so the composer
+              // recovery row can gate Retry when delivery was unverified.
+              lastActOutcome = event.outcome;
+            }
             break;
           case 'page_action_state':
             updatePageActionActivity(chatArea, {

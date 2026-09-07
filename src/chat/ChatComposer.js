@@ -10,6 +10,7 @@
  */
 
 import { RUN_STATES, isActiveRunState, isRunState } from '../utils/runState.js';
+import { shouldGateActRetry } from './ChatRunRecovery.js';
 
 /* ── Quick-action descriptors ────────────────────────────────────────── */
 
@@ -31,6 +32,16 @@ const PAGE_ACTIONS = [
   { id: 'page-technical', label: 'Technical', type: 'mode', mode: 'technical' },
 ];
 
+// Starter actions show beside the prompt when the composer has NO attached context.
+const STARTER_ACTIONS = [
+  { id: 'page-summarize', label: 'Summarize page', type: 'page-summarize' },
+  { id: 'ask-page', label: 'Ask about page', type: 'ask-page' },
+  { id: 'act-page', label: 'Act on page', type: 'act-page' },
+];
+
+// The row is capped so it never crowds the composer; the rest go to overflow.
+const MAX_VISIBLE_ACTIONS = 4;
+
 /**
  * Reads the composer-relevant context state from the DOM.
  * @param {Object} tray - Context tray element (or element-like object).
@@ -39,10 +50,7 @@ const PAGE_ACTIONS = [
  */
 export function getContextState(tray, container) {
   const children = tray ? Array.from(tray.children || []) : [];
-  const findHidden = (id) => {
-    const el = children.find((child) => child.id === id);
-    return el ? Boolean(el.hidden) : true;
-  };
+  const findHidden = (id) => (children.find((c) => c.id === id) || { hidden: true }).hidden;
   const runState = container && container.dataset ? container.dataset.runState : RUN_STATES.IDLE;
   return {
     hasSelectedText: !findHidden('selected-text-strip'),
@@ -54,19 +62,48 @@ export function getContextState(tray, container) {
 }
 
 /**
- * Returns the quick-action descriptors valid for a context state.
+ * Full set of context-aware quick-action descriptors for a context state,
+ * including optional page-scoped site suggestions and the no-context starters.
  * @param {Object} state - Context state from getContextState().
+ * @param {Array} [siteActions] - Site-suggestion descriptors (page-scoped).
  * @returns {Array} Quick-action descriptors.
  */
-export function getQuickActions(state) {
+export function getContextActions(state, siteActions = []) {
   const actions = [];
-  if (state && state.hasSelectedText) {
-    actions.push(...TEXT_ACTIONS);
-  }
-  if (state && state.hasPageContext) {
-    actions.push(...PAGE_ACTIONS);
-  }
+  const hasSelectedText = Boolean(state && state.hasSelectedText);
+  const hasPageContext = Boolean(state && state.hasPageContext);
+  const hasMedia = Boolean(state && state.hasMedia);
+  if (hasSelectedText) actions.push(...TEXT_ACTIONS);
+  if (hasPageContext) actions.push(...PAGE_ACTIONS);
+  if (hasPageContext && Array.isArray(siteActions)) actions.push(...siteActions);
+  // No attached context: offer starter actions so the panel starts work.
+  // Site suggestions stay page-scoped (only when page context is attached).
+  if (!hasSelectedText && !hasPageContext && !hasMedia) actions.push(...STARTER_ACTIONS);
   return actions;
+}
+
+/**
+ * Quick-action descriptors shown directly in the row, capped so the compact
+ * row stays at or under MAX_VISIBLE_ACTIONS.
+ * @param {Object} state - Context state from getContextState().
+ * @param {Array} [siteActions] - Site-suggestion descriptors.
+ * @param {number} [limit] - Max actions in the row (default MAX_VISIBLE_ACTIONS).
+ * @returns {Array} Quick-action descriptors for the row.
+ */
+export function getQuickActions(state, siteActions = [], limit = MAX_VISIBLE_ACTIONS) {
+  return getContextActions(state, siteActions).slice(0, limit);
+}
+
+/**
+ * Context-aware actions that could not fit in the row and belong in the
+ * existing overflow menu.
+ * @param {Object} state - Context state from getContextState().
+ * @param {Array} [siteActions] - Site-suggestion descriptors.
+ * @param {number} [limit] - Max actions in the row (default MAX_VISIBLE_ACTIONS).
+ * @returns {Array} Quick-action descriptors for the overflow menu.
+ */
+export function getOverflowActions(state, siteActions = [], limit = MAX_VISIBLE_ACTIONS) {
+  return getContextActions(state, siteActions).slice(limit);
 }
 
 /**
@@ -194,10 +231,15 @@ export function ensureStopButton(bubble, onStop) {
  * instead of the newest one.
  * @param {Object} messageDiv - The message element to attach to.
  * @param {Object} options - Which actions to offer: { retry, edit, continue }.
- * @param {Object} handlers - { onStop, onPrompt, onEdit } callbacks.
+ * @param {Object} handlers - { onStop, onPrompt, onEdit, onActFreshInspection }
+ *   callbacks.
  * @param {Object} chatArea - Chat area element (to resolve the originating prompt).
+ * @param {Object} [actOutcome] - Terminal Act outcome facts. When the run ended
+ *   with an unverified/in-flight mutation, generic Retry is gated: instead of
+ *   replaying (which could duplicate the change) the row routes through the
+ *   fresh-inspection recovery path via handlers.onActFreshInspection.
  */
-export function ensureRecoveryRow(messageDiv, options, handlers, chatArea) {
+export function ensureRecoveryRow(messageDiv, options, handlers, chatArea, actOutcome = null) {
   if (typeof document === 'undefined') return;
   if (!messageDiv || typeof messageDiv.querySelector !== 'function') return;
   if (messageDiv.querySelector('[data-recovery-row]')) return;
@@ -214,17 +256,31 @@ export function ensureRecoveryRow(messageDiv, options, handlers, chatArea) {
   // would act on the (possibly different) current request.
   const instruction = getLastUserPrompt(chatArea);
   const request = getLastUserRequest(chatArea);
+  const retryGated = shouldGateActRetry(actOutcome);
 
   if (options.retry !== false) {
-    const retry = makeRecoveryButton('Retry', 'Re-run the original request');
-    retry.addEventListener('click', () => {
-      if (typeof handlers.onPrompt !== 'function') return;
-      // Pass the full structured request/context identity so the replay uses
-      // the ORIGINAL context, not the current (possibly changed) one. Falls
-      // back to the plain prompt when no structured identity was captured.
-      handlers.onPrompt(request ? { instruction, request } : instruction, 'retry');
-    });
-    row.appendChild(retry);
+    if (retryGated) {
+      // The originating Act request ended with a mutation whose delivery could
+      // not be verified. NEVER auto-replay it: explain the uncertainty and
+      // route through the existing fresh-inspection/checkpoint recovery path.
+      const gate = makeRecoveryButton('Re-inspect first', 'Inspect the page before continuing');
+      gate.addEventListener('click', () => {
+        if (typeof handlers.onActFreshInspection === 'function') {
+          handlers.onActFreshInspection(actOutcome);
+        }
+      });
+      row.appendChild(gate);
+    } else {
+      const retry = makeRecoveryButton('Retry', 'Re-run the original request');
+      retry.addEventListener('click', () => {
+        if (typeof handlers.onPrompt !== 'function') return;
+        // Pass the full structured request/context identity so the replay uses
+        // the ORIGINAL context, not the current (possibly changed) one. Falls
+        // back to the plain prompt when no structured identity was captured.
+        handlers.onPrompt(request ? { instruction, request } : instruction, 'retry');
+      });
+      row.appendChild(retry);
+    }
   }
 
   if (options.edit !== false) {
@@ -276,12 +332,20 @@ function makeRecoveryButton(label, title) {
  * @param {Object} options.row - The #quick-actions-row element.
  * @param {Object} options.chatArea - The #chat-area element.
  * @param {Object} options.inputField - The #user-input textarea.
+ * @param {Object} options.overflowMenu - The existing #quick-actions-menu element
+ *   that receives context actions which do not fit in the row.
+ * @param {boolean} [options.actEnabled] - Initial Act permission state.
+ * @param {Array} [options.siteActions] - Initial page-scoped site suggestions.
  * @param {Object} options.handlers - Action callbacks: { onStop, onPrompt,
- *   onEdit, onMode, onPageMode, onAnalyze, onDetachPage }.
- * @returns {Object} The composer controller with a refresh() method.
+ *   onEdit, onMode, onPageMode, onAnalyze, onDetachPage, onPageSummary,
+ *   onAskPage, onActPage }.
+ * @returns {Object} The composer controller with refresh(), setPageContext(),
+ *   setSiteActions(), and setActEnabled() methods.
  */
 export function initComposer(options) {
-  const { container, tray, row, chatArea, handlers } = options || {};
+  const { container, tray, row, chatArea, overflowMenu, handlers } = options || {};
+  let actEnabled = Boolean(options && options.actEnabled);
+  let currentSiteActions = (options && options.siteActions) || [];
   const useMutationObserver =
     typeof MutationObserver === 'function' &&
     container &&
@@ -297,38 +361,128 @@ export function initComposer(options) {
   function renderQuickActions(state) {
     if (!row) return;
     if (typeof document === 'undefined') return;
-    const actions = getQuickActions(state);
+    // Hide the action row during an active run rather than leave orphaned chips.
+    if (state && state.isActive) {
+      row.innerHTML = '';
+      row.hidden = true;
+      return;
+    }
+    const visible = getQuickActions(state, currentSiteActions);
+    const overflow = getOverflowActions(state, currentSiteActions);
     row.innerHTML = '';
-    if (actions.length > 0) {
+    if (visible.length > 0) {
       const label = document.createElement('span');
       label.className = 'quick-actions-label';
       label.textContent = 'Quick actions';
       row.appendChild(label);
     }
-    for (const action of actions) {
+    for (const action of visible) {
+      row.appendChild(makeActionChip(action));
+    }
+    const actIndicator = makeActIndicator(state);
+    if (actIndicator) row.appendChild(actIndicator);
+    row.hidden = visible.length === 0 && !actEnabled;
+    renderOverflowActions(overflow);
+  }
+
+  function makeActionChip(action) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'ext-chip';
+    chip.textContent = action.label;
+    chip.title = action.title || action.label;
+    chip.addEventListener('click', () => dispatchAction(action));
+    return chip;
+  }
+
+  // Surf the sticky Act session permission beside the composer while idle.
+  function makeActIndicator(state) {
+    if (!actEnabled || !state || state.isActive) return null;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'ext-chip ext-chip--act';
+    chip.textContent = 'Act: on';
+    chip.title = 'Page actions are on for this browser session. Click to disable.';
+    chip.setAttribute('aria-pressed', 'true');
+    chip.addEventListener('click', () => {
+      if (typeof handlers.onActPage === 'function') handlers.onActPage();
+    });
+    return chip;
+  }
+
+  function renderOverflowActions(overflow) {
+    if (!overflowMenu || typeof document === 'undefined') return;
+    let section = overflowMenu.querySelector('[data-context-overflow]');
+    if (overflow.length === 0) {
+      if (section) section.remove();
+      return;
+    }
+    if (!section) {
+      section = document.createElement('section');
+      section.className = 'quick-actions-section';
+      section.dataset.contextOverflow = 'true';
+      const heading = document.createElement('h2');
+      heading.textContent = 'Context';
+      const chipContainer = document.createElement('div');
+      chipContainer.dataset.contextOverflowChips = 'true';
+      section.append(heading, chipContainer);
+      overflowMenu.appendChild(section);
+    }
+    let chipContainer = section.querySelector('[data-context-overflow-chips]');
+    if (!chipContainer) {
+      chipContainer = document.createElement('div');
+      chipContainer.dataset.contextOverflowChips = 'true';
+      section.appendChild(chipContainer);
+    }
+    chipContainer.innerHTML = '';
+    for (const action of overflow) {
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'ext-chip';
+      chip.className = 'quick-action-button quick-action-menu-item';
       chip.textContent = action.label;
       chip.title = action.title || action.label;
+      chip.dataset.closeQuickActions = 'true';
       chip.addEventListener('click', () => dispatchAction(action));
-      row.appendChild(chip);
+      chipContainer.appendChild(chip);
     }
-    row.hidden = actions.length === 0;
   }
 
   function dispatchAction(action) {
-    if (action.type === 'analyze' && typeof handlers.onAnalyze === 'function') {
-      handlers.onAnalyze();
-    } else if (action.type === 'mode' && typeof handlers.onMode === 'function') {
-      handlers.onMode(action.mode);
-    } else if (action.type === 'prompt' && typeof handlers.onPrompt === 'function') {
-      handlers.onPrompt(action.instruction, action.actionLabel || action.label);
+    if (!action) return;
+    switch (action.type) {
+      case 'analyze':
+        if (typeof handlers.onAnalyze === 'function') handlers.onAnalyze();
+        return;
+      case 'mode':
+        if (typeof handlers.onMode === 'function') handlers.onMode(action.mode);
+        return;
+      case 'prompt':
+        if (typeof handlers.onPrompt === 'function') {
+          handlers.onPrompt(action.instruction, action.actionLabel || action.label);
+        }
+        return;
+      case 'page-summarize':
+        if (typeof handlers.onPageSummary === 'function') handlers.onPageSummary();
+        return;
+      case 'ask-page':
+        if (typeof handlers.onAskPage === 'function') handlers.onAskPage();
+        return;
+      case 'act-page':
+        if (typeof handlers.onActPage === 'function') handlers.onActPage();
+        return;
+      default:
+        if (action.type === 'site' && typeof action.run === 'function') action.run();
+        return;
     }
   }
 
   function syncRunState(state) {
     if (!chatArea) return;
+    const renderRecovery = (bubble, options) => {
+      const actOutcome =
+        typeof handlers.getRunActOutcome === 'function' ? handlers.getRunActOutcome() : null;
+      ensureRecoveryRow(bubble, options, handlers, chatArea, actOutcome);
+    };
     if (state.isActive) {
       const bubble = getLastAssistantBubble(chatArea);
       if (bubble) ensureStopButton(bubble, handlers.onStop);
@@ -336,14 +490,10 @@ export function initComposer(options) {
     }
     if (state.runState === RUN_STATES.COMPLETE) {
       const bubble = getLastAssistantBubble(chatArea);
-      if (bubble) {
-        ensureRecoveryRow(bubble, { retry: true, edit: true, continue: true }, handlers, chatArea);
-      }
+      if (bubble) renderRecovery(bubble, { retry: true, edit: true, continue: true });
     } else if (state.runState === RUN_STATES.ERROR || state.runState === RUN_STATES.STOPPED) {
       const bubble = getLastAssistantBubble(chatArea);
-      if (bubble) {
-        ensureRecoveryRow(bubble, { retry: true, edit: true, continue: false }, handlers, chatArea);
-      }
+      if (bubble) renderRecovery(bubble, { retry: true, edit: true, continue: false });
     }
   }
 
@@ -413,15 +563,41 @@ export function initComposer(options) {
         typeof strip.querySelector === 'function'
           ? strip.querySelector('#page-context-details')
           : null;
+      const titleEl =
+        typeof strip.querySelector === 'function' ? strip.querySelector('.attachment-title') : null;
       if (page) {
-        if (details) details.textContent = `${page.details || page.url || ''}`;
+        if (titleEl) titleEl.textContent = page.title || 'Page content';
+        const type = page.type || 'Page content';
+        if (details) {
+          const trunc = page.truncated || /trimmed/i.test(String(page.details || ''));
+          const base = String(page.details || page.url || '')
+            .replace(/\s*\(trimmed\)\s*/gi, '')
+            .trim();
+          const parts = [];
+          if (type && type !== 'Page content') parts.push(type);
+          if (base) parts.push(base);
+          details.textContent =
+            `${parts.join(' · ')}${trunc ? ' · trimmed to fit context budget' : ''}`.trim();
+        }
         strip.hidden = false;
       } else {
         strip.hidden = true;
         if (details) details.textContent = '';
+        if (titleEl) titleEl.textContent = 'Page content';
       }
       syncTrayVisibility();
       refresh();
+    },
+    setSiteActions(actions) {
+      currentSiteActions = Array.isArray(actions) ? actions : [];
+      refresh();
+    },
+    setActEnabled(enabled) {
+      const next = Boolean(enabled);
+      if (next !== actEnabled) {
+        actEnabled = next;
+        refresh();
+      }
     },
   };
 }
@@ -429,7 +605,9 @@ export function initComposer(options) {
 export const chatComposer = {
   initComposer,
   getContextState,
+  getContextActions,
   getQuickActions,
+  getOverflowActions,
   createConversationController,
   getLastUserPrompt,
   getLastUserRequest,

@@ -1171,6 +1171,67 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Readable Act progress card (page_task_progress) */
+.page-task-progress {
+  border: 1px solid var(--ext-border);
+  background: var(--ext-muted);
+  font-size: 0.88em;
+}
+
+.page-task-progress p {
+  margin: 3px 0;
+}
+
+.page-task-progress-status {
+  font-weight: 600;
+  color: var(--ext-primary);
+}
+
+.page-task-progress-waiting {
+  color: var(--ext-warning);
+}
+
+.page-task-progress-receipt {
+  color: var(--ext-secondary);
+}
+
+.page-task-progress-outcome {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ext-border);
+}
+
+.page-task-progress-outcome-body {
+  color: var(--ext-secondary);
+  overflow-wrap: anywhere;
+}
+
+.page-task-progress-outcome-body strong {
+  color: var(--ext-primary);
+}
+
+.page-task-progress-steps {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+}
+
+.page-task-progress-steps li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.page-task-progress-steps li[data-step-status='completed'] {
+  color: var(--ext-success);
+}
+
+.page-task-progress-steps li[data-step-status='blocked'] {
+  color: var(--ext-destructive);
+}
+
+.page-task-progress-history {
+  margin-top: 8px;
+}
+
 .run-recovery-notice {
   display: grid;
   gap: 0.35rem;

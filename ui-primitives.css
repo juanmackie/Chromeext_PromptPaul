@@ -168,6 +168,31 @@
   box-shadow: none;
 }
 
+/* Act permission indicator: uses the restrained indigo→violet energy accent
+   so the sticky session permission is clearly visible beside the composer
+   while idle, distinct from a generic active chip. */
+.ext-chip--act,
+.ext-chip--act[aria-pressed='true'] {
+  background-image: linear-gradient(
+    135deg,
+    var(--ext-primary) 0%,
+    var(--ext-primary-bright) 43%,
+    var(--ext-ai-violet) 100%
+  );
+  color: var(--ext-primary-foreground);
+  border-color: var(--ext-primary-deep);
+}
+
+.ext-chip--act:hover:not(:disabled),
+.ext-chip--act[aria-pressed='true']:hover:not(:disabled) {
+  background-image: linear-gradient(
+    135deg,
+    var(--ext-primary-bright) 0%,
+    var(--ext-ai-violet) 100%
+  );
+  border-color: var(--ext-primary);
+}
+
 /* ── Badges ───────────────────────────────────────────────────────────── */
 
 .ext-badge {

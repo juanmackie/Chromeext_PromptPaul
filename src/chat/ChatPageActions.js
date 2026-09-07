@@ -48,16 +48,18 @@ export async function renderSiteSuggestions(input) {
   const chips = document.createElement('div');
   chips.className = 'site-suggestions-chips';
 
+  const run = (prompt) => {
+    chatMainArea.style.display = 'block';
+    oneoffInstructionArea.style.display = 'none';
+    makeApiCall(prompt);
+  };
+
   for (const card of actionCards) {
     const chip = document.createElement('button');
     chip.className = 'site-suggestion-chip site-suggestion-chip-primary';
     chip.textContent = card.title;
     chip.title = card.prompt;
-    chip.addEventListener('click', () => {
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
-      makeApiCall(card.prompt);
-    });
+    chip.addEventListener('click', () => run(card.prompt));
     chips.appendChild(chip);
   }
 
@@ -66,16 +68,41 @@ export async function renderSiteSuggestions(input) {
     chip.className = 'site-suggestion-chip';
     chip.textContent = s.command;
     chip.title = s.prompt;
-    chip.addEventListener('click', () => {
-      chatMainArea.style.display = 'block';
-      oneoffInstructionArea.style.display = 'none';
-      makeApiCall(s.prompt);
-    });
+    chip.addEventListener('click', () => run(s.prompt));
     chips.appendChild(chip);
   }
 
   container.appendChild(chips);
   if (chatAreaElement) chatAreaElement.appendChild(container);
+}
+
+/**
+ * Build page-scoped site-suggestion descriptors for the composer-owned
+ * quick-action row. Site actions render as chips in the same row as the
+ * contextual actions instead of a separate widget; actions beyond the row cap
+ * are retained in the overflow menu by the composer.
+ * @param {Object} input - { url, platform, platformInfo, onRun }.
+ * @param {Function} input.onRun - Called with the raw prompt to run.
+ * @returns {Promise<Array>} Site-action descriptors ({ id, label, title, type, run }).
+ */
+export async function buildSiteActions({ url, platform = null, platformInfo = null, onRun }) {
+  const siteKey = extractSiteKey(url);
+  const suggestions = siteKey ? await getSuggestionsForSite(siteKey) : [];
+  const actionCards = inferActionCards({ url, platform, platformInfo });
+  const actions = [];
+  const append = (label, prompt, primary = false) => {
+    actions.push({
+      id: `site:${label}`,
+      label,
+      title: prompt || label,
+      type: 'site',
+      primary,
+      run: () => onRun?.(prompt),
+    });
+  };
+  for (const card of actionCards) append(card.title, card.prompt, true);
+  for (const s of suggestions) append(s.command, s.prompt);
+  return actions;
 }
 
 export async function executePresetAnalysis(input) {

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Books Table Fixture</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 24px;
+      }
+      #filter-status {
+        margin-bottom: 8px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #888;
+        padding: 6px 10px;
+        text-align: left;
+      }
+      tr.data-row[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Inventory catalogue</h1>
+    <label for="filter">Filter by category</label>
+    <input id="filter" name="filter" placeholder="e.g. fantasy" autocomplete="off" />
+    <p id="filter-status">All 8 books shown.</p>
+    <table id="books">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Author</th>
+          <th>Category</th>
+          <th>Price</th>
+        </tr>
+      </thead>
+      <tbody id="book-rows">
+        <tr class="data-row" data-category="fantasy">
+          <td>The Crystal Keep</td>
+          <td>A. Rivers</td>
+          <td>fantasy</td>
+          <td>18</td>
+        </tr>
+        <tr class="data-row" data-category="scifi">
+          <td>Echo Station</td>
+          <td>B. Chen</td>
+          <td>scifi</td>
+          <td>21</td>
+        </tr>
+        <tr class="data-row" data-category="fantasy">
+          <td>Moonlit Orchard</td>
+          <td>C. Dune</td>
+          <td>fantasy</td>
+          <td>15</td>
+        </tr>
+        <tr class="data-row" data-category="mystery">
+          <td>The Hollow Verdict</td>
+          <td>D. Frost</td>
+          <td>mystery</td>
+          <td>24</td>
+        </tr>
+        <tr class="data-row" data-category="scifi">
+          <td>Starfall Protocol</td>
+          <td>E. Grant</td>
+          <td>scifi</td>
+          <td>30</td>
+        </tr>
+        <tr class="data-row" data-category="fantasy">
+          <td>Wildfire Crown</td>
+          <td>F. Harlow</td>
+          <td>fantasy</td>
+          <td>19</td>
+        </tr>
+        <tr class="data-row" data-category="mystery">
+          <td>The Silent Ledger</td>
+          <td>G. Ito</td>
+          <td>mystery</td>
+          <td>22</td>
+        </tr>
+        <tr class="data-row" data-category="reference">
+          <td>Field Atlas</td>
+          <td>H. Kumar</td>
+          <td>reference</td>
+          <td>40</td>
+        </tr>
+      </tbody>
+    </table>
+    <script>
+      const filterInput = document.getElementById('filter');
+      const status = document.getElementById('filter-status');
+      const rows = Array.from(document.querySelectorAll('#book-rows tr.data-row'));
+      filterInput.addEventListener('input', () => {
+        const query = filterInput.value.trim().toLowerCase();
+        let matched = 0;
+        for (const row of rows) {
+          const cell = row.cells[2].textContent.toLowerCase();
+          const show = !query || cell === query;
+          row.hidden = !show;
+          if (show) matched += 1;
+        }
+        status.textContent = query
+          ? `Showing ${matched} of ${rows.length} books matching "${query}".`
+          : `All ${rows.length} books shown.`;
+      });
+    </script>
+  </body>
+</html>

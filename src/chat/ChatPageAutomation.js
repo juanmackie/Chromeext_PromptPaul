@@ -3,6 +3,8 @@
  * @module ChatPageAutomation
  */
 
+import { selectActRecoveryOutcome } from './ChatRunRecovery.js';
+
 const PAGE_ACTIONS_ENABLED_KEY = 'pageActionsEnabled';
 const PAGE_ACTIONS_STORAGE = 'session';
 
@@ -77,6 +79,233 @@ function getActivityCard(chatArea, runId = '') {
 }
 
 /**
+ * Translate an Act delivery disposition into plain language, preserving the
+ * distinction between a verified single action and whole-task completion.
+ * @param {string|null} disposition
+ * @returns {string}
+ */
+export function formatPlainLanguageDisposition(disposition) {
+  switch (disposition) {
+    case 'delivered_verified':
+      return 'Verified';
+    case 'delivered_unverified':
+      return 'Performed - verification unavailable';
+    case 'not_delivered':
+      return 'Not performed';
+    default:
+      return '';
+  }
+}
+
+function getProgressCard(chatArea, runId = '') {
+  const cards = Array.from(chatArea?.querySelectorAll?.('[data-page-task-progress]') || []);
+  return cards.find((card) => card.dataset.pageActionRunId === runId) || (runId ? null : cards[0]);
+}
+
+const WAITING_LABELS = {
+  approval: 'Approval needed',
+  answer: 'Answer needed',
+  manual: 'Manual step required',
+};
+
+/**
+ * Render/update the run-scoped readable Act progress card from bounded
+ * page_task_progress events. The card shows the current step and target page,
+ * pending-interaction waiting states, plain-language delivery for the current
+ * action, and — only when a planner exists — completed/current/blocked steps.
+ * Runs without a planner show the current action only and never invent a plan
+ * or a completion percentage. A collapsed technical log (fed separately by
+ * page_action_state events) is available for troubleshooting.
+ * @param {HTMLElement|null} chatArea
+ * @param {object} event
+ * @param {string} [runId]
+ * @returns {HTMLElement|null}
+ */
+export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
+  if (!chatArea) return null;
+  const runKey = String(runId || event.runId || '').slice(0, 128);
+  let card = getProgressCard(chatArea, runKey);
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'message system-message page-task-progress';
+    card.dataset.pageTaskProgress = 'true';
+    card.dataset.pageActionRunId = runKey;
+    card.setAttribute('role', 'status');
+    card.setAttribute('aria-live', 'polite');
+
+    const heading = document.createElement('strong');
+    heading.textContent = 'Act progress';
+    card.appendChild(heading);
+
+    const status = document.createElement('p');
+    status.className = 'page-task-progress-status';
+    card.appendChild(status);
+
+    const waiting = document.createElement('p');
+    waiting.className = 'page-task-progress-waiting';
+    card.appendChild(waiting);
+
+    const receipt = document.createElement('p');
+    receipt.className = 'page-task-progress-receipt';
+    card.appendChild(receipt);
+
+    const outcome = document.createElement('div');
+    outcome.className = 'page-task-progress-outcome';
+    card.appendChild(outcome);
+
+    const steps = document.createElement('ol');
+    steps.className = 'page-task-progress-steps';
+    steps.setAttribute('aria-label', 'Planner steps');
+    card.appendChild(steps);
+
+    const history = document.createElement('details');
+    history.className = 'page-task-progress-history';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Activity details';
+    const historyList = document.createElement('ol');
+    historyList.className = 'page-action-activity-list';
+    history.append(summary, historyList);
+    card.appendChild(history);
+
+    chatArea.appendChild(card);
+  }
+
+  const status = card.querySelector('.page-task-progress-status');
+  const waiting = card.querySelector('.page-task-progress-waiting');
+  const receipt = card.querySelector('.page-task-progress-receipt');
+  const outcome = card.querySelector('.page-task-progress-outcome');
+  const steps = card.querySelector('.page-task-progress-steps');
+  const historyList = card.querySelector('.page-task-progress-history .page-action-activity-list');
+
+  // Current step + target page (sanitized label only).
+  if (status) {
+    const parts = [];
+    const step =
+      String(event.currentStep || event.currentAction || '').replace(/^page_/, '') ||
+      'Inspecting page';
+    parts.push(`Current: ${step}`);
+    if (event.target?.label) {
+      parts.push(
+        event.target.origin ? `Target: ${event.target.label}` : `On: ${event.target.label}`
+      );
+    }
+    status.textContent = parts.join(' · ');
+  }
+
+  // Waiting state maps from existing pending-interaction events.
+  if (waiting) {
+    waiting.textContent = event.waiting
+      ? `⏳ ${WAITING_LABELS[event.waiting] || event.waiting}`
+      : '';
+    waiting.hidden = !event.waiting;
+  }
+
+  // Plain-language delivery for the current action. A verified single action is
+  // NOT reported as whole-task completion.
+  if (receipt) {
+    const disposition = formatPlainLanguageDisposition(event.receipt?.disposition);
+    const text = disposition
+      ? `Last action (${String(event.receipt.actionName || 'page action').replace(/^page_/, '')}): ${disposition}`
+      : event.taskComplete
+        ? 'All planner steps resolved.'
+        : '';
+    receipt.textContent = text;
+    receipt.hidden = !text;
+  }
+
+  // Deterministic Act outcome: verified work, unresolved work, and the single
+  // best next recovery action, selected from ACTUAL runtime state. Rendered in
+  // the run-scoped activity card and routed onto existing controls (approval /
+  // clarification / manual Resume / Watch run / checkpoint Resume) rather than
+  // a parallel recovery UI. Bounded facts arrive in event.outcome; checkpoint
+  // presence is folded in when provided.
+  if (outcome && event.outcome && typeof event.outcome === 'object') {
+    const computed = selectActRecoveryOutcome({
+      ...event.outcome,
+      hasCheckpoint: Boolean(event.outcome.hasCheckpoint),
+    });
+    outcome.textContent = '';
+    const lines = [];
+    if (computed.hasVerifiedWork) {
+      lines.push(
+        `Verified work: ${computed.verifiedCount} step${computed.verifiedCount === 1 ? '' : 's'} confirmed.`
+      );
+    } else {
+      lines.push('Verified work: none.');
+    }
+    if (computed.unresolved.length > 0) {
+      lines.push(`Unresolved: ${computed.unresolved.join(', ')}.`);
+    } else {
+      lines.push('Unresolved: none.');
+    }
+    lines.push(`Next: ${computed.recoveryMessage}`);
+    const body = document.createElement('p');
+    body.className = 'page-task-progress-outcome-body';
+    const arrow = document.createElement('strong');
+    arrow.textContent = 'Outcome — ';
+    body.appendChild(arrow);
+    body.appendChild(document.createTextNode(lines.join(' ')));
+    outcome.appendChild(body);
+    outcome.hidden = false;
+  } else if (outcome && outcome.childElementCount === 0) {
+    outcome.hidden = true;
+  }
+
+  // Planner steps rendered only when a planner exists.
+  if (steps && historyList) {
+    steps.textContent = '';
+    if (event.hasPlanner && Array.isArray(event.steps)) {
+      steps.hidden = false;
+      for (const step of event.steps.slice(0, 12)) {
+        const li = document.createElement('li');
+        li.dataset.stepStatus = step.status || 'pending';
+        const marker =
+          step.status === 'completed'
+            ? '✓'
+            : step.status === 'blocked'
+              ? '✗'
+              : step.status === 'current'
+                ? '●'
+                : '○';
+        li.textContent = `${marker} ${String(step.label || '').slice(0, 220)}`;
+        steps.appendChild(li);
+      }
+    } else {
+      steps.hidden = true;
+    }
+
+    // Append a technical line to the collapsed troubleshooting log.
+    if (event.currentAction || event.currentStep) {
+      const entry = document.createElement('li');
+      entry.dataset.activityKey = `task-progress:${String(event.sequence || 'update')}`;
+      const target = event.target?.label ? ` on ${event.target.label}` : '';
+      const disposition = formatPlainLanguageDisposition(event.receipt?.disposition);
+      entry.textContent = `${String(event.currentAction || event.currentStep || 'progress').replace(
+        /^page_/,
+        ''
+      )}${target}${disposition ? ` - ${disposition}` : ''}`;
+      historyList.appendChild(entry);
+      while (historyList.children.length > 12) {
+        historyList.removeChild(historyList.firstElementChild);
+      }
+    }
+  }
+
+  // Preserve reader scroll position unless already near the bottom.
+  const remaining = chatArea.scrollHeight - chatArea.scrollTop - (chatArea.clientHeight || 0);
+  if (!Number.isFinite(remaining) || remaining <= 40) chatArea.scrollTop = chatArea.scrollHeight;
+  return card;
+}
+
+/**
+ * Append one raw page-action line to the collapsed troubleshooting log inside
+ * the run-scoped progress card. Used when page_action_state events arrive
+ * without a matching page_task_progress event in the same batch.
+ * @param {HTMLElement|null} chatArea
+ * @param {object} event
+ * @returns {void}
+ */
+/**
  * Render/update one compact activity card for the current page-action run.
  * Repeated tool events update this card instead of adding one system message
  * per action, keeping the chat readable and reducing DOM churn.
@@ -98,9 +327,14 @@ export function updatePageActionActivity(chatArea, event = {}) {
     const heading = document.createElement('strong');
     heading.textContent = 'Page activity';
     card.appendChild(heading);
+    const details = document.createElement('details');
+    details.className = 'page-action-activity-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Activity details';
     const list = document.createElement('ol');
     list.className = 'page-action-activity-list';
-    card.appendChild(list);
+    details.append(summary, list);
+    card.appendChild(details);
     chatArea.appendChild(card);
   }
 

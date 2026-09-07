@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   chatComposer,
   getContextState,
+  getContextActions,
   getQuickActions,
+  getOverflowActions,
   getLastUserPrompt,
   getLastAssistantBubble,
   isTrayVisible,
@@ -78,7 +80,7 @@ describe('getContextState', () => {
   });
 });
 
-describe('getQuickActions', () => {
+describe('getQuickActions / getContextActions / getOverflowActions', () => {
   it('offers text actions when text is attached', () => {
     const actions = getQuickActions({ hasSelectedText: true, hasPageContext: false });
     const labels = actions.map((a) => a.label);
@@ -96,13 +98,58 @@ describe('getQuickActions', () => {
     expect(labels).toContain('Technical');
   });
 
-  it('combines both groups when both contexts are attached', () => {
-    const actions = getQuickActions({ hasSelectedText: true, hasPageContext: true });
-    expect(actions).toHaveLength(6);
+  it('caps the combined row at four actions and keeps the rest in overflow', () => {
+    const state = { hasSelectedText: true, hasPageContext: true };
+    const visible = getQuickActions(state);
+    const overflow = getOverflowActions(state);
+    expect(visible).toHaveLength(4);
+    expect(overflow).toHaveLength(2);
+    const all = [...visible, ...overflow];
+    expect(all).toHaveLength(6);
   });
 
-  it('returns no actions without context', () => {
-    expect(getQuickActions({ hasSelectedText: false, hasPageContext: false })).toHaveLength(0);
+  it('shows starter actions when no context is attached', () => {
+    const state = { hasSelectedText: false, hasPageContext: false, hasMedia: false };
+    const labels = getContextActions(state).map((a) => a.label);
+    expect(labels).toContain('Summarize page');
+    expect(labels).toContain('Ask about page');
+    expect(labels).toContain('Act on page');
+    expect(getQuickActions(state)).toHaveLength(3);
+  });
+
+  it('does not show starters once any context is attached', () => {
+    const labels = getContextActions({ hasSelectedText: false, hasPageContext: true }).map(
+      (a) => a.label
+    );
+    expect(labels).not.toContain('Summarize page');
+    expect(labels).not.toContain('Ask about page');
+  });
+
+  it('includes site suggestions only while page context is attached', () => {
+    const site = [
+      { id: 'site:YouTube', label: 'YouTube', type: 'site', run: () => {} },
+      { id: 'site:Transcript', label: 'Transcript', type: 'site', run: () => {} },
+    ];
+    const withPage = getContextActions({ hasPageContext: true }, site);
+    expect(withPage.map((a) => a.label)).toContain('YouTube');
+    const withoutPage = getContextActions({ hasSelectedText: true, hasPageContext: false }, site);
+    expect(withoutPage.map((a) => a.label)).not.toContain('YouTube');
+  });
+
+  it('retains overflow actions in the overflow menu beyond the cap', () => {
+    const state = { hasSelectedText: true, hasPageContext: true };
+    const site = Array.from({ length: 6 }, (_, i) => ({
+      id: `s${i}`,
+      label: `Site ${i}`,
+      type: 'site',
+      run: () => {},
+    }));
+    const total = getContextActions(state, site);
+    const visible = getQuickActions(state, site);
+    const overflow = getOverflowActions(state, site);
+    expect(visible).toHaveLength(4);
+    expect(overflow).toHaveLength(total.length - 4);
+    expect([...visible, ...overflow]).toEqual(total);
   });
 });
 
@@ -216,9 +263,90 @@ describe('initComposer controller', () => {
     expect(tray.hidden).toBe(false);
   });
 
+  it('refresh does not append a null Act indicator when Act is disabled', () => {
+    // A DOM-like appendChild rejects non-Node children, mirroring the real
+    // TypeError a fresh profile (Act disabled) would hit on every refresh.
+    const realDocument = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => ({
+        tagName: tag,
+        children: [],
+        addEventListener() {},
+        setAttribute() {},
+      }),
+    };
+    try {
+      const row = {
+        innerHTML: '',
+        hidden: true,
+        children: [],
+        appendChild(child) {
+          if (child == null) {
+            throw new TypeError('appendChild: parameter 1 is not of type Node');
+          }
+          this.children.push(child);
+          return child;
+        },
+      };
+      const controller = chatComposer.initComposer({
+        container: makeContainer('idle'),
+        tray: makeTray(
+          makeElement('attachment-strip', true),
+          makeElement('selected-text-strip', true),
+          makeElement('page-context-strip', true)
+        ),
+        row,
+        chatArea: { querySelectorAll: () => [] },
+        inputField: null,
+        handlers: {},
+      });
+      expect(() => controller.refresh()).not.toThrow();
+      expect(row.hidden).toBe(false); // starter actions remain visible
+      expect(row.children.some((c) => c.className === 'ext-chip ext-chip--act')).toBe(false); // no Act indicator chip when Act is disabled
+    } finally {
+      globalThis.document = realDocument;
+    }
+  });
+
   it('returns a refresh function', () => {
     const { controller } = buildControllerFixtures();
     expect(typeof controller.refresh).toBe('function');
+  });
+
+  it('exposes site-action and Act-permission setters', () => {
+    const { controller } = buildControllerFixtures();
+    expect(typeof controller.setSiteActions).toBe('function');
+    expect(typeof controller.setActEnabled).toBe('function');
+  });
+
+  it('enriches the page-context tray with source title, type, and truncation', () => {
+    const titleEl = { textContent: '' };
+    const detailsEl = { textContent: '' };
+    const strip = makeElement('page-context-strip', true);
+    strip.querySelector = (sel) => {
+      if (sel === '#page-context-details') return detailsEl;
+      if (sel === '.attachment-title') return titleEl;
+      return null;
+    };
+    const tray = makeTray(strip);
+    const row = { innerHTML: '', hidden: true, children: [] };
+    const controller = chatComposer.initComposer({
+      container: makeContainer('idle'),
+      tray,
+      row,
+      chatArea: { querySelectorAll: () => [] },
+      inputField: null,
+      handlers: {},
+    });
+    controller.setPageContext({
+      title: 'My Article (Medium)',
+      details: 'https://example.com/a (trimmed)',
+      truncated: true,
+    });
+    expect(titleEl.textContent).toBe('My Article (Medium)');
+    expect(detailsEl.textContent).toContain('https://example.com/a');
+    expect(detailsEl.textContent).toContain('trimmed to fit context budget');
+    expect(strip.hidden).toBe(false);
   });
 });
 
@@ -337,6 +465,71 @@ describe('ensureRecoveryRow prompt binding', () => {
       // Edit hands back the OLD request identity alongside the prompt.
       bubble1.children[0].children[1].listeners.click[0]();
       expect(handlers.onEdit).toHaveBeenCalledWith('summarize this', oldRequest);
+    } finally {
+      globalThis.document = realDocument;
+    }
+  });
+
+  it('gates Retry for an unverified Act run, routing through fresh inspection', () => {
+    const realDocument = globalThis.document;
+    globalThis.document = makeFakeDocument();
+    try {
+      const messages = [{ dataset: { prompt: 'quit the tab' }, textContent: '' }];
+      const chatArea = {
+        querySelectorAll(selector) {
+          return selector === '.user-message' ? messages : [];
+        },
+      };
+      const handlers = { onPrompt: vi.fn(), onActFreshInspection: vi.fn() };
+      const bubble = {
+        querySelector: () => null,
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+      };
+
+      const gatedOutcome = { status: 'complete', unverified: true };
+      ensureRecoveryRow(bubble, { retry: true, edit: false }, handlers, chatArea, gatedOutcome);
+
+      const row = bubble.children[0];
+      const gate = row.children[0];
+      // The unverified mutation must NOT be blindly replayed through onPrompt.
+      expect(gate.textContent).toBe('Re-inspect first');
+      gate.listeners.click[0]();
+      expect(handlers.onPrompt).not.toHaveBeenCalled();
+      expect(handlers.onActFreshInspection).toHaveBeenCalledWith(gatedOutcome);
+    } finally {
+      globalThis.document = realDocument;
+    }
+  });
+
+  it('keeps the plain Retry button when the Act outcome is verified or absent', () => {
+    const realDocument = globalThis.document;
+    globalThis.document = makeFakeDocument();
+    try {
+      const messages = [{ dataset: { prompt: 'summarize' }, textContent: '' }];
+      const chatArea = {
+        querySelectorAll(selector) {
+          return selector === '.user-message' ? messages : [];
+        },
+      };
+      const handlers = { onPrompt: vi.fn(), onActFreshInspection: vi.fn() };
+      const bubble = {
+        querySelector: () => null,
+        children: [],
+        appendChild(child) {
+          this.children.push(child);
+        },
+      };
+      ensureRecoveryRow(bubble, { retry: true, edit: false }, handlers, chatArea, {
+        status: 'complete',
+        verified: true,
+      });
+      expect(bubble.children[0].children[0].textContent).toBe('Retry');
+      bubble.children[0].children[0].listeners.click[0]();
+      expect(handlers.onPrompt).toHaveBeenCalledTimes(1);
+      expect(handlers.onActFreshInspection).not.toHaveBeenCalled();
     } finally {
       globalThis.document = realDocument;
     }

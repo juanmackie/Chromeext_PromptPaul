@@ -23,5 +23,5 @@
     "TurndownService": "readonly",
     "DOMPurify": "readonly"
   },
-  "ignorePatterns": ["libs/", "marked.min.js", "node_modules/", "dist/"]
+  "ignorePatterns": ["libs/", "marked.min.js", "node_modules/", "dist/", "plans/"]
 }

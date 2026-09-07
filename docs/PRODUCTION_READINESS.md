@@ -26,6 +26,7 @@ This checklist keeps those rules practical and reviewable.
 - Run `npm run audit` before release. CI runs the same dependency gate before browser and build jobs.
 - Run `npm run build:prod` and verify that `dist/` reports diagnostics and the eval hook as `excluded`, contains no development tracer or eval hook implementation, and that `dist-dev/` and `dist-eval/` are never packaged or published.
 - Review authentication, user data, external API, and page-action changes for security before production deployment. For this Act change, the focused review is recorded in [ACT_SECURITY_LICENSE_REVIEW.md](ACT_SECURITY_LICENSE_REVIEW.md). Review receipt evidence, session checkpoints, explicit-resume boundaries, prompt-injection handling, sensitive-field masking, restricted-page behavior, and the rule that runtime scope/diff output stays indexed, bounded, and selector-free. Do not describe the extension as production-ready until these reviews and the required browser/provider checks are complete.
+- Review changes against the standing UX/DX/AX/UI decision rule in the root [AGENTS.md](../AGENTS.md#user-preferences), showing the benefit delivered across those axes and the regression checks that protect existing behavior.
 - Update the nearest DOX contract when behavior, structure, workflow, or quality requirements change.
 
 ## Page-action release gates
@@ -36,6 +37,8 @@ This checklist keeps those rules practical and reviewable.
 - The credential-free 15-case corpus must pass its unit/provider matrix, and browser-safe cases must pass against local fixtures with bounded result, policy, consistency, and scope metrics.
 - Runtime scope/diff output must remain indexed, bounded, and selector-free. Region and byte-size measurements remain evaluation-only.
 - Session checkpoints must contain only bounded metadata, expire on terminal cleanup, and offer explicit Resume without automatic action replay.
+- Act performance defaults are separate observation/navigation/mutation budgets of 256/96/64 actions, a twelve-tab run-created lease, 72 bounded task notes and a 360K-character history cap, and a session-only sub-goal planner capped at 12 sub-goals and 5 replans. A planner run requests one initial state-changing-action approval, then auto-approves only low-risk non-navigation actions for that run; high-risk and navigation actions stay confirmation-gated, and denial disables planner auto-approval. Fresh Act snapshots carry bounded visual index geometry and an ephemeral screenshot for multimodal providers; screenshots are never persisted.
+- The Act permission is a bounded lease, not broad automation: validated HTTP(S) links may navigate, writes and risky controls remain confirmation-gated, no arbitrary selector or JavaScript is executed, and current-page actions stay DOM/semantic-control-only in every mode. Scope/diff runtime output stays indexed, bounded, and selector-free.
 - Development traces must never be sent through normal chat events or analytics. Review any local trace before sharing it because it may contain user-provided troubleshooting content.
 
 ## Current review risks

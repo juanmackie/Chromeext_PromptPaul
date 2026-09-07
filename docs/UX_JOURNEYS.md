@@ -171,6 +171,30 @@ resume, and abort cleanup), 5 (Act-off parity and trusted-mode limits).
   **without** credentials; provider/Codex/Hermes API keys, Hermes keys, and session
   pointers are never included in a backup or the restore file.
 
+## Six Day-1 acceptance journeys
+
+The six release-gate journeys are scripted as real-browser regression in
+[`tests/browser/acceptance-journeys.spec.js`](../tests/browser/acceptance-journeys.spec.js);
+the deterministic context/test/approval parts are asserted credential-free, and the
+natural-language answer bubbles are checked separately against a live provider.
+
+1. **Summarize an article with attached context** - summarize `article.html` and keep the
+   bounded page context attached.
+2. **Rewrite selected text, retaining surroundings** - select a phrase and rewrite it while
+   surrounding text stays intact.
+3. **Follow up on an attached document** - attach `notes.md` (bounded `document` context via
+   `ChatMedia.prepareDroppedFile`) and follow up on it without the document entering the vision
+   pipeline.
+4. **Filter a table and report matching rows** - read-only `page_find_text`-style observation over
+   `tables.html` without page mutations.
+5. **Fill a harmless form under approval** - a benign input mutation on `form.html` that goes
+   through the approval gate.
+6. **Compare two pages opened explicitly** - open `plan-a.html` and `plan-b.html` as separate
+   owned tabs via explicit multi-page research.
+
+Journey fixtures live in [`tests/browser/fixtures/`](../tests/browser/fixtures/)
+(`article.html`, `notes.md`, `tables.html`, `plan-a.html`, `plan-b.html`).
+
 ## WCAG AA best-effort checklist
 
 - Focus visibility: `:focus-visible` ring on all interactive elements

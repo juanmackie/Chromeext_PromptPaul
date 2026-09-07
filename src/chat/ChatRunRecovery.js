@@ -8,6 +8,110 @@ import { listPageActionCheckpoints } from '../utils/pageActionCheckpoint.js';
 const ACTIVE_RUN_KEY = 'promptPaulActiveRunV1';
 
 /**
+ * Decide, from ACTUAL runtime state, whether generic Retry must NOT replay an
+ * Act request. Blind replay is only dangerous when the last mutation may have
+ * been delivered but not verified (delivered_unverified / in-flight), or an
+ * interrupted checkpoint exists (uncertain_delivery / in_flight) whose state on
+ * the page is unknown. In those cases retrying could duplicate the change, so
+ * the caller must route through the fresh-inspection recovery path instead.
+ * @param {object} [state] - { unverified, hasCheckpoint, status, disposition }
+ * @returns {boolean}
+ */
+export function shouldGateActRetry(state = {}) {
+  const s = state || {};
+  const disposition = s.disposition || s.lastReceipt?.disposition;
+  return Boolean(
+    s.unverified === true ||
+    s.hasCheckpoint === true ||
+    disposition === 'delivered_unverified' ||
+    disposition === 'in_flight' ||
+    s.status === 'in_flight' ||
+    s.status === 'uncertain_delivery'
+  );
+}
+
+/**
+ * Deterministically summarize an Act run's outcome and the single best next
+ * recovery action, selected from ACTUAL runtime state (receipt dispositions,
+ * checkpoint presence, blocked planner steps, pending interactions). Used by the
+ * readable progress card and by the Retry gate. Never invents a parallel
+ * recovery UI: the returned action maps onto existing Stop / Watch run /
+ * Resume / clarification controls.
+ * @param {object} [state]
+ * @param {boolean} [state.unverified] - last delivery could not be confirmed.
+ * @param {boolean} [state.notDelivered] - last action was not delivered.
+ * @param {boolean} [state.verified] - last delivery was verified.
+ * @param {boolean} [state.hasCheckpoint] - an in-flight/uncertain checkpoint exists.
+ * @param {boolean} [state.taskComplete] - all planner steps resolved.
+ * @param {boolean} [state.active] - the run is still live.
+ * @param {string|null} [state.waiting] - 'approval'|'answer'|'manual'|null.
+ * @param {string} [state.status] - run status (complete/error/stopped/running...).
+ * @param {number} [state.completedSteps] - verified planner steps.
+ * @param {number} [state.blockedSteps] - blocked planner steps.
+ * @param {number} [state.remainingSteps] - unfinished planner steps.
+ * @returns {{hasVerifiedWork: boolean, verifiedCount: number, unresolved: string[], recoveryAction: string, recoveryMessage: string, gated: boolean}}
+ */
+export function selectActRecoveryOutcome(state = {}) {
+  const s = state || {};
+  const waiting = s.waiting || null;
+  const terminal = !['running', 'streaming', 'stopping'].includes(
+    String(s.status || '').toLowerCase()
+  );
+
+  const verifiedCount = (Number(s.completedSteps) || 0) + (s.verified === true ? 1 : 0);
+  const hasVerifiedWork = verifiedCount > 0;
+  const blockedSteps = Number(s.blockedSteps) || 0;
+  const remainingSteps = Number(s.remainingSteps) || 0;
+
+  const unresolved = [];
+  if (s.unverified === true) unresolved.push('unverified-mutation');
+  if (s.notDelivered === true) unresolved.push('not-delivered');
+  if (blockedSteps > 0) unresolved.push('blocked-steps');
+  if ((remainingSteps > 0 || s.taskComplete !== true) && s.unverified !== true) {
+    unresolved.push('unfinished-steps');
+  }
+  if (waiting) unresolved.push(`waiting-${waiting}`);
+
+  let recoveryAction = 'finished';
+  let recoveryMessage = 'No recovery is needed — this run finished with no unresolved work.';
+  if (s.active === true && !s.taskComplete && !waiting) {
+    recoveryAction = 'watch';
+    recoveryMessage = 'The task is still running. Watch run to follow its live progress.';
+  } else if (waiting === 'approval') {
+    recoveryAction = 'approve';
+    recoveryMessage = 'A page action is awaiting approval. Approve or deny it to continue.';
+  } else if (waiting === 'answer') {
+    recoveryAction = 'answer';
+    recoveryMessage = 'A question is awaiting your answer. Respond to continue.';
+  } else if (waiting === 'manual') {
+    recoveryAction = 'resume';
+    recoveryMessage = 'A manual step is paused. Complete it in the tab, then Resume.';
+  } else if (s.unverified === true || s.hasCheckpoint === true) {
+    recoveryAction = 'fresh-inspection';
+    recoveryMessage =
+      'The last page action may or may not have applied. Re-running it could duplicate the change — inspect the page fresh before continuing.';
+  } else if (blockedSteps > 0) {
+    recoveryAction = 'fresh-inspection';
+    recoveryMessage = 'A planner step was blocked. Re-inspect the page before retrying it.';
+  } else if (remainingSteps > 0 && !s.taskComplete && terminal) {
+    recoveryAction = 'retry-or-continue';
+    recoveryMessage = 'The task stopped before finishing. Continue from where it left off.';
+  } else if (!hasVerifiedWork && terminal && !s.taskComplete) {
+    recoveryAction = 'retry';
+    recoveryMessage = 'Nothing was changed on the page, so retrying the request is safe.';
+  }
+
+  return {
+    hasVerifiedWork,
+    verifiedCount,
+    unresolved,
+    recoveryAction,
+    recoveryMessage,
+    gated: recoveryAction === 'fresh-inspection',
+  };
+}
+
+/**
  * Persist only the opaque run identity needed to reconnect the panel.
  * @param {string|null} runId
  * @param {number|null} sourceTabId
