@@ -17,6 +17,8 @@ import { renderMarkdown } from '../utils/domSanitizer.js';
  * panel normally survives tab switches, while the bounded run journal restores
  * state if the panel page is closed or reloaded.
  */
+const MAX_HISTORY_MESSAGES = 150; // ponytail: bounded cap; upgrade if long-context chats become common
+
 export class StreamStateManager {
   constructor() {
     // Streaming UI state
@@ -446,6 +448,9 @@ export class StreamStateManager {
    */
   addMessageToHistory(message) {
     this.conversationHistory.push(message);
+    if (this.conversationHistory.length > MAX_HISTORY_MESSAGES) {
+      this.conversationHistory.splice(0, this.conversationHistory.length - MAX_HISTORY_MESSAGES);
+    }
   }
 
   /**

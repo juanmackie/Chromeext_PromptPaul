@@ -508,32 +508,44 @@ export function initComposer(options) {
 
   // Tray visibility follows its items' hidden attributes.
   if (useMutationObserver) {
-    new MutationObserver(syncTrayVisibility).observe(tray, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['hidden'],
-    });
+    if (tray) {
+      if (tray.__ppVisibilityObserver) tray.__ppVisibilityObserver.disconnect();
+      tray.__ppVisibilityObserver = new MutationObserver(syncTrayVisibility);
+      tray.__ppVisibilityObserver.observe(tray, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['hidden'],
+      });
+    }
   }
 
   // Run state drives inline recovery; quick actions follow context.
   if (useMutationObserver) {
-    new MutationObserver(refresh).observe(container, {
-      attributes: true,
-      attributeFilter: ['data-run-state'],
-    });
+    if (container) {
+      if (container.__ppRunStateObserver) container.__ppRunStateObserver.disconnect();
+      container.__ppRunStateObserver = new MutationObserver(refresh);
+      container.__ppRunStateObserver.observe(container, {
+        attributes: true,
+        attributeFilter: ['data-run-state'],
+      });
+    }
   } else if (container && typeof container.addEventListener === 'function') {
     container.addEventListener('data-run-state', refresh);
   }
 
   // The quick-action row reacts to tray context changes too.
   if (useMutationObserver) {
-    new MutationObserver(refresh).observe(tray, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['hidden'],
-    });
+    if (tray) {
+      if (tray.__ppContextObserver) tray.__ppContextObserver.disconnect();
+      tray.__ppContextObserver = new MutationObserver(refresh);
+      tray.__ppContextObserver.observe(tray, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['hidden'],
+      });
+    }
   }
 
   // Wire the tray's page-context Remove button to the detach handler.
