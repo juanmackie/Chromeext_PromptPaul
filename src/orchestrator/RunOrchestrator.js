@@ -5415,6 +5415,7 @@ class RunOrchestrator {
       'confirmationId',
       'approved',
       'approveAll',
+      'timedOut',
       'actions',
       'limit',
       'toolName',

@@ -10,6 +10,8 @@ import {
   isTrayVisible,
   ensureStopButton,
   ensureRecoveryRow,
+  resolveDocumentDrop,
+  buildDocumentPromptRequest,
 } from '../src/chat/ChatComposer.js';
 
 function makeElement(id, hidden = true) {
@@ -76,7 +78,20 @@ describe('getContextState', () => {
     expect(state.hasSelectedText).toBe(false);
     expect(state.hasPageContext).toBe(false);
     expect(state.hasMedia).toBe(false);
+    expect(state.hasDocument).toBe(false);
     expect(state.runState).toBe('idle');
+  });
+
+  it('detects a pending document attachment', () => {
+    const tray = makeTray(
+      makeElement('attachment-strip', true),
+      makeElement('document-strip', false),
+      makeElement('selected-text-strip', true),
+      makeElement('page-context-strip', true)
+    );
+    const state = getContextState(tray, makeContainer('idle'));
+    expect(state.hasDocument).toBe(true);
+    expect(state.hasMedia).toBe(false);
   });
 });
 
@@ -123,6 +138,17 @@ describe('getQuickActions / getContextActions / getOverflowActions', () => {
     );
     expect(labels).not.toContain('Summarize page');
     expect(labels).not.toContain('Ask about page');
+  });
+
+  it('treats a pending document as attached context for starter actions', () => {
+    const labels = getContextActions({
+      hasSelectedText: false,
+      hasPageContext: false,
+      hasDocument: true,
+    }).map((a) => a.label);
+    expect(labels).not.toContain('Summarize page');
+    expect(labels).not.toContain('Ask about page');
+    expect(labels).not.toContain('Act on page');
   });
 
   it('includes site suggestions only while page context is attached', () => {
@@ -545,5 +571,241 @@ describe('DOM-building helpers', () => {
   it('expose the controller', () => {
     expect(typeof chatComposer.initComposer).toBe('function');
     expect(typeof chatComposer.getQuickActions).toBe('function');
+  });
+});
+
+describe('resolveDocumentDrop', () => {
+  const docPlan = (name, text = 'content') => ({
+    kind: 'document',
+    preview: { type: 'text', name, truncated: false, lineCount: 2 },
+    instruction: 'Analyze this attached document.',
+    text,
+  });
+
+  it('returns no attachment and no message without document plans', () => {
+    expect(resolveDocumentDrop([])).toEqual({ attach: null, limitMessage: null });
+    expect(resolveDocumentDrop([{ kind: 'media' }, { kind: 'invalid', error: 'x' }])).toEqual({
+      attach: null,
+      limitMessage: null,
+    });
+    expect(resolveDocumentDrop(null)).toEqual({ attach: null, limitMessage: null });
+  });
+
+  it('attaches the first document without a limit message', () => {
+    const { attach, limitMessage } = resolveDocumentDrop([docPlan('notes.txt')]);
+    expect(attach).toMatchObject({ name: 'notes.txt', text: 'content', truncated: false });
+    expect(limitMessage).toBeNull();
+  });
+
+  it('keeps only the first document and reports one single-document limit message', () => {
+    const { attach, limitMessage } = resolveDocumentDrop([
+      docPlan('a.txt'),
+      docPlan('b.csv'),
+      docPlan('c.json'),
+    ]);
+    expect(attach.name).toBe('a.txt');
+    expect(limitMessage).toContain('Only one document can be attached at a time');
+    expect(limitMessage).toContain('a.txt');
+    expect(limitMessage).toContain('c.json');
+    expect(limitMessage).toContain('b.csv');
+  });
+
+  it('ignores malformed document plans', () => {
+    expect(resolveDocumentDrop([{ kind: 'document', preview: { name: '' }, text: '  ' }])).toEqual({
+      attach: null,
+      limitMessage: null,
+    });
+  });
+});
+
+describe('buildDocumentPromptRequest', () => {
+  const doc = {
+    name: 'notes.txt',
+    text: 'line one\nline two',
+    truncated: false,
+    lineCount: 2,
+    instruction: 'Analyze this attached document.',
+  };
+
+  it('builds the structured document context with bounded name metadata', () => {
+    const request = buildDocumentPromptRequest('Who owns the migration?', doc);
+    expect(request.instruction).toBe('Who owns the migration?');
+    expect(request.context).toEqual({
+      type: 'document',
+      text: 'line one\nline two',
+      metadata: { name: 'notes.txt' },
+    });
+    expect(JSON.stringify(request)).not.toContain('base64');
+  });
+
+  it('falls back to the document instruction when the typed prompt is empty', () => {
+    const request = buildDocumentPromptRequest('   ', doc);
+    expect(request.instruction).toBe('Analyze this attached document.');
+    expect(request.context.type).toBe('document');
+  });
+
+  it('returns null without a usable document', () => {
+    expect(buildDocumentPromptRequest('hi', null)).toBeNull();
+    expect(buildDocumentPromptRequest('hi', { name: '', text: 'x' })).toBeNull();
+  });
+});
+
+describe('initComposer pending document', () => {
+  function makeDocumentButton(id) {
+    return {
+      id,
+      hidden: false,
+      listeners: {},
+      addEventListener(type, fn) {
+        (this.listeners[type] = this.listeners[type] || []).push(fn);
+      },
+      click() {
+        (this.listeners.click || []).forEach((fn) => fn());
+      },
+    };
+  }
+
+  function makeDocumentStripFixture() {
+    const els = {
+      '#document-title': makeDocumentButton('document-title'),
+      '#document-details': makeDocumentButton('document-details'),
+      '#document-remove-button': makeDocumentButton('document-remove-button'),
+      '#document-conflict-actions': makeDocumentButton('document-conflict-actions'),
+      '#document-replace-button': makeDocumentButton('document-replace-button'),
+      '#document-keep-button': makeDocumentButton('document-keep-button'),
+    };
+    const strip = {
+      id: 'document-strip',
+      hidden: true,
+      querySelector: (sel) => els[sel] || null,
+    };
+    return { strip, els };
+  }
+
+  function buildDocumentFixtures() {
+    const { strip, els } = makeDocumentStripFixture();
+    const tray = makeTray(
+      makeElement('attachment-strip', true),
+      makeElement('selected-text-strip', true),
+      makeElement('page-context-strip', true),
+      strip
+    );
+    tray.hidden = true;
+    const row = { innerHTML: '', hidden: true, children: [] };
+    const controller = chatComposer.initComposer({
+      container: makeContainer('idle'),
+      tray,
+      row,
+      chatArea: { querySelectorAll: () => [] },
+      inputField: null,
+      handlers: {},
+    });
+    return { controller, tray, strip, els };
+  }
+
+  const doc = (name, text = 'a\nb', extra = {}) => ({
+    name,
+    text,
+    lineCount: 2,
+    ...extra,
+  });
+
+  it('attaches a pending document with filename, line count, and truncation status', () => {
+    const { controller, tray, strip, els } = buildDocumentFixtures();
+    controller.setPendingDocument(doc('notes.txt', 'a\nb', { truncated: true }));
+    expect(strip.hidden).toBe(false);
+    expect(tray.hidden).toBe(false);
+    expect(els['#document-title'].textContent).toBe('notes.txt');
+    expect(els['#document-details'].textContent).toContain('2 lines');
+    expect(els['#document-details'].textContent).toContain('truncated to fit the context budget');
+    expect(els['#document-conflict-actions'].hidden).toBe(true);
+    expect(els['#document-remove-button'].hidden).toBe(false);
+  });
+
+  it('exposes and clears the pending document record', () => {
+    const { controller, tray } = buildDocumentFixtures();
+    expect(controller.getPendingDocument()).toBeNull();
+    controller.setPendingDocument(doc('a.txt', 'hello'));
+    expect(controller.getPendingDocument()).toMatchObject({ name: 'a.txt', text: 'hello' });
+    controller.clearPendingDocument();
+    expect(controller.getPendingDocument()).toBeNull();
+    expect(tray.hidden).toBe(true);
+  });
+
+  it('ignores unusable pending documents', () => {
+    const { controller, tray } = buildDocumentFixtures();
+    controller.setPendingDocument(null);
+    controller.setPendingDocument({ name: '', text: 'x' });
+    controller.setPendingDocument({ name: 'a.txt', text: '   ' });
+    expect(controller.getPendingDocument()).toBeNull();
+    expect(tray.hidden).toBe(true);
+  });
+
+  it('offers an explicit Replace / Keep current choice for a second document', () => {
+    const { controller, strip, els } = buildDocumentFixtures();
+    controller.setPendingDocument(doc('first.txt', 'one'));
+    controller.setPendingDocument(doc('second.txt', 'two'));
+
+    expect(els['#document-title'].textContent).toBe('Replace attached document?');
+    expect(els['#document-details'].textContent).toContain('"second.txt"');
+    expect(els['#document-details'].textContent).toContain('"first.txt"');
+    expect(els['#document-conflict-actions'].hidden).toBe(false);
+    expect(els['#document-remove-button'].hidden).toBe(true);
+    // The original document is still the pending attachment.
+    expect(controller.getPendingDocument().name).toBe('first.txt');
+    expect(strip.hidden).toBe(false);
+  });
+
+  it('replaces only after the explicit Replace choice', () => {
+    const { controller, els } = buildDocumentFixtures();
+    controller.setPendingDocument(doc('first.txt', 'one'));
+    controller.setPendingDocument(doc('second.txt', 'two'));
+    els['#document-replace-button'].click();
+    expect(controller.getPendingDocument().name).toBe('second.txt');
+    expect(els['#document-conflict-actions'].hidden).toBe(true);
+    expect(els['#document-title'].textContent).toBe('second.txt');
+  });
+
+  it('keeps the original document after the Keep current choice', () => {
+    const { controller, els } = buildDocumentFixtures();
+    controller.setPendingDocument(doc('first.txt', 'one'));
+    controller.setPendingDocument(doc('second.txt', 'two'));
+    els['#document-keep-button'].click();
+    expect(controller.getPendingDocument().name).toBe('first.txt');
+    expect(els['#document-conflict-actions'].hidden).toBe(true);
+    expect(els['#document-title'].textContent).toBe('first.txt');
+  });
+
+  it('removes the pending document via the Remove button', () => {
+    const { controller, tray, els } = buildDocumentFixtures();
+    controller.setPendingDocument(doc('a.txt', 'one'));
+    els['#document-remove-button'].click();
+    expect(controller.getPendingDocument()).toBeNull();
+    expect(tray.hidden).toBe(true);
+  });
+
+  it('clears the chip only for a successful sent run and retains it on failure', () => {
+    const { controller, tray } = buildDocumentFixtures();
+    controller.setPendingDocument(doc('a.txt', 'hello'));
+    controller.beginDocumentSend();
+    controller.finishDocumentSend();
+    expect(controller.getPendingDocument()).toBeNull();
+    expect(tray.hidden).toBe(true);
+
+    // Failed submission: begin then cancel retains the attachment.
+    controller.setPendingDocument(doc('b.txt', 'kept'));
+    controller.beginDocumentSend();
+    controller.cancelDocumentSend();
+    expect(controller.getPendingDocument()).toMatchObject({ name: 'b.txt' });
+
+    // A successful non-document run never clears an unclaimed attachment.
+    controller.beginDocumentSend();
+    controller.cancelDocumentSend();
+    controller.finishDocumentSend();
+    expect(controller.getPendingDocument()).toMatchObject({ name: 'b.txt' });
+
+    // finishDocumentSend without begin is a no-op.
+    controller.finishDocumentSend();
+    expect(controller.getPendingDocument()).toMatchObject({ name: 'b.txt' });
   });
 });

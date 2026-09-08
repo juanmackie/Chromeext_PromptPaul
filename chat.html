@@ -161,8 +161,10 @@
     <div id="drop-overlay" class="drop-overlay hidden">
       <div class="drop-overlay-content">
         <p class="drop-overlay-icon">&#x2B06;</p>
-        <p>Drop images or files here to analyze</p>
-        <p class="drop-overlay-hint">Supports images, videos, and audio files</p>
+        <p>Drop files here to attach them</p>
+        <p class="drop-overlay-hint">
+          Supports images, videos, audio, and .txt/.md/.csv/.json documents
+        </p>
       </div>
     </div>
     <div class="chat-container">
@@ -201,6 +203,39 @@
                 >
               </div>
               <button id="attachment-remove-button" class="attachment-remove-button" type="button">
+                Remove
+              </button>
+            </div>
+            <div id="document-strip" class="attachment-strip document-strip" hidden>
+              <span class="material-symbols-outlined selected-text-strip-icon">draft</span>
+              <div class="attachment-copy">
+                <span id="document-title" class="attachment-title">Document attached</span>
+                <span id="document-details" class="attachment-details"></span>
+              </div>
+              <div id="document-conflict-actions" class="document-conflict-actions" hidden>
+                <button
+                  id="document-replace-button"
+                  class="ext-btn ext-btn--sm ext-btn--primary"
+                  type="button"
+                  title="Replace the attached document with the newly dropped one"
+                >
+                  Replace
+                </button>
+                <button
+                  id="document-keep-button"
+                  class="ext-btn ext-btn--sm ext-btn--ghost"
+                  type="button"
+                  title="Keep the currently attached document"
+                >
+                  Keep current
+                </button>
+              </div>
+              <button
+                id="document-remove-button"
+                class="attachment-remove-button"
+                type="button"
+                title="Remove the attached document"
+              >
                 Remove
               </button>
             </div>

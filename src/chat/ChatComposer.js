@@ -1,9 +1,11 @@
 /**
  * @fileoverview Chat Composer Module - composer-led chat UI primitives.
  *
- * Owns the visible context tray, the contextual quick-action row, and inline
- * Stop/Retry/Edit/Continue recovery so chat.js stays under its line limit.
- * State is read from the DOM (tray item visibility, the input area's
+ * Owns the visible context tray, the contextual quick-action row, inline
+ * Stop/Retry/Edit/Continue recovery, and the pending document attachment
+ * (one bounded text document at a time, held in memory only, with an
+ * explicit Replace / Keep current choice) so chat.js stays under its line
+ * limit. State is read from the DOM (tray item visibility, the input area's
  * data-run-state attribute) so no duplicated state lives in chat.js.
  *
  * @module ChatComposer
@@ -39,6 +41,10 @@ const STARTER_ACTIONS = [
   { id: 'act-page', label: 'Act on page', type: 'act-page' },
 ];
 
+// Pending document attachment: one document at a time, held in memory only.
+const DOCUMENT_STRIP_ID = 'document-strip';
+const DOCUMENT_DEFAULT_INSTRUCTION = 'Analyze this attached document.';
+
 // The row is capped so it never crowds the composer; the rest go to overflow.
 const MAX_VISIBLE_ACTIONS = 4;
 
@@ -56,6 +62,7 @@ export function getContextState(tray, container) {
     hasSelectedText: !findHidden('selected-text-strip'),
     hasPageContext: !findHidden('page-context-strip'),
     hasMedia: !findHidden('attachment-strip'),
+    hasDocument: !findHidden(DOCUMENT_STRIP_ID),
     runState: isRunState(runState) ? runState : RUN_STATES.IDLE,
     isActive: isActiveRunState(runState),
   };
@@ -73,12 +80,15 @@ export function getContextActions(state, siteActions = []) {
   const hasSelectedText = Boolean(state && state.hasSelectedText);
   const hasPageContext = Boolean(state && state.hasPageContext);
   const hasMedia = Boolean(state && state.hasMedia);
+  const hasDocument = Boolean(state && state.hasDocument);
   if (hasSelectedText) actions.push(...TEXT_ACTIONS);
   if (hasPageContext) actions.push(...PAGE_ACTIONS);
   if (hasPageContext && Array.isArray(siteActions)) actions.push(...siteActions);
   // No attached context: offer starter actions so the panel starts work.
   // Site suggestions stay page-scoped (only when page context is attached).
-  if (!hasSelectedText && !hasPageContext && !hasMedia) actions.push(...STARTER_ACTIONS);
+  if (!hasSelectedText && !hasPageContext && !hasMedia && !hasDocument) {
+    actions.push(...STARTER_ACTIONS);
+  }
   return actions;
 }
 
@@ -321,6 +331,89 @@ function makeRecoveryButton(label, title) {
   return button;
 }
 
+/* ── Pending document attachment ─────────────────────────────────────── */
+
+/**
+ * Normalize a dropped-document plan into the pending document record held in
+ * composer memory. Returns null for unusable input; never persists anything.
+ * @param {Object|null} doc - { name, text, truncated?, lineCount?, instruction? }.
+ * @returns {Object|null} Normalized record or null.
+ */
+function normalizePendingDocument(doc) {
+  if (!doc || typeof doc !== 'object') return null;
+  const name = String(doc.name || '').trim();
+  const text = typeof doc.text === 'string' ? doc.text : '';
+  if (!name || !text.trim()) return null;
+  return {
+    name,
+    text,
+    truncated: Boolean(doc.truncated),
+    lineCount: Number.isFinite(doc.lineCount) ? doc.lineCount : null,
+    instruction: String(doc.instruction || DOCUMENT_DEFAULT_INSTRUCTION),
+  };
+}
+
+/**
+ * Resolve a drop batch's document plans under the one-pending-document rule.
+ * The first document plan becomes the attachment candidate; any additional
+ * documents are reported in one actionable single-document limit message.
+ * Pure: no DOM, no state, no network.
+ * @param {Array} plans - Prepared plans from ChatMedia.prepareDroppedFile().
+ * @returns {{attach: Object|null, limitMessage: string|null}} Attachment
+ *   candidate for composer.setPendingDocument() and an optional limit message.
+ */
+export function resolveDocumentDrop(plans) {
+  const documents = (Array.isArray(plans) ? plans : []).filter(
+    (plan) => plan && plan.kind === 'document'
+  );
+  if (documents.length === 0) return { attach: null, limitMessage: null };
+
+  const first = documents[0];
+  const attach = normalizePendingDocument({
+    name: first.preview && first.preview.name,
+    text: first.text,
+    truncated: first.preview && first.preview.truncated,
+    lineCount: first.preview && first.preview.lineCount,
+    instruction: first.instruction,
+  });
+  if (!attach) return { attach: null, limitMessage: null };
+
+  let limitMessage = null;
+  if (documents.length > 1) {
+    const skipped = documents
+      .slice(1)
+      .map((plan) => (plan.preview && plan.preview.name) || 'document')
+      .join(', ');
+    limitMessage =
+      `Only one document can be attached at a time. Attached "${attach.name}"; skipped: ${skipped}. ` +
+      'Remove the attached document and drop another file to replace it.';
+  }
+  return { attach, limitMessage };
+}
+
+/**
+ * Build the structured prompt request for sending a pending document. The
+ * document text travels as untrusted source material under the `document`
+ * context type; the filename is bounded display metadata. Callers pass the
+ * result to composeUserPrompt via makeApiCall. Pure.
+ * @param {string} instruction - The user's typed instruction (may be empty).
+ * @param {Object|null} doc - Pending document record from the composer.
+ * @returns {Object|null} {instruction, context} request, or null without a doc.
+ */
+export function buildDocumentPromptRequest(instruction, doc) {
+  const pending = normalizePendingDocument(doc);
+  if (!pending) return null;
+  const typed = String(instruction || '').trim();
+  return {
+    instruction: typed || pending.instruction,
+    context: {
+      type: 'document',
+      text: pending.text,
+      metadata: { name: pending.name },
+    },
+  };
+}
+
 /* ── Composer controller ─────────────────────────────────────────────── */
 
 /**
@@ -346,6 +439,10 @@ export function initComposer(options) {
   const { container, tray, row, chatArea, overflowMenu, handlers } = options || {};
   let actEnabled = Boolean(options && options.actEnabled);
   let currentSiteActions = (options && options.siteActions) || [];
+  // Pending document attachment state. Memory only: never written to storage.
+  let pendingDocument = null;
+  let pendingDocumentConflict = null;
+  let documentSentInRun = false;
   const useMutationObserver =
     typeof MutationObserver === 'function' &&
     container &&
@@ -506,6 +603,67 @@ export function initComposer(options) {
     if (tray.hidden !== shouldHide) tray.hidden = shouldHide;
   }
 
+  function findDocumentStrip() {
+    if (!tray || !tray.children) return null;
+    return Array.from(tray.children).find((child) => child.id === DOCUMENT_STRIP_ID) || null;
+  }
+
+  /**
+   * Render the pending document strip: normal attached mode, or the explicit
+   * Replace / Keep current conflict choice when a second document was dropped.
+   * No-op when the tray has no document strip (fixture or missing element).
+   */
+  function renderPendingDocument() {
+    const strip = findDocumentStrip();
+    if (!strip) return;
+    const query = (selector) =>
+      typeof strip.querySelector === 'function' ? strip.querySelector(selector) : null;
+    const titleEl = query('#document-title');
+    const detailsEl = query('#document-details');
+    const removeButton = query('#document-remove-button');
+    const conflictActions = query('#document-conflict-actions');
+
+    if (pendingDocumentConflict && pendingDocument) {
+      // Explicit Replace or Keep current choice; Remove is hidden so the
+      // dropped document never silently replaces (or silently vanishes).
+      if (titleEl) titleEl.textContent = 'Replace attached document?';
+      if (detailsEl) {
+        detailsEl.textContent = `"${pendingDocumentConflict.name}" will replace "${pendingDocument.name}".`;
+      }
+      if (conflictActions) conflictActions.hidden = false;
+      if (removeButton) removeButton.hidden = true;
+    } else if (pendingDocument) {
+      const detailParts = [];
+      if (Number.isFinite(pendingDocument.lineCount)) {
+        detailParts.push(
+          `${pendingDocument.lineCount} line${pendingDocument.lineCount === 1 ? '' : 's'}`
+        );
+      }
+      if (pendingDocument.truncated) {
+        detailParts.push('truncated to fit the context budget');
+      }
+      if (titleEl) titleEl.textContent = pendingDocument.name;
+      if (detailsEl) {
+        detailsEl.textContent = detailParts.length
+          ? detailParts.join(', ')
+          : 'Text document attached';
+      }
+      if (conflictActions) conflictActions.hidden = true;
+      if (removeButton) removeButton.hidden = false;
+    }
+
+    strip.hidden = !(pendingDocument || pendingDocumentConflict);
+    syncTrayVisibility();
+    refresh();
+  }
+
+  function clearPendingDocument() {
+    pendingDocument = null;
+    pendingDocumentConflict = null;
+    documentSentInRun = false;
+    renderPendingDocument();
+  }
+
   // Tray visibility follows its items' hidden attributes.
   if (useMutationObserver) {
     if (tray) {
@@ -560,6 +718,26 @@ export function initComposer(options) {
     pageContextRemoveButton.addEventListener('click', () => handlers.onDetachPage());
   }
 
+  // Wire the document strip's Remove and Replace / Keep current buttons.
+  const documentStrip = findDocumentStrip();
+  if (documentStrip && typeof documentStrip.querySelector === 'function') {
+    const wireDocumentButton = (selector, handler) => {
+      const el = documentStrip.querySelector(selector);
+      if (el && typeof el.addEventListener === 'function') el.addEventListener('click', handler);
+    };
+    wireDocumentButton('#document-remove-button', () => clearPendingDocument());
+    wireDocumentButton('#document-replace-button', () => {
+      if (!pendingDocumentConflict) return;
+      pendingDocument = pendingDocumentConflict;
+      pendingDocumentConflict = null;
+      renderPendingDocument();
+    });
+    wireDocumentButton('#document-keep-button', () => {
+      pendingDocumentConflict = null;
+      renderPendingDocument();
+    });
+  }
+
   syncTrayVisibility();
   refresh();
 
@@ -611,6 +789,55 @@ export function initComposer(options) {
         refresh();
       }
     },
+    /**
+     * Attach a prepared dropped document as the pending composer attachment.
+     * When a document is already pending, the new drop opens an explicit
+     * Replace / Keep current choice instead of silently replacing it.
+     * @param {Object} doc - { name, text, truncated?, lineCount?, instruction? }.
+     */
+    setPendingDocument(doc) {
+      const next = normalizePendingDocument(doc);
+      if (!next) return;
+      if (pendingDocument) {
+        pendingDocumentConflict = next;
+      } else {
+        pendingDocument = next;
+      }
+      renderPendingDocument();
+    },
+    /**
+     * The pending document record, or null. The record (including document
+     * text) lives only in this closure; nothing is written to storage.
+     * @returns {Object|null}
+     */
+    getPendingDocument() {
+      return pendingDocument;
+    },
+    clearPendingDocument,
+    /** Mark the pending document as included in the run now starting. */
+    beginDocumentSend() {
+      if (pendingDocument) documentSentInRun = true;
+    },
+    /**
+     * Terminal success: the document was consumed into conversation history,
+     * so the chip is cleared and follow-ups rely on history.
+     */
+    finishDocumentSend() {
+      if (!documentSentInRun) return;
+      documentSentInRun = false;
+      if (pendingDocument || pendingDocumentConflict) {
+        pendingDocument = null;
+        pendingDocumentConflict = null;
+        renderPendingDocument();
+      }
+    },
+    /**
+     * Terminal failure/stop: retain the pending document (and its chip) so the
+     * user can retry, edit, or resend it.
+     */
+    cancelDocumentSend() {
+      documentSentInRun = false;
+    },
   };
 }
 
@@ -626,4 +853,6 @@ export const chatComposer = {
   getLastAssistantBubble,
   ensureStopButton,
   ensureRecoveryRow,
+  resolveDocumentDrop,
+  buildDocumentPromptRequest,
 };

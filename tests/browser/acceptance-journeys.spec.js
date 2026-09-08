@@ -21,8 +21,9 @@
  * selected passage retained with its surroundings, a dropped document attached
  * as a named chip, filtered rows reported from real page state, an approved
  * mutation delivering verified values onto the fixture, and two pages each
- * explicitly read before comparison -- are asserted here with no provider
- * selected. The natural-language bubbles/answers a live model would produce
+ * explicitly read before comparison -- are asserted here (journey 3 seeds a
+ * local GET-only fixture endpoint so its failed-run retention case stays
+ * deterministic and credential-free). The natural-language bubbles/answers a live model would produce
  * are deliberately kept out of the scripted gate and trailed separately.
  *
  * @module acceptanceJourneysBrowserSpec
@@ -73,6 +74,28 @@ async function attachPageContext(chat, target) {
 async function sendPrompt(chat, text) {
   await chat.locator('#user-input').fill(text);
   await chat.locator('#send-button').click();
+}
+
+/** Seed a usable API profile pointing at the local fixture server. */
+async function seedLocalProfile(chat, endpointUrl) {
+  await chat.evaluate((endpoint) => {
+    return chrome.storage.local.get(['profiles']).then(({ profiles = [] }) => {
+      const next = profiles.filter((p) => p.id !== 'acceptance-fixture');
+      next.push({
+        id: 'acceptance-fixture',
+        name: 'Acceptance fixture',
+        provider: 'api',
+        llmEndpoint: endpoint,
+        // Fixture-only placeholder; never a real credential.
+        apiKey: 'pp-local-fixture-not-a-real-key',
+        modelName: 'fixture-model',
+      });
+      return chrome.storage.local.set({
+        profiles: next,
+        lastSelectedProfileId: 'acceptance-fixture',
+      });
+    });
+  }, endpointUrl);
 }
 
 /**
@@ -288,23 +311,30 @@ test('acceptance 3: follow up on an attached document', async () => {
     const mdUrl = fixtureUrl(fixtureServer, 'notes.md');
     const text = await (await context.request.get(mdUrl)).text();
 
-    // Drop the document into the chat as bounded text context.
-    await dispatchDocumentDrop(chat, 'notes.md', text);
+    // The fixture endpoint only serves GETs; the run POST fails fast, which is
+    // the deterministic credential-free "failed submission" case.
+    await seedLocalProfile(chat, fixtureUrl(fixtureServer, 'fixture-model'));
 
-    // The document attaches as a bounded text chip naming the file (rendered by
-    // ChatUI.addMediaPreview for type==='text'). This is deterministic and
-    // reachable credential-free; the live-model answer below is separated.
-    await expect(
-      chat.locator('.message.system-message').filter({ hasText: 'Document attached: notes.md' })
-    ).toBeVisible();
+    // Drop the document into the chat: it attaches as a bounded text chip in
+    // the composer tray WITHOUT any provider request (no run starts).
+    await dispatchDocumentDrop(chat, 'notes.md', text);
+    await expect(chat.locator('#document-strip')).toBeVisible();
+    await expect(chat.locator('#document-title')).toHaveText('notes.md');
+    await expect(chat.locator('.message.user-message')).toHaveCount(0);
 
     // Ask a follow-up question referencing the attached document.
     await sendPrompt(chat, 'Who owns the migration to the new data platform?');
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'error', {
+      timeout: 45000,
+    });
 
-    // The attached document context is retained across the follow-up message.
-    await expect(
-      chat.locator('.message.system-message').filter({ hasText: 'Document attached: notes.md' })
-    ).toBeVisible();
+    // The run was sent with the structured document context bound to the user
+    // message, and a failed submission RETAINS the attachment in the tray.
+    await expect(chat.locator('.message.user-message').last()).toContainText(
+      'Who owns the migration to the new data platform?'
+    );
+    await expect(chat.locator('#document-strip')).toBeVisible();
+    await expect(chat.locator('#document-title')).toHaveText('notes.md');
 
     // SEPARATED (live-model output): assert the follow-up answer names Diego,
     // e.g.:

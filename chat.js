@@ -281,6 +281,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function clearSelectedTextState() {
     selectedText = null;
+    // Releasing the sticky selection also releases the source-tab identity
+    // that arrived with it (so the next live selection read follows the
+    // browser's active tab), but only when the selection handoff actually
+    // established the tab. A media/page/notch handoff owns the tab identity
+    // and must survive a later selection-chip clear.
+    if (selectionOwnsTabId) {
+      tabId = null;
+      selectionOwnsTabId = false;
+    }
     selectedTextDiv.textContent = '';
     refreshSelectedTextActionState();
     syncChatAreaHeight();
@@ -897,6 +906,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let selectedText = null;
   let tabId = null;
+  // Tracks whether the current tabId was established by a sticky-selection
+  // handoff. When true, clearing the selection also releases the tab identity;
+  // when false the tab came from a media/page/notch handoff and survives a
+  // later selection-chip clear, so getRunSourceTabId keeps following it.
+  let selectionOwnsTabId = false;
   let panelTabId = null; // Owning tab for this side panel (set from message sender)
   let lastProcessedPanelActionId = null;
   let isResponseInFlight = false;
@@ -962,6 +976,13 @@ document.addEventListener('DOMContentLoaded', () => {
     userInput.disabled = false;
     sendButton.disabled = false;
     clearButton.textContent = 'Clear';
+    // A pending document consumed into a successful run is spent: follow-ups
+    // rely on conversation history. Failed or stopped runs retain it.
+    if (runState === RUN_STATES.COMPLETE) {
+      composer.finishDocumentSend();
+    } else {
+      composer.cancelDocumentSend();
+    }
     setRunState(inputArea, runState);
     void clearActiveRun();
   }
@@ -1420,6 +1441,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (request && request.context && request.context.type === 'selected_text') {
           applySelectedTextContext(request.context.text);
         }
+        if (
+          request &&
+          request.context &&
+          request.context.type === 'document' &&
+          !composer.getPendingDocument()
+        ) {
+          // Re-attach the original document identity (memory only) unless a
+          // document is already pending, which would force a replace choice.
+          composer.setPendingDocument({
+            name: request.context.metadata?.name || 'document',
+            text: String(request.context.text || ''),
+            truncated: false,
+          });
+        }
         userInput.value = instruction || '';
         userInput.dispatchEvent(new Event('input'));
         userInput.focus();
@@ -1461,6 +1496,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectedText = request.selectedText || '';
     tabId = request.tabId;
+    selectionOwnsTabId = true;
     refreshSelectedTextActionState();
 
     // Deep-link instruction: run it immediately against the attached context.
@@ -1516,6 +1552,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mediaData = request.mediaData || {};
     tabId = request.tabId;
+    selectionOwnsTabId = false;
 
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
@@ -1593,6 +1630,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (request.actionId) lastProcessedPanelActionId = request.actionId;
 
     tabId = request.tabId;
+    selectionOwnsTabId = false;
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
     const actionMenu = document.getElementById('quick-actions-more');
@@ -1613,6 +1651,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     tabId = request.tabId;
+    selectionOwnsTabId = false;
     const selected = String(request.selectedText || '')
       .trim()
       .slice(0, 20_000);
@@ -1696,6 +1735,7 @@ document.addEventListener('DOMContentLoaded', () => {
       selectedText = pinnedSelection;
       refreshSelectedTextActionState();
     }
+    selectionOwnsTabId = Boolean(pinnedSelection);
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
     chrome.storage.local.get(['instructions'], (result) => {
@@ -1751,6 +1791,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectedText = text;
     tabId = request.tabId;
+    selectionOwnsTabId = true;
     refreshSelectedTextActionState();
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
@@ -1769,6 +1810,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const response = request.pageData || {};
     if (response.isPdf) {
       tabId = request.tabId;
+      selectionOwnsTabId = false;
       chatMainArea.classList.remove('hidden');
       oneoffInstructionArea.classList.add('hidden');
       void executePagePresetMode('summary');
@@ -1793,6 +1835,7 @@ document.addEventListener('DOMContentLoaded', () => {
       PRESET_MODES
     );
     tabId = request.tabId;
+    selectionOwnsTabId = false;
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
     chatUI.addMessage('System', 'Summarizing page…');
@@ -2390,6 +2433,7 @@ document.addEventListener('DOMContentLoaded', () => {
       streamState.startNewConversation();
       clearCurrentMediaData();
       clearSelectedTextState();
+      composer.clearPendingDocument();
       if (lastLoadedPageContext) detachPageContext(true);
     },
     onError: (error) =>
@@ -2488,46 +2532,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chatUI.addMessage('System', `Processing ${files.length} dropped file(s)...`);
 
-    for (const file of files) {
-      try {
-        const mediaModule = await getChatMedia();
-        const plan = await mediaModule.prepareDroppedFile(file);
+    try {
+      const mediaModule = await getChatMedia();
+      const plans = [];
+      for (const file of files) {
+        try {
+          plans.push(await mediaModule.prepareDroppedFile(file));
+        } catch (err) {
+          console.error('Drop handler error:', err);
+          chatUI.addMessage('System', `❌ Error processing ${file.name}: ${err.message}`);
+        }
+      }
+
+      // Documents (.txt/.md/.csv/.json) attach as bounded text context in the
+      // composer tray. Dropping NEVER starts a provider request: the pending
+      // document is sent only when the user sends a prompt. One document at a
+      // time; extra documents get one actionable limit message (ChatComposer).
+      const drop = chatComposer.resolveDocumentDrop(plans);
+      if (drop.limitMessage) chatUI.addMessage('System', drop.limitMessage);
+      if (drop.attach) composer.setPendingDocument(drop.attach);
+
+      // Images/video/audio keep the existing auto-analyze media pipeline;
+      // invalid files surface their validation errors.
+      for (const plan of plans) {
         if (plan.kind === 'invalid') {
           chatUI.addMessage('System', `❌ ${plan.error}`);
           continue;
         }
-
-        if (plan.kind === 'document') {
-          // Documents (.txt/.md/.csv/.json) are bounded text context, never base64 media.
-          chatUI.addMediaPreview(plan.preview);
-          makeApiCall({
-            instruction: plan.instruction,
-            context: {
-              type: 'document',
-              text: plan.text,
-              metadata: { name: plan.preview.name },
-            },
-          });
-          continue;
-        }
-
+        if (plan.kind !== 'media') continue;
         chatUI.addMediaPreview(plan.mediaData);
         setCurrentMediaData(plan.mediaData);
-
-        // Auto-analyze with prompt
-        makeApiCallWithMedia(
-          {
-            instruction: plan.instruction,
-            context: {
-              type: 'media',
-            },
-          },
-          plan.mediaData
-        );
-      } catch (err) {
-        console.error('Drop handler error:', err);
-        chatUI.addMessage('System', `❌ Error processing ${file.name}: ${err.message}`);
+        // A pending document (dropped before this image) rides along as
+        // structured context in the auto-analyze run, sharing the same
+        // begin/finish/cancel lifecycle: it is spent on terminal success and
+        // retained on failure or stop.
+        const pendingDoc = composer.getPendingDocument();
+        makeApiCallWithMedia(buildMediaPromptRequest(plan.instruction, pendingDoc), plan.mediaData);
+        if (pendingDoc) composer.beginDocumentSend();
       }
+    } catch (err) {
+      console.error('Drop handler error:', err);
+      chatUI.addMessage('System', `❌ Error processing dropped files: ${err.message}`);
     }
   });
 
@@ -2621,16 +2666,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /**
+   * Build the prompt request for a media send. A pending document rides along
+   * as structured context through composeUserPrompt; without one the request
+   * carries only the media marker. Media still attaches via makeApiCallWithMedia's
+   * mediaData parameter in either case.
+   * @param {string} instruction - The typed or fallback instruction.
+   * @param {Object|null} document - Pending document record, or null.
+   * @returns {Object} Prompt request for the media run.
+   */
+  function buildMediaPromptRequest(instruction, document) {
+    return document
+      ? chatComposer.buildDocumentPromptRequest(instruction, document)
+      : {
+          instruction,
+          context: { type: 'media' },
+        };
+  }
+
   async function sendMessage() {
     streamState.setActiveToolCall(null); // Reset active tool call
     const message = userInput.value;
     const mediaData = streamState.getMediaData();
+    const pendingDocument = composer.getPendingDocument();
     const hasText = message.trim().length > 0;
     const hasMedia = Boolean(mediaData?.base64);
+    const hasDocument = Boolean(pendingDocument);
 
-    if ((hasText || hasMedia) && !userInput.disabled) {
+    if ((hasText || hasMedia || hasDocument) && !userInput.disabled) {
       let requestedSkill = null;
-      let effectiveMessage = hasText ? message : `Analyze this ${mediaData?.type || 'image'}`;
+      let effectiveMessage = hasText
+        ? message
+        : hasMedia
+          ? `Analyze this ${mediaData?.type || 'image'}`
+          : '';
 
       if (hasText) {
         // Fetch available skills
@@ -2674,17 +2743,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (hasMedia) {
+        // A pending document rides along as structured context: the media still
+        // attaches through makeApiCallWithMedia's mediaData, but the prompt
+        // request carries the document through composeUserPrompt and shares the
+        // same begin/finish/cancel lifecycle as a document-only send. A failed
+        // submission retains the chip; terminal success clears it.
         makeApiCallWithMedia(
-          {
-            instruction: effectiveMessage,
-            context: {
-              type: 'media',
-            },
-          },
+          buildMediaPromptRequest(effectiveMessage, hasDocument ? pendingDocument : null),
           mediaData,
           'auto',
           requestedSkill
         );
+        if (hasDocument) composer.beginDocumentSend();
+      } else if (hasDocument) {
+        // Structured document context through composeUserPrompt; a failed
+        // submission retains the attachment (cleared only on terminal success
+        // via finishDocumentSend), and Retry/Edit replay the bound identity.
+        makeApiCall(
+          chatComposer.buildDocumentPromptRequest(effectiveMessage, pendingDocument),
+          'auto',
+          requestedSkill
+        );
+        composer.beginDocumentSend();
       } else {
         makeApiCall({ instruction: effectiveMessage }, 'auto', requestedSkill);
       }

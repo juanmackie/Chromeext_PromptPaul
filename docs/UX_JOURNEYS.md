@@ -37,7 +37,8 @@ Steps:
    (`previous_response` context), proving context continuity.
 6. Click **Edit** - the last prompt is loaded into the composer for editing.
 7. Detach the selection via the tray chip; sidebar actions now run as
-   conversation follow-ups.
+   conversation follow-ups, and the captured source tab is released so the next
+   live selection read follows the active tab.
 
 Verification: axes 1 (history intact), 2 (context menu → chat), 3 (theme),
 4 (selection persists across actions and recovery), 5 (presets unchanged).
@@ -72,18 +73,24 @@ Steps:
    analysis runs and streams.
 3. Paste or drop a second image while a selection exists - both contexts show
    in the tray; sending combines them.
-4. From the Options page, click **Open Chat** (Get Started banner) - the
+4. Drop a text document (`.txt`, `.md`, `.markdown`, `.csv`, or `.json`) into
+   the panel - it attaches as a named chip in the composer **context tray**
+   (filename, truncation status when bounded, Remove) and **no run starts**.
+   Sending uses the structured `document` context, never the vision pipeline. A
+   second document asks **Replace** or **Keep current**; a failed submission
+   keeps the chip for Retry/Edit, and terminal success clears it.
+5. From the Options page, click **Open Chat** (Get Started banner) - the
    browser side panel opens in the current window directly from the button
    gesture; the Options page does not open a full-page chat tab.
-5. From the website (promptpaul.juanmackie.com, `externally_connectable`),
+6. From the website (promptpaul.juanmackie.com, `externally_connectable`),
    send `chrome.runtime.sendMessage(EXTENSION_ID, { action: 'openChat',
 context: { selectedText, mediaUrl } })` - the chat opens with the context
    attached; a `textPrompt` instruction runs automatically.
-6. Click the toolbar icon - the side panel opens in the current tab.
+7. Click the toolbar icon - the side panel opens in the current tab.
 
 Verification: axes 1 (media bytes + error paths preserved), 2 (three entry
-paths - context menu, Options, website deep link, toolbar), 4 (attachment
-continuity), 5 (media analysis unchanged).
+paths - context menu, Options, website deep link, toolbar), 4 (attachment and
+document continuity, no auto-send on drop), 5 (media analysis unchanged).
 
 ## Journey 4 - Browser-page Top Notch
 
@@ -182,9 +189,13 @@ natural-language answer bubbles are checked separately against a live provider.
    bounded page context attached.
 2. **Rewrite selected text, retaining surroundings** - select a phrase and rewrite it while
    surrounding text stays intact.
-3. **Follow up on an attached document** - attach `notes.md` (bounded `document` context via
-   `ChatMedia.prepareDroppedFile`) and follow up on it without the document entering the vision
-   pipeline.
+3. **Follow up on an attached document** - drop `notes.md` onto the panel: it
+   attaches as a bounded `document`-context tray chip via
+   `ChatMedia.prepareDroppedFile` + `ChatComposer` with no provider request and
+   no entry into the vision pipeline. The scripted case seeds a local GET-only
+   fixture profile, sends, asserts the deterministic failure, and checks that
+   the document identity stays bound to the user message with the chip retained
+   after the failed submission.
 4. **Filter a table and report matching rows** - read-only `page_find_text`-style observation over
    `tables.html` without page mutations.
 5. **Fill a harmless form under approval** - a benign input mutation on `form.html` that goes

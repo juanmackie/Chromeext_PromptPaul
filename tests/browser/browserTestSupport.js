@@ -178,8 +178,107 @@ async function launchTestBrowser(userDataDir) {
   return { context };
 }
 
-function serveFixture(request, response) {
-  const requestPath = new URL(request.url, 'http://127.0.0.1').pathname;
+const MOCK_CHAT_PATH = '/mock-chat';
+const MOCK_CHAT_REPLY = 'Mock provider reply: the attached context was received.';
+
+/**
+ * Read a bounded request body from a mock-provider POST.
+ * @param {http.IncomingMessage} request
+ * @returns {Promise<string>}
+ */
+function readMockRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    request.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > 1_000_000) {
+        request.destroy();
+        reject(new Error('Mock chat request body exceeded 1 MB.'));
+      }
+    });
+    request.on('end', () => resolve(raw));
+    request.on('error', reject);
+  });
+}
+
+/**
+ * Build a bounded OpenAI-style SSE stream that emits one deterministic reply.
+ * @param {string} content
+ * @returns {string}
+ */
+function openAiSsePayload(content) {
+  const base = {
+    id: 'chatcmpl-mock',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'fixture-model',
+  };
+  const first = {
+    ...base,
+    choices: [{ index: 0, delta: { role: 'assistant', content }, finish_reason: null }],
+  };
+  const last = { ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] };
+  return `data: ${JSON.stringify(first)}\n\ndata: ${JSON.stringify(last)}\n\ndata: [DONE]\n\n`;
+}
+
+/**
+ * Handle a POST to the mock chat-completions endpoint: record the bounded
+ * request (Authorization presence only, never the credential value) and
+ * answer with a deterministic OpenAI-style SSE stream.
+ * @param {http.IncomingMessage} request
+ * @param {http.ServerResponse} response
+ * @param {{mockRequests: Array, holdRelease: Function|null}} state
+ * @param {URL} requestUrl
+ * @returns {void}
+ */
+function serveMockChat(request, response, state, requestUrl) {
+  readMockRequestBody(request)
+    .then((raw) => {
+      let body = null;
+      try {
+        body = JSON.parse(raw);
+      } catch (_) {
+        body = null;
+      }
+      state.mockRequests.push({
+        url: requestUrl.pathname + requestUrl.search,
+        hasAuthorization: Boolean(request.headers.authorization),
+        body,
+      });
+      response.writeHead(200, { 'content-type': 'text/event-stream' });
+      if (requestUrl.searchParams.get('hold') === '1') {
+        // Hold the stream open so tests can observe in-flight run state;
+        // releaseMockChat() completes the deterministic reply.
+        state.holdRelease = () => {
+          response.write(openAiSsePayload(MOCK_CHAT_REPLY));
+          response.end();
+        };
+        return;
+      }
+      response.end(openAiSsePayload(MOCK_CHAT_REPLY));
+    })
+    .catch(() => {
+      try {
+        response.writeHead(500);
+        response.end();
+      } catch (_) {
+        // Socket already gone; nothing to recover.
+      }
+    });
+}
+
+function serveFixture(request, response, state) {
+  const requestUrl = new URL(request.url, 'http://127.0.0.1');
+  if (request.method === 'POST' && requestUrl.pathname === MOCK_CHAT_PATH) {
+    serveMockChat(request, response, state, requestUrl);
+    return;
+  }
+  if (request.method !== 'GET') {
+    response.writeHead(405);
+    response.end('Method not allowed');
+    return;
+  }
+  const requestPath = requestUrl.pathname;
   const fileName = path.basename(requestPath);
   const filePath = path.join(fixtureRoot, fileName);
   if (!filePath.startsWith(fixtureRoot) || !fs.existsSync(filePath)) {
@@ -192,12 +291,23 @@ function serveFixture(request, response) {
 }
 
 async function startFixtureServer() {
-  const server = http.createServer(serveFixture);
+  const state = { mockRequests: [], holdRelease: null };
+  const server = http.createServer((request, response) => serveFixture(request, response, state));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   return {
     url: (name) => `http://127.0.0.1:${address.port}/${name}`,
     close: () => new Promise((resolve) => server.close(resolve)),
+    /** Bounded recorded mock-chat requests (credential values are never kept). */
+    mockRequests: () => state.mockRequests.map((entry) => ({ ...entry })),
+    resetMockRequests: () => {
+      state.mockRequests = [];
+    },
+    releaseMockChat: () => {
+      const release = state.holdRelease;
+      state.holdRelease = null;
+      if (release) release();
+    },
   };
 }
 

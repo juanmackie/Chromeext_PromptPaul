@@ -20,6 +20,7 @@ Documentation in this subtree explains Prompt Paul architecture, development wor
 
 - Update `docs/ARCHITECTURE.md` when module responsibilities or data flow change.
 - Update `docs/UX_JOURNEYS.md` when the representative journeys, verification axes, or WCAG best-effort checklist change.
+- Update `docs/ACCEPTANCE_SPRINT.md` when acceptance gate results, residual defects, or test-stability classifications change; record exact observed results, including remaining failures.
 - Update `docs/DEVELOPMENT.md` when setup, commands, testing, or workflow changes.
 - Update `docs/PRODUCTION_READINESS.md` when production gates, security rules, or review requirements change.
 - Update `docs/SKILL_EXAMPLES.md` when skill invocation behavior, supported patterns, or examples change.

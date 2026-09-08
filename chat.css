@@ -675,6 +675,18 @@ body.dark-theme ::selection {
   font-size: var(--ext-font-size-xs);
 }
 
+/* Pending document conflict choice: explicit Replace / Keep current. */
+#context-tray .document-conflict-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+#context-tray .document-conflict-actions[hidden] {
+  display: none !important;
+}
+
 #context-tray .attachment-thumbnail {
   width: 32px;
   height: 32px;

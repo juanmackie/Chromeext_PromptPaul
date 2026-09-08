@@ -145,6 +145,10 @@ test('captures the live page selection when Analyze is clicked', async () => {
     await chat.locator('#selected-text-remove-button').click();
     await expect(chat.locator('#selected-text-strip')).toBeHidden();
 
+    // Detaching the selection releases its source-tab identity, so the live
+    // read follows the active tab: focus the target tab like a user would
+    // before clicking Analyze in the side panel.
+    await target.bringToFront();
     await chat.locator('#analyze-button').click();
 
     await expect(chat.locator('#selected-text-strip')).toBeVisible();

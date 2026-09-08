@@ -198,7 +198,13 @@
       return response;
     },
 
-    async resolveConfirmation(targetUrl, runId, approved = true, approveAll = false) {
+    async resolveConfirmation(
+      targetUrl,
+      runId,
+      approved = true,
+      approveAll = false,
+      overrides = {}
+    ) {
       const confirmation = pendingConfirmations.get(String(runId));
       if (!confirmation) return { success: false, error: 'No pending confirmation.' };
       const response = await sendRuntimeMessage({
@@ -211,9 +217,14 @@
         sourceTabId: sourceTabs.has(String(runId))
           ? sourceTabs.get(String(runId))
           : await getTabId(targetUrl),
+        ...overrides,
       });
       if (response?.success) pendingConfirmations.delete(String(runId));
       return response;
+    },
+
+    async getJournal(runId) {
+      return sendRuntimeMessage({ action: 'getRunJournal', runId });
     },
 
     executeTool(runId, id, name, args = {}) {
