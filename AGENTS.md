@@ -1,311 +1,60 @@
-# DOX Framework
+# Chromeext_PromptPaul agent contract
 
-- DOX is the AGENTS.md hierarchy installed for Prompt Paul.
-- Agents must follow this file and every applicable child AGENTS.md before editing.
+## Operating Standard
 
-## Core Contract
+- Apply `C:\Users\juanm\Documents\GitHub\Vibe Coding Rules 10.md` (V10) as the repository operating standard; read it in full before substantive work.
+- This file is the nearest-owning contract. It refines the parent policy with repository-specific facts and cannot weaken a mandatory parent rule; conflicts resolve to the parent.
 
-- AGENTS.md files are binding work contracts for their subtrees.
-- Work products, source materials, instructions, records, assets, and durable docs must stay understandable from the nearest applicable AGENTS.md plus every parent AGENTS.md above it.
+## Scope and Ownership
 
-## Read Before Editing
+- Root owns project-wide contracts, `manifest.json`, package metadata, root extension entry points (`background.js`, `chat.js`, `options.js`), content scripts, HTML/CSS entries, theme/loading helpers, `ui-primitives.css`, README/changelog files, and the durable `REVIEW_PLAN.md` review record. Transient `PLAN.md`/`plans/` drafts stay untracked.
+- Child docs own the durable subtrees listed under Child contracts below. Read the applicable child contract before editing inside its scope.
+- Shared logic belongs in `src/chat/`, `src/utils/`, or `src/orchestrator/`, not in growing root entry points.
+- `dist/`, `dist-dev/`, and `dist-eval/` are generated build output, not source of truth; never edit them directly. `dist-dev/` and `dist-eval/` are local-only development output and must never be packaged or published.
+- Do not edit vendored libraries or binary assets unless the task is specifically about them.
 
-1. Read the root AGENTS.md.
-2. Identify every file or folder you expect to touch.
-3. Walk from the repository root to each target path.
-4. Read every AGENTS.md found along each route.
-5. If a parent AGENTS.md lists a child AGENTS.md whose scope contains the path, read that child and continue from there.
-6. Use the nearest AGENTS.md as the local contract and parent docs for repo-wide rules.
-7. If docs conflict, the closer doc controls local work details, but no child doc may weaken DOX.
+## Constraints
 
-Do not rely on memory. Re-read the applicable DOX chain in the current session before editing.
-
-## Update After Editing
-
-Every meaningful change requires a DOX pass before the task is done.
-
-Update the closest owning AGENTS.md when a change affects:
-
-- purpose, scope, ownership, or responsibilities
-- durable structure, contracts, workflows, or operating rules
-- required inputs, outputs, permissions, constraints, side effects, or artifacts
-- user preferences about behavior, communication, process, organization, or quality
-- AGENTS.md creation, deletion, move, rename, or index contents
-
-Update parent docs when parent-level structure, ownership, workflow, or child index changes. Update child docs when parent changes alter local rules. Remove stale or contradictory text immediately. Small edits that do not change behavior or contracts may leave docs unchanged, but the DOX pass still must happen.
-
-## Hierarchy
-
-- Root AGENTS.md is the DOX rail: project-wide instructions, global preferences, durable workflow rules, and the top-level Child DOX Index.
-- Child AGENTS.md files own domain-specific instructions and their own Child DOX Index.
-- Each parent explains what its direct children cover and what stays owned by the parent.
-- The closer a doc is to the work, the more specific and practical it must be.
-
-## Child Doc Shape
-
-- Create a child AGENTS.md when a folder becomes a durable boundary with its own purpose, rules, responsibilities, workflow, materials, or quality standards.
-- Work Guidance must reflect the current standards of the project or user instructions; if there are no specific standards or instructions yet, leave it empty.
-- Verification must reflect an existing check; if no verification framework exists yet, leave it empty and update it when one exists.
-
-Default section order:
-
-- Purpose
-- Ownership
-- Local Contracts
-- Work Guidance
-- Verification
-- Child DOX Index
-
-## Style
-
-- Keep docs concise, current, and operational.
-- Document stable contracts, not diary entries.
-- Put broad rules in parent docs and concrete details in child docs.
-- Prefer direct bullets with explicit names.
-- Do not duplicate rules across many files unless each scope needs a local version.
-- Delete stale notes instead of explaining history.
-- Trim obvious statements, repeated rules, misplaced detail, and warnings for risks that no longer exist.
-
-## Closeout
-
-1. Re-check changed paths against the DOX chain.
-2. Update nearest owning docs and any affected parents or children.
-3. Refresh every affected Child DOX Index.
-4. Remove stale or contradictory text.
-5. Run existing verification when relevant.
-6. Report any docs intentionally left unchanged and why.
-
-## Purpose
-
-Prompt Paul is a Manifest V3 Chrome extension for sending selected text, media, and page content to an LLM from context menus and a side panel chat. It also implements an OpenClaw-compatible Agent Skills system for reusable AI instructions.
-
-## Ownership
-
-- Root owns project-wide contracts, `manifest.json`, package metadata, root extension entry points, shared browser UI files, README and changelog files, the durable `REVIEW_PLAN.md` review record, and the top-level DOX index. Transient `PLAN.md`/`plan.md`/`plans/` drafts stay ignored and untracked.
-- Root owns top-level extension surfaces: `background.js`, `chat.js`, `options.js`, content scripts, HTML/CSS entry files, theme/loading helpers, shared UI primitives (`ui-primitives.css`), and design prototypes.
-- Child docs own durable subtrees listed in the Child DOX Index.
-- Generated build output such as `dist/`, `dist-dev/`, and `dist-eval/` is not source of truth and should not be edited directly. `dist-dev/` and `dist-eval/` are local-only development output and must never be packaged or published.
-
-## Local Contracts
-
-- The extension is Manifest V3 and uses `background.js` as an ES module service worker.
-- API keys, profiles, custom instructions, tools, skills, and user settings live in Chrome storage. Codex subscription credentials and Hermes gateway credentials are background-owned and keyed by profile; they are never included in profile records, run configs, events, logs, or backups.
-- The storage schema is stable: canonical keys (`profiles`, `lastSelectedProfileId`, `instructions`, `customSkills`, `promptPaulTools`, `analyticsConsent`, `analyticsInstance`, `analyticsRotateAt`, `voiceInputEnabled`, `voiceInputPermissionState`, `voiceInputPermissionLastChecked`, `braveSearchApiKey`, `webSearchEnabled`, `searchProvider`, `pageActionsEnabled`, `pageActionsTrustedMode`, `pageActionsMultiTabEnabled`, `notchEnabled`, `notchPosition`, `notchPlacement`, `themePreference`, `pinnedQuickActions`, `customSiteSuggestions`, `hermesApiKeys`, `hermesSessions`, `hermesSessionKeys`, `promptPaulActCheckpointsV1`) are pinned by regression guards. `pageActionsEnabled` is session-scoped state and is excluded from local/sync backups; all provider and search credentials, Hermes keys, and session pointers are excluded from backups; backups export only supported persistent settings and restore profiles without credentials.
-- Remote LLM calls happen only when the user sends a prompt or invokes an action.
-- User-supplied media URLs are restricted to bounded public HTTP(S) fetches with private-host, media-type, redirect, timeout, and response-size guards before base64 conversion.
-- Browser-internal pages, extension pages, and Chrome Web Store pages must be blocked or reported before content extraction.
-- Broad host permissions are intentional for page extraction and context-menu workflows.
-- Built-in and custom skills are instructions by default, not executable tools, unless deterministic tool dispatch is explicitly implemented.
-- `chat.js` run entry points (`makeApiCall`, `makeApiCallWithMedia`) require `beginResponseRun()` before any side effects; `endResponseRun()` must run in `finally` blocks. This prevents two orchestrator runs from starting simultaneously and orphaning events.
-- The `executeRun` bridge acknowledges acceptance immediately instead of holding a runtime message channel open for the full run. Terminal status is delivered through ordered `orchestratorEvent` messages and the session journal; the owning chat keeps the opaque owner token until terminal cleanup or an acknowledged abort, and an extension-page reconnect may adopt that token for an active run without persisting it in the journal or events. Non-Hermes runs use bounded API-call and wall-clock budgets, one toolless wrap-up call, bounded transient-provider retries, context compaction, reasoning-aware request timeouts, and repetitive-output protection.
-- Development diagnostics are available only in `dist-dev/`, remain disabled until explicitly enabled from the service-worker console, expire after a bounded session window, and are never sent to analytics or normal chat events. Production builds install no-op diagnostics variants; credential-shaped fields and values remain redacted.
-- The evaluation build is generated only in `dist-eval/` with `npm run build:eval`; its `TEST_RUN_TASK` hook and bounded eval trace are replaced by no-op modules in `dist/` and `dist-dev/`, and eval artifacts remain outside the source-of-truth extension package. `evalDryRun` preserves sender, ownership, policy, and approval checks, then intercepts every state-changing page action before delivery; only explicit live eval runs may deliver local fixture mutations.
-- Privileged background messages require an extension-page sender. Content-script requests are bound to the sender tab, and run mutations use an opaque owner token issued at run start; provider credentials and configuration are resolved from the saved profile in the background.
-- Act runs opened from a directly opened side panel may omit `sourceTabId`; the background worker resolves the active usable web tab before starting the run, returns that source identity to the chat bridge for later approvals and manual responses, and fails with an actionable message when the active tab is blank or browser-internal instead of falling back to a background page.
-- Run/feedback states use the standardized `data-run-state` vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) driven by `src/utils/runState.js` and styled by shared primitives in `ui-primitives.css`; both extension surfaces must stay on this contract rather than introducing per-page state flags.
-- Shared UI primitives (buttons, chips, badges, trays, sections, run indicators) live in `ui-primitives.css`, which depends on `theme.css` tokens and must be loaded after it in every extension page. The restrained AI visual language uses theme-aware indigo/cyan/violet energy gradients and soft ambient washes without replacing Prompt Paul’s existing typography, geometry, or hard-shadow identity.
-- The chat surface is composer-led: `chat.js` routes all send/action flows through the composer (`#input-area`) and `ChatComposer.js` owns the context tray, contextual quick-action row, and inline Stop/Retry/Edit/Continue recovery. `chat.js`'s line guard covers composer wiring; new composer UI logic must go into `src/chat/ChatComposer.js`, not the entry point. Contextual and site suggestions consolidate into one composer-owned row capped at four visible actions (the rest live in the existing overflow menu), plus starter actions when no context is attached: Summarize page (loads bounded current-page context and submits the page summary in one click), Ask about page (loads context and focuses, no auto-send), and Act on page (enables the session Act permission and focuses, without starting a run). The sticky Act permission stays visible beside the composer while idle via the Act indicator. Starters reuse the canonical current-page load path and never silently swap the attached source tab.
-- The Options page is setup-led with explicit section saves: each section persists on its own action, credentials stay masked (keys are never written into input fields; `applyCredentialMask`/`resolveCredentialValue` in `src/options/OptionsUI.js` handle it), and the unsaved-changes guard covers the combined dirty state of all sections. Connection profiles are first-class: the selected profile appears before provider controls, saved profiles retain their provider, and creating a new connection chooses its provider before credentials are entered. Fresh source checkouts seed the Default profile with OpenRouter's OpenAI-compatible endpoint and `openrouter/free` model but no credential. Existing profiles are preserved.
-- Profiles may use `provider: 'api'`, `provider: 'codex'`, or `provider: 'hermes'`. Hermes profiles store a gateway endpoint and optional Hermes profile slug; their optional API keys live in the background-owned `hermesApiKeys` map, while remote HTTP(S) access requires explicit trust confirmation. Hermes runs use gateway sessions, explicit bounded `conversation_history`, server-side tools, and approval events. The local conversation identity remains authoritative across provider/model switches; Hermes session pointers include that identity so an unrelated remote session is never reused. Connection checks require the advertised Hermes run submission, status, SSE, stop, and approval features. Stale-run recovery clears a session pointer only for the documented `session_not_found` response. Hermes profile runs, reset operations, and session-key operations are serialized per profile. Hermes Stop keeps the local run active in `stopping` until the gateway reports a terminal state. In Hermes mode, the idle chat action is labeled **New chat**; it ends the selected gateway session, clears the local session pointer, preserves the stable memory key, and starts a new local conversation identity. API and Codex profiles keep local **Clear** behavior. Hermes Act/page actions are enabled only when the gateway advertises the documented `run_client_tools` capability and `/v1/runs/{run_id}/tool-result` endpoint; client calls use the existing bounded page-action policy, approvals, ownership, and receipts. Gateways without that capability reject Hermes Act runs with an actionable upgrade message. Codex profiles keep only model, reasoning-level, and prompt settings; a successful Codex device-code login creates or selects the profile named `Codex`. Options starts login, polls completion, and requests model metadata through the background worker. Codex discovery includes the extension client version required by the subscription models route; if discovery is unavailable, Options keeps a saved model and exposes manual model-ID entry. Restored Codex profiles require sign-in again. Background-owned Hermes keys are validated (non-empty, bounded length, no whitespace/control chars) before storage, and deleting a profile also drops its background-owned Hermes credential, session, and session-key records without ever exposing the secret to the Options page.
-- All entry points funnel into the canonical chat: context menus and deep links go through the window-scoped side panel via `sendPanelMessage`/`openChatWithContext` in `background.js`, preserving selection, media, attachment, and page context across tab switches. The toolbar action and website deep links (`externally_connectable` for promptpaul.juanmackie.com) open the chat with `{ action: 'openChat' }`; `chat.js` consumes deep-link `textPrompt` instructions against the attached context. The Options page calls `chrome.sidePanel.open()` directly from its button gesture for the current browser window, so it does not open a full-page `chat.html` fallback. A fresh panel may use the bounded active-run journal to watch live progress and recover approval controls.
-- The optional Top Notch is browser-page scoped and Shadow DOM isolated. Its compact edge surface exposes bounded page actions, dictation, an explicit Act task input, and up to four pinned custom instructions; the expanded header shows the selected profile's mode, model, and reasoning level. It follows the saved Light/Dark/System theme preference, including live system-theme changes. It is edge-pinnable: the `notchPlacement` storage key (top/right/bottom/left) picks which viewport edge it docks to, and `notchPosition`, a bounded 0-100 percentage persisted alongside it, sets the offset along that edge (horizontal for top/bottom, vertical for left/right) and can be changed by dragging the rail along that axis. At rest it is a slim pill that, on hover, reveals the details panel without pinning; a click pins it open so it stays on pointer-leave. Dictated instructions always attach bounded current-page context, while pinned prompts may use selection, page content, or conversation context. Dictation opens the side panel during the button gesture and uses a short-lived background-owned lease for delayed speech completion, so long dictation never calls `sidePanel.open()` outside a user gesture. Pinned instruction IDs and dictated/task text are validated by the background worker before routing to the canonical chat, and the notch never receives provider credentials. Act page actions notify the target tab to show a temporary branded border glow.
-- Context-bearing prompts must use structured prompt request objects and `composeUserPrompt`; do not concatenate selected text, page content, media context, filenames, metadata, or previous-response instructions directly into raw prompt strings. Untrusted context must remain bounded and explicitly marked as source material.
-- PDF page extraction must detect both filename-based URLs and extensionless PDF endpoints from response metadata, unwrap the built-in Chrome PDF viewer source URL when present, and parse bytes through the chat page's bundled pdf.js path because Chrome's native PDF viewer has no readable DOM.
-- Site-aware extraction adapters fill the existing `adapterMatched` slot in `content_script_unified.js`: structured Reddit-thread and RSS/Atom feed candidates score against the two-pass extractors with fail-open fallthrough, and GitHub pages gain a bounded metadata header above the winning body. Formatter logic is owned by `src/utils/siteExtractors.js` and mirrored in the classic content script; keep both sides aligned.
-- Dropped `.txt`/`.md`/`.markdown`/`.csv`/`.json` documents attach as bounded text through `ChatMedia.prepareDroppedFile()` into a pending composer attachment owned by `src/chat/ChatComposer.js` (memory only, one document at a time; a second document requires an explicit Replace/Keep-current choice, and multi-document drops show one single-document limit message). Dropping never starts a provider request; sending uses the `document` prompt context type from `src/prompts.js`, a failed submission retains the attachment, terminal success clears it, and Clear/New chat removes it. Documents never enter the base64/vision media pipeline. All other dropped files keep the existing media flow. When media is sent or auto-analyzed (send branch or an image drop) while a document is pending, the document rides along as structured `document` context in the same run via `buildMediaPromptRequest` and shares the begin/finish/cancel lifecycle: it is never silently dropped, and the chip clears only on terminal success.
-- `chat.js` resolves `sourceTabId` for side-panel runs via `getRunSourceTabId()`, not a captured `panelTabId`. Sticky-selection source-tab release is provenance-aware: a `selectionOwnsTabId` flag is set only by selection-bearing handoffs (setSelectedText, notch selection, pinned prompt that installs a selection) and cleared by media/page/notch handoffs; `clearSelectedTextState()` releases `tabId` only when the flag is set, so a media/page handoff's source identity survives a later selection-chip clear and the next live selection read follows the active tab.
-- Pending panel actions (`setMediaForAnalysis`, `setSelectedText`) are consumed locally in `chat.js` and not re-sent via `chrome.runtime.sendMessage`.
-- Panel context delivery treats a missing response or explicit `{ ignored: true }` response as a failed handoff; the session-queued action remains available until the panel for the target tab consumes it.
-- Keep privacy-sensitive analytics opt-in and safe-label handling intact.
-- Page actions are default-off, DOM/semantic-control-only tools. The session-scoped `pageActionsEnabled` Act toggle remains enabled across runs until the user disables it or the browser session ends; current-tab runs remain the default. If an enabled Act run cannot use its source tab, startup fails with an actionable error instead of silently falling back to plain chat. Every Act-enabled run forces an initial `page_get_state` inspection before the agent can respond; bounded `page_find_text` is available for read-only exact-text search without scrolling, `page_wait` handles bounded asynchronous text/URL conditions, and `page_batch` combines 2–4 read-only observations in one turn; later mutations still go through policy and approval gates. Snapshot text is untrusted page data; password, OTP, payment, credential, account, security, destructive, download, unsafe-scheme, and unsupported controls must remain masked, confirmation-gated, or blocked. Valid HTTP(S) links may navigate under the bounded Act lease; `page_open_link` navigates the current target tab by default, while `background: true` is reserved for explicit multi-page research. Safe navigation across origins does not create a per-site permission prompt, while writes and risky controls remain confirmation-gated. Act owns up to twelve run-created tabs for explicit multi-page work; the current target tab is the default, background tabs do not retarget the run, and each opened/switched tab passes a bounded document/bridge readiness check before inspection. `page_open_link` navigates the current target in place unless `background: true` explicitly requests a separate research/reference tab. Opens reuse owned tabs instead of creating duplicates: an exact destination match is adopted in place, and any other same-origin open navigates the run's existing non-source work tab to the new URL, so a run keeps one work tab per site and never hijacks the source tab; the Act prompt directs the model to keep ordinary tasks in the current tab and use separate tabs only for genuine multi-page work. If a bridge fails, that tab is quarantined and the run continues on another healthy owned tab or reports partial progress; after a user reload, a fresh `page_get_state` can re-probe the failed source tab. If the active target tab changes documents during a live run, Act automatically adopts the current supported page, discards stale snapshot state, and forces `page_get_state` before continuing. The model may request one bounded clarification through `page_request_user_input`, but the request is rejected if it asks for secrets or payment data. `page_pause_for_user` supports only safe manual steps, requires explicit Resume, clears the page-action session, and forces a fresh inspection; it cannot bypass policy or collect secrets. Observation, navigation, and mutation budgets are tracked separately (current numeric defaults in the Act performance-defaults bullet below), with bounded `page_record_note` task memory for long runs that rejects secret, credential, and payment wording. A session-scoped sub-goal planner activates automatically for long-horizon Act instructions (>100 chars or multi-step signals); it decomposes work into ≤8 sub-goals, requests one initial approval, then auto-approves only low-risk non-navigation actions for the run. Required post-mutation inspections preserve the verified mutation receipt for planner progress, and every planner receipt is bound to the active sub-goal index so it cannot advance a different goal. Successful owned-tab actions expose bounded verified receipts and outcomes. High-risk and navigation actions remain confirmation-gated, and denial disables planner auto-approval. Active planner state lives in run memory. Before a mutation, a bounded session checkpoint may store planner metadata, budgets, receipt identity, and an uncertainty token so the user can explicitly resume after a worker restart; it never stores DOM, page text, notes, credentials, or raw values. Resume always clears stale page state and forces a fresh inspection; actions never resume automatically. State-changing actions return bounded `not_delivered`, `delivered_unverified`, or `delivered_verified` receipts, and unchanged unverified mutations are not retried. The run-scoped page-task progress card is driven by bounded `page_task_progress` events and surfaces a deterministic outcome block (verified work, unresolved work, and a single best next recovery action) picked from actual run state and routed onto the existing approval / clarification / manual-Resume / Watch controls, never a parallel recovery UI; a generic Retry on an Act run whose delivery was unverified or in-flight is gated to the fresh-inspection/checkpoint recovery path rather than blindly replaying the mutation. Successful non-navigation mutations may also return selector-free `scopeDiff` metadata containing only indices, flags, counts, and snapshot IDs. The credential-free page-action corpus and browser-safe harness record only bounded evaluation metrics. Trusted mode never enables JavaScript; CDP/chrome.debugger and arbitrary JavaScript remain outside the page-action contract. Scope/diff output never accepts model-supplied selectors or exposes raw values.
-- Successful instruction saves reset the Add/Edit Instruction form immediately; manual clearing may still require confirmation when fields contain unsaved content.
-- Current Act performance defaults are 256 observation, 96 navigation, and 64 mutation actions; planner runs allow 12 sub-goals and 5 replans; task memory allows 72 notes and 360K history characters. Every fresh Act snapshot also carries bounded visual index geometry and an ephemeral screenshot for multimodal providers when available; screenshots are never persisted.
-
-## Work Guidance
-
-- Use 2-space indentation and single quotes in JavaScript.
-- Add `@fileoverview` and `@module` JSDoc to new source modules.
-- Prefer explicit exports from modules under `src/`.
-- Keep shared logic in `src/chat/`, `src/utils/`, or `src/orchestrator/` instead of adding more large blocks to root entry points.
-- Keep Codex authentication in `src/utils/codexAuth.js`, model discovery in `src/utils/modelDiscovery.js`, and Responses wire conversion in `src/orchestrator/CodexTransport.js`; do not pass OAuth access or refresh tokens through chat or UI messages. API model discovery uses the configured compatible `/models` route, while Codex discovery uses the authenticated Codex backend `/models` route.
-- Keep `docs/`, README, tests, and DOX files current when behavior, workflows, or structure changes.
-- Do not edit vendored libraries or binary assets unless the task is specifically about those files.
-- Preserve existing user changes in the working tree.
+- Manifest V3 extension; `background.js` is an ES module service worker; extension-page CSP is `script-src 'self'`. Use 2-space indentation, single quotes, and `@fileoverview`/`@module` JSDoc in new modules under `src/`.
+- API keys, profiles, instructions, tools, skills, and settings live in Chrome storage. Codex subscription and Hermes gateway credentials are background-owned and keyed by profile; they never appear in profile records, run configs, events, logs, backups, or chat/UI messages, and are never exposed to the Options page.
+- The storage schema is stable: canonical keys (profiles, `lastSelectedProfileId`, instructions, customSkills, promptPaulTools, analytics keys, voice-input keys, `braveSearchApiKey`, web-search/page-action/notch/theme keys, `hermesApiKeys`/`hermesSessions`/`hermesSessionKeys`, `promptPaulActCheckpointsV1`) are pinned by regression guards. `pageActionsEnabled` is session-scoped and excluded from backups; backups export only supported persistent settings and restore profiles without credentials.
+- Remote LLM calls happen only when the user sends a prompt or invokes an action. User-supplied media URLs are restricted to bounded public HTTP(S) fetches with private-host, media-type, redirect, timeout, and response-size guards. Browser-internal pages, extension pages, and Chrome Web Store pages are blocked or reported before content extraction. Broad host permissions are intentional for extraction and context-menu workflows.
+- Runs: `makeApiCall`/`makeApiCallWithMedia` require `beginResponseRun()` before any side effect and `endResponseRun()` in `finally`. The `executeRun` bridge acknowledges immediately; terminal status arrives via ordered `orchestratorEvent` messages and the session journal, with an opaque owner token kept by the owning chat (reconnect may adopt it, never persisting it). Non-Hermes runs use bounded API-call/wall-clock budgets, one toolless wrap-up, bounded transient retries, context compaction, reasoning-aware timeouts, and repetitive-output protection.
+- Privileged background messages require an extension-page sender; content-script requests are bound to the sender tab; provider credentials resolve from the saved profile in the background.
+- Providers are `api`, `codex`, or `hermes`. Hermes profiles use gateway sessions, bounded `conversation_history`, server-side tools, and approval events; runs, resets, and session-key operations serialize per profile; Act requires the gateway to advertise `run_client_tools` plus the tool-result endpoint (otherwise Act runs fail with an actionable message); Stop holds `stopping` until the gateway reports terminal; idle action is **New chat** (ends gateway session, clears pointer, keeps local conversation identity). Codex: device-code login creates/selects the `Codex` profile; discovery includes the required extension client version; restored Codex profiles require sign-in again. Codex auth stays in `src/utils/codexAuth.js`, model discovery in `src/utils/modelDiscovery.js`, wire conversion in `src/orchestrator/CodexTransport.js`.
+- All entry points (context menus, deep links, toolbar action, website deep links via `externally_connectable` for promptpaul.juanmackie.com) funnel through the side panel via `sendPanelMessage`/`openChatWithContext`. The Options page calls `chrome.sidePanel.open()` from its button gesture. `chat.js` resolves run source tabs via `getRunSourceTabId()`; sticky selection release is provenance-aware (`selectionOwnsTabId`); pending panel actions are consumed locally, not re-sent.
+- Chat is composer-led: all send/action flows route through `#input-area`, with composer UI logic in `src/chat/ChatComposer.js` (context tray, quick-action row capped at four visible actions, inline Stop/Retry/Edit/Continue). Suggestions consolidate into one row; starters reuse the canonical current-page load path.
+- Context-bearing prompts use structured prompt request objects and `composeUserPrompt` — never raw concatenation of selection, page content, media, or metadata. Untrusted context stays bounded and marked as source material.
+- Page actions (Act) are default-off, DOM/semantic-only, session-scoped. Every Act run forces an initial `page_get_state`; password/OTP/payment/credential/security/destructive controls are masked, confirmation-gated, or blocked; trusted mode never enables JavaScript and CDP/`chrome.debugger`/arbitrary JS stay outside the contract. Budgets: 256 observation / 96 navigation / 64 mutation actions; planner 12 sub-goals, 5 replans, auto-approval only for low-risk non-navigation; task memory 72 notes, 360K history chars; up to 12 run-created tabs with one work tab per site; mutations return `not_delivered`/`delivered_unverified`/`delivered_verified` receipts, and unverified mutations are not retried blind. Session checkpoints never store DOM, page text, notes, or credentials; resume always clears stale state and forces fresh inspection.
+- The Top Notch is Shadow-DOM isolated, edge-pinnable (`notchPlacement`/`notchPosition`), theme-following, holds no credentials, and dictation uses a short-lived background-owned lease so `sidePanel.open()` stays inside a user gesture. Notch-routed IDs and text are validated by the background worker.
+- Dropped `.txt`/`.md`/`.markdown`/`.csv`/`.json` files attach as bounded text via `ChatMedia.prepareDroppedFile()` (memory only, one at a time) and never enter the base64/vision pipeline; other drops keep the media flow. PDF extraction parses bytes through the bundled pdf.js path, not Chrome's viewer DOM. Site extraction adapters live in `src/utils/siteExtractors.js` and must stay aligned with the classic content script mirror.
+- Run/feedback states use the `data-run-state` vocabulary (`idle`, `running`, `streaming`, `stopping`, `complete`, `error`, `stopped`) driven by `src/utils/runState.js`; `ui-primitives.css` depends on `theme.css` tokens and loads after it on every extension page.
+- Web search grounding: Brave (keyed, key background-owned, never reused from LLM profiles) or DuckDuckGo (keyless) selected by `searchProvider`; `web_search` is a reserved tool name enforced in `src/chat/ChatAPI.js`, `src/orchestrator/RunOrchestrator.js`, and `options.js`; search is model-directed permission, not a mandate; one search slot per run; empty results are `WEB_SEARCH_NO_RESULTS`, not a grounded response.
+- Skills follow the Agent Skills spec (`SKILL.md` with YAML frontmatter; `name`/`description` required; `command-dispatch: tool` for deterministic execution) with built-ins registered in `skills/skills.json` (`humanizer`, `weather-guide`). Skills are instructions by default, not executable tools, unless deterministic tool dispatch is explicitly implemented. `docs/SKILL_EXAMPLES.md` holds user examples.
+- Analytics stay opt-in with safe-label handling and a rotating pseudonymous instance ID. Fresh checkouts seed the Default profile with OpenRouter's OpenAI-compatible endpoint and `openrouter/free` model but no credential; existing profiles are preserved.
 
 ## Verification
 
-- `npm run test` checks module structure, manifest references, skill files, and regression guards.
-- `npm run smoke` checks manifest file references and vendored dependency conflicts.
-- `npm run build` copies the extension into `dist/` for unpacked or packaged testing.
-- `npm run validate` runs lint, formatting checks, tests, smoke checks, and reproducible vendored-license verification.
-- For UI or browser-runtime changes, also reload the unpacked extension in Chrome or Edge and exercise the affected flow.
+- `npm run test` — module structure, manifest references, skill files, regression guards (`scripts/test-runner.js`).
+- `npm run test:behavior` — vitest behavior suite (`vitest.config.js`).
+- `npm run test:browser` — Playwright real-browser coverage (`playwright.config.cjs`, `tests/browser/`).
+- `npm run smoke` — manifest file references and vendored dependency conflicts (`scripts/smoke-check.js`).
+- `npm run validate` — lint, format check, tests, behavior suite, smoke, vendored-license verification (see `package.json` scripts; all component scripts exist there).
+- `npm run build` / `build:dev` / `build:eval` / `build:prod` — generate `dist/` variants (`scripts/build.js`).
+- For UI or browser-runtime changes, also reload the unpacked extension in Chrome or Edge and exercise the affected flow by hand; a passing build is not evidence of visual or interaction correctness.
 
-## Agent Skills Specification
+## Documentation index
 
-This section is the canonical specification reference for Prompt Paul skill format, metadata, and runtime behavior. For end-user examples and workflows, see `docs/SKILL_EXAMPLES.md`.
+- `docs/PRODUCTION_READINESS.md` is the concise repository checklist; keep it aligned with these contracts.
+- `docs/SKILL_EXAMPLES.md` documents end-user skill usage; `REVIEW_PLAN.md` is the durable review record.
 
-### Using Skills In Chat
+## Child contracts
 
-1. List all skills: `/skills`
-2. Invoke canonical command: `/skill <name> [input]`
-3. Invoke per-skill shortcut when user-invocable: `/<skill-name> [input]`
-4. Invoke by natural language trigger: `use <skill> skill and [your request]`
-
-### Supported Skill Intent Patterns
-
-| Pattern                  | Example                                  | Status    |
-| ------------------------ | ---------------------------------------- | --------- |
-| `use /<skill>`           | `use /humanizer and rewrite`             | supported |
-| `use <skill> skill`      | `use humanizer skill and rewrite`        | supported |
-| `apply /<skill>`         | `apply /summarizer to this`              | supported |
-| `with /<skill>`          | `with /humanizer, rewrite this`          | supported |
-| `invoke /<skill>`        | `invoke /weather-guide explain forecast` | supported |
-| `use <skill> and/to/for` | `use humanizer and rewrite`              | supported |
-| `please use <skill> to`  | `please use humanizer to rewrite`        | supported |
-
-### Skill Format
-
-Skills follow the Agent Skills specification with YAML frontmatter.
-
-```markdown
----
-name: 'skill-name'
-description: 'Brief description of what this skill does'
-license: 'MIT'
-user-invocable: true
-disable-model-invocation: false
-metadata: { 'tags': 'category', 'version': '1.0.0' }
----
-
-# Skill Name
-
-## Purpose
-
-Explain when and why to use this skill.
-
-## Guidelines
-
-1. Step-by-step instructions
-2. Best practices
-3. Expected outputs
-
-## Examples
-
-**Input:** Example input
-**Output:** Expected output
-```
-
-### Frontmatter Fields
-
-| Field                      | Type    | Default  | Description                                        |
-| -------------------------- | ------- | -------- | -------------------------------------------------- |
-| `name`                     | string  | required | Unique identifier, lowercase with optional hyphens |
-| `description`              | string  | required | Brief description for AI and user discovery        |
-| `license`                  | string  | optional | License identifier, for example MIT or Apache-2.0  |
-| `user-invocable`           | boolean | true     | Creates `/<name>` shortcut command when true       |
-| `disable-model-invocation` | boolean | false    | Hides from model auto-suggestions when true        |
-| `command-dispatch`         | enum    | null     | Set to `tool` for deterministic execution          |
-| `command-tool`             | string  | null     | Tool name when command-dispatch is `tool`          |
-| `command-arg-mode`         | string  | `raw`    | Argument passing mode for tool dispatch            |
-| `homepage`                 | string  | null     | URL for skill documentation                        |
-| `metadata`                 | object  | `{}`     | OpenClaw-compatible nested metadata                |
-
-### Metadata Object
-
-The `metadata` field supports OpenClaw-style nested configuration:
-
-```yaml
-metadata:
-  {
-    'tags': 'coding, python',
-    'version': '1.0.0',
-    'openclaw':
-      {
-        'requires': { 'bins': ['python'], 'env': ['PYTHON_PATH'] },
-        'install': [{ 'kind': 'brew', 'formula': 'python' }],
-      },
-  }
-```
-
-### Built-In Skills
-
-Built-in skills are configured in `skills/skills.json`.
-
-- `humanizer`: transforms AI-generated text to sound more natural and human.
-- `weather-guide`: explains weather reports and meteorological terminology.
-
-Each built-in skill source lives in `skills/<name>/SKILL.md`.
-
-### Importing Skills
-
-- From skills.sh: paste the skill URL into Prompt Paul Options -> Import from skills.sh.
-- From file: export skills from another Prompt Paul instance, then import the JSON file from Options -> Import Skills.
-- Manual import: create a `SKILL.md` file and place it in the skills directory, or create it via the Options page.
-
-### Troubleshooting Skills
-
-- If a skill does not appear in `/skills`, check `disable-model-invocation`, frontmatter validity, and extension reload state.
-- If a slash command does not work, check `user-invocable`, lowercase hyphenated names, and save/load state.
-- If metadata is not preserved, check YAML formatting and JSON syntax inside `metadata`.
-
-### OpenClaw Compatibility
-
-- `SKILL.md` format uses standard Agent Skills frontmatter.
-- Metadata supports `metadata.openclaw.*`.
-- Skills can specify required binaries or environment variables.
-- Metadata can include installation instructions.
-
-### Skill Resolution Flow
-
-1. User enters `/skill <name> ...` or matching intent.
-2. `chat.js` parses command or intent and resolves skill name.
-3. Request is sent to `background.js`.
-4. `SkillManager` resolves skill content and metadata.
-5. `RunOrchestrator` injects skill instructions into runtime context.
-6. Model response is generated with skill guidance applied.
-
-### Skill Manager API
-
-```javascript
-const skills = skillManager.getSkillsList();
-const eligible = skillManager.getEligibleSnapshot();
-const skill = skillManager.resolveSkill('humanizer');
-const commands = skillManager.getSlashCommands();
-```
-
-### Deterministic Tool-Dispatched Skills
-
-1. Set `command-dispatch: "tool"`.
-2. Set `command-tool: "your-tool-name"`.
-3. Implement the tool dispatch handling in orchestrator or runtime code.
-
-## User Preferences
-
-When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md.
-
-- Follow the user's production-ready coding rules: question requirements, delete unnecessary work, simplify before optimizing, keep dependencies real, validate all inputs, include readable tests, flag security review needs, and use ASD-STE100 Simplified Technical English in new docs and comments.
-- Evaluate every decision for all four axes together: user experience (clear user flows), developer experience (simple maintainable code), agent experience (explicit contracts that agents can discover and verify), and interface quality (accessible, consistent interfaces). Choose the smallest effective change that improves these areas together, and preserve existing behavior, data, security boundaries, and supported workflows. When benefits conflict, explain the tradeoff and prefer compatibility and simplicity; escalate material unresolved tradeoffs to the user. Verify affected behavior with the relevant existing checks and browser exercises, and report verification gaps rather than claiming nothing can break.
-- The concise repository checklist is `docs/PRODUCTION_READINESS.md`; keep it aligned with these contracts and the development workflow.
-
-## Child DOX Index
-
-- `docs/AGENTS.md`: documentation files, user guides, architecture notes, and development workflow docs.
-- `src/AGENTS.md`: source modules shared by extension entry points, with deeper contracts for chat, utilities, and orchestration.
-- `scripts/AGENTS.md`: build, smoke, and test scripts.
-- `skills/AGENTS.md`: built-in skill registry and `SKILL.md` source files.
-- `libs/AGENTS.md`: vendored browser libraries and third-party assets.
-- `icons/AGENTS.md`: extension icons and copy/action image assets.
-- `tests/AGENTS.md`: automated test suites, including real-browser integration coverage.
-
-## Web Search Grounding
-
-- Search providers: **Brave Search API** via `src/utils/braveSearch.js` (LLM Context endpoint, bounded requests, normalized sources, requires a key) and **DuckDuckGo** via `src/utils/duckDuckGoSearch.js` (free, keyless Instant Answer API). The `searchProvider` storage key (`'duckduckgo'` default | `'brave'`) selects the active provider; it is a plain preference included in backups, while the Brave key stays excluded.
-- The background worker owns Brave credential reads and injects the search executor; LLM profile keys never serve as Brave credentials. The injected executor in `background.js` dispatches to DuckDuckGo or Brave based on `searchProvider`.
-- DuckDuckGo's Instant Answer API only returns curated results and is frequently empty for general queries (a `WEB_SEARCH_NO_RESULTS` outcome); it never requires a key or hits the anti-bot wall the DDG HTML endpoint triggers.
-- Sidebar toggle and provider state bridge in `src/chat/ChatGrounding.js`; the web toggle enables even without a key when DuckDuckGo is active.
-- Reserved tool name `web_search` enforced in `src/chat/ChatAPI.js`, `src/orchestrator/RunOrchestrator.js`, and `options.js`.
-- Grounded completions surface a normalized, escaped first-party **Sources** section; ordinary responses omit grounding metadata when grounding is off.
-- Grounding is model-directed before use: web enabled means permission to search, not a mandate. `web_search` is offered with automatic selection alongside normal tools (or alone for `none`/a satisfied forced user tool).
-- After the single search slot is consumed, the immediate continuation is text-only and receives a phase-aware instruction to use the existing result; duplicate search calls are rejected without another search request.
-- Empty normalized results are a safe `WEB_SEARCH_NO_RESULTS` outcome, not a successful grounded response.
-- `braveSearch.js`, `duckDuckGoSearch.js`, and grounding/provider sequencing are covered by the behavior suite.
+- `docs/AGENTS.md` — documentation, user guides, architecture notes, development workflow docs.
+- `src/AGENTS.md` — shared source modules with deeper chat, utility, and orchestration contracts.
+- `scripts/AGENTS.md` — build, smoke, and test scripts.
+- `skills/AGENTS.md` — built-in skill registry and `SKILL.md` sources.
+- `libs/AGENTS.md` — vendored browser libraries and third-party assets.
+- `icons/AGENTS.md` — extension icons and copy/action image assets.
+- `tests/AGENTS.md` — automated test suites, including real-browser integration coverage.
+- Each child contract refines this file under V10 and cannot weaken the parent policy. `dist-dev/` and `dist-eval/` are generated build copies with no contracts; do not edit them.
