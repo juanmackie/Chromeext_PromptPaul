@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   classifyProviderError,
   compactConversationHistory,
@@ -84,6 +84,152 @@ describe('run resilience helpers', () => {
     expect(redactProviderErrorMessage('Invalid api_key=secret-value')).toBe(
       'Invalid api_key=[redacted]'
     );
+  });
+});
+
+function makePageSnapshot() {
+  return {
+    snapshotId: 'page-snap-1',
+    url: 'https://example.test/form',
+    title: 'Example form',
+    header: 'Current page',
+    content: '[0] <input label="Search">\\n[1] <button label="Open details">',
+    footer: 'End of page',
+    elements: [
+      { index: 0, tag: 'input', label: 'Search', type: 'text', sensitive: false },
+      { index: 1, tag: 'button', label: 'Open details', text: 'Open details', sensitive: false },
+    ],
+  };
+}
+
+function makePageCall(id, name, args) {
+  return { id, function: { name, arguments: JSON.stringify(args) } };
+}
+
+describe('RunOrchestrator approval-wait deadline pause', () => {
+  it('extends the run deadline by the time an approval card waits', async () => {
+    vi.useFakeTimers();
+    try {
+      const orch = new RunOrchestrator(skillManager, {
+        runBudgetMs: 120_000,
+        pageActionExecutor: async (_tabId, actionName) => ({
+          success: true,
+          snapshot: makePageSnapshot(),
+        }),
+      });
+      orch._emitEvent = () => {};
+      const runId = await orch.startRun({
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+      });
+      const run = orch.activeRuns.get(runId);
+      expect(run.resilience.approvalWaitStartedAt).toBeUndefined();
+
+      await orch.executeTool(runId, makePageCall('wait-state', 'page_get_state', {}));
+      const pending = orch.executeTool(
+        runId,
+        makePageCall('wait-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+      );
+      await vi.advanceTimersByTimeAsync(0); // let the confirmation register
+      expect(run.resilience.approvalWaitStartedAt).toBeTypeOf('number');
+
+      const deadlineBefore = run.resilience.deadlineAt;
+      expect(run.resilience.approvalWaitStartedAt).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(30_000);
+      const confirmationId = run.pageActions.pendingConfirmation.id;
+      expect(orch.resolvePageActionDecision(runId, confirmationId, true)).toBe(true);
+      const result = await pending;
+      expect(result.result.success).toBe(true);
+
+      // The deadline absorbed the full wait, so the run does not burn budget
+      // while a user stares at a confirmation card.
+      expect(run.resilience.deadlineAt - deadlineBefore).toBe(30_000);
+      expect(run.resilience.approvalWaitStartedAt).toBeNull();
+      expect(run.resilience.approvalWaitExtensions).toBe(1);
+      expect(run.pageActions.lastDeniedAction).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('caps the approval-wait deadline extension at ten minutes', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000);
+      const orch = new RunOrchestrator(skillManager);
+      // A card left open for twelve minutes can only extend the budget by ten.
+      const run = {
+        resilience: {
+          deadlineAt: 500_000,
+          approvalWaitStartedAt: 1_000_000 - 720_000,
+        },
+      };
+      orch._extendDeadlineForApprovalWait(run);
+      expect(run.resilience.deadlineAt).toBe(500_000 + 10 * 60 * 1_000);
+      expect(run.resilience.approvalWaitStartedAt).toBeNull();
+      expect(run.resilience.approvalWaitExtensions).toBe(1);
+
+      // A missing marker (e.g. non-Act run) is a no-op.
+      const plain = { resilience: { deadlineAt: 500_000 } };
+      orch._extendDeadlineForApprovalWait(plain);
+      expect(plain.resilience.deadlineAt).toBe(500_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('extends the deadline and records the denial when an approval times out', async () => {
+    vi.useFakeTimers();
+    try {
+      const orch = new RunOrchestrator(skillManager, {
+        runBudgetMs: 300_000,
+        pageActionExecutor: async (_tabId, actionName) => ({
+          success: true,
+          snapshot: makePageSnapshot(),
+        }),
+      });
+      orch._emitEvent = () => {};
+      const runId = await orch.startRun({
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+      });
+      const run = orch.activeRuns.get(runId);
+      await orch.executeTool(runId, makePageCall('timeout-state', 'page_get_state', {}));
+      const pending = orch.executeTool(
+        runId,
+        makePageCall('timeout-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      const deadlineBefore = run.resilience.deadlineAt;
+
+      await vi.advanceTimersByTimeAsync(60_001);
+      const result = await pending;
+      expect(result.result.error).toBe('PAGE_ACTION_DENIED');
+      expect(run.pageActions.lastDeniedAction).toMatchObject({ action: 'page_click' });
+      expect(run.resilience.deadlineAt - deadlineBefore).toBeGreaterThanOrEqual(60_000);
+      expect(run.resilience.approvalWaitStartedAt).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves non-Act run deadlines untouched', async () => {
+    vi.useFakeTimers();
+    try {
+      const orch = new RunOrchestrator(skillManager, { runBudgetMs: 120_000 });
+      const runId = await orch.startRun({ provider: 'api', messages: [] });
+      const run = orch.activeRuns.get(runId);
+      const deadlineBefore = run.resilience.deadlineAt;
+      expect(run.resilience.approvalWaitStartedAt).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(300_000);
+      orch._extendDeadlineForApprovalWait(run);
+      expect(run.resilience.deadlineAt).toBe(deadlineBefore);
+      expect(run.resilience.approvalWaitStartedAt).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

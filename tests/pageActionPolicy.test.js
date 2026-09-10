@@ -3,6 +3,7 @@ import {
   PAGE_ACTION_RISKS,
   evaluatePageActionPolicy,
   normalizePageActionArgs,
+  normalizePageActionTitle,
   normalizePageTabActionArgs,
   normalizePageUserInputArgs,
   normalizePageManualInterventionArgs,
@@ -317,5 +318,45 @@ describe('pageActionPolicy', () => {
       prohibited: true,
       risk: PAGE_ACTION_RISKS.PROHIBITED,
     });
+  });
+
+  it('accepts and bounds an optional model-supplied step title', () => {
+    expect(normalizePageActionTitle('Clicking the New task button')).toEqual({
+      valid: true,
+      value: 'Clicking the New task button',
+    });
+    // Missing or blank titles are optional.
+    expect(normalizePageActionTitle(undefined)).toBeNull();
+    expect(normalizePageActionTitle(null)).toBeNull();
+    expect(normalizePageActionTitle('   ')).toBeNull();
+    // Bounded to PAGE_ACTION_TITLE_MAX_CHARS.
+    expect(normalizePageActionTitle('x'.repeat(120)).error).toContain('80 characters');
+  });
+
+  it('rejects titles with control characters or credential wording', () => {
+    expect(normalizePageActionTitle('Opening the\u0000form').valid).toBe(false);
+    expect(normalizePageActionTitle('Checking my password field').valid).toBe(false);
+    expect(normalizePageActionTitle('Entering the otp code').valid).toBe(false);
+    expect(normalizePageActionTitle('Filling the credit card').valid).toBe(false);
+    expect(normalizePageActionTitle('Logging in with api_key').error).toContain('credentials');
+  });
+
+  it('carries a valid title through argument normalization but never a rejected one', () => {
+    const withTitle = normalizePageActionArgs('page_click', {
+      snapshotId: 'snap-1',
+      index: 3,
+      title: 'Opening details',
+    });
+    expect(withTitle).toEqual({
+      valid: true,
+      value: { snapshotId: 'snap-1', index: 3, title: 'Opening details' },
+    });
+    const rejected = normalizePageActionArgs('page_click', {
+      snapshotId: 'snap-1',
+      index: 3,
+      title: 'Entering my password',
+    });
+    expect(rejected.valid).toBe(false);
+    expect(rejected.error).toContain('credentials');
   });
 });

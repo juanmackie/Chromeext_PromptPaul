@@ -104,6 +104,20 @@ const PAGE_ACTION_BUDGETS = Object.freeze({
   navigation: 96,
   mutation: 64,
 });
+// Optional bounded model-supplied human label for one page action, shared by
+// the tool schemas. Display-only on the progress card; the policy layer
+// rejects control characters, credential/payment wording, and over-long text.
+const PAGE_ACTION_TITLE_SCHEMA = Object.freeze({
+  type: 'string',
+  minLength: 1,
+  maxLength: 80,
+  description:
+    'Optional ≤80-char human label for this step shown on the progress card (e.g. "Opening the form"). Never echo typed text, entered values, or secrets.',
+});
+// Max wall-clock time an open approval card can extend the run deadline. A
+// confirmation-gated action pauses the provider clock while the user decides;
+// this cap bounds that pause so an abandoned card cannot immortalize a run.
+const MAX_APPROVAL_WAIT_EXTENSION_MS = 10 * 60 * 1_000;
 const ACT_SCREENSHOT_MAX_BYTES = 750_000;
 // ponytail: single release gate for Act visual payloads. Kept off until a
 // reviewed image-privacy path exists (DOM masking does not redact visible
@@ -720,6 +734,13 @@ class RunOrchestrator {
         // Read-only display state for the Act progress card. Only sanitized
         // labels (never DOM/URLs/credentials) are tracked for emission.
         currentActivityAction: null,
+        // Optional bounded model-supplied human label for the current action
+        // (progress-card display only, never passed to the page or journaled
+        // raw). Falls back to the event-type label when null.
+        currentActionTitle: null,
+        // The last action the user declined (bounded name + timestamp only).
+        // Drives the distinct declined card state and the planner nudge.
+        lastDeniedAction: null,
         currentTabTitle: '',
         currentTabOrigin: '',
         repeatedActionCount: 0,
@@ -829,6 +850,30 @@ class RunOrchestrator {
     state.apiCallCount += 1;
     run.conversationHistory.push({ role: 'user', content: BUDGET_WRAP_UP_PROMPT });
     return true;
+  }
+
+  /**
+   * Extend the run deadline by the bounded time an approval card waited for a
+   * user decision. Called exactly once when a confirmation resolves (approve,
+   * deny, or timeout) so a user staring at a card does not burn budget while
+   * the provider clock is paused. The extension is capped at
+   * MAX_APPROVAL_WAIT_EXTENSION_MS; the field is cleared after use and never
+   * persisted (the deadline is recomputed fresh on resume anyway).
+   * @param {object} run
+   * @returns {void}
+   * @private
+   */
+  _extendDeadlineForApprovalWait(run) {
+    const startedAt = run.resilience?.approvalWaitStartedAt;
+    if (!startedAt) return;
+    const elapsed = Date.now() - Number(startedAt);
+    if (elapsed > 0) {
+      run.resilience.deadlineAt =
+        Number(run.resilience.deadlineAt || 0) + Math.min(elapsed, MAX_APPROVAL_WAIT_EXTENSION_MS);
+      run.resilience.approvalWaitExtensions =
+        Number(run.resilience.approvalWaitExtensions || 0) + 1;
+    }
+    run.resilience.approvalWaitStartedAt = null;
   }
 
   _finishAtRunLimit(run) {
@@ -1888,6 +1933,9 @@ class RunOrchestrator {
       };
     }
     run.pageActions.currentActivityAction = actionName;
+    // A fresh inspection means the model moved on from a denied action, so the
+    // planner nudge and distinct declined card state clear on the next look.
+    if (actionName === 'page_get_state') run.pageActions.lastDeniedAction = null;
     if (run.pageActions.pendingManualIntervention) {
       return {
         success: true,
@@ -1927,6 +1975,11 @@ class RunOrchestrator {
     }
 
     const args = normalized.value;
+    // Keep the optional bounded model-supplied title for the progress card.
+    // It is display-only, never sent to the page, and falls back to the
+    // event-type label when absent.
+    run.pageActions.currentActionTitle =
+      typeof args?.title === 'string' && args.title.trim() ? String(args.title).slice(0, 80) : null;
     if (actionName === 'page_get_state' && !args.regionId) {
       const snapshot = run.pageActions.snapshot;
       const cacheKey = buildActActionCacheKey({
@@ -2487,6 +2540,9 @@ class RunOrchestrator {
       };
     }
     run.pageActions.currentActivityAction = actionName;
+    // Tab actions do not accept a model title; clear any stale page-action
+    // title so the card falls back to the event-type label.
+    run.pageActions.currentActionTitle = null;
 
     const normalized = normalizePageTabActionArgs(
       actionName,
@@ -3086,6 +3142,7 @@ class RunOrchestrator {
           approved: false,
           approveAll: false,
           timedOut: true,
+          action: actionName,
         });
         pending.resolve(false);
       }, timeoutMs);
@@ -3098,14 +3155,30 @@ class RunOrchestrator {
       run.abortController.signal.addEventListener('abort', onAbort, { once: true });
       run.pageActions.pendingConfirmation = {
         id: confirmationId,
+        action: actionName,
         resolve: (approved) => {
           clearTimeout(timer);
           run.abortController.signal.removeEventListener('abort', onAbort);
           run.pageActions.pendingConfirmation = null;
+          // Pause the deadline clock for the whole time the card waited, then
+          // record a bounded declined marker when the user said no (covers the
+          // explicit deny and the auto-timeout path in one place).
+          this._extendDeadlineForApprovalWait(run);
+          if (approved) {
+            run.pageActions.lastDeniedAction = null;
+          } else {
+            run.pageActions.lastDeniedAction = {
+              action: String(actionName).slice(0, 64),
+              at: Date.now(),
+            };
+          }
           resolve(Boolean(approved));
         },
         reject: onAbort,
       };
+      // Begin the approval-wait window that pauses the provider budget; the
+      // extension is applied exactly once inside the resolve funnel above.
+      run.resilience.approvalWaitStartedAt = Date.now();
       this._emitEvent(run.id, {
         type: 'page_action_confirmation',
         confirmationId,
@@ -3151,6 +3224,7 @@ class RunOrchestrator {
       confirmationId,
       approved: isApproved,
       approveAll: sessionApproved,
+      action: pending.action || null,
     });
     return true;
   }
@@ -3300,6 +3374,7 @@ class RunOrchestrator {
             type: 'object',
             properties: {
               regionId: { type: 'string', maxLength: 32 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: [],
           },
@@ -3315,6 +3390,7 @@ class RunOrchestrator {
             properties: {
               query: { type: 'string', maxLength: 160 },
               regionId: { type: 'string', maxLength: 32 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['query'],
           },
@@ -3332,6 +3408,7 @@ class RunOrchestrator {
               text: { type: 'string', maxLength: 160 },
               timeoutMs: { type: 'integer', minimum: 0, maximum: 10000 },
               regionId: { type: 'string', maxLength: 32 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['condition'],
           },
@@ -3361,6 +3438,7 @@ class RunOrchestrator {
                   required: ['name'],
                 },
               },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['actions'],
           },
@@ -3376,6 +3454,7 @@ class RunOrchestrator {
             properties: {
               snapshotId: { type: 'string' },
               index: { type: 'integer', minimum: 0, maximum: 199 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['snapshotId', 'index'],
           },
@@ -3392,6 +3471,7 @@ class RunOrchestrator {
               snapshotId: { type: 'string' },
               index: { type: 'integer', minimum: 0, maximum: 199 },
               text: { type: 'string', maxLength: 2000 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['snapshotId', 'index', 'text'],
           },
@@ -3408,6 +3488,7 @@ class RunOrchestrator {
               snapshotId: { type: 'string' },
               index: { type: 'integer', minimum: 0, maximum: 199 },
               option: { type: 'string', maxLength: 320 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['snapshotId', 'index', 'option'],
           },
@@ -3425,6 +3506,7 @@ class RunOrchestrator {
               direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
               pages: { type: 'number', minimum: 0, maximum: 5 },
               containerIndex: { type: 'integer', minimum: 0, maximum: 15 },
+              title: PAGE_ACTION_TITLE_SCHEMA,
             },
             required: ['direction'],
           },
@@ -3870,6 +3952,17 @@ class RunOrchestrator {
 
     const taskMemory = buildPageTaskMemoryPrompt(run.pageActions?.notes);
     if (taskMemory) parts.push(taskMemory);
+
+    // Surface a recent user denial so the model changes approach instead of
+    // rehearsing the rejected action. Bounded name only, cleared on the next
+    // approved decision or fresh inspection.
+    if (run.pageActions?.enabled && run.pageActions.lastDeniedAction) {
+      parts.push(
+        'DECLINED ACTION: The user declined the page action ' +
+          `"${String(run.pageActions.lastDeniedAction.action || 'unknown')}". ` +
+          'Do NOT repeat it — choose a different approach or ask the user how to proceed.'
+      );
+    }
 
     // Inject sub-goal planner state when active so the model always knows
     // its current position in the plan and remaining budget.
@@ -5285,6 +5378,7 @@ class RunOrchestrator {
       unverified: disposition === 'delivered_unverified' || disposition === 'in_flight',
       notDelivered: disposition === 'not_delivered',
       verified: disposition === 'delivered_verified',
+      declined: Boolean(pa?.lastDeniedAction),
       completedSteps: Math.min(completedSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
       blockedSteps: Math.min(blockedSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
       remainingSteps: Math.min(remainingSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
@@ -5299,6 +5393,9 @@ class RunOrchestrator {
       currentAction: pa?.currentActivityAction
         ? String(pa.currentActivityAction).slice(0, 64)
         : null,
+      // Optional bounded model-supplied human label for the current action.
+      // Display-only; falls back to currentStep/currentAction in the renderer.
+      title: pa?.currentActionTitle ? String(pa.currentActionTitle).slice(0, 80) : null,
       target,
       waiting,
       waitingRequestId,
@@ -5489,6 +5586,9 @@ class RunOrchestrator {
       if (typeof event.currentAction === 'string') {
         safe.currentAction = event.currentAction.slice(0, 64);
       }
+      if (typeof event.title === 'string') {
+        safe.title = event.title.slice(0, 80);
+      }
       if (event.target?.label) {
         safe.target = {
           label: String(event.target.label).slice(0, 160),
@@ -5517,6 +5617,7 @@ class RunOrchestrator {
           unverified: Boolean(event.outcome.unverified),
           notDelivered: Boolean(event.outcome.notDelivered),
           verified: Boolean(event.outcome.verified),
+          declined: Boolean(event.outcome.declined),
           completedSteps: Math.min(
             Number(event.outcome.completedSteps) || 0,
             PAGE_TASK_PROGRESS_MAX_STEPS
@@ -5561,6 +5662,7 @@ class RunOrchestrator {
             runBudgetMs: Number(run.resilience.runBudgetMs || 0),
             wrapUp: Boolean(run.resilience.wrapUp),
             contextCompactions: Number(run.resilience.contextCompactions || 0),
+            approvalWaitExtensions: Number(run.resilience.approvalWaitExtensions || 0),
           }
         : null,
       pageActions: run.pageActions
@@ -5572,6 +5674,14 @@ class RunOrchestrator {
             documentUrl: run.pageActions.documentUrl || null,
             fingerprint: run.pageActions.snapshot?.fingerprint || null,
             loopWarnings: Number(run.pageActions.loopWarnings || 0),
+            lastDeniedAction: run.pageActions.lastDeniedAction
+              ? {
+                  action: String(run.pageActions.lastDeniedAction.action || '').slice(0, 64),
+                }
+              : null,
+            currentActionTitle: run.pageActions.currentActionTitle
+              ? String(run.pageActions.currentActionTitle).slice(0, 80)
+              : null,
             recovery: run.pageActions.recoveryCheckpoint
               ? {
                   actionName: String(run.pageActions.recoveryCheckpoint.actionName || '').slice(

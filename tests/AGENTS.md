@@ -21,10 +21,10 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `chatHermes.test.js` covers approval-card settlement; `keyedOperationLock.test.js` covers per-profile session reset and session-key concurrency primitives.
 - `chatComposer.test.js` covers composer context state, action splitting, inline recovery helpers, and the pending-document attachment rules (single-document limit message, structured `document` request building, tray rendering with Replace/Keep-current conflict state).
 - `chatRuntimeMessage.test.js` covers the acknowledgement-only long-run bridge and transient runtime-channel error wording.
-- `pageDom.test.js`, `pageActionPolicy.test.js`, and `pageTabController.test.js` cover bounded page state, policy, and owned-tab behavior.
+- `pageDom.test.js`, `pageActionPolicy.test.js`, and `pageTabController.test.js` cover bounded page state, policy, and owned-tab behavior. `pageActionPolicy.test.js` also guards the optional model-supplied step `title` (≤80 chars, control-character/credential rejection, argument propagation).
 - `evalDryRun.test.js` covers dry-run interception of state-changing page actions without delivery; `evalHook.test.js` covers the build-gated `TEST_RUN_TASK` bridge; `evalTrace.test.js` covers bounded redacted eval trace storage.
 - `tests/browser/AGENTS.md` owns unpacked-extension Playwright coverage and local browser fixtures; its `acceptance-journeys.spec.js` runs the six Day-1 acceptance journeys as real-browser regression.
-- `runOrchestrator.test.js` covers orchestrator behavior including the bounded `page_task_progress` progress-card events (current action, target page, waiting state) and journal safety.
+- `runOrchestrator.test.js` covers orchestrator behavior including the bounded `page_task_progress` progress-card events (current action, target page, waiting state), journal safety, the approval-wait deadline pause, and the declined-outcome/planner-nudge path. `runResilience.test.js` covers the approval-wait deadline-extension math (full wait absorbed, 10-minute cap, non-Act runs untouched, timeout path).
 
 ## Local Contracts
 

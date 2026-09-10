@@ -1060,6 +1060,12 @@ document.addEventListener('DOMContentLoaded', () => {
         );
       } else if (event.type === 'page_action_decision') {
         resolvePageActionConfirmation(chatArea, event);
+        updatePageActionActivity(chatArea, {
+          ...event,
+          runId: event.runId || '',
+          action: event.action || 'page action',
+          state: event.approved ? 'approved' : 'declined',
+        });
       } else if (!replaySawTerminal) {
         // Replay pending interactions through the same renderer used for live
         // events. The owner token is re-established from the run auth, never
@@ -2188,6 +2194,14 @@ document.addEventListener('DOMContentLoaded', () => {
             break;
           case 'page_action_decision':
             resolvePageActionConfirmation(chatArea, event);
+            // Surface a user decline explicitly in the Act activity log (the
+            // follow-up page_task_progress already appends a technical line).
+            updatePageActionActivity(chatArea, {
+              ...event,
+              runId,
+              action: event.action || 'page action',
+              state: event.approved ? 'approved' : 'declined',
+            });
             break;
           case 'page_task_progress':
             updatePageTaskProgress(chatArea, { ...event, runId });

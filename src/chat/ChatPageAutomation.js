@@ -181,7 +181,7 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
   if (status) {
     const parts = [];
     const step =
-      String(event.currentStep || event.currentAction || '').replace(/^page_/, '') ||
+      String(event.title || event.currentStep || event.currentAction || '').replace(/^page_/, '') ||
       'Inspecting page';
     parts.push(`Current: ${step}`);
     if (event.target?.label) {
@@ -246,6 +246,21 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
     body.appendChild(arrow);
     body.appendChild(document.createTextNode(lines.join(' ')));
     outcome.appendChild(body);
+
+    // Distinct declined marker when the user denied the last requested action:
+    // a change of approach (or a fresh inspection) is in flight, not a retry
+    // of the rejected control.
+    let declined = outcome.querySelector('.page-task-progress-outcome-declined');
+    if (!declined) {
+      declined = document.createElement('p');
+      declined.className = 'page-task-progress-outcome-declined';
+      declined.setAttribute('role', 'status');
+      outcome.appendChild(declined);
+    }
+    declined.textContent = event.outcome.declined
+      ? 'Declined: the user denied the last requested action. The task is changing approach instead of repeating it.'
+      : '';
+    declined.hidden = !event.outcome.declined;
     outcome.hidden = false;
   } else if (outcome && outcome.childElementCount === 0) {
     outcome.hidden = true;

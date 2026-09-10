@@ -2729,6 +2729,155 @@ describe('RunOrchestrator page actions', () => {
     }
   });
 
+  it('records a bounded denial, flags the card outcome, and nudges the planner', async () => {
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => ({
+        success: true,
+        snapshot: makeSnapshot(),
+      }),
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    await orch.executeTool(runId, makeCall('deny-state', 'page_get_state', {}));
+
+    const pending = orch.executeTool(
+      runId,
+      makeCall('deny-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, false)).toBe(true);
+    const result = await pending;
+    expect(result.result.error).toBe('PAGE_ACTION_DENIED');
+
+    // The bounded denial marker drives both the card outcome and the nudge.
+    expect(run.pageActions.lastDeniedAction).toMatchObject({ action: 'page_click' });
+    const decision = events.find((event) => event.type === 'page_action_decision');
+    expect(decision).toMatchObject({ approved: false, action: 'page_click' });
+    expect(orch._buildPageTaskProgressEvent(run).outcome.declined).toBe(true);
+
+    // The next planner prompt carries the "do not repeat it" directive.
+    const nudgePrompt = orch._buildSystemPrompt(run, []);
+    expect(nudgePrompt).toContain('DECLINED ACTION');
+    expect(nudgePrompt).toContain('page_click');
+    expect(nudgePrompt).toContain('Do NOT repeat it');
+  });
+
+  it('clears the denial marker on a fresh inspection and on the next approval', async () => {
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId) => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    await orch.executeTool(runId, makeCall('clear-state', 'page_get_state', {}));
+
+    const denyOne = orch.executeTool(
+      runId,
+      makeCall('clear-deny-1', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const first = events.find((event) => event.type === 'page_action_confirmation');
+    expect(orch.resolvePageActionDecision(runId, first.confirmationId, false)).toBe(true);
+    await denyOne;
+    expect(run.pageActions.lastDeniedAction).toMatchObject({ action: 'page_click' });
+
+    // A fresh inspection means the model moved on from the denied control.
+    await orch.executeTool(runId, makeCall('clear-fresh', 'page_get_state', {}));
+    expect(run.pageActions.lastDeniedAction).toBeNull();
+
+    // A later deny followed by an approval also clears the marker.
+    const denyTwo = orch.executeTool(
+      runId,
+      makeCall('clear-deny-2', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // events.find() would return the already-resolved first confirmation, so
+    // read the currently pending confirmation for this deny instead.
+    const second = run.pageActions.pendingConfirmation;
+    expect(second).toBeTruthy();
+    expect(second.id).not.toBe(first.confirmationId);
+    expect(orch.resolvePageActionDecision(runId, second.id, false)).toBe(true);
+    await denyTwo;
+    expect(run.pageActions.lastDeniedAction).toMatchObject({ action: 'page_click' });
+
+    const approveOne = orch.executeTool(
+      runId,
+      makeCall('clear-approve', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const approveConf = run.pageActions.pendingConfirmation;
+    expect(approveConf).toBeTruthy();
+    expect(orch.resolvePageActionDecision(runId, approveConf.id, true)).toBe(true);
+    await approveOne;
+    expect(run.pageActions.lastDeniedAction).toBeNull();
+  });
+
+  it('advertises an optional bounded title on every page-action tool', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.snapshot = makeSnapshot();
+    const tools = await orch._buildTools(run);
+    const names = [
+      'page_get_state',
+      'page_find_text',
+      'page_wait',
+      'page_batch',
+      'page_click',
+      'page_input',
+      'page_select',
+      'page_scroll',
+    ];
+    for (const name of names) {
+      const tool = tools.find((entry) => entry.function.name === name);
+      expect(tool, `tool ${name} is advertised`).toBeTruthy();
+      expect(tool.function.parameters.properties.title).toMatchObject({
+        type: 'string',
+        maxLength: 80,
+      });
+    }
+  });
+
+  it('carries a bounded model-supplied title onto the progress card', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, snapshot: makeSnapshot(), message: 'updated' },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    await orch.executeTool(runId, makeCall('title-state', 'page_get_state', {}));
+    await orch.executeTool(
+      runId,
+      makeCall('title-scroll', 'page_scroll', {
+        direction: 'down',
+        pages: 1,
+        title: 'Revealing the results list',
+      })
+    );
+    expect(run.pageActions.currentActionTitle).toBe('Revealing the results list');
+
+    const progress = orch._buildPageTaskProgressEvent(run);
+    expect(progress.title).toBe('Revealing the results list');
+    // The journal keeps only the bounded display title.
+    expect(orch._journalEvent(progress).title).toBe('Revealing the results list');
+
+    // An over-long title is still bounded to 80 chars on the card.
+    run.pageActions.currentActionTitle = 'x'.repeat(120);
+    expect(orch._buildPageTaskProgressEvent(run).title.length).toBe(80);
+
+    // A fresh inspection clears the stale title so the card falls back to the
+    // event-type label.
+    await orch.executeTool(runId, makeCall('title-state-two', 'page_get_state', {}));
+    expect(run.pageActions.currentActionTitle).toBeNull();
+  });
+
   it('aborts a pending page-action approval and clears the pending decision', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async (_tabId, actionName) =>

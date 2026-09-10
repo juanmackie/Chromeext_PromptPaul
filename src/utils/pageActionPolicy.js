@@ -47,6 +47,15 @@ export const PAGE_ACTION_RISKS = Object.freeze({
   PROHIBITED: 'prohibited',
 });
 
+export const PAGE_ACTION_TITLE_MAX_CHARS = 80;
+
+// Credential/payment wording that must never appear in a model-supplied step
+// title (mirrors the sensitive-field conventions in pageDom.js). Rejecting it
+// here prevents a title from echoing a masked field's identity back to the
+// user or into the journal.
+const CREDENTIAL_TITLE_PATTERN =
+  /password|passcode|one[-_ ]?time|otp|2fa|secret|api[-_ ]?key|token|credit|debit|card|\bcvv\b|\bcvc\b|ssn|social security|credential|previous password|pincode|bank/i;
+
 const RISK_PATTERN =
   /submit|send|delete|remove|purchase|buy|checkout|pay|payment|transfer|publish|post|sign out|log out|account|security|password|passcode|one[-_ ]?time|otp|2fa|credential|api[-_ ]?key|token|secret|permission|authorize|allow|deny/i;
 const NAVIGATION_PATTERN =
@@ -77,6 +86,39 @@ export function isPageManualInterventionActionName(value) {
 }
 
 /**
+ * Validate a bounded optional model-supplied step title for a page action.
+ * Overseen by the policy layer: over-long titles, control characters, and
+ * credential/payment wording are rejected so the label is safe to render on
+ * the progress card and persist in the journal.
+ * @param {unknown} raw
+ * @returns {{valid: boolean, value?: string, error?: string}|null} - null when
+ *   absent or empty (optional field), otherwise a validation result.
+ */
+export function normalizePageActionTitle(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string') return { valid: false, error: 'Title must be a string.' };
+  const title = raw.trim();
+  if (!title) return null;
+  if (title.length > PAGE_ACTION_TITLE_MAX_CHARS) {
+    return {
+      valid: false,
+      error: `Title is limited to ${PAGE_ACTION_TITLE_MAX_CHARS} characters.`,
+    };
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(title)) {
+    return { valid: false, error: 'Title cannot contain control characters.' };
+  }
+  if (CREDENTIAL_TITLE_PATTERN.test(title)) {
+    return {
+      valid: false,
+      error: 'Title cannot reference credentials, secret, or payment data.',
+    };
+  }
+  return { valid: true, value: title };
+}
+
+/**
  * Normalize and bound arguments received from a model tool call.
  * @param {string} actionName
  * @param {object} args
@@ -88,12 +130,19 @@ export function normalizePageActionArgs(actionName, args = {}) {
     return { valid: false, error: 'Page action arguments must be an object.' };
   }
 
+  // Optional human label shared by every page action. Rejected titles abort
+  // the whole call so a control-character/credential title never reaches the
+  // page or the journal.
+  const title = normalizePageActionTitle(args.title);
+  if (title && !title.valid) return title;
+  const attachTitle = (value) => (title?.value ? { ...value, title: title.value } : value);
+
   if (actionName === 'page_get_state') {
-    if (args.regionId == null) return { valid: true, value: {} };
+    if (args.regionId == null) return { valid: true, value: attachTitle({}) };
     const regionId = normalizeRegionId(args.regionId);
     if (!regionId)
       return { valid: false, error: 'Region must be a content-script region-N identifier.' };
-    return { valid: true, value: { regionId } };
+    return { valid: true, value: attachTitle({ regionId }) };
   }
   if (actionName === 'page_wait') {
     const condition = String(args.condition || '')
@@ -119,12 +168,12 @@ export function normalizePageActionArgs(actionName, args = {}) {
         return { valid: false, error: 'Region must be a content-script region-N identifier.' };
       return {
         valid: true,
-        value: { condition, timeoutMs, ...(text ? { text } : {}), regionId },
+        value: attachTitle({ condition, timeoutMs, ...(text ? { text } : {}), regionId }),
       };
     }
     return {
       valid: true,
-      value: { condition, timeoutMs, ...(text ? { text } : {}) },
+      value: attachTitle({ condition, timeoutMs, ...(text ? { text } : {}) }),
     };
   }
   if (actionName === 'page_batch') {
@@ -150,16 +199,16 @@ export function normalizePageActionArgs(actionName, args = {}) {
       if (!normalized.valid) return normalized;
       actions.push({ name, args: normalized.value });
     }
-    return { valid: true, value: { actions } };
+    return { valid: true, value: attachTitle({ actions }) };
   }
   if (actionName === 'page_find_text') {
     const query = capPageText(args.query, PAGE_DOM_CAPS.maxFindQueryChars);
     if (!query) return { valid: false, error: 'Search text cannot be empty.' };
-    if (args.regionId == null) return { valid: true, value: { query } };
+    if (args.regionId == null) return { valid: true, value: attachTitle({ query }) };
     const regionId = normalizeRegionId(args.regionId);
     if (!regionId)
       return { valid: false, error: 'Region must be a content-script region-N identifier.' };
-    return { valid: true, value: { query, regionId } };
+    return { valid: true, value: attachTitle({ query, regionId }) };
   }
   if (actionName === 'page_scroll') {
     const direction = String(args.direction || (args.down === false ? 'up' : 'down')).toLowerCase();
@@ -182,7 +231,11 @@ export function normalizePageActionArgs(actionName, args = {}) {
     }
     return {
       valid: true,
-      value: { direction, pages, ...(containerIndex === null ? {} : { containerIndex }) },
+      value: attachTitle({
+        direction,
+        pages,
+        ...(containerIndex === null ? {} : { containerIndex }),
+      }),
     };
   }
 
@@ -202,16 +255,16 @@ export function normalizePageActionArgs(actionName, args = {}) {
         error: `Input text is limited to ${PAGE_DOM_CAPS.maxInputChars} characters.`,
       };
     }
-    return { valid: true, value: { snapshotId, index, text } };
+    return { valid: true, value: attachTitle({ snapshotId, index, text }) };
   }
 
   if (actionName === 'page_select') {
     const option = capPageText(args.option ?? args.optionText, PAGE_DOM_CAPS.maxElementTextChars);
     if (!option) return { valid: false, error: 'A select option is required.' };
-    return { valid: true, value: { snapshotId, index, option } };
+    return { valid: true, value: attachTitle({ snapshotId, index, option }) };
   }
 
-  return { valid: true, value: { snapshotId, index } };
+  return { valid: true, value: attachTitle({ snapshotId, index }) };
 }
 
 /**
@@ -471,12 +524,14 @@ export const pageActionPolicy = {
   PAGE_USER_INPUT_ACTION_NAME,
   PAGE_MANUAL_INTERVENTION_ACTION_NAME,
   PAGE_ACTION_RISKS,
+  PAGE_ACTION_TITLE_MAX_CHARS,
   isPageActionName,
   isPageActionReadOnly,
   isPageTabActionName,
   isPageUserInputActionName,
   isPageManualInterventionActionName,
   normalizePageActionArgs,
+  normalizePageActionTitle,
   normalizePageTabActionArgs,
   normalizePageUserInputArgs,
   normalizePageManualInterventionArgs,

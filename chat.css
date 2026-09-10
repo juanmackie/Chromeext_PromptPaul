@@ -1222,6 +1222,12 @@ button:focus-visible {
   color: var(--ext-primary);
 }
 
+.page-task-progress-outcome-declined {
+  margin: 0.25rem 0 0;
+  color: var(--ext-destructive);
+  font-size: 0.85rem;
+}
+
 .page-task-progress-steps {
   margin: 8px 0 0;
   padding-left: 1.25rem;
