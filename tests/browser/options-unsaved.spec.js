@@ -146,6 +146,67 @@ test('switching profiles does not silently discard unsaved connection or editor 
   }
 });
 
+test('switching profiles with no edits does not prompt about unsaved changes', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-clean-switch-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  const extensionId = new URL(harness.url()).hostname;
+  const options = await context.newPage();
+
+  try {
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.set(
+            {
+              profiles: [
+                {
+                  id: 'default',
+                  name: 'Default',
+                  provider: 'api',
+                  llmEndpoint: 'https://a.example.com/v1',
+                  modelName: 'openrouter/free',
+                },
+                {
+                  id: 'alt',
+                  name: 'Alt',
+                  provider: 'api',
+                  llmEndpoint: 'https://b.example.com/v1',
+                  modelName: 'openrouter/free',
+                },
+              ],
+              lastSelectedProfileId: 'default',
+            },
+            resolve
+          )
+        )
+    );
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await options.waitForTimeout(1500);
+
+    // Selecting a profile is the switch itself, not an unsaved draft, so a
+    // freshly loaded page must not look dirty.
+    await expect(options.locator('#unsaved-banner')).toBeHidden();
+
+    let dialogCount = 0;
+    options.on('dialog', (dialog) => {
+      dialogCount += 1;
+      dialog.accept();
+    });
+
+    await options.locator('#profileSelect').selectOption('alt');
+    await options.waitForTimeout(300);
+
+    // No discard prompt; the switch applied and nothing is flagged dirty.
+    expect(dialogCount).toBe(0);
+    await expect(options.locator('#llmEndpoint')).toHaveValue('https://b.example.com/v1');
+    await expect(options.locator('#unsaved-banner')).toBeHidden();
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
 test('Improve Instruction routes through the background and leaves the original intact (P2-06)', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-improve-guard-'));
   const { context } = await launchTestBrowser(userDataDir);

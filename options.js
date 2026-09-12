@@ -1237,7 +1237,9 @@ document.addEventListener('DOMContentLoaded', () => {
       { element: document.getElementById('customModelName') },
       { element: document.getElementById('reasoningLevel') },
       { element: document.getElementById('systemPrompt') },
-      { element: document.getElementById('profileSelect') },
+      // NOTE: the profile selector is intentionally NOT tracked here. Selecting a
+      // profile is the switch action itself, not an unsaved draft; including it
+      // made every switch look dirty and fire the discard prompt with no edits.
       {
         element: document.getElementById('enableStreamingToggle'),
         getValue: (el) => String(Boolean(el && el.checked)),
