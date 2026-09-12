@@ -2000,7 +2000,9 @@
   function dispatchPageActionInput(element, text) {
     const tag = element.tagName.toLowerCase();
     if (element.disabled || element.readOnly || element.getAttribute('aria-disabled') === 'true') {
-      throw new Error('The target is disabled or read-only.');
+      const error = new Error('The target is disabled or read-only.');
+      error.code = 'PAGE_ACTION_TARGET_DISABLED';
+      throw error;
     }
     if (['password', 'file', 'hidden'].includes(String(element.type || '').toLowerCase())) {
       throw new Error('Credential and file controls are not supported.');
@@ -2319,7 +2321,11 @@
     }
 
     const record = getPageActionTarget(session, request.args || {});
-    if (record.disabled) throw new Error('The target is disabled.');
+    if (record.disabled) {
+      const error = new Error('The target is disabled or not yet available.');
+      error.code = 'PAGE_ACTION_TARGET_DISABLED';
+      throw error;
+    }
     if (record.sensitive) throw new Error('Sensitive controls are blocked.');
     highlightPageActionTarget(session, record);
     const beforeUrl = sanitizePageActionUrl(window.location.href);

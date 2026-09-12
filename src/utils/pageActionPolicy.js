@@ -381,6 +381,19 @@ export function classifyPageAction(target = {}, actionName = '') {
     };
   }
 
+  if (target.disabled === true) {
+    return {
+      risk: PAGE_ACTION_RISKS.PROHIBITED,
+      requiresConfirmation: true,
+      prohibited: true,
+      code: 'PAGE_ACTION_TARGET_DISABLED',
+      reason:
+        'This control is disabled on the page and cannot be activated. Re-inspect with ' +
+        "page_get_state and choose a different, enabled control (for a list row, use the row's own " +
+        'link or button instead).',
+    };
+  }
+
   const sensitive = Boolean(target.sensitive) || isSensitivePageElement(target);
   const descriptor = [
     target.tag,

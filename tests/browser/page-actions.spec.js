@@ -811,6 +811,55 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('refuses page_click on a disabled control and still clicks an enabled row sibling', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'gmail-list.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      await harness.evaluate(() => window.pageActionHarness.setTrustedMode(true));
+      const inspected = await startAndInspect(harness, targetUrl, 'gmail-list');
+      runId = inspected.runId;
+      const disabled = inspected.snapshot.elements.find((element) => element.disabled === true);
+      expect(disabled, JSON.stringify(inspected.snapshot.elements)).toBeTruthy();
+
+      const refused = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'gmail-list-disabled-click', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { runId, snapshotId: inspected.snapshot.snapshotId, index: disabled.index }
+      );
+      expect(refused.result?.error, JSON.stringify(refused)).toBe('PAGE_ACTION_TARGET_DISABLED');
+      expect(refused.result?.message).toContain('disabled');
+
+      const enabled = inspected.snapshot.elements.find(
+        (element) => element.disabled !== true && element.tag === 'button'
+      );
+      expect(enabled, JSON.stringify(inspected.snapshot.elements)).toBeTruthy();
+      const clicked = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'gmail-list-enabled-click', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { runId, snapshotId: inspected.snapshot.snapshotId, index: enabled.index }
+      );
+      expect(clicked.error, JSON.stringify(clicked)).toBeUndefined();
+      expect(clicked.result?.actionReceipt?.disposition).toBeTruthy();
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('indexes representative Gmail and Outlook compose fields, including contenteditable bodies', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);

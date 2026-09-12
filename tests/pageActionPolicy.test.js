@@ -282,6 +282,44 @@ describe('pageActionPolicy', () => {
     }
   });
 
+  it('blocks disabled targets for state-changing actions but allows read-only reads', () => {
+    const disabledTarget = {
+      tag: 'button',
+      label: 'Open details',
+      text: 'Open details',
+      disabled: true,
+    };
+    const clickResult = evaluatePageActionPolicy({
+      actionName: 'page_click',
+      target: disabledTarget,
+    });
+    expect(clickResult.code).toBe('PAGE_ACTION_TARGET_DISABLED');
+    expect(clickResult).toMatchObject({
+      allowed: false,
+      prohibited: true,
+      risk: PAGE_ACTION_RISKS.PROHIBITED,
+    });
+    expect(clickResult.reason).toContain('disabled');
+    expect(clickResult.reason).toContain('page_get_state');
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target: { tag: 'input', disabled: true },
+      }).prohibited
+    ).toBe(true);
+    // Disabled state never blocks read-only inspection.
+    expect(
+      evaluatePageActionPolicy({ actionName: 'page_get_state', target: disabledTarget })
+    ).toMatchObject({ allowed: true, risk: PAGE_ACTION_RISKS.READ_ONLY });
+    // An enabled control with identical metadata stays allowed.
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_click',
+        target: { tag: 'button', label: 'Open details', text: 'Open details', disabled: false },
+      }).allowed
+    ).toBe(true);
+  });
+
   it('keeps navigation-capable buttons confirmation-gated in trusted mode', () => {
     for (const text of ['Open', 'Continue', 'Next', 'Sign in', 'Log in']) {
       const result = evaluatePageActionPolicy({

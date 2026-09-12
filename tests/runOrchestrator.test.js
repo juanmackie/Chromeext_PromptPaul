@@ -3158,6 +3158,30 @@ describe('RunOrchestrator page actions', () => {
     );
   });
 
+  it('returns a coded recoverable result for a disabled page_click target instead of throwing', async () => {
+    const executorCalls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => {
+        executorCalls.push(actionName);
+        return { success: true };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const snapshot = makeSnapshot();
+    snapshot.elements[1].disabled = true; // "Open details" button
+    orch.activeRuns.get(runId).pageActions.snapshot = snapshot;
+
+    const result = await orch.executeTool(
+      runId,
+      makeCall('click-disabled-target', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+
+    expect(result.result.error).toBe('PAGE_ACTION_TARGET_DISABLED');
+    expect(result.result.message).toContain('disabled');
+    expect(executorCalls).not.toContain('page_click');
+  });
+
   it('classifies handshake and bridge failures as recoverable tab errors', async () => {
     const orch = new RunOrchestrator(createStubSkillManager());
     for (const code of [

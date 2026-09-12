@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Search results - juan.mackie@gmail.com - Gmail</title>
+  </head>
+  <body>
+    <!-- Gmail-like message list: disabled toolbar buttons next to enabled row links.
+       Row links stay actionable even though the toolbar "Archive"/"Older" controls
+       carry aria-disabled="true" (mirrors Gmail chrome from a real failing run). -->
+    <main aria-label="Search results">
+      <div role="toolbar">
+        <div role="button" aria-disabled="true" tabindex="0" aria-label="Archive selected">
+          Archive
+        </div>
+        <div role="button" aria-disabled="true" tabindex="0" aria-label="Older messages">Older</div>
+      </div>
+      <div role="grid">
+        <div role="row" tabindex="0" aria-label="Goodreads Aug 1 email">
+          <div role="link" tabindex="0" aria-label="Open Goodreads email from Aug 1">
+            Goodreads: your monthly picks
+          </div>
+        </div>
+        <div role="row" tabindex="0" aria-label="Goodreads Aug 8 email">
+          <div role="link" tabindex="0" aria-label="Open Goodreads email from Aug 8">
+            Goodreads: new releases
+          </div>
+        </div>
+        <button type="button">Reply</button>
+      </div>
+    </main>
+  </body>
+</html>

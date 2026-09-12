@@ -2086,6 +2086,7 @@ class RunOrchestrator {
           tag: target.tag,
           role: target.role,
           sensitive: Boolean(target.sensitive),
+          disabled: target.disabled === true,
           hasHref: Boolean(target.href),
           valuePresent: Boolean(target.valuePresent),
         }
@@ -2115,7 +2116,7 @@ class RunOrchestrator {
       return {
         success: true,
         result: {
-          error: 'PAGE_ACTION_BLOCKED',
+          error: policy.code || 'PAGE_ACTION_BLOCKED',
           message: policy.reason,
           risk: policy.risk,
         },
@@ -3923,7 +3924,9 @@ class RunOrchestrator {
           'pass regionId to scope follow-up reads to one indexed region on large pages, ' +
           'use the screenshot plus visual index badges with the snapshot indices to ground small or ambiguous controls, ' +
           'handle blocking popups or login walls in the current tab before other actions, then act, ' +
-          're-inspect after every mutation, and continue until done. For ' +
+          're-inspect after every mutation, and continue until done. Skip controls marked disabled=true; ' +
+          'they cannot be activated, so re-inspect and pick an enabled control (for a list row, use the ' +
+          "row's own link or button). For " +
           'multi-item or ongoing requests, do not stop after a partial result or ask whether to continue; ' +
           'an interim progress report or next-steps menu is not completion; keep using the tools until ' +
           'the requested work is complete. Ask a question only when a real ' +
