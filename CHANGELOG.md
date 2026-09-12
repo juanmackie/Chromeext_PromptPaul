@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.3.0] - 2026-09-12
+
+- Replaced the keyless DuckDuckGo Instant Answer provider with a keyless Exa search client (`src/utils/keylessSearch.js`) backed by Exa's hosted MCP endpoint, falling back to Parallel's keyless hosted Search MCP.
+- Added an optional background-owned Exa API key (`exaSearchApiKey`) that only raises Exa free-tier rate limits; it is excluded from backups and never exposed to the Options page as a value.
+- Updated the Options page provider UI: the Web Search section now offers Exa (default, free, no key required) and Brave (keyed).
+- `searchProvider` now accepts `exa` or `brave`; a stored legacy `duckduckgo` value migrates to `exa` automatically.
+
 ## [6.2.0] - 2026-05-11
 
 - Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.

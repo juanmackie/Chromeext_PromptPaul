@@ -50,7 +50,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `src/orchestrator/HermesTransport.js` owns the authenticated Hermes gateway routes, session creation, bounded SSE parsing, and server approval requests. Hermes credentials and session pointers stay in the background worker.
 - `src/utils/modelDiscovery.js` owns background-only `/models` requests. API profiles use the configured compatible endpoint, while Codex profiles use the authenticated Codex backend route and receive model-specific reasoning metadata.
 - `src/utils/braveSearch.js` bounded Brave LLM Context client with URL and payload validation (requires a key)
-- `src/utils/duckDuckGoSearch.js` keyless DuckDuckGo Instant Answer client that normalizes to the same source shape as Brave
+- `src/utils/keylessSearch.js` keyless search client for Exa's hosted MCP endpoint with a Parallel Search MCP fallback; normalizes to the same source shape as Brave
 - `src/utils/pageDom.js` bounded semantic DOM snapshot normalization and sensitive-field masking
 - `src/utils/pageActionPolicy.js` page-action and bounded tab argument validation, including `page_wait` and non-nested read-only `page_batch`, risk classification, hard blocks, trusted-mode policy, and safe manual-intervention validation
 - `src/utils/pageActionCheckpoint.js` bounded session-only mutation checkpoints and explicit-recovery metadata
@@ -158,9 +158,9 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 ### Web Search Grounding (optional)
 
-1. The sidebar **Web** toggle sets a boolean `webSearchEnabled` in `chrome.storage.local`; the side panel asks the background worker only for configured/not-configured status and never reads `braveSearchApiKey`. The `searchProvider` preference (`'duckduckgo'` default | `'brave'`) picks the active provider
+1. The sidebar **Web** toggle sets a boolean `webSearchEnabled` in `chrome.storage.local`; the side panel asks the background worker only for configured/not-configured status and never reads `braveSearchApiKey`. The `searchProvider` preference (`'exa'` default | `'brave'`; a stored legacy `'duckduckgo'` migrates to `'exa'`) picks the active provider
 2. `chat.js` reads the global preference at each `makeApiCall` / `makeApiCallWithMedia` entry and injects `webSearch: true` into `runConfig`
-3. The background worker validates provider availability and injects a background-owned search executor that dispatches on `searchProvider`; DuckDuckGo runs keyless, while only the Brave path reads `braveSearchApiKey` from storage at search time
+3. The background worker validates provider availability and injects a background-owned search executor (historical name `braveSearchExecutor`) that dispatches on `searchProvider`; the Exa leg runs keyless with an optional background-owned `exaSearchApiKey` that only lifts Exa free-tier rate limits, falls back to Parallel's keyless hosted Search MCP, and only the Brave path reads `braveSearchApiKey` from storage at search time
 4. `RunOrchestrator._buildTools()` offers the reserved `web_search` tool alongside the normal toolset (or alone for `none` / a satisfied forced user tool) with automatic model selection while a search is available; grounding is permission, not a mandate
 5. `executeTool()` claims the single search slot before network I/O. Parallel or hallucinated duplicate calls receive `WEB_SEARCH_ALREADY_USED` and cannot issue another search request
 6. After an attempt, the grounding prompt switches to an already-completed phase and the immediate LLM continuation is text-only so the model consumes the existing result and produces the final answer

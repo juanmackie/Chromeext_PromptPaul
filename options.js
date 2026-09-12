@@ -1274,6 +1274,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const groundingTracker = createDirtyTracker(
     [
       { element: document.getElementById('braveSearchApiKey') },
+      { element: document.getElementById('exaSearchApiKey') },
       {
         element: document.getElementById('searchProviderGroup'),
         getValue: (el) =>
@@ -3605,23 +3606,31 @@ function setupGroundingHandlers() {
   const keyToggle = document.getElementById('braveSearchKeyToggle');
   const keyRemove = document.getElementById('braveSearchKeyRemove');
   const keyStatus = document.getElementById('braveSearchKeyStatus');
-  const providerDuckDuckGo = document.getElementById('searchProviderDuckDuckGo');
+  const exaKeyInput = document.getElementById('exaSearchApiKey');
+  const exaKeyToggle = document.getElementById('exaSearchKeyToggle');
+  const exaKeyRemove = document.getElementById('exaSearchKeyRemove');
+  const exaKeyStatus = document.getElementById('exaSearchKeyStatus');
+  const exaKeyError = document.getElementById('exaSearchApiKeyError');
+  const providerExa = document.getElementById('searchProviderExa');
   const providerBrave = document.getElementById('searchProviderBrave');
   const braveKeyGroup = document.getElementById('braveKeyGroup');
-  const braveKeyLinks = document.getElementById('braveKeyLinks');
+  const exaKeyGroup = document.getElementById('exaKeyGroup');
 
-  // Show/hide the Brave-only key field and links based on the provider.
+  const MAX_EXA_KEY_LENGTH = 256;
+  const EXA_KEY_TOO_LONG = 'Exa API key must be 256 characters or fewer.';
+
+  // Show/hide provider-specific key fields; the shared link row stays visible.
   function renderProviderUI(provider) {
-    const isBrave = provider === 'brave';
-    if (braveKeyGroup) braveKeyGroup.style.display = isBrave ? '' : 'none';
-    if (braveKeyLinks) braveKeyLinks.style.display = isBrave ? '' : 'none';
+    if (braveKeyGroup) braveKeyGroup.style.display = provider === 'brave' ? '' : 'none';
+    if (exaKeyGroup) exaKeyGroup.style.display = provider === 'exa' ? '' : 'none';
   }
 
-  // Resolve the stored provider, defaulting to DuckDuckGo (free, keyless).
+  // Resolve the stored provider, defaulting to Exa (keyless).
+  // Legacy 'duckduckgo' (and any other stored value) normalizes to 'exa'.
   const readActiveProvider = (onDone) => {
     chrome.storage.local.get(['searchProvider'], (result) => {
-      const provider = result.searchProvider === 'brave' ? 'brave' : 'duckduckgo';
-      if (providerDuckDuckGo) providerDuckDuckGo.checked = provider !== 'brave';
+      const provider = result.searchProvider === 'brave' ? 'brave' : 'exa';
+      if (providerExa) providerExa.checked = provider !== 'brave';
       if (providerBrave) providerBrave.checked = provider === 'brave';
       renderProviderUI(provider);
       if (typeof onDone === 'function') onDone(provider);
@@ -3630,8 +3639,8 @@ function setupGroundingHandlers() {
 
   // Persist provider selection on change.
   function wireProviderRadios() {
-    if (!providerDuckDuckGo || !providerBrave) return;
-    for (const radio of [providerDuckDuckGo, providerBrave]) {
+    if (!providerExa || !providerBrave) return;
+    for (const radio of [providerExa, providerBrave]) {
       radio.addEventListener('change', () => {
         if (!radio.checked) return;
         const provider = radio.value;
@@ -3672,6 +3681,55 @@ function setupGroundingHandlers() {
     });
   }
 
+  // Exa key status: masked display only; the raw key never leaves the password input.
+  function updateExaKeyStatus(onDone) {
+    chrome.storage.local.get(['exaSearchApiKey'], (result) => {
+      if (result.exaSearchApiKey) {
+        const key = result.exaSearchApiKey;
+        const masked =
+          key.length > 8
+            ? key.substring(0, 4) + '•'.repeat(key.length - 8) + key.substring(key.length - 4)
+            : '•'.repeat(key.length);
+        if (exaKeyStatus) exaKeyStatus.textContent = '✓ Saved: ' + masked;
+        applyCredentialMask(exaKeyInput, true);
+      } else {
+        if (exaKeyStatus) exaKeyStatus.textContent = 'No key configured (keyless is fine).';
+        applyCredentialMask(exaKeyInput, false, 'Optional: paste your Exa API key');
+      }
+      if (typeof onDone === 'function') onDone();
+    });
+  }
+
+  function setExaKeyTooLong(error) {
+    if (exaKeyInput) exaKeyInput.classList.toggle('is-invalid', error);
+    if (exaKeyError) exaKeyError.textContent = error ? EXA_KEY_TOO_LONG : '';
+  }
+
+  // Exa password toggle
+  if (exaKeyToggle && exaKeyInput) {
+    exaKeyToggle.addEventListener('click', () => {
+      const isPassword = exaKeyInput.type === 'password';
+      exaKeyInput.type = isPassword ? 'text' : 'password';
+      exaKeyToggle.querySelector('.material-symbols-outlined').textContent = isPassword
+        ? 'visibility_off'
+        : 'visibility';
+    });
+  }
+
+  // Remove Exa key (leaves keyless Exa available; web grounding stays as-is)
+  if (exaKeyRemove) {
+    exaKeyRemove.addEventListener('click', () => {
+      chrome.storage.local.remove('exaSearchApiKey', () => {
+        if (chrome.runtime.lastError) {
+          showStatus('Failed to remove key: ' + chrome.runtime.lastError.message, true);
+          return;
+        }
+        updateExaKeyStatus();
+        showStatus('Exa API key removed; keyless Exa is still available.', false, true);
+      });
+    });
+  }
+
   // Remove key
   if (keyRemove) {
     keyRemove.addEventListener('click', () => {
@@ -3688,21 +3746,42 @@ function setupGroundingHandlers() {
     });
   }
 
-  // Explicit save for the Brave key (replaces debounced auto-save)
+  // Explicit save for the Brave key / Exa key (replaces debounced auto-save)
   const saveGroundingButton = document.getElementById('saveGrounding');
   if (saveGroundingButton && keyInput) {
     saveGroundingButton.addEventListener('click', () => {
-      const isBrave =
-        (providerBrave && providerBrave.checked) || (!providerDuckDuckGo && !providerBrave);
-      // DuckDuckGo needs no credential; saving just persists the provider choice.
+      const isBrave = (providerBrave && providerBrave.checked) || (!providerExa && !providerBrave);
       if (!isBrave) {
+        const value = exaKeyInput ? exaKeyInput.value.trim() : '';
+        if (value.length > MAX_EXA_KEY_LENGTH) {
+          setExaKeyTooLong(true);
+          showStatus('Exa API key is too long (max 256 characters).', true, true);
+          flashSaveFeedback(saveGroundingButton, true);
+          return;
+        }
         runErrorAwareSave({
           button: saveGroundingButton,
-          successMessage: 'DuckDuckGo is your search provider.',
+          successMessage: 'Web search settings saved.',
           errorLabel: 'Failed to save search settings',
           notify: showStatus,
+          onSuccess: updateExaKeyStatus,
           markClean: markGroundingTrackerClean,
-          write: () => Promise.resolve(),
+          write: () => {
+            const typed = exaKeyInput.value.trim();
+            if (typed) {
+              return setChromeStorage(chrome.storage.local, { exaSearchApiKey: typed });
+            }
+            if (exaKeyInput.dataset.configured === 'true') {
+              // Masked field with no new value. Keep the existing stored key.
+              return Promise.resolve();
+            }
+            // Empty value clears any stored key.
+            return new Promise((resolve, reject) =>
+              chrome.storage.local.remove('exaSearchApiKey', () =>
+                chrome.runtime.lastError ? reject(chrome.runtime.lastError) : resolve()
+              )
+            );
+          },
         })();
         return;
       }
@@ -3743,9 +3822,22 @@ function setupGroundingHandlers() {
     });
   }
 
+  if (exaKeyInput) {
+    exaKeyInput.addEventListener('input', () => {
+      if (exaKeyInput.dataset.configured === 'true') delete exaKeyInput.dataset.configured;
+      setExaKeyTooLong(exaKeyInput.value.trim().length > MAX_EXA_KEY_LENGTH);
+      if (exaKeyStatus) {
+        exaKeyStatus.textContent = 'Unsaved changes. Click Save Web Search Settings.';
+      }
+      announceDirtyChange(true);
+    });
+  }
+
   // Load initial state
   readActiveProvider(() => {
-    updateKeyStatus(() => markGroundingTrackerClean?.());
+    updateKeyStatus(() => {
+      updateExaKeyStatus(() => markGroundingTrackerClean?.());
+    });
   });
 }
 

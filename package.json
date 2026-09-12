@@ -1,6 +1,6 @@
 {
   "name": "prompt-paul",
-  "version": "6.2.1",
+  "version": "6.3.0",
   "description": "Prompt Paul - Chrome extension for AI-powered text processing with context menus and side panel chat interface",
   "main": "background.js",
   "author": "Juan Mackie",

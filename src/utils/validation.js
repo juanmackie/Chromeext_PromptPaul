@@ -49,6 +49,8 @@ export const RESERVED_TOOL_NAMES = Object.freeze([
 ]);
 export const ALLOWED_TOOL_METHODS = Object.freeze(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
 
+// Provider credentials (braveSearchApiKey, exaSearchApiKey) are deliberately
+// excluded from backups; providers that need keys are reconfigured on restore.
 export const BACKUP_LOCAL_KEYS = Object.freeze([
   'profiles',
   'lastSelectedProfileId',
@@ -384,10 +386,14 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
       }
       result[key] = value;
     } else if (key === 'searchProvider') {
-      if (!['duckduckgo', 'brave'].includes(value)) {
-        return { valid: false, error: 'searchProvider must be duckduckgo or brave.' };
+      if (value === 'duckduckgo') {
+        // Legacy backup value: restore as 'exa' (both were keyless).
+        result[key] = 'exa';
+      } else if (!['exa', 'brave'].includes(value)) {
+        return { valid: false, error: 'searchProvider must be exa or brave.' };
+      } else {
+        result[key] = value;
       }
-      result[key] = value;
     } else if (key === 'notchPosition') {
       if (!Number.isFinite(value) || value < 0 || value > 100) {
         return { valid: false, error: 'notchPosition must be a number from 0 to 100.' };

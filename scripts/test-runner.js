@@ -1447,6 +1447,7 @@ function runIntegrationTests(runner) {
       'voiceInputPermissionState',
       'voiceInputPermissionLastChecked',
       'braveSearchApiKey',
+      'exaSearchApiKey',
       'webSearchEnabled',
       'searchProvider',
       'pageActionsEnabled',

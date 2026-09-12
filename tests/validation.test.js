@@ -127,8 +127,13 @@ describe('validation helpers', () => {
 
   it('preserves the search provider preference in backups', () => {
     expect(BACKUP_LOCAL_KEYS).toContain('searchProvider');
-    expect(normalizeBackupPayload({ local: { searchProvider: 'duckduckgo' } }).valid).toBe(true);
+    expect(BACKUP_LOCAL_KEYS).not.toContain('exaSearchApiKey');
+    expect(BACKUP_LOCAL_KEYS).not.toContain('braveSearchApiKey');
+    expect(normalizeBackupPayload({ local: { searchProvider: 'exa' } }).valid).toBe(true);
     expect(normalizeBackupPayload({ local: { searchProvider: 'brave' } }).valid).toBe(true);
+    const legacy = normalizeBackupPayload({ local: { searchProvider: 'duckduckgo' } });
+    expect(legacy.valid).toBe(true);
+    expect(legacy.value.local.searchProvider).toBe('exa');
     expect(normalizeBackupPayload({ local: { searchProvider: 'yahoo' } }).valid).toBe(false);
   });
 

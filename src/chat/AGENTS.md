@@ -63,7 +63,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 
 ## Local Contracts
 
-- `ChatGrounding.js` owns the sidebar `webSearchEnabled` toggle, background-only Brave key status bridge, safe `Sources` formatting, and nested tool-result classification. It must not read `braveSearchApiKey` from side-panel storage.
+- `ChatGrounding.js` owns the sidebar `webSearchEnabled` toggle, background-only search-provider status bridge (Brave key status and keyless Exa provider availability), safe `Sources` formatting, and nested tool-result classification. It must not read `braveSearchApiKey` or `exaSearchApiKey` from side-panel storage.
 - `ChatGrounding.formatSourcesBlock()`, `buildBodyWithSources()`, and `buildFinalResponseBody()` are the canonical rendering helpers for grounded completions; source titles and URLs must be normalized before rendering.
 - Tool traces must classify the inner payload of the orchestrator `{ success, result }` envelope so already-used, no-results, and failed searches are never displayed as successful executions.
 - The reserved tool names `web_search`, all page-action and owned-tab tools, `page_request_user_input`, `page_pause_for_user`, `page_record_note`, and `page_replan` must never be shadowed by user-defined tools or imports; they are guarded in runtime and Options save/import validation.

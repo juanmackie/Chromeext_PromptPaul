@@ -13,7 +13,7 @@ const WEB_SEARCH_ENABLED_KEY = 'webSearchEnabled';
 
 /**
  * Read the persisted web-search toggle state and ask the background worker
- * whether the active provider is configured (DuckDuckGo is keyless). The side
+ * whether the active provider is configured (Exa is keyless by default). The side
  * panel never reads a credential itself.
  * @returns {Promise<boolean>}
  */
@@ -42,7 +42,7 @@ function setWebSearchEnabled(enabled) {
 
 /**
  * Check whether the active search provider is configured (via background to
- * avoid credential exposure in the chat page). DuckDuckGo is keyless.
+ * avoid credential exposure in the chat page). Exa is keyless by default.
  * @returns {Promise<{configured: boolean, provider?: string}>}
  */
 function getSearchStatus() {

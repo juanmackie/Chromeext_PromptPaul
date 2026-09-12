@@ -1158,20 +1158,22 @@ What this skill does and when to use it.
         <p class="text-secondary-emphasis small">
           Enable the sidebar <strong>Web</strong> toggle to let the LLM search the web before
           answering. Grounding results are returned as source-cited reference material. Choose a
-          provider below: <strong>DuckDuckGo</strong> needs no API key (free default), or
+          provider below: <strong>Exa</strong> needs no API key (free default) and falls back to
+          <strong>Parallel</strong> when it returns nothing, or
           <strong>Brave Search API</strong> returns broader results but requires a key.
         </p>
         <p class="text-secondary-emphasis small">
-          <strong>DuckDuckGo limits:</strong> its free Instant Answer API only returns curated
-          results and is frequently empty for general queries. For fuller, reliable web search,
-          select Brave and add an API key.
+          <strong>Exa limits:</strong> the keyless Exa free tier is rate limited. Adding an optional
+          Exa API key below lifts those limits. For broader results, select Brave and add an API
+          key.
         </p>
         <p class="text-secondary-emphasis small">
           <strong>Privacy:</strong> When enabled, a model-generated search query may derive from
           your prompt, conversation, selected text, page content, or media context and is sent to
-          the selected provider (DuckDuckGo or Brave). The extension does not send the full
-          conversation unless it is represented in that query. Your Brave key, when used, is stored
-          in Chrome storage and never included in LLM request payloads, logs, or analytics.
+          the selected provider (Brave, or Exa). With Exa, a web-search query is sent to Exa,
+          falling back to Parallel when Exa returns nothing. The extension does not send the full
+          conversation unless it is represented in that query. Your Brave or Exa key, when used, is
+          stored in Chrome storage and never included in LLM request payloads, logs, or analytics.
         </p>
 
         <div class="mb-3" id="searchProviderGroup">
@@ -1182,11 +1184,11 @@ What this skill does and when to use it.
                 class="form-check-input"
                 type="radio"
                 name="searchProviderRadio"
-                id="searchProviderDuckDuckGo"
-                value="duckduckgo"
+                id="searchProviderExa"
+                value="exa"
               />
-              <label class="form-check-label" for="searchProviderDuckDuckGo">
-                DuckDuckGo <span class="text-secondary-emphasis">(free, no key)</span>
+              <label class="form-check-label" for="searchProviderExa">
+                Exa <span class="text-secondary-emphasis">(free, no key)</span>
               </label>
             </div>
             <div class="form-check">
@@ -1200,8 +1202,45 @@ What this skill does and when to use it.
               <label class="form-check-label" for="searchProviderBrave">Brave Search API</label>
             </div>
           </div>
+          <div class="form-text">
+            Exa is keyless and free; when it returns nothing, the query falls back to Parallel.
+          </div>
         </div>
 
+        <div class="mb-3" id="exaKeyGroup">
+          <label for="exaSearchApiKey" class="form-label">
+            Exa API Key (optional)
+            <button
+              type="button"
+              class="btn btn-sm p-0 border-0 ms-1 align-baseline text-secondary-emphasis help-tooltip"
+              data-tooltip="Optional. The keyless Exa free tier works without a key; a key lifts its rate limits. Get one at dashboard.exa.ai/api-keys"
+              aria-label="Help"
+            >
+              <span class="material-symbols-outlined" style="font-size: 1rem">help</span>
+            </button>
+          </label>
+          <div class="input-group">
+            <input
+              type="password"
+              id="exaSearchApiKey"
+              class="form-control"
+              placeholder="Optional: paste your Exa API key"
+              autocomplete="off"
+            />
+            <button type="button" class="btn btn-outline-secondary" id="exaSearchKeyToggle">
+              <span class="material-symbols-outlined" style="font-size: 1.25rem">visibility</span>
+            </button>
+            <button type="button" class="btn btn-outline-danger" id="exaSearchKeyRemove">
+              <span class="material-symbols-outlined" style="font-size: 1.25rem">delete</span>
+            </button>
+          </div>
+          <div class="invalid-feedback" id="exaSearchApiKeyError"></div>
+          <div class="form-text">
+            Optional — keyless Exa works without it; a key only lifts rate limits. Saved on demand
+            with the button below.
+            <span id="exaSearchKeyStatus" class="fw-semibold"></span>
+          </div>
+        </div>
         <div class="mb-3" id="braveKeyGroup">
           <label for="braveSearchApiKey" class="form-label">
             Brave Search API Key
@@ -1249,6 +1288,15 @@ What this skill does and when to use it.
             >
               <span class="material-symbols-outlined" style="font-size: 1rem">key</span>
               Get Your Brave API Key
+            </a>
+            <a
+              href="https://dashboard.exa.ai/api-keys"
+              target="_blank"
+              class="btn btn-outline-secondary btn-sm"
+              rel="noopener noreferrer"
+            >
+              <span class="material-symbols-outlined" style="font-size: 1rem">key</span>
+              Optional Exa Key (lifts rate limits)
             </a>
             <a
               href="https://api-dashboard.search.brave.com/documentation/pricing"

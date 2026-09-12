@@ -28,7 +28,7 @@ import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileR
 import { sanitizePageActionUrl } from './src/utils/pageDom.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
-import { executeDuckDuckGoSearch } from './src/utils/duckDuckGoSearch.js';
+import { executeKeylessSearch } from './src/utils/keylessSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
 import { isSafeMediaUrl, MEDIA_FETCH_TIMEOUT_MS, readMediaBlob } from './src/utils/mediaFetch.js';
 import { waitForRetry } from './src/utils/retryBackoff.js';
@@ -1070,12 +1070,24 @@ const getBraveSearchApiKey = () =>
     });
   });
 
+const getExaSearchApiKey = () =>
+  new Promise((resolve, reject) => {
+    chrome.storage.local.get(['exaSearchApiKey'], (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(result.exaSearchApiKey || '');
+    });
+  });
+
 /** Default search provider used when no provider is stored. */
-const DEFAULT_SEARCH_PROVIDER = 'duckduckgo';
+const DEFAULT_SEARCH_PROVIDER = 'exa';
 
 /**
- * Resolve the active search provider from storage.
- * @returns {Promise<'duckduckgo'|'brave'>}
+ * Resolve the active search provider from storage. A legacy stored
+ * 'duckduckgo' value is migrated to 'exa' once and resolved as 'exa'.
+ * @returns {Promise<'exa'|'brave'>}
  */
 const getSearchProvider = () =>
   new Promise((resolve, reject) => {
@@ -1084,27 +1096,37 @@ const getSearchProvider = () =>
         reject(new Error(chrome.runtime.lastError.message));
         return;
       }
-      resolve(result.searchProvider === 'brave' ? 'brave' : DEFAULT_SEARCH_PROVIDER);
+      if (result.searchProvider === 'brave') {
+        resolve('brave');
+        return;
+      }
+      if (result.searchProvider === 'duckduckgo') {
+        // One-time migration of the legacy value; fire and forget.
+        chrome.storage.local.set({ searchProvider: 'exa' });
+      }
+      resolve(DEFAULT_SEARCH_PROVIDER);
     });
   });
 
 /**
- * Web-search executor that dispatches to the active provider. DuckDuckGo runs
- * keyless through the Instant Answer API; Brave requires a configured key.
+ * Web-search executor that dispatches to the active provider. The Exa keyless
+ * MCP path needs no configuration; Brave requires a configured key. Named
+ * `braveSearchExecutor` (kept as the orchestrator seam name) because
+ * renaming it would churn unrelated orchestrator tests.
  */
 const braveSearchExecutor = async (query, options = {}) => {
   const provider = await getSearchProvider();
-  if (provider === 'duckduckgo') {
-    return executeDuckDuckGoSearch(query, options);
+  if (provider === 'brave') {
+    const apiKey = await getBraveSearchApiKey();
+    if (!apiKey) {
+      throw new BraveSearchError(
+        'Web search requires a Brave Search API key. Configure it in Options.',
+        { code: 'NO_KEY' }
+      );
+    }
+    return executeBraveSearch(query, apiKey, options);
   }
-  const apiKey = await getBraveSearchApiKey();
-  if (!apiKey) {
-    throw new BraveSearchError(
-      'Web search requires a Brave Search API key. Configure it in Options.',
-      { code: 'NO_KEY' }
-    );
-  }
-  return executeBraveSearch(query, apiKey, options);
+  return executeKeylessSearch(query, { ...options, exaApiKey: await getExaSearchApiKey() });
 };
 
 const pageActionPolicyProvider = async () => {
@@ -1612,7 +1634,7 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
     callUserDefinedEndpoint(tool.endpointUrl, args, tool.httpMethod),
   webSearchStatusProvider: async () => {
     const provider = await getSearchProvider();
-    if (provider === 'duckduckgo') return true; // free, keyless
+    if (provider === 'exa') return true; // keyless, always configured
     return Boolean(await getBraveSearchApiKey());
   },
   braveSearchExecutor,
@@ -3033,9 +3055,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!extensionPageSender) {
       return rejectUnauthorizedMessage(sendResponse);
     }
+    // Read-only: resolve a legacy 'duckduckgo' value as 'exa' in memory only.
     chrome.storage.local.get(['searchProvider', 'braveSearchApiKey'], (result) => {
-      const provider = result.searchProvider === 'brave' ? 'brave' : DEFAULT_SEARCH_PROVIDER;
-      const configured = provider === 'duckduckgo' || Boolean(result.braveSearchApiKey);
+      const provider = result.searchProvider === 'brave' ? 'brave' : 'exa';
+      const configured = provider === 'exa' || Boolean(result.braveSearchApiKey);
       sendResponse({ configured, provider });
     });
     return true;
