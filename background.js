@@ -30,7 +30,12 @@ import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 import { executeKeylessSearch } from './src/utils/keylessSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
-import { isSafeMediaUrl, MEDIA_FETCH_TIMEOUT_MS, readMediaBlob } from './src/utils/mediaFetch.js';
+import {
+  isSafeMediaUrl,
+  isSafePublicHttpUrl,
+  MEDIA_FETCH_TIMEOUT_MS,
+  readMediaBlob,
+} from './src/utils/mediaFetch.js';
 import { waitForRetry } from './src/utils/retryBackoff.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
@@ -1618,6 +1623,52 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   }
 };
 
+const removeTemporarySearchTab = (tabId) =>
+  new Promise((resolve) => {
+    if (!Number.isInteger(tabId)) {
+      resolve();
+      return;
+    }
+    try {
+      chrome.tabs.remove(tabId, () => resolve());
+    } catch (_) {
+      resolve();
+    }
+  });
+
+/**
+ * Read one search result through the existing page extraction content script.
+ * Search URLs are untrusted; reuse the public-host guard before navigation and
+ * after redirects, and always close the inactive temporary tab.
+ * @param {string} url
+ * @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<{content: string, title: string, url: string}|null>}
+ */
+const readSearchResultPage = async (url, { signal } = {}) => {
+  if (!isSafePublicHttpUrl(url)) return null;
+  let tabId = null;
+  try {
+    if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
+    const tab = await chrome.tabs.create({ url, active: false });
+    tabId = Number.isInteger(tab?.id) ? tab.id : null;
+    if (tabId === null) return null;
+
+    await ensurePageActionContentScript(tabId, signal);
+    const current = await chrome.tabs.get(tabId);
+    if (!isSafePublicHttpUrl(current?.url)) return null;
+
+    const extracted = await executeTabContentExtraction(tabId);
+    if (!extracted?.success || typeof extracted.content !== 'string') return null;
+    return {
+      content: extracted.content,
+      title: String(extracted.title || current.title || ''),
+      url: String(extracted.url || current.url || url),
+    };
+  } finally {
+    await removeTemporarySearchTab(tabId);
+  }
+};
+
 const runOrchestrator = new RunOrchestrator(skillManager, {
   codexAuthProvider: (profileId) => codexAuthManager.getValidAuth(profileId),
   hermesTransport,
@@ -1638,6 +1689,7 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
     return Boolean(await getBraveSearchApiKey());
   },
   braveSearchExecutor,
+  webSearchPageReader: readSearchResultPage,
   pageActionPolicyProvider,
   pageActionAvailabilityProvider,
   pageActionDocumentProvider,

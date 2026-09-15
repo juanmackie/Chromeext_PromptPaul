@@ -10,9 +10,9 @@ Prompt Paul - AI Insights at the click of a mouse
 
 Context-aware AI in the browser. Short feedback loops for selected text, without ceremony.
 
-## What's new (version 6.2.0)
+## What's new (version 6.3.0)
 
-A clearer composer-led chat experience with visible context attachments, contextual quick actions, inline Stop/Retry/Edit/Continue controls, improved setup and Options workflows, masked API credentials, optional web search grounding, and continued support for media, voice input, custom instructions, tools, and Agent Skills.
+Web search now uses a keyless Exa client backed by Exa's hosted MCP endpoint (with optional background-owned `exaSearchApiKey` to lift free-tier rate limits), falling back to Parallel's keyless hosted Search MCP. The provider preference is `exa` (default) or `brave`; stored legacy `duckduckgo` values migrate to `exa` automatically. The Options page Web Search section reflects the new provider selection.
 
 ## Description
 

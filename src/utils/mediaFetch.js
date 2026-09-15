@@ -48,13 +48,17 @@ function isPrivateMediaHost(hostname) {
  * @param {unknown} url - Candidate URL.
  * @returns {boolean}
  */
-export function isSafeMediaUrl(url) {
+export function isSafePublicHttpUrl(url) {
   if (!isValidHttpUrl(url)) return false;
   try {
     return !isPrivateMediaHost(new URL(url).hostname);
   } catch (_) {
     return false;
   }
+}
+
+export function isSafeMediaUrl(url) {
+  return isSafePublicHttpUrl(url);
 }
 
 /**

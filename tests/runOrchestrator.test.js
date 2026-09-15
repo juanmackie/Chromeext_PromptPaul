@@ -1419,6 +1419,32 @@ describe('web search credential and sequencing contracts', () => {
     expect(state.config.apiKey).toBe('llm-provider-secret');
   });
 
+  it('reads bounded page content before returning a successful search result', async () => {
+    const readUrls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      braveSearchExecutor: async (query) => ({
+        query,
+        retrievedAt: new Date().toISOString(),
+        sources: [{ id: 'src-1', title: 'Weather', url: 'https://example.com', snippets: ['s'] }],
+      }),
+      webSearchPageReader: async (url) => {
+        readUrls.push(url);
+        return { content: 'The page says it is sunny.', title: 'Weather page', url };
+      },
+    });
+    const runId = await orch.startRun({ webSearch: true, messages: [] });
+    const result = await orch.executeTool(runId, {
+      id: 'search-with-page',
+      function: { name: 'web_search', arguments: JSON.stringify({ query: 'weather' }) },
+    });
+
+    expect(readUrls).toEqual(['https://example.com']);
+    expect(result.result.extractedPages).toMatchObject([
+      { title: 'Weather page', markdown: 'The page says it is sunny.' },
+    ]);
+    expect(orch.activeRuns.get(runId).webSearch.extractedPages).toHaveLength(1);
+  });
+
   it('consumes the search slot even when the Brave request fails', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       braveSearchExecutor: async () => {
