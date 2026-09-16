@@ -164,10 +164,11 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 4. `RunOrchestrator._buildTools()` offers the reserved `web_search` tool alongside the normal toolset (or alone for `none` / a satisfied forced user tool) with automatic model selection while a search is available; grounding is permission, not a mandate
 5. `executeTool()` claims the single search slot before network I/O. Parallel or hallucinated duplicate calls receive `WEB_SEARCH_ALREADY_USED` and cannot issue another search request
 6. After an attempt, the grounding prompt switches to an already-completed phase and the immediate LLM continuation is text-only so the model consumes the existing result and produces the final answer
-7. Empty normalized results become the safe `WEB_SEARCH_NO_RESULTS` outcome. Nested tool outcomes are classified before rendering so failures are not shown as successful executions
-8. `_finalizeTextResponse()` emits normalized `event.grounding.sources` when a search produced usable sources, and `chat.js` appends an escaped first-party `**Sources:**` section to rendered, copied, and persisted output
-9. When grounding is off, no grounding field or Sources section is added; the normal LLM payload and UI behavior remain unchanged
-10. Grounding requires an endpoint/model that supports function tools. Tool rejection is surfaced as an actionable error rather than retried indefinitely
+7. The extraction helper (`src/utils/webFetchGrounding.js`) deduplicates URLs, tries up to five ranked results to obtain three readable pages, caps each page at 8 KB and total at 24 KB UTF-8 bytes, enforces 15 s/page and 45 s overall timeouts, and propagates Stop immediately. Outcomes (`success | failed | empty | timeout | unsupported`) are returned per URL alongside `sources` and `extractedPages`.
+8. Empty normalized results become the safe `WEB_SEARCH_NO_RESULTS` outcome. Nested tool outcomes are classified before rendering so failures are not shown as successful executions
+9. `_finalizeTextResponse()` emits normalized `event.grounding.sources` when a search produced usable sources, and `chat.js` appends an escaped first-party `**Sources:**` section to rendered, copied, and persisted output
+10. When grounding is off, no grounding field or Sources section is added; the normal LLM payload and UI behavior remain unchanged
+11. Grounding requires an endpoint/model that supports function tools. Tool rejection is surfaced as an actionable error rather than retried indefinitely
 
 ## Build and Test
 

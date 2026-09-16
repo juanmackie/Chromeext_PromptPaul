@@ -116,7 +116,9 @@ export function compactPageTaskHistory(messages, options = {}) {
     if (message?.role !== 'tool') return boundHistoricalMessage(message);
     const payload = parseToolContent(message.content);
     const snapshot = payload?.result?.snapshot;
-    if (!snapshot) return boundHistoricalMessage(message);
+    // Preserve non-page-action tool results (web_search, skill_view, etc.) unchanged.
+    // They're already bounded by their respective extraction pipelines.
+    if (!snapshot) return message;
     const tabId = Number(payload?.result?.tabId || activeTabId || 0) || 0;
     const isLatest = latestByTab.get(tabId) === index;
     if (isLatest && (!activeTabId || tabId === activeTabId)) return message;

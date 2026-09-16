@@ -1445,6 +1445,84 @@ describe('web search credential and sequencing contracts', () => {
     expect(orch.activeRuns.get(runId).webSearch.extractedPages).toHaveLength(1);
   });
 
+  it('stores extraction outcomes on the run and in the tool result', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      braveSearchExecutor: async (query) => ({
+        query,
+        retrievedAt: new Date().toISOString(),
+        sources: [
+          { id: 'src-1', title: 'Page A', url: 'https://a.example/' },
+          { id: 'src-2', title: 'Page B', url: 'https://b.example/' },
+        ],
+      }),
+      webSearchPageReader: async (url) => {
+        if (url === 'https://a.example/') return { content: 'Content A', title: 'Page A', url };
+        return null;
+      },
+    });
+    const runId = await orch.startRun({ webSearch: true, messages: [] });
+    const result = await orch.executeTool(runId, {
+      id: 'search-outcomes',
+      function: { name: 'web_search', arguments: JSON.stringify({ query: 'test' }) },
+    });
+
+    const run = orch.activeRuns.get(runId);
+    expect(run.webSearch.extractionOutcomes).toMatchObject([
+      { url: 'https://a.example/', status: 'success' },
+      { url: 'https://b.example/', status: 'empty' },
+    ]);
+    expect(result.result.extractionOutcomes).toEqual(run.webSearch.extractionOutcomes);
+  });
+
+  it('distinguishes partial extraction when some pages fail', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      braveSearchExecutor: async (query) => ({
+        query,
+        retrievedAt: new Date().toISOString(),
+        sources: [
+          { id: 'src-1', url: 'https://ok.example/' },
+          { id: 'src-2', url: 'https://fail.example/' },
+        ],
+      }),
+      webSearchPageReader: async (url) => {
+        if (url.includes('ok')) return { content: 'readable', url };
+        throw new Error('unavailable');
+      },
+    });
+    const runId = await orch.startRun({ webSearch: true, messages: [] });
+    await orch.executeTool(runId, {
+      id: 'search-partial',
+      function: { name: 'web_search', arguments: JSON.stringify({ query: 'test' }) },
+    });
+
+    const run = orch.activeRuns.get(runId);
+    expect(run.webSearch.extractedPages).toHaveLength(1);
+    expect(run.webSearch.extractionOutcomes[0].status).toBe('success');
+    expect(run.webSearch.extractionOutcomes[1].status).toBe('failed');
+  });
+
+  it('discloses unreadable pages when search succeeds but no pages are readable', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      braveSearchExecutor: async (query) => ({
+        query,
+        retrievedAt: new Date().toISOString(),
+        sources: [{ id: 'src-1', url: 'https://empty.example/' }],
+      }),
+      webSearchPageReader: async () => null,
+    });
+    const runId = await orch.startRun({ webSearch: true, messages: [] });
+    const result = await orch.executeTool(runId, {
+      id: 'search-unreadable',
+      function: { name: 'web_search', arguments: JSON.stringify({ query: 'test' }) },
+    });
+
+    const run = orch.activeRuns.get(runId);
+    expect(run.webSearch.extractedPages).toHaveLength(0);
+    expect(run.webSearch.extractionOutcomes[0].status).toBe('empty');
+    // The result still includes sources so the model can use excerpts.
+    expect(result.result.sources).toHaveLength(1);
+  });
+
   it('consumes the search slot even when the Brave request fails', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       braveSearchExecutor: async () => {
