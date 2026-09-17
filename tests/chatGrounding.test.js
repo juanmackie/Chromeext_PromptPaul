@@ -146,6 +146,39 @@ describe('buildBodyWithSources', () => {
     const body = buildBodyWithSources(42, sources);
     expect(body).toContain('**Sources:**');
   });
+
+  it('lists only the sources the answer actually cited', () => {
+    const sources = [
+      { id: 'src-1', title: 'Cited', url: 'https://cited.example/a' },
+      { id: 'src-2', title: 'Unused', url: 'https://unused.example/b' },
+    ];
+    const body = buildBodyWithSources(
+      'According to https://cited.example/a the answer is 42.',
+      sources
+    );
+    expect(body).toContain('https://cited.example/a');
+    expect(body).not.toContain('https://unused.example/b');
+  });
+
+  it('treats trailing sentence punctuation as outside the cited URL', () => {
+    const sources = [
+      { id: 'src-1', title: 'Cited', url: 'https://cited.example/a' },
+      { id: 'src-2', title: 'Unused', url: 'https://unused.example/b' },
+    ];
+    const body = buildBodyWithSources('See https://cited.example/a.', sources);
+    expect(body).toContain('https://cited.example/a');
+    expect(body).not.toContain('https://unused.example/b');
+  });
+
+  it('falls back to the full retrieved set when the answer cites nothing', () => {
+    const sources = [
+      { id: 'src-1', title: 'One', url: 'https://one.example/a' },
+      { id: 'src-2', title: 'Two', url: 'https://two.example/b' },
+    ];
+    const body = buildBodyWithSources('Answer that cites no link.', sources);
+    expect(body).toContain('https://one.example/a');
+    expect(body).toContain('https://two.example/b');
+  });
 });
 
 describe('buildFinalResponseBody', () => {

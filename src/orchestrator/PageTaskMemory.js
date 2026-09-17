@@ -65,6 +65,10 @@ function parseToolContent(content) {
 
 function boundHistoricalMessage(message) {
   if (!message || typeof message !== 'object') return message;
+  // Context-bearing messages (loaded page content, selections, media, documents)
+  // are already bounded by prepareLoadedPageContext / the context-budget path.
+  // Clamping them here would silently drop the bulk of the supplied content.
+  if (message._promptPaulContext) return message;
   if (typeof message.content === 'string' && message.content.length > 12_000) {
     return {
       ...message,

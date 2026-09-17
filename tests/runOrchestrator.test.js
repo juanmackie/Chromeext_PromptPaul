@@ -1098,6 +1098,68 @@ describe('Fix 1: execute() persists messages into conversationHistory', () => {
     expect(requestConfig.messages.length).toBe(0);
   });
 
+  it('execute() preserves loaded page content across tool-call continuations', async () => {
+    const skillManager = createStubSkillManager();
+    const orch = new RunOrchestrator(skillManager);
+    const captured = [];
+
+    orch._executeOpenAI = async (run) => {
+      captured.push(run.conversationHistory.map((m) => ({ ...m })));
+    };
+
+    const runId = await orch.startRun({
+      llmEndpoint: 'https://api.openai.com/v1/chat/completions',
+      apiKey: 'sk-test',
+      modelName: 'gpt-4o',
+    });
+
+    // A loaded page is budget-fitted to ~40k tokens, far above the 12k-char
+    // historical clamp that used to silently discard most of the content.
+    const pageBody = 'p'.repeat(40_000);
+    await orch.execute(runId, {
+      messages: [
+        {
+          role: 'user',
+          content: `--- Page content ---\n${pageBody}\n--- End Page content ---`,
+          _promptPaulContext: { type: 'page_content' },
+        },
+        { role: 'user', content: 'Summarise it' },
+      ],
+    });
+
+    // A continuation is not re-sent by the client, so the marker has to stay on
+    // run.conversationHistory for the next compaction pass to keep protecting it.
+    const run = orch.getRun(runId);
+    run.conversationHistory.push(
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          { id: 't1', type: 'function', function: { name: 'web_search', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 't1', name: 'web_search', content: '{"query":"q"}' }
+    );
+    await orch.execute(runId, { continueConversation: true }, true);
+
+    expect(captured).toHaveLength(2);
+    for (const history of captured) {
+      const persisted = history.find((m) => m.content?.includes('--- Page content ---'));
+      expect(persisted).toBeTruthy();
+      expect(persisted.content).toContain(pageBody);
+    }
+
+    // The marker has to stay on local history — that is what keeps protecting
+    // the content — and must be dropped only when a provider payload is built.
+    const live = orch
+      .getRun(runId)
+      .conversationHistory.find((m) => m.content?.includes('--- Page content ---'));
+    expect(live._promptPaulContext).toEqual({ type: 'page_content' });
+    const payload = orch._stripInternalContextMarkers([live]);
+    expect(payload[0].content).toContain(pageBody);
+    expect(payload[0]._promptPaulContext).toBeUndefined();
+  });
+
   it('continuation after tool call carries the original user message in the second request', async () => {
     const skills = [
       {
@@ -1912,6 +1974,24 @@ describe('web search credential and sequencing contracts', () => {
     const prompt = orch._buildSystemPrompt(state, []);
     expect(prompt).toContain('AVAILABLE but OPTIONAL');
     expect(prompt).toContain('Do NOT call web_search for rewriting');
+  });
+
+  it('tells Hermes runs that retrieval is gateway-owned instead of offering web_search', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    const runId = await orch.startRun({
+      webSearch: true,
+      tool_choice: 'auto',
+      provider: 'hermes',
+      hermesEndpoint: 'https://hermes.test',
+      messages: [{ role: 'user', content: 'What is the latest pricing?' }],
+    });
+    const state = orch.activeRuns.get(runId);
+
+    const prompt = orch._buildSystemPrompt(state, []);
+    expect(prompt).toContain('owned by the Hermes gateway');
+    // `web_search` is not a Hermes client tool, so the model must not be told
+    // to call it.
+    expect(prompt).not.toContain('Do NOT call web_search for rewriting');
   });
 });
 

@@ -161,17 +161,45 @@ export function formatSourcesBlock(sources) {
   return lines.length === 3 ? '' : lines.concat('').join('\n');
 }
 
+const URL_IN_TEXT_PATTERN = /https?:\/\/[^\s<>()[\]"'`]+/gi;
+
+/**
+ * Collect URLs the answer text actually references so the Sources list can
+ * reflect attribution instead of the full retrieval set.
+ * @param {string} content
+ * @returns {Set<string>}
+ */
+function citedSourceUrls(content) {
+  const text = typeof content === 'string' ? content : '';
+  const found = new Set();
+  if (!text) return found;
+  for (const match of text.match(URL_IN_TEXT_PATTERN) || []) {
+    // Trailing sentence punctuation is not part of the URL.
+    const trimmed = match.replace(/[.,;:!?]+$/u, '');
+    if (trimmed) found.add(trimmed);
+  }
+  return found;
+}
+
 /**
  * Build the full assistant message body by appending a Sources
  * section (when present) to the answer content.
+ *
+ * Only sources the answer actually cited are listed, so the section reflects
+ * what the answer used. When the model cites none (for example it cited a site
+ * by name, or the answer was truncated on recovery), the full retrieved set is
+ * shown so the user still gets the links.
  *
  * @param {string} content - The assistant's rendered answer text.
  * @param {Array} sources - Raw grounding source metadata.
  * @returns {string} Body text suitable for rendering and persistence.
  */
 export function buildBodyWithSources(content, sources) {
-  const sourcesMd = formatSourcesBlock(sources);
   const trimmedContent = typeof content === 'string' ? content : '';
+  const normalized = normalizeSources(sources);
+  const cited = citedSourceUrls(trimmedContent);
+  const attributed = normalized.filter((source) => cited.has(source.url));
+  const sourcesMd = formatSourcesBlock(attributed.length > 0 ? attributed : normalized);
   return sourcesMd ? trimmedContent + '\n\n' + sourcesMd : trimmedContent;
 }
 
