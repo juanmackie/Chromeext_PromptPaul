@@ -76,6 +76,19 @@ async function sendPrompt(chat, text) {
   await chat.locator('#send-button').click();
 }
 
+/**
+ * Last user-message text from a recorded mock provider request. Media runs
+ * carry content parts; text-only runs carry a plain string.
+ */
+function lastUserText(request) {
+  const messages = request.body.messages;
+  const lastUser = messages[messages.length - 1];
+  expect(lastUser.role).toBe('user');
+  return typeof lastUser.content === 'string'
+    ? lastUser.content
+    : lastUser.content.find((part) => part.type === 'text').text;
+}
+
 /** Seed a usable API profile pointing at the local fixture server. */
 async function seedLocalProfile(chat, endpointUrl) {
   await chat.evaluate((endpoint) => {
@@ -235,6 +248,66 @@ test('acceptance 1: summarize the current article with its context attached', as
     //   await expect(summary).toBeVisible();
     //   await expect(summary).not.toHaveText('');
     // Only meaningful with a live provider selected on the bot profile.
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Journey 1b: A page quick-action card carries the attached page
+// ---------------------------------------------------------------------------
+
+test('acceptance 1b: a page quick-action card sends the attached page content', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const target = await context.newPage();
+  await target.goto(fixtureUrl(fixtureServer, 'article.html'));
+  const harness = await openHarness(context);
+  const chat = await openChat(context, harness);
+  try {
+    const loaded = await attachPageContext(chat, target);
+    await expect(loaded).toContainText('Pumped hydroelectricity');
+
+    // The fixture endpoint records the provider payload, so the card's request
+    // is asserted on the wire without a live model. Regression: the card used
+    // to send a bare prompt, leaving the run with no page content to summarize.
+    await seedLocalProfile(chat, fixtureUrl(fixtureServer, 'mock-chat'));
+    fixtureServer.resetMockRequests();
+    const siteCard = chat
+      .locator('#quick-actions-row')
+      .getByRole('button', { name: /Summarize (page|article)/ });
+    const cardPrompt = await siteCard.getAttribute('title');
+    await siteCard.click();
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete', {
+      timeout: 45000,
+    });
+
+    const requests = fixtureServer.mockRequests();
+    expect(requests).toHaveLength(1);
+    const cardText = lastUserText(requests[0]);
+    expect(cardText).toContain(cardPrompt);
+    expect(cardText).toContain('--- Page content ---');
+    expect(cardText).toContain('Pumped hydroelectricity');
+
+    // The composer page modes used to fabricate a previous_response context as
+    // soon as any history existed (the loaded page content alone was enough),
+    // so the model was told to apply the task to nothing. They must send the
+    // attached page instead.
+    fixtureServer.resetMockRequests();
+    await chat
+      .locator('#quick-actions-row')
+      .getByRole('button', { name: 'Summary', exact: true })
+      .click();
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete', {
+      timeout: 45000,
+    });
+    const modeRequests = fixtureServer.mockRequests();
+    expect(modeRequests).toHaveLength(1);
+    const modeText = lastUserText(modeRequests[0]);
+    expect(modeText).toContain('--- Page content ---');
+    expect(modeText).toContain('Pumped hydroelectricity');
+    expect(modeText).not.toContain('previous assistant response');
   } finally {
     await context.close();
     removeUserDataDir(userDataDir);

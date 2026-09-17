@@ -57,6 +57,7 @@ import {
   composeUserPrompt,
 } from './src/prompts.js';
 import {
+  buildCardPromptRequest,
   buildSmartPromptRequest,
   buildSiteActions,
   executePresetAnalysis,
@@ -225,6 +226,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let lastUsedPreset = 'summary'; // Default preset mode
   let lastLoadedPageContext = null;
+  // Bounded page text + identity for the attached page, kept so page-scoped
+  // quick actions (action cards, page presets) can carry the page content in
+  // the current request instead of relying on an earlier history turn.
+  let lastLoadedPageRequest = null;
   let pageContextHistoryMessage = null;
 
   /**
@@ -257,6 +262,18 @@ document.addEventListener('DOMContentLoaded', () => {
     executePreset(modeKey, `Generating ${preset.label}...`, `${preset.label} started`);
   }
 
+  // Page-scoped quick actions (site cards, page presets) send the attached page
+  // text inside the request, matching the preset and notch paths. Without
+  // attached page content the instruction is passed through unchanged.
+  function buildPageScopedRequest(instruction) {
+    if (!lastLoadedPageRequest) return instruction;
+    return buildCardPromptRequest(
+      instruction,
+      lastLoadedPageRequest.text,
+      lastLoadedPageRequest.metadata
+    );
+  }
+
   async function showSiteSuggestions(url, platform = null, platformInfo = null) {
     if (!url) {
       composer?.setSiteActions?.([]);
@@ -268,7 +285,9 @@ document.addEventListener('DOMContentLoaded', () => {
       platformInfo,
       onRun: (prompt) => {
         activateSelectedTextActionView();
-        makeApiCall(prompt);
+        // Cards only render while page context is attached, so the page content
+        // travels with the instruction rather than relying on history.
+        makeApiCall(buildPageScopedRequest(prompt));
       },
     });
     composer.setSiteActions(actions);
@@ -312,6 +331,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function hasConversation() {
     const history = streamState.getConversationHistory();
     return Array.isArray(history) && history.length > 0;
+  }
+
+  // A previous-response follow-up needs an actual assistant turn. Loaded page
+  // content is a user message, so hasConversation() alone is not enough.
+  function hasPreviousAssistantResponse() {
+    const history = streamState.getConversationHistory();
+    return Array.isArray(history) && history.some((message) => message?.role === 'assistant');
   }
 
   function updateSelectedTextActionButtons() {
@@ -368,7 +394,12 @@ document.addEventListener('DOMContentLoaded', () => {
         },
       };
     }
-    if (hasConversation()) {
+    if (lastLoadedPageRequest) {
+      // A page-scoped mode runs against the attached page, not against a
+      // previous assistant response.
+      return buildPageScopedRequest(basePrompt);
+    }
+    if (hasPreviousAssistantResponse()) {
       return {
         instruction: basePrompt,
         context: {
@@ -432,6 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (index >= 0) history.splice(index, 1);
     }
     pageContextHistoryMessage = null;
+    lastLoadedPageRequest = null;
   }
 
   // Inserts already-extracted page content into the chat context. Shared by the
@@ -451,6 +483,16 @@ document.addEventListener('DOMContentLoaded', () => {
     showSiteSuggestions(response.url, response.platform, response.platformInfo);
 
     lastLoadedPageContext = prepared.pageContext;
+    lastLoadedPageRequest = {
+      text: prepared.fitted.text,
+      metadata: {
+        title: response.title,
+        siteName: response.siteName,
+        byline: response.byline,
+        url: response.url,
+        type: response.type || response.platform,
+      },
+    };
     composer.setPageContext({
       title: prepared.sourceInfo,
       details: prepared.details,
@@ -2997,14 +3039,17 @@ document.addEventListener('DOMContentLoaded', () => {
         await makeApiCall(promptRequest, 'auto', requestedSkill);
         instructionInput.value = '';
         // Keep the selection sticky so further sidebar prompts can reuse it.
-      } else if (hasConversation()) {
-        // No selection/media, but a conversation exists: run as a follow-up.
-        const promptRequest = {
-          instruction: effectiveInstruction,
-          context: {
-            type: 'previous_response',
-          },
-        };
+      } else if (lastLoadedPageRequest || hasConversation()) {
+        // No selection/media: an attached page is the source material;
+        // otherwise run as a follow-up on the previous assistant response.
+        const promptRequest = lastLoadedPageRequest
+          ? buildPageScopedRequest(effectiveInstruction)
+          : {
+              instruction: effectiveInstruction,
+              context: {
+                type: 'previous_response',
+              },
+            };
 
         oneoffInstructionArea.classList.add('hidden');
         chatMainArea.classList.remove('hidden');

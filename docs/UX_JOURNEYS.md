@@ -54,8 +54,10 @@ Steps:
    quick-action row offers Summary / TL;DR / Technical.
 3. Ask a question - the page content is included as structured
    `page_content` context.
-4. Run **TL;DR** from the quick-action row - the answer builds on the page
-   context from history.
+4. Run **TL;DR** from the quick-action row, or a page action card such as
+   **Summarize page** - the request carries the attached page as structured
+   `page_content` context, so the answer does not depend on the model re-reading
+   an earlier history turn.
 5. Click the tray chip's **Remove** - the page context is detached, the tray
    item disappears, and follow-ups continue without page context.
 6. Load a second page - the tray updates to the new page; no stale context

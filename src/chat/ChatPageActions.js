@@ -13,11 +13,18 @@ import { getSuggestionsForSite, extractSiteKey } from '../utils/suggestionStorag
 import { inferActionCards } from '../utils/actionCards.js';
 import { friendlyRuntimeErrorMessage } from '../utils/runtimeErrors.js';
 
-export function buildSmartPromptRequest(presetKey, content, metadata, presetModes) {
-  const preset = presetModes[presetKey] || presetModes.summary;
-
+/**
+ * Build the structured prompt request for a page-scoped action. The page text
+ * travels as bounded untrusted `page_content` context so the action carries the
+ * content it was generated from instead of relying on an earlier history turn.
+ * @param {string} prompt - Instruction text (preset prompt or action-card prompt).
+ * @param {string} content - Bounded page content for the current page.
+ * @param {Object} metadata - Page identity fields (title, siteName, byline, url, type).
+ * @returns {{instruction: string, context: {type: string, text: string, metadata: Object}}}
+ */
+export function buildCardPromptRequest(prompt, content, metadata) {
   return {
-    instruction: preset.prompt,
+    instruction: prompt,
     context: {
       type: 'page_content',
       text: content,
@@ -26,65 +33,12 @@ export function buildSmartPromptRequest(presetKey, content, metadata, presetMode
   };
 }
 
-export async function renderSiteSuggestions(input) {
-  const {
-    url,
-    platform = null,
-    platformInfo = null,
-    chatMainArea,
-    oneoffInstructionArea,
-    makeApiCall,
-    chatAreaElement,
-  } = input;
-  const siteKey = extractSiteKey(url);
-  const suggestions = siteKey ? await getSuggestionsForSite(siteKey) : [];
-  const actionCards = inferActionCards({ url, platform, platformInfo });
-  if (suggestions.length === 0 && actionCards.length === 0) return;
+export function buildSmartPromptRequest(presetKey, content, metadata, presetModes) {
+  const preset = presetModes[presetKey] || presetModes.summary;
 
-  const container = document.createElement('div');
-  container.className = 'site-suggestions-container';
-  container.innerHTML = '<div class="site-suggestions-label">Quick actions for this page:</div>';
-
-  const chips = document.createElement('div');
-  chips.className = 'site-suggestions-chips';
-
-  const run = (prompt) => {
-    chatMainArea.style.display = 'block';
-    oneoffInstructionArea.style.display = 'none';
-    makeApiCall(prompt);
-  };
-
-  for (const card of actionCards) {
-    const chip = document.createElement('button');
-    chip.className = 'site-suggestion-chip site-suggestion-chip-primary';
-    chip.textContent = card.title;
-    chip.title = card.prompt;
-    chip.addEventListener('click', () => run(card.prompt));
-    chips.appendChild(chip);
-  }
-
-  for (const s of suggestions) {
-    const chip = document.createElement('button');
-    chip.className = 'site-suggestion-chip';
-    chip.textContent = s.command;
-    chip.title = s.prompt;
-    chip.addEventListener('click', () => run(s.prompt));
-    chips.appendChild(chip);
-  }
-
-  container.appendChild(chips);
-  if (chatAreaElement) chatAreaElement.appendChild(container);
+  return buildCardPromptRequest(preset.prompt, content, metadata);
 }
 
-/**
- * Build page-scoped site-suggestion descriptors for the composer-owned
- * quick-action row. Site actions render as chips in the same row as the
- * contextual actions instead of a separate widget; actions beyond the row cap
- * are retained in the overflow menu by the composer.
- * @param {Object} input - { url, platform, platformInfo, onRun }.
- * @param {Function} input.onRun - Called with the raw prompt to run.
- * @returns {Promise<Array>} Site-action descriptors ({ id, label, title, type, run }).
- */
 export async function buildSiteActions({ url, platform = null, platformInfo = null, onRun }) {
   const siteKey = extractSiteKey(url);
   const suggestions = siteKey ? await getSuggestionsForSite(siteKey) : [];
