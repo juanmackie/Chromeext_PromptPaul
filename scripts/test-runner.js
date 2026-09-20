@@ -505,7 +505,7 @@ function runUnitTests(runner) {
     const content = readFileSafe('background.js');
     const mediaFetch = readFileSafe('src/utils/mediaFetch.js');
     for (const token of [
-      'isSafeMediaUrl',
+      'isSafePublicHttpUrl',
       'MAX_MEDIA_BYTES',
       'MEDIA_FETCH_TIMEOUT_MS',
       "redirect: 'error'",

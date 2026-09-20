@@ -29,6 +29,7 @@ import {
 } from './src/utils/skillParser.js';
 import { setupThemeToggle } from './themeUtils.js';
 import { escapeHtml } from './src/utils/domSanitizer.js';
+import { createUniqueId, hashString } from './src/utils/ids.js';
 import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileRouting.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
 import {
@@ -93,14 +94,6 @@ const MAX_INSTRUCTION_TAG_CHARS = 2_000;
 const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_IMPORTED_RECORDS = 500;
 const MAX_SKILL_METADATA_CHARS = 20_000;
-
-function createUniqueId(prefix) {
-  const id =
-    typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  return `${prefix}_${id}`;
-}
 
 /**
  * Shows the Bootstrap confirmation modal and returns a promise that resolves to true/false.
@@ -1965,14 +1958,6 @@ function setupInstructionHandlers() {
       .slice(0, 80);
     if (cleaned) return cleaned;
     return fallback;
-  }
-
-  function hashString(value) {
-    let hash = 5381;
-    for (const character of String(value || '')) {
-      hash = (hash * 33) ^ character.codePointAt(0);
-    }
-    return (hash >>> 0).toString(36);
   }
 
   function parseTags(value) {

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isSafeMediaUrl, MAX_MEDIA_BYTES, readMediaBlob } from '../src/utils/mediaFetch.js';
+import { isSafePublicHttpUrl, MAX_MEDIA_BYTES, readMediaBlob } from '../src/utils/mediaFetch.js';
 
 describe('mediaFetch', () => {
   it('allows public HTTP(S) URLs and blocks private destinations', () => {
-    expect(isSafeMediaUrl('https://example.com/image.png')).toBe(true);
-    expect(isSafeMediaUrl('http://127.0.0.1/image.png')).toBe(false);
-    expect(isSafeMediaUrl('http://192.168.1.10/image.png')).toBe(false);
-    expect(isSafeMediaUrl('file:///etc/passwd')).toBe(false);
+    expect(isSafePublicHttpUrl('https://example.com/image.png')).toBe(true);
+    expect(isSafePublicHttpUrl('http://127.0.0.1/image.png')).toBe(false);
+    expect(isSafePublicHttpUrl('http://192.168.1.10/image.png')).toBe(false);
+    expect(isSafePublicHttpUrl('file:///etc/passwd')).toBe(false);
   });
 
   it('rejects non-media response content types', async () => {

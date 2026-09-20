@@ -57,10 +57,6 @@ export function isSafePublicHttpUrl(url) {
   }
 }
 
-export function isSafeMediaUrl(url) {
-  return isSafePublicHttpUrl(url);
-}
-
 /**
  * Read a media response without retaining more than the configured byte limit.
  * @param {object} response - Fetch response-like object.

@@ -10,6 +10,7 @@
  */
 
 import { renderMarkdown } from '../utils/domSanitizer.js';
+import { randomId } from '../utils/ids.js';
 
 /**
  * Stream state manager - tracks streaming and API call state.
@@ -52,7 +53,7 @@ export class StreamStateManager {
     this.pendingOrchestratorEvents = new Map();
 
     this.conversationHistory = [];
-    this.conversationId = createConversationId();
+    this.conversationId = randomId();
   }
 
   /**
@@ -198,7 +199,7 @@ export class StreamStateManager {
     this.resetStreamingState();
     this.resetApiState();
     this.conversationHistory = [];
-    this.conversationId = createConversationId();
+    this.conversationId = randomId();
   }
 
   /**
@@ -474,7 +475,7 @@ export class StreamStateManager {
    */
   startNewConversation() {
     this.conversationHistory = [];
-    this.conversationId = createConversationId();
+    this.conversationId = randomId();
     return this.conversationId;
   }
 
@@ -493,9 +494,4 @@ export class StreamStateManager {
   setConversationHistory(history) {
     this.conversationHistory = history;
   }
-}
-
-function createConversationId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `conversation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }

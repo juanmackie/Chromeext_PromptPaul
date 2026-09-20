@@ -30,8 +30,8 @@ import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 import { executeKeylessSearch } from './src/utils/keylessSearch.js';
 import { readBoundedResponseText } from './src/utils/streamSafety.js';
+import { randomId } from './src/utils/ids.js';
 import {
-  isSafeMediaUrl,
   isSafePublicHttpUrl,
   MEDIA_FETCH_TIMEOUT_MS,
   readMediaBlob,
@@ -172,21 +172,11 @@ async function getHermesSessionKey(profileId) {
     const result = await chrome.storage.local.get(HERMES_SESSION_KEYS_KEY);
     const keys = { ...(result?.[HERMES_SESSION_KEYS_KEY] || {}) };
     if (keys[profileId]) return keys[profileId];
-    const key = `prompt-paul-${uuidv4()}`.slice(0, 256);
+    const key = `prompt-paul-${randomId()}`.slice(0, 256);
     keys[profileId] = key;
     await chrome.storage.local.set({ [HERMES_SESSION_KEYS_KEY]: keys });
     return key;
   });
-}
-
-/**
- * Generates a UUID v4 compliant unique identifier.
- * @returns {string} A randomly generated UUID string.
- */
-function uuidv4() {
-  return ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
-    (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)
-  );
 }
 
 /**
@@ -250,7 +240,7 @@ async function getInstanceId() {
   let instance = res[ANALYTICS_INSTANCE_KEY];
   let rotateAt = res[ANALYTICS_ROTATE_AT_KEY];
   if (!instance || !rotateAt || now >= rotateAt) {
-    instance = uuidv4();
+    instance = randomId();
     rotateAt = now + ANALYTICS_ROTATE_MS;
     await chrome.storage.local.set({
       [ANALYTICS_INSTANCE_KEY]: instance,
@@ -477,7 +467,7 @@ function getMimeTypeFromUrl(url) {
  * @throws {Error} If the URL, fetch, or media size is invalid.
  */
 async function fetchMediaAsBase64(url) {
-  if (!isSafeMediaUrl(url)) throw new Error('Media URL must be a public HTTP(S) URL.');
+  if (!isSafePublicHttpUrl(url)) throw new Error('Media URL must be a public HTTP(S) URL.');
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), MEDIA_FETCH_TIMEOUT_MS);
@@ -1719,7 +1709,7 @@ registerEvalRunHook({
   isExtensionSender,
   resolveStoredRunConfig,
   runOrchestrator,
-  createOwnerToken: uuidv4,
+  createOwnerToken: randomId,
 });
 
 // ===== Menu System (Serialized Rebuild Queue) =====
@@ -1837,7 +1827,7 @@ async function openChatWithContext(context = {}, options = {}) {
   if (normalizedTabId === null) {
     return { success: false, error: 'No valid tab context for deep link' };
   }
-  if (normalizedMediaUrl && !isSafeMediaUrl(normalizedMediaUrl)) {
+  if (normalizedMediaUrl && !isSafePublicHttpUrl(normalizedMediaUrl)) {
     return { success: false, error: 'Media URL must be a public HTTP(S) URL.' };
   }
   const tabIdForContext = normalizedTabId;
@@ -3343,7 +3333,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     const config = request.config || {};
-    const ownerToken = uuidv4();
+    const ownerToken = randomId();
     Promise.resolve()
       .then(async () => {
         const effectiveConfig = await resolveStoredRunConfig(config);
@@ -3408,7 +3398,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           messages: [{ role: 'user', content: instruction }],
           actCheckpoint: checkpoint,
         });
-        const ownerToken = uuidv4();
+        const ownerToken = randomId();
         const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
         await clearPageActionCheckpoint(checkpointRunId);
         return {

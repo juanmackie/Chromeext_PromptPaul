@@ -2,6 +2,8 @@
  * @fileoverview Normalizes and caps custom site suggestions for Prompt Paul.
  * @module suggestionStorage
  */
+import { hashString } from './ids.js';
+
 const STORAGE_KEY = 'customSiteSuggestions';
 const MAX_SUGGESTIONS = 60;
 const MAX_COMMAND_LENGTH = 80;
@@ -141,12 +143,4 @@ function normalizeSuggestionId(value) {
 
 function createSuggestionId(siteKey, prompt, createdAt) {
   return normalizeSuggestionId(`${siteKey}-${createdAt}-${hashString(prompt)}`);
-}
-
-function hashString(value) {
-  let hash = 5381;
-  for (const character of value) {
-    hash = (hash * 33) ^ character.codePointAt(0);
-  }
-  return (hash >>> 0).toString(36);
 }
