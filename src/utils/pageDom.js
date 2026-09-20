@@ -340,19 +340,3 @@ export function normalizePageSnapshot(input = {}) {
 export function isCurrentSnapshot(expected, current) {
   return Boolean(expected && current && String(expected) === String(current));
 }
-
-export const pageDom = {
-  PAGE_DOM_CAPS,
-  PAGE_REGION_ID_PATTERN,
-  normalizeRegionId,
-  capPageText,
-  isSensitivePageElement,
-  normalizePageElement,
-  isSupportedPageControl,
-  formatPageElement,
-  normalizePageSnapshot,
-  isCurrentSnapshot,
-  sanitizePageActionUrl,
-  utf8ByteLength,
-  pageStateHash,
-};

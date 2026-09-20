@@ -34,7 +34,6 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 - `src/utils/contextBudget.js` trims loaded page content to fit the model window
 - `src/utils/hermesContext.js` builds bounded Hermes current-turn input and explicit transcript history while removing historical binary media
-- `src/utils/readStrategy.js` picks the extraction mode from page signals
 - `src/utils/siteExtractors.js` owns bounded Reddit-thread, GitHub-metadata, and RSS/Atom feed formatting with explicit caps. It is mirrored structurally inside the classic `content_script_unified.js` runtime; keep caps and behavior aligned on both sides.
 - `src/utils/permissionGuards.js` blocks unsupported browser pages
 - `src/utils/actionCards.js` generates site-specific quick actions

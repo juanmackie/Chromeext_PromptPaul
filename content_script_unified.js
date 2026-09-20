@@ -1225,6 +1225,20 @@
   // script. Manifest content scripts do not provide a reliable module-loader
   // contract, and keeping one page runtime avoids competing DOM indexes.
   const PAGE_ACTION_MAX_ELEMENTS = 200;
+  // The header cap leaves room for the omitted-control note appended after the
+  // snapshot budget loop trims records.
+  const PAGE_ACTION_MAX_HEADER_CHARS = 1_080;
+  // A single country-style dropdown can hold hundreds of options. Options are
+  // offered as indexed candidates so the model can pick one, but an uncapped
+  // dropdown consumes the whole element budget and starves every control that
+  // follows it in document order. page_select still matches against the live
+  // option list, so capping the listing does not remove the capability.
+  //
+  // The currently selected option is deliberately NOT disclosed: option state is
+  // a control value, and control values stay redacted (valuePresent only) so page
+  // content the user typed or chose never reaches the provider. The model is told
+  // which options exist, never which one is set.
+  const PAGE_ACTION_MAX_OPTIONS_PER_SELECT = 40;
   const PAGE_ACTION_MAX_SNAPSHOT_CHARS = 32000;
   const PAGE_ACTION_MAX_READABLE_CONTENT_CHARS = 16000;
   const PAGE_ACTION_MAX_TEXT_CHARS = 320;
@@ -1298,6 +1312,10 @@
       element.nodeType !== Node.ELEMENT_NODE ||
       element.closest('[data-page-agent-ignore], [data-browser-use-ignore]') ||
       element.closest('[aria-hidden="true"]') ||
+      // An `inert` subtree is non-interactive by definition. Element.checkVisibility()
+      // does not report inertness, so it is excluded here instead of losing a
+      // cycle to a control the page will never accept input on.
+      element.closest('[inert]') ||
       element.hidden ||
       element.getAttribute('aria-hidden') === 'true'
     );
@@ -1305,8 +1323,25 @@
 
   function isPageActionVisible(element) {
     if (isPageActionIgnored(element)) return false;
-    const style = window.getComputedStyle(element);
-    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    // An <option> in a closed <select> has no rendered box and reports
+    // checkVisibility() === false, but page_select still reaches it through its
+    // owning select. Judge an option by that select so a hidden dropdown stays
+    // excluded while a normal one stays offered.
+    const subject = element.tagName === 'OPTION' ? element.closest('select') : element;
+    if (subject) {
+      if (typeof subject.checkVisibility === 'function') {
+        // checkOpacity covers opacity:0 (which elementFromPoint still hit-tests,
+        // so occlusion checks cannot catch it). checkVisibilityCSS covers
+        // visibility:hidden and visibility:collapse. Plain checkVisibility()
+        // already covers display:none, content-visibility:hidden, and the
+        // skipped contents of a closed <details>.
+        if (!subject.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+          return false;
+      } else {
+        const style = window.getComputedStyle(subject);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+      }
+    }
     const rect = element.getBoundingClientRect();
     return rect.width > 0 || rect.height > 0 || element.tagName === 'OPTION';
   }
@@ -1378,6 +1413,29 @@
         element.tagName,
       PAGE_ACTION_MAX_ATTRIBUTE_CHARS
     );
+  }
+
+  /**
+   * Match one <option> against the model-supplied option text.
+   *
+   * Matching stays exact: an option that does not exist still fails loudly
+   * rather than being fuzzy-matched. The trade is that every string the
+   * snapshot disclosed for the option is accepted — its text, its value, and,
+   * when the option declares one, the `label` shown to the model — so choosing
+   * an offered option cannot fail on a wording mismatch between the label and
+   * the option's text. The label is only computed when the option declares an
+   * explicit aria-label/aria-labelledby, because otherwise it falls back to the
+   * text already compared above.
+   *
+   * @param {HTMLOptionElement} entry
+   * @param {string} option Lowercased, trimmed model-supplied option text.
+   * @returns {boolean}
+   */
+  function matchesPageActionOption(entry, option) {
+    if (entry.textContent.trim().toLowerCase() === option) return true;
+    if (String(entry.value).toLowerCase() === option) return true;
+    if (!entry.getAttribute('aria-label') && !entry.getAttribute('aria-labelledby')) return false;
+    return getPageActionLabel(entry).toLowerCase() === option;
   }
 
   function isPageActionSensitive(element, label, text) {
@@ -1624,6 +1682,11 @@
     element.style.outlineOffset = '2px';
   }
 
+  // Controls discovered beyond PAGE_ACTION_MAX_ELEMENTS are never collected. The
+  // overflow count is reported in the next snapshot so the model does not
+  // conclude a target is absent when it was simply never listed.
+  let pageActionCollectionOverflow = 0;
+
   function collectPageActionElements() {
     const selector = [
       'a',
@@ -1644,12 +1707,28 @@
     ].join(',');
     const seen = new Set();
     const records = [];
+    const optionsPerSelect = new Map();
+    let overflow = 0;
     for (const element of document.querySelectorAll(selector)) {
-      if (seen.has(element) || records.length >= PAGE_ACTION_MAX_ELEMENTS) continue;
+      if (seen.has(element)) continue;
+      if (records.length >= PAGE_ACTION_MAX_ELEMENTS) {
+        // Counted without a visibility probe: the extra control checks would force
+        // layout for every remaining match on a very large page, and "at least N
+        // further controls were not listed" is the honest, bounded claim.
+        overflow += 1;
+        continue;
+      }
       seen.add(element);
       if (!isPageActionControl(element) || !isPageActionInInspectionBand(element)) continue;
+      if (element.tagName === 'OPTION') {
+        const owner = element.closest('select');
+        const offered = optionsPerSelect.get(owner) || 0;
+        if (offered >= PAGE_ACTION_MAX_OPTIONS_PER_SELECT) continue;
+        optionsPerSelect.set(owner, offered + 1);
+      }
       records.push(getPageActionElementRecord(element, records.length));
     }
+    pageActionCollectionOverflow = overflow;
     return records;
   }
 
@@ -1866,15 +1945,32 @@
     const previousFingerprints = session.fingerprints || new Set();
     for (const record of records)
       record.newlyVisible = !previousFingerprints.has(record.fingerprint);
+    // Non-sensitive control state participates in change detection so a successful
+    // form fill registers as a page change: document.body.innerText excludes input
+    // values, and element fingerprints are identity-only. Only already-disclosed
+    // bits enter the hash (value presence and checked, which the snapshot already
+    // reports as value_present/checked). The selected index and raw values stay
+    // out: pageStateHash is a 32-bit FNV-1a digest sent to the provider, and a
+    // small index space would be brute-forceable from it.
+    const controlState = records
+      .map((record) =>
+        record.sensitive
+          ? ''
+          : `${record.fingerprint}:${record.valuePresent ? 1 : 0}:${record.checked === true ? 1 : 0}`
+      )
+      .join('~');
     const fingerprintSource = [
       url,
       capPageActionText(document.body?.innerText || '', 12_000),
       records.map((record) => record.fingerprint).join('\\n'),
     ].join('\\u001e');
-    const fingerprint = pageStateHash(fingerprintSource);
+    const fingerprint = pageStateHash(`${fingerprintSource}~${controlState}`);
     let boundedRecords = scopedRecords;
     let content = '';
     let elements = [];
+    // Assigned inside the loop (which may trim records) and read by the return
+    // below, so it cannot be a loop-scoped const.
+    let payloadHeader = header;
     for (;;) {
       content = boundedRecords
         .map(formatPageActionRecord)
@@ -1887,11 +1983,23 @@
           )
         )
       );
+      // Report what the caps dropped so the model does not read an absent target
+      // as a missing one. Computed per iteration because the payload budget check
+      // below must account for the note itself. Zero omissions add no text.
+      const omittedControls =
+        pageActionCollectionOverflow + Math.max(0, scopedRecords.length - boundedRecords.length);
+      const payloadHeaderForIteration = omittedControls
+        ? capPageActionText(
+            `${header} At least ${omittedControls} further control(s) were not listed.`,
+            PAGE_ACTION_MAX_HEADER_CHARS
+          )
+        : header;
+      payloadHeader = payloadHeaderForIteration;
       const payload = {
         snapshotId,
         url,
         title,
-        header,
+        header: payloadHeader,
         content,
         footer,
         readableContent,
@@ -1925,7 +2033,7 @@
       snapshotId,
       url,
       title,
-      header,
+      header: payloadHeader,
       content,
       footer,
       readableContent,
@@ -2393,21 +2501,18 @@
         const option = String(request.args?.option || '')
           .trim()
           .toLowerCase();
-        const match = Array.from(element.options).find(
-          (entry) =>
-            entry.textContent.trim().toLowerCase() === option ||
-            String(entry.value).toLowerCase() === option
+        const match = Array.from(element.options).find((entry) =>
+          matchesPageActionOption(entry, option)
         );
         if (!match) throw new Error('The requested option was not found.');
         element.value = match.value;
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
         const selected = element.options[element.selectedIndex];
-        const matched =
-          String(selected?.value || '').toLowerCase() === option ||
-          String(selected?.textContent || '')
-            .trim()
-            .toLowerCase() === option;
+        // Verification must use the same predicate as the selection above, or a
+        // correct choice records delivered_unverified and the run treats a
+        // successful action as unconfirmed.
+        const matched = Boolean(selected) && matchesPageActionOption(selected, option);
         actionReceipt = buildPageActionReceipt(
           matched ? 'delivered_verified' : 'delivered_unverified',
           'selected_option_match',

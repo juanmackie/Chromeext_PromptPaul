@@ -202,6 +202,197 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('offers only interactable controls, skipping inert, transparent, collapsed, and unrendered ones', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'act-visibility.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'visibility-run', 'page_get_state'),
+        targetUrl
+      );
+      expect(state.success, JSON.stringify(state)).toBe(true);
+      const elements = state.snapshot.elements;
+      const labels = elements.map((element) => element.label || element.text || '');
+
+      // Offered: controls the page will accept input on. The <details> summary stays
+      // interactive while its contents do not, and an <option> inside a closed
+      // <select> reports checkVisibility() === false yet must still be offered.
+      expect(labels, JSON.stringify(elements)).toContain('Visible action');
+      expect(labels, JSON.stringify(elements)).toContain('Visible scope');
+      expect(labels, JSON.stringify(elements)).toContain('Closed details summary');
+      expect(
+        elements.some((element) => element.tag === 'select' && element.label === 'Visible scope')
+      ).toBe(true);
+      expect(elements.some((element) => element.tag === 'option')).toBe(true);
+
+      // Skipped: controls the page will never accept input on. Clicking opacity:0
+      // surfaces a delivered_unverified receipt, so offering it only burns a cycle.
+      for (const excluded of [
+        'Ghost action',
+        'Ghost scope',
+        'Ghost option',
+        'Inert action',
+        'Content visibility action',
+        'Collapsed action',
+        'Details action',
+      ]) {
+        expect(
+          labels,
+          `${excluded} must not be offered: ${JSON.stringify(elements)}`
+        ).not.toContain(excluded);
+      }
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('bounds options per select so one large dropdown cannot starve later controls', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'act-large-select.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'large-select-run', 'page_get_state'),
+        targetUrl
+      );
+      expect(state.success, JSON.stringify(state)).toBe(true);
+      const elements = state.snapshot.elements;
+      const labels = elements.map((element) => element.label || element.text || '');
+      const options = elements.filter((element) => element.tag === 'option');
+
+      // The dropdown stays usable: some options are still enumerated.
+      expect(options.length).toBeGreaterThan(0);
+      // Its 250 options are capped instead of consuming the 200-element budget.
+      expect(options.length, JSON.stringify(labels)).toBeLessThanOrEqual(60);
+      // Controls after the dropdown in document order are still offered, and
+      // page_select can still reach options beyond the cap because matching
+      // reads the live option list rather than this snapshot.
+      expect(labels, JSON.stringify(labels)).toContain('Country');
+      expect(labels, JSON.stringify(labels)).toContain('Critical action');
+      expect(elements.some((element) => element.tag === 'input')).toBe(true);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('accepts the disclosed option label and still fails loudly for a missing option', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'act-select-label.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    const inspect = () =>
+      harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'select-label-run', 'page_get_state'),
+        targetUrl
+      );
+    const selectOption = ({ snapshotId, index, option }) =>
+      harness.evaluate(
+        (args) =>
+          window.pageActionHarness.directAction(args.url, 'select-label-run', 'page_select', {
+            snapshotId: args.snapshotId,
+            index: args.index,
+            option: args.option,
+          }),
+        { url: targetUrl, snapshotId, index, option }
+      );
+
+    try {
+      const initial = await inspect();
+      expect(initial.success, JSON.stringify(initial)).toBe(true);
+      // The snapshot discloses 'North America' for an option whose text is 'NA'.
+      expect(
+        initial.snapshot.elements.some(
+          (element) => element.tag === 'option' && element.label === 'North America'
+        ),
+        JSON.stringify(initial.snapshot.elements)
+      ).toBe(true);
+      const select = initial.snapshot.elements.find((element) => element.tag === 'select');
+      expect(select, JSON.stringify(initial.snapshot.elements)).toBeTruthy();
+
+      // An option that does not exist still fails loudly instead of fuzzy-matching.
+      const missing = await selectOption({
+        snapshotId: initial.snapshot.snapshotId,
+        index: select.index,
+        option: 'Atlantis',
+      });
+      expect(JSON.stringify(missing)).toContain('not found');
+      await expect(target.locator('#region')).toHaveValue('na');
+
+      // Re-inspect so the verified choice cannot pass via a stale-snapshot path.
+      const refreshed = await inspect();
+      const refreshedSelect = refreshed.snapshot.elements.find(
+        (element) => element.tag === 'select'
+      );
+      const chosen = await selectOption({
+        snapshotId: refreshed.snapshot.snapshotId,
+        index: refreshedSelect.index,
+        option: 'North America',
+      });
+      expect(chosen.success, JSON.stringify(chosen)).toBe(true);
+      expect(chosen.actionReceipt).toMatchObject({
+        disposition: 'delivered_verified',
+        evidence: { kind: 'selected_option_match', matched: true },
+      });
+      await expect(target.locator('#region')).toHaveValue('na');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('reports controls dropped by the element cap and stays silent when nothing is dropped', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const harness = await openHarness(context);
+
+    const inspect = async (name, runId) => {
+      const page = await context.newPage();
+      const url = fixtureUrl(fixtureServer, name);
+      await page.goto(url);
+      const state = await harness.evaluate(
+        ({ url: target, runId: id }) =>
+          window.pageActionHarness.directAction(target, id, 'page_get_state'),
+        { url, runId }
+      );
+      expect(state.success, JSON.stringify(state)).toBe(true);
+      return state;
+    };
+
+    try {
+      // 260 compact controls inside the viewport band exceed the 200-element cap.
+      const overflow = await inspect('act-overflow.html', 'overflow-run');
+      expect(overflow.snapshot.elements.length).toBeLessThanOrEqual(200);
+      expect(overflow.snapshot.header, JSON.stringify(overflow.snapshot.header)).toContain(
+        'were not listed'
+      );
+
+      // A page that drops nothing must not claim an omission.
+      const small = await inspect('act-select-label.html', 'no-overflow-run');
+      expect(small.snapshot.header).not.toContain('were not listed');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('finds bounded page text without scrolling or changing the page', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);

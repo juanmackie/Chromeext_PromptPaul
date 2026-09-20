@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Act Select Label Fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1 id="heading">Select labelling</h1>
+
+      <!-- The snapshot discloses each option's label, which prefers aria-label
+           over the option's text. Choosing the offered label must succeed, and
+           an option that does not exist must still fail loudly. -->
+      <select id="region" aria-label="Region">
+        <option value="na" aria-label="North America">NA</option>
+        <option value="eu" aria-label="Europe">EU</option>
+      </select>
+    </main>
+  </body>
+</html>

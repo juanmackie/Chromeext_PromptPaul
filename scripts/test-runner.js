@@ -518,14 +518,6 @@ function runUnitTests(runner) {
     }
   });
 
-  runner.test('readStrategy module structure valid', () => {
-    checkModule('src/utils/readStrategy.js');
-    const content = readFileSafe('src/utils/readStrategy.js');
-    if (!content.includes('export function determineReadStrategy')) {
-      throw new Error('readStrategy.js missing determineReadStrategy export');
-    }
-  });
-
   runner.test('runtimeErrors module structure valid', () => {
     checkModule('src/utils/runtimeErrors.js');
     const content = readFileSafe('src/utils/runtimeErrors.js');

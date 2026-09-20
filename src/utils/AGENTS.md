@@ -2,14 +2,13 @@
 
 ## Purpose
 
-The `src/utils/` subtree contains shared helpers for validation, context budgeting, page permissions, action cards, profile routing, model discovery, skill parsing, tool choice payloads, suggestions, read strategy, run/feedback state, and runtime errors.
+The `src/utils/` subtree contains shared helpers for validation, context budgeting, page permissions, action cards, profile routing, model discovery, skill parsing, tool choice payloads, suggestions, run/feedback state, and runtime errors.
 
 ## Ownership
 
 - `contextBudget.js` owns token estimation and DOM context trimming.
 - `hermesContext.js` owns bounded Hermes current-turn/history preparation, active page-context retention, and historical media redaction.
 - `hermesKeys.js` owns background-only Hermes credential validation (non-empty, 8–512 chars, no whitespace/control chars) and per-profile cleanup of `hermesApiKeys`/`hermesSessions`/`hermesSessionKeys` records on profile delete. It never exposes the secret value.
-- `readStrategy.js` owns extraction strategy selection from page signals.
 - `siteExtractors.js` owns pure bounded formatters for Reddit threads, GitHub page metadata, and RSS/Atom feeds (`SITE_EXTRACTOR_CAPS`, truncation markers, XML text normalization). The classic content script mirrors these helpers; keep both sides aligned and covered by `tests/siteExtractors.test.js`.
 - `permissionGuards.js` owns restricted URL and host permission checks.
 - `actionCards.js` owns inferred site-specific prompt cards.
@@ -22,7 +21,6 @@ The `src/utils/` subtree contains shared helpers for validation, context budgeti
 - `runtimeErrors.js` owns runtime error classification and friendly messages.
 - `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. Backup normalization strips provider and search credentials and bounds the persisted notch position before export or restore.
 - `validation.js` owns shared URL, tool, profile, and backup normalization/validation; request endpoints are HTTP(S)-only and custom-tool methods/names are allowlisted. The session-scoped `pageActionsEnabled` Act permission is not part of local backup/export data.
-- `debounce.js` owns debounce and throttle helpers.
 - `keylessSearch.js` owns the keyless search-provider client. It fixes two hosted MCP endpoints: Exa's `https://mcp.exa.ai/mcp` (tool `web_search_exa`) first, then Parallel's keyless hosted Search MCP `https://search.parallel.ai/mcp` (tool `web_search`) as fallback. Each leg is a plain JSON-RPC `tools/call` fetch with bounded timeouts, bounded response reads, and bounded query/response/source budgets. It runs keyless by default; an optional background-owned `exaSearchApiKey` is sent as an `x-api-key` header on the Exa leg only and only raises Exa free-tier rate limits. It normalizes results into the same source shape as Brave, preserves the `NO_RESULTS` contract, and never logs or persists the user's query.
 - `braveSearch.js` owns the bounded Brave LLM Context API client, HTTP(S)-only source normalization, byte budgeting, caller-abort handling, and safe `NO_RESULTS` errors when no usable sources remain. 400 error bodies surface a bounded, redacted reason in the user message so the user sees why the request was rejected. Error parsing extracts nested `error.detail` and `error.code` as bounded, redacted text and never emits `[object Object]`; the `OPTION_NOT_IN_PLAN` restriction maps to a `PLAN_RESTRICTED` error with an explicit "LLM Context access in Options" message, while all other HTTP 400 failures keep the existing `BAD_REQUEST` handling. The endpoint is fixed and plan restrictions are never auto-retried or auto-switched to another API.
 - `mediaFetch.js` owns public-media URL validation and bounded response-body reads used before background base64 conversion.

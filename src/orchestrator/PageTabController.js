@@ -351,5 +351,3 @@ export class PageTabController {
     return { ...(state.tabStates.get(Number(tabId)) || { status: 'unknown', failures: 0 }) };
   }
 }
-
-export const pageTabController = { PageTabController };

@@ -291,5 +291,3 @@ export async function restoreRunJournal(chatArea, onResume, onWatch, onTerminal)
     console.warn('Chat: run journal recovery failed:', error.message);
   }
 }
-
-export const runRecoveryStorageKeys = Object.freeze({ activeRun: ACTIVE_RUN_KEY });

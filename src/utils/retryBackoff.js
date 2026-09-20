@@ -58,5 +58,3 @@ export function waitForRetry(attempt, options = {}) {
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
-
-export const retryBackoff = Object.freeze({ getRetryDelay, waitForRetry });

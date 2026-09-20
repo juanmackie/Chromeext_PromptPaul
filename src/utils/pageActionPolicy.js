@@ -529,25 +529,3 @@ export function evaluatePageActionPolicy(input = {}) {
         : classification.reason,
   };
 }
-
-export const pageActionPolicy = {
-  PAGE_ACTION_NAMES,
-  READ_ONLY_PAGE_ACTIONS,
-  PAGE_TAB_ACTION_NAMES,
-  PAGE_USER_INPUT_ACTION_NAME,
-  PAGE_MANUAL_INTERVENTION_ACTION_NAME,
-  PAGE_ACTION_RISKS,
-  PAGE_ACTION_TITLE_MAX_CHARS,
-  isPageActionName,
-  isPageActionReadOnly,
-  isPageTabActionName,
-  isPageUserInputActionName,
-  isPageManualInterventionActionName,
-  normalizePageActionArgs,
-  normalizePageActionTitle,
-  normalizePageTabActionArgs,
-  normalizePageUserInputArgs,
-  normalizePageManualInterventionArgs,
-  classifyPageAction,
-  evaluatePageActionPolicy,
-};

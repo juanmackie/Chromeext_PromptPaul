@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Act Visibility Fixture</title>
+  </head>
+  <body>
+    <main>
+      <h1 id="heading">Visibility cases</h1>
+
+      <button id="visible-action" type="button">Visible action</button>
+      <select id="visible-scope" aria-label="Visible scope">
+        <option>All items</option>
+        <option>Unread items</option>
+      </select>
+
+      <!-- opacity:0 still occupies layout and is still returned by
+           document.elementFromPoint(), so hit-testing alone cannot reject it. -->
+      <button id="ghost-action" type="button" style="opacity: 0">Ghost action</button>
+
+      <!-- An inert subtree is non-interactive by definition. Element.checkVisibility()
+           does not report inertness. -->
+      <div id="inert-region" inert>
+        <button id="inert-action" type="button">Inert action</button>
+      </div>
+
+      <!-- content-visibility:hidden is reported by plain checkVisibility(). -->
+      <div id="content-visibility-region" style="content-visibility: hidden">
+        <button id="content-visibility-action" type="button">Content visibility action</button>
+      </div>
+
+      <!-- visibility:collapse is reported by checkVisibilityCSS. -->
+      <div id="collapsed-region" style="visibility: collapse">
+        <button id="collapsed-action" type="button">Collapsed action</button>
+      </div>
+
+      <!-- A closed <details> hides its contents but keeps <summary> interactive,
+           so exactly one of these two must be offered. -->
+      <details id="closed-details">
+        <summary>Closed details summary</summary>
+        <button id="details-action" type="button">Details action</button>
+      </details>
+
+      <!-- An invisible dropdown must not contribute its options either. -->
+      <select id="ghost-scope" aria-label="Ghost scope" style="opacity: 0">
+        <option>Ghost option</option>
+      </select>
+    </main>
+  </body>
+</html>

@@ -199,6 +199,23 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('ask whether to continue');
     expect(prompt).toContain('an interim progress report or next-steps menu is not completion');
     expect(prompt).toContain('summarize what you actually did on the page');
+
+    // Fake-success anti-patterns: each must reach the emitted instruction.
+    expect(prompt).toContain('a filled field is not an applied search');
+    expect(prompt).toContain('a typed query still needs its matching suggestion selected');
+    expect(prompt).toContain('a matching result does not prove a requested filter was set');
+    expect(prompt).toContain(
+      'Do not toggle a checkbox, switch, or radio that already reports the requested state'
+    );
+    expect(prompt).toContain(
+      'Recent page_wait calls are not evidence that content is still loading'
+    );
+    expect(prompt).toContain('finding a matching link is not enough');
+
+    // The two rules that need current field values stay out while values are
+    // redacted, so the instruction cannot ask for something the model cannot see.
+    expect(prompt).not.toContain('already holds the requested value');
+    expect(prompt).not.toContain('already contains the requested value');
   });
 
   it('never enumerates tool limitations and tells the model to answer normally', () => {
@@ -3198,6 +3215,114 @@ describe('RunOrchestrator page actions', () => {
     expect(second.result.actionReceipt.disposition).toBe('delivered_verified');
     expect(third.result.error).toBe('PAGE_ACTION_LOOP_DETECTED');
     expect(orch.activeRuns.get(runId).pageActions.repeatedActionCount).toBe(2);
+    expect(mutationCalls).toBe(4);
+  });
+
+  it('treats a verified mutation that changed no page state as progress, not a stall', async () => {
+    let mutationCalls = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        mutationCalls += 1;
+        // A fill that changes no observable page state still proves its own
+        // effect by reading the value back, so it must not count as progress-free.
+        return {
+          success: true,
+          snapshot: makeSnapshot(),
+          actionReceipt: {
+            disposition: 'delivered_verified',
+            evidence: { kind: 'input_value_match', matched: true },
+          },
+        };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('filled-state-1', 'page_get_state', {}));
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const result = await orch.executeTool(
+        runId,
+        makeCall(`filled-input-${attempt}`, 'page_input', {
+          snapshotId: 'page-snap-1',
+          index: 0,
+          text: `value ${attempt}`,
+        })
+      );
+      expect(result.result?.error, JSON.stringify(result)).toBeUndefined();
+      expect(result.result.actionReceipt.disposition).toBe('delivered_verified');
+    }
+
+    expect(orch.activeRuns.get(runId).pageActions.noProgressMutationCount).toBe(0);
+    expect(mutationCalls).toBe(5);
+  });
+
+  it('blocks a mutation once three different mutations changed nothing', async () => {
+    let mutationCalls = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        mutationCalls += 1;
+        return {
+          success: true,
+          snapshot: makeSnapshot(),
+          pageChanged: false,
+          actionReceipt: {
+            disposition: 'delivered_unverified',
+            evidence: { kind: 'click_dispatch_unconfirmed', pageEffectObserved: false },
+          },
+        };
+      },
+    });
+    const events = [];
+    orch._emitEvent = (_id, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('no-effect-state-1', 'page_get_state', {}));
+
+    // Three distinct mutations: distinct arguments give distinct action hashes,
+    // so the identical-action guard cannot see this and the new guard is what
+    // must fire. Clicks are avoided here because a click is confirmation-gated
+    // and would await a decision this stub never resolves.
+    const attempts = [
+      ['no-effect-input-a', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'alpha' }],
+      ['no-effect-input-b', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'beta' }],
+      ['no-effect-input-c', 'page_input', { snapshotId: 'page-snap-1', index: 0, text: 'gamma' }],
+    ];
+    for (const [id, name, args] of attempts) {
+      const result = await orch.executeTool(runId, makeCall(id, name, args));
+      expect(result.result?.error, JSON.stringify(result)).toBeUndefined();
+    }
+    // The identical-action guard saw nothing, because every action differed.
+    expect(orch.activeRuns.get(runId).pageActions.repeatedActionCount).toBe(1);
+    expect(orch.activeRuns.get(runId).pageActions.noProgressMutationCount).toBe(3);
+
+    const blocked = await orch.executeTool(
+      runId,
+      makeCall('no-effect-input-blocked', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'delta',
+      })
+    );
+    expect(blocked.result.error).toBe('PAGE_ACTION_NO_PROGRESS');
+    expect(events.some((event) => event.code === 'PAGE_ACTION_NO_PROGRESS')).toBe(true);
+    expect(mutationCalls).toBe(3);
+
+    // Inspecting again clears the streak so the guard's own guidance unblocks it.
+    await orch.executeTool(runId, makeCall('no-effect-state-2', 'page_get_state', {}));
+    expect(orch.activeRuns.get(runId).pageActions.noProgressMutationCount).toBe(0);
+
+    const afterInspection = await orch.executeTool(
+      runId,
+      makeCall('no-effect-input-after', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: 'epsilon',
+      })
+    );
+    expect(afterInspection.result?.error, JSON.stringify(afterInspection)).toBeUndefined();
     expect(mutationCalls).toBe(4);
   });
 

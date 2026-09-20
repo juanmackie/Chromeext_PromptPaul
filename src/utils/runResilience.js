@@ -344,14 +344,3 @@ export function detectRepeatedOutput(value, options = {}) {
   }
   return null;
 }
-
-export const runResilience = Object.freeze({
-  RUN_RESILIENCE_DEFAULTS,
-  getProviderTimeoutMs,
-  createTimeoutSignal,
-  classifyProviderError,
-  isRetryableProviderError,
-  redactProviderErrorMessage,
-  compactConversationHistory,
-  detectRepeatedOutput,
-});

@@ -226,12 +226,3 @@ export async function getPageActionCheckpoint(runId) {
 export function resetPageActionCheckpointsForTests() {
   memoryCheckpoints.clear();
 }
-
-export const pageActionCheckpoint = Object.freeze({
-  PAGE_ACTION_CHECKPOINT_STORAGE_KEY,
-  PAGE_ACTION_CHECKPOINT_CAPS,
-  savePageActionCheckpoint,
-  clearPageActionCheckpoint,
-  listPageActionCheckpoints,
-  getPageActionCheckpoint,
-});

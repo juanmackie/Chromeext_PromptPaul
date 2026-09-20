@@ -235,8 +235,25 @@ test('acceptance 1: summarize the current article with its context attached', as
     await expect(loaded).toContainText('Lithium-ion batteries');
     await expect(loaded).toContainText('Pumped hydroelectricity');
 
+    // Point the run at the local fixture endpoint so the provider payload is
+    // recorded on the wire without a live model.
+    await seedLocalProfile(chat, fixtureUrl(fixtureServer, 'mock-chat'));
+    fixtureServer.resetMockRequests();
+
     // Kick off the summarization prompt.
     await sendPrompt(chat, 'Summarize this article in three sentences.');
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete', {
+      timeout: 45000,
+    });
+
+    // Regression: a typed composer send must carry the attached page as
+    // structured page_content in its own request, not only as an earlier
+    // history turn that a provider may compact or ignore.
+    const requests = fixtureServer.mockRequests();
+    expect(requests).toHaveLength(1);
+    const typedText = lastUserText(requests[0]);
+    expect(typedText).toContain('--- Page content ---');
+    expect(typedText).toContain('Pumped hydroelectricity');
 
     // The attached article context is retained while the run is in flight.
     await expect(loaded).toBeVisible();

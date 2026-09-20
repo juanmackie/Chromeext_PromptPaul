@@ -2822,7 +2822,10 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         composer.beginDocumentSend();
       } else {
-        makeApiCall({ instruction: effectiveMessage }, 'auto', requestedSkill);
+        // A typed send carries the attached page as structured `page_content`
+        // context instead of relying on the earlier history turn. With no
+        // attached page, buildPageScopedRequest returns the bare instruction.
+        makeApiCall(buildPageScopedRequest(effectiveMessage), 'auto', requestedSkill);
       }
       userInput.value = '';
     }
