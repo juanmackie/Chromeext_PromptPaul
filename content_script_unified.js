@@ -2244,7 +2244,10 @@
     });
   }
 
-  function dispatchPageActionClick(element) {
+  // Resolve where a synthetic click would land. Scrolling, measuring, and the
+  // hit test all run synchronously so the observed cover cannot change before
+  // the dispatch that follows in the same task.
+  function resolvePageActionClickTarget(element) {
     element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
     const rect = element.getBoundingClientRect();
     const point = {
@@ -2252,14 +2255,34 @@
       clientY: Math.round(rect.top + Math.max(1, Math.min(rect.height / 2, rect.height - 1))),
     };
     const top = document.elementFromPoint(point.clientX, point.clientY);
-    const covered = Boolean(top && top !== element && !element.contains(top));
+    return {
+      point,
+      covered: Boolean(top && top !== element && !element.contains(top)),
+      top,
+    };
+  }
+
+  // Identity of the element that would receive the click instead of the target.
+  // A covering control that is already indexed is reported with its snapshot
+  // index so the model can act on it (for example dismiss a dialog) directly.
+  function describePageActionOccluder(element, session) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return null;
+    const record = session?.records?.find((entry) => entry?.ref === element);
+    return {
+      ...(record && Number.isInteger(record.index) ? { index: record.index } : {}),
+      tag: String(element.tagName || '').toLowerCase(),
+      role: element.getAttribute('role') || '',
+      label: getPageActionLabel(element) || element.textContent || '',
+    };
+  }
+
+  function dispatchPageActionClick(element, point) {
     element.focus({ preventScroll: true });
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
       const EventCtor = type.startsWith('pointer') ? PointerEvent : MouseEvent;
       element.dispatchEvent(new EventCtor(type, { bubbles: true, cancelable: true, ...point }));
     }
     element.click();
-    return covered;
   }
 
   function buildPageActionReceipt(disposition, kind, details = {}) {
@@ -2273,7 +2296,6 @@
           : {}),
         ...(typeof details.matched === 'boolean' ? { matched: details.matched } : {}),
         ...(typeof details.changed === 'boolean' ? { changed: details.changed } : {}),
-        ...(typeof details.covered === 'boolean' ? { covered: details.covered } : {}),
       },
     };
   }
@@ -2443,7 +2465,6 @@
       const element = record.ref;
       const tag = element.tagName.toLowerCase();
       let actionReceipt = buildPageActionReceipt('delivered_unverified', 'action_dispatched');
-      let covered = false;
       if (action === 'page_open_link') {
         const link = getPageActionLinkMetadata(element);
         if (!link?.href) {
@@ -2482,7 +2503,22 @@
           error.code = 'PAGE_NAVIGATION_NEW_TAB';
           throw error;
         }
-        covered = dispatchPageActionClick(element);
+        // Pre-dispatch occlusion gate. A covered target would send the pointer
+        // sequence and the click to the covering element, which the page reads
+        // as a real interaction with the wrong control. Report the cover and
+        // dispatch nothing; the orchestrator records this as not_delivered and
+        // charges no mutation budget.
+        const clickTarget = resolvePageActionClickTarget(element);
+        if (clickTarget.covered) {
+          const error = new Error(
+            'The target is covered by another element, so the click was not delivered.'
+          );
+          error.code = 'PAGE_ACTION_TARGET_OCCLUDED';
+          error.preDispatch = true;
+          error.occluder = describePageActionOccluder(clickTarget.top, session);
+          throw error;
+        }
+        dispatchPageActionClick(element, clickTarget.point);
       } else if (action === 'page_input') {
         const text = String(request.args?.text || '');
         if (!text || text.length > PAGE_ACTION_MAX_INPUT_CHARS)
@@ -2528,16 +2564,9 @@
       if (action === 'page_click' && checkedChanged) {
         actionReceipt = buildPageActionReceipt('delivered_verified', 'checked_state', {
           changed: true,
-          covered,
         });
       } else if (action === 'page_click' && navigationChanged) {
-        actionReceipt = buildPageActionReceipt('delivered_verified', 'navigation_observed', {
-          covered,
-        });
-      } else if (action === 'page_click' && covered) {
-        actionReceipt = buildPageActionReceipt('delivered_unverified', 'action_dispatched', {
-          covered: true,
-        });
+        actionReceipt = buildPageActionReceipt('delivered_verified', 'navigation_observed');
       }
       return {
         success: true,
@@ -2606,6 +2635,11 @@
             success: false,
             error: error.message,
             code: error.code || 'PAGE_ACTION_FAILED',
+            // A pre-dispatch failure never reached the page, so the flag lets
+            // the orchestrator record not_delivered without charging a
+            // mutation against the run budget.
+            ...(error.preDispatch === true ? { preDispatch: true } : {}),
+            ...(error.occluder ? { occluder: error.occluder } : {}),
           });
         });
       return true;

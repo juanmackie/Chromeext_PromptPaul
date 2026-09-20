@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PAGE_ACTION_OCCLUSION_CODE,
   PAGE_ACTION_RISKS,
+  buildPageActionOcclusionFailure,
   evaluatePageActionPolicy,
+  isPageActionPreDispatchFailure,
   normalizePageActionArgs,
+  normalizePageActionOccluder,
   normalizePageActionTitle,
   normalizePageTabActionArgs,
   normalizePageUserInputArgs,
@@ -396,5 +400,60 @@ describe('pageActionPolicy', () => {
     });
     expect(rejected.valid).toBe(false);
     expect(rejected.error).toContain('credentials');
+  });
+
+  it('bounds and trims untrusted occluder descriptors', () => {
+    expect(
+      normalizePageActionOccluder({ index: 12, tag: 'DIV', role: 'dialog', label: 'Sign in' })
+    ).toEqual({
+      index: 12,
+      tag: 'div',
+      role: 'dialog',
+      label: 'Sign in',
+    });
+    expect(normalizePageActionOccluder(null)).toBeNull();
+    expect(normalizePageActionOccluder('dialog')).toBeNull();
+    expect(normalizePageActionOccluder({})).toBeNull();
+    // Negative and non-integer indices are dropped rather than echoed back.
+    expect(normalizePageActionOccluder({ index: -4, tag: 'div' })).toEqual({ tag: 'div' });
+    expect(normalizePageActionOccluder({ index: '3.5', tag: 'div' })).toEqual({ tag: 'div' });
+    const long = normalizePageActionOccluder({ label: 'x'.repeat(400) });
+    expect(long.label.length).toBe(120);
+  });
+
+  it('describes the covering control and tells the model to clear it first', () => {
+    const failure = buildPageActionOcclusionFailure({
+      occluder: { index: 3, tag: 'div', role: 'dialog', label: 'Sign in to continue' },
+      targetLabel: 'Save draft',
+    });
+    expect(failure.code).toBe(PAGE_ACTION_OCCLUSION_CODE);
+    expect(failure.message).toContain('Save draft');
+    expect(failure.message).toContain('Sign in to continue');
+    expect(failure.message).toContain('[3]');
+    expect(failure.message).toContain('not delivered');
+    // Waiting alone cannot clear a cover, so the suggestion must name the fix.
+    expect(failure.suggestion).toMatch(/dismiss/i);
+    expect(failure.occluder).toMatchObject({ index: 3, role: 'dialog' });
+
+    // A missing descriptor still yields an actionable failure, never a throw.
+    const bare = buildPageActionOcclusionFailure({});
+    expect(bare.code).toBe(PAGE_ACTION_OCCLUSION_CODE);
+    expect(bare.occluder).toBeNull();
+    expect(bare.message).toContain('another element');
+  });
+
+  it('only treats a flagged, known pre-dispatch code as pre-dispatch', () => {
+    expect(
+      isPageActionPreDispatchFailure({
+        code: PAGE_ACTION_OCCLUSION_CODE,
+        preDispatch: true,
+      })
+    ).toBe(true);
+    // A lost flag or an unknown code keeps the conservative existing accounting.
+    expect(isPageActionPreDispatchFailure({ code: PAGE_ACTION_OCCLUSION_CODE })).toBe(false);
+    expect(isPageActionPreDispatchFailure({ code: 'PAGE_ACTION_TIMEOUT', preDispatch: true })).toBe(
+      false
+    );
+    expect(isPageActionPreDispatchFailure(null)).toBe(false);
   });
 });

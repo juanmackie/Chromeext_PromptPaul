@@ -113,7 +113,10 @@
 }
 
 /* Toast Notifications */
-.toast-container {
+/* These are loadingManager's own toast classes. They deliberately avoid Bootstrap's
+   `.toast`/`.toast-container` names: Bootstrap's `.toast:not(.show){display:none}`
+   (specificity 0,2,0) outranks a plain `.toast` rule and silently hid every toast. */
+.ext-toast-container {
   position: fixed;
   top: 20px;
   right: 20px;
@@ -124,7 +127,7 @@
   max-width: 400px;
 }
 
-.toast {
+.ext-toast {
   padding: 12px 16px;
   border-radius: 0px;
   border: 1px solid var(--ext-border);
@@ -140,25 +143,25 @@
   font-family: var(--ext-font-family);
 }
 
-.toast.success {
+.ext-toast.success {
   background: var(--ext-success);
   color: var(--ext-success-foreground);
   border-color: var(--ext-success-deep);
 }
 
-.toast.error {
+.ext-toast.error {
   background: var(--ext-destructive);
   color: var(--ext-destructive-foreground);
   border-color: var(--ext-destructive);
 }
 
-.toast.warning {
+.ext-toast.warning {
   background: var(--ext-warning);
   color: var(--ext-warning-foreground);
   border-color: var(--ext-warning-deep);
 }
 
-.toast.info {
+.ext-toast.info {
   background: var(--ext-info);
   color: var(--ext-info-foreground);
   border-color: var(--ext-info-deep);
@@ -197,7 +200,7 @@
   }
 }
 
-.toast.fade-out {
+.ext-toast.fade-out {
   animation: slideOut 0.3s ease-in forwards;
 }
 

@@ -1461,6 +1461,13 @@ const sendPageActionMessage = (tabId, message, signal) =>
         if (response?.success === false) {
           const error = new Error(response.error || 'The page action failed.');
           error.code = response.code || 'PAGE_ACTION_FAILED';
+          // Preserve the pre-dispatch signal and occluder identity so the
+          // orchestrator can record not_delivered and tell the model what is
+          // covering the target instead of collapsing to a bare message.
+          if (response.preDispatch === true) error.preDispatch = true;
+          if (response.occluder && typeof response.occluder === 'object') {
+            error.occluder = response.occluder;
+          }
           finish(null, error);
           return;
         }

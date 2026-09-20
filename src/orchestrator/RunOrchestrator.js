@@ -30,8 +30,10 @@ import { waitForRetry } from '../utils/retryBackoff.js';
 import {
   PAGE_ACTION_RISKS,
   READ_ONLY_PAGE_ACTIONS,
+  buildPageActionOcclusionFailure,
   evaluatePageActionPolicy,
   isPageActionName,
+  isPageActionPreDispatchFailure,
   isPageActionReadOnly,
   isPageTabActionName,
   isPageUserInputActionName,
@@ -407,6 +409,8 @@ class RunOrchestrator {
     run.pageActions.sessionApproval = false;
     run.pageActions.snapshot = null;
     run.pageActions.documentUrl = null;
+    run.pageActions.elementIndex = new Map();
+    run.pageActions.elementIndexDocumentUrl = null;
     run.pageActions.lastActionHash = '';
     run.pageActions.lastActionReceipt = null;
     run.pageActions.finalVerificationCompleted = false;
@@ -764,6 +768,13 @@ class RunOrchestrator {
         noProgressMutationCount: 0,
         loopWarnings: 0,
         snapshot: null,
+        // Document-scoped index of every control the model has seen, merged
+        // across snapshots instead of replaced. A region-scoped page_get_state
+        // lists only its own slice of the index, so without this the model
+        // loses every control it already discovered outside that region.
+        // Keyed to elementIndexDocumentUrl so a document change invalidates it.
+        elementIndex: new Map(),
+        elementIndexDocumentUrl: null,
         finalVerificationCompleted: false,
         pendingConfirmation: null,
         pendingUserInput: null,
@@ -1682,6 +1693,8 @@ class RunOrchestrator {
     });
     run.pageActions.documentUrl = null;
     run.pageActions.snapshot = null;
+    run.pageActions.elementIndex = new Map();
+    run.pageActions.elementIndexDocumentUrl = null;
     run.pageActions.lastActionHash = '';
     run.pageActions.lastActionReceipt = null;
     if (recovery.nextTargetTabId) {
@@ -1739,6 +1752,20 @@ class RunOrchestrator {
       });
     }
     return { ok: true };
+  }
+
+  /**
+   * Return a budget slot charged before an action that never reached the page.
+   * Only pre-dispatch failures qualify: nothing was dispatched, so charging the
+   * run for it would exhaust the mutation budget on actions the page never saw.
+   * @param {object} run
+   * @param {string} bucket
+   */
+  _refundPageActionBudget(run, bucket) {
+    const count = Number(run?.pageActions?.budgets?.[bucket] || 0);
+    if (count <= 0) return;
+    run.pageActions.budgets[bucket] = count - 1;
+    run.pageActions.actions = Math.max(0, Number(run.pageActions.actions || 0) - 1);
   }
 
   /**
@@ -1802,6 +1829,10 @@ class RunOrchestrator {
     if (!nextUrl) return;
     run.pageActions.documentUrl = nextUrl;
     run.pageActions.snapshot = null;
+    // Indices are only stable within one document, so a new document starts a
+    // fresh index instead of carrying entries that no longer resolve.
+    run.pageActions.elementIndex = new Map();
+    run.pageActions.elementIndexDocumentUrl = nextUrl;
     run.pageActions.lastActionHash = '';
     run.pageActions.lastActionReceipt = null;
     run.pageActions.repeatedActionCount = 0;
@@ -1811,6 +1842,50 @@ class RunOrchestrator {
     } catch (_) {
       // Sanitization already bounds the value; invalid URLs are ignored.
     }
+  }
+
+  /**
+   * Accumulate the indexed controls observed for the current document.
+   *
+   * A region-scoped snapshot lists only its own slice of the index, so
+   * replacing the element set with it strands every control the model already
+   * found elsewhere on the page. Indices are global and stable within a
+   * document, so entries merge by index rather than replace. The accumulator is
+   * keyed to the snapshot URL, which makes a document change invalidate it
+   * without separate bookkeeping.
+   * @private
+   * @param {object} run
+   * @param {object|null} snapshot - Normalized snapshot to merge.
+   */
+  _mergePageActionElements(run, snapshot) {
+    const pageActions = run?.pageActions;
+    if (!pageActions || !Array.isArray(snapshot?.elements) || snapshot.elements.length === 0) {
+      return;
+    }
+    const documentUrl = sanitizePageActionUrl(snapshot.url || '');
+    if (!documentUrl || documentUrl !== pageActions.elementIndexDocumentUrl) {
+      pageActions.elementIndex = new Map();
+      pageActions.elementIndexDocumentUrl = documentUrl;
+    }
+    for (const element of snapshot.elements) {
+      if (Number.isInteger(element?.index)) pageActions.elementIndex.set(element.index, element);
+    }
+  }
+
+  /**
+   * Resolve an indexed control from the accumulated document index, falling
+   * back to the latest snapshot payload so a single-snapshot run is unchanged.
+   * @private
+   * @param {object} run
+   * @param {number} index
+   * @returns {object|null}
+   */
+  _resolvePageActionElement(run, index) {
+    const pageActions = run?.pageActions;
+    if (!pageActions) return null;
+    const accumulated = pageActions.elementIndex?.get(index);
+    if (accumulated) return accumulated;
+    return pageActions.snapshot?.elements?.find((element) => element?.index === index) || null;
   }
 
   /**
@@ -2065,7 +2140,7 @@ class RunOrchestrator {
     const isMutation = !isPageActionReadOnly(actionName);
     const actionTarget = isPageActionReadOnly(actionName)
       ? null
-      : run.pageActions.snapshot?.elements?.find((element) => element?.index === args.index);
+      : this._resolvePageActionElement(run, args.index);
     const actionHash = pageStateHash(
       JSON.stringify({
         actionName,
@@ -2127,7 +2202,7 @@ class RunOrchestrator {
 
     const target = isPageActionReadOnly(actionName)
       ? null
-      : run.pageActions.snapshot?.elements?.find((element) => element?.index === args.index);
+      : this._resolvePageActionElement(run, args.index);
     if (!isPageActionReadOnly(actionName) && !target) {
       return {
         success: true,
@@ -2369,11 +2444,17 @@ class RunOrchestrator {
           const snapshotMatchesNavigation =
             Boolean(normalizedSnapshot?.url) && normalizedSnapshot.url === nextDocumentUrl;
           run.pageActions.snapshot = snapshotMatchesNavigation ? normalizedSnapshot : null;
-          if (snapshotMatchesNavigation) result.snapshot = normalizedSnapshot;
-          else result.snapshot = undefined;
+          if (snapshotMatchesNavigation) {
+            this._mergePageActionElements(run, normalizedSnapshot);
+            result.snapshot = normalizedSnapshot;
+          } else {
+            result.snapshot = undefined;
+          }
         }
       } else if (normalizedSnapshot) {
         run.pageActions.snapshot = normalizedSnapshot;
+        // Keep controls from earlier snapshots of this same document resolvable.
+        this._mergePageActionElements(run, normalizedSnapshot);
         result.snapshot = normalizedSnapshot;
         this._capturePageTaskTarget(run, normalizedSnapshot);
         if (!run.pageActions.documentUrl && normalizedSnapshot.url) {
@@ -2555,6 +2636,38 @@ class RunOrchestrator {
         action: actionName,
         error: message,
       });
+      if (isMutation && isPageActionPreDispatchFailure(error)) {
+        // Nothing reached the page: the click was withheld because the target is
+        // covered. Record not_delivered, return the mutation slot, and leave the
+        // no-progress streak alone so one covered control cannot lock the run out
+        // of every other mutation.
+        this._refundPageActionBudget(run, budgetBucket);
+        const failure = buildPageActionOcclusionFailure({
+          occluder: error.occluder,
+          targetLabel: target?.label || target?.name || target?.tag || '',
+        });
+        const actionReceipt = {
+          disposition: 'not_delivered',
+          evidence: { kind: 'pre_dispatch_blocked', code: failure.code },
+        };
+        this._emitEvent(run.id, {
+          type: 'page_action_warning',
+          code: failure.code,
+          action: actionName,
+          occluder: failure.occluder,
+          message: failure.message,
+        });
+        return {
+          success: true,
+          result: {
+            error: failure.code,
+            message: failure.message,
+            suggestion: failure.suggestion,
+            occluder: failure.occluder,
+            actionReceipt,
+          },
+        };
+      }
       if (tabFailure) {
         const recovery = this._quarantinePageActionTab(run, error);
         const actionReceipt = {
@@ -2638,7 +2751,9 @@ class RunOrchestrator {
           },
         };
       }
-      const target = run.pageActions.snapshot?.elements?.[args.index];
+      // Resolve through the shared document index so a link discovered before
+      // a region-scoped read stays addressable, exactly like page_click.
+      const target = this._resolvePageActionElement(run, args.index);
       if (!target) {
         return {
           success: true,

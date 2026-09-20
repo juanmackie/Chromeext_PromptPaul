@@ -6,12 +6,14 @@ export class LoadingManager {
   }
 
   init() {
-    if (!document.querySelector('.toast-container')) {
+    // Own container/class names: reusing Bootstrap's `.toast`/`.toast-container` made
+    // `.toast:not(.show){display:none}` win over loading-states.css and hid every toast.
+    if (!document.querySelector('.ext-toast-container')) {
       this.toastContainer = document.createElement('div');
-      this.toastContainer.className = 'toast-container';
+      this.toastContainer.className = 'ext-toast-container';
       document.body.appendChild(this.toastContainer);
     } else {
-      this.toastContainer = document.querySelector('.toast-container');
+      this.toastContainer = document.querySelector('.ext-toast-container');
     }
   }
 
@@ -44,7 +46,7 @@ export class LoadingManager {
   // Toast Notifications
   showToast(message, type = 'info', duration = 5000, options = {}) {
     const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
+    toast.className = `ext-toast ${type}`;
 
     const icons = {
       success: '✓',

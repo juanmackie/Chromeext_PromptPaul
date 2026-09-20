@@ -49,6 +49,25 @@ export const PAGE_ACTION_RISKS = Object.freeze({
 
 export const PAGE_ACTION_TITLE_MAX_CHARS = 80;
 
+/**
+ * Distinct error code for a mutation whose target is covered by another
+ * element. The click point hit-tests to a different node, so dispatching the
+ * synthetic pointer sequence would deliver the action to the covering element
+ * instead of the target. Reported before any event is dispatched.
+ */
+export const PAGE_ACTION_OCCLUSION_CODE = 'PAGE_ACTION_TARGET_OCCLUDED';
+
+/** Maximum characters kept for a reported occluder label. */
+export const PAGE_ACTION_OCCLUDER_MAX_CHARS = 120;
+
+/**
+ * Codes that can only be produced before anything reaches the page. A failure
+ * with one of these codes carries no page effect, so it must be recorded as
+ * `not_delivered` and must not consume a mutation budget slot or count toward
+ * the no-progress lockout.
+ */
+export const PAGE_ACTION_PRE_DISPATCH_CODES = Object.freeze([PAGE_ACTION_OCCLUSION_CODE]);
+
 // Credential/payment wording that must never appear in a model-supplied step
 // title (mirrors the sensitive-field conventions in pageDom.js). Rejecting it
 // here prevents a title from echoing a masked field's identity back to the
@@ -528,4 +547,77 @@ export function evaluatePageActionPolicy(input = {}) {
         ? 'Trusted page-actions mode approved this allowed action.'
         : classification.reason,
   };
+}
+
+/**
+ * Bound a raw occluder descriptor reported by the content script. Page data is
+ * untrusted, so every field is trimmed, capped, and optional.
+ * @param {unknown} raw
+ * @returns {{index?: number, tag?: string, role?: string, label?: string}|null}
+ */
+export function normalizePageActionOccluder(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const occluder = {};
+  const index = Number(raw.index);
+  if (Number.isInteger(index) && index >= 0) occluder.index = index;
+  const tag = capPageText(raw.tag, 32).toLowerCase();
+  if (tag) occluder.tag = tag;
+  const role = capPageText(raw.role, 40);
+  if (role) occluder.role = role;
+  const label = capPageText(raw.label, PAGE_ACTION_OCCLUDER_MAX_CHARS);
+  if (label) occluder.label = label;
+  return Object.keys(occluder).length > 0 ? occluder : null;
+}
+
+/**
+ * Human-readable identity for a normalized occluder, used in the model-facing
+ * message so the covering control can be dismissed or targeted directly.
+ * @param {object|null} occluder
+ * @returns {string}
+ */
+function describePageActionOccluder(occluder) {
+  if (!occluder) return 'another element';
+  const parts = [];
+  if (occluder.role) parts.push(occluder.role);
+  else if (occluder.tag) parts.push(`<${occluder.tag}>`);
+  if (occluder.label) parts.push(`"${occluder.label}"`);
+  const descriptor = parts.join(' ') || occluder.tag || 'another element';
+  return occluder.index == null ? descriptor : `${descriptor} [${occluder.index}]`;
+}
+
+/**
+ * Build the model-facing occlusion failure. Waiting will not help on its own:
+ * the covering element has to be dismissed or targeted, so the suggestion
+ * names that path explicitly instead of telling the model to retry.
+ * @param {object} input
+ * @param {unknown} input.occluder - Raw occluder descriptor from the page.
+ * @param {string} [input.targetLabel] - Label of the intended target.
+ * @returns {{code: string, message: string, suggestion: string, occluder: object|null}}
+ */
+export function buildPageActionOcclusionFailure(input = {}) {
+  const occluder = normalizePageActionOccluder(input.occluder);
+  const target = capPageText(input.targetLabel, PAGE_ACTION_OCCLUDER_MAX_CHARS);
+  const targetText = target ? ` for "${target}"` : '';
+  return {
+    code: PAGE_ACTION_OCCLUSION_CODE,
+    message:
+      `The target${targetText} is covered by ${describePageActionOccluder(occluder)}, so the ` +
+      'click was not delivered. Nothing was dispatched to the page.',
+    suggestion:
+      'Dismiss or act on the covering element first (inspect it with page_get_state), then ' +
+      're-issue the click. Retrying the same target without clearing the cover will fail again.',
+    occluder,
+  };
+}
+
+/**
+ * Whether a page-action error was produced before any input reached the page.
+ * Requires both the explicit pre-dispatch flag and a known pre-dispatch code so
+ * a lost or spoofed flag falls back to the conservative existing accounting.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isPageActionPreDispatchFailure(error) {
+  if (!error || error.preDispatch !== true) return false;
+  return PAGE_ACTION_PRE_DISPATCH_CODES.includes(String(error.code || ''));
 }

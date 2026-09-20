@@ -1706,9 +1706,31 @@ function runIntegrationTests(runner) {
       'editable: Boolean(element.isContentEditable)',
       'element.checked === true',
       "getAttribute('autocomplete')",
+      'PAGE_ACTION_TARGET_OCCLUDED',
     ]) {
       if (!content.includes(token))
         throw new Error(`Content script missing page-action guard: ${token}`);
+    }
+    // The occlusion gate must run before any click is dispatched. A covered
+    // target would otherwise receive the pointer sequence and click meant for a
+    // different control, which the page reads as a real interaction. The hit
+    // test and the dispatch are synchronous, so source order is the enforceable
+    // invariant that keeps the DOM untouched on this path.
+    const occlusionGateIndex = content.indexOf('if (clickTarget.covered)');
+    const clickDispatchIndex = content.indexOf(
+      'dispatchPageActionClick(element, clickTarget.point)'
+    );
+    if (occlusionGateIndex < 0 || clickDispatchIndex < 0) {
+      throw new Error('Page-action click dispatch must be guarded by the occlusion gate');
+    }
+    if (occlusionGateIndex > clickDispatchIndex) {
+      throw new Error('The occlusion gate must precede click dispatch');
+    }
+    if (!content.includes('error.preDispatch = true')) {
+      throw new Error('The occlusion failure must be marked as pre-dispatch');
+    }
+    if (!background.includes('if (response.preDispatch === true) error.preDispatch = true;')) {
+      throw new Error('The background bridge must preserve the pre-dispatch signal');
     }
     for (const token of [
       'page_get_state',
@@ -1732,6 +1754,9 @@ function runIntegrationTests(runner) {
       '_savePageActionCheckpoint',
       'finalVerificationCompleted',
       '_restoreActCheckpoint',
+      'isPageActionPreDispatchFailure',
+      '_refundPageActionBudget',
+      'pre_dispatch_blocked',
     ]) {
       if (!orchestrator.includes(token))
         throw new Error(`Orchestrator missing page-action contract: ${token}`);
@@ -1749,6 +1774,8 @@ function runIntegrationTests(runner) {
       'evaluatePageActionPolicy',
       'sensitive',
       'navigation: true',
+      'PAGE_ACTION_OCCLUSION_CODE',
+      'buildPageActionOcclusionFailure',
     ]) {
       if (!policy.includes(token))
         throw new Error(`Page-action policy missing safety contract: ${token}`);

@@ -170,7 +170,8 @@ test('shows feedback when Analyze is clicked without selected text', async () =>
   try {
     await chat.locator('#analyze-button').click();
 
-    await expect(chat.locator('.toast.warning')).toContainText('Please select text first');
+    await expect(chat.locator('.ext-toast.warning')).toBeVisible();
+    await expect(chat.locator('.ext-toast.warning')).toContainText('Please select text first');
   } finally {
     await context.close();
     removeUserDataDir(userDataDir);
@@ -193,7 +194,8 @@ test('shows immediate feedback when Analyze starts with selected text', async ()
     await expect(chat.locator('#selected-text-strip')).toBeVisible();
     await chat.locator('#analyze-button').click();
 
-    await expect(chat.locator('.toast.info')).toContainText('Summary started');
+    await expect(chat.locator('.ext-toast.info')).toBeVisible();
+    await expect(chat.locator('.ext-toast.info')).toContainText('Summary started');
   } finally {
     await context.close();
     removeUserDataDir(userDataDir);

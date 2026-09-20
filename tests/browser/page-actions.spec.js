@@ -465,7 +465,7 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
-  test('re-resolves recreated controls and records obscured delivery generically', async () => {
+  test('re-resolves recreated controls and withholds a click to an obscured target', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
     const { context } = launched;
@@ -536,6 +536,11 @@ test.describe('page-agent-style page actions', () => {
         (element) => element.label === 'Run dynamic action'
       );
       await target.evaluate(() => window.coverDynamicTarget());
+      // Reset the observable so a dispatched click would be visible again. The
+      // status text was already set by the earlier successful click above.
+      await target.evaluate(() => {
+        document.getElementById('status').textContent = 'Idle';
+      });
       const covered = await harness.evaluate(
         ({ url, snapshotId, index }) =>
           window.pageActionHarness.directAction(url, 'dynamic-page-run', 'page_click', {
@@ -544,11 +549,19 @@ test.describe('page-agent-style page actions', () => {
           }),
         { url: targetUrl, snapshotId: current.snapshot.snapshotId, index: currentTarget.index }
       );
-      expect(covered.actionReceipt).toMatchObject({
-        disposition: 'delivered_unverified',
-        evidence: { kind: 'action_dispatched', covered: true },
-      });
-      await expect(target.locator('#status')).toHaveText('Dynamic action completed');
+      // The cover is a full-viewport overlay, so a real user could never reach
+      // this control. The click is withheld and reported with the covering
+      // element instead of being dispatched into the overlay, which the page
+      // would have read as a real interaction with the wrong control.
+      expect(covered.success).toBe(false);
+      expect(covered.code).toBe('PAGE_ACTION_TARGET_OCCLUDED');
+      expect(covered.preDispatch).toBe(true);
+      expect(covered.occluder).toMatchObject({ tag: 'div' });
+      // Nothing was dispatched, so the control's own click handler never ran and
+      // the reset status stands. This deliberately replaces the previous
+      // expectation of 'Dynamic action completed', which recorded a fake
+      // success: the synthetic click bypassed the overlay a real click would hit.
+      await expect(target.locator('#status')).toHaveText('Idle');
     } finally {
       await context.close();
       removeUserDataDir(userDataDir);
