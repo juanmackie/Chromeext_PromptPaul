@@ -10,13 +10,14 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - `test-runner.js` owns structural tests, regression guards, manifest checks, and skill checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
 - `smoke-check.js` owns the cheapest manifest and vendored dependency sanity checks.
 - `verify-vendored-licenses.js` owns reproducible local hash and license-record checks for vendored libraries.
+- `act-benchmark.js` owns the explicit opt-in model-driven Act benchmark against local browser fixtures; it is never part of CI.
 
 ## Local Contracts
 
 - Scripts are CommonJS Node scripts and assume `process.cwd()` is the repository root.
 - `build.js` writes production output to `dist/`, development diagnostics output to `dist-dev/`, and evaluation output to `dist-eval/`; all are generated and are not source of truth. Builds copy the credential-free starter profile; connection credentials remain user-provided. Production directory copies exclude a review-approved development-only file set (`DEV_ONLY_EXCLUDES`, currently `AGENTS.md`) from `src`/`libs`/`skills`, while preserving runtime skill files, vendored assets, license notices, and provenance. Production `build-metadata.json` records the real git revision, clean/dirty working-tree status with the dirty paths, and a reproducible SHA-256 artifact root; a per-file `BUILD.sha256` manifest is written alongside it. Development and evaluation builds keep dev files for debugging and are never packaged or published.
 - `verify-vendored-licenses.js` must stay offline and verify every entry in `libs/vendor-manifest.json`, and every shipped third-party asset in `libs/` (plus the root `marked.min.js`) must have a provenance record — any unlisted vendored asset fails the gate.
-- `build.js` copies root manifest-referenced files and the `src`, `libs`, and `skills` directories, then installs the no-op diagnostics variants for production builds, including the isolated and main-world content bridges. The evaluation build installs the bounded eval hook and trace only in `dist-eval/`; `dist/` and `dist-dev/` keep the no-op eval modules.
+- `build.js` copies root manifest-referenced files and the `src`, `libs`, and `skills` directories, then installs the no-op diagnostics variants for production builds. Production output omits the no-op MAIN-world page-diagnostics script from its manifest and files; development/evaluation builds retain the active bridge. The evaluation build installs the bounded eval hook and trace only in `dist-eval/`; `dist/` and `dist-dev/` keep the no-op eval modules.
 - `test-runner.js` is intentionally structural and should guard contracts that are easy to regress without a browser. The runner guards the P3-02 packaging allowlist (production directory copies exclude `AGENTS.md`) and P3-03 traceability (metadata records the real git revision, clean/dirty status, and artifact checksum).
 - `smoke-check.js` must remain cheap enough to run often.
 
@@ -27,6 +28,7 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - Keep `test:browser` pointed at the complete `tests/browser/` suite; CI runs it with headed Chromium under Xvfb.
 - Update package scripts when adding new script entry points.
 - Keep development diagnostics build-gated: `build:dev` may include the full tracer in `dist-dev/`, while `build:prod` must exclude it from `dist/`. The evaluation hook is build-gated the same way: `build:eval` enables it only in `dist-eval/`.
+- `benchmark:act` requires an explicit `--run` and an environment-supplied key, exercises only ephemeral local fixtures, and writes bounded metrics—not prompts, page text, model responses, or credentials—to ignored local artifacts. A prebuilt eval extension may be selected for A/B runs.
 - Update tests when adding source modules with durable contracts.
 - Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`), side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`), structured prompt contracts (`composeUserPrompt`, raw concatenation patterns), public-media fetch guards, and current-page action contracts (bounded snapshots, stale-state rejection, reserved tools, approval routing, and run-scoped session approval) live in `test-runner.js`.
 - The storage regression guard also pins Hermes credential and session keys so future backup or migration changes cannot expose them accidentally. Backup tests also require provider/search credentials to stay out of exported payloads, and custom-tool argument limits to remain enforced.

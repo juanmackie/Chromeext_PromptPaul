@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prompt Paul local Act benchmark</title>
+    <style>
+      body {
+        font: 16px/1.5 sans-serif;
+        margin: 2rem;
+      }
+      button,
+      input,
+      [role] {
+        margin: 0.25rem;
+        padding: 0.5rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      #long-copy {
+        max-width: 55rem;
+      }
+      #scroll-list {
+        height: 260px;
+        overflow: auto;
+        border: 1px solid #777;
+      }
+      .row {
+        display: flex;
+        gap: 1rem;
+        padding: 0.5rem;
+      }
+      iframe {
+        width: 100%;
+        height: 240px;
+        border: 1px solid #777;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="task"></main>
+    <script>
+      const root = document.querySelector('#task');
+      const params = new URLSearchParams(location.search);
+      const kind = params.get('case') || '';
+      const el = (tag, attrs = {}, text = '') => {
+        const node = document.createElement(tag);
+        for (const [key, value] of Object.entries(attrs)) {
+          if (key === 'className') node.className = value;
+          else if (key === 'html') node.innerHTML = value;
+          else node.setAttribute(key, value);
+        }
+        if (text) node.textContent = text;
+        return node;
+      };
+      const button = (text, attrs = {}) => el('button', { type: 'button', ...attrs }, text);
+      const mark = (name, value) => {
+        document.body.dataset[name] = value;
+      };
+
+      if (kind === 'spa-menu') {
+        const menu = button('Products', { 'aria-expanded': 'false' });
+        const options = el('div', { role: 'menu', hidden: '' });
+        const item = button('Analytics', { role: 'menuitem' });
+        item.addEventListener('click', () => {
+          mark('selection', 'analytics');
+          options.hidden = true;
+        });
+        menu.addEventListener('click', () => {
+          options.hidden = false;
+          menu.setAttribute('aria-expanded', 'true');
+        });
+        options.append(item);
+        root.append(menu, options);
+      } else if (kind === 'autocomplete') {
+        const input = el('input', {
+          'aria-label': 'Choose a spice',
+          role: 'combobox',
+          'aria-autocomplete': 'list',
+          'aria-expanded': 'false',
+        });
+        const list = el('div', { role: 'listbox', hidden: '' });
+        input.addEventListener('input', () => {
+          list.replaceChildren();
+          if (!input.value) {
+            list.hidden = true;
+            return;
+          }
+          for (const name of ['Saffron', 'Sage', 'Star anise']) {
+            if (name.toLowerCase().startsWith(input.value.toLowerCase())) {
+              const option = el('div', { role: 'option' }, name);
+              option.addEventListener('click', () => {
+                input.value = name;
+                mark('selection', name);
+                list.hidden = true;
+              });
+              list.append(option);
+            }
+          }
+          list.hidden = list.childElementCount === 0;
+          input.setAttribute('aria-expanded', String(!list.hidden));
+        });
+        root.append(input, list);
+      } else if (kind === 'custom-radio') {
+        const group = el('div', { role: 'radiogroup', 'aria-label': 'Meal preference' });
+        for (const [name, value] of [
+          ['Standard', 'standard'],
+          ['Vegetarian', 'vegetarian'],
+        ]) {
+          const option = el('div', { role: 'radio', 'aria-checked': 'false', tabindex: '0' }, name);
+          option.addEventListener('click', () => {
+            for (const sibling of group.children) sibling.setAttribute('aria-checked', 'false');
+            option.setAttribute('aria-checked', 'true');
+            mark('selection', value);
+          });
+          group.append(option);
+        }
+        root.append(group);
+      } else if (kind === 'custom-dropdown') {
+        const combo = el(
+          'div',
+          { role: 'combobox', 'aria-label': 'Country', 'aria-expanded': 'false', tabindex: '0' },
+          'Choose a country'
+        );
+        const list = el('div', { role: 'listbox', hidden: '' });
+        for (const country of ['Canada', 'Japan', 'New Zealand']) {
+          const option = el('div', { role: 'option' }, country);
+          option.addEventListener('click', () => {
+            combo.textContent = country;
+            combo.setAttribute('aria-expanded', 'false');
+            list.hidden = true;
+            mark('selection', country);
+          });
+          list.append(option);
+        }
+        combo.addEventListener('click', () => {
+          list.hidden = false;
+          combo.setAttribute('aria-expanded', 'true');
+        });
+        root.append(combo, list);
+      } else if (kind === 'shadow-control') {
+        const host = el('benchmark-control');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const control = button('Choose blue');
+        control.addEventListener('click', () => mark('selection', 'blue'));
+        shadow.append(control);
+        root.append(host);
+      } else if (kind === 'iframe-form') {
+        const frame = el('iframe', { title: 'Contact form', src: '?case=iframe-child' });
+        root.append(frame);
+      } else if (kind === 'modal-dismissal') {
+        const dialog = el('section', { role: 'dialog', 'aria-label': 'Notice' });
+        const close = button('Close dialog');
+        close.addEventListener('click', () => {
+          dialog.hidden = true;
+          mark('dismissed', 'true');
+        });
+        dialog.append(el('p', {}, 'A notice must be dismissed.'), close);
+        root.append(dialog);
+      } else if (kind === 'pagination') {
+        const page = el('p', { id: 'page-content' }, 'Page 1: shipment is being prepared.');
+        const next = button('Next page');
+        next.addEventListener('click', () => {
+          page.textContent = 'Page 2: shipment has arrived.';
+          mark('page', '2');
+        });
+        root.append(page, next);
+      } else if (kind === 'infinite-scroll') {
+        const list = el('div', { id: 'scroll-list', tabindex: '0', 'aria-label': 'Activity feed' });
+        // Enough rows to overflow the 260px box, otherwise the container never
+        // scrolls and the lazy-loaded target can never be revealed.
+        for (let index = 1; index <= 20; index += 1) {
+          list.append(el('p', {}, `Entry ${index}: archived activity row`));
+        }
+        let loaded = false;
+        list.addEventListener('scroll', () => {
+          if (loaded || list.scrollTop <= 0) return;
+          loaded = true;
+          const target = button('Select Cedar');
+          target.id = 'target-entry';
+          target.addEventListener('click', () => mark('selection', 'cedar'));
+          list.append(target);
+          mark('loaded', 'true');
+        });
+        root.append(list);
+      } else if (kind === 'long-page') {
+        root.append(el('p', { id: 'long-copy' }, 'Archive '.repeat(7_000)));
+        root.append(el('p', {}, 'The verification marker is ORBIT-47.'));
+        const confirm = button('Confirm ORBIT-47');
+        confirm.addEventListener('click', () => mark('confirmed', 'ORBIT-47'));
+        root.append(confirm);
+      } else if (kind === 'duplicate-row-buttons') {
+        for (const name of ['Alder', 'Birch', 'Cedar']) {
+          const row = el('section', { className: 'row', 'data-row': name });
+          const label = el('span', {}, name);
+          const archive = button('Archive');
+          archive.addEventListener('click', () => {
+            row.dataset.archived = 'true';
+          });
+          row.append(label, archive);
+          root.append(row);
+        }
+      } else if (kind === 'iframe-child') {
+        const form = el('form', { id: 'contact-form' });
+        const name = el('input', { name: 'name', 'aria-label': 'Name' });
+        const submit = el('button', { type: 'submit' }, 'Submit contact form');
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          mark('submitted', name.value);
+        });
+        form.append(name, submit);
+        root.append(form);
+      } else {
+        root.textContent = 'Unknown local benchmark task.';
+      }
+    </script>
+  </body>
+</html>

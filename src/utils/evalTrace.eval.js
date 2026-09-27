@@ -95,6 +95,9 @@ export function recordEvalTrace(runId, details = {}) {
   if (details.error) step.error = redactString(details.error, 1_000);
   if (details.durationMs !== undefined)
     step.durationMs = Math.max(0, Number(details.durationMs) || 0);
+  if (details.tokenUsage && typeof details.tokenUsage === 'object') {
+    step.tokenUsage = sanitize(details.tokenUsage);
+  }
   trace.steps.push(step);
   if (details.kind === 'terminal') {
     trace.terminal = sanitize({

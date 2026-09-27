@@ -108,7 +108,10 @@ test('shows an isolated quick-action notch when enabled', async () => {
     const hostBox = await host.boundingBox();
     expect(hostBox).not.toBeNull();
     const initialCenter = hostBox.x + hostBox.width / 2;
-    expect(initialCenter).toBeCloseTo(640, 0);
+    // The property under test is horizontal centering, not a fixed width:
+    // resolve the expected center from the viewport the browser actually gave us.
+    const viewportWidth = target.viewportSize()?.width || (await target.evaluate(() => innerWidth));
+    expect(initialCenter).toBeCloseTo(viewportWidth / 2, 0);
     expect(hostBox.y).toBeLessThan(50);
 
     const rail = host.locator('.notch-rail');
@@ -152,7 +155,23 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(host.locator('.notch-panel')).toBeVisible();
-    await target.waitForTimeout(450);
+    // Wait for the open transition to settle instead of sleeping a fixed
+    // interval: under load a fixed sleep can sample the panel mid-animation
+    // and report a false misalignment. The tolerance below is unchanged.
+    await expect
+      .poll(
+        async () => {
+          const railNow = await host.locator('.notch-rail').boundingBox();
+          const panelNow = await host.locator('.notch-panel').boundingBox();
+          if (!railNow || !panelNow) return Number.POSITIVE_INFINITY;
+          return Math.max(
+            Math.abs(railNow.x - panelNow.x),
+            Math.abs(railNow.width - panelNow.width)
+          );
+        },
+        { timeout: 5_000 }
+      )
+      .toBeLessThanOrEqual(4);
     const railBox = await host.locator('.notch-rail').boundingBox();
     const panelBox = await host.locator('.notch-panel').boundingBox();
     expect(railBox).not.toBeNull();

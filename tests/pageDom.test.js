@@ -37,6 +37,7 @@ describe('pageDom', () => {
       {
         tag: 'button',
         role: 'button',
+        elementKey: 'snapshot-4:4',
         ariaLabel: 'ignored by adapter',
         name: 'Save draft',
         text: 'Save draft',
@@ -47,6 +48,7 @@ describe('pageDom', () => {
     );
 
     expect(element.index).toBe(4);
+    expect(element.elementKey).toBe('snapshot-4:4');
     expect(element.name).toBe('Save draft');
     expect(element.checked).toBe(false);
     expect(element.disabled).toBe(true);

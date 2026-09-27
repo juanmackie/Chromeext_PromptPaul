@@ -114,6 +114,7 @@ export function normalizePageElement(raw = {}, index = 0) {
   const tag = capPageText(raw.tag || raw.tagName || 'element', 32).toLowerCase();
   const normalized = {
     index: Math.max(0, Math.floor(Number(index) || 0)),
+    elementKey: capPageText(raw.elementKey, 64),
     tag,
     role: capPageText(raw.role, PAGE_DOM_CAPS.maxAttributeChars),
     name: capPageText(raw.name, PAGE_DOM_CAPS.maxAttributeChars),
@@ -284,18 +285,6 @@ export function normalizePageSnapshot(input = {}) {
         }))
         .filter((region) => region.indices.length > 0)
     : undefined;
-  const visualBoxes = Array.isArray(input.visualBoxes)
-    ? input.visualBoxes
-        .slice(0, 60)
-        .map((box) => ({
-          index: Math.max(0, Math.floor(Number(box?.index) || 0)),
-          x: Math.max(0, Math.floor(Number(box?.x) || 0)),
-          y: Math.max(0, Math.floor(Number(box?.y) || 0)),
-          width: Math.max(0, Math.floor(Number(box?.width) || 0)),
-          height: Math.max(0, Math.floor(Number(box?.height) || 0)),
-        }))
-        .filter((box) => box.width > 0 && box.height > 0)
-    : undefined;
   const payloadBase = {
     snapshotId: capPageText(input.snapshotId || '', 128),
     url: sanitizePageActionUrl(input.url),
@@ -309,7 +298,6 @@ export function normalizePageSnapshot(input = {}) {
       typeof input.regionId === 'string' && PAGE_REGION_ID_PATTERN.test(input.regionId)
         ? input.regionId
         : undefined,
-    visualBoxes,
     scroll: input.scroll && typeof input.scroll === 'object' ? input.scroll : undefined,
     scrollContainers: Array.isArray(input.scrollContainers)
       ? input.scrollContainers.slice(0, 16)

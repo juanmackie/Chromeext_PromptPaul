@@ -433,6 +433,157 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('scrolls the advertised horizontal and vertical containers by the same indices', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const horizontal = document.createElement('div');
+        horizontal.dataset.scrollContainer = 'true';
+        horizontal.setAttribute('aria-label', 'Fixture carousel');
+        horizontal.style.cssText = 'width:120px;height:60px;overflow:auto;white-space:nowrap';
+        const wide = document.createElement('div');
+        wide.style.cssText = 'width:480px;height:40px';
+        horizontal.appendChild(wide);
+
+        const vertical = document.createElement('div');
+        vertical.dataset.scrollContainer = 'true';
+        vertical.setAttribute('aria-label', 'Fixture results');
+        vertical.style.cssText = 'width:120px;height:60px;overflow:auto';
+        const tall = document.createElement('div');
+        tall.style.cssText = 'width:80px;height:480px';
+        vertical.appendChild(tall);
+        document.body.prepend(horizontal, vertical);
+      });
+      const initial = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'scroll-index-run', 'page_get_state'),
+        targetUrl
+      );
+      const horizontal = initial.snapshot.scrollContainers.find(
+        (container) => container.label === 'Fixture carousel'
+      );
+      const vertical = initial.snapshot.scrollContainers.find(
+        (container) => container.label === 'Fixture results'
+      );
+      expect(horizontal?.horizontal).toBe(true);
+      expect(vertical?.vertical).toBe(true);
+
+      const horizontalResult = await harness.evaluate(
+        ({ url, containerIndex }) =>
+          window.pageActionHarness.directAction(url, 'scroll-index-run', 'page_scroll', {
+            direction: 'right',
+            pages: 1,
+            containerIndex,
+          }),
+        { url: targetUrl, containerIndex: horizontal.index }
+      );
+      const verticalResult = await harness.evaluate(
+        ({ url, containerIndex }) =>
+          window.pageActionHarness.directAction(url, 'scroll-index-run', 'page_scroll', {
+            direction: 'down',
+            pages: 1,
+            containerIndex,
+          }),
+        { url: targetUrl, containerIndex: vertical.index }
+      );
+      expect(
+        horizontalResult.snapshot.scrollContainers.find((entry) => entry.index === horizontal.index)
+          .left
+      ).toBeGreaterThan(0);
+      expect(
+        verticalResult.snapshot.scrollContainers.find((entry) => entry.index === vertical.index).top
+      ).toBeGreaterThan(0);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('allows a page batch with two maximum-duration waits to finish', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const batch = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'long-waits-run', 'page_batch', {
+            actions: [
+              {
+                name: 'page_wait',
+                args: { condition: 'text', text: 'Never appears', timeoutMs: 10_000 },
+              },
+              {
+                name: 'page_wait',
+                args: { condition: 'text', text: 'Still absent', timeoutMs: 10_000 },
+              },
+            ],
+          }),
+        targetUrl
+      );
+      expect(batch.success).toBe(true);
+      expect(batch.results).toHaveLength(2);
+      expect(batch.results.every((result) => result.satisfied === false)).toBe(true);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('finds and waits for text beyond the old 16,000-character window', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    const targetText =
+      'Long-page confirmation text appears after the first fifty thousand characters.';
+
+    try {
+      await target.evaluate((text) => {
+        const content = document.createElement('p');
+        content.textContent = 'ordinary searchable page text. '.repeat(2_000) + text;
+        document.querySelector('main').appendChild(content);
+      }, targetText);
+
+      const found = await harness.evaluate(
+        ({ url, query }) =>
+          window.pageActionHarness.directAction(url, 'long-page-search-run', 'page_find_text', {
+            query,
+          }),
+        { url: targetUrl, query: targetText }
+      );
+      expect(found).toMatchObject({ success: true, found: true });
+      expect(found.matches.join(' ')).toContain(targetText);
+
+      const waited = await harness.evaluate(
+        ({ url, text }) =>
+          window.pageActionHarness.directAction(url, 'long-page-wait-run', 'page_wait', {
+            condition: 'text',
+            text,
+            timeoutMs: 100,
+          }),
+        { url: targetUrl, text: targetText }
+      );
+      expect(waited).toMatchObject({ success: true, satisfied: true });
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('uses accessible names for icon controls and ARIA options', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -459,6 +610,129 @@ test.describe('page-agent-style page actions', () => {
           expect.objectContaining({ label: 'Search scope' }),
         ])
       );
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('refuses a stale merged index after a region snapshot reorders controls', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'targeting.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      const initial = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'stale-region-run', 'page_get_state'),
+        targetUrl
+      );
+      const previousTarget = initial.snapshot.elements[0];
+      expect(previousTarget.elementKey).toBeTruthy();
+      await target.evaluate(() => {
+        const button = document.createElement('button');
+        button.id = 'inserted-dangerous-control';
+        button.textContent = 'Delete account';
+        button.addEventListener('click', () => {
+          document.body.dataset.staleTargetClicked = 'true';
+        });
+        document.querySelector('main').prepend(button);
+      });
+
+      const refreshed = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'stale-region-run', 'page_get_state', {
+            regionId: 'region-0',
+          }),
+        targetUrl
+      );
+      expect(refreshed.snapshot.elements[0].label).toContain('Delete account');
+      expect(refreshed.snapshot.elements[0].elementKey).not.toBe(previousTarget.elementKey);
+
+      const blocked = await harness.evaluate(
+        ({ url, snapshotId, index, elementKey }) =>
+          window.pageActionHarness.directAction(url, 'stale-region-run', 'page_click', {
+            snapshotId,
+            index,
+            elementKey,
+          }),
+        {
+          url: targetUrl,
+          snapshotId: refreshed.snapshot.snapshotId,
+          index: previousTarget.index,
+          elementKey: previousTarget.elementKey,
+        }
+      );
+      expect(blocked.code).toBe('PAGE_STATE_STALE');
+      await expect(target.locator('body')).not.toHaveAttribute('data-stale-target-clicked', 'true');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('returns stale instead of rebinding an identical row action to the first match', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'targeting.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const rows = document.createElement('div');
+        rows.id = 'duplicate-rows';
+        for (let index = 1; index <= 5; index += 1) {
+          const button = document.createElement('button');
+          button.textContent = 'Delete';
+          button.className = 'row-delete';
+          button.dataset.row = String(index);
+          button.addEventListener('click', () => {
+            document.body.dataset.clickedRow = button.dataset.row;
+          });
+          rows.appendChild(button);
+        }
+        document.querySelector('main').appendChild(rows);
+      });
+      const initial = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'duplicate-row-run', 'page_get_state'),
+        targetUrl
+      );
+      const duplicates = initial.snapshot.elements.filter((element) => element.label === 'Delete');
+      expect(duplicates).toHaveLength(5);
+      const intended = duplicates[4];
+      await target.evaluate(() => {
+        const previous = document.querySelector('#duplicate-rows');
+        const replacement = document.createElement('div');
+        replacement.id = 'duplicate-rows';
+        for (let index = 1; index <= 5; index += 1) {
+          const button = document.createElement('button');
+          button.textContent = 'Delete';
+          button.className = 'row-delete';
+          button.dataset.row = String(index);
+          button.addEventListener('click', () => {
+            document.body.dataset.clickedRow = button.dataset.row;
+          });
+          replacement.appendChild(button);
+        }
+        previous.replaceWith(replacement);
+      });
+
+      const result = await harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'duplicate-row-run', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url: targetUrl, snapshotId: initial.snapshot.snapshotId, index: intended.index }
+      );
+      expect(result.code).toBe('PAGE_STATE_STALE');
+      await expect(target.locator('body')).not.toHaveAttribute('data-clicked-row');
     } finally {
       await context.close();
       removeUserDataDir(userDataDir);
@@ -495,6 +769,7 @@ test.describe('page-agent-style page actions', () => {
         targetUrl
       );
       expect(batched.snapshot?.snapshotId).toBeTruthy();
+      expect(batched.snapshot.visualBoxes).toBeUndefined();
       expect(batched.results).toHaveLength(2);
       expect(batched.results[0]).toMatchObject({ found: true });
       expect(batched.results[0].snapshot).toBeUndefined();
@@ -1498,7 +1773,10 @@ test.describe('page-agent-style page actions', () => {
         )
         .toMatchObject({ success: true });
       await expect.poll(() => target.url()).toContain('/landing.html');
-      expect(context.pages()).toHaveLength(pageCount);
+      // Navigating a _blank link must not open a new tab. Keep the count
+      // strict, but list the URLs so an intermittent extra page is
+      // diagnosable from the failure output instead of being opaque.
+      expect(context.pages().map((page) => page.url())).toHaveLength(pageCount);
       await expect(target.locator('#destination')).toHaveText('Landing destination');
       const destinationState = await harness.evaluate(
         ({ runId }) =>

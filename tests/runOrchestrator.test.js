@@ -237,21 +237,15 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('Never fake an action');
   });
 
-  it('lists owned-tab tools only when Tabs is enabled', () => {
+  it('keeps owned-tab tools inside the Act lease even for a legacy disabled flag', () => {
     const orch = new RunOrchestrator(createStubSkillManager());
-    const currentTabPrompt = orch._buildSystemPrompt(
+    const prompt = orch._buildSystemPrompt(
       { config: {}, pageActions: { enabled: true, multiTabEnabled: false } },
       []
     );
-    expect(currentTabPrompt).toContain('page_request_user_input');
-    expect(currentTabPrompt).not.toContain('page_open_link');
-
-    const tabsPrompt = orch._buildSystemPrompt(
-      { config: {}, pageActions: { enabled: true, multiTabEnabled: true } },
-      []
-    );
-    expect(tabsPrompt).toContain('page_open_link');
-    expect(tabsPrompt).toContain('page_switch_tab');
+    expect(prompt).toContain('page_request_user_input');
+    expect(prompt).toContain('page_open_link');
+    expect(prompt).toContain('page_switch_tab');
   });
 
   it('omits the PAGE ACTIONS block when page actions are disabled', () => {
@@ -1192,7 +1186,7 @@ describe('Fix 1: execute() persists messages into conversationHistory', () => {
 
     // Return a tool call on the first invocation, then empty text on subsequent
     // (so the orchestrator completes without looping forever).
-    global.fetch = async (url, opts) => {
+    global.fetch = async (_url, opts) => {
       const body = JSON.parse(opts.body);
       seenBodies.push(body);
       callCount++;
@@ -2225,6 +2219,62 @@ describe('RunOrchestrator page actions', () => {
     return { id, function: { name, arguments: JSON.stringify(args) } };
   }
 
+  it('passes the merged snapshot element key to the page bridge for stale-target validation', async () => {
+    const oldElementKey = 'page-old:0';
+    const currentElementKey = 'page-new:0';
+    let inspections = 0;
+    let delivered = false;
+    const currentSnapshot = {
+      ...makeSnapshot(),
+      snapshotId: 'page-new',
+      elements: [{ index: 1, elementKey: 'page-new:1', tag: 'button', label: 'Safe action' }],
+    };
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName, args) => {
+        if (actionName === 'page_get_state') {
+          inspections += 1;
+          return {
+            success: true,
+            snapshot:
+              inspections === 1
+                ? {
+                    ...makeSnapshot(),
+                    elements: [
+                      { index: 0, elementKey: oldElementKey, tag: 'button', label: 'Help' },
+                    ],
+                  }
+                : currentSnapshot,
+          };
+        }
+        if (args.elementKey !== currentElementKey) {
+          return { success: true, error: 'PAGE_STATE_STALE' };
+        }
+        delivered = true;
+        return { success: true, message: 'clicked' };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.sessionApproval = true;
+    await orch.executeTool(runId, makeCall('key-state-1', 'page_get_state', {}));
+    await orch.executeTool(
+      runId,
+      makeCall('key-state-2', 'page_get_state', { regionId: 'region-0' })
+    );
+
+    const outcome = await orch.executeTool(
+      runId,
+      makeCall('key-stale-click', 'page_click', {
+        snapshotId: 'page-new',
+        index: 0,
+      })
+    );
+
+    expect(outcome.result.error).toBe('PAGE_STATE_STALE');
+    expect(delivered).toBe(false);
+  });
+
   it('advertises page tools only for an explicitly opted-in run', async () => {
     const orch = new RunOrchestrator(createStubSkillManager());
     const disabledId = await orch.startRun({ tool_choice: 'auto', sourceTabId: 7 });
@@ -2426,6 +2476,36 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(false);
   });
 
+  it('includes a bounded typed-text preview in the live card but not in the journal', async () => {
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true, message: 'updated', snapshot: makeSnapshot() },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('preview-state', 'page_get_state', {}));
+
+    const pending = orch.executeTool(
+      runId,
+      makeCall('preview-input', 'page_input', {
+        snapshotId: 'page-snap-1',
+        index: 0,
+        text: `Draft ${'x'.repeat(320)}`,
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(confirmation.inputPreview).toHaveLength(280);
+    expect(confirmation.inputPreview).toMatch(/^Draft /);
+    expect(confirmation.args.text).toBeUndefined();
+    expect(orch._journalEvent(confirmation).inputPreview).toBeUndefined();
+    orch.resolvePageActionDecision(runId, confirmation.confirmationId, false);
+    await pending;
+  });
+
   it('returns a verified receipt from an executor postcondition', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionPolicyProvider: async () => true,
@@ -2591,6 +2671,80 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.activeRuns.get(runId).pageActions.allowedOrigins).toContain(
       'https://external.example'
     );
+  });
+
+  it('confirms model-entered unrequested cross-origin tab URLs before opening them', async () => {
+    const events = [];
+    const tabCalls = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true },
+      pageTabExecutor: async (_runId, actionName, args) => {
+        tabCalls.push({ actionName, args });
+        return { ready: true, openedTabId: 9, targetTabId: 9, tab: { tabId: 9, url: args.url } };
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      tool_choice: 'auto',
+      messages: [{ role: 'user', content: 'Review the current page.' }],
+    });
+    await orch.executeTool(runId, makeCall('external-state', 'page_get_state', {}));
+
+    const pending = orch.executeTool(
+      runId,
+      makeCall('external-open', 'page_open_tab', {
+        url: 'https://attacker.example/private-note',
+      })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    expect(confirmation).toMatchObject({
+      action: 'page_open_tab',
+      destination: 'https://attacker.example/private-note',
+      destinationOrigin: 'attacker.example',
+    });
+    expect(tabCalls).toHaveLength(0);
+
+    expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
+    const result = await pending;
+    expect(result.result.ready).toBe(true);
+    expect(tabCalls).toHaveLength(1);
+  });
+
+  it('does not prompt for a cross-origin destination named in the user request', async () => {
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: makeSnapshot() }
+          : { success: true },
+      pageTabExecutor: async (_runId, _actionName, args) => ({
+        ready: true,
+        openedTabId: 9,
+        targetTabId: 9,
+        tab: { tabId: 9, url: args.url },
+      }),
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      tool_choice: 'auto',
+      messages: [{ role: 'user', content: 'Open reports.example for me.' }],
+    });
+    await orch.executeTool(runId, makeCall('named-state', 'page_get_state', {}));
+
+    const result = await orch.executeTool(
+      runId,
+      makeCall('named-open', 'page_open_tab', { url: 'https://reports.example/daily' })
+    );
+    expect(result.result.ready).toBe(true);
+    expect(events.some((event) => event.type === 'page_action_confirmation')).toBe(false);
   });
 
   it('navigates a blank-target link in the current tab without exposing its query string', async () => {
@@ -2900,7 +3054,7 @@ describe('RunOrchestrator page actions', () => {
     orch.abort(runId);
   });
 
-  it('denies a page-action approval after its timeout', async () => {
+  it('keeps the default approval card active for at least two minutes', async () => {
     vi.useFakeTimers();
     try {
       const events = [];
@@ -2912,14 +3066,50 @@ describe('RunOrchestrator page actions', () => {
       });
       orch._emitEvent = (_runId, event) => events.push(event);
       const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+      await orch.executeTool(runId, makeCall('long-timeout-state', 'page_get_state', {}));
+      const pending = orch.executeTool(
+        runId,
+        makeCall('long-timeout-click', 'page_click', {
+          snapshotId: 'page-snap-1',
+          index: 1,
+        })
+      );
+      await vi.advanceTimersByTimeAsync(120_001);
+      expect(events.some((event) => event.type === 'page_action_decision')).toBe(false);
+      const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+      expect(orch.resolvePageActionDecision(runId, confirmation.confirmationId, true)).toBe(true);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats approval timeout as no answer rather than a user denial', async () => {
+    vi.useFakeTimers();
+    try {
+      const events = [];
+      const orch = new RunOrchestrator(createStubSkillManager(), {
+        pageActionExecutor: async (...args) =>
+          args[1] === 'page_get_state'
+            ? { success: true, snapshot: makeSnapshot() }
+            : { success: true, snapshot: makeSnapshot() },
+      });
+      orch._emitEvent = (_runId, event) => events.push(event);
+      const runId = await orch.startRun({
+        pageActions: true,
+        sourceTabId: 7,
+        tool_choice: 'auto',
+        pageActionConfirmationTimeoutMs: 1_000,
+      });
       await orch.executeTool(runId, makeCall('timeout-state', 'page_get_state', {}));
       const pending = orch.executeTool(
         runId,
         makeCall('timeout-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
       );
-      await vi.advanceTimersByTimeAsync(60_001);
+      await vi.advanceTimersByTimeAsync(1_001);
       const result = await pending;
       expect(result.result.error).toBe('PAGE_ACTION_DENIED');
+      expect(orch.activeRuns.get(runId).pageActions.lastDeniedAction).toBeNull();
       expect(events).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ type: 'page_action_decision', timedOut: true }),
@@ -2933,7 +3123,7 @@ describe('RunOrchestrator page actions', () => {
   it('records a bounded denial, flags the card outcome, and nudges the planner', async () => {
     const events = [];
     const orch = new RunOrchestrator(createStubSkillManager(), {
-      pageActionExecutor: async (_tabId, actionName) => ({
+      pageActionExecutor: async () => ({
         success: true,
         snapshot: makeSnapshot(),
       }),
@@ -2969,7 +3159,7 @@ describe('RunOrchestrator page actions', () => {
   it('clears the denial marker on a fresh inspection and on the next approval', async () => {
     const events = [];
     const orch = new RunOrchestrator(createStubSkillManager(), {
-      pageActionExecutor: async (_tabId) => ({ success: true, snapshot: makeSnapshot() }),
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
     });
     orch._emitEvent = (_runId, event) => events.push(event);
     const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
@@ -3218,6 +3408,32 @@ describe('RunOrchestrator page actions', () => {
     expect(mutationCalls).toBe(4);
   });
 
+  it('always performs a live page inspection instead of reusing a cached snapshot', async () => {
+    let inspections = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') {
+          inspections += 1;
+          return {
+            success: true,
+            snapshot: { ...makeSnapshot(), title: `Inspection ${inspections}` },
+          };
+        }
+        return { success: true };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+
+    const first = await orch.executeTool(runId, makeCall('live-state-1', 'page_get_state', {}));
+    const second = await orch.executeTool(runId, makeCall('live-state-2', 'page_get_state', {}));
+
+    expect(inspections).toBe(2);
+    expect(first.result.snapshot.title).toBe('Inspection 1');
+    expect(second.result.snapshot.title).toBe('Inspection 2');
+    expect(second.result.cacheHit).toBeUndefined();
+  });
+
   it('treats a verified mutation that changed no page state as progress, not a stall', async () => {
     let mutationCalls = 0;
     const orch = new RunOrchestrator(createStubSkillManager(), {
@@ -3256,6 +3472,45 @@ describe('RunOrchestrator page actions', () => {
 
     expect(orch.activeRuns.get(runId).pageActions.noProgressMutationCount).toBe(0);
     expect(mutationCalls).toBe(5);
+  });
+
+  it('treats a changed page fingerprint as progress after a mutation', async () => {
+    let pageVersion = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        pageVersion += 1;
+        return {
+          success: true,
+          snapshot: {
+            ...makeSnapshot(),
+            content: `Updated page ${pageVersion}`,
+            fingerprint: `page-fingerprint-${pageVersion}`,
+          },
+          pageChanged: false,
+          actionReceipt: { disposition: 'delivered_unverified' },
+        };
+      },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('fingerprint-state', 'page_get_state', {}));
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await orch.executeTool(
+        runId,
+        makeCall(`fingerprint-input-${attempt}`, 'page_input', {
+          snapshotId: 'page-snap-1',
+          index: 0,
+          text: `value ${attempt}`,
+        })
+      );
+      expect(result.result?.error, JSON.stringify(result)).toBeUndefined();
+    }
+
+    expect(orch.activeRuns.get(runId).pageActions.noProgressMutationCount).toBe(0);
+    expect(pageVersion).toBe(4);
   });
 
   it('blocks a mutation once three different mutations changed nothing', async () => {
@@ -3503,12 +3758,10 @@ describe('RunOrchestrator page actions', () => {
       const error = new Error('bridge down');
       error.code = code;
       expect(orch._isPageActionTabFailure(error)).toBe(true);
-      expect(orch._isPageActionTerminalError(error)).toBe(false);
     }
-    expect(orch._isPageActionTerminalError(null)).toBe(false);
     const navigation = new Error('page changed');
     navigation.code = 'PAGE_ACTION_NAVIGATED';
-    expect(orch._isPageActionTerminalError(navigation)).toBe(false);
+    expect(orch._isPageActionTabFailure(navigation)).toBe(false);
   });
 
   it('propagates a run-start handshake failure as one actionable error', async () => {
@@ -3781,7 +4034,52 @@ describe('RunOrchestrator page actions', () => {
     }
   });
 
-  it('still caps repeated failing tool calls at 3 consecutive retries', async () => {
+  it('does not count Act denials or undelivered outcomes as failed tool turns', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7 });
+    const run = orch.activeRuns.get(runId);
+    run.toolCallIterations = 2;
+    run.activeToolCall = makeCall('denied-call', 'page_click', {});
+    orch.executeTool = async () => ({ success: true, result: { error: 'PAGE_ACTION_DENIED' } });
+    orch.execute = async () => {};
+
+    await orch._finalizeToolCall(run);
+    expect(run.toolCallIterations).toBe(0);
+
+    run.toolCallIterations = 2;
+    run.activeToolCall = makeCall('undelivered-call', 'page_click', {});
+    orch.executeTool = async () => ({
+      success: true,
+      result: {
+        error: 'PAGE_STATE_STALE',
+        actionReceipt: { disposition: 'not_delivered' },
+      },
+    });
+    await orch._finalizeToolCall(run);
+    expect(run.toolCallIterations).toBe(0);
+  });
+
+  it('switches an Act run to a no-tools wrap-up after repeated failures', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager());
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7 });
+    const run = orch.activeRuns.get(runId);
+    run.toolCallIterations = 3;
+    run.activeToolCall = makeCall('retry-cap', 'page_get_state', {});
+    let continuation;
+    orch.execute = async (...args) => {
+      continuation = args;
+    };
+
+    await orch._finalizeToolCall(run);
+
+    expect(run.resilience.wrapUp).toBe(true);
+    expect(run.conversationHistory.at(-1).content).toMatch(/Stop using tools/);
+    expect(continuation).toEqual([runId, { continueConversation: true }, true]);
+  });
+
+  it('finishes an Act run with a final answer after repeated tool failures', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
     });
@@ -3808,12 +4106,8 @@ describe('RunOrchestrator page actions', () => {
                       index: 0,
                       id: `call-stale-${callCount}`,
                       function: {
-                        name: 'page_input',
-                        arguments: JSON.stringify({
-                          snapshotId: 'stale-snapshot',
-                          index: 0,
-                          text: 'x',
-                        }),
+                        name: 'unregistered_tool',
+                        arguments: JSON.stringify({}),
                       },
                     },
                   ],
@@ -3839,7 +4133,9 @@ describe('RunOrchestrator page actions', () => {
         tool_choice: 'auto',
         messages: [{ role: 'user', content: 'Fill the form' }],
       });
-      await expect(orch.execute(runId, {})).rejects.toThrow(/Maximum tool call retries exceeded/);
+      await orch.execute(runId, {});
+      expect(events.find((event) => event.type === 'complete')?.content).toContain('done');
+      expect(events.some((event) => event.type === 'error')).toBe(false);
     } finally {
       delete global.chrome;
       delete global.fetch;
@@ -3890,168 +4186,6 @@ describe('RunOrchestrator page actions', () => {
     );
     expect(exhausted.result).toMatchObject({ error: 'PAGE_ACTION_LIMIT', budget: 'observation' });
     expect(orch.activeRuns.get(runId).pageActions.budgets.mutation).toBe(0);
-  });
-});
-
-describe('RunOrchestrator Act screenshot privacy and preservation (P1-01/P1-02)', () => {
-  const PNG_1PX =
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-  const previous = RunOrchestrator.ACT_SCREENSHOTS_ENABLED;
-  afterEach(() => {
-    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = previous;
-  });
-
-  function makeRun(snapshotId = 'snap-1') {
-    return {
-      // P2-01: the selected model is vision-capable, so screenshots may attach
-      // when the privacy gate is enabled.
-      config: { modelName: 'gpt-4o' },
-      pageActions: {
-        lastScreenshot: null,
-        snapshot: { snapshotId },
-      },
-    };
-  }
-
-  it('does not store Act screenshots while the visual-privacy gate is off (P1-01)', () => {
-    const orch = new RunOrchestrator(createStubSkillManager());
-    const run = makeRun();
-    // Synthetic secret/payment-marked pixels must never enter provider payloads.
-    orch._storeActScreenshot(run, 'data:image/png;base64,c2VjcmV0', 'snap-1');
-    expect(run.pageActions.lastScreenshot).toBeNull();
-    expect(orch._getActVisionImage(run)).toBeNull();
-  });
-
-  it('never attaches a screen image while the gate is off; DOM snapshot still flows (P1-01)', () => {
-    const orch = new RunOrchestrator(createStubSkillManager());
-    const run = makeRun();
-    const userMessages = [
-      { role: 'system', content: 'sys' },
-      { role: 'user', content: [{ type: 'text', text: 'compare this' }] },
-    ];
-    const openAi = orch._withActVisionOpenAI(userMessages, run);
-    const anthropic = orch._withActVisionAnthropic(userMessages, run);
-    expect(JSON.stringify(openAi)).not.toContain('image_url');
-    expect(JSON.stringify(anthropic)).not.toContain('"type":"image"');
-    // A fresh inspection still records the DOM snapshot for grounding.
-    run.pageActions.snapshot = { snapshotId: 'snap-2', url: 'about:blank' };
-    expect(orch._getActVisionImage(run)).toBeNull();
-    expect(run.pageActions.snapshot).toMatchObject({ snapshotId: 'snap-2' });
-  });
-
-  it('drops the Act screen image for a text-only model even when the gate is on (P2-01)', () => {
-    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
-    const orch = new RunOrchestrator(createStubSkillManager());
-    const run = makeRun();
-    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
-    // The screenshot is stored, but the capability gate must keep it out of
-    // the provider payload for a model that cannot accept imagery.
-    expect(orch._getActVisionImage(run)).not.toBeNull();
-    const textOnly = {
-      config: { modelName: 'openrouter/free' },
-      pageActions: run.pageActions,
-    };
-    const userMessages = [{ role: 'user', content: 'compare this' }];
-    const openAi = orch._withActVisionOpenAI(userMessages, textOnly);
-    const anthropic = orch._withActVisionAnthropic(userMessages, textOnly);
-    expect(JSON.stringify(openAi)).not.toContain('image_url');
-    expect(JSON.stringify(anthropic)).not.toContain('"type":"image"');
-  });
-
-  it('preserves a user-uploaded image alongside the Act screen on initial and continuation calls (P1-02, OpenAI-compatible)', () => {
-    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
-    const orch = new RunOrchestrator(createStubSkillManager());
-    const run = makeRun();
-    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
-    const history = [
-      { role: 'system', content: 'sys' },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'does the page match my file?' },
-          { type: 'image_url', image_url: { url: 'data:image/png;base64,USERBYTES' } },
-        ],
-      },
-    ];
-    // Initial call: user image + text kept in order, screen image appended.
-    const initial = orch._withActVisionOpenAI(
-      history.map((m) => ({ ...m })),
-      run
-    );
-    const initialUser = initial.find((m) => m.role === 'user').content;
-    const urls = initialUser.filter((p) => p.type === 'image_url').map((p) => p.image_url.url);
-    expect(urls).toContain('data:image/png;base64,USERBYTES');
-    expect(urls).toContain(PNG_1PX);
-    expect(initialUser[0].type).toBe('text');
-    // Continuation call: still preserves the user image.
-    const continuation = orch._withActVisionOpenAI(
-      history.map((m) => ({ ...m })),
-      run
-    );
-    const continuationUser = continuation.find((m) => m.role === 'user').content;
-    expect(
-      continuationUser.filter((p) => p.type === 'image_url').map((p) => p.image_url.url)
-    ).toContain('data:image/png;base64,USERBYTES');
-    // The internal marker never leaks to the wire payload.
-    expect(JSON.stringify(initial)).not.toContain('__ppActScreen');
-  });
-
-  it('preserves a user-uploaded image alongside the Act screen (P1-02, Anthropic)', () => {
-    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
-    const orch = new RunOrchestrator(createStubSkillManager());
-    const run = makeRun();
-    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
-    const history = [
-      { role: 'system', content: 'sys' },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'compare' },
-          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'USERBYTES' } },
-        ],
-      },
-    ];
-    const converted = orch._withActVisionAnthropic(
-      history.map((m) => ({ ...m })),
-      run
-    );
-    const userContent = converted.find((m) => m.role === 'user').content || [];
-    const images = userContent.filter((p) => p.type === 'image');
-    expect(images.some((p) => p.source.data === 'USERBYTES')).toBe(true);
-    expect(images.some((p) => p.source.media_type === 'image/png')).toBe(true);
-    expect(JSON.stringify(converted)).not.toContain('__ppActScreen');
-  });
-
-  it('replaces only a prior Act screen image, keeping user images (P1-02, continuation with prior screen)', () => {
-    RunOrchestrator.ACT_SCREENSHOTS_ENABLED = true;
-    const orch = new RunOrchestrator(createStubSkillManager());
-    const run = makeRun();
-    orch._storeActScreenshot(run, PNG_1PX, 'snap-1');
-    const history = [
-      { role: 'system', content: 'sys' },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'compare' },
-          {
-            type: 'image_url',
-            __ppActScreen: true,
-            image_url: { url: 'data:image/png;base64,OLD' },
-          },
-          { type: 'image_url', image_url: { url: 'data:image/png;base64,USERBYTES' } },
-        ],
-      },
-    ];
-    const converted = orch._withActVisionOpenAI(
-      history.map((m) => ({ ...m })),
-      run
-    );
-    const userContent = converted.find((m) => m.role === 'user').content;
-    const urls = userContent.filter((p) => p.type === 'image_url').map((p) => p.image_url.url);
-    // The prior Act screen is replaced, the user image and text remain.
-    expect(urls).not.toContain('data:image/png;base64,OLD');
-    expect(urls).toContain('data:image/png;base64,USERBYTES');
-    expect(urls).toContain(PNG_1PX);
   });
 });
 

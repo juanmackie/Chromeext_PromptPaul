@@ -159,9 +159,9 @@ describe('pre-dispatch occlusion gate', () => {
     ).toBe(false);
   });
 
-  it('leaves a delivered mutation charged and counted', async () => {
-    // Guards the refund against over-reach: only pre-dispatch failures are
-    // returned, so a real dispatch still consumes its slot and records progress.
+  it('charges a delivered mutation but resets the no-progress streak when the page changes', async () => {
+    // Only pre-dispatch failures refund a slot; a delivered mutation stays charged.
+    // A changed fingerprint counts as progress even when delivery is unverified.
     const orchestrator = new RunOrchestrator(skillManager(), {
       pageActionPolicyProvider: async () => true,
       pageActionExecutor: async (_tabId, actionName) => {
@@ -195,6 +195,6 @@ describe('pre-dispatch occlusion gate', () => {
 
     expect(outcome.result.actionReceipt.disposition).toBe('delivered_unverified');
     expect(run.pageActions.budgets.mutation).toBe(1);
-    expect(run.pageActions.noProgressMutationCount).toBe(1);
+    expect(run.pageActions.noProgressMutationCount).toBe(0);
   });
 });

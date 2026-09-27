@@ -133,8 +133,19 @@ async function getChatMedia() {
 }
 const PAGE_ACTIVITY_TOOL_NAMES = new Set([...PAGE_ACTION_NAMES, ...PAGE_TAB_ACTION_NAMES]);
 
-function renderMarkdownContent(markdown) {
-  return renderMarkdown(markdown);
+function renderMarkdownInto(element, markdown) {
+  if (!element) return;
+  const safeHtml = renderMarkdown(markdown);
+  if (typeof DOMParser !== 'function') {
+    element.textContent = String(markdown || '');
+    return;
+  }
+  const parsed = new DOMParser().parseFromString(safeHtml, 'text/html');
+  const fragment = document.createDocumentFragment();
+  for (const node of parsed.body.childNodes) {
+    fragment.appendChild(document.importNode(node, true));
+  }
+  element.replaceChildren(fragment);
 }
 function formatUserMessageForDisplay(message) {
   const text = String(message || '');
@@ -1106,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ...event,
           runId: event.runId || '',
           action: event.action || 'page action',
-          state: event.approved ? 'approved' : 'declined',
+          state: event.timedOut ? 'no answer' : event.approved ? 'approved' : 'declined',
         });
       } else if (!replaySawTerminal) {
         // Replay pending interactions through the same renderer used for live
@@ -1992,7 +2003,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (streamState.getReasoningContentElement()) {
       chatUI.finalizeReasoningPanel(messageDiv, streamState.getReasoningElapsedMs());
     }
-    contentElement.innerHTML = renderMarkdownContent(content);
+    renderMarkdownInto(contentElement, content);
     postProcessRenderedContent(contentElement);
     return chatUI.moveMessageToEnd(messageDiv);
   }
@@ -2105,15 +2116,15 @@ document.addEventListener('DOMContentLoaded', () => {
               event.grounding?.sources || [],
               event.completion
             );
-            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(body);
+            renderMarkdownInto(streamState.getCurrentStreamingContentElement(), body);
             if (body.trim()) streamState.addMessageToHistory({ role: 'assistant', content: body });
           } else if (event.type === 'error') {
-            streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+            renderMarkdownInto(
+              streamState.getCurrentStreamingContentElement(),
               '❌ Error: ' + (event.error || 'unknown error')
             );
           } else if (event.type === 'aborted') {
-            streamState.getCurrentStreamingContentElement().innerHTML =
-              renderMarkdownContent('Response stopped');
+            renderMarkdownInto(streamState.getCurrentStreamingContentElement(), 'Response stopped');
           }
           chatUI.moveMessageToEnd(streamState.getCurrentStreamingMessageDiv());
           resetRunUi(RUN_STATES.IDLE);
@@ -2242,7 +2253,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ...event,
               runId,
               action: event.action || 'page action',
-              state: event.approved ? 'approved' : 'declined',
+              state: event.timedOut ? 'no answer' : event.approved ? 'approved' : 'declined',
             });
             break;
           case 'page_task_progress':
@@ -2291,11 +2302,13 @@ document.addEventListener('DOMContentLoaded', () => {
             streamState.setActiveToolCall(event.toolCall);
             if (streamState.getCurrentStreamingContentElement()) {
               if (event.capability === 'skill' || isSkillLoaderTool(event.toolCall.function.name)) {
-                streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+                renderMarkdownInto(
+                  streamState.getCurrentStreamingContentElement(),
                   `Loading skill: **${event.toolCall.function.name}**`
                 );
               } else {
-                streamState.getCurrentStreamingContentElement().innerHTML = renderMarkdownContent(
+                renderMarkdownInto(
+                  streamState.getCurrentStreamingContentElement(),
                   `⚙️ Using tool: **${event.toolCall.function.name}**`
                 );
               }
@@ -2378,8 +2391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             );
 
             if (streamState.getCurrentStreamingContentElement()) {
-              streamState.getCurrentStreamingContentElement().innerHTML =
-                renderMarkdownContent(body);
+              renderMarkdownInto(streamState.getCurrentStreamingContentElement(), body);
               postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
               const msgDiv = streamState.getCurrentStreamingMessageDiv();

@@ -4,3 +4,5 @@ dist/
 test-results/
 .pi/
 .pi-subagents/
+# Vendored minified third-party bundles stay byte-identical to upstream.
+*.min.js

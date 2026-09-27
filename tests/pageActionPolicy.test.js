@@ -253,6 +253,36 @@ describe('pageActionPolicy', () => {
     });
   });
 
+  it('uses word boundaries for risk and navigation labels', () => {
+    for (const label of ['Postal code', 'Search posts', 'Allowance calculator', 'Sender filter']) {
+      expect(
+        evaluatePageActionPolicy({
+          actionName: 'page_input',
+          target: { tag: 'input', label },
+          trustedMode: true,
+        }).requiresConfirmation
+      ).toBe(false);
+    }
+    for (const label of ['Opening hours', 'Backpacks']) {
+      expect(
+        evaluatePageActionPolicy({
+          actionName: 'page_click',
+          target: { tag: 'button', label },
+          trustedMode: true,
+        })
+      ).toMatchObject({ risk: PAGE_ACTION_RISKS.LOW, requiresConfirmation: false });
+    }
+    for (const label of ['Submit order', 'Delete account', 'Continue', 'Sign in']) {
+      expect(
+        evaluatePageActionPolicy({
+          actionName: 'page_click',
+          target: { tag: 'button', label },
+          trustedMode: true,
+        }).requiresConfirmation
+      ).toBe(true);
+    }
+  });
+
   it('allows safe links as explicit navigation actions', () => {
     const result = evaluatePageActionPolicy({
       actionName: 'page_click',
@@ -383,7 +413,7 @@ describe('pageActionPolicy', () => {
     expect(normalizePageActionTitle('Logging in with api_key').error).toContain('credentials');
   });
 
-  it('carries a valid title through argument normalization but never a rejected one', () => {
+  it('drops unsafe optional titles without rejecting otherwise valid actions', () => {
     const withTitle = normalizePageActionArgs('page_click', {
       snapshotId: 'snap-1',
       index: 3,
@@ -393,13 +423,19 @@ describe('pageActionPolicy', () => {
       valid: true,
       value: { snapshotId: 'snap-1', index: 3, title: 'Opening details' },
     });
-    const rejected = normalizePageActionArgs('page_click', {
-      snapshotId: 'snap-1',
-      index: 3,
-      title: 'Entering my password',
-    });
-    expect(rejected.valid).toBe(false);
-    expect(rejected.error).toContain('credentials');
+    for (const title of [
+      'Move card to Done',
+      'Entering my password',
+      'Open token list',
+      'Bad\u0000title',
+    ]) {
+      const normalized = normalizePageActionArgs('page_click', {
+        snapshotId: 'snap-1',
+        index: 3,
+        title,
+      });
+      expect(normalized).toEqual({ valid: true, value: { snapshotId: 'snap-1', index: 3 } });
+    }
   });
 
   it('bounds and trims untrusted occluder descriptors', () => {

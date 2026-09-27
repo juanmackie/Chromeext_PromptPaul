@@ -44,6 +44,25 @@ describe('evaluation trace', () => {
     clearEvalTrace(runId);
   });
 
+  it('records provider-reported token usage without retaining credential fields', () => {
+    const runId = 'eval-trace-usage';
+    clearEvalTrace(runId);
+    beginEvalTrace({ taskId: 'token-task', runId, task: 'Read the local page.' });
+    recordEvalTrace(runId, {
+      kind: 'usage',
+      tokenUsage: { inputTokens: 23, outputTokens: 7, apiKey: 'not-recorded' },
+    });
+
+    const trace = getEvalTrace(runId);
+    expect(trace.steps[0].tokenUsage).toEqual({
+      inputTokens: 23,
+      outputTokens: 7,
+      apiKey: '[REDACTED]',
+    });
+    expect(JSON.stringify(trace)).not.toContain('not-recorded');
+    clearEvalTrace(runId);
+  });
+
   it('caps trace growth', () => {
     const runId = 'eval-trace-cap';
     clearEvalTrace(runId);

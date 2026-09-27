@@ -349,6 +349,7 @@ describe('executor regression coverage (page-action evaluation matrix)', () => {
     );
     approvalOrch._emitEvent = (_runId, event) => approvalEvents.push(event);
     const approvalRun = await start(approvalOrch, 'api', 'approval-timeout');
+    approvalOrch.activeRuns.get(approvalRun).config.pageActionConfirmationTimeoutMs = 60_000;
     vi.useFakeTimers();
     try {
       const pending = approvalOrch.executeTool(

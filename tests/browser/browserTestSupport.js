@@ -25,6 +25,9 @@ function extensionLoadPath() {
 }
 const fixtureRoot = path.join(__dirname, 'fixtures');
 let diagnosticsCaptureIndex = 0;
+// Extension ids returned by Extensions.loadUnpacked, so a test never has to
+// win a race against a service worker that may start lazily.
+const knownExtensionIds = new WeakMap();
 
 function shouldCaptureDiagnostics() {
   return process.env.PROMPT_PAUL_CAPTURE_DIAGNOSTICS === 'true';
@@ -160,17 +163,27 @@ async function launchTestBrowser(userDataDir) {
   // security reasons. The CDP Extensions domain is the supported path for
   // loading an unpacked directory in those real browsers.
   const browserCdp = await browser.newBrowserCDPSession();
-  await browserCdp.send('Extensions.loadUnpacked', { path: extensionLoadPath() });
+  const loaded = await browserCdp.send('Extensions.loadUnpacked', {
+    path: extensionLoadPath(),
+  });
   const context = browser.contexts()[0];
+  if (typeof loaded?.id === 'string' && loaded.id) knownExtensionIds.set(context, loaded.id);
   const closeContext = context.close.bind(context);
   context.close = async () => {
     await captureBrowserDiagnostics(context);
     await closeContext();
     await browser.close();
     if (process.platform === 'win32') {
-      execFileSync('taskkill', ['/pid', String(processHandle.pid), '/t', '/f'], {
-        stdio: 'ignore',
-      });
+      // Best effort: browser.close() usually exits the process first, and
+      // taskkill reports an already-dead pid as a non-zero status. Teardown
+      // must never fail a test whose assertions already passed.
+      try {
+        execFileSync('taskkill', ['/pid', String(processHandle.pid), '/t', '/f'], {
+          stdio: 'ignore',
+        });
+      } catch (_) {
+        // The browser process is already gone.
+      }
     } else {
       processHandle.kill('SIGKILL');
     }
@@ -322,6 +335,8 @@ async function isPromptPaulWorker(serviceWorker) {
 }
 
 async function getExtensionId(context) {
+  const known = knownExtensionIds.get(context);
+  if (known) return known;
   for (const serviceWorker of context.serviceWorkers()) {
     if (await isPromptPaulWorker(serviceWorker)) return new URL(serviceWorker.url()).hostname;
   }
@@ -338,21 +353,29 @@ async function getExtensionId(context) {
 }
 
 async function openHarness(context) {
-  const extensionId = await getExtensionId(context);
-  const harness = await context.newPage();
-  await harness.goto(`chrome-extension://${extensionId}/tests/browser/extension-harness.html`);
-  await expect(harness.locator('#status')).toHaveAttribute('data-ready', 'true');
-  if (shouldCaptureDiagnostics()) {
-    await harness.evaluate(async () => {
-      await chrome.storage.session.set({
-        promptPaulDevDiagnosticsConfigV1: {
-          enabled: true,
-          expiresAt: Date.now() + 24 * 60 * 60 * 1_000,
-        },
+  try {
+    const extensionId = await getExtensionId(context);
+    const harness = await context.newPage();
+    await harness.goto(`chrome-extension://${extensionId}/tests/browser/extension-harness.html`);
+    await expect(harness.locator('#status')).toHaveAttribute('data-ready', 'true');
+    if (shouldCaptureDiagnostics()) {
+      await harness.evaluate(async () => {
+        await chrome.storage.session.set({
+          promptPaulDevDiagnosticsConfigV1: {
+            enabled: true,
+            expiresAt: Date.now() + 24 * 60 * 60 * 1_000,
+          },
+        });
       });
-    });
+    }
+    return harness;
+  } catch (error) {
+    // A browser whose harness never opened cannot be driven by the test, and
+    // several callers invoke openHarness before their try/finally. Close it
+    // here so one failed test cannot leak a process and starve later launches.
+    await context.close().catch(() => {});
+    throw error;
   }
-  return harness;
 }
 
 async function startAndInspect(harness, targetUrl, prefix) {

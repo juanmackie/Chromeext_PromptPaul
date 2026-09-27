@@ -112,7 +112,7 @@ describe('RunOrchestrator approval-wait deadline pause', () => {
     try {
       const orch = new RunOrchestrator(skillManager, {
         runBudgetMs: 120_000,
-        pageActionExecutor: async (_tabId, actionName) => ({
+        pageActionExecutor: async () => ({
           success: true,
           snapshot: makePageSnapshot(),
         }),
@@ -179,12 +179,12 @@ describe('RunOrchestrator approval-wait deadline pause', () => {
     }
   });
 
-  it('extends the deadline and records the denial when an approval times out', async () => {
+  it('extends the deadline without treating an approval timeout as a user denial', async () => {
     vi.useFakeTimers();
     try {
       const orch = new RunOrchestrator(skillManager, {
         runBudgetMs: 300_000,
-        pageActionExecutor: async (_tabId, actionName) => ({
+        pageActionExecutor: async () => ({
           success: true,
           snapshot: makePageSnapshot(),
         }),
@@ -194,6 +194,7 @@ describe('RunOrchestrator approval-wait deadline pause', () => {
         pageActions: true,
         sourceTabId: 7,
         tool_choice: 'auto',
+        pageActionConfirmationTimeoutMs: 60_000,
       });
       const run = orch.activeRuns.get(runId);
       await orch.executeTool(runId, makePageCall('timeout-state', 'page_get_state', {}));
@@ -207,7 +208,7 @@ describe('RunOrchestrator approval-wait deadline pause', () => {
       await vi.advanceTimersByTimeAsync(60_001);
       const result = await pending;
       expect(result.result.error).toBe('PAGE_ACTION_DENIED');
-      expect(run.pageActions.lastDeniedAction).toMatchObject({ action: 'page_click' });
+      expect(run.pageActions.lastDeniedAction).toBeNull();
       expect(run.resilience.deadlineAt - deadlineBefore).toBeGreaterThanOrEqual(60_000);
       expect(run.resilience.approvalWaitStartedAt).toBeNull();
     } finally {

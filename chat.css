@@ -1160,6 +1160,11 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.page-action-confirmation-input-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .page-action-confirmation-controls {
   display: flex;
   flex-wrap: wrap;

@@ -55,8 +55,24 @@
   const toolResults = new Map();
   const sourceTabs = new Map();
   const runTokens = new Map();
+  const pageSnapshots = new Map();
+  const runMetrics = new Map();
+  const evaluationResults = new Map();
 
   chrome.runtime.onMessage.addListener((request) => {
+    if (request.action === 'orchestratorEvent' && request.runId) {
+      const metrics = runMetrics.get(String(request.runId)) || {
+        confirmationCards: 0,
+        progressCards: 0,
+        manualInterventions: 0,
+      };
+      if (request.event?.type === 'page_action_confirmation') metrics.confirmationCards += 1;
+      if (request.event?.type === 'page_task_progress') metrics.progressCards += 1;
+      if (request.event?.type === 'page_manual_intervention_request') {
+        metrics.manualInterventions += 1;
+      }
+      runMetrics.set(String(request.runId), metrics);
+    }
     if (
       request.action === 'orchestratorEvent' &&
       request.event?.type === 'page_action_confirmation'
@@ -68,6 +84,9 @@
       request.event?.type === 'page_manual_intervention_request'
     ) {
       pendingManualInterventions.set(request.runId, request.event);
+    }
+    if (request.action === 'TEST_RUN_TASK_RESULT' && request.taskId) {
+      evaluationResults.set(String(request.taskId), request);
     }
   });
 
@@ -117,7 +136,31 @@
     async directAction(targetUrl, runId, pageAction, args = {}) {
       const tabId = await getTabId(targetUrl);
       if (!tabId) return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
-      return sendPageAction(tabId, { action: 'pageAction', runId, pageAction, args });
+      const currentArgs = { ...args };
+      if (pageAction === 'page_get_state') {
+        const result = await sendPageAction(tabId, {
+          action: 'pageAction',
+          runId,
+          pageAction,
+          args: currentArgs,
+        });
+        if (result?.snapshot) pageSnapshots.set(runId, result.snapshot);
+        return result;
+      }
+      if (!currentArgs.elementKey && Number.isInteger(Number(currentArgs.index))) {
+        const element = pageSnapshots
+          .get(runId)
+          ?.elements?.find((candidate) => candidate.index === Number(currentArgs.index));
+        if (element?.elementKey) currentArgs.elementKey = element.elementKey;
+      }
+      const result = await sendPageAction(tabId, {
+        action: 'pageAction',
+        runId,
+        pageAction,
+        args: currentArgs,
+      });
+      if (result?.snapshot) pageSnapshots.set(runId, result.snapshot);
+      return result;
     },
 
     async measureScopeDiff(before, after) {
@@ -133,6 +176,34 @@
     async setTrustedMode(enabled) {
       await chrome.storage.local.set({ pageActionsTrustedMode: Boolean(enabled) });
       return { success: true };
+    },
+
+    async startEvaluationTask(targetUrl, taskId, task, profileId) {
+      const sourceTabId = await getTabId(targetUrl);
+      if (!sourceTabId) {
+        return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
+      }
+      const response = await sendRuntimeMessage({
+        action: 'TEST_RUN_TASK',
+        taskId,
+        task,
+        profileId,
+        sourceTabId,
+        dryRun: false,
+      });
+      if (response?.runId) {
+        sourceTabs.set(String(response.runId), sourceTabId);
+        runTokens.set(String(response.runId), response.ownerToken || '');
+      }
+      return response;
+    },
+
+    getEvaluationResult(taskId) {
+      return evaluationResults.get(String(taskId)) || null;
+    },
+
+    getRunMetrics(runId) {
+      return { ...(runMetrics.get(String(runId)) || {}) };
     },
 
     async startRun(targetUrl, multiTab = false, extraConfig = {}) {

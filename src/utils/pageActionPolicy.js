@@ -76,9 +76,9 @@ const CREDENTIAL_TITLE_PATTERN =
   /password|passcode|one[-_ ]?time|otp|2fa|secret|api[-_ ]?key|token|credit|debit|card|\bcvv\b|\bcvc\b|ssn|social security|credential|previous password|pincode|bank/i;
 
 const RISK_PATTERN =
-  /submit|send|delete|remove|purchase|buy|checkout|pay|payment|transfer|publish|post|sign out|log out|account|security|password|passcode|one[-_ ]?time|otp|2fa|credential|api[-_ ]?key|token|secret|permission|authorize|allow|deny/i;
+  /\b(?:submit|send|delete|remove|purchase|buy|checkout|pay|payment|transfer|publish|post|sign out|log out|account|security|password|passcode|one[-_ ]?time|otp|2fa|credential|api[-_ ]?key|token|secret|permission|authorize|allow|deny)\b/i;
 const NAVIGATION_PATTERN =
-  /log ?in|sign ?in|register|create account|continue|next|back|open|navigate/i;
+  /\b(?:log ?in|sign ?in|register|create account|continue|next|back|open|navigate)\b/i;
 
 /**
  * @param {unknown} value
@@ -149,12 +149,12 @@ export function normalizePageActionArgs(actionName, args = {}) {
     return { valid: false, error: 'Page action arguments must be an object.' };
   }
 
-  // Optional human label shared by every page action. Rejected titles abort
-  // the whole call so a control-character/credential title never reaches the
-  // page or the journal.
+  // Optional human label shared by every page action. A rejected display title
+  // is omitted rather than blocking the actual action; this also keeps
+  // control-character or sensitive wording out of progress events and journals.
   const title = normalizePageActionTitle(args.title);
-  if (title && !title.valid) return title;
-  const attachTitle = (value) => (title?.value ? { ...value, title: title.value } : value);
+  const attachTitle = (value) =>
+    title?.valid && title.value ? { ...value, title: title.value } : value;
 
   if (actionName === 'page_get_state') {
     if (args.regionId == null) return { valid: true, value: attachTitle({}) };

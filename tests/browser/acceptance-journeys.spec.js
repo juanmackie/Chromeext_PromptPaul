@@ -316,6 +316,11 @@ test('acceptance 1b: a page quick-action card sends the attached page content', 
       .locator('#quick-actions-row')
       .getByRole('button', { name: 'Summary', exact: true })
       .click();
+    // The previous run already left data-run-state=complete, so a run-state
+    // assertion here would pass instantly on stale state and never wait for
+    // this run. Poll the recorded provider request instead: sending exactly
+    // one request carrying the page is the contract under test.
+    await expect.poll(() => fixtureServer.mockRequests().length, { timeout: 45_000 }).toBe(1);
     await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete', {
       timeout: 45000,
     });

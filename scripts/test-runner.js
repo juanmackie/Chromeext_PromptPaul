@@ -86,6 +86,19 @@ function readFileSafe(relativePath) {
 }
 
 /**
+ * Read and parse a repository JSON file, failing loudly with the file name.
+ * @param {string} relativePath
+ * @returns {object}
+ */
+function readJson(relativePath) {
+  try {
+    return JSON.parse(readFileSafe(relativePath));
+  } catch (error) {
+    throw new Error(`${relativePath} is not valid JSON: ${error.message}`);
+  }
+}
+
+/**
  * Validate module file structure and exports
  */
 function checkModule(relativePath, expectedExportPatterns = []) {
@@ -295,10 +308,7 @@ function runUnitTests(runner) {
     if (production.includes('console.debug') || production.includes('chrome.storage.session')) {
       throw new Error('Production diagnostics module must remain a no-op');
     }
-    for (const file of [
-      'content_script_diagnostics.prod.js',
-      'content_script_page_diagnostics.prod.js',
-    ]) {
+    for (const file of ['content_script_diagnostics.prod.js']) {
       if (readFileSafe(file).includes('sendMessage')) {
         throw new Error(`${file} must remain a no-op`);
       }
@@ -557,10 +567,20 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('Act benchmark tasks match their local fixtures', () => {
+    const suite = readFileSafe('scripts/act-benchmark.js');
+    const fixture = readFileSafe('tests/browser/fixtures/act-benchmark.html');
+    const taskIds = [...suite.matchAll(/^ {4}id: '([a-z0-9-]+)',\r?$/gmu)].map((match) => match[1]);
+    if (taskIds.length < 5) throw new Error('Act benchmark task list looks truncated');
+    const missing = taskIds.filter((id) => !fixture.includes(`kind === '${id}'`));
+    if (missing.length) {
+      throw new Error(`Benchmark tasks without a fixture branch: ${missing.join(', ')}`);
+    }
+  });
+
   // ---------- Manifest Validation ----------
   runner.test('Manifest.json is valid MV3', () => {
-    const content = readFileSafe('manifest.json');
-    const manifest = JSON.parse(content);
+    const manifest = readJson('manifest.json');
     if (manifest.manifest_version !== 3) {
       throw new Error('Manifest must specify manifest_version 3');
     }
@@ -571,7 +591,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Manifest references exist', () => {
-    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const manifest = readJson('manifest.json');
     const filesToCheck = [];
     if (manifest.background?.service_worker) filesToCheck.push(manifest.background.service_worker);
     if (manifest.options_page) filesToCheck.push(manifest.options_page);
@@ -590,7 +610,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Development diagnostics content bridges are wired', () => {
-    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const manifest = readJson('manifest.json');
     const pageBridge = manifest.content_scripts?.find((entry) =>
       entry.js?.includes('content_script_page_diagnostics.js')
     );
@@ -603,7 +623,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Optional notch is registered and isolated', () => {
-    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const manifest = readJson('manifest.json');
     const notchScript = manifest.content_scripts?.find((entry) =>
       entry.js?.includes('content_script_notch.js')
     );
@@ -670,7 +690,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Manifest scopes Outlook compose adapter to Outlook hosts', () => {
-    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    const manifest = readJson('manifest.json');
     const outlookScript = manifest.content_scripts?.find(
       (entry) =>
         Array.isArray(entry.matches) &&
@@ -698,7 +718,7 @@ function runUnitTests(runner) {
 
   // ---------- Package Validation ----------
   runner.test('Package.json has required scripts', () => {
-    const pkg = JSON.parse(readFileSafe('package.json'));
+    const pkg = readJson('package.json');
     const requiredScripts = ['test', 'build', 'smoke', 'validate', 'audit', 'lint', 'format'];
     for (const s of requiredScripts) {
       if (!pkg.scripts?.[s]) {
@@ -708,7 +728,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Production readiness guardrails are present', () => {
-    const pkg = JSON.parse(readFileSafe('package.json'));
+    const pkg = readJson('package.json');
     const requiredScripts = [
       'lint',
       'format:check',
@@ -773,7 +793,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Package.json has devDependencies', () => {
-    const pkg = JSON.parse(readFileSafe('package.json'));
+    const pkg = readJson('package.json');
     if (!pkg.devDependencies || Object.keys(pkg.devDependencies).length === 0) {
       throw new Error('Package is missing devDependencies (eslint, prettier)');
     }
@@ -781,7 +801,7 @@ function runUnitTests(runner) {
 
   // ---------- Skills Validation ----------
   runner.test('Skills manifest references valid files', () => {
-    const skills = JSON.parse(readFileSafe('skills/skills.json'));
+    const skills = readJson('skills/skills.json');
     if (!Array.isArray(skills) || skills.length === 0) {
       throw new Error('Skills manifest must be a non-empty array');
     }
@@ -797,7 +817,7 @@ function runUnitTests(runner) {
   });
 
   runner.test('Skill SKILL.md files have valid frontmatter', () => {
-    const skills = JSON.parse(readFileSafe('skills/skills.json'));
+    const skills = readJson('skills/skills.json');
     skills.forEach((skill) => {
       const content = readFileSafe(skill.path);
       if (!content.startsWith('---')) {
@@ -1007,10 +1027,10 @@ function runUnitTests(runner) {
 
   // ---------- Config Files ----------
   runner.test('Config files exist and are valid', () => {
-    JSON.parse(readFileSafe('.eslintrc.json'));
-    JSON.parse(readFileSafe('.prettierrc.json'));
+    readJson('.eslintrc.json');
+    readJson('.prettierrc.json');
     readFileSafe('.gitignore');
-    JSON.parse(readFileSafe('package-lock.json'));
+    readJson('package-lock.json');
   });
 
   // ---------- Regression: Stop button reverts to Clear ----------
@@ -1745,7 +1765,6 @@ function runIntegrationTests(runner) {
       'resolvePageActionDecision',
       'sessionApproval',
       'page_action_confirmation',
-      '_isPageActionTerminalError',
       '_terminateRun',
       "state: 'error'",
       'page_pause_for_user',
@@ -1878,7 +1897,7 @@ function runIntegrationTests(runner) {
 
   // ---------- Skills Consistency ----------
   runner.test('All skill directories are referenced in skills manifest', () => {
-    const skills = JSON.parse(readFileSafe('skills/skills.json'));
+    const skills = readJson('skills/skills.json');
     const manifestNames = skills.map((s) => s.name);
     const skillDirs = fs
       .readdirSync(path.join(repoRoot, 'skills'))
@@ -2040,7 +2059,6 @@ function runIntegrationTests(runner) {
       'content_script_diagnostics.js',
       'content_script_diagnostics.prod.js',
       'content_script_page_diagnostics.js',
-      'content_script_page_diagnostics.prod.js',
       'content_script_notch.js',
       'input-controls.js',
       'content_script_outlook_compose.js',

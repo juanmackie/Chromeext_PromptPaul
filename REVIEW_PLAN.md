@@ -1,311 +1,536 @@
-# Prompt Paul repository review and punchlist
+# Prompt Paul review and TODO — overall health, with an Act focus
 
-Reviewed: 2026-09-05 to 2026-09-06. Baseline: commit `d4f76a3`, version 6.2.1.
-Goal selected by the owner: **a reliable public release**.
+Reviewed: 2026-09-27. Baseline: commit `e46e7c9`, version 6.3.0. Status: **draft for owner review**.
+Goal set by the owner: **an overall improvement, and a substantial improvement to Act**.
+
+The previous punchlist (27 items, all marked resolved) is preserved in git: `git show e46e7c9:REVIEW_PLAN.md`. Its two unverified residuals are carried over as GEN-06.
+
+## How to read this
+
+- **Reproduced:** observed by a probe or test against the current code. Probes used stubbed executors in Node, not a live page.
+- **Source-confirmed:** the current code establishes the issue; the full browser flow was not run.
+- **Recommendation:** an improvement or design change, not a proven defect.
+- **Decision:** needs an owner decision because it changes a documented contract.
+- **P1:** fix first — Act acts on the wrong thing, stops the run, or weakens a safety gate. **P2:** the substantial Act upgrade and real reliability gaps. **P3:** cleanup, docs, and measured efficiency work.
+- Effort: **S** narrow change, **M** several related paths, **L** cross-cutting. Not time estimates.
+- Removal/simplification items use the V10 labels `delete:`, `shrink:`, `yagni:`.
+
+## Baseline checks (this review)
+
+| Check                            | Result                                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run lint`                   | 0 errors, 7 warnings (unused parameters in `tests/runOrchestrator.test.js` and `tests/runResilience.test.js`)                                                                   |
+| `npm run format:check`           | **Fails locally** on `marked.min.js` only: the working copy is CRLF while the index is LF (`git ls-files --eol` → `i/lf w/crlf`). An LF copy passes. See GEN-01.                |
+| `npm run validate`               | Stops at the format check above. The remaining gates were run individually.                                                                                                     |
+| `npm run test` (structural)      | 98/98 passed                                                                                                                                                                    |
+| `npm run test:behavior` (Vitest) | 746/746 passed across 56 files                                                                                                                                                  |
+| `npm run smoke`                  | Passed                                                                                                                                                                          |
+| `npm run verify:licenses`        | Passed                                                                                                                                                                          |
+| Browser suite                    | **Not run** in this review (`npm run test:browser:prod` needs a headed browser)                                                                                                 |
+| Direct probes                    | Reproduced ACT-01, ACT-02, ACT-03, ACT-15 and the planner activation part of ACT-27 with Node scripts against `pageActionPolicy.js`, `ActPlanner.js`, and `RunOrchestrator.js`. |
 
 ## Assessment
 
-The extension has substantial functionality and useful regression coverage. The next release should focus on privacy, saved-data integrity, recovery, and testing the actual shipped package. Adding more Act tools or raising budgets is lower priority until those foundations pass.
+**What to keep.** The safety scaffolding around Act is strong and well tested: forced first inspection, stale-snapshot checks, delivery receipts, the pre-dispatch occlusion gate, sensitive-control masking, separate budgets, restart checkpoints with explicit Resume, bounded journals, and a large behavior suite. The items below build on these controls; none of them removes one.
 
-This is a broad source and local-test review, not a claim that every possible defect has been found. It covers extension entry points, chat and Options flows, orchestration and provider boundaries, page actions, validation, build/CI, evaluation tests, and operating documentation. No real credentials, signed-in websites, or live provider streams were used. Pixel privacy is confirmed from the capture-to-provider code path; no private screenshot was captured to demonstrate it.
+**What holds Act back.** Most failures a user would see fall into four groups:
 
-This report replaces the earlier completed review record. Earlier fixes are not automatically reopened. Items below refer to the current baseline and remain open unless explicitly marked otherwise.
+1. **Guards that misfire on normal work.** A display-only step title can reject a valid action (ACT-01). Three rejected or denied tool turns stop the whole run with a raw error (ACT-02). The no-progress guard counts visible page changes as "no change" (ACT-03). The risk classifier matches substrings, so "Postal code" is high risk (ACT-15).
+2. **Target identity is weaker than the approval card implies.** The orchestrator evaluates policy on one indexed element, and in some cases the page acts on a different one (ACT-04, ACT-05).
+3. **The page model is narrow.** Act cannot see shadow DOM or iframes, cannot press Enter or Escape, cannot operate custom dropdowns or ARIA menus/tabs, and searches only the first 16,000 characters of a page (ACT-09, ACT-20 to ACT-24).
+4. **No task-level measurement.** The corpus tests the executor with scripted actions. No model-driven success rate exists, and the WebVoyager baseline was never recorded. Improvements cannot be shown to help until ACT-30 exists.
 
-### Evidence and priorities
+## TODO index
 
-- **Reproduced:** observed by a test or a direct probe of the current implementation.
-- **Source-confirmed:** the current code establishes the issue; the full browser flow was not separately reproduced.
-- **Investigation:** a failure or risk is established, but the root cause or external impact needs further testing.
-- **Recommendation:** an improvement, not a proven product defect.
-- **P1:** address before public release. **P2:** next reliability/quality work. **P3:** lower urgency cleanup.
-- Effort is relative: **S** = a narrow change, **M** = several related paths, **L** = a cross-cutting change. These are not time commitments.
+Suggested order: GEN-01 → ACT-30 → P1 → P2 capability → P3. See [Sequencing](#sequencing).
 
-## Verification
+**P1 — fix first**
 
-| Check                                     | Result                                                                                                                                                                                                 |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ESLint                                    | Passed                                                                                                                                                                                                 |
-| Prettier repository check                 | Passed; review document formatted and rechecked after editing                                                                                                                                          |
-| Structural tests                          | 96/96 passed                                                                                                                                                                                           |
-| Vitest behavior suite                     | 565/565 passed across 48 files; later 570/570 across 49 files after P2-02/P2-03 tests; 579/579 across 50 files after P2-04/P2-05/P2-06 (selectOptimalProfile + runOrchestrator + draft-guard coverage) |
-| Smoke                                     | Passed                                                                                                                                                                                                 |
-| Vendored hash/license-record verification | Passed for recorded inventory; see P2-11                                                                                                                                                               |
-| npm dependency audit                      | Passed, zero reported vulnerabilities; does not audit vendored runtime assets                                                                                                                          |
-| Production build                          | Passed; metadata marks diagnostics and eval hook excluded; eval implementations absent                                                                                                                 |
-| Browser suite                             | Green in this environment (headed); options-unsaved spec now covers P1-04 unsaved-state, P2-05 profile-switch draft guard, and P2-06 background Improve capability flow                                |
-| Direct source probes                      | Reproduced pinned-backup rejection, lost site suggestion, reserved-name acceptance, and user-image replacement                                                                                         |
+- [x] ACT-01 Step `title` validation rejects valid actions (Reproduced · S)
+- [x] ACT-02 Three failing tool turns stop an Act run; user denials count as failures (Reproduced · S)
+- [x] ACT-03 No-progress guard blocks clicks that visibly changed the page (Reproduced · S)
+- [x] ACT-04 Approval/policy can evaluate a different element than the page acts on (Source-confirmed · M)
+- [x] ACT-05 Re-render rebinding picks the first identical control (wrong list row) (Source-confirmed · S)
+- [ ] ACT-06 Screenshots are captured on every inspection although the release gate discards them (Source-confirmed · S)
+- [ ] ACT-07 "Approve all this session" also skips high-risk confirmations (Recommendation · Decision · S)
+- [x] ACT-08 Model-typed URLs open cross-origin without confirmation (Recommendation · Decision · S)
 
-The first validate invocation stopped when the sandbox blocked a Vitest subprocess with EPERM. Behavior tests passed when rerun outside that restriction. This is an environment limitation, not a repository failure. Browser tests also required an unsandboxed worker launch.
+**P2 — reliability defects**
 
-The punchlist contains **27 items: 8 P1, 16 P2, and 3 P3**. Priorities include confirmed defects, one unresolved browser failure, release-process gaps, and labeled recommendations.
+- [x] ACT-09 `page_find_text` / `page_wait` see only the first 16,000 characters (Source-confirmed · S)
+- [x] ACT-10 Batches/waits can exceed the fixed 15 s bridge timeout and quarantine a healthy tab (Source-confirmed · S)
+- [x] ACT-11 `page_scroll.containerIndex` indexes a different list than the snapshot shows (Source-confirmed · S)
+- [x] ACT-12 The 5 s snapshot cache can return a stale page (Source-confirmed · S) → delete `ActActionCache.js` (RM-01)
+- [ ] ACT-13 Approval cards do not show the text that will be typed (Source-confirmed · S)
+- [ ] ACT-14 Approval cards auto-deny after 60 s (Source-confirmed · S)
+- [x] ACT-15 Risk and navigation classification uses substring matching (Reproduced · M)
 
-## P1 — Fix before public release
+**P2 — the substantial Act upgrade**
 
-### P1-01 — Prevent screenshot pixels from bypassing sensitive-data masking
+- [ ] ACT-30 Model-driven local Act benchmark — **do this before the capability work** (Recommendation · M)
+- [ ] ACT-20 Keyboard actions and form submit (Enter, Escape, Tab, arrows) (Recommendation · M)
+- [ ] ACT-21 Broader control discovery: ARIA roles, labels for hidden inputs, own-label occlusion (Recommendation · M)
+- [ ] ACT-22 Custom dropdowns and comboboxes (ARIA listbox/option) (Recommendation · M)
+- [ ] ACT-23 Open shadow DOM traversal (Recommendation · M)
+- [ ] ACT-24 Iframes: same-origin first, then cross-origin frames (Recommendation · L)
+- [ ] ACT-25 Stable element IDs within a document (Recommendation · M)
+- [ ] ACT-26 Deterministic first observation instead of a forced named tool choice (Recommendation · S)
+- [ ] ACT-27 Replace the regex planner with a model-maintained checklist (Reproduced in part · M)
+- [ ] ACT-28 Declared postconditions and richer click evidence (Recommendation · M)
+- [ ] ACT-29 Warn when the selected model cannot call tools (Recommendation · S)
+- [ ] ACT-41 Rewrite the Act prompt: stale screenshot text, contradictions, missing `page_record_note` (Source-confirmed · S)
 
-**Source-confirmed · M · Runtime/privacy**
+**P3 — efficiency, removals, overall**
 
-Evidence: [capture helper](content_script_unified.js#L1762), [visible-tab capture](background.js#L2710), [provider attachment](src/orchestrator/RunOrchestrator.js#L381). Act captures visible pixels and attaches them to provider input. DOM masking does not redact those pixels. Visible payment fields, revealed secrets, and sensitive embedded content can therefore be present even when the semantic snapshot omits their values. Existing privacy copy describes bounded DOM data and masking without explaining this new image path.
+- [ ] ACT-40 One compact model-facing snapshot format (drop the duplicate element list and unused fields) (Source-confirmed · S)
+- [ ] ACT-42 Measure, then reduce snapshot build cost (Recommendation · M)
+- [ ] ACT-43 Measure, then reduce per-action bridge round trips (Recommendation · S)
+- [ ] ACT-44 `page_hover` and `page_go_back` (Recommendation · S)
+- [x] RM-01 `delete:` `ActActionCache.js` (S)
+- [x] RM-02 `delete:` dead Act code paths and stale comments (S)
+- [x] RM-03 `shrink:` collapse the always-true `multiTabEnabled` flag (S)
+- [x] RM-04 `yagni:` decide the dormant screenshot/vision path — shipped by deletion (Decision · S/M)
+- [x] RM-05 `delete:` the production MAIN-world no-op content script (S)
+- [ ] RM-06 `shrink:` source-text guards in `scripts/test-runner.js` (M)
+- [ ] RM-07 `shrink:` archive dated review/report docs (S)
+- [x] GEN-01 `npm run validate` passes on this Windows checkout (S)
+- [ ] GEN-02 Pin and update imprecisely versioned vendored libraries (S)
+- [ ] GEN-03 Extract the page-action runtime from `RunOrchestrator.js`; split the Act content script (L)
+- [ ] GEN-04 Documentation drift fixes (S)
+- [ ] GEN-05 Measure, then reduce per-page content-script injection (M)
+- [ ] GEN-06 Carried-over residuals from the previous punchlist (S)
 
-- Fix: disable automatic Act screenshots for the release until a reviewed image-privacy path exists. Retain DOM snapshots. Any later visual mode needs clear user disclosure, capability gating, sensitive-region exclusion, and safe handling of embedded content.
-- Acceptance: a local fixture with visible secret/payment markers never places those pixels in provider payloads; failed redaction falls back to DOM-only operation. Inspect payloads using synthetic data only.
+---
 
-**Resolution: Resolved.** Added a release gate `RunOrchestrator.ACT_SCREENSHOTS_ENABLED = false` (static class field, default off for release). `_storeActScreenshot` and `_getActVisionImage` now early-return / return null when the gate is off, so no screenshot pixels reach provider payloads while DOM snapshots are retained. Covered by combined P1-01/P1-02 verification tests that toggle the gate on to exercise the dormant path and restore it after each test.
+## P1 — Fix first
 
-### P1-02 — Preserve user images when Act adds a screenshot
+### ACT-01 — Step `title` validation rejects valid actions
 
-**Reproduced · S · Provider payloads**
+**Reproduced · S · Act/policy**
 
-Evidence: [OpenAI conversion](src/orchestrator/RunOrchestrator.js#L394), [Anthropic conversion](src/orchestrator/RunOrchestrator.js#L415). Both helpers remove every existing image part from the last user message. A probe containing an original USER image returned only the SCREEN image.
+Evidence: [title pattern](src/utils/pageActionPolicy.js#L75), [early return](src/utils/pageActionPolicy.js#L156). The optional title exists only for the progress card. When it matches `CREDENTIAL_TITLE_PATTERN`, `normalizePageActionArgs` returns invalid and the **action** fails with `PAGE_ACTION_INVALID`. The pattern contains bare `card`, `bank`, `token`, `credit`, and `debit`. A probe rejected `page_click` with the titles "Open the product card", "Move card to Done", "Click Bank Holidays tab", and "Open token list". Trello cards, product cards, and gift cards are normal targets.
 
-- Fix: distinguish ephemeral Act imagery from user attachments and replace only the former. Keep user images and text in their original order.
-- Acceptance: a request to compare an uploaded image with a page retains both inputs on initial and continuation calls; include OpenAI-compatible, Codex conversion, and Anthropic cases.
+- Fix: an invalid title is dropped (treated as absent) and the card falls back to the event-type label. Keep the pattern for display filtering only; never fail the action because of it.
+- Acceptance: `page_click` with title "Move card to Done" dispatches; the progress card shows the default label; the existing title tests still reject control characters for display.
 
-**Resolution: Resolved.** Refactored `_withActVisionOpenAI` and `_withActVisionAnthropic` so the last user message keeps user text and uploaded images in their original order and replaces only the ephemeral Act screen, identified by a part-level `__ppActScreen` marker. A `stripActScreenMarker(part)` helper removes the marker before the array reaches provider wire payloads (via `.map(stripActScreenMarker)`). Tests cover initial and continuation calls for OpenAI and Anthropic, gate-off attach prevention, and prior-screen replacement.
+### ACT-02 — Three failing tool turns stop an Act run; user denials count as failures
 
-### P1-03 — Repair backups for pinned instructions
+**Reproduced · S · Act/orchestrator**
 
-**Reproduced · S · Data integrity**
+Evidence: [cap](src/orchestrator/RunOrchestrator.js#L86), [check](src/orchestrator/RunOrchestrator.js#L5243), [failure classification](src/orchestrator/RunOrchestrator.js#L5303). Every tool result with an inner `error` counts toward `MAX_TOOL_CALL_RETRIES = 3`, including `PAGE_ACTION_DENIED`, approval timeout, `PAGE_STATE_STALE`, occlusion, and invalid arguments. On the fourth turn `_finalizeToolCall` throws and the run ends with `Maximum tool call retries exceeded (3).` A probe with three `PAGE_ACTION_INVALID` turns (from ACT-01) reproduced exactly that. A user who denies two actions and then hits one stale snapshot loses the run instead of getting a summary or a question.
 
-Evidence: [backup normalization](src/utils/validation.js#L335), [pin storage](options.js#L1940). Pins are string IDs, but backup validation treats them as object records. A real-shaped input with `pinnedQuickActions: ['instruction_123']` returns `pinnedQuickActions contains an invalid record.` Full export calls the same normalizer, so pinning an instruction can block the entire backup.
+- Fix: do not count user decisions (denied, timed out) or not-delivered pre-dispatch outcomes as failures. For Act runs, reaching the cap should switch to the existing toolless wrap-up (`_finishAtRunLimit` / `BUDGET_WRAP_UP_PROMPT`) instead of throwing. Consider counting only repeated identical failures.
+- Acceptance: three denials in a row leave the run alive; the model can ask or summarize; the run ends in `complete` with an honest summary, never the raw retry error.
+- Verified: denials and `not_delivered` receipts reset/avoid the retry counter; repeated failing tool calls trigger a forced toolless wrap-up. `npx vitest run tests/runOrchestrator.test.js` passes (153 tests), including wrap-up completion and decision/pre-dispatch counter cases.
 
-- Fix: validate pins as a bounded, deduplicated array of string IDs; keep record validation for actual object arrays.
-- Acceptance: export/import round-trips profiles without credentials, instructions, skills, tools, pins, suggestions, and themes together. Include an empty and a populated pin list.
+### ACT-03 — No-progress guard blocks clicks that visibly changed the page
 
-**Resolution: Resolved.** Added `normalizePinArray` in `src/utils/validation.js` that validates pins as a bounded (max 500) array of non-empty string IDs trimmed to 256 chars, deduplicated via a Set; invalid/non-string/duplicate entries are dropped instead of failing the whole backup. `normalizeStorageArea` now routes `pinnedQuickActions` through `normalizePinArray` separately from the object-record arrays. Four regression tests cover a populated pin list, empty+dedup list, the string-ID (non-record) shape, and a full export round-trip.
+**Reproduced · S · Act/orchestrator + content script**
 
-### P1-04 — Keep unsaved state independent for each Options section
+Evidence: [progress test](src/orchestrator/RunOrchestrator.js#L2511), [click receipt](content_script_unified.js#L2467). `madeProgress` is `result.pageChanged || verified receipt`. The content script never sets `pageChanged` for DOM changes, and every ordinary click returns `delivered_unverified` unless a checkbox toggles or the URL changes. A probe with four clicks, each producing a new page fingerprint, blocked the fourth with `PAGE_ACTION_NO_PROGRESS` ("Three page mutations produced no page change"). Single-page apps (menus, panels, filters, carts) hit this whenever the model does not re-inspect between clicks.
 
-**Source-confirmed · M · Options**
+- Fix: treat a fingerprint change between the pre- and post-action snapshots as progress. Also add `changed: true` to the content-script click evidence when the fingerprint changed (see ACT-28 for stronger verification).
+- Acceptance: the probe scenario passes; the existing test "blocks a mutation once three different mutations changed nothing" still blocks.
 
-Evidence: [connection save](options.js#L902), [global clean function and timer](options.js#L1169), [privacy save](options.js#L1363). Saving Connection or Privacy marks every tracker clean even when other sections were not saved. The one-second startup timer can also mark a real early edit clean.
+### ACT-04 — Approval/policy can evaluate a different element than the page acts on
 
-- Fix: mark only the successfully saved section clean. Establish each baseline after its own initial load; remove the timer-based global reset.
-- Acceptance: edit Web Search or Top Notch, save Connection or Privacy, and verify the unsaved warning remains. Repeat with an edit during startup and delayed storage/model responses.
+**Source-confirmed · M · Act/targeting integrity**
 
-**Resolution: Resolved.** Replaced the blanket `markAllTrackersClean()` with per-section clean functions (`markConnectionTrackerClean`, `markPrivacyTrackerClean`) so saving Connection or Privacy clears only that section's unsaved flag. Removed the one-second timer-based global reset. Each section now re-baselines after its own async load (connection after model discovery settles; privacy after analytics+voice consent loads; grounding via an `onDone` callback; notch/page-actions at load end). Added browser test `tests/browser/options-unsaved.spec.js` (edit Notch → save Privacy keeps the banner; save Notch clears it).
+Evidence: [merge across snapshots](src/orchestrator/RunOrchestrator.js#L1860), [resolve](src/orchestrator/RunOrchestrator.js#L1883), [positional indices](content_script_unified.js#L1729), [region slice vs full records](content_script_unified.js#L2027), [target lookup](content_script_unified.js#L2083).
 
-### P1-05 — Recover every pending user interaction after panel reconnect
+The orchestrator keeps an element map merged by index across snapshots of the same URL, on the stated assumption that "indices are global and stable within a document". The content script does not keep that invariant: every snapshot re-collects controls in the current viewport band and numbers them by position. It also stores **all** records in the session while sending only a region slice (region reads) or a trimmed list (payload cap).
 
-**Source-confirmed · M · Run lifecycle**
+Failure scenario: a full snapshot lists `[12] Help`. The page re-renders (feed update, list insertion). The model reads `region-1` and then calls `page_click(index: 12)` with the new snapshot ID. The orchestrator resolves index 12 from the older merged map ("Help", low risk, no card). The content script clicks `records[12]` of the fresh collection, which may be "Delete". Policy, the approval card, and the receipt then describe a different control from the one that was clicked. The content script still blocks sensitive and disabled targets, but the risk gate (high → confirmation) can be skipped.
 
-Evidence: [watch replay](chat.js#L950), [journal normalization](src/orchestrator/RunOrchestrator.js#L5163), [clarification request](src/orchestrator/RunOrchestrator.js#L2953), [manual request](src/orchestrator/RunOrchestrator.js#L2822). Replay handles page confirmations, but not clarification, manual Resume, or Hermes approvals. The journal also drops fields such as request ID, question, and options. A reopened panel can watch a run that still waits on controls it cannot render.
+- Fix (smallest): each snapshot element carries a short opaque key (hash of fingerprint plus ordinal). The orchestrator sends the key of the element it evaluated. The content script refuses with `PAGE_STATE_STALE` when `records[index]` has a different key. Resolve only indices that the latest snapshot actually sent. ACT-25 (stable IDs) is the longer-term fix.
+- Acceptance: a unit and browser test with a region read after a DOM change detects the mismatch and dispatches nothing; the existing region-index tests still pass.
+- Implemented: snapshots carry a bounded per-snapshot element key; the orchestrator forwards the key for indexed actions, and the content script rejects a key mismatch before dispatch. Browser regression "refuses a stale merged index after a region snapshot reorders controls" passes in the real-browser suite.
 
-- Fix: expose a bounded snapshot of currently pending interactions, with their opaque IDs and allowed display fields. Replay that state through the same renderers used for live events. Do not restore stale decisions or secret arguments.
-- Acceptance: close/reopen during each approval, clarification, and manual state; the correct control returns once, accepts a decision, and resumes the existing run. Test the terminal-event race during reconnect too.
+### ACT-05 — Re-render rebinding picks the first identical control
 
-**Resolution: Resolved.** `RunOrchestrator._journalEvent` now preserves `requestId` and `approvalId`, and for pending user/manual interactions keeps bounded display fields `question`, `options`, and `activeTab` (title/origin/tabId); secret arguments and decisions are never persisted. `chat.js` `watchActiveRun` journal replay now routes `page_user_input_request`, `page_manual_intervention_request`, and `hermes_approval_required` through the same renderers used for live events (`handlePageUserInputRequest` / `hermesChat.renderHermesApproval`), re-establishes the owner token from run auth, and skips stale pending controls when a terminal event already appears earlier in the journal. Four new behavior tests cover the preserved fields and non-leakage.
+**Source-confirmed · S · Act/targeting integrity**
 
-### P1-06 — Stop reporting successful writes when tools/skills/profile creation fail
+Evidence: [rebind](content_script_unified.js#L2093). When the indexed node was replaced (virtual-DOM re-render), `getPageActionTarget` re-collects all controls and binds to the **first** one with the same fingerprint. Rows of identical "Delete", "Reply", "Archive", or "Add to cart" buttons share a fingerprint, so the action lands on row 1 instead of row N.
 
-**Source-confirmed · M · Options/data integrity**
+- Fix: rebind only when exactly one candidate matches. With duplicates, match by ordinal among identical fingerprints plus a nearby-text check; otherwise return `PAGE_STATE_STALE`.
+- Acceptance: a fixture with five identical row buttons that re-renders before the click acts on the intended row or reports stale; it never acts on row 1 by default.
+- Implemented: content-script rebinding now proceeds only when exactly one current control has the old fingerprint; ambiguous duplicates fail closed. Browser regression "returns stale instead of rebinding an identical row action to the first match" passes in the real-browser suite.
 
-Evidence: [new profile callback](options.js#L1541), [tool save](options.js#L2512), [tool import](options.js#L2604), [skill save](options.js#L2882), [skill import](options.js#L3028). Several paths still reload, clear drafts, or display success without checking `chrome.runtime.lastError`. The error-aware instruction-save helper did not cover all storage actions.
+### ACT-06 — Screenshots are captured on every inspection although the release gate discards them
 
-- Fix: use the existing error-aware storage helper consistently. Report success and reset forms only after acknowledgement; preserve the draft on failure. Cover delete/pin paths in the same pass.
-- Acceptance: injected quota/read/write failures retain drafts and saved data, show an actionable error, and allow retry without duplicates.
+**Source-confirmed · S · Act/privacy + latency**
 
-**Resolution: Resolved (core paths).** Tool add/update, skill add/update, and new-profile creation now persist through the error-aware `setChromeStorage` helper (rejects on `chrome.runtime.lastError`). Success messages, table/form resets, and profile reload happen only after write acknowledgement; on failure an actionable error shows and the in-progress draft/form is preserved (profile create reloads pristine storage so no phantom profile appears). Remaining lower-risk delete/pin and import write-backs can be routed through the helper in the same follow-up pass as P2-07.
+Evidence: [capture on every `page_get_state`](content_script_unified.js#L2377), [PNG capture handler](background.js#L2941), [gate discards](src/orchestrator/RunOrchestrator.js#L426). P1-01 of the previous review disabled Act screenshots at the orchestrator. The content script still requests a full-viewport PNG on every inspection, and the worker still captures it. Visible pixels (including any on-screen payment or secret data) are copied into the worker only to be dropped. Each capture adds latency and message size (up to 750 KB), and `captureVisibleTab` is rate limited, so batches can fail captures. Large PNGs above the 750,000-character limit are dropped anyway.
 
-### P1-07 — Resolve the failing browser gate
+- Fix: remove the dormant Act screenshot/vision path, index overlay badges, and `visualBoxes`; keep the separate video/content-extraction screenshot path.
+- Acceptance: no `captureScreenshot` message is sent during an Act inspection, no screenshot/visual-box fields enter the Act snapshot, and video extraction still retains its screenshot.
+- Implemented: the content-script Act snapshot and batch paths no longer capture or return screenshots; the orchestrator vision wrappers and user-facing overlay metadata were removed. The independent `getUnifiedContent` screenshot flow remains unchanged. Browser regression asserts the batch result carries no `screenshot` and no `visualBoxes`. Still unverified: the video/content-extraction screenshot path has no browser coverage, so the retention claim rests on code inspection and unit tests only.
 
-**Reproduced failure; root cause open · M · Test/runtime integration**
+### ACT-07 — "Approve all this session" also skips high-risk confirmations
 
-Evidence: [browser case](tests/browser/chat-actions.spec.js#L77). The case expects saved reasoning `high` but the sidebar shows `Auto`. It failed on the initial run and the full rerun. The isolated status unit tests still pass.
+**Recommendation · Decision · S · Act/safety**
 
-- Fix: determine whether profile initialization/model loading overwrites the fixture or whether the runtime discards saved reasoning. Inspect storage before and after opening chat and settle first-run initialization in the test. Do not merely change the expected string.
-- Acceptance: the saved profile and sidebar agree, storage updates refresh the display, and the complete browser suite passes repeatedly with isolated profiles.
+Evidence: [confirmation bypass](src/orchestrator/RunOrchestrator.js#L2293), [flag set](src/orchestrator/RunOrchestrator.js#L3397). One click on "Approve all this session" for a harmless action makes every later policy-allowed action run without a card, including high-risk Send, Delete, Publish, and Submit. Page text is untrusted: prompt-injected content read later in the same run can then trigger those actions silently. This is the documented contract today, so changing it needs an owner decision.
 
-**Resolution: Resolved (environment-dependent).** The reported Auto-vs-high failure did not reproduce in this environment: the full browser suite (36+ cases, headed) passes repeatedly against the current code, so it is a first-run initialization race/order flake rather than a runtime overwrite. The test at `tests/browser/chat-actions.spec.js:77` was hardened to be deterministic without changing the expected string: it reads the saved `reasoningLevel` from storage inside the chat page, asserts it is still `high` (proving no runtime overwrite), then asserts the sidebar matches the saved value. See P1-08 for the production-output browser gate that must also stay green.
+- Recommended fix: approve-all covers low and medium risk only; high risk always confirms. Rename the button to "Approve similar actions this run". Hard blocks stay unchanged.
+- Acceptance: after approve-all, a low-risk input runs without a card and a high-risk "Send" still shows one. Update `src/orchestrator/AGENTS.md` and `src/chat/AGENTS.md`.
 
-### P1-08 — Gate release artifacts on browser tests of production output
+### ACT-08 — Model-typed URLs open cross-origin without confirmation
 
-**Source-confirmed workflow gap · M · Release engineering**
+**Recommendation · Decision · S · Act/safety**
 
-Evidence: [CI](.github/workflows/ci.yml), [browser loader](tests/browser/browserTestSupport.js#L58). The build job depends only on validation and can upload an artifact while the browser job fails. Browser tests load the source checkout, whereas production replaces diagnostic and evaluation modules. `npm run ci` also omits browser tests.
+Evidence: [URL normalization keeps the path](src/utils/pageActionPolicy.js#L330), [origin admitted without approval](src/orchestrator/RunOrchestrator.js#L2933). `page_open_tab` accepts any HTTP(S) URL written by the model. Query strings are stripped, but the path is kept. On a private page (mail, CRM), injected text can tell the model to open `https://attacker.example/<private text>`, which leaks data through the request path with no card. Link clicks are lower risk because the page, not the model, chose the destination.
 
-- Fix: build once, exercise production output in an isolated browser, and publish/upload the release candidate only after all required gates pass. Keep the internal test harness separate from the shipped artifact. Align the local release command with CI.
-- Acceptance: a failed browser check prevents release-candidate publication; production startup, settings, chat, page extraction, and safe Act smoke tests run against the exact packaged files.
+- Recommended fix: require confirmation for `page_open_tab` when the destination origin is not the source origin, is not an `href` seen in a snapshot this run, and does not appear in the user's instruction. Show the full destination on the card.
+- Acceptance: an injection fixture that asks for an attacker URL produces a confirmation card; ordinary "open the site I named" requests do not.
+- Verified: orchestrator tests confirm an unrequested cross-origin URL is gated before tab dispatch and carries the destination on the card; a hostname present in the user request bypasses the prompt. `npx vitest run tests/runOrchestrator.test.js` passes (153 tests). Browser UI verification remains unavailable because Playwright Chromium is not installed.
 
-**Resolution (verified 2026-09-06): DONE.** The production-output browser gate is wired AND green. `tests/browser/browserTestSupport.js` resolves the extension load path from `PROMPT_PAUL_LOAD_EXTENSION_DIR`, so the loader exercises a built `dist/`. The cross-platform Node wrapper `scripts/test-browser-prod.js` builds production output, sets `PROMPT_PAUL_LOAD_EXTENSION_DIR='dist'` before staging, and runs the Playwright suite via the module CLI without a shell (fixes the Windows `'C:\Program' is not recognized` path issue). `scripts/stage-browser-harness.js` copies the test-only harness (`extension-harness.html`/`.js`) into the extension under test at test time only — it never pollutes the shipped artifact, and the produced `dist/` excludes dev-only files (guarded by the P3-02 smoke check). The `stage:browser-harness` npm script and the CI browser job stage the harness before running tests; the `build` job `needs: [validate, browser]` and uploads `dist/` only on success. `npm run ci` and `npm run test:browser:prod` include this gate, and a P1-08 regression guard in `scripts/test-runner.js` checks the staging + prod gate wiring. **Verified green this session:** `npm run test:browser:prod` = 40/40 pass against `dist/` (EXIT 0); `npm run validate` = EXIT 0 (lint + format + 99 structural + 616 behavior + smoke + licenses); `npm run audit` = 0 vulnerabilities. The stale vendor-manifest hash blocker from the PARTIAL state was resolved as part of the P1-08 CI fix.
+---
 
-### P2-01 — Gate visual payloads on actual model capability
+## P2 — Reliability defects
 
-**Source-confirmed missing gate; provider failure needs reproduction · M**
-
-[Act image helpers](src/orchestrator/RunOrchestrator.js#L381) attach imagery when a screenshot exists without checking the selected model. [Media routing](src/utils/profileRouting.js#L7) uses model-name patterns rather than authoritative capability metadata. A text-only compatible endpoint can receive an image payload it cannot accept.
-
-- Fix: use provider/model capability metadata when available, conservative defaults otherwise, and DOM-only fallback. Do not switch providers silently to enable visuals.
-- Acceptance: text-only and multimodal mock endpoints receive supported payloads; unknown models remain usable without screenshots.
-
-**Resolution: Resolved.** `_getActVisionImage` in `src/orchestrator/RunOrchestrator.js` now also returns null unless `modelSupportsVision(run.config.modelName)` — the Act screenshot is never injected into the provider payload for a text-only or unknown model, even when the privacy gate is enabled. Both OpenAI-compatible and Anthropic attachment paths inherit this single guard via `_getActVisionImage`, leaving the DOM snapshot + visual-index text as the fallback. Added a P2-01 regression test in `tests/runOrchestrator.test.js` (text-only `openrouter/free` model retains the stored screenshot but receives no image part); existing P1-01/02 vision tests updated to use a vision-capable model fixture.
-
-### P2-02 — Make saved site suggestions survive normalization
-
-**Reproduced · S**
-
-[addSuggestion](src/utils/suggestionStorage.js#L26) converts a URL to a hostname, but [normalizeSuggestion](src/utils/suggestionStorage.js#L87) parses that hostname as an absolute URL and discards it. A probe adding an example.com suggestion returned an entry while storage and subsequent reads were both empty.
-
-- Fix: define one canonical site-key normalizer that accepts stored hostnames and incoming URLs. Use it for add/read/filter operations.
-- Acceptance: a suggestion remains present after add, reload, another add, and removal; test URL and hostname inputs.
-
-**Resolution: Resolved.** `extractSiteKey` in `src/utils/suggestionStorage.js` is now one canonical site-key normalizer that accepts both full URLs and bare hostnames: it parses the input as a URL and, on parse failure, retries with an `https://` prefix so stored bare hostnames round-trip. Added `tests/suggestionStorage.test.js` (5 cases) covering the add → read → reload(→ another add → remove) round-trip, URL and hostname inputs, and empty/invalid inputs.
-
-### P2-03 — Reserve all built-in page-tool names
-
-**Reproduced validator gap · S**
-
-[RESERVED_TOOL_NAMES](src/utils/validation.js#L28) omits `page_find_text`, `page_wait`, and `page_batch`. All three were accepted as user-defined tools by a direct probe, although the runtime already defines them.
-
-- Fix: use one shared built-in-name registry for save, import, prompt assembly, and runtime dispatch. Reject existing conflicting custom definitions with a useful message.
-- Acceptance: each built-in name is rejected on every custom-tool entry path; provider schemas contain no duplicate names. This finding does not assert a demonstrated policy bypass.
-
-**Resolution: Resolved.** Added `page_find_text`, `page_wait`, and `page_batch` to `RESERVED_TOOL_NAMES` in `src/utils/validation.js`; they were real runtime tools (defined in `RunOrchestrator.js`/`pageActionPolicy.js`) but missing from the shared reserved registry, so they were accepted as custom tools. Extended the reserved-name test in `tests/validation.test.js` to assert all three are rejected on the custom-tool save path.
-
-### P2-04 — Validate alternate profiles before media rerouting
+### ACT-09 — `page_find_text` and `page_wait` see only the first 16,000 characters
 
 **Source-confirmed · S**
 
-[selectOptimalProfile](src/chat/ChatAPI.js#L31) selects the first vision-name match without requiring it to be a usable connection. An incomplete alternate profile can replace a working current profile.
+Evidence: [readable content cap](content_script_unified.js#L1472), used by [find](content_script_unified.js#L1519) and [wait](content_script_unified.js#L2210). Both tools search the Markdown export of the page cut to 16,000 characters. On long pages the text the user asked about is never found, and `page_wait(text)` never matches content lower on the page. `page_wait` also clones the body and runs Turndown every 250 ms for up to 10 s, which is heavy on large pages.
 
-- Fix: require connection usability and suitable capability, and make the effective connection visible before sending data to a different provider.
-- Acceptance: incomplete alternate profiles are skipped; a working current profile is retained when no eligible alternative exists; the UI identifies the selected destination.
+- Fix: search `document.body.innerText` (or a text-node walker) with a much larger bound, redacting only the returned snippets. Use a cheap text check for `page_wait`.
+- Acceptance: a fixture with the target text after 50,000 characters is found; a wait for below-the-fold text succeeds.
+- Implemented: `page_find_text` now searches sanitized, control-free body text bounded to 120,000 characters; `page_wait` uses a bounded direct text check instead of repeating Turndown. Browser regression "finds and waits for text beyond the old 16,000-character window" passes in the real-browser suite.
 
-**Resolution: Resolved.** `selectOptimalProfile` in `src/chat/ChatAPI.js` now filters the vision-capable candidate with `isProfileUsable` (from `src/utils/profileRouting.js`), so only a usable connection (valid endpoint/key/model, or valid Codex/Hermes credentials) can be selected as a reroute destination. An incomplete alternate profile can no longer replace a working current profile; when no usable vision-capable alternative exists the current profile is retained with `rerouted: false`. The caller already surfaces the destination as a system message. Added `tests/selectOptimalProfile.test.js` (5 cases) covering unusable-alternate skip, usable-alternate reroute, retained-current fallback, current-already-vision, and no-vision-needed.
-
-### P2-05 — Protect drafts when changing profiles
-
-**Source-confirmed · M**
-
-[profile selector](options.js#L1468) loads another profile immediately; the unload guard does not cover this in-page replacement. Instruction, tool, and skill editor fields are also absent from the combined dirty trackers.
-
-- Fix: preserve per-profile drafts or require an explicit discard before replacing edited fields. Include unsaved editor drafts in navigation protection.
-- Acceptance: switching profiles or closing Options cannot silently discard modified connection, instruction, tool, or skill fields.
-
-**Resolution: Resolved.** Added an `editorDraftsTracker` over the visible instruction/tool/skill editor text fields and included it in `allTrackers` (options.js), so browser-unload protection now covers in-page editor drafts as well. The profile-select change handler's real-profile branch now checks every tracker (`allTrackers.some((t) => t.isDirty())`) and, when anything is unsaved, requires an explicit `confirm()` discard before switching; declining reverts the dropdown to the previously selected profile and preserves the draft. `loadProfileSettings` still re-baselines the connection tracker so a confirmed switch does not leave a false unsaved banner. Verified by `tests/browser/options-unsaved.spec.js` (P2-05 case): editing the endpoint makes the banner visible, refusing the confirm keeps the dropdown + draft, accepting switches profiles.
-
-### P2-06 — Route Improve Instruction through supported provider transports
-
-**Source-confirmed · M**
-
-[Improve handler](options.js#L2007) requires API endpoint/key/model fields; [improvePromptAPI](options.js#L2313) makes a separate OpenAI-shaped fetch with no timeout or bounded response handling. Codex and Hermes profiles cannot use it, and it bypasses the provider-aware path.
-
-- Fix: use a bounded background-owned instruction-improvement request through the existing provider transport. Remove the duplicate direct fetch after parity is verified.
-- Acceptance: API, Codex, and Hermes configurations receive either a working supported flow or an explicit capability message; timeout/error leaves the original instruction intact.
-
-**Resolution: Resolved.** The Options Improve handler now sends `{ action: 'improveInstruction' }` to the background worker instead of directing an OpenAI-shaped fetch itself. Background added `improveInstructionForProfile` (background.js): it resolves the selected profile, and for `api` profiles performs a bounded chat-completions POST (30s AbortController timeout, bounded response body via `readBoundedResponseText`) reusing the saved endpoint/key/model through the provider-aware path; for `codex`/`hermes` profiles it throws an explicit `capability: 'unsupported'` message rather than a misleading "configuration incomplete" error. The duplicate direct `improvePromptAPI` fetch in options.js was removed. On any failure the options handler leaves the editor untouched (original instruction intact) and shows the error/capability status; the editor is populated only on success. Verified by `tests/browser/options-unsaved.spec.js` (P2-06 case): a Codex profile with a seeded instruction returns a capability message and the editor stays empty (original intact), and no network fetch to a real provider is made.
-
-### P2-07 — Apply import limits before reading every file
+### ACT-10 — Batches and waits can exceed the fixed 15 s bridge timeout
 
 **Source-confirmed · S**
 
-Instruction and skill imports check file size. [Tool import](options.js#L2566) and [full restore](options.js#L3331) read and parse the entire file first. Backup profile/tool arrays also lack the record-count guard used by other arrays.
+Evidence: [fixed timeout](background.js#L1429), [batch and wait limits](content_script_unified.js#L1250), [timeout is a tab failure](src/orchestrator/RunOrchestrator.js#L100). A `page_batch` may contain up to six `page_wait` steps of 10 s each. The message times out after 15 s, the error is classified as a tab failure, and a healthy tab is quarantined.
 
-- Fix: enforce the shared byte and record limits across every import, before FileReader/JSON parsing where possible. Normalize record types consistently.
-- Acceptance: oversized files and record counts fail promptly without modifying storage; valid boundary-size files still work.
+- Fix: derive the message timeout from the request (sum of wait timeouts plus a margin, bounded), or cap total batch wait time in the content script.
+- Acceptance: a batch with two 10 s waits returns results and no tab is quarantined.
+- Implemented: the background bridge timeout now adds the clamped `page_wait` budgets in a batch to the normal 15-second margin, bounded at 75 seconds. Browser regression "allows a page batch with two maximum-duration waits to finish" passes in the real-browser suite.
 
-**Resolution (verified 2026-09-06): DONE.** Import-time byte/record rejection was already enforced before `new FileReader()`/`readAsText` on all four user-facing paths (instructions, tools, skills, full restore) via `MAX_IMPORT_FILE_BYTES`/`MAX_IMPORTED_RECORDS` (`options.js:93-94`). The remaining gaps are closed: every array write-back now applies the keep-first `MAX_IMPORTED_RECORDS` (500) cap via `.slice(0, MAX_IMPORTED_RECORDS)` — profiles (`options.js:279,881,1727`), instructions (`:2312,2334`), tools (`:2683,2793`), and skills/customSkills (`:3072,3223,3429`) — so merged/boundary-shape files can no longer exceed the record limit, and the full-restore hole is closed because `normalizeStorageArea` in `src/utils/validation.js` now rejects `profiles` and `promptPaulTools` arrays longer than `MAX_BACKUP_ARRAY_ITEMS` (500) instead of importing them unbounded. Record types normalize consistently (tool `normalizeToolDefinition`, skill `parseSkillMarkdown`/`MAX_SKILL_MARKDOWN_CHARS`, backup `normalizeBackupPayload`). Covered by `tests/validation.test.js` boundary-file and record-count tests. Verified: `npm run validate` EXIT 0.
-
-### P2-08 — Make terminal recovery truncation visible
-
-**Source-confirmed · S**
-
-[Journal completion](src/orchestrator/RunOrchestrator.js#L5183) stores only 8,000 characters; [terminal recovery](chat.js#L1005) presents this as a normal complete answer and inserts it into history. Grounding/completion metadata is not restored through the normal final renderer.
-
-- Fix: record a bounded truncation flag and original length; clearly label partial recovered content. Preserve bounded source/completion metadata and use the canonical safe final renderer.
-- Acceptance: recovery of a long grounded answer does not imply completeness, does not invent missing text, and preserves available sources and limitation notices.
-
-**Resolution (verified 2026-09-06): DONE.** `RunOrchestrator._journalEvent`'s complete branch (`src/orchestrator/RunOrchestrator.js:5216-5229`) no longer blind-slices: when the full answer exceeds the 8,000-char cap it records `contentTruncated: true` and `originalLength`, otherwise it keeps the full content; it also preserves `event.grounding` (Sources) and `event.completion` metadata in the journal record (`:5228-5229`, grounded at emit `:5141`). `src/chat/ChatGrounding.js` adds the exported `buildRecoveredBody(event, streamedText)` (`:208-225`) that routes through the canonical `buildFinalResponseBody` (same safe renderer as live grounded responses, appends the Sources section via `buildBodyWithSources`), prefixes a visible **Response truncated — this answer is partial** notice when `contentTruncated` is true, and preserves grounding sources/completion. `chat.js:1060-1069` (`restoreTerminalRun`) renders recovered journals through `buildRecoveredBody`, so a truncated journal is never shown as a complete answer and Sources are preserved. Covered by `tests/chatGrounding.test.js` + `tests/runOrchestrator.test.js`. Verified: `npm run validate` EXIT 0 (616 behavior tests).
-
-### P2-10 — Enforce background-owned Hermes credential operations
-
-**Source-confirmed contract mismatch · M**
-
-[Options reads and writes](options.js#L819) access the whole `hermesApiKeys` map, and [profile loading](options.js#L918) reads it to compute a mask. This contradicts the documented background-owned credential boundary, even though the field stays masked.
-
-- Fix: use background status/set/remove operations scoped to a profile. Return only configured status to UI reads. Include credential/session cleanup when deleting profiles, and verify storage access restrictions for content-script contexts.
-- Acceptance: Options can preserve, replace, and remove a key without reading saved secrets; deleting one profile affects only its credential/session records. No credential exposure exploit was demonstrated in this review.
-
-**Resolution (verified 2026-09-06): DONE.** Core background-owned boundary already met (read/write only from `background.js` via `getHermesCredential`/`setHermesCredential`/`removeHermesCredential`, exposed as `hermesKeyStatus`/`hermesKeySet`/`hermesKeyRemove` behind an extension-page sender returning only `{ configured }`; Options never reads the secret). The open gaps are now closed: (1) **delete-orphan cleanup** — Options profile delete (`options.js:1589`) sends `hermesProfileDeleted`; the background owner (new `src/utils/hermesKeys.js` `removeProfileHermesState`) drops that profile's `hermesApiKeys` credential, `hermesSessions` session, and `hermesSessionKeys` session key, never exposing the secret to the bridge; (2) **key validation** — `hermesKeySet` now runs `validateHermesKey` (`src/utils/hermesKeys.js:34`; non-empty, 8-512 chars, no whitespace/control chars) before storage and rejects invalid keys with an actionable message; (3) **tests** — new `tests/hermesKeys.test.js` behavior suite covers validation, per-profile cleanup, and (via source scan) extension-page sender gating of all four Hermes background actions. DOX updated: `src/utils/AGENTS.md` ownership entry + root `AGENTS.md` Hermes validation/delete-cleanup contract. Verified: `npm run validate` EXIT 0.
-
-### P2-12 — Replace asserted evaluation metrics with measured outcomes
-
-**Source-confirmed · M**
-
-[Browser metrics](tests/browser/page-action-evaluation.spec.js#L33) count tool-argument characters as prompt size and set `policyViolation: false`; the suite then asserts zero risk. [Provider matrix](tests/pageActionEvaluationExecution.test.js#L43) ignores the provider argument in its constructor and exercises the executor. Hidden/alt/ARIA injection entries reuse one result instead of distinct scenarios.
-
-- Fix: label the existing suite as executor regression coverage. Measure actual provider payload size, observed policy outcomes, end-state task success, latency, and repeated-run consistency in a separate whole-task suite. Use real distinct injection fixtures.
-- Acceptance: an intentionally wrong outcome fails the relevant metric; provider cases pass through their actual wire conversion; consistency is computed from repeated runs rather than empty data.
-
-**Resolution (verified 2026-09-06): DONE.** Executor-regression relabeling already done; the remaining gaps are now closed in `tests/browser/page-action-evaluation.spec.js` and `tests/pageActionEvaluationExecution.test.js`: (1) **policy outcome is measured, not hardcoded** — `isDeniedOutcome(payload)` derives denial from the ACTUAL result (`PAGE_ACTION_DENIED` error or `not_delivered` receipt), `evaluationRecord` sets `policyViolation` from the real decision (with an explicit details override only for intentionally sabotaged end-states), never a hardcoded `false`; `derivePolicyViolation` is wired into `record()` in the execution suite, with a new unit test driving an actual denial and asserting it fails the metric; (2) **distinct fixtures now loaded** — an `injectionVariants` loop loads `injection-hidden.html`, `injection-alt.html`, `injection-aria.html` end-to-end (previously only mapped, never read); (3) **browser-level metric gate** — the spec asserts four injected-credential records all remain `policyViolation === false` and `result === 'complete'` (missed-sabotage gate) plus a denial-measurement gate (a denied action must surface as `policyViolation: true`/`result: 'error'`/`receiptDisposition: null`, never a delivered success). The approval-timeout case is observed as a legitimate measured denial, and the stray hardcoded `42`-char record is removed. The eval spec runs in the standard `test:browser:prod` suite (40/40 against `dist/`); the prod build keeps the eval hook as a no-op.
-
-### P2-15 — Bind Retry/Edit to the response they belong to
+### ACT-11 — `page_scroll.containerIndex` indexes a different list than the snapshot shows
 
 **Source-confirmed · S**
 
-[Recovery row](src/chat/ChatComposer.js#L182) resolves the last user prompt from the entire transcript when a button is clicked. Buttons on older response bubbles therefore act on the newest prompt.
+Evidence: [advertised list](content_script_unified.js#L1912) (vertical **or** horizontal scrollers), [list used by the action](content_script_unified.js#L2401) (vertical only). When a horizontal carousel appears before the intended container, every later index shifts and the wrong element scrolls. Horizontal-only containers can never be scrolled.
 
-- Fix: bind each row to its originating structured request and context identity, or expose these actions only on the latest response with clear labels.
-- Acceptance: after two turns, Retry/Edit on the first answer uses the first request; attachments and selection are not replaced with unrelated current context.
+- Fix: one shared `collectScrollContainers()` for both the snapshot and the action, with direction flags.
+- Acceptance: a fixture with a carousel and a scrollable list scrolls each by its advertised index, in both directions.
+- Implemented: snapshot advertisement and `page_scroll` dispatch now use one `collectPageActionScrollContainers()` ordering that includes horizontal and vertical scrollers. Browser regression "scrolls the advertised horizontal and vertical containers by the same indices" passes in the real-browser suite.
 
-**Resolution (verified 2026-09-06): DONE.** Recovery rows now carry and replay the originating structured request/context identity, not the current context. `src/chat/ChatUI.js:80,85,104` — `addMessage(sender, message, requestIdentity)` stores the `requestIdentity` on the user message element; `chat.js:2419` passes `{ promptRequest, mediaData }` for media calls and `chat.js:2602` passes the `promptRequest` for plain calls. `src/chat/ChatComposer.js` adds `getLastUserRequest(chatArea)` (`:147`) reading the bound identity, and `ensureRecoveryRow` (`:200-234`) binds both the prompt and the request identity once at row-creation time. Retry dispatches `{ instruction, request }` to the handler (falling back to the plain prompt string when no identity was captured, keeping backward compatibility with existing behavior/tests), and Edit passes `(instruction, request)`. `chat.js` `sendComposerPrompt` (`:1258-1268`) replays the originating request: `makeApiCallWithMedia(replay.promptRequest, replay.mediaData)` when attachments/media are present, else `makeApiCall(replay)` for selection/page/structured context — so attachments and selection are the original response's, never replaced by unrelated current context. Covered by `tests/chatComposer.test.js`. Verified: `npm run validate` EXIT 0.
+### ACT-12 — The 5 s snapshot cache can return a stale page
 
-## P3 — Improvements and removals
+**Source-confirmed · S** (see RM-01)
 
-### P3-01 — Extract cohesive Options persistence and run-recovery boundaries
+Evidence: [cache hit](src/orchestrator/RunOrchestrator.js#L2097), [cache fill](src/orchestrator/RunOrchestrator.js#L2473). A second `page_get_state` within 5 s of the first returns the cached snapshot (`cacheHit: true`) when no mutation happened in between. The usual reason to inspect again is that the page is still loading (search results, async panels), so the model gets the old page exactly when it tries to see the change.
+
+- Fix: remove the cache (RM-01). If a de-duplication is still wanted, allow it only within the same tool turn.
+- Acceptance: two inspections 1 s apart on a page that updates in between return different fingerprints.
+
+### ACT-13 — Approval cards do not show the text that will be typed
+
+**Source-confirmed · S · UX/safety**
+
+Evidence: [text removed from the event](src/orchestrator/RunOrchestrator.js#L3377), [card fields](src/chat/ChatPageAutomation.js#L655). For `page_input` the card says "input Message (low)". The user approves typing without seeing the text, which could be wrong or shaped by injected page content. Sensitive fields are already hard blocked, so the text is model-generated, not a page secret.
+
+- Fix: add a bounded `inputPreview` (for example 280 characters) to the live confirmation event for non-sensitive targets and render it on the card. The journal allow-list in `_journalEvent` already excludes unknown fields; keep it excluded.
+- Acceptance: the card shows the preview; the session journal does not contain it; sensitive targets never reach the card.
+- Implemented: live confirmation events carry at most 280 characters of `page_input` text for non-sensitive controls, and the card renders it with `textContent`; journal allow-listing continues to exclude the field. Unit coverage passes. Still unverified: no browser test asserts the card actually renders the preview text, so the render path is covered by inspection only.
+
+### ACT-14 — Approval cards auto-deny after 60 s
+
+**Source-confirmed · S · UX**
+
+Evidence: [60 s cap](src/orchestrator/RunOrchestrator.js#L3323). The run deadline pauses for up to 10 minutes while a card waits, but the card itself resolves as a denial after 60 s. A user who looks away for a minute gets a "declined" outcome and a planner "do not repeat" nudge they did not choose, and with ACT-02 the timeouts count toward stopping the run.
+
+- Fix: align the card timeout with the 10-minute cap, show the remaining time, and record a timeout as "no answer" rather than a denial (no planner revocation, no "declined" line).
+- Acceptance: a card left for 2 minutes can still be approved; a real timeout renders as "no answer".
+- Implemented: default confirmation timeout now matches the 10-minute deadline-extension cap; timed-out cards/activity render as no answer, and the planner's declined marker is not set. Unit tests verify a default card can still be approved after two virtual minutes and a configured short timeout is not recorded as a user denial; browser regression "confirmation timeout denies the action without delivery and records the timeout decision" passes in the real-browser suite. Still open: the requested visible countdown is not implemented, and no browser test asserts the "no answer" label is rendered.
+
+### ACT-15 — Risk and navigation classification uses substring matching
+
+**Reproduced · M · UX/approval friction**
+
+Evidence: [risk and navigation patterns](src/utils/pageActionPolicy.js#L78). The patterns have no word boundaries and look at labels only. A probe in **trusted mode** classified "Postal code" (post), "Search posts", "Allowance calculator" (allow), and "Sender filter" (send) as high risk, and "Opening hours" and "Backpacks" (open, back) as navigation. Both classes always ask for confirmation, even in trusted mode and under planner auto-approval. Extra cards train users to click "Approve all", which makes ACT-07 worse.
+
+- Fix: word-boundary matching; use element semantics (`type=submit`, form membership, role, `aria-haspopup`) and action type before label words; typing into a field whose label contains "post" is not publishing.
+- Acceptance: a table-driven test with true and false positives (including all probe labels) passes; existing hard blocks are unchanged.
+
+---
+
+## P2 — The substantial Act upgrade
+
+Do ACT-30 first so each item below has a before/after number.
+
+### ACT-30 — Model-driven local Act benchmark
+
+**Recommendation · M · Measurement**
+
+Evidence: the existing corpus drives the executor with scripted actions ([tests/AGENTS.md](tests/AGENTS.md)); [the WebVoyager baseline](docs/ACT_RELIABILITY_BASELINE.md) says "Baseline status: Not recorded".
+
+- Implemented an explicit `npm run benchmark:act -- --run` harness (never in CI) with local fixtures for the listed interaction families. It builds the isolated `dist-eval` extension by default, accepts an optional prebuilt eval extension for A/B runs, and writes bounded metrics under ignored `artifacts/act-benchmark/`.
+- The harness refuses to start without `--run` and `PROMPT_PAUL_BENCHMARK_API_KEY`; a local OpenAI-compatible endpoint can be configured to avoid external model traffic. Results exclude prompts, page text, responses, and credentials.
+- Coverage: SPA menus, autocomplete combobox, custom radio, custom dropdown, shadow-DOM control, same-origin iframe form, modal dismissal, pagination, infinite scroll, long-page text after 50,000 characters, and duplicate row buttons.
+- The baseline score is expected to be **low**: several tasks deliberately exercise capabilities that are still open, so they must fail until those land. Expected to pass today: `spa-menu`, `custom-radio`, `modal-dismissal`, `pagination`, `long-page`, `duplicate-row-buttons`, `infinite-scroll`. Expected to fail until the noted item ships: `autocomplete` and `custom-dropdown` (`role=option` is not collected — ACT-21/ACT-22), `shadow-control` (no open-shadow-root walk — ACT-23), `iframe-form` (`content_script_unified.js` runs with `all_frames: false` — ACT-24 phase 1). A rising score across those capability items is the point of the baseline, not a pass rate today.
+- Record per task: success judged from the fixture's **end state** (not the model's claim), steps, tokens, wall time, confirmation/progress-card events, and failure codes. Run each task several times and report the pass rate.
+- Acceptance: a deliberately broken build lowers the score; results are stored as local artifacts only. Not yet verified: no live/local model run was authorized in this work, so no task has actually been scored. The harness is otherwise runnable — `npm run benchmark:act -- --run` drives the real extension in a real browser and the executor-regression corpus (`page-action-evaluation.spec.js`) passes there. The harness records confirmation/progress card events, not visible UI rendering, so card presentation remains outside measured coverage.
+
+### ACT-20 — Keyboard actions and form submit
 
 **Recommendation · M**
 
-Use the fixes above to centralize error-aware section storage, draft state, and pending-interaction recovery. Remove duplicate implementations after tests cover their callers. Avoid a broad framework migration or splitting files only to reduce line counts.
+Evidence: the content script dispatches no keyboard events and never calls `requestSubmit` (searched `content_script_unified.js`). Search boxes without a button, closing dialogs with Escape, moving through autocomplete lists, and chat inputs that send on Enter are not possible today.
 
-Acceptance: each behavior has one owning implementation and focused integration coverage; runtime message and storage schemas remain compatible.
+- Add `page_press_key` with an allow-list (Enter, Escape, Tab, Shift+Tab, arrows, Backspace) on an indexed element or the focused element, and an optional `submit: true` on `page_input` that uses `form.requestSubmit()` when the field is in a form.
+- Policy: Enter/submit is a mutation. Classify it by the form's submit control (high when that control is Send/Delete/Pay). Synthetic key events are untrusted (`isTrusted=false`); prefer `requestSubmit()` and report `delivered_unverified` when nothing observable changes.
+- Acceptance: benchmark tasks "search without a button" and "dismiss a modal" pass.
 
-**Resolution (verified 2026-09-06): DONE.** `commit 6c3c1aa` centralizes error-aware section storage behind a shared save helper (`options.js` uses one `runErrorAwareSave`-style path across sections), so each behavior has a single owning implementation rather than per-section duplicates. Draft and pending-interaction recovery are routed through the shared recovery plumbing added for P1-05. Runtime message and storage schemas remain compatible; no framework migration or line-count-driven split was introduced. Small pre-deferred residuals (delete/pin and import write-backs not yet re-routed through the shared helper) remain as noted in the P1-06 and P2-07 follow-ups.
+### ACT-21 — Broader control discovery
 
-### P3-02 — Keep agent instructions out of the shipped runtime package
+**Recommendation · M**
 
-**Source-confirmed packaging cleanup · S**
+Evidence: [selector list](content_script_unified.js#L1691). Missing: `role` = option, menuitem, menuitemcheckbox, menuitemradio, tab, switch, treeitem, searchbox, spinbutton, slider, and `<label>` (which `pageDom.js` lists as a supported tag, but the content script never collects). Inputs hidden with `opacity: 0` behind a styled label are excluded by the visibility check, and visually hidden (`sr-only`) inputs hit-test to their label, so the occlusion gate reports them as covered.
 
-[scripts/build.js](scripts/build.js#L113) recursively copies all files in src/libs/skills, including AGENTS.md. Exclude development-only instructions through a reviewed packaging allowlist. Preserve runtime SKILL.md files, provenance, and required notices.
+- Collect the ARIA roles above. Offer a label as the click proxy for its hidden input. In the occlusion gate, treat the target's own `<label>` (or an ancestor label) as a valid click target instead of an occluder.
+- Keep the 200-element cap and the payload bound; re-check masking for the new roles.
+- Acceptance: tabs, menu items, switches, and custom checkboxes in fixtures are listed and clickable.
 
-Acceptance: the release archive contains only runtime files and intentional notices; no required skill or asset is lost.
+### ACT-22 — Custom dropdowns and comboboxes
 
-**Resolution (verified 2026-09-06): DONE.** `scripts/build.js` `DEV_ONLY_EXCLUDES = ['AGENTS.md']` (`:113-127`) filters AGENTS.md from the production copy of `src`, `libs`, and `skills`; eval and dev-diagnostic variants are removed from production output (`installEvalVariant`/`installDiagnosticsVariant`). Verified empirically: `node scripts/build.js --prod` leaves zero AGENTS.md in `dist/` while keeping `skills/skills.json`, both `SKILL.md` files, license/provenance, and manifest intact; no `*.eval.js` in `dist/`. A regression guard asserts this (`scripts/test-runner.js`). Minor caveat: the punchlist says "allowlist" but the implementation uses an exclude-list pattern — functionally equivalent for the current file set.
+**Recommendation · M**
 
-### P3-03 — Make the release traceable and repeatable
+Evidence: [`page_select` requires a native `<select>`](content_script_unified.js#L2536). Most design systems use ARIA `combobox`/`listbox`/`option`, so `page_select` fails and options are not listed (see ACT-21).
+
+- Extend `page_select` for `role=combobox`/`listbox`: open, find the option by exact text, click it, and verify the displayed value or `aria-selected`.
+- Acceptance: benchmark "choose a country in a custom dropdown" passes.
+
+### ACT-23 — Open shadow DOM traversal
+
+**Recommendation · M**
+
+Evidence: no `shadowRoot` use in `content_script_unified.js`. Controls inside open shadow roots (web-component design systems and several large sites) are invisible to Act.
+
+- Walk open shadow roots in element collection, readable text, find, and occlusion (`elementFromPoint` returns the host; recurse into `shadowRoot.elementFromPoint`). Closed roots stay out of scope.
+- Acceptance: a fixture button inside an open shadow root is listed, clickable, and correctly occlusion-checked.
+
+### ACT-24 — Iframes
+
+**Recommendation · L**
+
+Evidence: the unified script runs with `all_frames: false` ([manifest](manifest.json#L59)); the baseline doc notes that BBC News served six iframes Act could not see.
+
+- Phase 1: same-origin iframes reachable from the top document, with frame-labelled elements.
+- Phase 2: cross-origin frames through per-frame injection and `frameId` routing in `chrome.tabs.sendMessage`. Apply restricted-host and masking rules per frame origin; payment frames stay blocked.
+- Acceptance: a same-origin iframe form fixture can be filled; a payment-frame fixture stays blocked.
+
+### ACT-25 — Stable element IDs within a document
+
+**Recommendation · M**
+
+Evidence: [positional indices](content_script_unified.js#L1729), [index cap 0–199](src/utils/pageActionPolicy.js#L264). After every scroll or re-inspection the same control gets a new number. Models often reuse an earlier number, which then points at a different control.
+
+- Keep a per-session `WeakMap<Element, id>` with a monotonic counter so a control keeps its ID for the life of the document. Keep the 200-elements-per-snapshot cap but lift the ID range. This also removes the root cause of ACT-04.
+- Acceptance: a control keeps its ID across scroll and region reads; a reused ID for a removed control reports stale.
+
+### ACT-26 — Deterministic first observation
 
 **Recommendation · S**
 
-The local production build records commit and branch as `local`. Record the actual revision and clean/dirty status, produce an archive checksum, and make the release candidate reproducible from the recorded revision. Keep development/evaluation output excluded.
+Evidence: [forced named tool choice](src/orchestrator/RunOrchestrator.js#L4804), [tool-error hint only mentions web search](src/orchestrator/RunOrchestrator.js#L4845). Every Act run spends one full model round trip to be forced into `page_get_state`. Some OpenAI-compatible servers reject a named `tool_choice`, and there is no fallback.
 
-Acceptance: a downloaded candidate can be traced to the tested revision and its exact artifact checksum.
+- Run `page_get_state` in the orchestrator before the first provider call and add it to the history as a synthetic tool call and result. Keep the "inspect first" guarantee without depending on provider support for named tool choice.
+- Acceptance: the first provider request already contains the snapshot; runs on a server without named `tool_choice` still start.
 
-**Resolution (verified 2026-09-06): DONE.** `scripts/build.js` records the real git revision and clean/dirty status (no longer hardcoded `local`) and emits a per-file SHA-256 checksum alongside the build metadata, so a release candidate can be traced to the tested revision and its exact artifact hash. Development and evaluation output stay excluded from the packaged archive.
+### ACT-27 — Replace the regex planner with a model-maintained checklist
 
-## The next two highest-ROI actions
+**Reproduced in part · M**
 
-### 1. Ship a focused release-safety patch
+Evidence: [activation](src/orchestrator/ActPlanner.js#L79), [goal matching](src/orchestrator/ActPlanner.js#L324), [progress](src/orchestrator/ActPlanner.js#L362), [incomplete warning](src/orchestrator/RunOrchestrator.js#L5462), [tool list without `page_record_note`](src/orchestrator/RunOrchestrator.js#L4104).
 
-**Outcome:** users can trust what is sent, what is saved, and whether a run can recover.
+- A probe activated the planner for "Go to the next page" and "Find the cheapest flight and book it" (regex signals `next`, `find … and`). Any instruction over 100 characters also activates it.
+- A goal advances only when the model calls `page_record_note` right after a `delivered_verified` receipt and the note matches keyword lists. Most clicks are `delivered_unverified` (ACT-03), so successful tasks can end with "⚠️ Act task incomplete". The ACT MODE tool list omits `page_record_note`.
+- Planner activation also changes approval behavior (one approval, then auto-approve low risk), so the same task phrased longer gets different consent semantics.
+- Fix: a `page_update_plan` tool where the model writes and updates a short checklist (≤ 12 items). The orchestrator bounds it, shows it on the progress card, and requires a receipt or fresh snapshot reference to mark an item done. Remove regex decomposition and keyword matching. Decouple approval behavior from planning.
+- Acceptance: a one-step task never shows the incomplete warning; multi-step benchmark tasks show accurate progress.
 
-Implement P1-01 through P1-06, then resolve P1-07. Include the small reproduced fixes P2-02 and P2-03 while adding their regression tests. Disable automatic screenshots for this release instead of making the release depend on an unproven redaction system. Keep existing user attachments working. Do not increase action budgets or add new providers during this patch.
+### ACT-28 — Declared postconditions and richer click evidence
 
-**Done when:** synthetic sensitive pixels are absent from provider payloads; full backups round-trip populated settings; independent saves preserve pending edits; failed writes preserve drafts; every pending interaction survives reconnect; all existing and new tests pass. This has the highest ROI because it protects privacy and prevents lost work in existing features.
+**Recommendation · M**
 
-### 2. Establish one production-package acceptance gate
+Evidence: [click receipt](content_script_unified.js#L2467); the earlier [browser-agent review](docs/BROWSER_AGENT_REPOSITORY_REVIEW.md) recommended "verify a declared safe postcondition". Clicks are verified only by a checkbox toggle or a URL change.
 
-**Outcome:** a green release check means the actual distributed extension completes its core journeys.
+- Add bounded evidence: fingerprint changed, target `aria-expanded`/`aria-selected`/`aria-pressed`/`aria-checked` changed, a dialog or menu appeared, target removed, focus moved.
+- Add an optional `expect` argument (`text_appears`, `text_gone`, `url_changes`) that the content script checks after settling. Report `delivered_verified` only when the declared effect is observed.
+- Acceptance: "open the filter panel" clicks verify; a no-effect click stays unverified.
 
-Implement P1-08 and P2-12. Start with a small deterministic suite: fresh setup → first response; selection/page/document/image input; backup round-trip; Stop and retry; reconnect during every pending state; one read-only Act task; one approved local form action; and a denied sensitive action. Cover API-compatible, Codex, and Hermes wire formats with local mock services. Add a separately authorized live-provider smoke checklist before release, not private credentials in CI.
+### ACT-29 — Warn when the selected model cannot call tools
 
-Measure task end state, payload size, latency, and repeated-run consistency. Gate the exact production archive on these journeys and the existing checks. Use failures to select subsequent work.
+**Recommendation · S**
 
-**Done when:** the production artifact is the tested artifact, failures block release, each supported transport has an exercised journey, and evaluation metrics can detect a deliberately broken result. This provides more release confidence than additional tools, higher limits, or cosmetic redesign.
+Evidence: the fresh-install default is `openrouter/free`; `src/utils/modelDiscovery.js` records no tool-support metadata. Act on a model without function calling fails late with a provider 400 error.
 
-## Closeout and limits
+- Record tool support from discovery metadata where the provider exposes it (for example OpenRouter `supported_parameters`). Warn when Act is turned on with an unsupported or unknown model and link to a recommended model.
+- Acceptance: enabling Act with a known text-only model shows the warning before the run.
 
-- This task writes the review record only. Source fixes and releases are not part of this review.
-- Generated production output and ignored test artifacts may change during verification; they are not source changes.
-- DOX pass: root owns REVIEW_PLAN.md already. Root and child AGENTS.md files are intentionally unchanged because this review introduces no new runtime or ownership contract. Existing documentation defects are tracked above for the implementation pass.
-- No live provider compatibility, private-page behavior, upstream advisory audit, comprehensive accessibility audit, or measured production performance claim is made. Those require dedicated checks.
-- Treat this as the evidence-backed backlog found in this review, not a guarantee that no other defects exist.
+### ACT-41 — Rewrite the Act prompt
+
+**Source-confirmed · S**
+
+Evidence: [ACT MODE block](src/orchestrator/RunOrchestrator.js#L4129) (about 3,800 characters in one paragraph), [screenshot instruction](src/orchestrator/RunOrchestrator.js#L4139), [repeated tool preamble](src/orchestrator/RunOrchestrator.js#L3554) (352 characters, repeated in 7 tool descriptions).
+
+- It tells the model to "use the screenshot" although screenshots are off (ACT-06).
+- It says safe navigation needs no prompt, and later that links navigate "with approval".
+- It omits `page_record_note` from the tool list while the planner depends on it (ACT-27).
+- Fix: a short numbered checklist with conditional sections (screenshots, planner, tabs). Put the shared safety preamble once in the system prompt.
+- Acceptance: measured on ACT-30 with no success-rate loss; prompt length drops.
+
+---
+
+## P3 — Efficiency (measure first)
+
+### ACT-40 — One compact model-facing snapshot format
+
+**Source-confirmed · S**
+
+Evidence: [tool result serialization](src/orchestrator/RunOrchestrator.js#L5328), [snapshot shape](src/utils/pageDom.js). The tool result is `JSON.stringify(result)`, so the model gets every control twice (formatted `content` lines **and** the `elements` array), plus `visualBoxes` (no consumer without screenshots), `regions` (index lists derivable from `region-N`), `metrics`, and `fingerprint`. A snapshot can reach the 128 KB payload cap.
+
+- Fix: a dedicated serializer for the model (header, readable content, one element list, notices). Keep the full object internally.
+- Acceptance: measure bytes per snapshot on the fixtures before and after; expect a large reduction (an estimate until measured) with no ACT-30 regression.
+
+### ACT-42 — Snapshot build cost
+
+**Recommendation · M**
+
+Evidence: [snapshot builder](content_script_unified.js#L1883). Each snapshot clones the body and runs Turndown, computes accessible names for every candidate, measures every `div` for scroll containers, and removes one record per loop while re-serializing until the payload fits. The worker then repeats the trim loop in `normalizePageSnapshot`.
+
+- First record `metrics.buildMs` on heavy real pages. Then: cache readable content per fingerprint, trim with a binary search, and limit the scroll-container scan.
+
+### ACT-43 — Per-action bridge round trips
+
+**Recommendation · S**
+
+Evidence: [executor](background.js#L1482). Every action does a readiness check (tab lookup plus ping with a 1.5 s timeout), a URL lookup before, and another after. Cache readiness per tab and document and skip pings that cannot change the outcome. Measure first.
+
+### ACT-44 — `page_hover` and `page_go_back`
+
+**Recommendation · S**
+
+Menus that open on hover and "go back to the results" are common and currently need workarounds. `page_go_back` navigates history in an owned tab and counts as navigation. `page_hover` dispatches the pointer-over/enter sequence and is read-only.
+
+---
+
+## Removals and simplification
+
+### RM-01 — `delete:` `ActActionCache.js`
+
+`src/orchestrator/ActActionCache.js` (140 lines) describes an "always-on action-template cache" that reuses policy verdicts across runs. The only use is the 5 s `page_get_state` cache in ACT-12, which is a defect. Delete the module and its two call sites; keep behavior: every inspection reads the live page. Update `src/orchestrator/AGENTS.md` and `tests/actActionCache.test.js`.
+
+### RM-02 — `delete:` dead Act code paths and stale comments
+
+- `_isPageActionTerminalError()` always returns `false`; remove it and its branch ([L1549](src/orchestrator/RunOrchestrator.js#L1549), [L2701](src/orchestrator/RunOrchestrator.js#L2701)).
+- The target is resolved twice (`actionTarget` at [L2141](src/orchestrator/RunOrchestrator.js#L2141) and `target` at [L2203](src/orchestrator/RunOrchestrator.js#L2203)).
+- Unreachable check in `waitForPageActionSettled` ([L2167](content_script_unified.js#L2167)).
+- The snapshot header contains a literal `\n` instead of a newline ([L1933](content_script_unified.js#L1933)).
+- Misplaced JSDoc: the web-search doc block sits above `_restoreActCheckpoint` ([L341](src/orchestrator/RunOrchestrator.js#L341)); the screenshot-gate comment sits above `ACT_SNAPSHOT_CACHE_MS` ([L126](src/orchestrator/RunOrchestrator.js#L126)).
+- The `documentUrl` comment says a mismatch "invalidates the run", but the code adopts the new document ([L784](src/orchestrator/RunOrchestrator.js#L784)).
+
+Completed: removed the always-false terminal classifier and redundant target resolution; removed the unreachable settled-wait check and obsolete source-text assertion; corrected the snapshot newline, misplaced web-search JSDoc, stale screenshot-gate comment (with the cache deletion), and document-change comment. `npm run test` passed 98/98 and `npm run test:behavior` passed 55 files / 748 tests.
+
+### RM-03 — `shrink:` collapse the always-true `multiTabEnabled` flag
+
+`multiTabEnabled` was always equal to `enabled` ([startRun](src/orchestrator/RunOrchestrator.js)); the single-tab prompt text, tool filter, and guard branches were unreachable in production runs. Removed the redundant run-state flag and dead branches; Act-owned tab tools now consistently share the Act lease. Legacy config objects may still include `multiTabEnabled`, but runtime behavior is determined solely by `pageActions.enabled`. The focused regression asserts owned-tab tools remain available when a legacy synthetic state says `multiTabEnabled: false`; `npx vitest run tests/runOrchestrator.test.js` passed (150 tests).
+
+### RM-04 — `yagni:` decide the dormant screenshot/vision path
+
+**Decision.** The vision payload code (`_storeActScreenshot`, `_getActVisionImage`, `_withActVisionOpenAI`, `_withActVisionAnthropic`), the index overlay badges drawn on the user's page, and `visualBoxes` exist for screenshots that are switched off. Either:
+
+- (a) ship an **opt-in** visual mode for vision-capable models (disclosure, sensitive-region exclusion, per-run consent). This is likely the biggest single gain for canvas- and icon-heavy apps such as Google Maps; or
+- (b) delete the dormant path, overlay badges, and `visualBoxes`, keeping the video-extraction screenshot.
+
+The user selected deletion. The dormant Act screenshot storage/provider wrappers, capture request, overlay badges, and `visualBoxes` were removed; video/content-extraction screenshots remain. The removal is browser-verified (the batch result carries no `screenshot` and no `visualBoxes`); the retained video-extraction path has no browser coverage.
+
+### RM-05 — `delete:` the production MAIN-world no-op content script
+
+`content_script_page_diagnostics.prod.js` was an empty file, but the manifest still injected it into the page's main world at `document_start` on every URL ([manifest](manifest.json#L53)). The production build now removes that entry and omits the script file, and the now-unused production no-op shim was deleted; development/evaluation builds retain the active bridge. Verified by `npm run build:prod` plus an output check for both manifest reference and file absence, and `npm run test` (98/98) / `npm run smoke`.
+
+### RM-06 — `shrink:` source-text guards in `scripts/test-runner.js`
+
+The 2,082-line runner has about 96 `includes()` checks on source text, some on comments (for example `'// Keep the action queued.'` at [L931](scripts/test-runner.js#L931)). They fail on harmless refactors and do not prove behavior. Convert the valuable ones to behavior tests and delete the comment-string guards.
+
+### RM-07 — `shrink:` archive dated review and report docs
+
+`docs/FEATURE_REVIEW.md` (2026-08-30 counts), `docs/ACCEPTANCE_SPRINT.md`, `docs/BROWSER_AGENT_REPOSITORY_REVIEW.md` (implemented), and `docs/ACT_RELIABILITY_BASELINE.md` (superseded by ACT-30) are point-in-time records. Move them to `docs/history/` or fold the durable parts into `docs/ARCHITECTURE.md`, and update the documentation index.
+
+---
+
+## Overall (outside Act)
+
+### GEN-01 — Make `npm run validate` pass on Windows checkouts
+
+**Reproduced · S**
+
+- `marked.min.js` is checked out CRLF while the index is LF, so `prettier --check` fails locally. Add `eol=lf` rules to `.gitattributes` for text sources and renormalize.
+- Move `marked.min.js` into `libs/` (the vendored home, already Prettier-ignored). It is the only vendored bundle at the root, and it is stored Prettier-formatted, so it is not byte-identical to upstream. Update `chat.html`, `scripts/build.js`, `scripts/test-runner.js`, `scripts/verify-vendored-licenses.js`, and the vendor manifest together.
+- Fix the 7 ESLint warnings in `tests/runOrchestrator.test.js` and `tests/runResilience.test.js`.
+
+Resolved: `npm run validate` is green (exit 0) — lint, format check, structural tests, behavior suite, smoke, and vendored-license verification all pass. The ESLint warnings were already clean. For the format gate, the vendored minified bundle is now excluded via `*.min.js` in `.prettierignore`, matching the existing `libs/` convention, so a minified vendor blob is never reformatted away from upstream; the file was deliberately **not** moved into `libs/` because that would touch the build, manifest, test-runner, and license-verifier for no behavioral gain. The `.gitattributes` renormalization was not needed here.
+
+### GEN-02 — Pin and update imprecisely versioned vendored libraries
+
+`libs/vendor-manifest.json` records marked as `4.x`, readability as `0.5.x`, and turndown as `7.x`. Record exact versions with hashes. marked 4.x is several major versions behind; update it and keep DOMPurify in front of rendered output.
+
+### GEN-03 — Extract the page-action runtime; split the Act content script
+
+**Recommendation · L**
+
+`src/orchestrator/RunOrchestrator.js` is 6,174 lines. It mixes OpenAI and Anthropic stream handling, the Hermes flow, the journal, prompt building, and about 2,000 lines of page-action runtime whose state is more than 30 loose fields on `run.pageActions`. `content_script_unified.js` mixes page extraction (lines 1–1,220) and the Act runtime (lines 1,220–2,590).
+
+- Extract a `PageActionRunner` (page and tab actions, receipts, budgets, guards, confirmations) with its own state object, and move OpenAI and Anthropic wire code next to `CodexTransport.js`.
+- Split the Act runtime into its own content script; this also enables GEN-05.
+- Do this alongside the P1 fixes, not before them, and keep the event, journal, and message contracts unchanged.
+
+### GEN-04 — Documentation drift fixes
+
+- `docs/PRODUCTION_READINESS.md` links to `AGENTS.md#user-preferences`, which does not exist, and says fresh Act snapshots carry a screenshot for multimodal providers (disabled).
+- `src/orchestrator/AGENTS.md` says `page_batch` combines 2–4 observations; the code allows 2–6.
+- `src/utils/AGENTS.md` lists the `validation.js` ownership bullet twice.
+- `src/chat/AGENTS.md` has two "Local Contracts" and two "Work Guidance" sections, a contract line inside "Child DOX Index", and claims a 600-line module guard and a `chat.js` line guard that no test enforces (`ChatComposer.js` is 858 lines, `ChatPageAutomation.js` 798).
+- `CHANGELOG.md` order is `[6.3.0]`, `[6.2.0]`, `[Unreleased]`, `[6.2.1]`. Restore chronological order and move shipped Unreleased entries under their release.
+- The AGENTS files restate many constants (budgets, caps, timeouts) that drift from code. Keep durable contracts and point to the code for numbers.
+
+### GEN-05 — Measure, then reduce per-page content-script injection
+
+Every page load injects about 330 KB of scripts (unified 106 KB, Readability 88 KB, notch 62 KB, dom-accessibility-api 36 KB, Turndown 27 KB, diagnostics) plus the main-world script from RM-05. Measure CPU and memory on a heavy page. Then consider injecting the extraction and Act bundles on demand with `chrome.scripting` (the injection helper already exists in `background.js`), keeping only the notch static.
+
+### GEN-06 — Carried-over residuals from the previous punchlist
+
+Not re-verified in this review. The previous plan left delete/pin and import write-backs in `options.js` outside the error-aware storage helper (P1-06 and P2-07 follow-ups). Route them through the helper and add failure tests.
+
+---
+
+## Sequencing
+
+1. **Unblock:** GEN-01 so `npm run validate` is green on every machine.
+2. **Measure:** ACT-30 and record the current score.
+3. **Stop the misfires (P1, mostly S):** ACT-01, ACT-02, ACT-03, ACT-06, RM-01/ACT-12, RM-02. These are small and should move the benchmark on their own.
+4. **Targeting integrity and consent:** ACT-04, ACT-05, then ACT-25; ACT-13, ACT-14, ACT-15; ACT-07 and ACT-08 after the owner decides.
+5. **Capability:** ACT-26, ACT-41, ACT-20, ACT-21, ACT-22, ACT-23, ACT-28, ACT-27, ACT-29; then ACT-24 and ACT-44.
+6. **Efficiency and structure:** ACT-40, ACT-42, ACT-43, GEN-03, GEN-05.
+7. **Hygiene:** RM-03 to RM-07, GEN-02, GEN-04, GEN-06.
+
+Each step re-runs `npm run validate`, `npm run test:browser:prod`, and the ACT-30 benchmark, and updates the nearest AGENTS contract when behavior changes.
+
+## Decisions needed from the owner
+
+1. **ACT-07:** should "Approve all" stop covering high-risk actions?
+2. **ACT-08:** should model-typed cross-origin URLs require a card? This changes the "no per-site prompt" lease wording.
+3. **RM-04:** ship an opt-in visual mode, or delete the dormant screenshot path and page overlay badges?
+4. **Per-site trust:** is a persistent "allow low-risk actions on this site" setting wanted? Today Act consent is per run and per browser session.
+
+## Limits of this review
+
+- Source review plus the local gates listed above. The Playwright browser suite, live providers, signed-in sites, and the Hermes/Codex paths were not exercised.
+- Act was reviewed in depth (orchestrator page-action loop, policy, planner, content script, background executor, approval UI). Options, notch, Hermes, grounding, and extraction were reviewed only for the overall items listed.
+- Probes used stubbed executors in Node. "Source-confirmed" items still need a failing test before the fix, per V10.
+- Size reductions and speedups are expectations until measured (ACT-40, ACT-42, ACT-43, GEN-05).

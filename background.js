@@ -1347,6 +1347,8 @@ const pageActionDocumentProvider = async (tabId) => {
 
 const PAGE_ACTION_NAVIGATION_TIMEOUT_MS = 15_000;
 const PAGE_ACTION_NAVIGATION_POLL_MS = 250;
+const PAGE_ACTION_MESSAGE_TIMEOUT_MS = 15_000;
+const PAGE_ACTION_BATCH_TIMEOUT_MAX_MS = 75_000;
 
 const getPageActionTabUrl = async (tabId) => {
   const tab = await chrome.tabs.get(tabId);
@@ -1422,7 +1424,12 @@ const waitForPageActionBridge = async (tabId, signal) => {
   throw error;
 };
 
-const sendPageActionMessage = (tabId, message, signal) =>
+const sendPageActionMessage = (
+  tabId,
+  message,
+  signal,
+  timeoutMs = PAGE_ACTION_MESSAGE_TIMEOUT_MS
+) =>
   new Promise((resolve, reject) => {
     let settled = false;
     let onAbort = null;
@@ -1430,7 +1437,7 @@ const sendPageActionMessage = (tabId, message, signal) =>
       const error = new Error('The page did not respond to the action in time.');
       error.code = 'PAGE_ACTION_TIMEOUT';
       finish(null, error);
-    }, 15_000);
+    }, timeoutMs);
 
     const finish = (value, error) => {
       if (settled) return;
@@ -1479,6 +1486,18 @@ const sendPageActionMessage = (tabId, message, signal) =>
     }
   });
 
+const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
+  if (actionName !== 'page_batch' || !Array.isArray(args.actions)) {
+    return PAGE_ACTION_MESSAGE_TIMEOUT_MS;
+  }
+  const waitMs = args.actions.reduce((total, action) => {
+    if (action?.name !== 'page_wait') return total;
+    const requested = Number(action.args?.timeoutMs ?? 5_000);
+    return total + (Number.isFinite(requested) ? Math.max(0, Math.min(10_000, requested)) : 5_000);
+  }, 0);
+  return Math.min(PAGE_ACTION_BATCH_TIMEOUT_MAX_MS, PAGE_ACTION_MESSAGE_TIMEOUT_MS + waitMs);
+};
+
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   const startedAt = Date.now();
   recordDevDiagnostic('page_action_executor_start', {
@@ -1516,8 +1535,9 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     // the message can be sent.
   }
 
+  const messageTimeoutMs = getPageActionMessageTimeoutMs(actionName, args);
   try {
-    const response = await sendPageActionMessage(tabId, message, options.signal);
+    const response = await sendPageActionMessage(tabId, message, options.signal, messageTimeoutMs);
     const diagnosticResponse = { ...(response || {}) };
     delete diagnosticResponse.screenshot;
     recordDevDiagnostic(
@@ -1607,7 +1627,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       // Give the bridge one bounded reconnect window before surfacing the
       // original failure to the orchestrator.
       await waitForPageActionBridge(tabId, options.signal);
-      return await sendPageActionMessage(tabId, message, options.signal);
+      return await sendPageActionMessage(tabId, message, options.signal, messageTimeoutMs);
     }
     if (!currentUrl || !previousUrl || currentUrl === previousUrl) throw error;
     const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);

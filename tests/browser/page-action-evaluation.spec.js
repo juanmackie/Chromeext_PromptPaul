@@ -448,7 +448,14 @@ test('executor-regression: executes browser-safe corpus cases and records bounde
     for (const record of denied) {
       expect(record.policyViolation).toBe(true);
       expect(record.result).toBe('error');
-      expect(record.receiptDisposition).toBe(null);
+      // Nothing denied may be recorded as delivered. An explicit user or policy
+      // denial dispatched nothing and carries no receipt; a fail-closed
+      // outcome (stale snapshot, masked or blocked target) carries
+      // not_delivered. A true denial must still carry no receipt at all.
+      expect(String(record.receiptDisposition || '')).not.toMatch(/^delivered/);
+      if (record.failureCode === 'PAGE_ACTION_DENIED') {
+        expect(record.receiptDisposition).toBe(null);
+      }
     }
     // No denied/blocked outcome may be recorded as a delivered success.
     for (const record of records) {

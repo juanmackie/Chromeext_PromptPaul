@@ -652,6 +652,13 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
     card.appendChild(destination);
   }
 
+  if (typeof event.inputPreview === 'string' && event.inputPreview) {
+    const inputPreview = document.createElement('p');
+    inputPreview.className = 'page-action-confirmation-input-preview';
+    inputPreview.textContent = `Text to type: ${event.inputPreview}`;
+    card.appendChild(inputPreview);
+  }
+
   const summary = document.createElement('p');
   summary.textContent = `${event.summary || event.action || 'Page action'} (${event.risk || 'risk unknown'})`;
   card.appendChild(summary);
@@ -763,19 +770,20 @@ export function resolvePageActionConfirmation(chatArea, event) {
   card.querySelectorAll('button').forEach((button) => {
     button.disabled = true;
   });
-  card.dataset.decision = event.approveAll
-    ? 'approved-session'
-    : event.approved
-      ? 'approved'
-      : 'denied';
-  card.setAttribute(
-    'aria-label',
-    event.approveAll
-      ? 'Page action approved for this session'
-      : event.approved
-        ? 'Page action approved'
-        : 'Page action denied'
-  );
+  let decision = 'denied';
+  let label = 'Page action denied';
+  if (event.timedOut) {
+    decision = 'no-answer';
+    label = 'No answer; page action was not performed';
+  } else if (event.approveAll) {
+    decision = 'approved-session';
+    label = 'Page action approved for this session';
+  } else if (event.approved) {
+    decision = 'approved';
+    label = 'Page action approved';
+  }
+  card.dataset.decision = decision;
+  card.setAttribute('aria-label', label);
   card._restorePageActionFocus?.();
 }
 

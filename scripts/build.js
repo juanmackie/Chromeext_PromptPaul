@@ -181,7 +181,6 @@ function copyFiles(manifest) {
     'theme-toggle.js',
     'content_script_unified.js',
     'content_script_diagnostics.js',
-    'content_script_page_diagnostics.js',
     'pdfContentScript.js',
     // Shared stylesheets referenced by extension pages
     'theme.css',
@@ -285,9 +284,6 @@ function installDiagnosticsVariant() {
   const contentProduction = path.join(srcDir, 'content_script_diagnostics.prod.js');
   if (isProd) fs.copyFileSync(contentProduction, contentTarget);
 
-  const pageTarget = path.join(buildDir, 'content_script_page_diagnostics.js');
-  const pageProduction = path.join(srcDir, 'content_script_page_diagnostics.prod.js');
-  if (isProd) fs.copyFileSync(pageProduction, pageTarget);
   console.log(`  ✓ Diagnostics variant: ${isProd ? 'excluded' : 'development trace available'}`);
 }
 
@@ -389,8 +385,20 @@ function generateBuildMetadata() {
 /**
  * Main build function
  */
+function createBuildManifest(manifest) {
+  if (!isProd) return manifest;
+  const contentScripts = (manifest.content_scripts || [])
+    .map((entry) => ({
+      ...entry,
+      js: entry.js?.filter((file) => file !== 'content_script_page_diagnostics.js'),
+    }))
+    .filter((entry) => entry.js?.length || entry.css?.length);
+  return { ...manifest, content_scripts: contentScripts };
+}
+
 function main() {
   const manifest = readJson('manifest.json');
+  const buildManifest = createBuildManifest(manifest);
 
   // Validate manifest
   console.log('🔍 Validating manifest.json...');
@@ -407,7 +415,11 @@ function main() {
 
   // Copy files
   console.log('📦 Copying files...');
-  copyFiles(manifest);
+  copyFiles(buildManifest);
+  fs.writeFileSync(
+    path.join(buildDir, 'manifest.json'),
+    `${JSON.stringify(buildManifest, null, 2)}\n`
+  );
   installDiagnosticsVariant();
   installEvalVariant();
   console.log('');
