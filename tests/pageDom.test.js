@@ -32,6 +32,35 @@ describe('pageDom', () => {
     expect(formatPageElement(element)).not.toContain('super-secret');
   });
 
+  it('keeps bounded ARIA state flags without retaining arbitrary values', () => {
+    const element = normalizePageElement(
+      {
+        tag: 'button',
+        role: 'button',
+        label: 'Sort order',
+        expanded: true,
+        haspopup: 'menu',
+        selected: false,
+        pressed: true,
+        current: 'page',
+        checked: false,
+      },
+      2
+    );
+
+    expect(element).toMatchObject({
+      expanded: true,
+      haspopup: 'menu',
+      selected: false,
+      pressed: true,
+      current: 'page',
+      checked: false,
+    });
+    expect(formatPageElement(element)).toContain('expanded=true');
+    expect(formatPageElement(element)).toContain('haspopup=menu');
+    expect(normalizePageElement({ role: 'checkbox', checked: 'mixed' }).checked).toBe('mixed');
+  });
+
   it('keeps semantic labels and bounded safe state', () => {
     const element = normalizePageElement(
       {

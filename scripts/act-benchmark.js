@@ -67,6 +67,21 @@ const TASKS = [
     prompt:
       'On this local page, archive the Birch row only. Do not archive Alder or Cedar, and do not leave this page.',
   },
+  {
+    id: 'gmail-sort',
+    prompt:
+      'On this Gmail-like local page, switch the inbox to Most recent and leave the menu closed.',
+  },
+  {
+    id: 'gmail-open-three',
+    prompt:
+      'On this Gmail-like local page, open the three newest threads one at a time, return to the inbox between them, and do not reopen any thread.',
+  },
+  {
+    id: 'gmail-toggle-trap',
+    prompt:
+      'On this Gmail-like local page, open and close the categories panel to inspect it. If the same toggle restores the previous state, stop toggling it and explain the result.',
+  },
 ];
 
 function parseArgs(argv) {
@@ -123,12 +138,16 @@ function summarizeTrace(trace) {
   const failureCodes = new Set();
   let inputTokens = 0;
   let outputTokens = 0;
+  let toggleProtectionObserved = false;
   for (const step of steps) {
     const usage = step.tokenUsage;
     if (Number.isFinite(usage?.inputTokens)) inputTokens += usage.inputTokens;
     if (Number.isFinite(usage?.outputTokens)) outputTokens += usage.outputTokens;
     const result = step.action_result;
     const code = result?.result?.error || result?.error || result?.code;
+    if (result?.result?.toggleDetected === true || code === 'PAGE_ACTION_TOGGLE_LOOP') {
+      toggleProtectionObserved = true;
+    }
     if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{2,79}$/.test(code)) failureCodes.add(code);
     if (typeof step.error === 'string') {
       const match = step.error.match(/\b[A-Z][A-Z0-9_]{2,79}\b/);
@@ -143,6 +162,7 @@ function summarizeTrace(trace) {
     modelTurns: steps.filter((step) => step.kind === 'llm_turn_started').length,
     tokens: inputTokens || outputTokens ? { input: inputTokens, output: outputTokens } : null,
     failureCodes: [...failureCodes].slice(0, 32),
+    toggleProtectionObserved,
     terminalState: String(trace?.terminal?.type || 'missing').slice(0, 32),
   };
 }
@@ -161,6 +181,23 @@ async function readFixtureState(page, task) {
         root.querySelector('[data-row="Cedar"]')?.dataset.archived !== 'true'
       );
     }
+    if (taskId === 'gmail-open-three') {
+      const subjects = (root.querySelector('#opened')?.textContent || '')
+        .split(' | ')
+        .filter(Boolean);
+      return (
+        subjects.length === 3 &&
+        new Set(subjects).size === 3 &&
+        root.querySelector('#inbox')?.hidden === false
+      );
+    }
+    if (taskId === 'gmail-toggle-trap') {
+      const toggle = root.querySelector('#toggle-trap');
+      return (
+        Number(toggle?.dataset.activations || 0) === 2 &&
+        toggle?.getAttribute('aria-pressed') === 'false'
+      );
+    }
     const successById = {
       'spa-menu': (body) => body.dataset.selection === 'analytics',
       autocomplete: (body) => body.dataset.selection === 'Saffron',
@@ -172,6 +209,7 @@ async function readFixtureState(page, task) {
       'infinite-scroll': (body) =>
         body.dataset.loaded === 'true' && body.dataset.selection === 'cedar',
       'long-page': (body) => body.dataset.confirmed === 'ORBIT-47',
+      'gmail-sort': (body) => body.dataset.sort === 'recent',
     };
     return Boolean(successById[taskId]?.(document.body));
   }, task.id);
@@ -285,8 +323,17 @@ async function runAttempt({
     const trace = resultMessage?.result || null;
     const traceSummary = summarizeTrace(trace);
     for (const code of traceSummary.failureCodes) failureCodes.add(code);
-    const success = await readFixtureState(target, task);
+    const endStateMatches = await readFixtureState(target, task);
+    const success =
+      endStateMatches && (task.id !== 'gmail-toggle-trap' || traceSummary.toggleProtectionObserved);
     if (!success && !failureCodes.size) failureCodes.add('END_STATE_MISMATCH');
+    if (
+      endStateMatches &&
+      task.id === 'gmail-toggle-trap' &&
+      !traceSummary.toggleProtectionObserved
+    ) {
+      failureCodes.add('TOGGLE_PROTECTION_NOT_OBSERVED');
+    }
     const cards = runId
       ? await harness.evaluate((id) => window.pageActionHarness.getRunMetrics(id), runId)
       : {};

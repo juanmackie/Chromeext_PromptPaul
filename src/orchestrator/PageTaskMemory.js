@@ -4,6 +4,7 @@
  */
 
 import { capPageText } from '../utils/pageDom.js';
+import { addActQuotaItem } from './ActWorkingMemory.js';
 
 export const PAGE_TASK_MEMORY_CAPS = Object.freeze({
   maxNotes: 72,
@@ -32,7 +33,20 @@ export function normalizePageTaskNote(args = {}) {
       error: 'Task notes cannot contain secrets, credentials, or payment data.',
     };
   }
-  return { valid: true, value: { text } };
+  const hasItem = Object.hasOwn(args, 'item');
+  if (Object.hasOwn(args, 'status') && !hasItem) {
+    return { valid: false, error: 'A quota status requires an item label.' };
+  }
+  if (!hasItem) return { valid: true, value: { text } };
+  const item = capPageText(args.item, 80);
+  const status = args.status === undefined ? 'done' : String(args.status);
+  if (!item || SENSITIVE_NOTE_PATTERN.test(item)) {
+    return { valid: false, error: 'Quota item labels must be non-sensitive and non-empty.' };
+  }
+  if (!['done', 'skipped'].includes(status)) {
+    return { valid: false, error: 'Quota item status must be done or skipped.' };
+  }
+  return { valid: true, value: { text, item, status } };
 }
 
 /**
@@ -40,9 +54,11 @@ export function normalizePageTaskNote(args = {}) {
  * @param {object} run
  * @param {string} text
  * @param {number|null} [tabId]
- * @returns {{count: number, note: object}}
+ * @param {string} [item]
+ * @param {'done'|'skipped'} [status]
+ * @returns {{count: number, note: object, quotaItem?: object}}
  */
-export function recordPageTaskNote(run, text, tabId = null) {
+export function recordPageTaskNote(run, text, tabId = null, item, status = 'done') {
   if (!Array.isArray(run.pageActions.notes)) run.pageActions.notes = [];
   const note = {
     text: capPageText(text, PAGE_TASK_MEMORY_CAPS.maxNoteChars),
@@ -51,7 +67,8 @@ export function recordPageTaskNote(run, text, tabId = null) {
   };
   run.pageActions.notes.push(note);
   run.pageActions.notes = run.pageActions.notes.slice(-PAGE_TASK_MEMORY_CAPS.maxNotes);
-  return { count: run.pageActions.notes.length, note };
+  const quotaItem = item ? addActQuotaItem(run.pageActions.planner, item, status) : undefined;
+  return { count: run.pageActions.notes.length, note, quotaItem };
 }
 
 function parseToolContent(content) {

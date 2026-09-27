@@ -6,6 +6,7 @@
  */
 
 import { capPageText } from '../utils/pageDom.js';
+import { addActQuotaItem, isActQuotaComplete } from './ActWorkingMemory.js';
 
 /** Maximum number of sub-goals per run. */
 export const MAX_SUB_GOALS = 12;
@@ -76,11 +77,47 @@ function splitInstructionIntoClauses(instruction) {
  * @param {string} instruction
  * @returns {boolean}
  */
+export function extractQuotaTarget(instruction) {
+  if (typeof instruction !== 'string') return null;
+  const text = instruction.toLowerCase();
+  const numberWords = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+  };
+  const quantity =
+    /\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b(?:\s+[a-z][a-z-]*){0,3}\s+([a-z][a-z-]*s)\b/i.exec(
+      text
+    );
+  if (quantity) {
+    const value = Number(quantity[1]) || numberWords[quantity[1]];
+    if (value > 0) return Math.min(MAX_SUB_GOALS, value);
+  }
+  if (
+    /\b(?:each|every|all)\s+(?:(?:of\s+)?the\s+)?(?:[a-z][a-z-]*\s+){0,2}[a-z][a-z-]*s\b/i.test(
+      text
+    )
+  ) {
+    return MAX_SUB_GOALS;
+  }
+  return null;
+}
+
 export function shouldActivatePlanner(instruction) {
   if (typeof instruction !== 'string') return false;
   const trimmed = instruction.trim();
   if (trimmed.length > PLANNER_INSTRUCTION_MIN_LENGTH) return true;
   return (
+    extractQuotaTarget(trimmed) !== null ||
     MULTI_STEP_SIGNALS.some((pattern) => pattern.test(trimmed)) ||
     splitInstructionIntoClauses(trimmed).length > 1
   );
@@ -152,6 +189,7 @@ export function createPlannerState(instruction) {
   if (!shouldActivatePlanner(instruction)) return null;
   const subGoals = generateSubGoals(instruction);
   if (subGoals.length === 0) return null;
+  const quotaTarget = extractQuotaTarget(instruction);
   return {
     active: true,
     originalInstruction: capPageText(instruction, 2000),
@@ -159,7 +197,21 @@ export function createPlannerState(instruction) {
     currentSubGoalIndex: 0,
     replanCount: 0,
     completedAt: null,
+    quota: quotaTarget ? { target: quotaTarget, done: [] } : null,
   };
+}
+
+/** Record a bounded, deduplicated item in the planner's counted-request quota. */
+export function recordPlannerQuotaItem(planner, item, status = 'done') {
+  const result = addActQuotaItem(planner, item, status);
+  if (
+    result.added &&
+    isActQuotaComplete(planner) &&
+    planner.subGoals?.every((goal) => goal.status === 'done' || goal.status === 'blocked')
+  ) {
+    planner.completedAt = Date.now();
+  }
+  return result;
 }
 
 /**
@@ -212,6 +264,9 @@ export function advanceSubGoal(planner, outcomeNote, receipt = {}) {
   }
 
   if (nextIndex === -1) {
+    if (!isActQuotaComplete(planner)) {
+      return { advanced: false, allDone: false, quotaIncomplete: true };
+    }
     planner.completedAt = Date.now();
     return { advanced: false, allDone: true };
   }
@@ -241,8 +296,8 @@ export function blockCurrentSubGoal(planner, reason) {
   // Find next pending
   const nextIndex = planner.subGoals.findIndex((g) => g.status === 'pending');
   if (nextIndex === -1) {
-    planner.completedAt = Date.now();
-    return { skipped: false, allDone: true };
+    if (isActQuotaComplete(planner)) planner.completedAt = Date.now();
+    return { skipped: false, allDone: isActQuotaComplete(planner) };
   }
 
   planner.currentSubGoalIndex = nextIndex;
@@ -285,7 +340,7 @@ export function replan(planner, newInstruction) {
   planner.subGoals = [...preserved, ...replacement];
   planner.currentSubGoalIndex = planner.subGoals.findIndex((g) => g.status === 'pending');
   if (planner.currentSubGoalIndex === -1) {
-    planner.completedAt = Date.now();
+    if (isActQuotaComplete(planner)) planner.completedAt = Date.now();
   } else {
     planner.subGoals[planner.currentSubGoalIndex].status = 'in_progress';
   }
@@ -310,15 +365,18 @@ export function hasReceiptConsistentProgress(planner) {
   if (!planner?.active || !Array.isArray(planner.subGoals) || planner.subGoals.length === 0) {
     return false;
   }
-  return planner.subGoals.every((goal, index) => {
-    if (goal?.status === 'blocked') return Boolean(String(goal.blockReason || '').trim());
-    return (
-      goal?.status === 'done' &&
-      goal.completionEvidence?.subGoalIndex === index &&
-      goal.completionEvidence?.disposition === 'delivered_verified' &&
-      Boolean(goal.completionEvidence.evidenceKind)
-    );
-  });
+  return (
+    isActQuotaComplete(planner) &&
+    planner.subGoals.every((goal, index) => {
+      if (goal?.status === 'blocked') return Boolean(String(goal.blockReason || '').trim());
+      return (
+        goal?.status === 'done' &&
+        goal.completionEvidence?.subGoalIndex === index &&
+        goal.completionEvidence?.disposition === 'delivered_verified' &&
+        Boolean(goal.completionEvidence.evidenceKind)
+      );
+    })
+  );
 }
 
 export function receiptMatchesCurrentGoal(planner, actionResult, note = '') {
@@ -497,7 +555,25 @@ export function buildPlannerPromptBlock(planner, budgets = {}, budgetCaps = {}) 
       'blocked work, and any remaining limitation without claiming unverified success.'
   );
 
-  if (planner.completedAt) {
+  if (planner.quota) {
+    const done = Array.isArray(planner.quota.done) ? planner.quota.done : [];
+    const labels = done
+      .slice(0, planner.quota.target)
+      .map(
+        (item) =>
+          `"${capPageText(item?.label, 80)}"${item?.status === 'skipped' ? ' (skipped)' : ''}`
+      );
+    lines.push(
+      `PROGRESS ${Math.min(done.length, planner.quota.target)}/${planner.quota.target}: ${labels.join(', ') || 'none'}`
+    );
+    if (!isActQuotaComplete(planner)) {
+      lines.push(
+        `Continue until ${planner.quota.target} distinct item(s) are recorded. Already counted items are done; do not reopen them. Then call page_get_state for final verification.`
+      );
+    }
+  }
+
+  if (planner.completedAt && isActQuotaComplete(planner)) {
     lines.push(
       'ALL SUB-GOALS RESOLVED. Produce a final summary now, separating verified work from blocked work.'
     );

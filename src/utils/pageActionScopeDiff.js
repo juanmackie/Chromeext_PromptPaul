@@ -71,7 +71,15 @@ function comparableElement(element, index) {
   return {
     ...metadata,
     disabled: element?.disabled === true,
-    checked: typeof element?.checked === 'boolean' ? element.checked : null,
+    checked:
+      typeof element?.checked === 'boolean' || element?.checked === 'mixed'
+        ? element.checked
+        : null,
+    expanded: typeof element?.expanded === 'boolean' ? element.expanded : null,
+    haspopup: boundedText(element?.haspopup, 16),
+    selected: typeof element?.selected === 'boolean' ? element.selected : null,
+    pressed: typeof element?.pressed === 'boolean' ? element.pressed : null,
+    current: boundedText(element?.current, 16),
     valuePresent: element?.valuePresent === true,
     sensitive: element?.sensitive === true,
   };

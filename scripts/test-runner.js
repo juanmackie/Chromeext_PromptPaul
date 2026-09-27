@@ -572,7 +572,11 @@ function runUnitTests(runner) {
     const fixture = readFileSafe('tests/browser/fixtures/act-benchmark.html');
     const taskIds = [...suite.matchAll(/^ {4}id: '([a-z0-9-]+)',\r?$/gmu)].map((match) => match[1]);
     if (taskIds.length < 5) throw new Error('Act benchmark task list looks truncated');
-    const missing = taskIds.filter((id) => !fixture.includes(`kind === '${id}'`));
+    const missing = taskIds.filter(
+      (id) =>
+        !fixture.includes(`kind === '${id}'`) &&
+        !(id.startsWith('gmail-') && fixture.includes("kind.startsWith('gmail-')"))
+    );
     if (missing.length) {
       throw new Error(`Benchmark tasks without a fixture branch: ${missing.join(', ')}`);
     }
@@ -1832,6 +1836,69 @@ function runIntegrationTests(runner) {
     }
     if (orchestrator.includes('execute_javascript')) {
       throw new Error('Page-action orchestrator must not expose arbitrary JavaScript execution');
+    }
+  });
+
+  runner.test('Act working memory is bounded and excluded from durable state', () => {
+    checkModule('src/orchestrator/ActWorkingMemory.js');
+    const memory = readFileSafe('src/orchestrator/ActWorkingMemory.js');
+    const content = readFileSafe('content_script_unified.js');
+    const orchestrator = readFileSafe('src/orchestrator/RunOrchestrator.js');
+    const checkpoint = readFileSafe('src/utils/pageActionCheckpoint.js');
+    for (const token of [
+      'maxEntries: 16',
+      'maxVisited: 72',
+      'maxPromptChars: 1_500',
+      'makeActTargetKey',
+      'recordActAction',
+      'toggleBlockedTargetKey',
+    ]) {
+      if (!memory.includes(token)) throw new Error(`ActWorkingMemory missing contract: ${token}`);
+    }
+    if (/chrome\\.storage|savePageActionCheckpoint|recordRunJournal/u.test(memory)) {
+      throw new Error('ActWorkingMemory must not persist or journal run memory');
+    }
+    if (/pageActions\\.memory|memory:\\s*record\\.memory/u.test(checkpoint)) {
+      throw new Error('Page-action checkpoints must not serialize working memory');
+    }
+    const checkpointWriter = orchestrator.slice(
+      orchestrator.indexOf('async _savePageActionCheckpoint'),
+      orchestrator.indexOf('async _settlePageActionCheckpoint')
+    );
+    if (checkpointWriter.includes('pageActions.memory')) {
+      throw new Error('The RunOrchestrator checkpoint writer must exclude working memory');
+    }
+    const progressStart = orchestrator.indexOf('_buildPageTaskProgressEvent(run)');
+    const progressEnd = orchestrator.indexOf('_emitPageTaskProgress(run)', progressStart);
+    if (
+      progressStart < 0 ||
+      progressEnd < 0 ||
+      orchestrator.slice(progressStart, progressEnd).includes('memory')
+    ) {
+      throw new Error('Working memory must not be included in page-task journal/progress events');
+    }
+    for (const role of [
+      'menuitem',
+      'menuitemradio',
+      'menuitemcheckbox',
+      'option',
+      'tab',
+      'switch',
+      'treeitem',
+    ]) {
+      if (!content.includes(`[role="${role}"]`)) {
+        throw new Error(`ARIA page-action collector is missing ${role}`);
+      }
+    }
+    if (
+      !/const routeId = pageStateHash\(\s*`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{window\.location\.hash\}`\s*\);/u.test(
+        content
+      )
+    ) {
+      throw new Error('SPA route metadata must be a digest of query/fragment data');
+    }
+    if (!content.includes("buildPageActionReceipt('delivered_verified', 'route_changed')")) {
+      throw new Error('Hash-only route changes need a verified route_changed receipt');
     }
   });
 

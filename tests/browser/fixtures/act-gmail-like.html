@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gmail-like local Act fixture</title>
+    <style>
+      body {
+        font: 16px/1.45 sans-serif;
+        margin: 2rem;
+      }
+      button,
+      [role] {
+        margin: 0.25rem;
+        padding: 0.45rem;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      [role='row'] {
+        border-bottom: 1px solid #bbb;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <button id="sort" type="button" aria-label="Sort order" aria-expanded="false">
+        Showing most relevant
+      </button>
+      <div id="sort-menu" role="menu" aria-label="Sort messages" hidden>
+        <div role="menuitemradio" aria-checked="true" tabindex="-1" data-sort="relevant">
+          Most relevant
+        </div>
+        <div role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="recent">
+          Most recent
+        </div>
+      </div>
+      <button id="back" type="button" hidden>Back to Inbox</button>
+      <section id="thread" hidden aria-live="polite"></section>
+      <div id="inbox" role="grid" aria-label="Inbox">
+        <div role="row" data-subject="Quarterly report">
+          <button type="button" aria-label="Open Quarterly report">Quarterly report — Alex</button>
+        </div>
+        <div role="row" data-subject="Project update">
+          <button type="button" aria-label="Open Project update">Project update — Morgan</button>
+        </div>
+        <div role="row" data-subject="Travel receipt">
+          <button type="button" aria-label="Open Travel receipt">Travel receipt — Sam</button>
+        </div>
+      </div>
+      <button id="toggle-trap" type="button" aria-pressed="false">Show categories</button>
+      <p id="categories" hidden>Category widgets are open.</p>
+      <output id="opened" aria-label="Opened subjects"></output>
+    </main>
+    <script>
+      const sort = document.querySelector('#sort');
+      const menu = document.querySelector('#sort-menu');
+      const inbox = document.querySelector('#inbox');
+      const back = document.querySelector('#back');
+      const thread = document.querySelector('#thread');
+      const opened = document.querySelector('#opened');
+      const categories = document.querySelector('#categories');
+      const openedSubjects = [];
+
+      sort.addEventListener('click', () => {
+        menu.hidden = !menu.hidden;
+        sort.setAttribute('aria-expanded', String(!menu.hidden));
+      });
+      menu.querySelectorAll('[role="menuitemradio"]').forEach((item) => {
+        item.addEventListener('click', () => {
+          menu.querySelectorAll('[role="menuitemradio"]').forEach((option) => {
+            option.setAttribute('aria-checked', String(option === item));
+          });
+          sort.textContent = `Showing ${item.dataset.sort === 'recent' ? 'most recent' : 'most relevant'}`;
+          menu.hidden = true;
+          sort.setAttribute('aria-expanded', 'false');
+        });
+      });
+      inbox.querySelectorAll('[role="row"] button').forEach((link) => {
+        link.addEventListener('click', () => {
+          const row = link.closest('[role="row"]');
+          const subject = row.dataset.subject;
+          openedSubjects.push(subject);
+          opened.textContent = openedSubjects.join(' | ');
+          inbox.hidden = true;
+          sort.hidden = true;
+          thread.hidden = false;
+          thread.textContent = subject;
+          back.hidden = false;
+          location.hash = `message/${encodeURIComponent(subject.toLowerCase().replaceAll(' ', '-'))}`;
+        });
+      });
+      back.addEventListener('click', () => {
+        thread.hidden = true;
+        inbox.hidden = false;
+        sort.hidden = false;
+        back.hidden = true;
+        location.hash = 'inbox';
+      });
+      document.querySelector('#toggle-trap').addEventListener('click', (event) => {
+        const expanded = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+        event.currentTarget.setAttribute('aria-pressed', String(expanded));
+        categories.hidden = !expanded;
+      });
+    </script>
+  </body>
+</html>

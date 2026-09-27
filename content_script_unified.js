@@ -1356,7 +1356,7 @@
     return (
       ['a', 'button', 'input', 'select', 'textarea', 'option', 'summary'].includes(tag) ||
       element.matches(
-        '[contenteditable="true"], [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="textbox"], [role="combobox"], [tabindex]:not([tabindex="-1"])'
+        '[contenteditable="true"], [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="textbox"], [role="combobox"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="tab"], [role="switch"], [role="treeitem"], [tabindex]:not([tabindex="-1"])'
       )
     );
   }
@@ -1515,6 +1515,12 @@
       Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true'),
       element.checked === true,
       String(element.getAttribute('autocomplete') || '').toLowerCase(),
+      parseAriaBoolean(element.getAttribute('aria-expanded')) ?? '',
+      parseAriaPopup(element.getAttribute('aria-haspopup')) || '',
+      parseAriaBoolean(element.getAttribute('aria-selected')) ?? '',
+      parseAriaBoolean(element.getAttribute('aria-pressed')) ?? '',
+      parseAriaCurrent(element.getAttribute('aria-current')) ?? '',
+      parseAriaChecked(element.getAttribute('aria-checked')) ?? '',
       isPageActionSensitive(element, label, text),
       link?.safeHref || '',
       link?.target || '',
@@ -1606,6 +1612,33 @@
     };
   }
 
+  function parseAriaBoolean(value) {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return undefined;
+  }
+
+  function parseAriaChecked(value) {
+    const normalized = parseAriaBoolean(value);
+    return normalized === undefined && value === 'mixed' ? 'mixed' : normalized;
+  }
+
+  function parseAriaPopup(value) {
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'true') return 'menu';
+    return ['menu', 'listbox', 'tree', 'grid', 'dialog'].includes(normalized)
+      ? normalized
+      : undefined;
+  }
+
+  function parseAriaCurrent(value) {
+    if (value === 'true') return true;
+    const normalized = String(value || '').toLowerCase();
+    return ['page', 'step', 'location', 'date', 'time'].includes(normalized)
+      ? normalized
+      : undefined;
+  }
+
   function getPageActionElementRecord(element, index) {
     const tag = element.tagName.toLowerCase();
     const label = getPageActionLabel(element);
@@ -1642,6 +1675,12 @@
     if (link?.target) record.target = link.target;
     if (link?.download) record.download = true;
     if (tag === 'input' && ['checkbox', 'radio'].includes(type)) record.checked = element.checked;
+    else record.checked = parseAriaChecked(element.getAttribute('aria-checked'));
+    record.expanded = parseAriaBoolean(element.getAttribute('aria-expanded'));
+    record.haspopup = parseAriaPopup(element.getAttribute('aria-haspopup'));
+    record.selected = parseAriaBoolean(element.getAttribute('aria-selected'));
+    record.pressed = parseAriaBoolean(element.getAttribute('aria-pressed'));
+    record.current = parseAriaCurrent(element.getAttribute('aria-current'));
     return record;
   }
 
@@ -1651,6 +1690,11 @@
       if (record[key]) attrs.push(`${key}=${JSON.stringify(record[key])}`);
     }
     if (record.checked !== undefined) attrs.push(`checked=${record.checked}`);
+    if (record.expanded !== undefined) attrs.push(`expanded=${record.expanded}`);
+    if (record.haspopup) attrs.push(`haspopup=${record.haspopup}`);
+    if (record.selected !== undefined) attrs.push(`selected=${record.selected}`);
+    if (record.pressed !== undefined) attrs.push(`pressed=${record.pressed}`);
+    if (record.current !== undefined) attrs.push(`current=${record.current}`);
     if (record.disabled) attrs.push('disabled=true');
     if (record.editable) attrs.push('editable=true');
     if (record.sensitive) attrs.push('sensitive=true');
@@ -1723,6 +1767,13 @@
       '[role="radio"]',
       '[role="textbox"]',
       '[role="combobox"]',
+      '[role="menuitem"]',
+      '[role="menuitemradio"]',
+      '[role="menuitemcheckbox"]',
+      '[role="option"]',
+      '[role="tab"]',
+      '[role="switch"]',
+      '[role="treeitem"]',
       '[tabindex]:not([tabindex="-1"])',
     ].join(',');
     const seen = new Set();
@@ -1843,6 +1894,10 @@
     // Query strings and fragments may carry tokens or message IDs; only
     // origin/path is sent to the model.
     const url = sanitizePageActionUrl(window.location.href);
+    const routeId = pageStateHash(
+      `${window.location.pathname}${window.location.search}${window.location.hash}`
+    );
+    const routeChanged = Boolean(session.routeId && session.routeId !== routeId);
     const title = capPageActionText(document.title || '', 240);
     const readableContent = buildPageActionReadableContent();
     const scrollContainers = collectPageActionScrollContainers().map(
@@ -1890,6 +1945,7 @@
       url,
       capPageActionText(document.body?.innerText || '', 12_000),
       records.map((record) => record.fingerprint).join('\\n'),
+      routeId,
     ].join('\\u001e');
     const fingerprint = pageStateHash(`${fingerprintSource}~${controlState}`);
     let boundedRecords = scopedRecords;
@@ -1932,6 +1988,8 @@
         readableContent,
         elements,
         fingerprint,
+        routeId,
+        routeChanged,
         regions,
         regionId: regionId || undefined,
         scroll: {
@@ -1953,6 +2011,7 @@
     session.records = records;
     session.fingerprints = new Set(records.map((record) => record.fingerprint));
     session.fingerprint = fingerprint;
+    session.routeId = routeId;
     session.createdAt = Date.now();
     return {
       snapshotId,
@@ -1964,6 +2023,8 @@
       readableContent,
       elements,
       fingerprint,
+      routeId,
+      routeChanged,
       regions,
       regionId: regionId || undefined,
       scroll: {
@@ -2370,7 +2431,7 @@
     highlightPageActionTarget(session, record);
     const beforeUrl = sanitizePageActionUrl(window.location.href);
     const beforeChecked =
-      typeof record.ref.checked === 'boolean' ? Boolean(record.ref.checked) : null;
+      typeof record.checked === 'boolean' || record.checked === 'mixed' ? record.checked : null;
     try {
       const element = record.ref;
       const tag = element.tagName.toLowerCase();
@@ -2469,12 +2530,19 @@
       }
       await waitForPageActionSettled();
       const snapshot = createPageActionSnapshot(session);
-      const checkedChanged = beforeChecked !== null && Boolean(element.checked) !== beforeChecked;
+      const afterChecked =
+        typeof element.checked === 'boolean'
+          ? element.checked
+          : parseAriaChecked(element.getAttribute('aria-checked'));
+      const checkedChanged = beforeChecked !== null && afterChecked !== beforeChecked;
       const navigationChanged = sanitizePageActionUrl(window.location.href) !== beforeUrl;
+      const routeChanged = snapshot.routeChanged === true;
       if (action === 'page_click' && checkedChanged) {
         actionReceipt = buildPageActionReceipt('delivered_verified', 'checked_state', {
           changed: true,
         });
+      } else if (action === 'page_click' && routeChanged) {
+        actionReceipt = buildPageActionReceipt('delivered_verified', 'route_changed');
       } else if (action === 'page_click' && navigationChanged) {
         actionReceipt = buildPageActionReceipt('delivered_verified', 'navigation_observed');
       }

@@ -59,7 +59,78 @@
         document.body.dataset[name] = value;
       };
 
-      if (kind === 'spa-menu') {
+      if (kind.startsWith('gmail-')) {
+        const sort = button('Showing most relevant', {
+          'aria-label': 'Sort order',
+          'aria-expanded': 'false',
+        });
+        const menu = el('div', { role: 'menu', 'aria-label': 'Sort messages', hidden: '' });
+        const inbox = el('div', { role: 'grid', 'aria-label': 'Inbox', id: 'inbox' });
+        const opened = el('output', { id: 'opened', 'aria-label': 'Opened subjects' });
+        const back = button('Back to Inbox', { id: 'back', hidden: '' });
+        const thread = el('section', { id: 'thread', hidden: '' });
+        const toggle = button('Show categories', { id: 'toggle-trap', 'aria-pressed': 'false' });
+        const categories = el('p', { hidden: '' }, 'Category widgets are open.');
+        toggle.dataset.activations = '0';
+        const names = ['Quarterly report', 'Project update', 'Travel receipt'];
+        const openedSubjects = [];
+        sort.addEventListener('click', () => {
+          menu.hidden = !menu.hidden;
+          sort.setAttribute('aria-expanded', String(!menu.hidden));
+        });
+        for (const [index, name] of names.entries()) {
+          const row = el('div', { role: 'row', 'data-subject': name });
+          const link = button(`${name} — Sender`, { 'aria-label': `Open ${name}` });
+          link.addEventListener('click', () => {
+            openedSubjects.push(name);
+            opened.textContent = openedSubjects.join(' | ');
+            inbox.hidden = true;
+            sort.hidden = true;
+            thread.hidden = false;
+            thread.textContent = name;
+            back.hidden = false;
+            location.hash = `message/${index + 1}`;
+          });
+          row.append(link);
+          inbox.append(row);
+        }
+        for (const value of ['Most relevant', 'Most recent']) {
+          const item = el(
+            'div',
+            {
+              role: 'menuitemradio',
+              tabindex: '-1',
+              'aria-checked': String(value === 'Most relevant'),
+              'data-sort': value === 'Most recent' ? 'recent' : 'relevant',
+            },
+            value
+          );
+          item.addEventListener('click', () => {
+            for (const option of menu.querySelectorAll('[role="menuitemradio"]')) {
+              option.setAttribute('aria-checked', String(option === item));
+            }
+            sort.textContent = `Showing ${value.toLowerCase()}`;
+            document.body.dataset.sort = item.dataset.sort;
+            menu.hidden = true;
+            sort.setAttribute('aria-expanded', 'false');
+          });
+          menu.append(item);
+        }
+        back.addEventListener('click', () => {
+          thread.hidden = true;
+          inbox.hidden = false;
+          sort.hidden = false;
+          back.hidden = true;
+          location.hash = 'inbox';
+        });
+        toggle.addEventListener('click', () => {
+          const expanded = toggle.getAttribute('aria-pressed') !== 'true';
+          toggle.dataset.activations = String(Number(toggle.dataset.activations) + 1);
+          toggle.setAttribute('aria-pressed', String(expanded));
+          categories.hidden = !expanded;
+        });
+        root.append(sort, menu, back, thread, inbox, toggle, categories, opened);
+      } else if (kind === 'spa-menu') {
         const menu = button('Products', { 'aria-expanded': 'false' });
         const options = el('div', { role: 'menu', hidden: '' });
         const item = button('Analytics', { role: 'menuitem' });

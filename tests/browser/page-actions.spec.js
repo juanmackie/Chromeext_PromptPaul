@@ -253,6 +253,226 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('observes Gmail-like ARIA sort menus and verifies hash-only thread routes without leaking fragments', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const actionUrl = fixtureUrl(fixtureServer, 'act-gmail-like.html');
+    const targetUrl = `${actionUrl}#access-token-secret`;
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    const inspect = () =>
+      harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'gmail-like-run', 'page_get_state'),
+        actionUrl
+      );
+    const click = (snapshot, element) =>
+      harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'gmail-like-run', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url: actionUrl, snapshotId: snapshot.snapshotId, index: element.index }
+      );
+
+    try {
+      const initial = await inspect();
+      expect(initial.success, JSON.stringify(initial)).toBe(true);
+      expect(JSON.stringify(initial.snapshot)).not.toContain('access-token-secret');
+      const sort = initial.snapshot.elements.find((element) => element.label === 'Sort order');
+      expect(sort).toBeTruthy();
+      expect(sort.expanded).toBe(false);
+      expect(initial.snapshot.elements.some((element) => element.role === 'menuitemradio')).toBe(
+        false
+      );
+
+      await click(initial.snapshot, sort);
+      const openMenu = await inspect();
+      const expandedSort = openMenu.snapshot.elements.find(
+        (element) => element.label === 'Sort order'
+      );
+      const recent = openMenu.snapshot.elements.find((element) => element.text === 'Most recent');
+      expect(expandedSort.expanded).toBe(true);
+      expect(recent).toMatchObject({ role: 'menuitemradio', checked: false });
+      await click(openMenu.snapshot, recent);
+      const sorted = await inspect();
+      const sortedButton = sorted.snapshot.elements.find(
+        (element) => element.label === 'Sort order'
+      );
+      expect(sortedButton.expanded).toBe(false);
+      expect(sortedButton.text.toLowerCase()).toContain('most recent');
+      await click(sorted.snapshot, sortedButton);
+      const sortedMenu = await inspect();
+      expect(
+        sortedMenu.snapshot.elements.find((element) => element.text === 'Most recent').checked
+      ).toBe(true);
+
+      const thread = sortedMenu.snapshot.elements.find(
+        (element) => element.label === 'Open Quarterly report'
+      );
+      const opened = await click(sortedMenu.snapshot, thread);
+      expect(opened.actionReceipt).toMatchObject({
+        disposition: 'delivered_verified',
+        evidence: { kind: 'route_changed' },
+      });
+      expect(opened.snapshot.routeChanged).toBe(true);
+      expect(opened.snapshot.routeId).toMatch(/^[a-z0-9]{1,8}$/i);
+      expect(JSON.stringify(opened)).not.toContain('message/quarterly-report');
+      await expect(target).toHaveURL(/#message\/quarterly-report$/);
+
+      let activeSnapshot = opened.snapshot;
+      for (const subject of ['Project update', 'Travel receipt']) {
+        const back = activeSnapshot.elements.find((element) => element.label === 'Back to Inbox');
+        await click(activeSnapshot, back);
+        const inbox = await inspect();
+        const threadControl = inbox.snapshot.elements.find(
+          (element) => element.label === `Open ${subject}`
+        );
+        const nextThread = await click(inbox.snapshot, threadControl);
+        expect(nextThread.actionReceipt).toMatchObject({
+          disposition: 'delivered_verified',
+          evidence: { kind: 'route_changed' },
+        });
+        activeSnapshot = nextThread.snapshot;
+      }
+      await expect(target.locator('#opened')).toHaveText(
+        'Quarterly report | Project update | Travel receipt'
+      );
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('warns on A→B→A, keeps the toggle block through inspection, then resets on another target', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'act-gmail-like.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    let stateCounter = 0;
+    const inspect = (id) => {
+      const toolId = `toggle-state-${++stateCounter}`;
+      return harness.evaluate(
+        ({ run, tool }) => window.pageActionHarness.executeTool(run, tool, 'page_get_state', {}),
+        { run: id, tool: toolId }
+      );
+    };
+    const clickAndApprove = async (id, toolId, snapshot, element) => {
+      await harness.evaluate(
+        ({ runId: run, id: tool, snapshotId, index }) => {
+          void window.pageActionHarness.executeTool(run, tool, 'page_click', { snapshotId, index });
+          return true;
+        },
+        { runId: id, id: toolId, snapshotId: snapshot.snapshotId, index: element.index }
+      );
+      await expect
+        .poll(() => harness.evaluate((run) => window.pageActionHarness.getConfirmation(run), id))
+        .toMatchObject({ action: 'page_click' });
+      expect(
+        await harness.evaluate(
+          ({ url, run }) => window.pageActionHarness.resolveConfirmation(url, run, true),
+          { url: targetUrl, run: id }
+        )
+      ).toMatchObject({ success: true });
+      await expect
+        .poll(() =>
+          harness.evaluate(({ run, tool }) => window.pageActionHarness.getToolResult(run, tool), {
+            run: id,
+            tool: toolId,
+          })
+        )
+        .toMatchObject({ success: true });
+      return harness.evaluate(
+        ({ run, tool }) => window.pageActionHarness.getToolResult(run, tool),
+        { run: id, tool: toolId }
+      );
+    };
+
+    try {
+      const started = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.startRun(url, false, {
+            messages: [{ role: 'user', content: 'Open and inspect the categories toggle.' }],
+          }),
+        targetUrl
+      );
+      expect(started.runId, JSON.stringify(started)).toBeTruthy();
+      runId = started.runId;
+
+      const firstState = await inspect(runId);
+      const firstToggle = firstState.result.snapshot.elements.find(
+        (element) => element.label === 'Show categories'
+      );
+      const opened = await clickAndApprove(
+        runId,
+        'toggle-first',
+        firstState.result.snapshot,
+        firstToggle
+      );
+      expect(opened.result.actionReceipt.disposition).toMatch(/^delivered_/u);
+
+      const secondState = await inspect(runId);
+      const secondToggle = secondState.result.snapshot.elements.find(
+        (element) => element.label === 'Show categories'
+      );
+      const detected = await clickAndApprove(
+        runId,
+        'toggle-second',
+        secondState.result.snapshot,
+        secondToggle
+      );
+      expect(detected.result).toMatchObject({ toggleDetected: true });
+      expect(detected.result.notice).toContain('Do not activate it again');
+
+      const refreshed = await inspect(runId);
+      const blockedToggle = refreshed.result.snapshot.elements.find(
+        (element) => element.label === 'Show categories'
+      );
+      const blocked = await harness.evaluate(
+        ({ run, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(run, 'toggle-blocked', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { run: runId, snapshotId: refreshed.result.snapshot.snapshotId, index: blockedToggle.index }
+      );
+      expect(blocked.result).toMatchObject({
+        error: 'PAGE_ACTION_TOGGLE_LOOP',
+        actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'toggle_loop_blocked' } },
+      });
+      expect(
+        await harness.evaluate((run) => window.pageActionHarness.getConfirmation(run), runId)
+      ).toBeNull();
+
+      const sortButton = refreshed.result.snapshot.elements.find(
+        (element) => element.label === 'Sort order'
+      );
+      await clickAndApprove(runId, 'different-target', refreshed.result.snapshot, sortButton);
+      const afterReset = await inspect(runId);
+      const availableToggle = afterReset.result.snapshot.elements.find(
+        (element) => element.label === 'Show categories'
+      );
+      const allowedAgain = await clickAndApprove(
+        runId,
+        'toggle-reset',
+        afterReset.result.snapshot,
+        availableToggle
+      );
+      expect(allowedAgain.result.error).toBeUndefined();
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('bounds options per select so one large dropdown cannot starve later controls', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -1735,7 +1955,16 @@ test.describe('page-agent-style page actions', () => {
     const targetUrl = fixtureUrl(fixtureServer, 'links.html');
     await target.goto(targetUrl);
     const harness = await openHarness(context);
-    const pageCount = context.pages().length;
+    const isFirstRunOptionsPage = (page) => {
+      const url = new URL(page.url());
+      return (
+        url.protocol === 'chrome-extension:' &&
+        url.pathname === '/options.html' &&
+        url.searchParams.get('firstRun') === '1'
+      );
+    };
+    // Extension onInstalled may open its first-run Options tab asynchronously.
+    const pageCount = context.pages().filter((page) => !isFirstRunOptionsPage(page)).length;
     let runId;
 
     try {
@@ -1776,7 +2005,8 @@ test.describe('page-agent-style page actions', () => {
       // Navigating a _blank link must not open a new tab. Keep the count
       // strict, but list the URLs so an intermittent extra page is
       // diagnosable from the failure output instead of being opaque.
-      expect(context.pages().map((page) => page.url())).toHaveLength(pageCount);
+      const actionPages = context.pages().filter((page) => !isFirstRunOptionsPage(page));
+      expect(actionPages.map((page) => page.url())).toHaveLength(pageCount);
       await expect(target.locator('#destination')).toHaveText('Landing destination');
       const destinationState = await harness.evaluate(
         ({ runId }) =>

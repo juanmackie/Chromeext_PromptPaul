@@ -7,6 +7,8 @@ import {
   buildPlannerPromptBlock,
   createPlannerState,
   evaluateProgress,
+  recordPlannerQuotaItem,
+  extractQuotaTarget,
   generateSubGoals,
   replan,
   shouldActivatePlanner,
@@ -22,6 +24,28 @@ function createSkillManager() {
 }
 
 describe('ActPlanner', () => {
+  it('activates for counted plural requests and bounds the requested quota', () => {
+    expect(shouldActivatePlanner('Open 6 of the newest emails')).toBe(true);
+    expect(extractQuotaTarget('Open 6 of the newest emails')).toBe(6);
+    expect(extractQuotaTarget('Review the top five results')).toBe(5);
+    expect(extractQuotaTarget('Read all unread messages')).toBe(12);
+    expect(extractQuotaTarget('Open 99 records')).toBe(12);
+    expect(extractQuotaTarget('Open one record')).toBeNull();
+  });
+
+  it('tracks quota items by normalized key and does not count duplicates', () => {
+    const planner = createPlannerState('Open 2 of the newest emails');
+    expect(planner.quota).toEqual({ target: 2, done: [] });
+    expect(recordPlannerQuotaItem(planner, 'Subject A')).toMatchObject({ added: true, count: 1 });
+    expect(recordPlannerQuotaItem(planner, ' subject   a ')).toMatchObject({
+      added: false,
+      count: 1,
+    });
+    expect(recordPlannerQuotaItem(planner, 'Subject B')).toMatchObject({ added: true, count: 2 });
+    expect(recordPlannerQuotaItem(planner, 'Subject C')).toMatchObject({ added: false, count: 2 });
+    expect(planner.quota.done.map((item) => item.label)).toEqual(['Subject A', 'Subject B']);
+  });
+
   it('activates only for long or clearly multi-step instructions', () => {
     expect(shouldActivatePlanner('Click the button')).toBe(false);
     expect(shouldActivatePlanner('Click the button, then enter the title')).toBe(true);
@@ -247,7 +271,7 @@ describe('RunOrchestrator ActPlanner integration', () => {
 
   it('consumes one action receipt so duplicate notes cannot advance twice', async () => {
     const orchestrator = new RunOrchestrator(createSkillManager(), {
-      pageActionExecutor: async (tabId, actionName) =>
+      pageActionExecutor: async (_tabId, actionName) =>
         actionName === 'page_get_state'
           ? {
               snapshot: {

@@ -123,7 +123,12 @@ export function normalizePageElement(raw = {}, index = 0) {
     type: capPageText(raw.type, 32).toLowerCase(),
     text: capPageText(raw.text),
     disabled: Boolean(raw.disabled),
-    checked: typeof raw.checked === 'boolean' ? raw.checked : undefined,
+    checked: typeof raw.checked === 'boolean' || raw.checked === 'mixed' ? raw.checked : undefined,
+    expanded: typeof raw.expanded === 'boolean' ? raw.expanded : undefined,
+    haspopup: normalizeAriaPopup(raw.haspopup),
+    selected: typeof raw.selected === 'boolean' ? raw.selected : undefined,
+    pressed: typeof raw.pressed === 'boolean' ? raw.pressed : undefined,
+    current: normalizeAriaCurrent(raw.current),
     editable: raw.editable === true ? true : undefined,
     newlyVisible: raw.newlyVisible === true ? true : undefined,
     sensitive,
@@ -180,6 +185,11 @@ export function formatPageElement(element = {}) {
     if (element[key]) attrs.push(`${key}=${JSON.stringify(capPageText(element[key], 80))}`);
   }
   if (element.checked !== undefined) attrs.push(`checked=${element.checked}`);
+  if (element.expanded !== undefined) attrs.push(`expanded=${element.expanded}`);
+  if (element.haspopup !== undefined) attrs.push(`haspopup=${element.haspopup}`);
+  if (element.selected !== undefined) attrs.push(`selected=${element.selected}`);
+  if (element.pressed !== undefined) attrs.push(`pressed=${element.pressed}`);
+  if (element.current !== undefined) attrs.push(`current=${element.current}`);
   if (element.disabled) attrs.push('disabled=true');
   if (element.editable) attrs.push('editable=true');
   if (element.newlyVisible) attrs.push('new=true');
@@ -243,6 +253,20 @@ export function pageStateHash(value) {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+function normalizeAriaPopup(value) {
+  if (typeof value === 'boolean') return value ? 'menu' : undefined;
+  const normalized = String(value || '').toLowerCase();
+  return ['menu', 'listbox', 'tree', 'grid', 'dialog'].includes(normalized)
+    ? normalized
+    : undefined;
+}
+
+function normalizeAriaCurrent(value) {
+  if (typeof value === 'boolean') return value || undefined;
+  const normalized = String(value || '').toLowerCase();
+  return ['page', 'step', 'location', 'date', 'time'].includes(normalized) ? normalized : undefined;
+}
+
 function capSnapshotText(value, maxLength) {
   return String(value ?? '')
     .replace(/\u0000/gu, '') // eslint-disable-line no-control-regex
@@ -293,6 +317,10 @@ export function normalizePageSnapshot(input = {}) {
     footer: capPageText(input.footer, 1_000),
     readableContent: capSnapshotText(input.readableContent, PAGE_DOM_CAPS.maxReadableContentChars),
     fingerprint: capPageText(input.fingerprint || '', 128),
+    routeId: /^[a-f0-9]{8}$/iu.test(String(input.routeId || ''))
+      ? String(input.routeId)
+      : undefined,
+    routeChanged: input.routeChanged === true,
     regions,
     regionId:
       typeof input.regionId === 'string' && PAGE_REGION_ID_PATTERN.test(input.regionId)

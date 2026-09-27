@@ -29,6 +29,30 @@ describe('PageTaskMemory', () => {
     expect(buildPageTaskMemoryPrompt(run.pageActions.notes)).toContain('TASK MEMORY');
   });
 
+  it('normalizes optional quota items with the same sensitive-label rejection', () => {
+    expect(
+      normalizePageTaskNote({ text: 'Read the item', item: 'Quarterly report', status: 'done' })
+    ).toMatchObject({
+      valid: true,
+      value: { item: 'Quarterly report', status: 'done' },
+    });
+    expect(
+      normalizePageTaskNote({ text: 'Read the item', item: 'API token', status: 'done' })
+    ).toMatchObject({
+      valid: false,
+    });
+    expect(
+      normalizePageTaskNote({ text: 'Read the item', item: 'Quarterly report', status: 'unknown' })
+    ).toMatchObject({
+      valid: false,
+    });
+    const run = { pageActions: { notes: [], planner: { quota: { target: 2, done: [] } } } };
+    recordPageTaskNote(run, 'Read the item', null, 'Quarterly report', 'done');
+    expect(run.pageActions.planner.quota.done).toMatchObject([
+      { key: expect.any(String), label: 'Quarterly report' },
+    ]);
+  });
+
   it('compacts old snapshots while retaining the active tab snapshot', () => {
     const snapshot = (id, tabId) =>
       JSON.stringify({

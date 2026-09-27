@@ -47,6 +47,16 @@ import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../
 import { buildIndexedPageRegions, diffPageActionSnapshots } from '../utils/pageActionScopeDiff.js';
 import { recordDevDiagnostic } from '../utils/devDiagnostics.js';
 import { recordEvalTrace } from '../utils/evalTrace.js';
+import {
+  buildActWorkingMemoryPrompt,
+  createActWorkingMemory,
+  hasActVisited,
+  isActQuotaComplete,
+  makeActTargetKey,
+  markActVisited,
+  recordActAction,
+  shouldBlockActTarget,
+} from './ActWorkingMemory.js';
 import { buildHermesTurn } from '../utils/hermesContext.js';
 import { buildCodexRequest, streamCodexResponse } from './CodexTransport.js';
 import {
@@ -70,6 +80,7 @@ import {
   evaluateProgress,
   hasReceiptConsistentProgress,
   MAX_PLANNER_INSTRUCTION_CHARS,
+  recordPlannerQuotaItem,
   replan,
 } from './ActPlanner.js';
 const CORE_INSTRUCTIONS =
@@ -618,8 +629,9 @@ class RunOrchestrator {
         // auto-approval uses a separate bounded flag below so high-risk and
         // navigation actions remain confirmation-gated.
         sessionApproval: false,
-        // Sub-goal planner state for long-horizon Act runs. Null when inactive.
+        // Sub-goal planner and strictly run-scoped action memory.
         planner: null,
+        memory: createActWorkingMemory(),
         actions: 0,
         budgets: { observation: 0, navigation: 0, mutation: 0 },
         budgetWarnings: new Set(),
@@ -1298,7 +1310,9 @@ class RunOrchestrator {
         const recorded = recordPageTaskNote(
           run,
           normalizedNote.value.text,
-          run.pageActions.targetTabId || run.sourceTabId || null
+          run.pageActions.targetTabId || run.sourceTabId || null,
+          normalizedNote.value.item,
+          normalizedNote.value.status
         );
         // Evaluate planner progress with the one fresh action receipt attached
         // to this note. Consuming it prevents duplicate notes from advancing
@@ -1325,6 +1339,9 @@ class RunOrchestrator {
           result: {
             recorded: true,
             noteCount: recorded.count,
+            quotaProgress: recorded.quotaItem
+              ? `${recorded.quotaItem.count}/${run.pageActions.planner?.quota?.target || 0}`
+              : undefined,
             message: 'Task note recorded for this run only.',
           },
         };
@@ -1845,6 +1862,19 @@ class RunOrchestrator {
       };
     }
 
+    if (
+      actionName === 'page_click' &&
+      result?.success === true &&
+      previousSnapshot?.routeId &&
+      nextSnapshot?.routeId &&
+      previousSnapshot.routeId !== nextSnapshot.routeId
+    ) {
+      return {
+        disposition: 'delivered_verified',
+        evidence: { kind: 'route_changed' },
+      };
+    }
+
     if (actionName === 'page_scroll') {
       const before = previousSnapshot?.scroll || {};
       const after = nextSnapshot?.scroll || {};
@@ -1986,6 +2016,31 @@ class RunOrchestrator {
       ? null
       : this._resolvePageActionElement(run, args.index);
     if (actionTarget?.elementKey) args.elementKey = actionTarget.elementKey;
+    run.pageActions.memory ||= createActWorkingMemory();
+    const stableTargetKey = actionTarget ? makeActTargetKey(actionTarget) : '';
+    if (isMutation && shouldBlockActTarget(run.pageActions.memory, stableTargetKey)) {
+      run.pageActions.loopWarnings += 1;
+      const message =
+        'This control already toggled back to its previous state. The repeat activation was blocked; choose a different control or ask for guidance.';
+      this._emitEvent(run.id, {
+        type: 'page_action_warning',
+        code: 'PAGE_ACTION_TOGGLE_LOOP',
+        action: actionName,
+        message,
+      });
+      return {
+        success: true,
+        result: {
+          error: 'PAGE_ACTION_TOGGLE_LOOP',
+          handled: true,
+          message,
+          actionReceipt: {
+            disposition: 'not_delivered',
+            evidence: { kind: 'toggle_loop_blocked' },
+          },
+        },
+      };
+    }
     const actionHash = pageStateHash(
       JSON.stringify({
         actionName,
@@ -2351,6 +2406,64 @@ class RunOrchestrator {
           ...diffPageActionSnapshots(previousSnapshot, normalizedSnapshot),
           regions: buildIndexedPageRegions(normalizedSnapshot),
         };
+      }
+      if (actionName === 'page_get_state' && normalizedSnapshot?.routeId) {
+        markActVisited(run.pageActions.memory, 'route', normalizedSnapshot.routeId);
+      }
+      const routeEntered = Boolean(
+        isMutation &&
+        normalizedSnapshot?.routeId &&
+        receipt.disposition === 'delivered_verified' &&
+        (navigationObserved || receipt.evidence?.kind === 'route_changed')
+      );
+      const routeWasVisited = routeEntered
+        ? hasActVisited(run.pageActions.memory, 'route', normalizedSnapshot.routeId)
+        : true;
+      if (routeEntered && !routeWasVisited && run.pageActions.planner?.quota) {
+        const routeLabel = actionTarget?.label || actionTarget?.name || normalizedSnapshot.title;
+        const safeQuotaItem = normalizePageTaskNote({
+          text: 'A verified page route was entered.',
+          item: routeLabel,
+          status: 'done',
+        });
+        if (safeQuotaItem.valid) {
+          recordPlannerQuotaItem(run.pageActions.planner, safeQuotaItem.value.item, 'done');
+        }
+      }
+      const memoryResult = recordActAction(run.pageActions.memory, {
+        action: actionName,
+        target: actionTarget,
+        targetKey: stableTargetKey,
+        receipt,
+        scopeDiff: result.scopeDiff,
+        navigated: Boolean(result?.navigated || navigationObserved),
+        routeChanged: normalizedSnapshot?.routeChanged === true,
+        routeId: normalizedSnapshot?.routeId,
+        beforeFingerprint: previousSnapshot?.fingerprint,
+        afterFingerprint: normalizedSnapshot?.fingerprint,
+      });
+      if (memoryResult.toggleDetected) {
+        const addedIndices = (result.scopeDiff?.changes || [])
+          .filter((change) => change.kind === 'added')
+          .map((change) => Number(change.index))
+          .filter((index) => Number.isInteger(index) && index >= 0)
+          .slice(0, 8);
+        const addedTargets = addedIndices.length
+          ? ` Newly visible controls: [${addedIndices.join('] [')}].`
+          : '';
+        const message =
+          'This control toggles its state and has now restored the earlier page state. Do not activate it again; choose one of the newly visible controls or ask for guidance.' +
+          addedTargets;
+        run.pageActions.loopWarnings += 1;
+        result.toggleDetected = true;
+        result.notice = message;
+        result.message = `${result.message || ''} ${message}`.trim();
+        this._emitEvent(run.id, {
+          type: 'page_action_warning',
+          code: 'PAGE_ACTION_TOGGLE_DETECTED',
+          action: actionName,
+          message,
+        });
       }
       if (actionName === 'page_get_state' && run.pageActions.planner?.completedAt) {
         const verificationReceipt = result?.actionReceipt;
@@ -3678,7 +3791,11 @@ class RunOrchestrator {
             'Record one short, untrusted observation for this long-running page task. Use it for facts such as prices, URLs, availability, or why a tab was skipped; never record secrets.',
           parameters: {
             type: 'object',
-            properties: { text: { type: 'string', maxLength: 800 } },
+            properties: {
+              text: { type: 'string', maxLength: 800 },
+              item: { type: 'string', maxLength: 80 },
+              status: { type: 'string', enum: ['done', 'skipped'] },
+            },
             required: ['text'],
           },
         },
@@ -4068,6 +4185,8 @@ class RunOrchestrator {
 
     const taskMemory = buildPageTaskMemoryPrompt(run.pageActions?.notes);
     if (taskMemory) parts.push(taskMemory);
+    const actionMemory = buildActWorkingMemoryPrompt(run.pageActions?.memory);
+    if (actionMemory) parts.push(actionMemory);
 
     // Surface a recent user denial so the model changes approach instead of
     // rehearsing the rejected action. Bounded name only, cleared on the next
@@ -5317,7 +5436,9 @@ class RunOrchestrator {
       !planner?.active ||
       run.resilience.wrapUp ||
       (!needsFinalVerification && hasReceiptConsistentProgress(planner)) ||
-      (!needsFinalVerification && planner.subGoals.every((goal) => goal.status === 'blocked'))
+      (!needsFinalVerification &&
+        isActQuotaComplete(planner) &&
+        planner.subGoals.every((goal) => goal.status === 'blocked'))
     ) {
       return false;
     }
@@ -6005,7 +6126,7 @@ class RunOrchestrator {
   }
 
   _generateRunId() {
-    return `run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `run-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }
 
   _isAnthropicEndpoint(endpoint) {
