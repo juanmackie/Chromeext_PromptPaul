@@ -374,6 +374,9 @@ export function updatePageActionActivity(chatArea, event = {}) {
   return card;
 }
 
+/** Background clarification wait; keep aligned with RunOrchestrator's timeout. */
+const PAGE_USER_INPUT_WINDOW_MS = 120_000;
+
 export function renderPageUserInputRequest(chatArea, event, onSubmit) {
   if (!chatArea || !event?.requestId) return null;
   const card = document.createElement('div');
@@ -420,12 +423,22 @@ export function renderPageUserInputRequest(chatArea, event, onSubmit) {
     input.disabled = true;
     try {
       const response = await onSubmit?.(event.requestId, input.value);
-      if (response?.success === false)
-        throw new Error(response.error || 'The answer was not sent.');
+      if (response?.success === false) {
+        const failure = new Error(response.error || 'The answer was not sent.');
+        failure.expired = response.expired === true;
+        throw failure;
+      }
       card.dataset.decision = 'sent';
+      card._clearExpiryTimer?.();
     } catch (error) {
-      input.disabled = false;
-      submit.disabled = false;
+      // An expired question can never accept an answer, so keep the card
+      // closed instead of inviting retries that cannot succeed.
+      if (error.expired) {
+        card.dataset.decision = 'expired';
+      } else {
+        input.disabled = false;
+        submit.disabled = false;
+      }
       showError(error.message || 'The answer could not be sent. Try again.');
     }
   });
@@ -433,26 +446,57 @@ export function renderPageUserInputRequest(chatArea, event, onSubmit) {
   card.appendChild(controls);
   chatArea.appendChild(card);
   input.focus();
+  // The background stops waiting after 120 s; close the card at the same point
+  // so it cannot invite an answer that can no longer be delivered.
+  const expiryTimer = setTimeout(() => {
+    if (card.dataset.decision) return;
+    card.dataset.decision = 'expired';
+    input.disabled = true;
+    submit.disabled = true;
+    showError('This question timed out. Send a new message to continue.');
+  }, PAGE_USER_INPUT_WINDOW_MS);
+  card._clearExpiryTimer = () => clearTimeout(expiryTimer);
   return card;
 }
 
-export function handlePageUserInputRequest(chatArea, event, runId, sourceTabId) {
+/**
+ * Render a clarification or manual-intervention card.
+ * @param {HTMLElement} chatArea
+ * @param {object} event - Orchestrator request event.
+ * @param {string} runId
+ * @param {number|null} sourceTabId
+ * @param {(() => Promise<{ownerToken: string, sourceTabId: number|null}>)} [resolveAuth] -
+ *   Resolves the current run auth at send time so a token adopted after the
+ *   card was drawn (panel reconnect) is still used.
+ * @returns {HTMLElement|null}
+ */
+export function handlePageUserInputRequest(chatArea, event, runId, sourceTabId, resolveAuth) {
   if (event?.type === 'page_manual_intervention_request') {
-    return handlePageManualInterventionRequest(chatArea, event, runId, sourceTabId);
+    return handlePageManualInterventionRequest(chatArea, event, runId, sourceTabId, resolveAuth);
   }
-  return renderPageUserInputRequest(chatArea, event, (requestId, answer) =>
-    chrome.runtime.sendMessage({
+  return renderPageUserInputRequest(chatArea, event, async (requestId, answer) => {
+    const auth = (await resolveAuth?.()) || {
+      ownerToken: event.ownerToken || '',
+      sourceTabId,
+    };
+    return chrome.runtime.sendMessage({
       action: 'pageUserInputResponse',
       runId,
       requestId,
       answer,
-      ownerToken: event.ownerToken || '',
-      sourceTabId,
-    })
-  );
+      ownerToken: auth.ownerToken || event.ownerToken || '',
+      sourceTabId: auth.sourceTabId ?? sourceTabId,
+    });
+  });
 }
 
-export function handlePageManualInterventionRequest(chatArea, event, runId, sourceTabId) {
+export function handlePageManualInterventionRequest(
+  chatArea,
+  event,
+  runId,
+  sourceTabId,
+  resolveAuth
+) {
   if (!chatArea || !event?.requestId) return null;
   const existing = chatArea.querySelector(`[data-page-manual-intervention="${event.requestId}"]`);
   if (existing) return existing;
@@ -518,13 +562,19 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
     resume.disabled = true;
     stop.disabled = true;
     try {
+      const auth = (await resolveAuth?.()) || { ownerToken: '', sourceTabId };
       const response = await chrome.runtime.sendMessage({
         action: 'pageManualInterventionResume',
         runId,
         requestId: event.requestId,
-        ownerToken: event.ownerToken || '',
-        sourceTabId,
+        ownerToken: auth.ownerToken || event.ownerToken || '',
+        sourceTabId: auth.sourceTabId ?? sourceTabId,
       });
+      if (response?.expired) {
+        settle('expired');
+        showError(response.error || 'This step is no longer waiting.');
+        return;
+      }
       if (!response?.success) throw new Error(response?.error || 'Resume was not accepted.');
       settle('resumed');
     } catch (error) {
@@ -533,13 +583,14 @@ export function handlePageManualInterventionRequest(chatArea, event, runId, sour
       showError(error.message || 'Resume failed. Try again.');
     }
   });
-  stop.addEventListener('click', () => {
+  stop.addEventListener('click', async () => {
     settle('stopped');
+    const auth = (await resolveAuth?.()) || { ownerToken: '', sourceTabId };
     void chrome.runtime.sendMessage({
       action: 'abortRun',
       runId,
-      ownerToken: event.ownerToken || '',
-      sourceTabId,
+      ownerToken: auth.ownerToken || event.ownerToken || '',
+      sourceTabId: auth.sourceTabId ?? sourceTabId,
     });
   });
   controls.append(resume, stop);

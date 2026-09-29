@@ -3488,10 +3488,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // must match the run's source tab: the opaque confirmation ID alone is
     // not enough to authorize an action.
     const decisionRun = runOrchestrator.activeRuns.get(request.runId);
-    if (!extensionPageSender || !isAuthorizedRunRequest(request, sender)) {
+    if (!extensionPageSender) {
       sendResponse({
         success: false,
         error: 'Approval decisions must come from the Prompt Paul extension.',
+      });
+      return true;
+    }
+    // A card can outlive its run (finished, stopped, timed out, or the worker
+    // restarted). Say so instead of reporting a misleading sender failure.
+    if (!decisionRun) {
+      sendResponse({
+        success: false,
+        expired: true,
+        error:
+          'This approval is no longer waiting (the run ended, timed out, or was stopped). Send a new message to continue.',
+      });
+      return true;
+    }
+    if (!isAuthorizedRunRequest(request, sender)) {
+      sendResponse({
+        success: false,
+        error:
+          'This approval could not be verified for the current run. Reload Prompt Paul and try again.',
       });
       return true;
     }
@@ -3517,50 +3536,71 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.approved === true,
       request.approveAll === true
     );
-    sendResponse({ success: accepted });
+    sendResponse(
+      accepted
+        ? { success: true }
+        : {
+            success: false,
+            expired: true,
+            error: 'This approval is no longer waiting (it was already answered or timed out).',
+          }
+    );
     return true;
   }
 
   if (request.action === 'pageUserInputResponse') {
+    const expiredMessage =
+      'This question is no longer waiting for an answer (it timed out or the run ended). Send a new message to continue.';
+    if (!runOrchestrator.activeRuns.has(request.runId)) {
+      sendResponse({ success: false, expired: true, error: expiredMessage });
+      return true;
+    }
     if (!isAuthorizedRunRequest(request, sender)) {
       sendResponse({ success: false, error: 'User input response is not authorized.' });
       return true;
     }
     const run = runOrchestrator.activeRuns.get(request.runId);
-    if (!run || run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
+    if (run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
       sendResponse({ success: false, error: 'User input response does not match the run.' });
       return true;
     }
-    sendResponse({
-      success: runOrchestrator.resolvePageUserInput(
-        request.runId,
-        request.requestId,
-        request.answer
-      ),
-    });
+    const accepted = runOrchestrator.resolvePageUserInput(
+      request.runId,
+      request.requestId,
+      request.answer
+    );
+    sendResponse(
+      accepted ? { success: true } : { success: false, expired: true, error: expiredMessage }
+    );
     return true;
   }
 
   if (request.action === 'pageManualInterventionResume') {
+    const expiredMessage = 'This step is no longer waiting (it timed out or the run ended).';
+    if (!runOrchestrator.activeRuns.has(request.runId)) {
+      sendResponse({ success: false, expired: true, error: expiredMessage });
+      return true;
+    }
     if (!isAuthorizedRunRequest(request, sender)) {
       sendResponse({ success: false, error: 'Manual-intervention response is not authorized.' });
       return true;
     }
     const run = runOrchestrator.activeRuns.get(request.runId);
-    if (!run || run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
+    if (run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
       sendResponse({
         success: false,
         error: 'Manual-intervention response does not match the run.',
       });
       return true;
     }
-    sendResponse({
-      success: runOrchestrator.resolvePageManualIntervention(
-        request.runId,
-        request.requestId,
-        request.resume === undefined ? true : request.resume === true
-      ),
-    });
+    const resumed = runOrchestrator.resolvePageManualIntervention(
+      request.runId,
+      request.requestId,
+      request.resume === undefined ? true : request.resume === true
+    );
+    sendResponse(
+      resumed ? { success: true } : { success: false, expired: true, error: expiredMessage }
+    );
     return true;
   }
 

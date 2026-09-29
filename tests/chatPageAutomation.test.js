@@ -3,13 +3,14 @@
  * @module chatPageAutomation.test
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   isPageActionsEnabled,
   setPageActionsEnabled,
   setPageActionsRunActive,
   initPageActionsToggle,
   formatPlainLanguageDisposition,
+  handlePageUserInputRequest,
 } from '../src/chat/ChatPageAutomation.js';
 
 describe('ChatPageAutomation Act permission', () => {
@@ -123,5 +124,123 @@ describe('ChatPageAutomation plain-language delivery mapping', () => {
     expect(formatPlainLanguageDisposition(undefined)).toBe('');
     expect(formatPlainLanguageDisposition(null)).toBe('');
     expect(formatPlainLanguageDisposition('weird')).toBe('');
+  });
+});
+
+describe('ChatPageAutomation clarification card', () => {
+  class FakeElement {
+    constructor(tag) {
+      this.tag = tag;
+      this.className = '';
+      this.children = [];
+      this.dataset = {};
+      this.listeners = {};
+      this.attributes = {};
+      this.disabled = false;
+      this.value = '';
+      this.textContent = '';
+    }
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    }
+    append(...nodes) {
+      nodes.forEach((node) => this.appendChild(node));
+    }
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    }
+    addEventListener(name, handler) {
+      this.listeners[name] = handler;
+    }
+    querySelector(selector) {
+      const cls = selector.replace('.', '');
+      for (const child of this.children) {
+        if (child.className === cls) return child;
+        const nested = child.querySelector?.(selector);
+        if (nested) return nested;
+      }
+      return null;
+    }
+    focus() {}
+  }
+
+  let sent;
+  let response;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sent = [];
+    response = { success: true };
+    globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+    globalThis.chrome = {
+      runtime: {
+        sendMessage: async (message) => {
+          sent.push(message);
+          return response;
+        },
+      },
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete globalThis.document;
+    delete globalThis.chrome;
+  });
+
+  const findSubmit = (card) => {
+    const controls = card.children.find((child) => child.className.includes('controls'));
+    return controls.children.find((child) => child.textContent === 'Send');
+  };
+  const findInput = (card) => {
+    const controls = card.children.find((child) => child.className.includes('controls'));
+    return controls.children.find((child) => child.tag === 'input');
+  };
+
+  const render = (resolveAuth) =>
+    handlePageUserInputRequest(
+      new FakeElement('div'),
+      { type: 'page_user_input_request', requestId: 'input-1', question: 'Which one?' },
+      'run-1',
+      7,
+      resolveAuth
+    );
+
+  it('sends the owner token resolved at click time', async () => {
+    const card = render(async () => ({ ownerToken: 'fresh-token', sourceTabId: 7 }));
+    findInput(card).value = 'first';
+    await findSubmit(card).listeners.click();
+    expect(sent[0]).toMatchObject({
+      action: 'pageUserInputResponse',
+      ownerToken: 'fresh-token',
+      sourceTabId: 7,
+      answer: 'first',
+    });
+    expect(card.dataset.decision).toBe('sent');
+  });
+
+  it('closes the card when the background reports the question expired', async () => {
+    response = { success: false, expired: true, error: 'gone' };
+    const card = render();
+    await findSubmit(card).listeners.click();
+    expect(card.dataset.decision).toBe('expired');
+    expect(findSubmit(card).disabled).toBe(true);
+    expect(card.querySelector('.page-action-inline-error').textContent).toBe('gone');
+  });
+
+  it('keeps the card retryable after a non-expiry failure', async () => {
+    response = { success: false, error: 'boom' };
+    const card = render();
+    await findSubmit(card).listeners.click();
+    expect(card.dataset.decision).toBeUndefined();
+    expect(findSubmit(card).disabled).toBe(false);
+  });
+
+  it('expires on its own after the background wait window', () => {
+    const card = render();
+    vi.advanceTimersByTime(120_000);
+    expect(card.dataset.decision).toBe('expired');
+    expect(findInput(card).disabled).toBe(true);
   });
 });

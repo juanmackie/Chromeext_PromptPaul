@@ -1128,7 +1128,16 @@ document.addEventListener('DOMContentLoaded', () => {
           event.type === 'page_manual_intervention_request'
         ) {
           event.ownerToken = getRunAuth(runId).ownerToken;
-          handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
+          handlePageUserInputRequest(
+            chatArea,
+            event,
+            runId,
+            streamState.getSourceTabId(),
+            async () => {
+              await refreshRunOwnerToken(runId);
+              return getRunAuth(runId, streamState.getSourceTabId());
+            }
+          );
         } else if (event.type === 'hermes_approval_required') {
           hermesChat.renderHermesApproval(
             chatArea,
@@ -2283,7 +2292,16 @@ document.addEventListener('DOMContentLoaded', () => {
           case 'page_user_input_request':
           case 'page_manual_intervention_request':
             event.ownerToken = getRunAuth(runId).ownerToken;
-            handlePageUserInputRequest(chatArea, event, runId, streamState.getSourceTabId());
+            handlePageUserInputRequest(
+              chatArea,
+              event,
+              runId,
+              sourceTabId ?? streamState.getSourceTabId(),
+              async () => {
+                await refreshRunOwnerToken(runId);
+                return getRunAuth(runId, sourceTabId ?? streamState.getSourceTabId());
+              }
+            );
             break;
           case 'continuation_start':
             streamState.startNewTurn();
