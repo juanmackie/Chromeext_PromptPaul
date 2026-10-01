@@ -27,6 +27,7 @@ import {
   redactProviderErrorMessage,
 } from '../utils/runResilience.js';
 import { waitForRetry } from '../utils/retryBackoff.js';
+import { withServiceWorkerKeepAlive } from './ServiceWorkerKeepAlive.js';
 import {
   PAGE_ACTION_RISKS,
   READ_ONLY_PAGE_ACTIONS,
@@ -872,11 +873,28 @@ class RunOrchestrator {
    * Execute LLM request
    */
   async execute(runId, requestConfig, internalContinuation = false) {
-    const executionStartedAt = Date.now();
     const run = this.activeRuns.get(runId);
     if (!run) throw new Error(`Run ${runId} not found`);
     if (run.executeInProgress && !internalContinuation) return;
     if (!internalContinuation) run.executeInProgress = true;
+
+    // Nested provider/tool continuations share the outer execution's lifetime.
+    if (run.workerKeepAliveActive) {
+      return this._executeTurn(runId, requestConfig, internalContinuation);
+    }
+    run.workerKeepAliveActive = true;
+    try {
+      return await withServiceWorkerKeepAlive(() =>
+        this._executeTurn(runId, requestConfig, internalContinuation)
+      );
+    } finally {
+      run.workerKeepAliveActive = false;
+    }
+  }
+
+  async _executeTurn(runId, requestConfig, internalContinuation) {
+    const executionStartedAt = Date.now();
+    const run = this.activeRuns.get(runId);
 
     run.status = 'streaming';
     recordEvalTrace(runId, {

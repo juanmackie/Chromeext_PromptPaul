@@ -3,6 +3,28 @@
 Reviewed: 2026-09-27. Baseline: commit `e46e7c9`, version 6.3.0. Status: **draft for owner review**.
 Goal set by the owner: **an overall improvement, and a substantial improvement to Act**.
 
+## 2026-10-01 blocker review
+
+- [x] Remove the obsolete V10 dependency; use the active global instructions and repository contracts.
+- [x] Run baseline validation: 100 structural checks, 762 behavior tests, and 82 browser tests passed.
+- [x] Reproduce the highest-impact lifecycle defect: an acknowledged Act run lost its pending clarification after 40 seconds without worker inspection or runtime messages. The journal remained non-terminal, but `getRunJournal` returned `active: false`.
+- [x] Protect executing runs from idle worker shutdown and add regression coverage.
+- [x] Verify the original browser reproduction, validation, browser coverage, and production build.
+
+Scope: `RunOrchestrator`, one worker-lifetime helper, focused unit/browser tests, structural module validation, and the related contracts and architecture notes.
+
+INTENT: code loses a pending Act question during worker idle shutdown; the regression expects the question to remain answerable; the run contract says an acknowledged run continues through user decisions and ordered terminal events.
+
+The shared `execute()` boundary now owns a 20-second local extension API heartbeat through `ServiceWorkerKeepAlive.js`. Nested turns share it, concurrent runs release it independently, and completion, error, and Stop clear it in `finally`. No heartbeat starts for an unexecuted run. Run budgets, decision timeouts, approval policy, credentials, and storage keys stay unchanged. This follows [Chrome's guidance for long-running operations](https://developer.chrome.com/docs/extensions/develop/migrate/to-service-workers#keep_a_service_worker_alive_until_a_long-running_operation_is_finished).
+
+Regression evidence: three focused tests failed before the fix because no worker heartbeat was issued. All nine lifetime behavior cases pass after the fix. The real-browser test uses no worker debugger, answers the same question after 40 quiet seconds, receives one completion, and observes normal worker shutdown after completion. Ordinary Playwright worker attachment can hide this defect.
+
+TWINS: searched detached execute calls - found 1 other site: `src/utils/evalHook.eval.js`, covered by the shared fix.
+
+Final validation passed: lint, formatting, 100 structural checks, 771 behavior tests, smoke, vendored licenses, and all 83 browser tests. The same lifecycle test also passed against the staged production build. The first production test could not load its harness because staging used the source path; it passed after setting the correct `PROMPT_PAUL_LOAD_EXTENSION_DIR=dist` for both staging and testing. The production build includes the lifetime helper and excludes diagnostics/evaluation implementations. Its Git revision and dirty-tree metadata were verified after building outside the sandbox; the sandboxed build could not read Git metadata. The final production build removes the staged test harness. No live-provider request was needed. Manual side-panel interaction was unavailable because this session exposed no browser UI surface.
+
+Temporary reproduction scripts and the disposable probe profiles were removed. The permanent unit/browser regressions remain in `tests/`.
+
 The previous punchlist (27 items, all marked resolved) is preserved in git: `git show e46e7c9:REVIEW_PLAN.md`. Its two unverified residuals are carried over as GEN-06.
 
 ## How to read this
@@ -13,7 +35,7 @@ The previous punchlist (27 items, all marked resolved) is preserved in git: `git
 - **Decision:** needs an owner decision because it changes a documented contract.
 - **P1:** fix first — Act acts on the wrong thing, stops the run, or weakens a safety gate. **P2:** the substantial Act upgrade and real reliability gaps. **P3:** cleanup, docs, and measured efficiency work.
 - Effort: **S** narrow change, **M** several related paths, **L** cross-cutting. Not time estimates.
-- Removal/simplification items use the V10 labels `delete:`, `shrink:`, `yagni:`.
+- Removal/simplification items use the labels `delete:`, `shrink:`, `yagni:`.
 
 ## Baseline checks (this review)
 
@@ -532,5 +554,5 @@ Each step re-runs `npm run validate`, `npm run test:browser:prod`, and the ACT-3
 
 - Source review plus the local gates listed above. The Playwright browser suite, live providers, signed-in sites, and the Hermes/Codex paths were not exercised.
 - Act was reviewed in depth (orchestrator page-action loop, policy, planner, content script, background executor, approval UI). Options, notch, Hermes, grounding, and extraction were reviewed only for the overall items listed.
-- Probes used stubbed executors in Node. "Source-confirmed" items still need a failing test before the fix, per V10.
+- Probes used stubbed executors in Node. "Source-confirmed" items still need a failing test before the fix.
 - Size reductions and speedups are expectations until measured (ACT-40, ACT-42, ACT-43, GEN-05).

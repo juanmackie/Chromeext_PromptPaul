@@ -25,6 +25,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `evalDryRun.test.js` covers dry-run interception of state-changing page actions without delivery; `evalHook.test.js` covers the build-gated `TEST_RUN_TASK` bridge; `evalTrace.test.js` covers bounded redacted eval trace storage and provider-reported token counts.
 - `tests/browser/AGENTS.md` owns unpacked-extension Playwright coverage and local browser fixtures; its `acceptance-journeys.spec.js` runs the six Day-1 acceptance journeys as real-browser regression.
 - `runOrchestrator.test.js` covers orchestrator behavior including the bounded `page_task_progress` progress-card events (current action, target page, waiting state), journal safety, the approval-wait deadline pause, and the declined-outcome/planner-nudge path. `runResilience.test.js` covers the approval-wait deadline-extension math (full wait absorbed, 10-minute cap, non-Act runs untouched, timeout path).
+- `serviceWorkerKeepAlive.test.js` covers execution-scoped worker heartbeats through clarification, approval, manual steps, nested turns, concurrent runs, runtime API failure, completion, provider error, and Stop; it verifies that an idle worker receives no heartbeat.
 
 ## Local Contracts
 

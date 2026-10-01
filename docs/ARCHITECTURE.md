@@ -14,6 +14,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 - `content_script_diagnostics.js` relays development diagnostics from isolated content scripts, while `content_script_page_diagnostics.js` observes main-world page errors and console output only in development builds
 - Content scripts extract page content and page metadata
 - The background worker coordinates context menu actions, notch requests, and permissions
+- `RunOrchestrator.execute()` keeps the worker alive while the run is executing or waiting for a user decision. `ServiceWorkerKeepAlive.js` calls a local extension API every 20 seconds and clears the interval when execution settles; nested turns share the same lifetime, and idle workers can suspend normally. Run budgets, decision timeouts, and explicit recovery after an unexpected restart remain in force.
 - The side panel displays chat, page actions, and loaded content
 
 ### Chat Layer

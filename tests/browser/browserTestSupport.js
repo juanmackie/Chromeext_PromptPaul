@@ -415,7 +415,9 @@ function removeUserDataDir(userDataDir) {
 
 module.exports = {
   abortRun,
+  extensionLoadPath,
   fixtureUrl: (server, name) => server.url(name),
+  getBrandedExecutable,
   launchTestBrowser,
   openHarness,
   removeUserDataDir,

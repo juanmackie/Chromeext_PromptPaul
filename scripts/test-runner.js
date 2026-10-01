@@ -2099,6 +2099,7 @@ function runIntegrationTests(runner) {
   // ---------- Orchestrator ----------
   runner.test('RunOrchestrator module exists and is valid', () => {
     checkModule('src/orchestrator/RunOrchestrator.js');
+    checkModule('src/orchestrator/ServiceWorkerKeepAlive.js');
     const content = readFileSafe('src/orchestrator/RunOrchestrator.js');
     for (const token of [
       'formatToolsForLlm(normalizedUserTools)',
