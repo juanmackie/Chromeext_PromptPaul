@@ -53,6 +53,33 @@ describe('ActPlanner', () => {
     expect(shouldActivatePlanner('a'.repeat(101))).toBe(true);
   });
 
+  it('keeps title abbreviations, decimal values, and URLs in one lookup goal', () => {
+    for (const instruction of [
+      'Find the initial release date for Guardians of the Galaxy Vol. 3 the movie.',
+      'Find the derivative of x squared when x=5.6.',
+      'Read the article at https://example.com/news and report its title.',
+      'Find the appointment for Dr. Ada Lovelace.',
+      'Find the appointment for Ada L. Lovelace.',
+      'Read https://example.com/news?id=5.6&view=full and report its title.',
+    ]) {
+      expect(generateSubGoals(instruction).map((goal) => goal.description)).toEqual([
+        instruction.replace(/\.$/, ''),
+      ]);
+    }
+    expect(
+      shouldActivatePlanner(
+        'Find the initial release date for Guardians of the Galaxy Vol. 3 the movie.'
+      )
+    ).toBe(false);
+    expect(
+      generateSubGoals('Open the menu. Select Analytics.').map((goal) => goal.description)
+    ).toEqual(['Open the menu', 'Select Analytics']);
+    expect(generateSubGoals('Click A. Click B.').map((goal) => goal.description)).toEqual([
+      'Click A',
+      'Click B',
+    ]);
+  });
+
   it('decomposes numbered instructions into bounded sub-goals', () => {
     const instruction = Array.from(
       { length: 17 },

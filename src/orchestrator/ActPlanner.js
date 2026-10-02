@@ -53,7 +53,29 @@ const ACTION_VERB_PATTERN =
  * @returns {string[]}
  */
 function splitInstructionIntoClauses(instruction) {
-  const units = instruction.split(/[.!?;]+|\r?\n+/);
+  const units = [];
+  let start = 0;
+  for (const separator of instruction.matchAll(/[.!?;]+|\r?\n+/g)) {
+    const before = instruction.slice(0, separator.index);
+    const after = instruction.slice(separator.index + separator[0].length);
+    // A decimal, URL component, title abbreviation, or name initial is not
+    // a new task. Splitting these creates goals such as "3 the movie".
+    if (separator[0] === '.') {
+      if (after && !/^\s/.test(after)) continue;
+      if (
+        after.trim() &&
+        (/\b(?:vol|no|mr|mrs|ms|dr|prof|st|vs|etc|e\.g|i\.e)$/i.test(before) ||
+          (/\b[A-Z]$/.test(before) &&
+            !new RegExp(`^\\s*(?:${ACTION_VERB_PATTERN.source})`, 'i').test(after)))
+      ) {
+        continue;
+      }
+    }
+    if (after && !/^\s/.test(after) && /https?:\/\/\S*$/i.test(before)) continue;
+    units.push(instruction.slice(start, separator.index));
+    start = separator.index + separator[0].length;
+  }
+  units.push(instruction.slice(start));
   const clauses = [];
   for (const unit of units) {
     const chained = unit.split(

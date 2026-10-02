@@ -3,6 +3,26 @@
 Reviewed: 2026-09-27. Baseline: commit `e46e7c9`, version 6.3.0. Status: **draft for owner review**.
 Goal set by the owner: **an overall improvement, and a substantial improvement to Act**.
 
+## 2026-10-02 Act evaluation and planner correction
+
+Evaluated task completion and recovery using the existing sibling repository `prompt-paul-agent-eval`. The user's instruction to proceed authorized reuse of its fixtures and outcome grading. Existing local changes in that repository were preserved.
+
+INTENT: a lookup for “Guardians of the Galaxy Vol. 3” activated the multi-goal planner because punctuation splitting invented a second goal, “3 the movie”. The regression requires title/name abbreviations, initials, decimal values, and URLs to remain within their lookup clause, while genuine action sentences still split.
+
+Reproduced before fixing: the planner regression failed on the invented goal. The source correction is confined to `splitInstructionIntoClauses` in `src/orchestrator/ActPlanner.js`; six lookup variants and two genuine action sequences now pass. TWINS: planner activation and initial goal generation share this function, so both use the correction.
+
+Real-model evidence through the extension's eval-only entry point: `mistral-small-latest`, one local release-date task, three repetitions per artifact. Calibrated baseline **0/3**, candidate **3/3**. The baseline was frozen before changing source. One cancelled baseline timeout was preserved separately and its missing repetition retried; the timeout is not hidden in the scored denominator. Scored baseline trials required 9, 9, and 14 recorded model calls; candidate trials required two each.
+
+The external harness now distinguishes bookkeeping, navigation, and mutation; verifies a page observation and independent fixture state; rejects explicit incomplete-planner outcomes; bounds/cancels cases; preserves repetitions and configuration fingerprints; separates infrastructure errors; and supports resuming missing trials and regrading saved traces. The release-date grader no longer requires an attribution phrase absent from the request. Both immutable raw runs were graded with the same calibrated checks, preserving original grades.
+
+Audit limits: nine existing fixtures display preset facts; the shopping-list, BBC causes, and dictionary-definition mappings have prompt/oracle gaps. Mock results are plumbing evidence. The one selected lookup is a regression check, not a general success estimate or deploy decision; serving identity, stop reasons, complete timeout usage, and billed cost remain unavailable. No signed-in site, real mutation, or Hermes/Codex comparison was performed.
+
+Verification: full `npm run validate` passed (100 structural checks, 772 behavior tests, lint, formatting, smoke, and licenses). All 46 focused Act/approval browser tests passed. Of the remaining 37 cases, 35 passed initially and the Options profile-switch timeout passed on retry: 82/83 unique browser cases passed. The notch width check at `tests/browser/notch.spec.js:183` remains failing (6.347 px initially, 4.203 px on retry, 4 px tolerance); its source and tests were untouched. The full browser gate is not green. The external harness passed 14 unit tests, its dry-run browser smoke test, and pinned-corpus verification (590 records). The production build passed and excludes diagnostics/evaluation implementations.
+
+Manual UI coverage remains unavailable: the agent-browser launcher lacks its native executable, and the supplied browser UI runtime failed to start. Headed browser regressions and the model-backed extension runs provide automated coverage.
+
+Inspect the [local report](artifacts/act-eval/report.md) for the actual input, all six outputs, atomic grading, wall times, measured token counts, raw traces, comparison artifact, and reproduction commands. These artifacts are local and ignored by Git. No commit, push, or deployment was performed.
+
 ## 2026-10-01 blocker review
 
 - [x] Remove the obsolete V10 dependency; use the active global instructions and repository contracts.
