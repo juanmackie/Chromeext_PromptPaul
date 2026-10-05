@@ -29,6 +29,7 @@ describe('PageTabController', () => {
           return tab;
         }),
         remove: vi.fn(async (tabId) => tabs.delete(tabId)),
+        group: vi.fn(async ({ groupId }) => groupId || 7),
       },
     };
     controller = new PageTabController();
@@ -40,6 +41,21 @@ describe('PageTabController', () => {
     expect(result.tabs).toEqual([
       { tabId: 1, title: 'Source', url: 'https://example.com/start', active: true },
     ]);
+  });
+
+  it('goes back only in an owned tab and checks readiness before returning', async () => {
+    chrome.tabs.goBack = vi.fn(async (tabId) => {
+      tabs.get(tabId).url = 'https://example.com/previous';
+    });
+    controller.ensureTabReady = vi.fn(async () => {});
+    await expect(controller.execute('run-1', 'page_go_back', { tabId: 99 })).rejects.toMatchObject({
+      code: 'PAGE_TAB_NOT_OWNED',
+    });
+    expect(chrome.tabs.goBack).not.toHaveBeenCalled();
+    const result = await controller.execute('run-1', 'page_go_back', { tabId: 1 });
+    expect(chrome.tabs.goBack).toHaveBeenCalledWith(1);
+    expect(controller.ensureTabReady).toHaveBeenCalledWith(1, undefined);
+    expect(result).toMatchObject({ targetTabId: 1, ready: true, navigated: true });
   });
 
   it('opens, switches, and closes only owned non-source tabs', async () => {
@@ -55,6 +71,25 @@ describe('PageTabController', () => {
     );
     await controller.execute('run-1', 'page_close_tab', { tabId: 2 });
     expect(chrome.tabs.remove).toHaveBeenCalledWith(2);
+  });
+
+  it('groups only run-created tabs and reuses the group for later tabs', async () => {
+    await controller.execute('run-1', 'page_open_tab', { url: 'https://one.example/' });
+    await controller.execute('run-1', 'page_open_tab', { url: 'https://two.example/' });
+
+    expect(chrome.tabs.group).toHaveBeenNthCalledWith(1, { tabIds: [2] });
+    expect(chrome.tabs.group).toHaveBeenNthCalledWith(2, { tabIds: [3], groupId: 7 });
+  });
+
+  it('does not fail a tab open when grouping is unavailable', async () => {
+    chrome.tabs.group.mockRejectedValue(new Error('group API unavailable'));
+
+    const opened = await controller.execute('run-1', 'page_open_tab', {
+      url: 'https://other.example/path',
+    });
+
+    expect(opened.openedTabId).toBe(2);
+    expect(opened.ready).toBe(true);
   });
 
   it('waits for a new tab bridge before reporting it ready', async () => {

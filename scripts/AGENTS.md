@@ -8,9 +8,11 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 
 - `build.js` owns manifest validation, build directory recreation, source file copying, source directory copying, and build metadata generation.
 - `test-runner.js` owns structural tests, regression guards, manifest checks, and skill checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
+- Act guards pin all built-in tool names and require the occlusion gate before pointer dispatch, including dispatch through an associated visible label.
 - `smoke-check.js` owns the cheapest manifest and vendored dependency sanity checks.
 - `verify-vendored-licenses.js` owns reproducible local hash and license-record checks for vendored libraries.
 - `act-benchmark.js` owns the explicit opt-in model-driven Act benchmark against local browser fixtures; it is never part of CI.
+- Its roadmap corpus includes keyboard-only search/modal, hover, hidden owned tabs, viewport reading, prefilled forms, range/date, nested scroll, cross-origin frame, and trusted-key fixtures. Graders inspect end state and exclude redundant edits; importing its exported task/grade helpers must never launch a benchmark. The hidden-tab case must use real visibility, not focus emulation. Structured terminal outcomes become bounded ACT_* failure codes. End-state grading stays independent; runtime blocked/failed outcomes cannot count as success. Older A/B traces without structured outcomes are recorded as unavailable, not inferred from prose.
 
 ## Local Contracts
 
@@ -31,9 +33,11 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 - `benchmark:act` requires an explicit `--run` and an environment-supplied key, exercises only ephemeral local fixtures, and writes bounded metrics—not prompts, page text, model responses, or credentials—to ignored local artifacts. A prebuilt eval extension may be selected for A/B runs.
 - Update tests when adding source modules with durable contracts.
 - Regression guards for `chat.js` concurrency (`isResponseInFlight`, `beginResponseRun`), side-panel event routing (`sourceTabsMatch`, `getRunSourceTabId`), structured prompt contracts (`composeUserPrompt`, raw concatenation patterns), public-media fetch guards, and current-page action contracts (bounded snapshots, stale-state rejection, reserved tools, approval routing, and run-scoped session approval) live in `test-runner.js`.
-- The storage regression guard also pins Hermes credential and session keys so future backup or migration changes cannot expose them accidentally. Backup tests also require provider/search credentials to stay out of exported payloads, and custom-tool argument limits to remain enforced.
+- The storage regression guard pins `pageActionSitePolicies` and its owning source module. It also pins Hermes credential and session keys so future backup or migration changes cannot expose them accidentally. Backup tests also require provider/search credentials to stay out of exported payloads, and custom-tool argument limits to remain enforced.
 - The current-page action guard also pins the bounded user-input and owned-tab tool entry points.
 - `npm run audit` is the dependency vulnerability gate used by CI and the release-oriented `npm run ci` command.
+
+- Pin orchestrator-only `page_update_plan` in reserved tool/schema guards; it is not a DOM action or a batch member. Register scalar-value mutations in every reserved tool list and working-memory action set; stable IDs are independent of the snapshot element cap. Snapshot byte comparisons retain region identity/counts while dropping duplicate arrays.
 
 ## Verification
 

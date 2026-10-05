@@ -93,6 +93,12 @@ function normalizeModel(model, provider) {
     reasoningLevels,
     defaultReasoningLevel,
     priority: Number.isFinite(Number(model?.priority)) ? Number(model.priority) : 0,
+    supportsTools:
+      provider === 'codex'
+        ? true
+        : Array.isArray(model?.supported_parameters)
+          ? model.supported_parameters.includes('tools')
+          : null,
   };
 }
 

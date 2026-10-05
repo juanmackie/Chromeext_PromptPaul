@@ -13,6 +13,7 @@
  */
 
 import { loadingManager } from './loadingManager.js';
+import { setupPageActionSitePolicies } from './src/options/OptionsPageActions.js';
 import {
   BACKUP_LOCAL_KEYS,
   BACKUP_SYNC_KEYS,
@@ -420,7 +421,9 @@ async function loadAvailableModels(profile) {
           : 'No models were returned by this endpoint.'
       );
     }
-    const metadata = new Map(models.map((model) => [model.id, model]));
+    const metadata = new Map(
+      models.map((model) => [model.id, { ...model, endpoint: profile.llmEndpoint }])
+    );
     modelMetadataByProfile.set(profile.id, metadata);
     modelSelect.innerHTML = '';
     models.forEach((model) => {
@@ -856,6 +859,22 @@ function saveOptions(e) {
       profileToUpdate.lastUpdated = new Date().toLocaleString();
     }
 
+    const discoveredModel = modelMetadataByProfile.get(selectedProfileId)?.get(modelNameValue);
+    if (
+      discoveredModel?.endpoint === profileToUpdate.llmEndpoint &&
+      typeof discoveredModel?.supportsTools === 'boolean'
+    ) {
+      profileToUpdate.modelToolSupport = {
+        modelName: modelNameValue,
+        endpoint: profileToUpdate.llmEndpoint,
+        supportsTools: discoveredModel.supportsTools,
+      };
+    } else if (
+      profileToUpdate.modelToolSupport?.modelName !== modelNameValue ||
+      profileToUpdate.modelToolSupport?.endpoint !== profileToUpdate.llmEndpoint
+    ) {
+      delete profileToUpdate.modelToolSupport;
+    }
     const normalizedProfile = normalizeProfileRecord(profileToUpdate);
     if (!normalizedProfile.valid) {
       saveButton.disabled = false;
@@ -1284,6 +1303,10 @@ document.addEventListener('DOMContentLoaded', () => {
     [
       {
         element: document.getElementById('pageActionsTrustedMode'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+      {
+        element: document.getElementById('pageActionsPreciseInput'),
         getValue: (el) => String(Boolean(el && el.checked)),
       },
     ],
@@ -3885,22 +3908,33 @@ function setupNotchHandlers() {
  * Setup the trusted current-page action preference.
  */
 function setupPageActionHandlers() {
+  setupPageActionSitePolicies({
+    list: document.getElementById('pageActionSitePoliciesList'),
+    form: document.getElementById('pageActionSitePolicyForm'),
+    originInput: document.getElementById('pageActionSitePolicyOrigin'),
+    ruleInput: document.getElementById('pageActionSitePolicyRule'),
+    notify: showStatus,
+  });
   const toggle = document.getElementById('pageActionsTrustedMode');
+  const preciseInputToggle = document.getElementById('pageActionsPreciseInput');
   const saveButton = document.getElementById('savePageActions');
   const status = document.getElementById('pageActionsSaveStatus');
   if (!toggle) return;
 
-  chrome.storage.local.get(['pageActionsTrustedMode'], (result) => {
+  chrome.storage.local.get(['pageActionsTrustedMode', 'pageActionsPreciseInput'], (result) => {
     toggle.checked = result.pageActionsTrustedMode === true;
+    if (preciseInputToggle) preciseInputToggle.checked = result.pageActionsPreciseInput === true;
     if (status)
       status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
     markPageActionsTrackerClean?.();
   });
 
-  toggle.addEventListener('change', () => {
+  const markChanged = () => {
     announceDirtyChange(true);
     if (status) status.textContent = 'Unsaved changes. Click Save Page Action Settings.';
-  });
+  };
+  toggle.addEventListener('change', markChanged);
+  preciseInputToggle?.addEventListener('change', markChanged);
 
   saveButton?.addEventListener(
     'click',
@@ -3910,12 +3944,20 @@ function setupPageActionHandlers() {
       errorLabel: 'Failed to save page-action settings',
       notify: showStatus,
       onSuccess: () => {
-        if (status)
-          status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
+        if (status) {
+          const modeStatus = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
+          const preciseStatus = preciseInputToggle?.checked
+            ? ' Precise input is on.'
+            : ' Precise input is off.';
+          status.textContent = modeStatus + preciseStatus;
+        }
       },
       markClean: markPageActionsTrackerClean,
       write: () =>
-        setChromeStorage(chrome.storage.local, { pageActionsTrustedMode: toggle.checked }),
+        setChromeStorage(chrome.storage.local, {
+          pageActionsTrustedMode: toggle.checked,
+          pageActionsPreciseInput: Boolean(preciseInputToggle?.checked),
+        }),
     })
   );
 }

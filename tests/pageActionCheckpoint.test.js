@@ -22,6 +22,35 @@ function createSkillManager() {
 }
 
 describe('pageActionCheckpoint', () => {
+  it('preserves twelve short checklist descriptions and restores one active step', async () => {
+    await savePageActionCheckpoint({
+      runId: 'twelve',
+      instruction: 'Continue the public checklist',
+      planner: {
+        active: true,
+        currentSubGoalIndex: 8,
+        subGoals: Array.from({ length: 12 }, (_, index) => ({
+          description: `S${index}`,
+          status: index < 8 ? 'completed' : index === 8 ? 'in_progress' : 'pending',
+        })),
+      },
+    });
+    const checkpoint = await getPageActionCheckpoint('twelve');
+    expect(checkpoint.planner.subGoals).toHaveLength(12);
+    const orchestrator = new RunOrchestrator(createSkillManager());
+    orchestrator._emitEvent = vi.fn();
+    const id = await orchestrator.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      messages: [{ role: 'user', content: checkpoint.instruction }],
+      actCheckpoint: checkpoint,
+    });
+    const plan = orchestrator.getRun(id).pageActions.planner;
+    expect(plan.subGoals).toHaveLength(12);
+    expect(plan.subGoals[0].description).toBe('S0');
+    expect(plan.currentSubGoalIndex).toBe(8);
+    expect(plan.subGoals.filter((goal) => goal.status === 'in_progress')).toHaveLength(1);
+  });
   it('stores bounded execution metadata without note text or secrets', async () => {
     await savePageActionCheckpoint({
       runId: 'run-1',
@@ -106,6 +135,18 @@ describe('pageActionCheckpoint', () => {
       messages: [{ role: 'user', content: '1. Fill the search field\n2. Review results' }],
     });
     await orchestrator.executeTool(runId, {
+      id: 'plan-1',
+      function: {
+        name: 'page_update_plan',
+        arguments: JSON.stringify({
+          steps: [
+            { description: 'Fill the search field', status: 'in_progress' },
+            { description: 'Review results', status: 'pending' },
+          ],
+        }),
+      },
+    });
+    await orchestrator.executeTool(runId, {
       id: 'state-1',
       function: { name: 'page_get_state', arguments: '{}' },
     });
@@ -141,7 +182,7 @@ describe('pageActionCheckpoint', () => {
       evidence: 'unknown_delivery_after_worker_restart',
     });
     expect(resumed.pageActions.planner.subGoals[0]).toMatchObject({
-      status: 'blocked',
+      status: 'skipped',
       blockReason: 'The first page was unavailable.',
     });
     expect(orchestrator._buildSystemPrompt(resumed, [])).toContain('explicitly resumed');

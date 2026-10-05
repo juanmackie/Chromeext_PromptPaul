@@ -42,9 +42,9 @@ export function isPageActionsEnabled() {
 /**
  * Enable or disable page actions for the current browser session.
  * @param {boolean} enabled
- * @returns {Promise<void>}
+ * @returns {Promise<string>} Bounded tool-support warning, or an empty string.
  */
-export function setPageActionsEnabled(enabled) {
+export function setPageActionsEnabled(enabled, feedback = null) {
   pageActionsStateVersion += 1;
   pageActionsArmed = Boolean(enabled);
   renderPageActionsToggle();
@@ -54,6 +54,22 @@ export function setPageActionsEnabled(enabled) {
       if (error) reject(error);
       else resolve();
     });
+  }).then(async () => {
+    if (!enabled) return '';
+    let support = null;
+    try {
+      support = (await chrome.runtime.sendMessage?.({ action: 'getActModelSupport' }))
+        ?.supportsTools;
+    } catch (_) {
+      /* Warning must not undo saved permission. */
+    }
+    if (support === true) return '';
+    const warning =
+      support === false
+        ? 'This model is known not to support tools. Act may fail. Choose a tool-capable model in Options and save the connection.'
+        : 'Tool support for this model is unknown. Act may fail. Check the model in Options, select one that supports tools, and save the connection.';
+    feedback?.showToast?.(warning, 'warning');
+    return warning;
   });
 }
 
@@ -189,6 +205,12 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
         event.target.origin ? `Target: ${event.target.label}` : `On: ${event.target.label}`
       );
     }
+    const inputStatus = {
+      enabled: 'Precise input: enabled',
+      active: 'Precise input: active',
+      fallback: 'Precise input: unavailable; using standard input',
+    }[event.preciseInputState];
+    if (inputStatus) parts.push(inputStatus);
     status.textContent = parts.join(' · ');
   }
 
@@ -204,11 +226,13 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
   // NOT reported as whole-task completion.
   if (receipt) {
     const disposition = formatPlainLanguageDisposition(event.receipt?.disposition);
-    const text = disposition
-      ? `Last action (${String(event.receipt.actionName || 'page action').replace(/^page_/, '')}): ${disposition}`
-      : event.taskComplete
-        ? 'All planner steps resolved.'
-        : '';
+    let text = '';
+    if (disposition) {
+      const action = String(event.receipt.actionName || 'page action').replace(/^page_/, '');
+      text = `Last action (${action}): ${disposition}`;
+    } else if (event.taskComplete) {
+      text = event.hasPlanner ? 'All planner steps resolved.' : 'Task complete.';
+    }
     receipt.textContent = text;
     receipt.hidden = !text;
   }
@@ -226,6 +250,20 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
     });
     outcome.textContent = '';
     const lines = [];
+    if (event.actOutcome && ['done', 'blocked', 'failed'].includes(event.actOutcome.status)) {
+      const reasons = {
+        sign_in_required: 'Sign-in required',
+        captcha: 'CAPTCHA requires manual work',
+        needs_confirmation: 'Confirmation needed',
+        declined: 'User declined',
+        ambiguous: 'Completion not verified',
+        loop_detected: 'Repeated-action guard stopped work',
+        budget_exhausted: 'Run budget exhausted',
+        site_blocked: 'Site policy blocked work',
+      };
+      const reason = reasons[event.actOutcome.reason];
+      lines.push(`Result: ${event.actOutcome.status}${reason ? ` — ${reason}` : ''}.`);
+    }
     if (computed.hasVerifiedWork) {
       lines.push(
         `Verified work: ${computed.verifiedCount} step${computed.verifiedCount === 1 ? '' : 's'} confirmed.`
@@ -633,13 +671,14 @@ export function initPageActionsToggle(toggleElement, loadingManagerRef) {
   toggleElement.addEventListener('click', async () => {
     const next = !pageActionsArmed;
     try {
-      await setPageActionsEnabled(next);
+      const warning = await setPageActionsEnabled(next);
       renderPageActionsToggle();
       loadingManagerRef?.showToast?.(
-        next
-          ? 'Page actions enabled for this browser session. Risky actions still require approval.'
-          : 'Page actions disabled for this browser session.',
-        'info'
+        warning ||
+          (next
+            ? 'Page actions enabled for this browser session. Risky actions still require approval.'
+            : 'Page actions disabled for this browser session.'),
+        warning ? 'warning' : 'info'
       );
     } catch (error) {
       pageActionsArmed = !next;
@@ -728,8 +767,9 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
   const approveAll = document.createElement('button');
   approveAll.type = 'button';
   approveAll.className = 'btn btn-outline-primary btn-sm';
-  approveAll.textContent = 'Approve all this session';
-  approveAll.title = 'Approve all policy-allowed page actions for this chat run.';
+  approveAll.textContent = 'Approve similar actions this run';
+  approveAll.title =
+    'Approve allowed low/medium-risk actions for this run. High-risk actions always ask.';
   const deny = document.createElement('button');
   deny.type = 'button';
   deny.className = 'btn btn-outline-secondary btn-sm';
@@ -749,46 +789,71 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
     }
     error.textContent = message;
   };
+  const allowSite = document.createElement('button');
+  allowSite.type = 'button';
+  allowSite.className = 'btn btn-outline-primary btn-sm';
+  allowSite.textContent = 'Always allow low-risk actions on this site';
+  allowSite.title =
+    'Approve this action once and save low-risk site trust. High-risk actions always ask.';
+  allowSite.hidden = !event.siteOrigin;
   const disableAll = () => {
+    allowSite.disabled = true;
     approve.disabled = true;
     approveAll.disabled = true;
     deny.disabled = true;
     stop.disabled = true;
   };
   const enableAll = () => {
+    allowSite.disabled = false;
     approve.disabled = false;
     approveAll.disabled = false;
     deny.disabled = false;
     stop.disabled = false;
   };
 
-  const decide = async (approved, approveForSession = false) => {
+  const decide = async (approved, approveForSession = false, approveForSite = false) => {
     disableAll();
     try {
-      const response = await onDecision?.(event.confirmationId, approved, approveForSession);
-      if (response?.success === false)
-        throw new Error(response.error || 'Decision was not accepted.');
-      card.dataset.decision = approveForSession
-        ? 'approved-session'
-        : approved
-          ? 'approved'
-          : 'denied';
-      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
-      card.setAttribute(
-        'aria-label',
-        approveForSession
-          ? 'Page action approved for this session'
-          : approved
-            ? 'Page action approved'
-            : 'Page action denied'
+      const response = await onDecision?.(
+        event.confirmationId,
+        approved,
+        approveForSession,
+        approveForSite
       );
+      if (response?.success === false) {
+        const error = new Error(response.error || 'Decision was not accepted.');
+        error.expired = response.expired === true;
+        throw error;
+      }
+      let decision = 'denied';
+      let label = 'Page action denied';
+      if (approved) {
+        decision = 'approved';
+        label = 'Page action approved';
+      }
+      if (approveForSession) {
+        decision = 'approved-session';
+        label = 'Page action approved; similar low and medium-risk actions allowed for this run';
+      }
+      if (approveForSite) {
+        decision = 'approved-site';
+        label = 'Page action approved; low-risk site trust saved';
+      }
+      card.dataset.decision = decision;
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+      card.setAttribute('aria-label', label);
     } catch (error) {
-      enableAll();
+      if (error.expired && !card.dataset.decision) {
+        card.dataset.decision = 'expired';
+        card.setAttribute('aria-label', 'This page-action approval expired');
+      }
+      if (!card.dataset.decision) enableAll();
       showError(error.message || 'The decision could not be sent. Try again.');
     }
   };
   approve.addEventListener('click', () => decide(true));
   approveAll.addEventListener('click', () => decide(true, true));
+  allowSite.addEventListener('click', () => decide(true, false, true));
   deny.addEventListener('click', () => decide(false));
   stop.addEventListener('click', () => {
     disableAll();
@@ -797,7 +862,7 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
     if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
     onStop?.();
   });
-  controls.append(approve, approveAll, deny, stop);
+  controls.append(approve, approveAll, allowSite, deny, stop);
   card.appendChild(controls);
   chatArea.appendChild(card);
   card._restorePageActionFocus = () => {
@@ -828,7 +893,7 @@ export function resolvePageActionConfirmation(chatArea, event) {
     label = 'No answer; page action was not performed';
   } else if (event.approveAll) {
     decision = 'approved-session';
-    label = 'Page action approved for this session';
+    label = 'Page action approved; similar low and medium-risk actions allowed for this run';
   } else if (event.approved) {
     decision = 'approved';
     label = 'Page action approved';

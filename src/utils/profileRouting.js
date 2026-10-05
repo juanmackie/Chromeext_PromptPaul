@@ -20,6 +20,17 @@ const VISION_MODEL_PATTERNS = [
   /internlm-xcomposer/i,
 ];
 
+/** Saved tool metadata is usable only for the model and endpoint that were discovered. */
+export function getProfileToolSupport(profile) {
+  if (profile?.provider === 'codex' || profile?.provider === 'hermes') return true;
+  const metadata = profile?.modelToolSupport;
+  return metadata?.modelName === profile?.modelName &&
+    metadata?.endpoint === profile?.llmEndpoint &&
+    typeof metadata?.supportsTools === 'boolean'
+    ? metadata.supportsTools
+    : null;
+}
+
 export function modelSupportsVision(modelName) {
   if (!modelName) return false;
   return VISION_MODEL_PATTERNS.some((pattern) => pattern.test(modelName));

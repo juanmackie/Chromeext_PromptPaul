@@ -110,11 +110,11 @@ function getBrandedExecutable(requested) {
  * @param {string} userDataDir
  * @returns {Promise<{context: object}>}
  */
-async function launchTestBrowser(userDataDir) {
+async function launchTestBrowser(userDataDir, options = {}) {
   const requested = String(
     process.env.PROMPT_PAUL_BROWSER || process.env.PROMPT_PAUL_BROWSER_CHANNEL || ''
   ).toLowerCase();
-  if (!requested && !process.env.PROMPT_PAUL_BROWSER_EXECUTABLE) {
+  if (!requested && !process.env.PROMPT_PAUL_BROWSER_EXECUTABLE && !options.realVisibility) {
     const context = await chromium.launchPersistentContext(
       userDataDir,
       browserLaunchOptions(userDataDir)
@@ -127,7 +127,10 @@ async function launchTestBrowser(userDataDir) {
     return { context };
   }
 
-  const executable = getBrandedExecutable(requested === 'edge' ? 'edge' : 'chrome');
+  const executable =
+    !requested && !process.env.PROMPT_PAUL_BROWSER_EXECUTABLE && options.realVisibility
+      ? chromium.executablePath()
+      : getBrandedExecutable(requested === 'edge' ? 'edge' : 'chrome');
   if (!executable) {
     throw new Error(
       `No ${requested === 'edge' ? 'Microsoft Edge' : 'Google Chrome'} executable was found. ` +
@@ -148,7 +151,9 @@ async function launchTestBrowser(userDataDir) {
   let browser;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
+        noDefaults: options.realVisibility === true,
+      });
       break;
     } catch (_) {
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -258,6 +263,15 @@ function serveMockChat(request, response, state, requestUrl) {
         hasAuthorization: Boolean(request.headers.authorization),
         body,
       });
+      if (
+        requestUrl.searchParams.get('reject_named_tools') === '1' &&
+        body?.tool_choice &&
+        typeof body.tool_choice === 'object'
+      ) {
+        response.writeHead(400, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ error: { message: 'Named tool choice is unsupported.' } }));
+        return;
+      }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       if (requestUrl.searchParams.get('hold') === '1') {
         // Hold the stream open so tests can observe in-flight run state;
@@ -292,6 +306,32 @@ function serveFixture(request, response, state) {
     return;
   }
   const requestPath = requestUrl.pathname;
+  if (requestPath === '/models') {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(
+      JSON.stringify({
+        data: [
+          {
+            id: 'fixture-model',
+            name: 'Fixture tool model (simulated)',
+            supported_parameters: ['tools'],
+          },
+          {
+            id: 'fixture-text-only',
+            name: 'Fixture text model (simulated)',
+            supported_parameters: ['temperature'],
+          },
+          { id: 'fixture-unknown', name: 'Fixture unknown model (simulated)' },
+        ],
+      })
+    );
+    return;
+  }
+  if (requestPath === '/act-site-redirect') {
+    response.writeHead(302, { location: `http://localhost:${request.socket.localPort}/form.html` });
+    response.end();
+    return;
+  }
   const fileName = path.basename(requestPath);
   const filePath = path.join(fixtureRoot, fileName);
   if (!filePath.startsWith(fixtureRoot) || !fs.existsSync(filePath)) {

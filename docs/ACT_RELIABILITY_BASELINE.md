@@ -124,10 +124,10 @@ Conclusions worth acting on:
 If the pinned tasks prove to be poor fits once run, re-pick with the same seed and
 record the substitution here.
 
+## Roadmap evaluation boundary
+
+The local roadmap corpus and scripted Chrome journeys are delivery checks, not results for these live tasks. Model-driven A/B remains **not recorded** while `PROMPT_PAUL_BENCHMARK_API_KEY` is absent. Current traces preserve runtime `actOutcome` and ACT_* failure codes; end state is graded independently of model completion claims. Pre-outcome traces do not have comparable structured failure metadata.
+
 ## Deliberate omission
 
-The current selection of a disclosure control is never disclosed to the model:
-control values stay redacted (the snapshot reports `value_present` only), and
-`pageStateHash` is a 32-bit digest sent to the provider, so a small value space such
-as a selected option index would be brute-forceable from it. See the value-redaction
-notes in `content_script_unified.js` and `src/utils/pageDom.js`.
+Sensitive control values remain omitted, including password, hidden and file fields. With Act enabled, non-sensitive values (including selected option text) are disclosed in the viewport outline, limited to 160 characters per field and 8,000 characters per snapshot. Only those already-disclosed values participate in change fingerprints. Values are kept in live task state and model history, never in activity journals or checkpoints.

@@ -15,6 +15,51 @@ const PROFILE_ID = 'act-benchmark-local';
 const RUN_TIMEOUT_MS = 8 * 60 * 1_000;
 const TASKS = [
   {
+    id: 'search-enter',
+    prompt: 'Search for Cedar using the search box with no button. Stay on this local page.',
+  },
+  {
+    id: 'escape-modal',
+    prompt: 'Dismiss the Notice dialog using Escape. Stay on this local page.',
+  },
+  {
+    id: 'hover-menu',
+    prompt: 'Open the Products menu by hovering and choose Analytics. Stay on this local page.',
+  },
+  {
+    id: 'background-tab',
+    prompt:
+      'Open the Background notes link in a background tab, switch your work target to it without activating it, and enter Background note in Notes. Keep the source tab open.',
+  },
+  {
+    id: 'viewport-read',
+    prompt:
+      'Read the verification code in the current viewport and enter it in Verification code. Stay on this local page.',
+  },
+  {
+    id: 'prefilled-form',
+    prompt:
+      'Keep Name as Ada and City as Brisbane. Correct only the Team field to Cedar. Stay on this local page.',
+  },
+  {
+    id: 'range-date',
+    prompt: 'Set Volume to 70 and Appointment date to 2026-10-20. Stay on this local page.',
+  },
+  {
+    id: 'nested-scroll',
+    prompt: 'Scroll inside the Activity panel to reach and select Cedar. Stay on this local page.',
+  },
+  {
+    id: 'cross-origin-iframe',
+    prompt:
+      'Enter Ada in Name in the Contact form frame and submit that form. Stay on these local fixture pages.',
+  },
+  {
+    id: 'trusted-key-only',
+    prompt:
+      'Press Enter in the Ready field to complete the local keyboard check. Stay on this local page.',
+  },
+  {
     id: 'spa-menu',
     prompt:
       'On this local page, open the Products menu and choose Analytics. Do not leave this local page.',
@@ -139,11 +184,20 @@ function summarizeTrace(trace) {
   let inputTokens = 0;
   let outputTokens = 0;
   let toggleProtectionObserved = false;
+  const snapshotBytes = [];
+  const settlements = [];
   for (const step of steps) {
     const usage = step.tokenUsage;
     if (Number.isFinite(usage?.inputTokens)) inputTokens += usage.inputTokens;
     if (Number.isFinite(usage?.outputTokens)) outputTokens += usage.outputTokens;
     const result = step.action_result;
+    if (Number.isFinite(step.snapshotBytes?.after)) snapshotBytes.push(step.snapshotBytes);
+    const settle = result?.result?.settle || result?.settle;
+    if (Number.isFinite(settle?.waitedMs))
+      settlements.push({
+        waitedMs: settle.waitedMs,
+        reason: String(settle.reason || '').slice(0, 32),
+      });
     const code = result?.result?.error || result?.error || result?.code;
     if (result?.result?.toggleDetected === true || code === 'PAGE_ACTION_TOGGLE_LOOP') {
       toggleProtectionObserved = true;
@@ -154,6 +208,19 @@ function summarizeTrace(trace) {
       if (match) failureCodes.add(match[0]);
     }
   }
+  const rawOutcome = trace?.terminal?.actOutcome;
+  const knownReason =
+    /^(?:sign_in_required|captcha|needs_confirmation|declined|ambiguous|loop_detected|budget_exhausted|site_blocked)$/.test(
+      rawOutcome?.reason || ''
+    );
+  const actOutcome =
+    rawOutcome &&
+    ((rawOutcome.status === 'done' && rawOutcome.reason === null) ||
+      (['blocked', 'failed'].includes(rawOutcome.status) && knownReason))
+      ? { status: rawOutcome.status, reason: rawOutcome.reason }
+      : null;
+  if (actOutcome?.status !== 'done' && actOutcome?.reason)
+    failureCodes.add(`ACT_${actOutcome.reason.toUpperCase()}`);
   if (trace?.terminal?.type && trace.terminal.type !== 'complete') {
     failureCodes.add(`RUN_${String(trace.terminal.type).toUpperCase().slice(0, 24)}`);
   }
@@ -161,13 +228,38 @@ function summarizeTrace(trace) {
     steps: actionSteps.length,
     modelTurns: steps.filter((step) => step.kind === 'llm_turn_started').length,
     tokens: inputTokens || outputTokens ? { input: inputTokens, output: outputTokens } : null,
+    snapshotBytes,
+    settlements,
     failureCodes: [...failureCodes].slice(0, 32),
     toggleProtectionObserved,
     terminalState: String(trace?.terminal?.type || 'missing').slice(0, 32),
+    actOutcome,
   };
 }
 
-async function readFixtureState(page, task) {
+async function readFixtureState(page, task, excludedTabIds = []) {
+  if (task.id === 'background-tab') {
+    const harness = page
+      .context()
+      .pages()
+      .find((candidate) => candidate.url().endsWith('/extension-harness.html'));
+    if (!harness) return false;
+    return harness.evaluate(async (excludedIds) => {
+      const tabs = await chrome.tabs.query({});
+      const tab = tabs.find(
+        (candidate) =>
+          !excludedIds.includes(candidate.id) && candidate.url?.endsWith('/act-hidden-settle.html')
+      );
+      if (!tab || tab.active) return false;
+      const [state] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () =>
+          document.visibilityState === 'hidden' &&
+          document.querySelector('#notes')?.value === 'Background note',
+      });
+      return state?.result === true;
+    }, excludedTabIds);
+  }
   return page.evaluate((taskId) => {
     const root = document.querySelector('#task');
     if (!root) return false;
@@ -199,6 +291,24 @@ async function readFixtureState(page, task) {
       );
     }
     const successById = {
+      'search-enter': (body) => body.dataset.searched === 'Cedar',
+      'escape-modal': (body) => body.dataset.dismissed === 'true',
+      'hover-menu': (body) => body.dataset.selection === 'analytics',
+      'viewport-read': () => root.querySelector('#verification')?.value === 'ORBIT-64',
+      'prefilled-form': () =>
+        ['Ada', 'Brisbane', 'Cedar'].every(
+          (value, index) => root.querySelectorAll('input')[index]?.value === value
+        ) &&
+        [...root.querySelectorAll('input')]
+          .slice(0, 2)
+          .every((input) => input.dataset.edits === '0'),
+      'range-date': () =>
+        root.querySelector('#volume')?.value === '70' &&
+        root.querySelector('#date')?.value === '2026-10-20',
+      'nested-scroll': (body) =>
+        body.dataset.selection === 'cedar' && root.querySelector('#scroll-list')?.scrollTop > 0,
+      'cross-origin-iframe': (body) => body.dataset.submitted === 'Ada',
+      'trusted-key-only': (body) => body.dataset.trustedKey === 'true',
       'spa-menu': (body) => body.dataset.selection === 'analytics',
       autocomplete: (body) => body.dataset.selection === 'Saffron',
       'custom-radio': (body) => body.dataset.selection === 'vegetarian',
@@ -245,6 +355,7 @@ async function runAttempt({
   const target = await context.newPage();
   const targetUrl = `${fixtureServer.url('act-benchmark.html')}?case=${encodeURIComponent(task.id)}`;
   await target.goto(targetUrl);
+  await target.bringToFront();
   const taskId = `${task.id}-${runNumber}-${Date.now().toString(36)}`;
   const fixtureOrigin = parseUrl(targetUrl, 'Local fixture URL').origin;
   const startedAt = Date.now();
@@ -252,6 +363,9 @@ async function runAttempt({
   let resultMessage = null;
   const failureCodes = new Set();
   const deadline = startedAt + RUN_TIMEOUT_MS;
+  const initialTabIds = await harness.evaluate(async () =>
+    (await chrome.tabs.query({})).map((tab) => tab.id)
+  );
   try {
     await harness.evaluate(
       ({ endpoint, model, apiKey, profileId }) =>
@@ -323,9 +437,11 @@ async function runAttempt({
     const trace = resultMessage?.result || null;
     const traceSummary = summarizeTrace(trace);
     for (const code of traceSummary.failureCodes) failureCodes.add(code);
-    const endStateMatches = await readFixtureState(target, task);
+    const endStateMatches = await readFixtureState(target, task, initialTabIds);
     const success =
-      endStateMatches && (task.id !== 'gmail-toggle-trap' || traceSummary.toggleProtectionObserved);
+      endStateMatches &&
+      (task.id !== 'gmail-toggle-trap' || traceSummary.toggleProtectionObserved) &&
+      (!traceSummary.actOutcome || traceSummary.actOutcome.status === 'done');
     if (!success && !failureCodes.size) failureCodes.add('END_STATE_MISMATCH');
     if (
       endStateMatches &&
@@ -344,11 +460,14 @@ async function runAttempt({
       steps: traceSummary.steps,
       modelTurns: traceSummary.modelTurns,
       tokens: traceSummary.tokens,
+      snapshotBytes: traceSummary.snapshotBytes,
+      settlements: traceSummary.settlements,
       wallTimeMs: Math.max(0, Date.now() - startedAt),
       confirmationCards: Number(cards?.confirmationCards) || 0,
       progressCards: Number(cards?.progressCards) || 0,
       failureCodes: [...failureCodes].slice(0, 32),
       terminalState: traceSummary.terminalState,
+      actOutcome: traceSummary.actOutcome,
     };
   } catch (error) {
     failureCodes.add(
@@ -371,6 +490,12 @@ async function runAttempt({
     if (runId && !resultMessage) {
       await harness.evaluate((id) => window.pageActionHarness.abortRun(id), runId).catch(() => {});
     }
+    await harness
+      .evaluate(async (initialIds) => {
+        const created = (await chrome.tabs.query({})).filter((tab) => !initialIds.includes(tab.id));
+        for (const tab of created) await chrome.tabs.remove(tab.id).catch(() => {});
+      }, initialTabIds)
+      .catch(() => {});
     await target.close().catch(() => {});
   }
 }
@@ -440,7 +565,7 @@ async function runBenchmark(options) {
   const records = [];
   try {
     fixtureServer = await startFixtureServer();
-    ({ context } = await launchTestBrowser(osDir));
+    ({ context } = await launchTestBrowser(osDir, { realVisibility: true }));
     const harness = await openHarness(context);
     for (const task of TASKS) {
       for (let runNumber = 1; runNumber <= options.runs; runNumber += 1) {
@@ -508,9 +633,11 @@ async function main() {
   await runBenchmark(options);
 }
 
-main().catch((error) => {
-  console.error(`Act benchmark stopped: ${error.message}`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`Act benchmark stopped: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
 
-module.exports = { parseArgs, summarizeTrace };
+module.exports = { TASKS, parseArgs, summarizeTrace, readFixtureState };

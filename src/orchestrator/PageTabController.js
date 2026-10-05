@@ -65,6 +65,8 @@ export class PageTabController {
       targetTabId: Number(sourceTabId),
       ownedTabIds: new Set([Number(sourceTabId)]),
       tabStates: new Map([[Number(sourceTabId), { status: 'unknown', failures: 0 }]]),
+      tabGroupId: null,
+      grouping: Promise.resolve(),
     });
   }
 
@@ -145,6 +147,25 @@ export class PageTabController {
           }
         : {}),
     };
+  }
+
+  async _groupRunTab(state, tabId) {
+    if (typeof chrome.tabs.group !== 'function') return;
+    state.grouping = state.grouping.then(async () => {
+      try {
+        const options = { tabIds: [tabId] };
+        if (Number.isInteger(state.tabGroupId)) options.groupId = state.tabGroupId;
+        state.tabGroupId = await chrome.tabs.group(options);
+      } catch (_) {
+        if (!Number.isInteger(state.tabGroupId)) return;
+        try {
+          state.tabGroupId = await chrome.tabs.group({ tabIds: [tabId] });
+        } catch (_) {
+          // Grouping is a convenience; tab creation remains successful.
+        }
+      }
+    });
+    await state.grouping;
   }
 
   async execute(runId, actionName, args = {}) {
@@ -236,6 +257,7 @@ export class PageTabController {
       if (!tab?.id) throw new Error('The browser did not return the new tab id.');
       state.ownedTabIds.add(tab.id);
       state.tabStates.set(tab.id, { status: 'starting', failures: 0 });
+      await this._groupRunTab(state, tab.id);
       const foreground = args.background !== true;
       if (foreground) state.targetTabId = tab.id;
       let ready = true;
@@ -272,6 +294,10 @@ export class PageTabController {
     }
 
     this._assertOwned(state, args.tabId);
+    if (actionName === 'page_go_back') {
+      await chrome.tabs.goBack(Number(args.tabId));
+      return this._adoptOwnedTab(state, Number(args.tabId), args, true);
+    }
     if (actionName === 'page_switch_tab') {
       state.targetTabId = Number(args.tabId);
       let ready = true;

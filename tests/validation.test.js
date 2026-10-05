@@ -137,6 +137,15 @@ describe('validation helpers', () => {
     expect(normalizeBackupPayload({ local: { searchProvider: 'yahoo' } }).valid).toBe(false);
   });
 
+  it('preserves the opt-in precise-input preference in backups', () => {
+    expect(BACKUP_LOCAL_KEYS).toContain('pageActionsPreciseInput');
+    const enabled = normalizeBackupPayload({ local: { pageActionsPreciseInput: true } });
+    const invalid = normalizeBackupPayload({ local: { pageActionsPreciseInput: 'yes' } });
+    expect(enabled.valid).toBe(true);
+    expect(enabled.value.local.pageActionsPreciseInput).toBe(true);
+    expect(invalid.valid).toBe(false);
+  });
+
   it('preserves the persistent notch preference and position in backups', () => {
     expect(BACKUP_LOCAL_KEYS).toContain('notchEnabled');
     expect(BACKUP_LOCAL_KEYS).toContain('notchPosition');

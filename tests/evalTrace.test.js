@@ -13,6 +13,27 @@ import {
 } from '../src/utils/evalTrace.eval.js';
 
 describe('evaluation trace', () => {
+  it('measures full snapshot serialization before bounded trace truncation', () => {
+    const runId = 'snapshot-metric';
+    beginEvalTrace({ runId });
+    const step = recordEvalTrace(runId, {
+      kind: 'action',
+      actionResult: {
+        result: {
+          snapshot: {
+            snapshotId: 's',
+            content: '[0] input Name',
+            elements: [{ index: 0, label: 'Name' }],
+            metrics: { buildMs: 4 },
+            fingerprint: 'abcd',
+          },
+        },
+      },
+    });
+    expect(step.snapshotBytes.after).toBeGreaterThan(0);
+    expect(step.snapshotBytes.after).toBeLessThan(step.snapshotBytes.before);
+    clearEvalTrace(runId);
+  });
   it('records bounded redacted provider and action steps', () => {
     const runId = 'eval-trace-test';
     clearEvalTrace(runId);
@@ -60,6 +81,31 @@ describe('evaluation trace', () => {
       apiKey: '[REDACTED]',
     });
     expect(JSON.stringify(trace)).not.toContain('not-recorded');
+    clearEvalTrace(runId);
+  });
+
+  it('retains bounded machine outcomes even after the step cap', () => {
+    const runId = 'terminal-outcome-cap';
+    beginEvalTrace({ runId });
+    for (let index = 0; index < 256; index++) recordEvalTrace(runId, { kind: 'event' });
+    recordEvalTrace(runId, {
+      kind: 'terminal',
+      terminalType: 'complete',
+      llmResponse: 'Everything succeeded.',
+      actOutcome: { status: 'blocked', reason: 'declined', pageText: 'must-not-enter-outcome' },
+    });
+    const trace = finishEvalTrace(runId);
+    expect(trace.steps).toHaveLength(256);
+    expect(trace.terminal.actOutcome).toEqual({ status: 'blocked', reason: 'declined' });
+    expect(JSON.stringify(trace)).not.toContain('must-not-enter-outcome');
+    clearEvalTrace(runId);
+    beginEvalTrace({ runId });
+    expect(
+      finishEvalTrace(runId, {
+        type: 'complete',
+        actOutcome: { status: 'failed', reason: 'ambiguous' },
+      }).terminal.actOutcome
+    ).toEqual({ status: 'failed', reason: 'ambiguous' });
     clearEvalTrace(runId);
   });
 

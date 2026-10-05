@@ -24,8 +24,16 @@ import {
   normalizeProfileRecord,
   normalizeToolHttpMethod,
 } from './src/utils/validation.js';
-import { getHermesEndpoint, resolvePreferredProfile } from './src/utils/profileRouting.js';
+import {
+  getHermesEndpoint,
+  getProfileToolSupport,
+  resolvePreferredProfile,
+} from './src/utils/profileRouting.js';
 import { sanitizePageActionUrl } from './src/utils/pageDom.js';
+import {
+  createPageActionSitePolicyStore,
+  getPageActionSiteOrigin,
+} from './src/utils/pageActionSitePolicies.js';
 import { CONTEXT_MENU_PROMPTS } from './src/prompts.js';
 import { executeBraveSearch, BraveSearchError } from './src/utils/braveSearch.js';
 import { executeKeylessSearch } from './src/utils/keylessSearch.js';
@@ -39,6 +47,7 @@ import {
 import { waitForRetry } from './src/utils/retryBackoff.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
+import { CdpInputBackend } from './src/orchestrator/CdpInputBackend.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
 import { HermesTransport, supportsHermesClientTools } from './src/orchestrator/HermesTransport.js';
@@ -1124,6 +1133,9 @@ const braveSearchExecutor = async (query, options = {}) => {
   return executeKeylessSearch(query, { ...options, exaApiKey: await getExaSearchApiKey() });
 };
 
+const pageActionSitePolicyStore = createPageActionSitePolicyStore(chrome.storage.local);
+const pageActionSitePolicyProvider = () => pageActionSitePolicyStore.read();
+
 const pageActionPolicyProvider = async () => {
   const result = await chrome.storage.local.get(['pageActionsTrustedMode']);
   return result.pageActionsTrustedMode === true;
@@ -1150,7 +1162,7 @@ const pingPageActionContentScript = (tabId) =>
       resolve({ connected: false });
     }, PAGE_ACTION_PING_TIMEOUT_MS);
     try {
-      chrome.tabs.sendMessage(tabId, { action: 'pageActionPing' }, (response) => {
+      chrome.tabs.sendMessage(tabId, { action: 'pageActionPing' }, { frameId: 0 }, (response) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -1182,6 +1194,18 @@ const verifyPageActionConnection = async (tabId, signal) => {
   });
   return (await pingPageActionContentScript(tabId)).connected;
 };
+
+const injectPageActionFrameScripts = (tabId) =>
+  new Promise((resolve) => {
+    try {
+      chrome.scripting.executeScript(
+        { target: { tabId, allFrames: true }, files: ['content_script_page_actions.js'] },
+        () => resolve(!chrome.runtime.lastError)
+      );
+    } catch (_) {
+      resolve(false);
+    }
+  });
 
 /**
  * Inject the unified page bridge when a tab was opened after the extension
@@ -1216,6 +1240,7 @@ const injectPageActionContentScript = (tabId) =>
             'libs/turndown.js',
             'libs/dom-accessibility-api.js',
             'content_script_unified.js',
+            'content_script_page_actions.js',
           ],
         },
         () => {
@@ -1227,7 +1252,7 @@ const injectPageActionContentScript = (tabId) =>
             finish(error);
             return;
           }
-          finish();
+          void injectPageActionFrameScripts(tabId).finally(() => finish());
         }
       );
     } catch (error) {
@@ -1260,7 +1285,10 @@ const ensurePageActionContentScript = async (tabId, signal) => {
     }
     const url = String(tab?.url || tab?.pendingUrl || '').trim();
     if (url && getCurrentPageSupport(url).available) {
-      if (await verifyPageActionConnection(Number(tabId), signal)) return true;
+      if (await verifyPageActionConnection(Number(tabId), signal)) {
+        await injectPageActionFrameScripts(Number(tabId));
+        return true;
+      }
       // A content script may be absent because this tab was created after the
       // match decision. Inject once after the document commits, then continue
       // polling until the bridge answers.
@@ -1381,8 +1409,11 @@ const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
     }
 
     if (currentUrl && currentUrl !== previousUrl) {
-      const connected = await pingPageActionContentScript(tabId);
-      if (connected.connected) return { url: currentUrl };
+      try {
+        if (await ensurePageActionContentScript(tabId, signal)) return { url: currentUrl };
+      } catch (_) {
+        // Keep waiting while the destination document finishes loading.
+      }
     }
 
     await waitForRetry(attempt++, {
@@ -1410,8 +1441,11 @@ const waitForPageActionBridge = async (tabId, signal) => {
   let attempt = 0;
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
-    const connected = await pingPageActionContentScript(tabId);
-    if (connected.connected) return;
+    try {
+      if (await ensurePageActionContentScript(tabId, signal)) return;
+    } catch (_) {
+      // Keep waiting while the destination document finishes loading.
+    }
     await waitForRetry(attempt++, {
       baseMs: PAGE_ACTION_NAVIGATION_POLL_MS,
       maxMs: 1_000,
@@ -1428,7 +1462,8 @@ const sendPageActionMessage = (
   tabId,
   message,
   signal,
-  timeoutMs = PAGE_ACTION_MESSAGE_TIMEOUT_MS
+  timeoutMs = PAGE_ACTION_MESSAGE_TIMEOUT_MS,
+  frameId = 0
 ) =>
   new Promise((resolve, reject) => {
     let settled = false;
@@ -1458,7 +1493,7 @@ const sendPageActionMessage = (
     }
 
     try {
-      chrome.tabs.sendMessage(tabId, message, (response) => {
+      const callback = (response) => {
         if (chrome.runtime.lastError) {
           const error = new Error(friendlyRuntimeErrorMessage(chrome.runtime.lastError.message));
           error.code = 'PAGE_ACTION_MESSAGE_FAILED';
@@ -1479,7 +1514,9 @@ const sendPageActionMessage = (
           return;
         }
         finish(response, null);
-      });
+      };
+      if (Number.isInteger(frameId)) chrome.tabs.sendMessage(tabId, message, { frameId }, callback);
+      else chrome.tabs.sendMessage(tabId, message, callback);
     } catch (error) {
       error.code = error.code || 'PAGE_ACTION_MESSAGE_FAILED';
       finish(null, error);
@@ -1497,6 +1534,227 @@ const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
   }, 0);
   return Math.min(PAGE_ACTION_BATCH_TIMEOUT_MAX_MS, PAGE_ACTION_MESSAGE_TIMEOUT_MS + waitMs);
 };
+
+let runOrchestrator = null;
+const cdpInputBackend = new CdpInputBackend({
+  onUnexpectedDetach: ({ runId }) => {
+    const run = runOrchestrator?.activeRuns.get(runId);
+    if (run?.pageActions?.enabled) runOrchestrator.setPreciseInputState(runId, 'fallback');
+  },
+});
+
+const pageActionFrameSnapshotMaps = new Map();
+const PAGE_ACTION_MAX_FRAMES = 16;
+
+const getPageActionFrameDescriptors = async (tabId) => {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        const parsed = new URL(location.href);
+        return {
+          origin: /^https?:$/u.test(parsed.protocol) ? parsed.origin : '',
+          title: String(document.title || '').slice(0, 120),
+          frameTitle: String(window.frameElement?.getAttribute('title') || '').slice(0, 120),
+          frameName: String(window.name || '').slice(0, 120),
+          isTop: window === window.top,
+        };
+      },
+    });
+    return (Array.isArray(results) ? results : [])
+      .filter((entry) => Number.isInteger(entry.frameId) && entry.result?.origin)
+      .map((entry) => {
+        const origin = String(entry.result.origin).slice(0, 256);
+        let hostname = '';
+        try {
+          hostname = new URL(origin).hostname;
+        } catch (_) {
+          return null;
+        }
+        const paymentFrame =
+          /stripe|paypal|adyen|braintree|checkout\.com|worldpay|squareup/i.test(hostname) ||
+          /payment|checkout|card|billing/i.test(
+            `${String(entry.result.title || '')} ${String(entry.result.frameTitle || '')} ${String(entry.result.frameName || '')}`
+          );
+        return {
+          frameId: entry.frameId,
+          origin,
+          isTop: entry.frameId === 0,
+          restricted: !getCurrentPageSupport(origin).available,
+          paymentFrame,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => Number(b.isTop) - Number(a.isTop) || a.frameId - b.frameId);
+  } catch (_) {
+    return [];
+  }
+};
+
+const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount = 0) => {
+  const topFrame = frameSnapshots.find((frame) => frame.isTop) || frameSnapshots[0];
+  if (!topFrame?.snapshot) return null;
+  const snapshotId = `frames-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const elements = [];
+  const routes = Object.create(null);
+  const contentParts = [];
+  let valueBudget = 8_000;
+  for (const [frameIndex, frame] of frameSnapshots.entries()) {
+    const local = frame.snapshot;
+    if (!local) continue;
+    contentParts.push(
+      `Frame ${frameIndex + 1} — ${frame.isTop ? 'main page' : frame.origin}\n${String(local.content || '')}`
+    );
+    for (const element of Array.isArray(local.elements) ? local.elements : []) {
+      if (elements.length >= 200) break;
+      const index = elements.length;
+      const mapped = {
+        ...element,
+        index,
+        elementKey: `${snapshotId}:${index}`.slice(0, 64),
+        frameOrigin: frame.origin,
+      };
+      if (typeof mapped.value === 'string') {
+        mapped.value = mapped.value.slice(0, valueBudget);
+        valueBudget -= mapped.value.length;
+      }
+      elements.push(mapped);
+      routes[index] = {
+        frameId: frame.frameId,
+        snapshotId: local.snapshotId,
+        index: element.index,
+        elementKey: element.elementKey,
+      };
+    }
+  }
+  if (omittedFrameCount > 0) {
+    contentParts.push(
+      `${omittedFrameCount} embedded frame${omittedFrameCount === 1 ? '' : 's'} omitted by safety policy.`
+    );
+  }
+  const content = contentParts.join('\n\n').slice(0, 24_000);
+  const focusedFrame = frameSnapshots.find((frame) => frame.snapshot?.focusedElement);
+  const focusedElement = focusedFrame?.snapshot?.focusedElement
+    ? {
+        ...focusedFrame.snapshot.focusedElement,
+        elementKey: `${snapshotId}:focus`.slice(0, 64),
+        frameOrigin: focusedFrame.origin,
+      }
+    : undefined;
+  if (focusedFrame) {
+    routes.focused = {
+      frameId: focusedFrame.frameId,
+      snapshotId: focusedFrame.snapshot.snapshotId,
+      index: focusedFrame.snapshot.focusedElement.index,
+      elementKey: focusedFrame.snapshot.focusedElement.elementKey,
+    };
+  }
+  const merged = {
+    ...topFrame.snapshot,
+    snapshotId,
+    content,
+    elements,
+    ...(focusedElement ? { focusedElement } : { focusedElement: undefined }),
+    regions: topFrame.snapshot.regions || [],
+    truncated: contentParts.join('').length > content.length || elements.length >= 200,
+  };
+  pageActionFrameSnapshotMaps.set(runId, { snapshotId, routes });
+  return merged;
+};
+
+const collectPageActionFrameSnapshots = async ({
+  tabId,
+  runId,
+  blockedOrigins,
+  signal,
+  topResponse = null,
+}) => {
+  const allDescriptors = await getPageActionFrameDescriptors(tabId);
+  const descriptors = allDescriptors.slice(0, PAGE_ACTION_MAX_FRAMES);
+  const frames = [];
+  let omittedFrameCount = Math.max(0, allDescriptors.length - descriptors.length);
+  const eligibleFrames = descriptors.filter((frame) => {
+    if (frame.restricted || frame.paymentFrame || blockedOrigins.includes(frame.origin)) {
+      omittedFrameCount += 1;
+      return false;
+    }
+    if (frame.isTop && topResponse?.snapshot) {
+      frames.push({ ...frame, snapshot: topResponse.snapshot });
+      return false;
+    }
+    return true;
+  });
+  const childResponses = await Promise.all(
+    eligibleFrames.map((frame) =>
+      sendPageActionMessage(
+        tabId,
+        {
+          action: 'pageAction',
+          runId,
+          pageAction: 'page_get_state',
+          args: {},
+          blockedOrigins,
+        },
+        signal,
+        PAGE_ACTION_MESSAGE_TIMEOUT_MS,
+        frame.frameId
+      )
+        .then((response) => ({ frame, response }))
+        .catch(() => ({ frame, response: null }))
+    )
+  );
+  for (const { frame, response } of childResponses) {
+    if (response?.snapshot) frames.push({ ...frame, snapshot: response.snapshot });
+    else omittedFrameCount += 1;
+  }
+  if (!frames.some((frame) => frame.isTop) && topResponse?.snapshot) {
+    let origin = '';
+    try {
+      origin = new URL(topResponse.snapshot.url).origin;
+    } catch (_) {
+      // The content script should already return a valid page URL.
+    }
+    frames.unshift({ frameId: 0, origin, isTop: true, snapshot: topResponse.snapshot });
+  }
+  return mergePageActionFrameSnapshots(runId, frames, omittedFrameCount);
+};
+
+const dispatchCdpKey = (runId, tabId, key, options = {}) =>
+  cdpInputBackend.dispatch(runId, tabId, 'Input.dispatchKeyEvent', {
+    type: options.type || 'keyDown',
+    key,
+    code: options.code || '',
+    modifiers: options.modifiers || 0,
+    ...(options.windowsVirtualKeyCode === undefined
+      ? {}
+      : { windowsVirtualKeyCode: options.windowsVirtualKeyCode }),
+    ...(options.nativeVirtualKeyCode === undefined
+      ? {}
+      : { nativeVirtualKeyCode: options.nativeVirtualKeyCode }),
+  });
+
+const dispatchCdpKeyPair = async (runId, tabId, key, code, modifiers = 0) => {
+  await dispatchCdpKey(runId, tabId, key, { type: 'keyDown', code, modifiers });
+  await dispatchCdpKey(runId, tabId, key, { type: 'keyUp', code, modifiers });
+};
+
+const PRECISE_KEY_MAP = Object.freeze({
+  Enter: { key: 'Enter', code: 'Enter' },
+  Escape: { key: 'Escape', code: 'Escape' },
+  Tab: { key: 'Tab', code: 'Tab' },
+  'Shift+Tab': { key: 'Tab', code: 'Tab', modifiers: 8 },
+  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp' },
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown' },
+  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft' },
+  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight' },
+  Backspace: { key: 'Backspace', code: 'Backspace' },
+  Delete: { key: 'Delete', code: 'Delete' },
+  Space: { key: ' ', code: 'Space' },
+  Home: { key: 'Home', code: 'Home' },
+  End: { key: 'End', code: 'End' },
+  PageUp: { key: 'PageUp', code: 'PageUp' },
+  PageDown: { key: 'PageDown', code: 'PageDown' },
+});
 
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   const startedAt = Date.now();
@@ -1519,12 +1777,62 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     throw error;
   }
 
+  const blockedOrigins = Object.entries(
+    runOrchestrator.activeRuns.get(options.runId)?.pageActions?.sitePolicies || {}
+  )
+    .filter(([, policy]) => policy === 'block')
+    .map(([origin]) => origin)
+    .slice(0, 200);
+  const assertSiteAllowed = async (url = '') => {
+    if (actionName === 'clearPageActionSession' || !blockedOrigins.length) return;
+    if (
+      blockedOrigins.includes(getPageActionSiteOrigin(url || (await getPageActionTabUrl(tabId))))
+    ) {
+      const error = new Error('Act is blocked on this site. Review site policies in Options.');
+      error.code = 'PAGE_ACTION_SITE_BLOCKED';
+      throw error;
+    }
+  };
+  const frameMap = pageActionFrameSnapshotMaps.get(options.runId);
+  const frameRoute =
+    args?.snapshotId === frameMap?.snapshotId
+      ? Number.isInteger(args?.index)
+        ? frameMap.routes[args.index]
+        : args?.focused === true
+          ? frameMap.routes.focused
+          : null
+      : null;
+  if (
+    args?.snapshotId === frameMap?.snapshotId &&
+    ((Number.isInteger(args?.index) && !frameRoute) || (args?.focused === true && !frameRoute))
+  ) {
+    const error = new Error(
+      'The indexed frame target is no longer available. Inspect the page again.'
+    );
+    error.code = 'PAGE_STATE_STALE';
+    throw error;
+  }
+  const frameArgs = frameRoute
+    ? {
+        ...args,
+        snapshotId: frameRoute.snapshotId,
+        ...(Number.isInteger(frameRoute.index) ? { index: frameRoute.index } : {}),
+        elementKey: frameRoute.elementKey,
+      }
+    : args;
   const message =
     actionName === 'clearPageActionSession'
       ? { action: 'clearPageActionSession', runId: options.runId }
-      : { action: 'pageAction', runId: options.runId, pageAction: actionName, args };
+      : {
+          action: 'pageAction',
+          runId: options.runId,
+          pageAction: actionName,
+          args: frameArgs,
+          blockedOrigins,
+        };
   const expectNavigation = options.expectNavigation === true;
   if (actionName !== 'clearPageActionSession') {
+    await assertSiteAllowed();
     await ensurePageActionContentScript(tabId, options.signal);
   }
   let previousUrl = '';
@@ -1536,8 +1844,228 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   }
 
   const messageTimeoutMs = getPageActionMessageTimeoutMs(actionName, args);
+  const checkedSend = async (
+    messageOverride = message,
+    targetFrameId = frameRoute?.frameId ?? 0
+  ) => {
+    await assertSiteAllowed();
+    const response = await sendPageActionMessage(
+      tabId,
+      messageOverride,
+      options.signal,
+      messageTimeoutMs,
+      targetFrameId
+    );
+    await assertSiteAllowed();
+    if (response?.snapshot?.url) await assertSiteAllowed(response.snapshot.url);
+    return response;
+  };
+  const run = runOrchestrator.activeRuns.get(options.runId);
+  if (
+    frameRoute &&
+    frameRoute.frameId !== 0 &&
+    ['enabled', 'active'].includes(run?.pageActions?.preciseInputState)
+  ) {
+    await cdpInputBackend.detachRun(options.runId);
+    runOrchestrator.setPreciseInputState(options.runId, 'fallback');
+  }
+  const wantsPrecise =
+    run?.pageActions?.enabled &&
+    ['enabled', 'active'].includes(run.pageActions.preciseInputState) &&
+    (!frameRoute || frameRoute.frameId === 0) &&
+    ['page_click', 'page_input', 'page_keypress'].includes(actionName);
   try {
-    const response = await sendPageActionMessage(tabId, message, options.signal, messageTimeoutMs);
+    let response;
+    if (actionName === 'clearPageActionSession') {
+      response = await checkedSend(message, 0);
+      const frames = await getPageActionFrameDescriptors(tabId);
+      await Promise.all(
+        frames
+          .filter((frame) => !frame.isTop)
+          .map((frame) =>
+            sendPageActionMessage(
+              tabId,
+              message,
+              options.signal,
+              messageTimeoutMs,
+              frame.frameId
+            ).catch(() => null)
+          )
+      );
+    } else if (wantsPrecise) {
+      let deliveryStarted = false;
+      try {
+        const currentUrl = await getPageActionTabUrl(tabId);
+        if (!getCurrentPageSupport(currentUrl).available) throw new Error('restricted_page');
+        await assertSiteAllowed(currentUrl);
+        await cdpInputBackend.attach(options.runId, tabId);
+        runOrchestrator.setPreciseInputState(options.runId, 'active');
+        const prepared = await checkedSend({ ...message, precisePrepare: true });
+        const input = prepared?.preparedInput;
+        if (!input || typeof input.planId !== 'string') throw new Error('input_plan_unavailable');
+        if (input.type === 'key') {
+          const key = PRECISE_KEY_MAP[input.key];
+          if (!key) throw new Error('unsupported_key');
+          deliveryStarted = true;
+          await dispatchCdpKeyPair(options.runId, tabId, key.key, key.code, key.modifiers || 0);
+        } else if (input.type === 'click' || input.type === 'text') {
+          deliveryStarted = true;
+          await cdpInputBackend.dispatch(options.runId, tabId, 'Input.dispatchMouseEvent', {
+            type: 'mousePressed',
+            x: input.clientX,
+            y: input.clientY,
+            button: 'left',
+            clickCount: input.count || 1,
+          });
+          await cdpInputBackend.dispatch(options.runId, tabId, 'Input.dispatchMouseEvent', {
+            type: 'mouseReleased',
+            x: input.clientX,
+            y: input.clientY,
+            button: 'left',
+            clickCount: input.count || 1,
+          });
+          if (input.type === 'text') {
+            if (args?.mode === 'append') {
+              await dispatchCdpKey(options.runId, tabId, 'Control', {
+                type: 'keyDown',
+                code: 'ControlLeft',
+                modifiers: 2,
+                windowsVirtualKeyCode: 17,
+              });
+              await dispatchCdpKeyPair(options.runId, tabId, 'End', 'End', 2);
+              await dispatchCdpKey(options.runId, tabId, 'Control', {
+                type: 'keyUp',
+                code: 'ControlLeft',
+                modifiers: 2,
+                windowsVirtualKeyCode: 17,
+              });
+            } else {
+              await dispatchCdpKey(options.runId, tabId, 'Control', {
+                type: 'keyDown',
+                code: 'ControlLeft',
+                modifiers: 2,
+                windowsVirtualKeyCode: 17,
+              });
+              await dispatchCdpKey(options.runId, tabId, 'a', {
+                type: 'rawKeyDown',
+                code: 'KeyA',
+                modifiers: 2,
+                windowsVirtualKeyCode: 65,
+                nativeVirtualKeyCode: 65,
+              });
+              await dispatchCdpKey(options.runId, tabId, 'a', {
+                type: 'keyUp',
+                code: 'KeyA',
+                modifiers: 2,
+                windowsVirtualKeyCode: 65,
+                nativeVirtualKeyCode: 65,
+              });
+              await dispatchCdpKey(options.runId, tabId, 'Control', {
+                type: 'keyUp',
+                code: 'ControlLeft',
+                modifiers: 2,
+                windowsVirtualKeyCode: 17,
+              });
+            }
+            await cdpInputBackend.dispatch(options.runId, tabId, 'Input.insertText', {
+              text: args.text,
+            });
+            if (args?.submit === true) {
+              await dispatchCdpKey(options.runId, tabId, 'Enter', {
+                type: 'keyDown',
+                code: 'Enter',
+                modifiers: 0,
+              });
+              await dispatchCdpKey(options.runId, tabId, 'Enter', {
+                type: 'keyUp',
+                code: 'Enter',
+                modifiers: 0,
+              });
+            }
+          }
+        }
+        response = await checkedSend({
+          ...message,
+          preciseFinalize: true,
+          precisePlanId: input.planId,
+        });
+      } catch (error) {
+        await cdpInputBackend.detachRun(options.runId);
+        if (deliveryStarted) {
+          runOrchestrator.setPreciseInputState(options.runId, 'fallback');
+          const changedUrl = await getPageActionTabUrl(tabId).catch(() => '');
+          if (changedUrl && previousUrl && changedUrl !== previousUrl) {
+            const navigation = await waitForPageActionNavigation(
+              tabId,
+              previousUrl,
+              options.signal
+            );
+            await assertSiteAllowed(navigation.url);
+            response = {
+              success: true,
+              navigated: true,
+              navigationUrl: navigation.url,
+              actionReceipt: {
+                disposition: 'delivered_unverified',
+                evidence: { kind: 'input_dispatched' },
+              },
+            };
+          } else {
+            const snapshot = await checkedSend({
+              action: 'pageAction',
+              runId: options.runId,
+              pageAction: 'page_get_state',
+              args: {},
+              blockedOrigins,
+            })
+              .then((result) => result?.snapshot)
+              .catch(() => null);
+            response = {
+              success: true,
+              message:
+                'Precise input was dispatched, but verification failed. Inspect the page before retrying.',
+              ...(snapshot ? { snapshot } : {}),
+              actionReceipt: {
+                disposition: 'delivered_unverified',
+                evidence: { kind: 'input_dispatched' },
+              },
+            };
+          }
+        } else {
+          await cdpInputBackend.detachRun(options.runId);
+          runOrchestrator.setPreciseInputState(options.runId, 'fallback');
+          if (options.signal?.aborted) throw error;
+          response = await checkedSend();
+        }
+      }
+    } else {
+      response = await checkedSend();
+    }
+    if (response?.snapshot && actionName !== 'clearPageActionSession') {
+      const topResponse =
+        actionName === 'page_get_state' && !frameRoute
+          ? response
+          : await checkedSend(
+              {
+                action: 'pageAction',
+                runId: options.runId,
+                pageAction: 'page_get_state',
+                args: {},
+                blockedOrigins,
+              },
+              0
+            ).catch(() => null);
+      if (topResponse?.snapshot) {
+        const mergedSnapshot = await collectPageActionFrameSnapshots({
+          tabId,
+          runId: options.runId,
+          blockedOrigins,
+          signal: options.signal,
+          topResponse,
+        });
+        if (mergedSnapshot) response = { ...response, snapshot: mergedSnapshot };
+      }
+    }
     const diagnosticResponse = { ...(response || {}) };
     delete diagnosticResponse.screenshot;
     recordDevDiagnostic(
@@ -1589,6 +2117,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       if (!expectNavigation) return response;
       throw _;
     }
+    if (currentUrl) await assertSiteAllowed(currentUrl);
     if (currentUrl && previousUrl && currentUrl !== previousUrl) {
       const connected = await pingPageActionContentScript(tabId);
       if (connected.connected) {
@@ -1597,6 +2126,9 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     }
     return response;
   } catch (error) {
+    const wasPreciseInputAttached = cdpInputBackend.isAttached(options.runId);
+    await cdpInputBackend.detachRun(options.runId);
+    if (wasPreciseInputAttached) runOrchestrator.setPreciseInputState(options.runId, 'fallback');
     recordDevDiagnostic('page_action_executor_error', {
       runId: options.runId,
       tabId,
@@ -1620,6 +2152,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     }
     if (expectNavigation) {
       const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);
+      await assertSiteAllowed(navigation.url);
       return { success: true, navigated: true, navigationUrl: navigation.url };
     }
     if (actionName === 'page_get_state' && currentUrl && currentUrl === previousUrl) {
@@ -1627,10 +2160,11 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       // Give the bridge one bounded reconnect window before surfacing the
       // original failure to the orchestrator.
       await waitForPageActionBridge(tabId, options.signal);
-      return await sendPageActionMessage(tabId, message, options.signal, messageTimeoutMs);
+      return await checkedSend();
     }
     if (!currentUrl || !previousUrl || currentUrl === previousUrl) throw error;
     const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);
+    await assertSiteAllowed(navigation.url);
     return {
       success: true,
       navigated: true,
@@ -1686,7 +2220,7 @@ const readSearchResultPage = async (url, { signal } = {}) => {
   }
 };
 
-const runOrchestrator = new RunOrchestrator(skillManager, {
+runOrchestrator = new RunOrchestrator(skillManager, {
   codexAuthProvider: (profileId) => codexAuthManager.getValidAuth(profileId),
   hermesTransport,
   hermesClientToolsProvider: async (config) => {
@@ -1708,6 +2242,7 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
   braveSearchExecutor,
   webSearchPageReader: readSearchResultPage,
   pageActionPolicyProvider,
+  pageActionSitePolicyProvider,
   pageActionAvailabilityProvider,
   pageActionDocumentProvider,
   pageActionExecutor,
@@ -1715,12 +2250,14 @@ const runOrchestrator = new RunOrchestrator(skillManager, {
     pageTabController.execute(runId, actionName, { ...args, signal: options.signal }),
   pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
   pageTabRunDisposer: (runId) => {
+    pageActionFrameSnapshotMaps.delete(runId);
     const ownedTabIds = pageTabController.getOwnedTabIds(runId);
-    return Promise.all(
-      ownedTabIds.map((tabId) =>
+    return Promise.all([
+      cdpInputBackend.detachRun(runId),
+      ...ownedTabIds.map((tabId) =>
         pageActionExecutor(tabId, 'clearPageActionSession', {}, { runId }).catch(() => undefined)
-      )
-    ).finally(() => pageTabController.disposeRun(runId));
+      ),
+    ]).finally(() => pageTabController.disposeRun(runId));
   },
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
@@ -3364,6 +3901,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     Promise.resolve()
       .then(async () => {
         const effectiveConfig = await resolveStoredRunConfig(config);
+        const { pageActionsPreciseInput } =
+          await chrome.storage.local.get('pageActionsPreciseInput');
+        effectiveConfig.pageActionsPreciseInput =
+          effectiveConfig.pageActions === true && pageActionsPreciseInput === true;
         if (
           effectiveConfig.provider === 'hermes' &&
           hermesSessionResetLock.isLocked(effectiveConfig.profileId)
@@ -3425,6 +3966,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           messages: [{ role: 'user', content: instruction }],
           actCheckpoint: checkpoint,
         });
+        const { pageActionsPreciseInput } =
+          await chrome.storage.local.get('pageActionsPreciseInput');
+        effectiveConfig.pageActionsPreciseInput = pageActionsPreciseInput === true;
         const ownerToken = randomId();
         const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
         await clearPageActionCheckpoint(checkpointRunId);
@@ -3482,6 +4026,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'getActModelSupport') {
+    if (!extensionPageSender) {
+      sendResponse({
+        success: false,
+        error: 'Model support status requires a Prompt Paul extension page.',
+      });
+      return true;
+    }
+    chrome.storage.local
+      .get(['profiles', 'lastSelectedProfileId'])
+      .then(({ profiles, lastSelectedProfileId }) => {
+        const saved = Array.isArray(profiles) ? profiles : [];
+        const profile = resolvePreferredProfile({
+          selectedProfile: saved.find((entry) => entry.id === lastSelectedProfileId),
+          defaultProfile: saved.find((entry) => entry.id === 'default') || saved[0],
+        });
+        sendResponse({
+          success: true,
+          supportsTools: getProfileToolSupport(profile),
+          modelName: String(profile?.modelName || '').slice(0, 256),
+        });
+      })
+      .catch(() => sendResponse({ success: false, error: 'Model support status is unavailable.' }));
+    return true;
+  }
+
+  if (request.action === 'setPageActionSitePolicy') {
+    if (!extensionPageSender) {
+      sendResponse({
+        success: false,
+        error: 'Site policy changes require a Prompt Paul extension page.',
+      });
+      return true;
+    }
+    pageActionSitePolicyStore
+      .update(request.origin, request.policy)
+      .then((policies) => sendResponse({ success: true, policies }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
   if (request.action === 'pageActionDecision') {
     // Sender/run ownership validation: approval decisions must come from a
     // Prompt Paul extension page (the side panel), and the supplied source tab
@@ -3528,6 +4113,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         success: false,
         error: 'Approval decision does not match the run source tab.',
       });
+      return true;
+    }
+    if (request.allowSite === true && request.approved === true) {
+      const pending = decisionRun.pageActions?.pendingConfirmation;
+      if (!pending || pending.id !== request.confirmationId || !pending.siteOrigin) {
+        sendResponse({
+          success: false,
+          expired: true,
+          error: 'The site approval is no longer waiting.',
+        });
+        return true;
+      }
+      void (async () => {
+        const current = await pageActionDocumentProvider(
+          decisionRun.pageActions.targetTabId || decisionRun.sourceTabId
+        );
+        if (getPageActionSiteOrigin(current?.url) !== pending.siteOrigin)
+          throw new Error('The target site changed. Re-inspect before approving a site policy.');
+        await pageActionSitePolicyStore.update(pending.siteOrigin, 'allow_low_risk');
+        if (decisionRun.pageActions.pendingConfirmation !== pending) {
+          sendResponse({
+            success: false,
+            expired: true,
+            error: 'The approval expired. The site policy was saved, but no action was approved.',
+          });
+          return;
+        }
+        decisionRun.pageActions.sitePolicies = {
+          ...decisionRun.pageActions.sitePolicies,
+          [pending.siteOrigin]: 'allow_low_risk',
+        };
+        const accepted = runOrchestrator.resolvePageActionDecision(
+          request.runId,
+          request.confirmationId,
+          true,
+          false
+        );
+        sendResponse(
+          accepted
+            ? { success: true }
+            : { success: false, expired: true, error: 'The approval is no longer waiting.' }
+        );
+      })().catch((error) => sendResponse({ success: false, error: error.message }));
       return true;
     }
     const accepted = runOrchestrator.resolvePageActionDecision(
@@ -3609,6 +4237,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!isAuthorizedRunRequest(request, sender)) {
       return rejectUnauthorizedMessage(sendResponse, 'Run abort is not authorized.');
     }
+    void cdpInputBackend.detachRun(runId);
     runOrchestrator
       .abort(runId)
       .then((success) => sendResponse({ success: success !== false }))

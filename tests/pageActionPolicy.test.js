@@ -14,6 +14,68 @@ import {
 } from '../src/utils/pageActionPolicy.js';
 
 describe('pageActionPolicy', () => {
+  it('allow-lists keyboard input and classifies Enter and input submit by the form submit control', () => {
+    expect(normalizePageActionArgs('page_keypress', { key: 'Enter' })).toMatchObject({
+      valid: true,
+      value: { key: 'Enter' },
+    });
+    expect(normalizePageActionArgs('page_keypress', { key: 'Control+L' }).valid).toBe(false);
+    expect(normalizePageActionArgs('page_keypress', { key: 'Escape', index: 2 }).valid).toBe(false);
+    const target = {
+      tag: 'input',
+      label: 'Message',
+      submitControl: { tag: 'button', label: 'Send' },
+    };
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_keypress',
+        target,
+        args: { key: 'Enter' },
+        trustedMode: true,
+      })
+    ).toMatchObject({ risk: 'high', requiresConfirmation: true });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target,
+        args: { submit: true },
+        trustedMode: true,
+      })
+    ).toMatchObject({ risk: 'high', requiresConfirmation: true });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_keypress',
+        target,
+        args: { key: 'Escape' },
+        trustedMode: true,
+      })
+    ).toMatchObject({ risk: 'low', requiresConfirmation: false });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_keypress',
+        target: { ...target, sensitive: true },
+        args: { key: 'Enter' },
+      })
+    ).toMatchObject({ allowed: false });
+  });
+  it('bounds double-click and hover arguments', () => {
+    expect(
+      normalizePageActionArgs('page_click', { snapshotId: 's', index: 1, count: 2 })
+    ).toMatchObject({ valid: true, value: { count: 2 } });
+    expect(
+      normalizePageActionArgs('page_click', { snapshotId: 's', index: 1, count: 3 }).valid
+    ).toBe(false);
+    expect(normalizePageActionArgs('page_hover', { snapshotId: 's', index: 1 })).toMatchObject({
+      valid: true,
+    });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_hover',
+        target: { tag: 'button', label: 'Products' },
+      })
+    ).toMatchObject({ allowed: true, requiresConfirmation: false, risk: 'read-only' });
+  });
+
   it('normalizes bounded action arguments', () => {
     expect(normalizePageActionArgs('page_click', { snapshotId: 'snap-1', index: 3 })).toEqual({
       valid: true,

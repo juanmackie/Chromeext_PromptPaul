@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import RunOrchestrator from '../src/orchestrator/RunOrchestrator.js';
 import { createThinkParser } from '../src/utils/inlineReasoning.js';
+import { buildCodexInput } from '../src/orchestrator/CodexTransport.js';
 
 /** Feed an array of deltas through a parser and concatenate the results. */
 function runParser(deltas) {
@@ -53,6 +54,73 @@ function createStubSkillManager(overrides = {}) {
     },
   };
 }
+
+describe('deterministic initial Act observation', () => {
+  it.each(['openai', 'anthropic', 'codex'])(
+    'includes a valid tool pair before the first %s request without named tool choice',
+    async (provider) => {
+      const executor = vi.fn(async () => ({
+        success: true,
+        snapshot: {
+          snapshotId: 'initial-state',
+          url: 'https://example.test/',
+          title: 'Form',
+          elements: [{ index: 0, tag: 'button', label: 'Inspect' }],
+        },
+      }));
+      const orch = new RunOrchestrator(createStubSkillManager(), { pageActionExecutor: executor });
+      orch._emitEvent = () => {};
+      let observed = false;
+      const inspect = async (run) => {
+        expect(executor).toHaveBeenCalledOnce();
+        expect(orch._getEffectiveToolChoice(run)).toBe('auto');
+        const [call, result] = run.conversationHistory.slice(-2);
+        expect(call.tool_calls[0].function.name).toBe('page_get_state');
+        expect(result.tool_call_id).toBe(call.tool_calls[0].id);
+        expect(JSON.parse(result.content).result.snapshot.snapshotId).toBe('initial-state');
+        if (provider === 'anthropic') {
+          const messages = orch._buildAnthropicMessages(run);
+          expect(messages.at(-2).content[0]).toMatchObject({
+            type: 'tool_use',
+            id: result.tool_call_id,
+            name: 'page_get_state',
+          });
+          expect(messages.at(-1).content[0]).toMatchObject({
+            type: 'tool_result',
+            tool_use_id: result.tool_call_id,
+          });
+        } else if (provider === 'codex') {
+          const input = buildCodexInput(run.conversationHistory);
+          expect(input.at(-2)).toMatchObject({
+            type: 'function_call',
+            call_id: result.tool_call_id,
+          });
+          expect(input.at(-1)).toMatchObject({
+            type: 'function_call_output',
+            call_id: result.tool_call_id,
+          });
+        }
+        observed = true;
+        run.accumulatedText = 'Inspection completed.';
+      };
+      orch._executeOpenAI = inspect;
+      orch._executeAnthropic = inspect;
+      orch._executeCodex = inspect;
+      const id = await orch.startRun({
+        pageActions: true,
+        sourceTabId: 7,
+        provider: provider === 'codex' ? 'codex' : 'api',
+        llmEndpoint:
+          provider === 'anthropic'
+            ? 'https://api.anthropic.com/v1/messages'
+            : 'https://provider.test/v1/chat/completions',
+        tool_choice: 'auto',
+      });
+      await orch.execute(id, { messages: [{ role: 'user', content: 'Read this page.' }] });
+      expect(observed).toBe(true);
+    }
+  );
+});
 
 describe('RunOrchestrator._buildSystemPrompt', () => {
   it('includes requested-skill instructions when requestedSkill is set', () => {
@@ -195,7 +263,7 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('re-inspect after every mutation');
     expect(prompt).toContain('If the current tab changes documents during the run');
     expect(prompt).toContain('continue the same request');
-    expect(prompt).toContain('do not stop after a partial result');
+    expect(prompt).toContain('do not give a partial next-step menu as completion');
     expect(prompt).toContain('ask whether to continue');
     expect(prompt).toContain('an interim progress report or next-steps menu is not completion');
     expect(prompt).toContain('summarize what you actually did on the page');
@@ -212,10 +280,8 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     );
     expect(prompt).toContain('finding a matching link is not enough');
 
-    // The two rules that need current field values stay out while values are
-    // redacted, so the instruction cannot ask for something the model cannot see.
-    expect(prompt).not.toContain('already holds the requested value');
-    expect(prompt).not.toContain('already contains the requested value');
+    expect(prompt).toContain('already holds the requested value');
+    expect(prompt).toContain('already contains the requested value');
   });
 
   it('never enumerates tool limitations and tells the model to answer normally', () => {
@@ -232,9 +298,9 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).not.toContain('git clone');
     expect(prompt).not.toContain('OUT OF SCOPE');
     expect(prompt).not.toContain('JavaScript');
-    expect(prompt).toContain('just answer normally as a helpful assistant');
-    expect(prompt).toContain('that does not mean the tools are unavailable');
-    expect(prompt).toContain('Never fake an action');
+    expect(prompt).toContain('answer normally; never fake an action');
+    expect(prompt).toContain('tools remain available');
+    expect(prompt).toContain('never fake an action');
   });
 
   it('keeps owned-tab tools inside the Act lease even for a legacy disabled flag', () => {
@@ -2288,7 +2354,7 @@ describe('RunOrchestrator page actions', () => {
     });
     const enabledRun = orch.activeRuns.get(enabledId);
     const initialTools = await orch._buildTools(enabledRun);
-    expect(orch._getEffectiveToolChoice(enabledRun)).toBe('page_get_state');
+    expect(orch._getEffectiveToolChoice(enabledRun)).toBe('auto');
     expect(initialTools.map((tool) => tool.function.name)).toEqual(['page_get_state']);
     enabledRun.pageActions.snapshot = makeSnapshot();
     const enabled = await orch._buildTools(enabledRun);
@@ -2432,7 +2498,7 @@ describe('RunOrchestrator page actions', () => {
     });
     const run = orch.activeRuns.get(runId);
 
-    expect(orch._getEffectiveToolChoice(run)).toBe('page_get_state');
+    expect(orch._getEffectiveToolChoice(run)).toBe('auto');
     expect((await orch._buildTools(run)).map((tool) => tool.function.name)).toEqual([
       'page_get_state',
     ]);
@@ -2867,7 +2933,7 @@ describe('RunOrchestrator page actions', () => {
     expect(orch.activeRuns.get(runId).pageActions.snapshot.snapshotId).toBe('page-snap-2');
   });
 
-  it('approves every policy-allowed page action for the rest of the run when requested', async () => {
+  it('approves similar low/medium actions for the run but always confirms high risk', async () => {
     const events = [];
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
@@ -2905,13 +2971,15 @@ describe('RunOrchestrator page actions', () => {
       label: 'Submit order',
       text: 'Submit order',
     };
-    const highRiskAction = orch.executeTool(
+    orch._mergePageActionElements(run, run.pageActions.snapshot);
+    const confirmation = vi.spyOn(orch, '_requestPageActionConfirmation').mockResolvedValue(true);
+    const highRiskResult = await orch.executeTool(
       runId,
       makeCall('click-session-high', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
     );
-    const highRiskResult = await highRiskAction;
     expect(highRiskResult.result.success).toBe(true);
-    expect(events.filter((event) => event.type === 'page_action_confirmation')).toHaveLength(1);
+    expect(confirmation).toHaveBeenCalledTimes(1);
+    expect(confirmation.mock.calls[0][4].risk).toBe('high');
   });
 
   it('keeps session approval for later same-origin navigation-capable actions', async () => {
@@ -3044,7 +3112,7 @@ describe('RunOrchestrator page actions', () => {
     expect(result.result.notice).toContain('Navigation completed');
     expect(run.pageActions.documentUrl).toBe('https://example.test/tasks');
     expect(run.pageActions.snapshot).toBeNull();
-    expect(orch._getEffectiveToolChoice(run)).toBe('page_get_state');
+    expect(orch._getEffectiveToolChoice(run)).toBe('auto');
 
     const refreshed = await orch.executeTool(
       runId,
@@ -3875,7 +3943,7 @@ describe('RunOrchestrator page actions', () => {
     expect(executorCalls).toEqual(['page_get_state']);
     expect(orch.activeRuns.get(runId).pageActions.documentUrl).toBe('https://other.test/elsewhere');
     expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
-    expect(orch._getEffectiveToolChoice(orch.activeRuns.get(runId))).toBe('page_get_state');
+    expect(orch._getEffectiveToolChoice(orch.activeRuns.get(runId))).toBe('auto');
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'page_action_warning', code: 'PAGE_ACTION_PAGE_CHANGED' })
     );
@@ -3937,7 +4005,7 @@ describe('RunOrchestrator page actions', () => {
     expect(result.result.pageChanged).toBe(true);
     expect(result.result.actionReceipt).toMatchObject({ disposition: 'delivered_unverified' });
     expect(orch.activeRuns.get(runId).pageActions.snapshot).toBeNull();
-    expect(orch._getEffectiveToolChoice(orch.activeRuns.get(runId))).toBe('page_get_state');
+    expect(orch._getEffectiveToolChoice(orch.activeRuns.get(runId))).toBe('auto');
   });
 
   it('runs a multi-step page flow beyond the old 3-turn cap when each step succeeds', async () => {
@@ -4026,7 +4094,7 @@ describe('RunOrchestrator page actions', () => {
 
       const complete = events.find((event) => event.type === 'complete');
       expect(complete?.content).toContain('Email composed');
-      expect(events.filter((event) => event.type === 'tool_complete')).toHaveLength(5);
+      expect(events.filter((event) => event.type === 'tool_complete')).toHaveLength(6);
       expect(events.some((event) => event.type === 'error')).toBe(false);
     } finally {
       delete global.chrome;
@@ -4353,6 +4421,17 @@ describe('Day 3: Act progress card page_task_progress events', () => {
     expect(event.receipt.disposition).toBe('delivered_verified');
   });
 
+  it('renders precise-input state as a bounded progress field and persists only its enum', () => {
+    const { orch, run, events } = boot({ preciseInputState: 'active' });
+    orch._emitPageTaskProgress(run);
+    const event = events.find((entry) => entry.type === 'page_task_progress');
+    expect(event.preciseInputState).toBe('active');
+    expect(
+      orch._journalEvent({ ...event, preciseInputState: 'arbitrary-data' })
+    ).not.toHaveProperty('preciseInputState');
+    expect(orch._journalEvent(event).preciseInputState).toBe('active');
+  });
+
   it('uses a bounded origin label as target when no tab title is available', () => {
     const { orch, run, events } = boot({ currentTabTitle: '' });
     orch._emitPageTaskProgress(run);
@@ -4366,11 +4445,11 @@ describe('Day 3: Act progress card page_task_progress events', () => {
       completedAt: Date.now(),
       currentSubGoalIndex: 2,
       subGoals: [
-        { description: 'Open the form', status: 'done' },
-        { description: 'Fill required fields', status: 'done' },
+        { description: 'Open the form', status: 'completed' },
+        { description: 'Fill required fields', status: 'completed' },
         { description: 'Review summary', status: 'in_progress' },
         { description: 'Submit', status: 'pending' },
-        { description: 'Confirm receipt', status: 'blocked' },
+        { description: 'Confirm receipt', status: 'skipped' },
       ],
     };
     const { orch, run, events } = boot({ planner, currentActivityAction: null });
@@ -4565,11 +4644,11 @@ describe('Day 4: page_task_progress deterministic outcome facts', () => {
       completedAt: null,
       currentSubGoalIndex: 2,
       subGoals: [
-        { description: 'Open the form', status: 'done' },
-        { description: 'Fill required fields', status: 'done' },
+        { description: 'Open the form', status: 'completed' },
+        { description: 'Fill required fields', status: 'completed' },
         { description: 'Review summary', status: 'in_progress' },
         { description: 'Submit', status: 'pending' },
-        { description: 'Confirm receipt', status: 'blocked' },
+        { description: 'Confirm receipt', status: 'skipped' },
       ],
     };
     const { orch, run, events } = boot({ planner, currentActivityAction: null });
@@ -4633,21 +4712,23 @@ describe('Day 4: page_task_progress deterministic outcome facts', () => {
   });
 });
 
-describe('Day 4: planner notice wording (low-risk, non-navigation)', () => {
-  it('does not overstate auto-approval scope in the activation notice', () => {
+describe('Act planning and consent are independent', () => {
+  it('never enables auto-approval or emits an approval-scope notice from long prose', () => {
     const orch = new RunOrchestrator(createStubSkillManager());
-    const src = RunOrchestrator.toString();
-    // The contract wording must describe low-risk non-navigation auto-approval
-    // with high-risk/navigation staying confirmation-gated — never "low and
-    // medium" automatic progress.
-    expect(src).toMatch(/low-risk, non-navigation/i);
-    expect(src).toMatch(/remain confirmation-gated/i);
-    expect(src).not.toMatch(/low\s+and\s+medium\s+automatic/i);
-    expect(src).not.toMatch(/low and medium-risk automatic/i);
-    const notice = orch._plannerActivationNotice ? orch._plannerActivationNotice() : null;
-    if (notice) {
-      expect(notice).toMatch(/low-risk, non-navigation/i);
-      expect(notice).not.toMatch(/low and medium|ld and medium/i);
-    }
+    orch._emitEvent = vi.fn();
+    const run = {
+      pageActions: { enabled: true, sessionApproval: false },
+      conversationHistory: [
+        {
+          role: 'user',
+          content: 'Open the menu, then review the entries and select the requested entry.',
+        },
+      ],
+    };
+    orch._initializeActPlanner(run);
+    expect(run.pageActions.planner.subGoals).toEqual([]);
+    expect(run.pageActions.planner.autoApproval).toBeUndefined();
+    expect(run.pageActions.sessionApproval).toBe(false);
+    expect(orch._emitEvent).not.toHaveBeenCalled();
   });
 });

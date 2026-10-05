@@ -13,7 +13,13 @@ export const ACT_WORKING_MEMORY_CAPS = Object.freeze({
 });
 
 const RECEIPTS = new Set(['delivered_verified', 'delivered_unverified', 'not_delivered']);
-const MUTATING_ACTIONS = new Set(['page_click', 'page_select', 'page_input', 'page_keypress']);
+const MUTATING_ACTIONS = new Set([
+  'page_click',
+  'page_select',
+  'page_input',
+  'page_keypress',
+  'page_set_value',
+]);
 
 /** Create fresh memory for one live Act run. Never serialize this object. */
 export function createActWorkingMemory() {

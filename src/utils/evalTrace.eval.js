@@ -3,6 +3,9 @@
  * @module evalTraceEvaluation
  */
 
+import { serializePageActionResult } from './pageActionResult.js';
+import { normalizeActOutcome } from '../orchestrator/ActOutcome.js';
+
 export const EVAL_TRACE_STORAGE_KEY = 'promptPaulEvalTraceV1';
 
 const MAX_TASK_CHARS = 4_000;
@@ -79,7 +82,7 @@ export function beginEvalTrace(details = {}) {
  */
 export function recordEvalTrace(runId, details = {}) {
   const trace = traces.get(String(runId));
-  if (!trace || trace.steps.length >= MAX_STEPS) return null;
+  if (!trace || (trace.steps.length >= MAX_STEPS && details.kind !== 'terminal')) return null;
   const step = {
     stepIndex: trace.steps.length,
     timestamp: Date.now(),
@@ -91,6 +94,13 @@ export function recordEvalTrace(runId, details = {}) {
   }
   if (details.action !== undefined) step.action_taken = sanitize(details.action);
   if (details.actionResult !== undefined) step.action_result = sanitize(details.actionResult);
+  const snapshot = details.actionResult?.result?.snapshot || details.actionResult?.snapshot;
+  if (snapshot) {
+    step.snapshotBytes = {
+      before: new TextEncoder().encode(JSON.stringify({ snapshot })).length,
+      after: new TextEncoder().encode(serializePageActionResult({ snapshot })).length,
+    };
+  }
   if (details.eventType) step.eventType = String(details.eventType).slice(0, 64);
   if (details.error) step.error = redactString(details.error, 1_000);
   if (details.durationMs !== undefined)
@@ -98,12 +108,13 @@ export function recordEvalTrace(runId, details = {}) {
   if (details.tokenUsage && typeof details.tokenUsage === 'object') {
     step.tokenUsage = sanitize(details.tokenUsage);
   }
-  trace.steps.push(step);
+  if (trace.steps.length < MAX_STEPS) trace.steps.push(step);
   if (details.kind === 'terminal') {
     trace.terminal = sanitize({
       type: String(details.terminalType || 'complete').slice(0, 32),
       content: details.llmResponse,
       error: details.error,
+      actOutcome: normalizeActOutcome(details.actOutcome),
     });
   }
   const bounded = boundedTrace(trace);
@@ -125,6 +136,7 @@ export function finishEvalTrace(runId, terminal = {}) {
       type: String(terminal.type || 'complete').slice(0, 32),
       content: terminal.content,
       error: terminal.error,
+      actOutcome: normalizeActOutcome(terminal.actOutcome),
     });
   }
   trace.finishedAt = Date.now();

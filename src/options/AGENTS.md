@@ -7,6 +7,7 @@ The `src/options/` subtree contains shared modules for the Options page setup an
 ## Ownership
 
 - `OptionsUI.js` owns chat-led setup status rendering, dirty tracking, the unsaved-changes guard, credential masking helpers, and per-section save feedback.
+- `OptionsPageActions.js` owns the bounded Act site-policy list and explicit save/block/remove controls. It reads safe policy metadata and writes through the extension-page-only background bridge; successful writes apply to new runs and are included in backups.
 
 ## Local Contracts
 
@@ -15,7 +16,7 @@ The `src/options/` subtree contains shared modules for the Options page setup an
 - Codex profiles hide API credential fields and use the background `codexLoginStart`/`codexLoginPoll`/`codexLogout` bridge. A successful login creates or selects the `Codex` profile. Model choices and supported reasoning levels come from the background `getAvailableModels` bridge. The Options page may display only sanitized connection/model metadata, never access or refresh tokens.
 - The unsaved-changes guard is driven by the combined dirty state of every Options section (connection, privacy, web search, and page actions), not a single form.
 - Error-aware section saves (privacy, web search, notch, page actions) share one owning implementation, `runErrorAwareSave` in `OptionsUI.js`: it runs the storage write, surfaces success/error through the page status and button feedback, re-baselines the dirty tracker, and clears the dirty flag. Section-specific keys, schemas, and validation guards stay in `options.js`; the helper does not rename keys or restructure stored data.
-- `options.js` (root-owned) remains the entry point for storage I/O and section wiring; new setup/management helpers belong here rather than in the entry point.
+- `options.js` (root-owned) wires sections and profile storage; shared management UI stays here. Site-policy writes are background-owned and apply immediately only on explicit save/block/remove; they do not use the page-actions toggle Save button. Profile saves retain discovered tool support only for the matching model/endpoint.
 - The setup status distinguishes a verified connection from configured-but-untested settings: `renderSetupStatus` shows **Connected** only after a successful bounded connection check (Hermes via the background `testHermesConnection` bridge), otherwise **Configured** for saved untested settings or an error with a retry action. It never infers a verified connection from nonempty fields or an endpoint alone, and stale checks revert to Configured when connection settings change.
 
 ## Work Guidance

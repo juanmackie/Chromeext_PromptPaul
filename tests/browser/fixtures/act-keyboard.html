@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Keyboard controls</title>
+<label>Search<input id="search" type="search" /></label>
+<output id="found"></output>
+<div role="dialog" tabindex="-1" id="dialog">Modal notice</div>
+<form id="message">
+  <label>Message<input id="message-text" /></label><button>Send</button>
+</form>
+<script>
+  document.querySelector('#search').onkeydown = (event) => {
+    if (event.key === 'Enter')
+      document.querySelector('#found').textContent = 'Found ' + event.target.value;
+  };
+  document.querySelector('#dialog').onkeydown = (event) => {
+    if (event.key === 'Escape') event.target.hidden = true;
+  };
+  document.querySelector('#message').onsubmit = (event) => {
+    event.preventDefault();
+    document.body.dataset.sent = document.querySelector('#message-text').value;
+  };
+  document.querySelector('#dialog').focus();
+</script>

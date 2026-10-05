@@ -3,6 +3,8 @@
  * @module validation
  */
 
+import { normalizePageActionSitePolicies } from './pageActionSitePolicies.js';
+
 const MAX_TOOL_NAME_LENGTH = 64;
 const MAX_TOOL_DESCRIPTION_LENGTH = 1024;
 export const MAX_TOOL_ARGUMENTS_BYTES = 16_384;
@@ -34,18 +36,22 @@ export const RESERVED_TOOL_NAMES = Object.freeze([
   'page_wait',
   'page_batch',
   'page_click',
+  'page_hover',
   'page_input',
+  'page_set_value',
+  'page_keypress',
   'page_select',
   'page_scroll',
   'page_list_tabs',
   'page_open_tab',
   'page_open_link',
   'page_switch_tab',
+  'page_go_back',
   'page_close_tab',
   'page_request_user_input',
   'page_pause_for_user',
   'page_record_note',
-  'page_replan',
+  'page_update_plan',
 ]);
 export const ALLOWED_TOOL_METHODS = Object.freeze(['GET', 'POST', 'PUT', 'DELETE', 'PATCH']);
 
@@ -66,6 +72,8 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'webSearchEnabled',
   'searchProvider',
   'pageActionsTrustedMode',
+  'pageActionsPreciseInput',
+  'pageActionSitePolicies',
   'pageActionsMultiTabEnabled',
   'notchEnabled',
   'notchPosition',
@@ -276,6 +284,17 @@ export function normalizeProfileRecord(profile) {
       ? { hermesRemoteConfirmed: true }
       : {}),
     ...(reasoningLevel ? { reasoningLevel } : {}),
+    ...(profile.modelToolSupport?.modelName === modelName &&
+    profile.modelToolSupport?.endpoint === endpoint &&
+    typeof profile.modelToolSupport?.supportsTools === 'boolean'
+      ? {
+          modelToolSupport: {
+            modelName,
+            endpoint,
+            supportsTools: profile.modelToolSupport.supportsTools,
+          },
+        }
+      : {}),
     ...(typeof profile.lastUpdated === 'string' ? { lastUpdated: profile.lastUpdated } : {}),
   };
 
@@ -362,6 +381,10 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
       const records = normalizeRecordArray(value, key);
       if (!records.valid) return records;
       result[key] = records.value;
+    } else if (key === 'pageActionSitePolicies') {
+      const policies = normalizePageActionSitePolicies(value);
+      if (!policies.valid) return policies;
+      result[key] = policies.value;
     } else if (key === 'pinnedQuickActions') {
       const pins = normalizePinArray(value, key);
       if (!pins.valid) return pins;
@@ -374,6 +397,7 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
         'pageActionsEnabled',
         'notchEnabled',
         'pageActionsTrustedMode',
+        'pageActionsPreciseInput',
         'pageActionsMultiTabEnabled',
         'darkTheme',
       ].includes(key)

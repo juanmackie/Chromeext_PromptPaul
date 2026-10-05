@@ -564,8 +564,10 @@ describe('whole-task measured evaluation outcomes', () => {
       runId,
       call('measured-denied', 'page_click', clickArgs)
     );
-    const pending = deniedOrch.activeRuns.get(runId)?.pageActions?.pendingConfirmation;
-    expect(pending).toBeTruthy();
+    await vi.waitFor(() =>
+      expect(deniedOrch.activeRuns.get(runId)?.pageActions?.pendingConfirmation).toBeTruthy()
+    );
+    const pending = deniedOrch.activeRuns.get(runId).pageActions.pendingConfirmation;
     const resolved = deniedOrch.resolvePageActionDecision(runId, pending.id, false);
     expect(resolved).toBe(true);
     const result = await pendingRun;
