@@ -6,6 +6,9 @@
 export const PAGE_DOM_CAPS = Object.freeze({
   maxElements: 200,
   maxSnapshotChars: 32_000,
+  maxOutlineChars: 24_000,
+  maxValueChars: 160,
+  maxTotalValueChars: 8_000,
   maxReadableContentChars: 16_000,
   maxElementTextChars: 320,
   maxAttributeChars: 120,
@@ -94,7 +97,7 @@ export function isSensitivePageElement(element = {}) {
     .join(' ');
 
   return (
-    type === 'password' ||
+    ['password', 'hidden', 'file'].includes(type) ||
     autocomplete.includes('current-password') ||
     autocomplete.includes('new-password') ||
     autocomplete.includes('one-time-code') ||
@@ -103,8 +106,7 @@ export function isSensitivePageElement(element = {}) {
 }
 
 /**
- * Normalize one content-script element record. Text input values are never
- * returned; checkbox/radio state is represented by `checked` only.
+ * Normalize one record, disclosing only bounded non-sensitive control values.
  * @param {object} raw
  * @param {number} index
  * @returns {object}
@@ -112,8 +114,17 @@ export function isSensitivePageElement(element = {}) {
 export function normalizePageElement(raw = {}, index = 0) {
   const sensitive = Boolean(raw.sensitive) || isSensitivePageElement(raw);
   const tag = capPageText(raw.tag || raw.tagName || 'element', 32).toLowerCase();
+  let frameOrigin = '';
+  try {
+    const parsedFrameOrigin = new URL(String(raw.frameOrigin || ''));
+    if (['http:', 'https:'].includes(parsedFrameOrigin.protocol))
+      frameOrigin = parsedFrameOrigin.origin;
+  } catch (_) {
+    frameOrigin = '';
+  }
   const normalized = {
     index: Math.max(0, Math.floor(Number(index) || 0)),
+    ...(frameOrigin ? { frameOrigin } : {}),
     elementKey: capPageText(raw.elementKey, 64),
     tag,
     role: capPageText(raw.role, PAGE_DOM_CAPS.maxAttributeChars),
@@ -131,9 +142,17 @@ export function normalizePageElement(raw = {}, index = 0) {
     current: normalizeAriaCurrent(raw.current),
     editable: raw.editable === true ? true : undefined,
     newlyVisible: raw.newlyVisible === true ? true : undefined,
+    focused: raw.focused === true ? true : undefined,
+    inForm: raw.inForm === true ? true : undefined,
     sensitive,
-    valuePresent: Boolean(raw.valuePresent),
+    value: !sensitive && typeof raw.value === 'string' ? capPageValue(raw.value) : undefined,
   };
+  if (raw.submitControl && typeof raw.submitControl === 'object') {
+    normalized.submitControl = normalizePageElement(
+      { ...raw.submitControl, submitControl: undefined, value: undefined },
+      0
+    );
+  }
 
   if ((tag === 'a' || normalized.role === 'link') && raw.href) {
     try {
@@ -154,13 +173,23 @@ export function normalizePageElement(raw = {}, index = 0) {
   if (sensitive) {
     normalized.text = '';
     normalized.placeholder = '';
-    normalized.valuePresent = Boolean(raw.valuePresent);
   }
 
   for (const key of Object.keys(normalized)) {
-    if (normalized[key] === undefined || normalized[key] === '') delete normalized[key];
+    if (normalized[key] === undefined || (normalized[key] === '' && key !== 'value'))
+      delete normalized[key];
   }
   return normalized;
+}
+
+/** Bound and redact a non-sensitive field value without flattening its whitespace. */
+export function capPageValue(value, maxLength = PAGE_DOM_CAPS.maxValueChars) {
+  return String(value ?? '')
+    .replace(/\u0000/gu, '') // eslint-disable-line no-control-regex
+    .replace(/\b(?:\d[ -]*?){13,19}\b/gu, '[REDACTED_NUMBER]')
+    .replace(/\b\d{3}[- ]?\d{2}[- ]?\d{4}\b/gu, '[REDACTED_ID]')
+    .replace(/\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}\b/giu, '[REDACTED_TOKEN]')
+    .slice(0, Math.max(0, maxLength));
 }
 
 /**
@@ -194,7 +223,8 @@ export function formatPageElement(element = {}) {
   if (element.editable) attrs.push('editable=true');
   if (element.newlyVisible) attrs.push('new=true');
   if (element.sensitive) attrs.push('sensitive=true');
-  if (element.valuePresent) attrs.push('value_present=true');
+  if (typeof element.value === 'string' && !element.sensitive)
+    attrs.push(`value=${JSON.stringify(element.value)}`);
   if (element.download) attrs.push('download=true');
 
   const tag = element.tag || 'element';
@@ -291,7 +321,17 @@ export function normalizePageSnapshot(input = {}) {
     .slice(0, PAGE_DOM_CAPS.maxElements)
     .map((element, index) => normalizePageElement(element, element.index ?? index));
 
-  const buildContent = (list) => capSnapshotText(list.map(formatPageElement).join('\n'), maxChars);
+  let valueCharsRemaining = PAGE_DOM_CAPS.maxTotalValueChars;
+  for (const element of elements) {
+    if (typeof element.value !== 'string') continue;
+    element.value = element.value.slice(0, valueCharsRemaining);
+    valueCharsRemaining -= element.value.length;
+  }
+
+  const buildContent = (list) =>
+    input.observationFormat === 'outline'
+      ? capSnapshotText(input.content, Math.min(maxChars, PAGE_DOM_CAPS.maxOutlineChars))
+      : capSnapshotText(list.map(formatPageElement).join('\n'), maxChars);
   let content = buildContent(elements);
 
   const regions = Array.isArray(input.regions)
@@ -302,7 +342,11 @@ export function normalizePageSnapshot(input = {}) {
           indices: Array.isArray(region?.indices)
             ? region.indices
                 .map((value) => Math.max(0, Math.floor(Number(value) || 0)))
-                .filter((value) => Number.isInteger(value) && value < PAGE_DOM_CAPS.maxElements)
+                .filter(
+                  (value) =>
+                    Number.isSafeInteger(value) &&
+                    elements.some((element) => element.index === value)
+                )
                 .slice(0, 32)
             : [],
           elementCount: Math.max(0, Math.floor(Number(region?.elementCount) || 0)),
@@ -313,6 +357,9 @@ export function normalizePageSnapshot(input = {}) {
     snapshotId: capPageText(input.snapshotId || '', 128),
     url: sanitizePageActionUrl(input.url),
     title: capPageText(input.title, 240),
+    focusedElement: input.focusedElement
+      ? normalizePageElement({ ...input.focusedElement, value: undefined }, 0)
+      : undefined,
     header: capPageText(input.header, 1_000),
     footer: capPageText(input.footer, 1_000),
     readableContent: capSnapshotText(input.readableContent, PAGE_DOM_CAPS.maxReadableContentChars),

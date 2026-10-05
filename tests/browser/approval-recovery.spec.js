@@ -85,9 +85,8 @@ async function seedMockProfile(harness, endpointUrl, profileId = 'approval-fixtu
 
 /**
  * Start an Act run and take the first bounded snapshot.
- * With `planner`, the run carries a multi-step user message so the session
- * sub-goal planner activates (one initial approval, then low-risk
- * auto-approval only).
+ * With `planner`, the run carries a multi-step user message. Planning is
+ * model-maintained and does not grant consent; tests create the checklist explicitly.
  */
 async function startInspectedRun(harness, targetUrl, { planner = false } = {}) {
   const started = await harness.evaluate(
@@ -444,7 +443,7 @@ test('Stop during a pending approval aborts the run without delivering the actio
   }
 });
 
-test('planner approval stays distinct from individual action approval', async () => {
+test('model planning never enables consent and run approval never covers Send', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
   const { context } = await launchTestBrowser(userDataDir);
   const target = await context.newPage();
@@ -454,18 +453,31 @@ test('planner approval stays distinct from individual action approval', async ()
   let runId;
 
   try {
+    await target.locator('#continue').evaluate((button) => {
+      button.textContent = 'Send';
+    });
     const inspected = await startInspectedRun(harness, targetUrl, { planner: true });
     runId = inspected.runId;
+    const planned = await harness.evaluate(
+      (id) =>
+        window.pageActionHarness.executeTool(id, 'model-plan', 'page_update_plan', {
+          steps: [
+            { description: 'Fill body', status: 'in_progress' },
+            { description: 'Fill subject', status: 'pending' },
+            { description: 'Review sending', status: 'pending' },
+          ],
+        }),
+      runId
+    );
+    expect(planned.result.updated).toBe(true);
     const body = inspected.snapshot.elements.find((element) => element.editable === true);
     const subject = inspected.snapshot.elements.find((element) => element.label === 'Subject');
-    const continueButton = inspected.snapshot.elements.find(
-      (element) => element.label === 'Continue'
-    );
+    const continueButton = inspected.snapshot.elements.find((element) => element.label === 'Send');
     expect(body).toBeTruthy();
     expect(subject).toBeTruthy();
     expect(continueButton).toBeTruthy();
 
-    // The planner's initial gated approval covers this one decision only.
+    // A single approval covers this decision only, independently of the checklist.
     await fireGatedInput(harness, {
       runId,
       snapshotId: inspected.snapshot.snapshotId,
@@ -492,10 +504,8 @@ test('planner approval stays distinct from individual action approval', async ()
       .toMatchObject({ result: { actionReceipt: { disposition: 'delivered_verified' } } });
     await expect(target.locator('#body')).toContainText(APPROVED_BODY_TEXT);
 
-    // The planner approval enables auto-approval for later low-risk input: no
-    // new confirmation is requested and the value is still verified. The
-    // verified body mutation invalidated the first snapshot, so the run must
-    // inspect the page again before its next action.
+    // A checklist never grants approval. The next low-risk input still asks,
+    // and its target must come from the latest observation.
     const nextState = await harness.evaluate(
       ({ id }) => window.pageActionHarness.executeTool(id, 'planner-state-2', 'page_get_state', {}),
       { id: runId }
@@ -503,25 +513,25 @@ test('planner approval stays distinct from individual action approval', async ()
     expect(nextState.error, JSON.stringify(nextState)).toBeUndefined();
     const nextSnapshot = nextState.result.snapshot;
     const nextSubject = nextSnapshot.elements.find((element) => element.label === 'Subject');
-    const nextContinue = nextSnapshot.elements.find((element) => element.label === 'Continue');
+    const nextContinue = nextSnapshot.elements.find((element) => element.label === 'Send');
     expect(nextSubject, JSON.stringify(nextSnapshot)).toBeTruthy();
     expect(nextContinue, JSON.stringify(nextSnapshot)).toBeTruthy();
-    const autoApproved = harness.evaluate(
-      ({ runId, snapshotId, index, toolCallId, text }) =>
-        window.pageActionHarness.executeTool(runId, toolCallId, 'page_input', {
-          snapshotId,
-          index,
-          text,
-        }),
-      {
-        runId,
-        snapshotId: nextSnapshot.snapshotId,
-        index: nextSubject.index,
-        toolCallId: 'planner-subject-input',
-        text: 'Planner auto-approved subject',
-      }
-    );
-    await expect(autoApproved).resolves.not.toHaveProperty('error');
+    await fireGatedInput(harness, {
+      runId,
+      snapshotId: nextSnapshot.snapshotId,
+      index: nextSubject.index,
+      toolCallId: 'planner-subject-input',
+      text: 'Explicitly approved subject',
+    });
+    await expect
+      .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
+      .toMatchObject({ action: 'page_input' });
+    expect(
+      await harness.evaluate(
+        ({ url, id }) => window.pageActionHarness.resolveConfirmation(url, id, true, true),
+        { url: targetUrl, id: runId }
+      )
+    ).toMatchObject({ success: true });
     await expect
       .poll(() =>
         harness.evaluate(
@@ -530,22 +540,20 @@ test('planner approval stays distinct from individual action approval', async ()
         )
       )
       .toMatchObject({ result: { actionReceipt: { disposition: 'delivered_verified' } } });
-    await expect(target.locator('#subject')).toHaveValue('Planner auto-approved subject');
+    await expect(target.locator('#subject')).toHaveValue('Explicitly approved subject');
     expect(
       await harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId)
     ).toBe(null);
 
-    // Planner approval is NOT a session approval: the navigation-capable
-    // Continue control still requires its own, separately-bound confirmation.
-    // The verified subject mutation invalidated that snapshot, so the run
-    // inspects the page again before its next action.
+    // Explicit similar-action approval cannot cover high-risk Send. It needs
+    // a new, separately bound confirmation after fresh inspection.
     const navState = await harness.evaluate(
       ({ id }) => window.pageActionHarness.executeTool(id, 'planner-state-3', 'page_get_state', {}),
       { id: runId }
     );
     expect(navState.error, JSON.stringify(navState)).toBeUndefined();
     const navSnapshot = navState.result.snapshot;
-    const navContinue = navSnapshot.elements.find((element) => element.label === 'Continue');
+    const navContinue = navSnapshot.elements.find((element) => element.label === 'Send');
     expect(navContinue, JSON.stringify(navSnapshot)).toBeTruthy();
     const navigation = harness.evaluate(
       ({ runId, snapshotId, index, toolCallId }) =>
@@ -578,7 +586,7 @@ test('planner approval stays distinct from individual action approval', async ()
     await expect(navigation).resolves.toMatchObject({
       result: { error: 'PAGE_ACTION_DENIED' },
     });
-    await expect(target.locator('#subject')).toHaveValue('Planner auto-approved subject');
+    await expect(target.locator('#subject')).toHaveValue('Explicitly approved subject');
   } finally {
     await abortRun(harness, runId);
     await context.close();
@@ -781,14 +789,20 @@ test('checkpoint Resume requires an explicit user action and a fresh inspection,
     await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete');
     await expect(target.locator('#body')).not.toContainText(APPROVED_BODY_TEXT);
 
-    // The resumed Act run forces a fresh inspection before any mutation: the
-    // provider request carries ONLY page_get_state as a tool, and its choice,
-    // because checkpoint restore clears the snapshot. No mutation tool, and no
-    // automatic replay of the interrupted page_input.
+    // Resume clears stale state and executes a fresh inspection before the
+    // provider request. The matching synthetic pair replaces named tool choice;
+    // the interrupted mutation is never replayed.
     expect(fixtureServer.mockRequests()).toHaveLength(1);
     const resumedBody = fixtureServer.mockRequests()[0].body;
-    expect(resumedBody.tool_choice.function.name).toBe('page_get_state');
-    expect(resumedBody.tools.map((t) => t.function.name)).toEqual(['page_get_state']);
+    expect(resumedBody.tool_choice).toBe('auto');
+    const initialCall = resumedBody.messages.find((message) => message.tool_calls)?.tool_calls[0];
+    const observation = resumedBody.messages.find((message) => message.role === 'tool');
+    expect(initialCall.function.name).toBe('page_get_state');
+    expect(observation.tool_call_id).toBe(initialCall.id);
+    expect(JSON.parse(observation.content).result.snapshot.snapshotId).not.toBe(
+      'snapshot-approval-recovery'
+    );
+    expect(JSON.parse(observation.content).result.snapshot.url).toBe(targetUrl);
 
     checkpoints = await chat.evaluate(() =>
       chrome.storage.session.get(['promptPaulActCheckpointsV1'])

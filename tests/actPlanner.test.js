@@ -1,39 +1,291 @@
 import { describe, expect, it, vi } from 'vitest';
 import RunOrchestrator from '../src/orchestrator/RunOrchestrator.js';
 import {
-  MAX_REPLAN_COUNT,
-  MAX_SUB_GOALS,
-  MAX_SUB_GOAL_CHARS,
   buildPlannerPromptBlock,
   createPlannerState,
-  evaluateProgress,
-  recordPlannerQuotaItem,
   extractQuotaTarget,
-  generateSubGoals,
-  replan,
-  shouldActivatePlanner,
+  recordPlannerQuotaItem,
 } from '../src/orchestrator/ActPlanner.js';
 
-function createSkillManager() {
-  return {
-    resolveSkill: () => null,
-    getEligibleSnapshot: () => [],
-    getSkillsList: () => [],
-    getSlashCommands: () => [],
-  };
+const skills = {
+  getSkillNames: () => [],
+  hasSkill: () => false,
+  resolveSkill: () => null,
+  getEligibleSnapshot: () => [],
+  getSkillsList: () => [],
+  getSlashCommands: () => [],
+};
+const step = (description, status = 'pending') => ({ description, status });
+async function setup(instruction = 'Read this page', observation = {}) {
+  let version = 0;
+  const orchestrator = new RunOrchestrator(skills, {
+    pageActionExecutor: async () => ({
+      snapshot: {
+        snapshotId: `snapshot-${++version}`,
+        url: 'https://example.test/form',
+        elements: [],
+        ...observation,
+      },
+      actionReceipt: { disposition: 'delivered_verified', evidence: { kind: 'snapshot_captured' } },
+    }),
+  });
+  orchestrator._emitEvent = vi.fn();
+  const runId = await orchestrator.startRun({
+    pageActions: true,
+    sourceTabId: 7,
+    messages: [{ role: 'user', content: instruction }],
+  });
+  let callId = 0;
+  const call = (name, args = {}) =>
+    orchestrator.executeTool(runId, {
+      id: `tool-${++callId}`,
+      function: { name, arguments: JSON.stringify(args) },
+    });
+  return { orchestrator, run: orchestrator.getRun(runId), call };
 }
 
-describe('ActPlanner', () => {
-  it('activates for counted plural requests and bounds the requested quota', () => {
-    expect(shouldActivatePlanner('Open 6 of the newest emails')).toBe(true);
-    expect(extractQuotaTarget('Open 6 of the newest emails')).toBe(6);
-    expect(extractQuotaTarget('Review the top five results')).toBe(5);
-    expect(extractQuotaTarget('Read all unread messages')).toBe(12);
-    expect(extractQuotaTarget('Open 99 records')).toBe(12);
-    expect(extractQuotaTarget('Open one record')).toBeNull();
+describe('Model-maintained Act checklist', () => {
+  it('never invents a checklist or changes consent from the instruction wording', async () => {
+    for (const text of [
+      'Read this page',
+      'Find Guardians of the Galaxy Vol. 3',
+      'Open the menu. Select Analytics.',
+      'a'.repeat(300),
+    ]) {
+      const { run, orchestrator } = await setup(text);
+      expect(run.pageActions.planner?.subGoals || []).toEqual([]);
+      expect(run.pageActions.sessionApproval).toBe(false);
+      expect(orchestrator._buildPageTaskProgressEvent(run).hasPlanner).toBe(false);
+    }
   });
 
-  it('tracks quota items by normalized key and does not count duplicates', () => {
+  it('records a model checklist, bounds it, and leaves note taking separate from progress', async () => {
+    const { run, call, orchestrator } = await setup();
+    await call('page_get_state');
+    expect(
+      (
+        await call('page_update_plan', {
+          steps: [step('Inspect', 'in_progress'), step('Read results')],
+        })
+      ).result.updated
+    ).toBe(true);
+    expect(run.pageActions.planner.subGoals).toHaveLength(2);
+    expect(run.pageActions.planner.autoApproval).toBeUndefined();
+    await call('page_record_note', { text: 'The inspection is now complete.' });
+    expect(run.pageActions.planner.subGoals[0].status).toBe('in_progress');
+    expect(orchestrator._buildPageTaskProgressEvent(run).steps[0]).toMatchObject({
+      label: 'Inspect',
+      status: 'current',
+    });
+    expect(buildPlannerPromptBlock(run.pageActions.planner)).toContain('page_update_plan');
+  });
+
+  it('requires new observed evidence for completion and never consumes it twice', async () => {
+    const { run, call } = await setup();
+    await call('page_get_state');
+    await call('page_update_plan', {
+      steps: [step('Inspect', 'in_progress'), step('Read results')],
+    });
+    const next = { steps: [step('Inspect', 'completed'), step('Read results', 'in_progress')] };
+    expect((await call('page_update_plan', next)).result.error).toBe('PAGE_PLAN_EVIDENCE_REQUIRED');
+    await call('page_get_state');
+    expect((await call('page_update_plan', next)).result.updated).toBe(true);
+    expect(run.pageActions.planner.currentSubGoalIndex).toBe(1);
+    expect(
+      (
+        await call('page_update_plan', {
+          steps: [step('Inspect', 'completed'), step('Read results', 'completed')],
+        })
+      ).result.error
+    ).toBe('PAGE_PLAN_EVIDENCE_REQUIRED');
+    await call('page_get_state');
+    expect(
+      (
+        await call('page_update_plan', {
+          steps: [step('Inspect', 'completed'), step('Read results', 'completed')],
+        })
+      ).result.updated
+    ).toBe(true);
+    expect(run.pageActions.planner.completedAt).toBeTruthy();
+    expect(run.pageActions.finalVerificationCompleted).toBe(false);
+    await call('page_get_state');
+    expect(run.pageActions.finalVerificationCompleted).toBe(true);
+  });
+
+  it('rejects invalid checklist shapes, lengths, statuses, and ambiguous active steps atomically', async () => {
+    const { run, call } = await setup();
+    const invalid = [
+      [],
+      [step('Inspect')],
+      [step('Inspect', 'in_progress'), step('Read', 'in_progress')],
+      [step('Inspect', 'done')],
+      [step('x'.repeat(201), 'in_progress')],
+      [step('API key contents', 'in_progress')],
+      Array.from({ length: 13 }, (_, index) =>
+        step(`Step ${index}`, index === 0 ? 'in_progress' : 'pending')
+      ),
+    ];
+    for (const steps of invalid) {
+      expect((await call('page_update_plan', { steps })).result.error).toBe('PAGE_PLAN_INVALID');
+      expect(run.pageActions.planner?.subGoals || []).toEqual([]);
+    }
+  });
+
+  it('allows five bounded revisions before refusing another replacement', async () => {
+    const { run, call } = await setup();
+    await call('page_update_plan', { steps: [step('Inspect', 'in_progress')] });
+    for (let index = 0; index < 5; index++) {
+      expect(
+        (await call('page_update_plan', { steps: [step(`Inspect ${index}`, 'in_progress')] }))
+          .result.updated
+      ).toBe(true);
+    }
+    expect(run.pageActions.planner.replanCount).toBe(5);
+    expect(
+      (await call('page_update_plan', { steps: [step('Another revision', 'in_progress')] })).result
+        .error
+    ).toBe('PAGE_PLAN_LIMIT');
+  });
+
+  it('finishes a simple observed read without an invented unfinished-steps warning', async () => {
+    const { run, call, orchestrator } = await setup();
+    await call('page_get_state');
+    run.accumulatedText = 'The requested page was read.';
+    await orchestrator._finalizeTextResponse(run);
+    const event = orchestrator._emitEvent.mock.calls
+      .map(([, event]) => event)
+      .find((event) => event.type === 'complete');
+    expect(event.content).not.toContain('Act task incomplete');
+    expect(event.actOutcome).toEqual({ status: 'done', reason: null });
+    expect(orchestrator._buildPageTaskProgressEvent(run).outcome.taskComplete).toBe(true);
+  });
+
+  it('does not invent counted work from durations or unquantified all requests', async () => {
+    for (const instruction of [
+      'Read this page in 2 seconds',
+      'Read all paragraphs on this page',
+      'Read the gpt-5 release notes',
+      'Read one page of notes',
+    ]) {
+      const { orchestrator, run, call } = await setup(instruction);
+      await call('page_get_state');
+      run.accumulatedText = 'The page was read.';
+      await orchestrator._finalizeTextResponse(run);
+      expect(
+        orchestrator._emitEvent.mock.calls
+          .map(([, event]) => event)
+          .find((event) => event.type === 'complete').actOutcome
+      ).toEqual({ status: 'done', reason: null });
+    }
+  });
+
+  it('continues unresolved explicit plans without interpreting keywords in notes', async () => {
+    const { run, call, orchestrator } = await setup();
+    await call('page_update_plan', { steps: [step('Inspect', 'in_progress')] });
+    run.accumulatedText = 'Started.';
+    orchestrator.execute = vi.fn(async () => {});
+    await orchestrator._finalizeTextResponse(run);
+    expect(orchestrator.execute).toHaveBeenCalledWith(run.id, { continueConversation: true }, true);
+  });
+
+  it('derives bounded terminal reasons from actual run state, never answer claims', async () => {
+    for (const [state, expected] of [
+      [
+        { lastDeniedAction: { action: 'page_click', at: 1 } },
+        { status: 'blocked', reason: 'declined' },
+      ],
+      [
+        { lastDeniedAction: { action: 'page_click', at: 1 }, confirmationTimedOut: true },
+        { status: 'blocked', reason: 'needs_confirmation' },
+      ],
+      [{ lastBlockReason: 'site_blocked' }, { status: 'blocked', reason: 'site_blocked' }],
+      [{ lastBlockReason: 'loop_detected' }, { status: 'failed', reason: 'loop_detected' }],
+      [
+        { lastActionReceipt: { disposition: 'delivered_unverified' } },
+        { status: 'failed', reason: 'ambiguous' },
+      ],
+    ]) {
+      const { orchestrator, run, call } = await setup();
+      await call('page_get_state');
+      Object.assign(run.pageActions, state);
+      run.accumulatedText = 'Everything is done.';
+      await orchestrator._finalizeTextResponse(run);
+      expect(
+        orchestrator._emitEvent.mock.calls
+          .map(([, event]) => event)
+          .find((event) => event.type === 'complete').actOutcome
+      ).toEqual(expected);
+    }
+  });
+
+  it('does not turn a declined mutation into success after reinspection', async () => {
+    const { orchestrator, run, call } = await setup('Fill this field', {
+      elements: [{ index: 0, tag: 'input', label: 'City', editable: true, visible: true }],
+    });
+    await call('page_get_state');
+    const action = call('page_input', {
+      snapshotId: run.pageActions.snapshot.snapshotId,
+      index: 0,
+      text: 'Public city',
+    });
+    await vi.waitFor(() => expect(run.pageActions.pendingConfirmation).toBeTruthy());
+    orchestrator.resolvePageActionDecision(run.id, run.pageActions.pendingConfirmation.id, false);
+    expect((await action).result.error).toBe('PAGE_ACTION_DENIED');
+    await call('page_get_state');
+    run.accumulatedText = 'All done.';
+    await orchestrator._finalizeTextResponse(run);
+    expect(
+      orchestrator._emitEvent.mock.calls
+        .map(([, event]) => event)
+        .find((event) => event.type === 'complete').actOutcome
+    ).toEqual({ status: 'blocked', reason: 'declined' });
+  });
+
+  it('reports skipped requirements as incomplete rather than done', async () => {
+    const { orchestrator, run, call } = await setup();
+    await call('page_get_state');
+    await call('page_update_plan', { steps: [step('Cannot finish this requirement', 'skipped')] });
+    await call('page_get_state');
+    run.accumulatedText = 'All done.';
+    await orchestrator._finalizeTextResponse(run);
+    expect(
+      orchestrator._emitEvent.mock.calls
+        .map(([, event]) => event)
+        .find((event) => event.type === 'complete').actOutcome
+    ).toEqual({ status: 'failed', reason: 'ambiguous' });
+  });
+
+  it('classifies manual blockers from observed page signals instead of the question', async () => {
+    for (const [observation, reason] of [
+      [
+        {
+          elements: [
+            { index: 0, tag: 'input', type: 'password', visible: true },
+            { index: 1, tag: 'button', label: 'Sign in', visible: true },
+          ],
+        },
+        'sign_in_required',
+      ],
+      [{ observationFormat: 'outline', content: 'CAPTCHA: Verify you are human' }, 'captcha'],
+    ]) {
+      const { orchestrator, run, call } = await setup('Read this page', observation);
+      await call('page_get_state');
+      const pending = call('page_pause_for_user', {
+        question: 'Complete the safe manual step on the target page.',
+      }).catch((error) => error);
+      await vi.waitFor(() => expect(run.pageActions.pendingManualIntervention).toBeTruthy());
+      orchestrator._terminateRun(run.id, { type: 'aborted' });
+      expect((await pending).name).toBe('AbortError');
+      expect(
+        orchestrator._emitEvent.mock.calls
+          .map(([, event]) => event)
+          .find((event) => event.type === 'aborted').actOutcome
+      ).toEqual({ status: 'blocked', reason });
+    }
+  });
+
+  it('retains bounded counted-request quotas and deduplicated item records', () => {
+    expect(extractQuotaTarget('Open 99 records')).toBe(12);
     const planner = createPlannerState('Open 2 of the newest emails');
     expect(planner.quota).toEqual({ target: 2, done: [] });
     expect(recordPlannerQuotaItem(planner, 'Subject A')).toMatchObject({ added: true, count: 1 });
@@ -43,622 +295,5 @@ describe('ActPlanner', () => {
     });
     expect(recordPlannerQuotaItem(planner, 'Subject B')).toMatchObject({ added: true, count: 2 });
     expect(recordPlannerQuotaItem(planner, 'Subject C')).toMatchObject({ added: false, count: 2 });
-    expect(planner.quota.done.map((item) => item.label)).toEqual(['Subject A', 'Subject B']);
-  });
-
-  it('activates only for long or clearly multi-step instructions', () => {
-    expect(shouldActivatePlanner('Click the button')).toBe(false);
-    expect(shouldActivatePlanner('Click the button, then enter the title')).toBe(true);
-    expect(shouldActivatePlanner('Open inbox, label invoices')).toBe(true);
-    expect(shouldActivatePlanner('a'.repeat(101))).toBe(true);
-  });
-
-  it('keeps title abbreviations, decimal values, and URLs in one lookup goal', () => {
-    for (const instruction of [
-      'Find the initial release date for Guardians of the Galaxy Vol. 3 the movie.',
-      'Find the derivative of x squared when x=5.6.',
-      'Read the article at https://example.com/news and report its title.',
-      'Find the appointment for Dr. Ada Lovelace.',
-      'Find the appointment for Ada L. Lovelace.',
-      'Read https://example.com/news?id=5.6&view=full and report its title.',
-    ]) {
-      expect(generateSubGoals(instruction).map((goal) => goal.description)).toEqual([
-        instruction.replace(/\.$/, ''),
-      ]);
-    }
-    expect(
-      shouldActivatePlanner(
-        'Find the initial release date for Guardians of the Galaxy Vol. 3 the movie.'
-      )
-    ).toBe(false);
-    expect(
-      generateSubGoals('Open the menu. Select Analytics.').map((goal) => goal.description)
-    ).toEqual(['Open the menu', 'Select Analytics']);
-    expect(generateSubGoals('Click A. Click B.').map((goal) => goal.description)).toEqual([
-      'Click A',
-      'Click B',
-    ]);
-  });
-
-  it('decomposes numbered instructions into bounded sub-goals', () => {
-    const instruction = Array.from(
-      { length: 17 },
-      (_, index) => `${index + 1}. Do task ${index + 1}`
-    ).join('\n');
-    const goals = generateSubGoals(instruction);
-
-    expect(goals).toHaveLength(MAX_SUB_GOALS);
-    expect(goals.every((goal) => goal.status === 'pending')).toBe(true);
-    expect(goals.every((goal) => goal.description.length <= MAX_SUB_GOAL_CHARS)).toBe(true);
-    expect(goals.at(-1)).toMatchObject({ overflow: true, overflowCount: 6 });
-  });
-
-  it('splits prose into action clauses for long-horizon instructions', () => {
-    const goals = generateSubGoals(
-      'Open Gmail, search for invoices, download the matching files, and then organize them.'
-    );
-
-    expect(goals.map((goal) => goal.description)).toEqual([
-      'Open Gmail',
-      'search for invoices',
-      'download the matching files',
-      'organize them',
-    ]);
-  });
-
-  it('advances on a verified action followed by a meaningful note', () => {
-    const planner = createPlannerState('1. Open the page\n2. Complete the form');
-    const result = evaluateProgress(
-      planner,
-      { disposition: 'delivered_verified', actionName: 'page_open_tab', subGoalIndex: 0 },
-      'Page opened successfully'
-    );
-
-    expect(result.advance).toBe(true);
-    expect(planner.subGoals[0].status).toBe('done');
-    expect(planner.subGoals[0].completionEvidence).toMatchObject({
-      subGoalIndex: 0,
-      disposition: 'delivered_verified',
-    });
-    expect(planner.currentSubGoalIndex).toBe(1);
-    expect(planner.subGoals[1].status).toBe('in_progress');
-  });
-
-  it('accepts matching read-only receipts but rejects mismatched evidence', () => {
-    const planner = createPlannerState('1. Find the invoice\n2. Review the result');
-    expect(
-      evaluateProgress(
-        planner,
-        { actionName: 'page_find_text', disposition: 'delivered_verified', subGoalIndex: 0 },
-        'Found the invoice on the page'
-      ).advance
-    ).toBe(true);
-    expect(
-      evaluateProgress(
-        planner,
-        { actionName: 'page_click', disposition: 'delivered_verified', subGoalIndex: 0 },
-        'Clicked an unrelated control'
-      ).advance
-    ).toBe(false);
-  });
-
-  it('does not advance a goal from a receipt owned by another goal', () => {
-    const planner = createPlannerState('1. Open the page\n2. Complete the form');
-    planner.currentSubGoalIndex = 1;
-    planner.subGoals[1].status = 'in_progress';
-
-    const result = evaluateProgress(
-      planner,
-      { actionName: 'page_open_tab', disposition: 'delivered_verified', subGoalIndex: 0 },
-      'The page opened successfully'
-    );
-
-    expect(result.advance).toBe(false);
-    expect(planner.subGoals[1].status).toBe('in_progress');
-  });
-
-  it('blocks a repeatedly failing sub-goal and moves on', () => {
-    const planner = createPlannerState('1. Open the page\n2. Complete the form');
-    evaluateProgress(planner, {
-      disposition: 'not_delivered',
-      message: 'Bridge failed',
-      actionName: 'page_open_tab',
-      subGoalIndex: 0,
-    });
-    const result = evaluateProgress(planner, {
-      disposition: 'not_delivered',
-      message: 'Bridge failed again',
-      actionName: 'page_open_tab',
-      subGoalIndex: 0,
-    });
-
-    expect(result.blocked).toBe(true);
-    expect(planner.subGoals[0].status).toBe('blocked');
-    expect(planner.currentSubGoalIndex).toBe(1);
-  });
-
-  it('enforces the replan cap while preserving resolved goals', () => {
-    const planner = createPlannerState('1. Open the page\n2. Complete the form');
-    planner.subGoals[0].status = 'done';
-
-    for (let index = 0; index < MAX_REPLAN_COUNT; index += 1) {
-      expect(replan(planner, '1. Revisit the page\n2. Finish the remaining task').replanned).toBe(
-        true
-      );
-    }
-    expect(replan(planner, '1. Try again')).toEqual({ replanned: false, blocked: true });
-    expect(planner.replanCount).toBe(MAX_REPLAN_COUNT);
-    expect(planner.subGoals.some((goal) => goal.status === 'done')).toBe(true);
-  });
-
-  it('renders bounded progress and budget state for the model', () => {
-    const planner = createPlannerState('1. Open the page\n2. Complete the form');
-    const prompt = buildPlannerPromptBlock(
-      planner,
-      { observation: 2, navigation: 1, mutation: 3 },
-      { observation: 256, navigation: 96, mutation: 64 }
-    );
-
-    expect(prompt).toContain('CURRENT SUB-GOAL (1/2)');
-    expect(prompt).toContain('Budget remaining: obs=254, nav=95, mut=61');
-    expect(prompt.length).toBeLessThan(2000);
-
-    planner.subGoals[0].status = 'done';
-    planner.subGoals[0].outcome = 'The page was inspected successfully.';
-    expect(buildPlannerPromptBlock(planner)).toContain('COMPLETED OUTCOMES');
-    expect(buildPlannerPromptBlock(planner)).toContain('The page was inspected successfully.');
-    planner.subGoals[1].status = 'blocked';
-    planner.subGoals[1].blockReason = 'The required control was unavailable.';
-    expect(buildPlannerPromptBlock(planner)).toContain('BLOCKED OUTCOMES');
-
-    planner.completedAt = Date.now();
-    expect(buildPlannerPromptBlock(planner)).toContain('ALL SUB-GOALS RESOLVED');
-
-    planner.subGoals[0].description = 'line one\nline two';
-    expect(buildPlannerPromptBlock(planner)).toContain('line one line two');
-    expect(buildPlannerPromptBlock(planner).length).toBeLessThanOrEqual(4_000);
-  });
-});
-
-describe('RunOrchestrator ActPlanner integration', () => {
-  it('does not activate from appended page context alone', () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    const run = {
-      id: 'run-context',
-      pageActions: { enabled: true, planner: null, sessionApproval: false },
-      conversationHistory: [
-        {
-          role: 'user',
-          content: 'Summarize this page\n\n--- Page content ---\n' + 'x'.repeat(500),
-        },
-      ],
-    };
-
-    orchestrator._initializeActPlanner(run);
-
-    expect(run.pageActions.planner).toBeNull();
-    expect(run.pageActions.sessionApproval).toBe(false);
-  });
-
-  it('emits one user-facing notice when planner activation is observed', () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    const emitEvent = vi.fn();
-    orchestrator._emitEvent = emitEvent;
-    const run = {
-      id: 'run-notice',
-      pageActions: { enabled: true, planner: null, sessionApproval: false },
-      conversationHistory: [{ role: 'user', content: '1. Open the page\n2. Complete the form' }],
-    };
-
-    orchestrator._initializeActPlanner(run, { notify: true });
-
-    expect(emitEvent).toHaveBeenCalledTimes(1);
-    expect(emitEvent).toHaveBeenCalledWith(
-      'run-notice',
-      expect.objectContaining({
-        type: 'page_action_notice',
-        code: 'PAGE_PLANNER_ACTIVATED',
-      })
-    );
-  });
-
-  it('initializes the planner after the first execute message arrives', () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    orchestrator._emitEvent = () => {};
-    const run = {
-      id: 'run-1',
-      pageActions: { enabled: true, planner: null, sessionApproval: false },
-      conversationHistory: [
-        {
-          role: 'user',
-          content: [{ type: 'text', text: '1. Open the page\n2. Complete the form' }],
-        },
-      ],
-    };
-
-    orchestrator._initializeActPlanner(run);
-
-    expect(run.pageActions.planner?.active).toBe(true);
-    expect(run.pageActions.planner.subGoals).toHaveLength(2);
-    expect(run.pageActions.planner.autoApprovalPending).toBe(true);
-    expect(run.pageActions.sessionApproval).toBe(false);
-
-    let resolved;
-    run.pageActions.pendingConfirmation = {
-      id: 'confirmation-1',
-      resolve: (value) => (resolved = value),
-    };
-    orchestrator.activeRuns.set(run.id, run);
-    expect(orchestrator.resolvePageActionDecision(run.id, 'confirmation-1', true)).toBe(true);
-    expect(resolved).toBe(true);
-    expect(run.pageActions.sessionApproval).toBe(false);
-    expect(run.pageActions.planner.autoApproval).toBe(true);
-    expect(run.pageActions.planner.autoApprovalPending).toBe(false);
-  });
-
-  it('consumes one action receipt so duplicate notes cannot advance twice', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager(), {
-      pageActionExecutor: async (_tabId, actionName) =>
-        actionName === 'page_get_state'
-          ? {
-              snapshot: {
-                snapshotId: 'snapshot-1',
-                url: 'https://example.test/form',
-                title: 'Form',
-                elements: [{ index: 0, tag: 'input', label: 'Search', sensitive: false }],
-              },
-            }
-          : {
-              snapshot: {
-                snapshotId: 'snapshot-2',
-                url: 'https://example.test/form',
-                title: 'Form',
-              },
-            },
-    });
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Fill the search field\n2. Review the results' }],
-    });
-
-    const run = orchestrator.activeRuns.get(runId);
-    run.pageActions.planner.autoApproval = true;
-    run.pageActions.planner.autoApprovalPending = false;
-    await orchestrator.executeTool(runId, {
-      id: 'state-1',
-      function: { name: 'page_get_state', arguments: '{}' },
-    });
-    await orchestrator.executeTool(runId, {
-      id: 'input-1',
-      function: {
-        name: 'page_input',
-        arguments: JSON.stringify({ snapshotId: 'snapshot-1', index: 0, text: 'query' }),
-      },
-    });
-    expect(run.pageActions.planner.pendingReceipt).toMatchObject({
-      disposition: 'delivered_unverified',
-    });
-
-    const note = (id) =>
-      orchestrator.executeTool(runId, {
-        id,
-        function: {
-          name: 'page_record_note',
-          arguments: JSON.stringify({ text: 'Search filled' }),
-        },
-      });
-    await note('note-1');
-    expect(run.pageActions.planner.currentSubGoalIndex).toBe(0);
-    expect(run.pageActions.planner.pendingReceipt).toBeNull();
-    await note('note-2');
-    expect(run.pageActions.planner.currentSubGoalIndex).toBe(0);
-  });
-
-  it('retains a verified mutation receipt through required reinspection', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Fill the search field\n2. Review the results' }],
-    });
-    const run = orchestrator.getRun(runId);
-
-    orchestrator._recordPlannerActionResult(run, 'page_input', {
-      result: {
-        actionReceipt: {
-          disposition: 'delivered_verified',
-          evidence: { kind: 'input_value_match', matched: true },
-        },
-      },
-    });
-    orchestrator._recordPlannerActionResult(run, 'page_get_state', {
-      result: {
-        actionReceipt: {
-          disposition: 'delivered_verified',
-          evidence: { kind: 'snapshot_captured' },
-        },
-      },
-    });
-
-    expect(run.pageActions.planner.pendingReceipt).toMatchObject({
-      actionName: 'page_input',
-      disposition: 'delivered_verified',
-    });
-    await orchestrator.executeTool(runId, {
-      id: 'planner-note-after-inspection',
-      function: {
-        name: 'page_record_note',
-        arguments: JSON.stringify({ text: 'The search field now contains the requested query.' }),
-      },
-    });
-    expect(run.pageActions.planner.currentSubGoalIndex).toBe(1);
-  });
-
-  it('rejects a stale receipt from another current sub-goal', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Open the work page\n2. Review it' }],
-    });
-    const run = orchestrator.getRun(runId);
-
-    orchestrator._recordPlannerActionResult(run, 'page_open_tab', {
-      result: {
-        actionReceipt: {
-          subGoalIndex: 1,
-          disposition: 'delivered_verified',
-          evidence: { kind: 'owned_tab_ready' },
-        },
-      },
-    });
-
-    expect(run.pageActions.planner.pendingReceipt).toBeUndefined();
-  });
-
-  it('records verified receipts for successful owned-tab actions', async () => {
-    const pageTabExecutor = vi.fn(async () => ({
-      openedTabId: 9,
-      targetTabId: 9,
-      ready: true,
-      reused: true,
-    }));
-    const orchestrator = new RunOrchestrator(createSkillManager(), { pageTabExecutor });
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Open the work page\n2. Review it' }],
-    });
-
-    const result = await orchestrator.executeTool(runId, {
-      id: 'planner-open-tab',
-      function: {
-        name: 'page_open_tab',
-        arguments: JSON.stringify({ url: 'https://example.test/work' }),
-      },
-    });
-
-    expect(result.result.actionReceipt).toMatchObject({
-      disposition: 'delivered_verified',
-      evidence: { kind: 'owned_tab_reused' },
-    });
-    expect(orchestrator.getRun(runId).pageActions.planner.pendingReceipt).toMatchObject({
-      actionName: 'page_open_tab',
-      disposition: 'delivered_verified',
-    });
-  });
-
-  it('keeps high-risk actions confirmation-gated after planner approval', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager(), {
-      pageActionExecutor: async () => ({
-        snapshot: { snapshotId: 'snapshot-2', url: 'https://example.test' },
-      }),
-    });
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Delete the item' }],
-    });
-    const run = orchestrator.activeRuns.get(runId);
-    run.pageActions.snapshot = {
-      snapshotId: 'snapshot-1',
-      url: 'https://example.test',
-      elements: [{ index: 0, tag: 'button', label: 'Delete item', sensitive: false }],
-    };
-    run.pageActions.documentUrl = 'https://example.test';
-    run.pageActions.planner.autoApproval = true;
-    run.pageActions.planner.autoApprovalPending = false;
-    const confirmation = vi
-      .spyOn(orchestrator, '_requestPageActionConfirmation')
-      .mockResolvedValue(true);
-
-    await orchestrator.executeTool(runId, {
-      id: 'delete-1',
-      function: {
-        name: 'page_click',
-        arguments: JSON.stringify({ snapshotId: 'snapshot-1', index: 0 }),
-      },
-    });
-
-    expect(confirmation).toHaveBeenCalledTimes(1);
-    confirmation.mockRestore();
-  });
-
-  it('advertises replan while active and removes page tools after completion', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
-    });
-    const run = orchestrator.activeRuns.get(runId);
-    run.pageActions.snapshot = { snapshotId: 'snapshot-1', url: 'https://example.test' };
-
-    const toolNames = (await orchestrator._buildTools(run)).map((tool) => tool.function.name);
-    expect(toolNames).toContain('page_replan');
-
-    orchestrator._recordPlannerActionResult(run, 'page_list_tabs', {
-      success: true,
-      result: {
-        tabs: [{ tabId: 7 }],
-        actionReceipt: {
-          disposition: 'delivered_verified',
-          evidence: { kind: 'tabs_listed' },
-        },
-      },
-    });
-    expect(run.pageActions.planner.pendingReceipt).toMatchObject({
-      actionName: 'page_list_tabs',
-      disposition: 'delivered_verified',
-    });
-
-    run.pageActions.planner.subGoals.forEach((goal) => {
-      goal.status = 'blocked';
-      goal.blockReason = 'Not needed for this test';
-    });
-    run.pageActions.planner.completedAt = Date.now();
-    expect((await orchestrator._buildTools(run)).map((tool) => tool.function.name)).toEqual([
-      'page_get_state',
-    ]);
-    expect(orchestrator._getEffectiveToolChoice(run)).toBe('page_get_state');
-    run.pageActions.finalVerificationCompleted = true;
-    expect(await orchestrator._buildTools(run)).toEqual([]);
-    expect(orchestrator._getEffectiveToolChoice(run)).toBe('none');
-  });
-
-  it('requires a fresh inspection before the planner can finish', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager(), {
-      pageActionExecutor: async () => ({
-        success: true,
-        snapshot: { snapshotId: 'final-state', url: 'https://example.test' },
-      }),
-    });
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
-    });
-    const run = orchestrator.getRun(runId);
-    run.pageActions.snapshot = { snapshotId: 'old-state', url: 'https://example.test' };
-    run.pageActions.planner.subGoals.forEach((goal) => {
-      goal.status = 'blocked';
-      goal.blockReason = 'Test completion evidence';
-    });
-    run.pageActions.planner.completedAt = Date.now();
-
-    expect(orchestrator._getEffectiveToolChoice(run)).toBe('page_get_state');
-    const result = await orchestrator.executeTool(runId, {
-      id: 'final-verification',
-      function: { name: 'page_get_state', arguments: '{}' },
-    });
-
-    expect(result.result.actionReceipt.disposition).toBe('delivered_verified');
-    expect(run.pageActions.finalVerificationCompleted).toBe(true);
-    expect(await orchestrator._buildTools(run)).toEqual([]);
-    expect(orchestrator._getEffectiveToolChoice(run)).toBe('none');
-  });
-
-  it('continues instead of silently completing unresolved planner goals', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    orchestrator._emitEvent = vi.fn();
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
-    });
-    const run = orchestrator.getRun(runId);
-    run.accumulatedText = 'I started the task.';
-    orchestrator.execute = vi.fn(async () => {});
-
-    await orchestrator._finalizeTextResponse(run);
-
-    expect(orchestrator.execute).toHaveBeenCalledWith(runId, { continueConversation: true }, true);
-    expect(orchestrator._emitEvent).toHaveBeenCalledWith(
-      runId,
-      expect.objectContaining({ type: 'continuation_start' })
-    );
-    expect(run.conversationHistory.at(-1).content).toContain('unresolved sub-goals');
-    expect(run.status).not.toBe('complete');
-  });
-
-  it('rejects final verification without receipt-consistent progress', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager(), {
-      pageActionExecutor: async () => ({
-        success: true,
-        snapshot: { snapshotId: 'final-state', url: 'https://example.test' },
-      }),
-    });
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
-    });
-    const run = orchestrator.getRun(runId);
-    run.pageActions.planner.subGoals.forEach((goal) => {
-      goal.status = 'done';
-      goal.completionEvidence = {
-        disposition: 'delivered_unverified',
-        evidenceKind: 'action_dispatched',
-      };
-    });
-    run.pageActions.planner.completedAt = Date.now();
-
-    const result = await orchestrator.executeTool(runId, {
-      id: 'invalid-final-verification',
-      function: { name: 'page_get_state', arguments: '{}' },
-    });
-
-    expect(run.pageActions.finalVerificationCompleted).toBe(false);
-    expect(result.result.finalVerification).toMatchObject({ verified: false });
-    expect((await orchestrator._buildTools(run)).map((tool) => tool.function.name)).toEqual([
-      'page_get_state',
-    ]);
-  });
-
-  it('rejects non-string replacement plans at the runtime boundary', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
-    });
-
-    const result = await orchestrator.executeTool(runId, {
-      id: 'invalid-replan-1',
-      function: { name: 'page_replan', arguments: JSON.stringify({ instruction: {} }) },
-    });
-
-    expect(result.result).toMatchObject({ error: 'PAGE_REPLAN_INVALID' });
-  });
-
-  it('replans through the bounded runtime tool', async () => {
-    const orchestrator = new RunOrchestrator(createSkillManager());
-    orchestrator._emitEvent = () => {};
-    const runId = await orchestrator.startRun({
-      pageActions: true,
-      sourceTabId: 7,
-      messages: [{ role: 'user', content: '1. Review the page\n2. Finish the task' }],
-    });
-
-    const result = await orchestrator.executeTool(runId, {
-      id: 'replan-1',
-      function: {
-        name: 'page_replan',
-        arguments: JSON.stringify({
-          instruction: '1. Inspect the new page\n2. Finish the new task',
-        }),
-      },
-    });
-
-    expect(result.result.replanned).toBe(true);
-    expect(orchestrator.activeRuns.get(runId).pageActions.planner.replanCount).toBe(1);
   });
 });

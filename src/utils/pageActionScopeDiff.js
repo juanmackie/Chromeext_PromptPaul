@@ -81,6 +81,7 @@ function comparableElement(element, index) {
     pressed: typeof element?.pressed === 'boolean' ? element.pressed : null,
     current: boundedText(element?.current, 16),
     valuePresent: element?.valuePresent === true,
+    value: element?.sensitive === true ? undefined : boundedText(element?.value, 160),
     sensitive: element?.sensitive === true,
   };
 }

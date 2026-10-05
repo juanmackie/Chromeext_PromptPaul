@@ -9,7 +9,20 @@ describe('executing run worker lifetime', () => {
     vi.useFakeTimers();
     getPlatformInfo = vi.fn().mockResolvedValue({ os: 'win' });
     vi.stubGlobal('chrome', { runtime: { getPlatformInfo, sendMessage: async () => {} } });
-    orch = new RunOrchestrator({ getEligibleSnapshot: () => [], getSkillNames: () => [] });
+    orch = new RunOrchestrator(
+      { getEligibleSnapshot: () => [], getSkillNames: () => [] },
+      {
+        pageActionExecutor: async () => ({
+          success: true,
+          snapshot: {
+            snapshotId: 'lifetime-state',
+            url: 'https://example.test/',
+            title: 'Greeting fixture',
+            elements: [],
+          },
+        }),
+      }
+    );
     orch._buildTools = async () => [];
   });
 

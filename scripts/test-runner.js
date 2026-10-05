@@ -1468,6 +1468,7 @@ function runIntegrationTests(runner) {
       'searchProvider',
       'pageActionsEnabled',
       'pageActionsTrustedMode',
+      'pageActionsPreciseInput',
       'notchPosition',
       'pinnedQuickActions',
       'customSiteSuggestions',
@@ -1475,6 +1476,7 @@ function runIntegrationTests(runner) {
       'hermesSessions',
       'hermesSessionKeys',
       'promptPaulActCheckpointsV1',
+      'pageActionSitePolicies',
     ];
     const sources = [
       'options.js',
@@ -1483,6 +1485,7 @@ function runIntegrationTests(runner) {
       'src/chat/ChatVoice.js',
       'src/utils/suggestionStorage.js',
       'src/utils/pageActionCheckpoint.js',
+      'src/utils/pageActionSitePolicies.js',
       'content_script_notch.js',
     ]
       .map(readFileSafe)
@@ -1490,6 +1493,52 @@ function runIntegrationTests(runner) {
     for (const key of canonicalKeys) {
       if (!sources.includes(key)) {
         throw new Error(`Canonical storage key no longer referenced anywhere: ${key}`);
+      }
+    }
+  });
+
+  runner.test('precise input keeps chrome.debugger contained to the Input allowlist', () => {
+    const manifest = JSON.parse(readFileSafe('manifest.json'));
+    if (!manifest.permissions?.includes('debugger')) {
+      throw new Error(
+        'The debugger permission must be declared for the opt-in precise-input mode.'
+      );
+    }
+    const backendPath = path.join(repoRoot, 'src/orchestrator/CdpInputBackend.js');
+    const backend = fs.readFileSync(backendPath, 'utf8');
+    for (const method of [
+      'Input.dispatchMouseEvent',
+      'Input.dispatchKeyEvent',
+      'Input.insertText',
+    ]) {
+      if (!backend.includes(method)) throw new Error(`Precise-input method is missing: ${method}`);
+    }
+    for (const forbidden of [
+      ['Runtime', '.'].join(''),
+      ['Page', '.captureScreenshot'].join(''),
+      ['DOM', '.'].join(''),
+      ['Network', '.'].join(''),
+    ]) {
+      if (backend.includes(forbidden)) {
+        throw new Error(`Precise-input backend exposes a forbidden CDP namespace: ${forbidden}`);
+      }
+    }
+    const appFiles = fs.readdirSync(repoRoot).filter((file) => file.endsWith('.js'));
+    const sourceFiles = [...appFiles.map((file) => path.join(repoRoot, file))];
+    const visit = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const fullPath = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(fullPath);
+        else if (entry.isFile() && entry.name.endsWith('.js')) sourceFiles.push(fullPath);
+      }
+    };
+    visit(path.join(repoRoot, 'src'));
+    for (const file of sourceFiles) {
+      if (file === backendPath) continue;
+      if (fs.readFileSync(file, 'utf8').includes(['chrome', '.debugger'].join(''))) {
+        throw new Error(
+          `chrome.debugger must stay inside CdpInputBackend.js: ${path.relative(repoRoot, file)}`
+        );
       }
     }
   });
@@ -1709,19 +1758,35 @@ function runIntegrationTests(runner) {
   });
 
   runner.test('page action contracts are wired and guarded', () => {
-    const content = readFileSafe('content_script_unified.js');
+    const content = readFileSafe('content_script_page_actions.js');
+    const extraction = readFileSafe('content_script_unified.js');
+    const build = readFileSafe('scripts/build.js');
     const orchestrator = readFileSafe('src/orchestrator/RunOrchestrator.js');
     const policy = readFileSafe('src/utils/pageActionPolicy.js');
     const background = readFileSafe('background.js');
     const chat = readFileSafe('chat.js');
     const card = readFileSafe('src/chat/ChatPageAutomation.js');
     const scopeDiff = readFileSafe('src/utils/pageActionScopeDiff.js');
+    if (extraction.includes('PAGE_ACTION_MAX_ELEMENTS')) {
+      throw new Error('Page-action runtime must stay out of the always-on extraction script');
+    }
+    if (
+      !background.includes("'content_script_page_actions.js'") ||
+      !build.includes("'content_script_page_actions.js'")
+    ) {
+      throw new Error('On-demand page-action runtime must be injected and packaged');
+    }
     for (const token of [
       'pageActionSessions',
       'PAGE_ACTION_MAX_ELEMENTS',
       'PAGE_ACTION_MAX_PAYLOAD_BYTES',
-      'PAGE_ACTION_MAX_READABLE_CONTENT_CHARS',
-      'buildPageActionReadableContent',
+      'PAGE_ACTION_MAX_OUTLINE_CHARS',
+      'PAGE_ACTION_MAX_VALUE_CHARS',
+      'PAGE_ACTION_MAX_TOTAL_VALUE_CHARS',
+      'buildPageActionOutline',
+      'walkPageActionNodes',
+      'elementIds: new WeakMap()',
+      'getPageActionElementId',
       'computeAccessibleName',
       'pageActionPing',
       'sanitizePageActionUrl',
@@ -1742,7 +1807,7 @@ function runIntegrationTests(runner) {
     // invariant that keeps the DOM untouched on this path.
     const occlusionGateIndex = content.indexOf('if (clickTarget.covered)');
     const clickDispatchIndex = content.indexOf(
-      'dispatchPageActionClick(element, clickTarget.point)'
+      'dispatchPageActionClick(clickTarget.deliveryElement, clickTarget.point)'
     );
     if (occlusionGateIndex < 0 || clickDispatchIndex < 0) {
       throw new Error('Page-action click dispatch must be guarded by the occlusion gate');
@@ -1759,7 +1824,11 @@ function runIntegrationTests(runner) {
     for (const token of [
       'page_get_state',
       'page_click',
+      'page_hover',
+      'page_go_back',
       'page_input',
+      'page_set_value',
+      'page_keypress',
       'page_select',
       'page_scroll',
       'page_find_text',
@@ -1825,7 +1894,7 @@ function runIntegrationTests(runner) {
     }
     for (const token of [
       "'Stop'",
-      "'Approve all this session'",
+      "'Approve similar actions this run'",
       'page-action-confirmation-context',
       'page_manual_intervention_request',
       'activeTab',
@@ -1842,7 +1911,7 @@ function runIntegrationTests(runner) {
   runner.test('Act working memory is bounded and excluded from durable state', () => {
     checkModule('src/orchestrator/ActWorkingMemory.js');
     const memory = readFileSafe('src/orchestrator/ActWorkingMemory.js');
-    const content = readFileSafe('content_script_unified.js');
+    const content = readFileSafe('content_script_page_actions.js');
     const orchestrator = readFileSafe('src/orchestrator/RunOrchestrator.js');
     const checkpoint = readFileSafe('src/utils/pageActionCheckpoint.js');
     for (const token of [
@@ -1914,6 +1983,7 @@ function runIntegrationTests(runner) {
       'loadingManager.js',
       'themeUtils.js',
       'content_script_unified.js',
+      'content_script_page_actions.js',
       'content_script_outlook_compose.js',
       'pdfContentScript.js',
     ];
@@ -2124,6 +2194,7 @@ function runIntegrationTests(runner) {
       'background.js',
       'chat.js',
       'content_script_unified.js',
+      'content_script_page_actions.js',
       'content_script_diagnostics.js',
       'content_script_diagnostics.prod.js',
       'content_script_page_diagnostics.js',

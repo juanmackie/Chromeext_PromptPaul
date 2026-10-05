@@ -82,7 +82,82 @@ The previous punchlist (27 items, all marked resolved) is preserved in git: `git
 3. **The page model is narrow.** Act cannot see shadow DOM or iframes, cannot press Enter or Escape, cannot operate custom dropdowns or ARIA menus/tabs, and searches only the first 16,000 characters of a page (ACT-09, ACT-20 to ACT-24).
 4. **No task-level measurement.** The corpus tests the executor with scripted actions. No model-driven success rate exists, and the WebVoyager baseline was never recorded. Improvements cannot be shown to help until ACT-30 exists.
 
+## Browser-use roadmap execution (2026-10-04)
+
+- Branch: `feat/act-browser-use-roadmap`; starting revision: `afb0ed5` (clean).
+- Scope requested: the full five-phase roadmap, with baseline preparation first; no commit or push. The complete implementation source is the local, untracked `plans/act-browser-use-roadmap.md`. Its saved contents close the previously missing sections; older drafts are not implementation sources.
+- Model-driven baseline: **not recorded**. `npm run benchmark:act -- --run` stopped before browser/model execution because `PROMPT_PAUL_BENCHMARK_API_KEY` is absent. Use scripted corpus and browser gates until credentials are available. No model pass rate, steps, tokens, or snapshot-byte comparison is claimed.
+- Phase 0 automated gate **passed**: ten new local benchmark interaction cases, outcome graders, and oracle/null checks. Validation passed (100 structural checks, 778 behavior tests), all 86 browser cases passed, and the production build passed. The background-tab benchmark uses real visibility rather than Playwright's focus emulation. Manual Chrome journeys remain pending; the local browser launcher is now repaired.
+- Phase 1 **passed** its automated and manual delivery gates (90 browser tests, 100 structural checks, 791 behavior tests, production build, three Chrome journeys). Phase 2 **passed** its automated and manual delivery gates (98 browser tests, 100 structural checks, 801 behavior tests, production build, three Chrome journeys). Phase 3 **passed delivery gates**: validation (100 structural checks, 796 behavior tests), all 105 browser tests, production build, and real production-unpacked Chrome read, approved Notes edit/read-back, and owned-tab journeys through a local simulated provider. The browser journey artifact is `artifacts/act-roadmap/phase3-manual-journeys-fresh.log`; the latest UI label regression has separate red/green Playwright evidence. This is not model-performance evidence. Phases 4–5 have not started.
+
+| New item | Phase | Requirement                                          | Status               |
+| -------- | ----- | ---------------------------------------------------- | -------------------- |
+| ACT-45   | 1     | Hidden-tab settlement                                | Phase 1 gates passed |
+| ACT-46   | 1     | Adaptive settlement on action-triggered busy signals | Phase 1 gates passed |
+| ACT-47   | 2     | Viewport-anchored outline                            | Phase 2 gates passed |
+| ACT-48   | 2     | Bounded non-sensitive field values                   | Phase 2 gates passed |
+| ACT-49   | 2     | Set-value and append input                           | Phase 2 gates passed |
+| ACT-50   | 2     | Element-scoped scroll                                | Phase 2 gates passed |
+| ACT-51   | 3     | Structured Act terminal outcome                      | Phase 3 gates passed |
+| ACT-52   | 3     | Per-site trust/block policies                        | Phase 3 gates passed |
+| ACT-53   | 4     | Opt-in allow-listed CDP input with DOM fallback      | Pending              |
+| ACT-54   | 4     | Group run-created tabs without added permissions     | Pending              |
+
+### ACT-45 — Hidden-tab settlement
+
+- [x] Complete automated verification and record results.
+
+Reproduced against the unchanged runtime: the browser asserted `document.visibilityState === 'hidden'`, then input failed with `HIDDEN_SETTLE_TIMEOUT` after five seconds. The DOM mutation was delivered, but the double animation-frame wait never returned. The focused unit reproduction also failed for hidden documents and visibility changes between frames.
+
+Settlement now uses a timer when hidden, observes visibility changes during the frame wait, and applies the existing one-second deadline to the entire wait. Visible quiet pages retain two animation frames. Completion clears the observer, quiet/deadline/hidden timers, pending frames, and visibility listener. The browser regression checks a verified input receipt, hidden-tab scroll completion, and a fresh inspection without bridge quarantine.
+
+Verification: `npm run validate` passed (100 structural checks, 776 behavior tests, lint, formatting, smoke, and licenses). The four settlement unit cases also pass with timing assertions that require the hidden-tab path to finish before the deadline. `npm run test:browser` passed all 84 cases, including the scripted evaluation corpus, the hidden-tab regression, and normal worker shutdown without a worker debugger. The known notch failure did not reproduce in this run. `npm run build` passed; production metadata records starting revision `afb0ed5`, the feature branch, and the dirty working tree, with diagnostics/eval hooks excluded. Final changed-file formatting and whitespace checks passed.
+
+The earlier manual-check blocker is resolved. A fresh production unpacked build was loaded into disposable Chrome and exercised through the visible chat UI with a local scripted provider: read the hidden-tab fixture, approve the Notes edit and inspect its actual value, then open and inspect the pointer-controls fixture in a run-owned tab. All three delivery journeys completed. At this phase boundary the final progress card incorrectly reported unfinished steps; Phase 3 fixed this with runtime-derived terminal outcomes and explicit simple-task wording. Phase 2's Chrome exercise was delivery/UI verification, not a model-driven benchmark. No commit or push was performed.
+
+Phase 1 validation passed with 100 structural checks and 791 behavior tests; the production build passed. Original/compact snapshot bytes measured on real fixtures were 2,489/1,281 (form), 2,977/1,710 (Gmail-like), and 2,789/1,503 (pointer controls), a combined 45.6% reduction. A full browser attempt passed 89/90 with an unchanged notch reasoning assertion failing; its targeted rerun passed. The obsolete Resume named-tool-choice assertion was updated to verify the fresh synthetic pair. The final full browser rerun passed all 90 tests after synchronizing the initial-observation fixture with the install-time starter-profile write. Validation briefly failed because Chrome installed extension files into the temporary profile inside the lint tree; moving that profile under the ignored dependency cache restored the full validation gate.
+
+### Phase 2 — Observation model (gates passed)
+
+All nine new unit regressions and eight real-browser regressions failed against Phase 1, reproducing each observation/action gap. The new cases now pass in focused browser testing. ACT-47 adds a viewport outline with modal-first context; ACT-25 keeps node IDs through insertion/reinspection and rejects removed nodes; ACT-48 discloses bounded safe values and compares them in metadata-only diffs; ACT-49 adds native scalar setters and append; ACT-23 traverses open roots for controls/text/occlusion; ACT-22 scopes exact custom option selection; ACT-50 scrolls indexed/focused/modal containers; ACT-28 checks declared postconditions and additional click evidence. The previous validation passed (100 structural checks, 800 behavior tests) and the production build passed. The full browser attempt passed 91/98; seven outdated outline/injection/focus assertions were corrected, then passed 7/7 in a focused rerun. This was not a green full-suite gate. Snapshot full/compact bytes were 2,410/1,332 (form), 2,769/1,655 (Gmail-like), and 2,612/1,486 (pointer controls).
+
+The focused-value boundary regression failed before the correction: a separately normalized focused record disclosed `beyond-shared-budget` after the 8K element allowance was exhausted. Focused and submit-control metadata are now value-free in the classic runtime and normalizer; bounded control values stay available in the outline. Final verification passed: 31 focused behavior cases, `npm run validate` (100 structural checks, 801 behavior tests, lint, formatting, smoke, licenses), all 98 `npm run test:browser` cases, and `npm run build`. Logs are in `artifacts/act-roadmap/phase2-{validate,browser,build}.log`; the value regression red/green logs are in the same directory. The final browser run measured the same full/compact bytes listed above after the correction.
+
+The handoff's task-owned helpers had stopped. New disposable helpers loaded the final production build into Chrome; agent-browser connected successfully after explicitly opening a tab (its initial listing omitted existing extension pages, not a connection failure). All three visible UI journeys passed with the local scripted provider: read the current fixture, approve the Notes edit and read back `Manual fixture note` from the actual field, then open and inspect the pointer-controls fixture in an owned tab. Screenshots are `phase2-read.png`, `phase2-form-{approval,complete}.png` and `phase2-multitab-complete.png` in `artifacts/act-roadmap/`. No page errors were reported. The multi-tab wait initially followed the newly active owned tab; returning to chat confirmed completion. The existing incorrect unfinished-steps outcome remains assigned to Phase 3 (ACT-27/ACT-51), not silently accepted as accurate progress. These journeys prove delivery and rendering only. Model-driven A/B remains **not recorded** because the benchmark key is absent. No commit, push or deployment occurred.
+
+### Phase 3 — Agent loop and approvals (gates passed)
+
+ACT-27 replaces regex decomposition and keyword-driven note advancement with `page_update_plan`: twelve 200-character steps, one active unresolved step, five revisions, atomic validation and fresh evidence for completion. Notes retain finite multi-item quotas but never advance steps or grant consent. One-item/unquantified reading, durations and model-version numbers no longer invent unfinished quota work. All twelve short step descriptions survive checkpoints; explicit Resume normalizes legacy statuses and performs fresh inspection.
+
+ACT-51 carries normalized runtime `actOutcome` through final/progress/journal/eval records, including when the trace step cap is full. Declines persist across reinspection, timeout reports `needs_confirmation`, skipped work does not report done, and sign-in/CAPTCHA reasons use observed signals rather than model explanations. Benchmark summaries use ACT_* codes and reject blocked/failed success claims independently of answer prose.
+
+ACT-07 makes high risk always confirm after run/global/site trust and renames the button to **Approve similar actions this run**. ACT-52 implements background-owned serialized origin policies, backups/pinned keys, live-card site saving, Options list/block/remove and run-start snapshots. Source, requested, landed and recovery dispatch origins are gated before extraction; blocked runs clear observations and withhold tools. Site saving is bound to the authenticated unexpired card and unchanged live origin; failed persistence never approves. Stop cannot create a late approval after awaited policy checks. Expired cards remain disabled after late transport failure; malformed stored policy maps render an error, not false trust.
+
+ACT-29 records advertised API tool support, preserves endpoint/model-bound metadata and warns on all enable paths for unsupported/unknown models without generation. The warning directs users to Options; no specific model quality is recommended without model-driven evidence.
+
+Red reproductions are preserved under `artifacts/act-roadmap/phase3-*-red.log`, including planner/high-risk/site/model, redirect extraction, checkpoint/outcome/eval boundaries, expired-card transport, malformed settings, quota false positives and simple-task progress wording. Final gates passed after contract/documentation alignment: `npm run validate` (100 structural checks, 796 behavior tests, lint, format, smoke, licenses), `npm run test:browser` (105/105), and `npm run build` (production diagnostics/eval hooks excluded). A first browser attempt was affected by an active task-owned manual Chrome process and one transient Notch width assertion; after stopping only that identified process, a full rerun passed 104/104. After the final progress-label regression/fix, validation and build passed again and the complete browser suite passed 105/105. The real production-unpacked Chrome read, approved field edit/read-back, and owned-tab inspection passed with the local deterministic provider; the terminal journal recorded `{status: done, reason: null}`. The provider is simulated and proves delivery only. `PROMPT_PAUL_BENCHMARK_API_KEY` is absent, so model A/B is **not recorded**. Persistent site trust requires human security review before production; no production/release action occurred.
+
 ## TODO index
+
+### ACT-46 — Adaptive settlement
+
+The failing unit and browser reproductions returned before a 1.4-second action-triggered busy result. Settlement now captures pre-action busy controls, ignores existing spinners, observes newly busy controls and resource entries during the quiet window, and extends only those waits to a three-second overall deadline. Quiet pages retain the 100 ms / one-second path. Results include `settle: {waitedMs, reason}`; all DOM/resource observers, timers, frames and visibility listeners are released. The adaptive browser case and hidden-tab regression passed together. Phase 1 validation, all 90 browser tests, production build and the three Chrome delivery journeys passed; see the phase record above.
+
+### ACT-26 / ACT-40 — Initial observation and compact results (Phase 1 passed)
+
+Non-Hermes runs now execute `page_get_state` before their first provider request and add a synthetic matching call/result pair. Compact model results retain the identity envelope, formatted controls, readable text, notices, receipts and diffs, while duplicate elements/regions, metrics and fingerprints remain internal. Provider-adapter/history-compaction checks, byte measurements, all 90 browser tests and manual acceptance passed; see the Phase 1 evidence above.
+
+### ACT-21 / ACT-44 / double-click — Pointer controls (Phase 1 passed)
+
+The browser reproduction omitted searchbox/spinbutton/slider roles and the label-backed invisible checkbox. Collection now includes those roles and visible label proxies for hidden checkbox/radio controls; own labels pass the occlusion gate. Double-click accepts only counts 1 or 2, and indexed hover returns a fresh snapshot with observation budgeting. Owned-tab back navigation checks readiness and clears stale state. Focused checks and Phase 1 automated/manual gates passed; see the phase record above.
+
+### ACT-20 — Keyboard and submit (Phase 1 passed)
+
+Keyboard validation is allow-listed. Indexed and focused targets share current snapshot/key checks; focused identity is revalidated before delivery. Form submit metadata is bounded, normalized, and incorporated into target fingerprints so a changed submit control invalidates approval. Enter and `page_input.submit` classify the submit control; sensitive controls remain blocked. DOM key delivery and form submission passed browser acceptance, conservative-receipt tests and the Phase 1 gates.
+
+### ACT-41 — Act prompt checklist (Phase 1 passed)
+
+The Act instructions now use an eight-step checklist covering inspection, safety, observation tools, receipts, outcome verification, tabs, continued work and recovery. Tool descriptions share the system safety policy instead of repeating it. Navigation wording distinguishes observed links from unrequested model-entered destinations, and the list includes notes, keyboard, hover and back navigation. Provider/browser checks and Phase 1 automated/manual gates passed. Model effectiveness remains unmeasured.
 
 Suggested order: GEN-01 → ACT-30 → P1 → P2 capability → P3. See [Sequencing](#sequencing).
 
@@ -94,11 +169,12 @@ Suggested order: GEN-01 → ACT-30 → P1 → P2 capability → P3. See [Sequenc
 - [x] ACT-04 Approval/policy can evaluate a different element than the page acts on (Source-confirmed · M)
 - [x] ACT-05 Re-render rebinding picks the first identical control (wrong list row) (Source-confirmed · S)
 - [ ] ACT-06 Screenshots are captured on every inspection although the release gate discards them (Source-confirmed · S)
-- [ ] ACT-07 "Approve all this session" also skips high-risk confirmations (Recommendation · Decision · S)
+- [x] ACT-07 "Approve all this session" also skips high-risk confirmations (Recommendation · Decision · S; Phase 3 gates passed)
 - [x] ACT-08 Model-typed URLs open cross-origin without confirmation (Recommendation · Decision · S)
 
 **P2 — reliability defects**
 
+- [x] ACT-45 Hidden-tab settlement and visibility changes during frame waits (Reproduced · S; Phase 1 automated/manual gates passed)
 - [x] ACT-09 `page_find_text` / `page_wait` see only the first 16,000 characters (Source-confirmed · S)
 - [x] ACT-10 Batches/waits can exceed the fixed 15 s bridge timeout and quarantine a healthy tab (Source-confirmed · S)
 - [x] ACT-11 `page_scroll.containerIndex` indexes a different list than the snapshot shows (Source-confirmed · S)
@@ -110,24 +186,24 @@ Suggested order: GEN-01 → ACT-30 → P1 → P2 capability → P3. See [Sequenc
 **P2 — the substantial Act upgrade**
 
 - [ ] ACT-30 Model-driven local Act benchmark — **do this before the capability work** (Recommendation · M)
-- [ ] ACT-20 Keyboard actions and form submit (Enter, Escape, Tab, arrows) (Recommendation · M)
-- [ ] ACT-21 Broader control discovery: ARIA roles, labels for hidden inputs, own-label occlusion (Recommendation · M)
-- [ ] ACT-22 Custom dropdowns and comboboxes (ARIA listbox/option) (Recommendation · M)
-- [ ] ACT-23 Open shadow DOM traversal (Recommendation · M)
+- [x] ACT-20 Keyboard actions and form submit (Enter, Escape, Tab, arrows) (Recommendation · M)
+- [x] ACT-21 Broader control discovery: ARIA roles, labels for hidden inputs, own-label occlusion (Recommendation · M)
+- [x] ACT-22 Custom dropdowns and comboboxes (ARIA listbox/option) (Recommendation · M)
+- [x] ACT-23 Open shadow DOM traversal (Recommendation · M)
 - [ ] ACT-24 Iframes: same-origin first, then cross-origin frames (Recommendation · L)
-- [ ] ACT-25 Stable element IDs within a document (Recommendation · M)
-- [ ] ACT-26 Deterministic first observation instead of a forced named tool choice (Recommendation · S)
-- [ ] ACT-27 Replace the regex planner with a model-maintained checklist (Reproduced in part · M)
-- [ ] ACT-28 Declared postconditions and richer click evidence (Recommendation · M)
-- [ ] ACT-29 Warn when the selected model cannot call tools (Recommendation · S)
-- [ ] ACT-41 Rewrite the Act prompt: stale screenshot text, contradictions, missing `page_record_note` (Source-confirmed · S)
+- [x] ACT-25 Stable element IDs within a document (Recommendation · M)
+- [x] ACT-26 Deterministic first observation instead of a forced named tool choice (Recommendation · S)
+- [x] ACT-27 Replace the regex planner with a model-maintained checklist (Reproduced in part · M; Phase 3 gates passed)
+- [x] ACT-28 Declared postconditions and richer click evidence (Recommendation · M)
+- [x] ACT-29 Warn when the selected model cannot call tools (Recommendation · S; Phase 3 gates passed)
+- [x] ACT-41 Rewrite the Act prompt: stale screenshot text, contradictions, missing `page_record_note` (Source-confirmed · S)
 
 **P3 — efficiency, removals, overall**
 
-- [ ] ACT-40 One compact model-facing snapshot format (drop the duplicate element list and unused fields) (Source-confirmed · S)
+- [x] ACT-40 One compact model-facing snapshot format (drop the duplicate element list and unused fields) (Source-confirmed · S)
 - [ ] ACT-42 Measure, then reduce snapshot build cost (Recommendation · M)
 - [ ] ACT-43 Measure, then reduce per-action bridge round trips (Recommendation · S)
-- [ ] ACT-44 `page_hover` and `page_go_back` (Recommendation · S)
+- [x] ACT-44 `page_hover` and `page_go_back` (Recommendation · S)
 - [x] RM-01 `delete:` `ActActionCache.js` (S)
 - [x] RM-02 `delete:` dead Act code paths and stale comments (S)
 - [x] RM-03 `shrink:` collapse the always-true `multiTabEnabled` flag (S)
@@ -216,6 +292,7 @@ Evidence: [confirmation bypass](src/orchestrator/RunOrchestrator.js#L2293), [fla
 
 - Recommended fix: approve-all covers low and medium risk only; high risk always confirms. Rename the button to "Approve similar actions this run". Hard blocks stay unchanged.
 - Acceptance: after approve-all, a low-risk input runs without a card and a high-risk "Send" still shows one. Update `src/orchestrator/AGENTS.md` and `src/chat/AGENTS.md`.
+- Implemented in Phase 3; the risk regression failed before the fix and the browser checklist/Send regression passed. Phase 3 gates passed.
 
 ### ACT-08 — Model-typed URLs open cross-origin without confirmation
 
@@ -395,6 +472,7 @@ Evidence: [activation](src/orchestrator/ActPlanner.js#L79), [goal matching](src/
 - Planner activation also changes approval behavior (one approval, then auto-approve low risk), so the same task phrased longer gets different consent semantics.
 - Fix: a `page_update_plan` tool where the model writes and updates a short checklist (≤ 12 items). The orchestrator bounds it, shows it on the progress card, and requires a receipt or fresh snapshot reference to mark an item done. Remove regex decomposition and keyword matching. Decouple approval behavior from planning.
 - Acceptance: a one-step task never shows the incomplete warning; multi-step benchmark tasks show accurate progress.
+- Implemented in Phase 3, including false quota and twelve-step checkpoint regressions. Model-driven progress accuracy remains unmeasured; scripted delivery and Phase 3 gates passed.
 
 ### ACT-28 — Declared postconditions and richer click evidence
 
@@ -414,6 +492,7 @@ Evidence: the fresh-install default is `openrouter/free`; `src/utils/modelDiscov
 
 - Record tool support from discovery metadata where the provider exposes it (for example OpenRouter `supported_parameters`). Warn when Act is turned on with an unsupported or unknown model and link to a recommended model.
 - Acceptance: enabling Act with a known text-only model shows the warning before the run.
+- Implemented in Phase 3; local simulated metadata verifies unsupported/unknown/supported warnings, profile saves and zero generation calls on enable. Options guidance is provided rather than an unverified model-quality recommendation. Phase 3 gates passed.
 
 ### ACT-41 — Rewrite the Act prompt
 
@@ -531,6 +610,8 @@ Resolved: `npm run validate` is green (exit 0) — lint, format check, structura
 - Extract a `PageActionRunner` (page and tab actions, receipts, budgets, guards, confirmations) with its own state object, and move OpenAI and Anthropic wire code next to `CodexTransport.js`.
 - Split the Act runtime into its own content script; this also enables GEN-05.
 - Do this alongside the P1 fixes, not before them, and keep the event, journal, and message contracts unchanged.
+
+**Phase 4 progress:** 4.1 and 4.4 remain implemented as recorded above. Phase 4.2 now injects the Act runtime into supported frames on demand, merges up to 16 labelled frame snapshots (200 controls/24K characters), routes current global indices to frame-local snapshot keys, applies blocked-origin rules per frame, and omits recognized payment-like frames. Frame IDs and origins come from `chrome.scripting.executeScript({allFrames:true})`; this uses no `webNavigation` permission and replaces the plan's proposed `postMessage` mapping handshake. A real-browser fixture covers same-origin and cross-origin read/action routing, blocked origins, and payment-frame exclusion. Phase 4.3 is implemented with a default-off `pageActionsPreciseInput` setting and one isolated `CdpInputBackend.js` allowlist for `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`, and `Input.insertText`. The service worker attaches only on an approved supported-page mutation, displays active/fallback state, detaches on Stop/run cleanup/errors, and never replays uncertain input through DOM events. Unit and browser tests cover allowlist bounds, trusted input, explicit setting save/default, and the background debugger path. Latest gates: `npm run validate` passed (101 structural checks, 805 behavior tests, lint, formatting, smoke and licenses); `npm run build` passed; `npm run test:browser` passed 109/109 in 10.0 minutes; `git diff --check` passed. Still pending: manual Chrome banner/cancel/off-mode and read/form/multitab journeys; the requested `PageActionRunner` extraction (Phase 5); model A/B (no benchmark key); human security review for persistent site trust and the debugger permission. The postMessage-vs-scripting frame-ID design substitution is documented and should be reviewed before production.
 
 ### GEN-04 — Documentation drift fixes
 

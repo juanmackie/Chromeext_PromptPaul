@@ -14,6 +14,10 @@ Context-aware AI in the browser. Short feedback loops for selected text, without
 
 Web search now uses a keyless Exa client backed by Exa's hosted MCP endpoint (with optional background-owned `exaSearchApiKey` to lift free-tier rate limits), falling back to Parallel's keyless hosted Search MCP. The provider preference is `exa` (default) or `brave`; stored legacy `duckduckgo` values migrate to `exa` automatically. The Options page Web Search section reflects the new provider selection.
 
+## Next release permission notice (do not publish until release)
+
+The upcoming experimental precise-input option adds Chrome's `debugger` permission. Chrome will ask existing users to review the added permission when the extension updates. The option is off by default and limits debugger use to approved mouse, keyboard, and text input; it does not enable page JavaScript, DOM inspection, screenshots, or network access.
+
 ## Description
 
 **Prompt Paul - Context-aware AI in the browser**
@@ -52,9 +56,14 @@ Use configured custom HTTP tools and OpenClaw-compatible Agent Skills with API-k
 **Optional web search**
 Enable web search grounding for API-key or Codex connections when current or verifiable information would improve the answer. Responses that use search include a Sources section. The selected model must support function calling.
 
+**Experimental precise input**
+Act uses semantic page controls by default. An optional, default-off setting can send approved mouse and keyboard input through Chrome's debugger Input API for pages where synthetic DOM events do not work. Chrome may show a debugger permission warning. The setting does not enable page JavaScript, DOM inspection through CDP, screenshots, or network access.
+
 ### Privacy
 
 Prompt Paul stores your configuration locally in Chrome and only sends selected text, page content, media, or instructions when you explicitly ask it to process them.
+
+When you enable Act and submit a task, the selected provider receives a bounded outline of the inspected page, including non-sensitive field values (up to 160 characters per field and 8,000 per snapshot). Password, OTP, payment, credential, hidden and file values remain masked or excluded. Field values are not stored in activity journals or recovery checkpoints.
 
 API keys stay in Chrome storage. Analytics is opt-in and disabled by default; if enabled, it sends coarse event labels and a rotating pseudonymous instance ID, not page content, prompts, keys, or credentials.
 

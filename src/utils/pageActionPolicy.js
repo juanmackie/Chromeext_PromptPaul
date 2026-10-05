@@ -13,7 +13,10 @@ import {
 export const PAGE_ACTION_NAMES = Object.freeze([
   'page_get_state',
   'page_click',
+  'page_hover',
   'page_input',
+  'page_set_value',
+  'page_keypress',
   'page_select',
   'page_scroll',
   'page_find_text',
@@ -23,6 +26,7 @@ export const PAGE_ACTION_NAMES = Object.freeze([
 
 export const READ_ONLY_PAGE_ACTIONS = Object.freeze([
   'page_get_state',
+  'page_hover',
   'page_scroll',
   'page_find_text',
   'page_wait',
@@ -34,6 +38,7 @@ export const PAGE_TAB_ACTION_NAMES = Object.freeze([
   'page_open_tab',
   'page_open_link',
   'page_switch_tab',
+  'page_go_back',
   'page_close_tab',
 ]);
 export const PAGE_USER_INPUT_ACTION_NAME = 'page_request_user_input';
@@ -46,6 +51,24 @@ export const PAGE_ACTION_RISKS = Object.freeze({
   HIGH: 'high',
   PROHIBITED: 'prohibited',
 });
+
+export const PAGE_ACTION_KEYS = Object.freeze([
+  'Enter',
+  'Escape',
+  'Tab',
+  'Shift+Tab',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Backspace',
+  'Delete',
+  'Space',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
 
 export const PAGE_ACTION_TITLE_MAX_CHARS = 80;
 
@@ -66,7 +89,10 @@ export const PAGE_ACTION_OCCLUDER_MAX_CHARS = 120;
  * `not_delivered` and must not consume a mutation budget slot or count toward
  * the no-progress lockout.
  */
-export const PAGE_ACTION_PRE_DISPATCH_CODES = Object.freeze([PAGE_ACTION_OCCLUSION_CODE]);
+export const PAGE_ACTION_PRE_DISPATCH_CODES = Object.freeze([
+  PAGE_ACTION_OCCLUSION_CODE,
+  'PAGE_STATE_STALE',
+]);
 
 // Credential/payment wording that must never appear in a model-supplied step
 // title (mirrors the sensitive-field conventions in pageDom.js). Rejecting it
@@ -153,8 +179,25 @@ export function normalizePageActionArgs(actionName, args = {}) {
   // is omitted rather than blocking the actual action; this also keeps
   // control-character or sensitive wording out of progress events and journals.
   const title = normalizePageActionTitle(args.title);
-  const attachTitle = (value) =>
-    title?.valid && title.value ? { ...value, title: title.value } : value;
+  let expect;
+  if (args.expect != null && ['page_click', 'page_keypress', 'page_input'].includes(actionName)) {
+    if (
+      !args.expect ||
+      typeof args.expect !== 'object' ||
+      Array.isArray(args.expect) ||
+      !['text_appears', 'text_gone', 'url_changes'].includes(args.expect.type)
+    )
+      return { valid: false, error: 'Unsupported declared postcondition.' };
+    const text = capPageText(args.expect.text, PAGE_DOM_CAPS.maxFindQueryChars);
+    if (args.expect.type !== 'url_changes' && !text)
+      return { valid: false, error: 'Text postconditions require bounded text.' };
+    expect = { type: args.expect.type, ...(args.expect.type === 'url_changes' ? {} : { text }) };
+  }
+  const attachTitle = (value) => ({
+    ...value,
+    ...(title?.valid && title.value ? { title: title.value } : {}),
+    ...(expect ? { expect } : {}),
+  });
 
   if (actionName === 'page_get_state') {
     if (args.regionId == null) return { valid: true, value: attachTitle({}) };
@@ -230,6 +273,13 @@ export function normalizePageActionArgs(actionName, args = {}) {
     return { valid: true, value: attachTitle({ query, regionId }) };
   }
   if (actionName === 'page_scroll') {
+    const index = args.index == null ? null : Number(args.index);
+    const snapshotId = capPageText(args.snapshotId, 128);
+    if (index != null && (!snapshotId || !Number.isSafeInteger(index) || index < 0))
+      return {
+        valid: false,
+        error: 'Element-scoped scroll requires a current snapshot and safe element ID.',
+      };
     const direction = String(args.direction || (args.down === false ? 'up' : 'down')).toLowerCase();
     const pages = Number(args.pages ?? 0.5);
     const containerIndex = args.containerIndex == null ? null : Number(args.containerIndex);
@@ -254,18 +304,31 @@ export function normalizePageActionArgs(actionName, args = {}) {
         direction,
         pages,
         ...(containerIndex === null ? {} : { containerIndex }),
+        ...(index === null ? {} : { snapshotId, index }),
       }),
     };
   }
 
   const snapshotId = capPageText(args.snapshotId, 128);
+  if (actionName === 'page_keypress') {
+    if (!PAGE_ACTION_KEYS.includes(args.key))
+      return { valid: false, error: 'Unsupported page key.' };
+    if (args.index == null)
+      return {
+        valid: true,
+        value: attachTitle({ key: args.key, ...(snapshotId ? { snapshotId } : {}) }),
+      };
+  }
   const index = Number(args.index);
   if (!snapshotId) return { valid: false, error: 'A current snapshotId is required.' };
-  if (!Number.isInteger(index) || index < 0 || index >= PAGE_DOM_CAPS.maxElements) {
+  if (!Number.isSafeInteger(index) || index < 0) {
     return { valid: false, error: 'Element index is outside the allowed range.' };
   }
 
   if (actionName === 'page_input') {
+    const mode = args.mode ?? 'replace';
+    if (!['replace', 'append'].includes(mode))
+      return { valid: false, error: 'Input mode must be replace or append.' };
     const text = String(args.text ?? '');
     if (!text.trim()) return { valid: false, error: 'Input text cannot be empty.' };
     if (text.length > PAGE_DOM_CAPS.maxInputChars) {
@@ -274,7 +337,30 @@ export function normalizePageActionArgs(actionName, args = {}) {
         error: `Input text is limited to ${PAGE_DOM_CAPS.maxInputChars} characters.`,
       };
     }
-    return { valid: true, value: attachTitle({ snapshotId, index, text }) };
+    if (args.submit != null && typeof args.submit !== 'boolean')
+      return { valid: false, error: 'Submit must be a boolean.' };
+    return {
+      valid: true,
+      value: attachTitle({
+        snapshotId,
+        index,
+        text,
+        mode,
+        ...(args.submit === true ? { submit: true } : {}),
+      }),
+    };
+  }
+
+  if (actionName === 'page_set_value') {
+    if (
+      !['string', 'number'].includes(typeof args.value) ||
+      (typeof args.value === 'number' && !Number.isFinite(args.value))
+    )
+      return { valid: false, error: 'A bounded string or numeric value is required.' };
+    const value = String(args.value);
+    if (!value || value.length > PAGE_DOM_CAPS.maxValueChars)
+      return { valid: false, error: 'Set value is limited to 160 characters.' };
+    return { valid: true, value: attachTitle({ snapshotId, index, value }) };
   }
 
   if (actionName === 'page_select') {
@@ -282,6 +368,13 @@ export function normalizePageActionArgs(actionName, args = {}) {
     if (!option) return { valid: false, error: 'A select option is required.' };
     return { valid: true, value: attachTitle({ snapshotId, index, option }) };
   }
+
+  if (actionName === 'page_click' && args.count != null) {
+    if (![1, 2].includes(args.count)) return { valid: false, error: 'Click count must be 1 or 2.' };
+    return { valid: true, value: attachTitle({ snapshotId, index, count: args.count }) };
+  }
+  if (actionName === 'page_keypress')
+    return { valid: true, value: attachTitle({ snapshotId, index, key: args.key }) };
 
   return { valid: true, value: attachTitle({ snapshotId, index }) };
 }
@@ -304,7 +397,7 @@ export function normalizePageTabActionArgs(actionName, args = {}) {
     const snapshotId = capPageText(args.snapshotId, 128);
     const index = Number(args.index);
     if (!snapshotId) return { valid: false, error: 'A current snapshotId is required.' };
-    if (!Number.isInteger(index) || index < 0 || index >= PAGE_DOM_CAPS.maxElements) {
+    if (!Number.isSafeInteger(index) || index < 0) {
       return { valid: false, error: 'Element index is outside the allowed range.' };
     }
     return { valid: true, value: { snapshotId, index, background: args.background === true } };
@@ -390,7 +483,7 @@ export function normalizePageUserInputArgs(args = {}) {
  * @param {string} actionName
  * @returns {{risk: string, requiresConfirmation: boolean, prohibited: boolean, reason: string}}
  */
-export function classifyPageAction(target = {}, actionName = '') {
+export function classifyPageAction(target = {}, actionName = '', args = {}) {
   if (isPageActionReadOnly(actionName)) {
     return {
       risk: PAGE_ACTION_RISKS.READ_ONLY,
@@ -433,6 +526,29 @@ export function classifyPageAction(target = {}, actionName = '') {
       requiresConfirmation: true,
       prohibited: true,
       reason: 'Credential, password, one-time-code, or security-sensitive controls are blocked.',
+    };
+  }
+
+  if (
+    (actionName === 'page_keypress' && args.key === 'Enter') ||
+    (actionName === 'page_input' && args.submit === true)
+  ) {
+    if (target.submitControl) return classifyPageAction(target.submitControl, 'page_click');
+    if (target.inForm)
+      return classifyPageAction({ tag: 'button', label: 'Submit form' }, 'page_click');
+    if (actionName === 'page_keypress') return classifyPageAction(target, 'page_click');
+  }
+  if (
+    actionName === 'page_keypress' &&
+    ['Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
+      args.key
+    )
+  ) {
+    return {
+      risk: PAGE_ACTION_RISKS.LOW,
+      requiresConfirmation: true,
+      prohibited: false,
+      reason: 'This key changes focus or widget state.',
     };
   }
 
@@ -517,15 +633,25 @@ export function classifyPageAction(target = {}, actionName = '') {
  */
 export function evaluatePageActionPolicy(input = {}) {
   const actionName = String(input.actionName || '');
-  const classification = classifyPageAction(input.target, actionName);
+  const sitePolicy = input.sitePolicies?.[input.origin];
+  if (sitePolicy === 'block')
+    return {
+      allowed: false,
+      prohibited: true,
+      risk: PAGE_ACTION_RISKS.PROHIBITED,
+      requiresConfirmation: false,
+      requiresExplicitConfirmation: false,
+      code: 'PAGE_ACTION_SITE_BLOCKED',
+      reason: 'Act is blocked on this site. Review its policy in Options.',
+    };
+  const classification = classifyPageAction(input.target, actionName, input.args);
   if (classification.prohibited) {
     return { allowed: false, ...classification };
   }
 
-  const trustedMode = input.trustedMode === true;
+  const trustedMode = input.trustedMode === true || sitePolicy === 'allow_low_risk';
   // High-risk and navigation-capable controls stay confirmation-gated in
-  // persistent trusted mode. An explicit session approval is handled by the
-  // orchestrator and may bypass this confirmation for allowed actions.
+  // persistent trusted mode. Explicit run approval never bypasses high risk.
   const requiresExplicitConfirmation =
     classification.risk === PAGE_ACTION_RISKS.HIGH || classification.navigation === true;
   const requiresConfirmation =

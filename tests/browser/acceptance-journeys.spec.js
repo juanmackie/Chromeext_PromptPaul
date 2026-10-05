@@ -179,12 +179,13 @@ async function approvedInput(harness, { url, runId, snapshotId, index, batch, te
     .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
     .toMatchObject({ action: 'page_input' });
 
-  // Best-effort approval: the true gate is the delivered_verified receipt
-  // below (a confirmation may be auto-consumed under planner auto-approval).
-  await harness.evaluate(
-    ({ url, id }) => window.pageActionHarness.resolveConfirmation(url, id, true, false),
-    { url, id: runId }
-  );
+  // The explicit decision is required; model planning cannot consume this gate.
+  expect(
+    await harness.evaluate(
+      ({ url, id }) => window.pageActionHarness.resolveConfirmation(url, id, true, false),
+      { url, id: runId }
+    )
+  ).toMatchObject({ success: true });
 
   // The tool result settles once the approval decision is delivered; assert it
   // was not rejected before checking the verified mutation receipt.
@@ -576,7 +577,7 @@ test('acceptance 6: compare information across two pages', async () => {
     // Read Vendor A: monthly price, seats, storage.
     const a = await dr('acceptance6-a', 'page_get_state');
     expect(a.result?.snapshot, JSON.stringify(a)).toBeTruthy();
-    const aText = `${a.result.snapshot.title} ${a.result.snapshot.readableContent || ''}`;
+    const aText = `${a.result.snapshot.title} ${a.result.snapshot.content}`;
     expect(aText).toContain('Vendor A');
     expect(aText).toContain('Monthly price');
     expect(aText).toContain('24');
@@ -593,7 +594,7 @@ test('acceptance 6: compare information across two pages', async () => {
     });
     const b = await dr('acceptance6-b', 'page_get_state');
     expect(b.result?.snapshot, JSON.stringify(b)).toBeTruthy();
-    const bText = `${b.result.snapshot.title} ${b.result.snapshot.readableContent || ''}`;
+    const bText = `${b.result.snapshot.title} ${b.result.snapshot.content}`;
     expect(bText).toContain('Vendor B');
     expect(bText).toContain('19');
 

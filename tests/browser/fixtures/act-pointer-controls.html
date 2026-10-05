@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Semantic pointer controls</title>
+<style>
+  label {
+    display: inline-block;
+    padding: 24px;
+  }
+  #hidden-check {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+</style>
+<input id="hidden-check" type="checkbox" /><label for="hidden-check">Include archive</label>
+<button id="double">Open row</button>
+<button id="hover">Products</button>
+<p id="revealed" hidden>Analytics menu</p>
+<div role="searchbox" aria-label="Search widget">Search</div>
+<div role="spinbutton" aria-label="Quantity widget">1</div>
+<div role="slider" aria-label="Volume widget">50</div>
+<script>
+  document.querySelector('#double').ondblclick = () => (document.body.dataset.opened = 'true');
+  document.querySelector('#hover').onmouseover = () =>
+    (document.querySelector('#revealed').hidden = false);
+</script>

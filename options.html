@@ -1331,9 +1331,10 @@ What this skill does and when to use it.
         />
         <p class="text-secondary-emphasis small">
           Turn on <strong>Act</strong> in the side panel to let Prompt Paul inspect and operate
-          semantic controls on the current tab. Page text is treated as untrusted data. The first
-          release is DOM-only: it does not control other tabs, run JavaScript, read cookies or
-          storage, or operate passwords, one-time codes, payment fields, or security controls.
+          semantic controls on the current tab. Page text is treated as untrusted data. Act does not
+          run page JavaScript, read cookies or storage, or operate passwords, one-time codes,
+          payment fields, or security controls. Optional precise input uses only allow-listed
+          browser input events and never captures screenshots or evaluates page code.
         </p>
         <p class="text-secondary-emphasis small">
           When Act is enabled, the bounded page snapshot is sent to your configured LLM endpoint.
@@ -1350,6 +1351,17 @@ What this skill does and when to use it.
           Default: off. Submits, sends, deletes, purchases, navigation, account/security changes,
           and credential fields remain confirmation-gated or blocked.
         </div>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="pageActionsPreciseInput" />
+          <label class="form-check-label" for="pageActionsPreciseInput">
+            Precise input (experimental)
+          </label>
+        </div>
+        <div class="form-text mb-3">
+          Off by default. When enabled, Chrome shows its debugging notice while Act uses trusted
+          mouse/keyboard input. If attachment is denied or cancelled, Act falls back to standard
+          page interaction. Turn this off to avoid the debugger permission prompt.
+        </div>
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <button type="button" id="savePageActions" class="btn btn-primary">
             <span class="material-symbols-outlined me-1" style="font-size: 1.25rem">save</span>
@@ -1357,6 +1369,33 @@ What this skill does and when to use it.
           </button>
           <span id="pageActionsSaveStatus" class="small text-secondary-emphasis"></span>
         </div>
+        <h3 class="fs-6 mt-4">Site policies</h3>
+        <p class="form-text">
+          Policies are saved immediately and apply to new runs. Site trust never skips high-risk
+          confirmations. Blocked sites cannot be inspected by Act. Policies are included in backups.
+        </p>
+        <div id="pageActionSitePoliciesList" aria-label="Saved Act site policies"></div>
+        <form id="pageActionSitePolicyForm" class="d-flex gap-2 flex-wrap align-items-end mt-3">
+          <div>
+            <label for="pageActionSitePolicyOrigin" class="form-label">Site origin</label>
+            <input
+              id="pageActionSitePolicyOrigin"
+              type="url"
+              class="form-control"
+              placeholder="https://example.com"
+              maxlength="2048"
+              required
+            />
+          </div>
+          <div>
+            <label for="pageActionSitePolicyRule" class="form-label">Policy</label>
+            <select id="pageActionSitePolicyRule" class="form-select">
+              <option value="block">Block Act</option>
+              <option value="allow_low_risk">Allow low-risk actions</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-outline-primary">Save site policy</button>
+        </form>
       </section>
 
       <!-- Top Notch Section -->

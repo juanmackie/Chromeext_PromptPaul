@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Embedded content</title>
+<label for="frame-note">Frame note</label>
+<input id="frame-note" value="empty" />
+<button id="frame-action">Frame action</button>
+<p id="frame-clicked">0</p>
+<script>
+  document.querySelector('#frame-action').addEventListener('click', (event) => {
+    const output = document.querySelector('#frame-clicked');
+    output.textContent = String(Number(output.textContent) + 1);
+  });
+</script>

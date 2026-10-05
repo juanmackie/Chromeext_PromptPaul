@@ -11,7 +11,7 @@ import { capPageText } from './pageDom.js';
 export const PAGE_ACTION_CHECKPOINT_STORAGE_KEY = 'promptPaulActCheckpointsV1';
 export const PAGE_ACTION_CHECKPOINT_CAPS = Object.freeze({
   maxRecords: 8,
-  maxGoals: 8,
+  maxGoals: 12,
   maxGoalChars: 200,
   maxInstructionChars: 2_000,
 });

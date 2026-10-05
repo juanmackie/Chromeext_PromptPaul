@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Precise input fixture</title>
+<label for="message">Message</label>
+<input id="message" value="original" />
+<p id="input-trusted">false</p>
+<button id="action">Count click</button>
+<p id="click-trusted">false</p>
+<script>
+  const message = document.querySelector('#message');
+  message.addEventListener('input', (event) => {
+    document.querySelector('#input-trusted').textContent = String(event.isTrusted);
+  });
+  document.querySelector('#action').addEventListener('click', (event) => {
+    document.querySelector('#click-trusted').textContent = String(event.isTrusted);
+  });
+</script>

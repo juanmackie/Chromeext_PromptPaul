@@ -1091,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPageActionConfirmation(
           chatArea,
           event,
-          async (confirmationId, approved, approveAll) => {
+          async (confirmationId, approved, approveAll, allowSite = false) => {
             if (!(await refreshRunOwnerToken(runId))) {
               throw new Error(
                 'Run reconnect authorization was not established. Reload Prompt Paul.'
@@ -1103,10 +1103,14 @@ document.addEventListener('DOMContentLoaded', () => {
               confirmationId,
               approved,
               approveAll,
+              allowSite,
               ...getRunAuth(runId, streamState.getSourceTabId()),
             });
-            if (!response?.success)
-              throw new Error(response?.error || 'Approval was not accepted.');
+            if (!response?.success) {
+              const error = new Error(response?.error || 'Approval was not accepted.');
+              error.expired = response?.expired === true;
+              throw error;
+            }
             return response;
           },
           () => abortRun(runId)
@@ -1445,13 +1449,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let enabled;
     try {
       enabled = await isPageActionsEnabled();
-      await setPageActionsEnabled(!enabled);
+      const warning = await setPageActionsEnabled(!enabled);
       composer.setActEnabled(!enabled);
       loadingManager.showToast(
-        enabled
-          ? 'Page actions disabled for this browser session.'
-          : 'Page actions enabled for this browser session. Risky actions still require approval.',
-        'info'
+        warning ||
+          (enabled
+            ? 'Page actions disabled for this browser session.'
+            : 'Page actions enabled for this browser session. Risky actions still require approval.'),
+        warning ? 'warning' : 'info'
       );
     } catch (error) {
       loadingManager.showToast(error.message || 'Could not update Act permission.', 'error');
@@ -1727,7 +1732,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (request.includePageContext === true) {
       if (pageData.isPdf && pageData.pdfUrl) {
         void (async () => {
-          if (request.act === true) await setPageActionsEnabled(true);
+          if (request.act === true) await setPageActionsEnabled(true, loadingManager);
           await loadPdfContent(pageData, null, textPrompt);
         })();
         return true;
@@ -1744,7 +1749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         type: pageData.type,
       };
       void (async () => {
-        if (request.act === true) await setPageActionsEnabled(true);
+        if (request.act === true) await setPageActionsEnabled(true, loadingManager);
         await makeApiCall(
           {
             instruction: textPrompt,
@@ -1775,7 +1780,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chatMainArea.classList.remove('hidden');
     oneoffInstructionArea.classList.add('hidden');
     void (async () => {
-      if (request.act === true) await setPageActionsEnabled(true);
+      if (request.act === true) await setPageActionsEnabled(true, loadingManager);
       userInput.value = textPrompt;
       userInput.dispatchEvent(new Event('input'));
       await sendMessage();
@@ -2188,7 +2193,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderPageActionConfirmation(
               chatArea,
               event,
-              async (confirmationId, approved, approveAll) => {
+              async (confirmationId, approved, approveAll, allowSite = false) => {
                 try {
                   if (!(await refreshRunOwnerToken(runId))) {
                     throw new Error(
@@ -2201,12 +2206,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     confirmationId,
                     approved,
                     approveAll,
+                    allowSite,
                     ...getRunAuth(runId, sourceTabId ?? streamState.getSourceTabId()),
                   });
                   if (!response?.success) {
-                    throw new Error(
+                    const error = new Error(
                       response?.error || 'This page-action approval is no longer active.'
                     );
+                    error.expired = response?.expired === true;
+                    throw error;
                   }
                   return response;
                 } catch (error) {

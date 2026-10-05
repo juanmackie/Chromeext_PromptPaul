@@ -59,7 +59,101 @@
         document.body.dataset[name] = value;
       };
 
-      if (kind.startsWith('gmail-')) {
+      if (kind === 'search-enter') {
+        const search = el('input', { type: 'search', 'aria-label': 'Search' });
+        search.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') mark('searched', search.value);
+        });
+        root.append(search);
+      } else if (kind === 'escape-modal') {
+        const dialog = el(
+          'section',
+          { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Notice', tabindex: '0' },
+          'Press Escape to dismiss this notice.'
+        );
+        dialog.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            dialog.hidden = true;
+            mark('dismissed', 'true');
+          }
+        });
+        root.append(dialog);
+        dialog.focus();
+      } else if (kind === 'hover-menu') {
+        const menu = button('Products', { 'aria-expanded': 'false' });
+        const list = el('div', { role: 'menu', hidden: '' });
+        const option = button('Analytics');
+        menu.addEventListener('mouseover', () => {
+          list.hidden = false;
+          menu.setAttribute('aria-expanded', 'true');
+        });
+        option.addEventListener('click', () => mark('selection', 'analytics'));
+        list.append(option);
+        root.append(menu, list);
+      } else if (kind === 'background-tab') {
+        root.append(
+          el('a', { href: 'act-hidden-settle.html', target: '_blank' }, 'Background notes')
+        );
+      } else if (kind === 'viewport-read') {
+        root.append(el('p', {}, 'Archive '.repeat(7_000)));
+        const marker = el('p', {}, 'The verification code is ORBIT-64.');
+        root.append(marker, el('input', { id: 'verification', 'aria-label': 'Verification code' }));
+        marker.scrollIntoView();
+      } else if (kind === 'prefilled-form') {
+        for (const [label, value] of [
+          ['Name', 'Ada'],
+          ['City', 'Brisbane'],
+          ['Team', 'Birch'],
+        ]) {
+          const input = el('input', { 'aria-label': label, value });
+          input.dataset.edits = '0';
+          input.addEventListener('input', () => {
+            input.dataset.edits = String(Number(input.dataset.edits) + 1);
+          });
+          root.append(input);
+        }
+      } else if (kind === 'range-date') {
+        root.append(
+          el('input', { type: 'range', id: 'volume', 'aria-label': 'Volume', value: '20' }),
+          el('input', {
+            type: 'date',
+            id: 'date',
+            'aria-label': 'Appointment date',
+            value: '2026-10-01',
+          })
+        );
+      } else if (kind === 'nested-scroll') {
+        const panel = el('div', {
+          id: 'scroll-list',
+          tabindex: '0',
+          'aria-label': 'Activity panel',
+        });
+        for (let index = 0; index < 30; index += 1) panel.append(el('p', {}, `Activity ${index}`));
+        const choose = button('Select Cedar');
+        choose.addEventListener('click', () => mark('selection', 'cedar'));
+        panel.append(choose);
+        root.append(panel);
+      } else if (kind === 'cross-origin-iframe') {
+        const child = new URL(location.href);
+        child.hostname = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+        child.search = '?case=iframe-child';
+        const frame = el('iframe', { title: 'Contact form', src: child.href });
+        window.addEventListener('message', (event) => {
+          if (
+            event.source === frame.contentWindow &&
+            event.origin === child.origin &&
+            event.data?.type === 'fixture-submitted'
+          )
+            mark('submitted', String(event.data.name || ''));
+        });
+        root.append(frame);
+      } else if (kind === 'trusted-key-only') {
+        const input = el('input', { 'aria-label': 'Ready', value: 'ready' });
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && event.isTrusted) mark('trustedKey', 'true');
+        });
+        root.append(input);
+      } else if (kind.startsWith('gmail-')) {
         const sort = button('Showing most relevant', {
           'aria-label': 'Sort order',
           'aria-expanded': 'false',
@@ -279,6 +373,7 @@
         form.addEventListener('submit', (event) => {
           event.preventDefault();
           mark('submitted', name.value);
+          parent.postMessage({ type: 'fixture-submitted', name: name.value }, '*');
         });
         form.append(name, submit);
         root.append(form);

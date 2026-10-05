@@ -13,6 +13,8 @@ Documentation in this subtree explains Prompt Paul architecture, development wor
 ## Local Contracts
 
 - Keep docs aligned with the current extension behavior, available commands, and build/test scripts.
+- `PRODUCTION_READINESS.md` includes the hidden-tab settlement gate: browser coverage must assert a genuinely hidden document, including verified input, scrolling, and a healthy follow-up inspection.
+- Record manual UI delivery checks separately from model benchmark scores; local scripted providers verify interaction flows without measuring model task success.
 - Link to root AGENTS.md for the canonical skill specification.
 - Prefer concise operational docs over historical notes.
 
@@ -26,6 +28,8 @@ Documentation in this subtree explains Prompt Paul architecture, development wor
 - Update `docs/SKILL_EXAMPLES.md` when skill invocation behavior, supported patterns, or examples change.
 - Update `docs/STORE_LISTING.md` whenever the Chrome Web Store listing changes; keep its "What's new" entry aligned with the latest release section in the root changelog.
 - Keep relative links valid from the document being edited.
+
+- Act value disclosure changes require aligned privacy text in STORE_LISTING.md and omission/measurement wording in ACT_RELIABILITY_BASELINE.md; distinguish live model history from durable journal/checkpoint metadata.
 
 ## Verification
 

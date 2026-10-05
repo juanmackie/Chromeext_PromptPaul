@@ -84,6 +84,18 @@ describe('pageDom', () => {
     expect(formatPageElement(element)).toContain('[4]');
   });
 
+  it('retains only a safe HTTP(S) frame origin for site-policy routing', () => {
+    expect(
+      normalizePageElement({
+        tag: 'button',
+        frameOrigin: 'https://checkout.example/path?token=secret',
+      }).frameOrigin
+    ).toBe('https://checkout.example');
+    expect(
+      normalizePageElement({ tag: 'button', frameOrigin: 'javascript:alert(1)' }).frameOrigin
+    ).toBeUndefined();
+  });
+
   it('keeps safe link destinations while removing query strings and fragments', () => {
     const element = normalizePageElement(
       {

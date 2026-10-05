@@ -117,24 +117,30 @@ Steps:
 
 1. Open a normal form or SPA and click the side-panel **Act** toggle; confirm it
    is `aria-pressed="true"` and that page tools stay enabled for the session
-   until you turn them off (they do not reset after a single run).
-2. Ask Prompt Paul to inspect the page. It uses `page_get_state` and shows a
-   bounded semantic snapshot; page text that contains instructions is treated as
-   untrusted data.
+   until you turn them off (they do not reset after a single run). Unsupported
+   or unknown API model tool support shows an advisory warning before a run;
+   enabling makes no generation request.
+2. Ask Prompt Paul to inspect the page. Non-Hermes runs already include
+   `page_get_state` in the first provider request. The viewport outline shows
+   nearby text and bounded safe values; source text stays untrusted.
 3. Ask it to fill a harmless field or click a non-destructive control. The
    target is highlighted and the run shows an approval card; Deny causes no DOM
-   event, while Approve executes once and refreshes the snapshot. **Approve all
-   this session** enables every policy-allowed mutation for the rest of the
-   current run; hard-blocked controls remain unavailable.
+   event, while Approve executes once and refreshes the snapshot. **Approve
+   similar actions this run** covers permitted low/medium-risk actions only;
+   high-risk Send still asks. **Always allow low-risk actions on this site**
+   saves origin-scoped trusted-mode behavior. Verify it appears in Options.
+   Hard-blocked controls remain unavailable.
 4. Change the SPA DOM or navigate the active tab before the next action. Prompt
    Paul discards the stale snapshot, inspects the current page, and continues the
    request rather than guessing an index or requiring a new user message. If a
    mutation was interrupted during navigation, it is reported as unverified and
    is not repeated blindly.
 5. Enable **Trusted page actions** in Options and repeat a harmless mutation;
-   allowed low/medium-risk actions may proceed without a card. Password, OTP,
-   payment, security, destructive, navigation, and unsupported controls remain
-   blocked or confirmation-gated.
+   permitted low/medium-risk non-navigation controls may proceed without a card.
+   High risk always asks; password, OTP, payment, security, destructive and
+   unsupported controls stay blocked or gated. Block the fixture origin in
+   **Act site policies**; a new run must stop before inspection. Remove the
+   policy and start a new run to restore access; an already blocked run stays stopped.
 6. Press Stop during approval or execution; the card disables, the run ends, the
    highlight is removed, and the next run starts cleanly. The **Act** toggle stays
    enabled for the session until you turn it off or the browser session ends.
@@ -151,6 +157,11 @@ Steps:
    recovery card does not resume automatically, warns that delivery is
    uncertain, and offers **Resume Act** only as an explicit user action. Resume
    starts a fresh run and performs `page_get_state` before any mutation.
+10. For a multi-step task, verify `page_update_plan` renders one active step.
+    Notes do not mark it complete, and planning does not suppress approvals.
+    A simple one-step read must not invent unfinished work. At the end, check
+    the runtime task outcome (`done`, `blocked`, `failed`) separately from the
+    answer. Declines, timeouts, skipped steps and blocked sites must not say done.
 
 Verification: axes 1 (no secret/action leakage), 3 (approval card themes), 4
 (snapshot refresh, session approval, manual intervention, receipts, checkpoint
@@ -170,14 +181,17 @@ resume, and abort cleanup), 5 (Act-off parity and trusted-mode limits).
   masked placeholder and never contains the raw key; the copy button still
   copies the stored key; saving with the field blank preserves the stored key.
 - **Explicit section saves**: Connection, Privacy, Web Search, Page Actions, and Top Notch
-  each persist on their own Save button with green flash feedback.
+  each persist on their own Save button with green flash feedback. Act site-policy
+  add/block/remove controls save immediately and announce success/failure; changes
+  generally apply to new runs. A card-saved policy updates that one waiting origin.
 - **Appearance**: choose **Light**, **Dark**, or **System**. System follows the browser or operating
   system preference and updates when that preference changes.
 - **Top Notch**: off by default; saving the toggle updates open pages. The notch rests as a slim pill that reveals details on hover, pins open on click, and can dock to any viewport edge; it shows up to four saved pinned prompts.
 - **Unsaved changes**: editing any field shows the warning banner; navigating
   away triggers the `beforeunload` prompt.
 - **Backup**: Full Backup exports supported persistent settings and restores profiles
-  **without** credentials; provider/Codex/Hermes API keys, Hermes keys, and session
+  **without** credentials and include bounded site policies, not session Act permission;
+  provider/Codex/Hermes API keys, Hermes keys, and session
   pointers are never included in a backup or the restore file.
 
 ## Six Day-1 acceptance journeys

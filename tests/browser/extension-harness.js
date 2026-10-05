@@ -29,7 +29,7 @@
   const sendPageAction = (tabId, message) =>
     new Promise((resolve) => {
       try {
-        chrome.tabs.sendMessage(tabId, message, (response) => {
+        chrome.tabs.sendMessage(tabId, message, { frameId: 0 }, (response) => {
           if (chrome.runtime.lastError) {
             resolve({
               success: false,
@@ -90,6 +90,18 @@
     }
   });
 
+  async function ensurePageActionRuntime(tabId) {
+    const [probe] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => Boolean(window.PROMPT_PAUL_PAGE_ACTIONS_LOADED),
+    });
+    if (probe?.result) return;
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content_script_page_actions.js'],
+    });
+  }
+
   window.pageActionHarness = Object.freeze({
     async attachSelectionSource(targetUrl, selectedText = 'Previous selection') {
       const tabId = await getTabId(targetUrl);
@@ -110,11 +122,15 @@
     async ping(targetUrl) {
       const tabId = await getTabId(targetUrl);
       if (!tabId) return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
+      await ensurePageActionRuntime(tabId);
       return sendPageAction(tabId, { action: 'pageActionPing' });
     },
 
     async pingTabId(tabId) {
-      return sendPageAction(Number(tabId), { action: 'pageActionPing' });
+      const id = Number(tabId);
+      const tab = await chrome.tabs.get(id);
+      if (/^https?:/u.test(String(tab.url || ''))) await ensurePageActionRuntime(id);
+      return sendPageAction(id, { action: 'pageActionPing' });
     },
 
     async sendFromContentScript(tabId, message) {
@@ -136,6 +152,7 @@
     async directAction(targetUrl, runId, pageAction, args = {}) {
       const tabId = await getTabId(targetUrl);
       if (!tabId) return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
+      await ensurePageActionRuntime(tabId);
       const currentArgs = { ...args };
       if (pageAction === 'page_get_state') {
         const result = await sendPageAction(tabId, {
@@ -296,6 +313,15 @@
 
     async getJournal(runId) {
       return sendRuntimeMessage({ action: 'getRunJournal', runId });
+    },
+
+    executeRun(runId, messages) {
+      return sendRuntimeMessage({
+        action: 'executeRun',
+        runId,
+        ownerToken: runTokens.get(String(runId)) || '',
+        requestConfig: { messages },
+      });
     },
 
     executeTool(runId, id, name, args = {}) {

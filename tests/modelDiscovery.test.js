@@ -35,8 +35,24 @@ describe('model discovery', () => {
         reasoningLevels: [],
         defaultReasoningLevel: '',
         priority: 0,
+        supportsTools: null,
       },
     ]);
+  });
+
+  it('records advertised tools support and leaves absent metadata unknown', () => {
+    const models = normalizeAvailableModels({
+      data: [
+        { id: 'supports-tools', supported_parameters: ['tools', 'temperature'] },
+        { id: 'text-only', supported_parameters: ['temperature'] },
+        { id: 'unknown' },
+      ],
+    });
+    expect(Object.fromEntries(models.map((model) => [model.id, model.supportsTools]))).toEqual({
+      'supports-tools': true,
+      'text-only': false,
+      unknown: null,
+    });
   });
 
   it('keeps visible Codex model metadata for the thinking-level selector', () => {
