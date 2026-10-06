@@ -181,17 +181,22 @@ export function normalizePageActionArgs(actionName, args = {}) {
   const title = normalizePageActionTitle(args.title);
   let expect;
   if (args.expect != null && ['page_click', 'page_keypress', 'page_input'].includes(actionName)) {
-    if (
-      !args.expect ||
-      typeof args.expect !== 'object' ||
-      Array.isArray(args.expect) ||
-      !['text_appears', 'text_gone', 'url_changes'].includes(args.expect.type)
-    )
-      return { valid: false, error: 'Unsupported declared postcondition.' };
-    const text = capPageText(args.expect.text, PAGE_DOM_CAPS.maxFindQueryChars);
-    if (args.expect.type !== 'url_changes' && !text)
-      return { valid: false, error: 'Text postconditions require bounded text.' };
-    expect = { type: args.expect.type, ...(args.expect.type === 'url_changes' ? {} : { text }) };
+    // The declared postcondition is optional evidence, not a safety gate. A
+    // malformed shape must never block the underlying action; accept the common
+    // alternate spellings and otherwise omit the declaration.
+    const rawExpect = args.expect;
+    if (rawExpect && typeof rawExpect === 'object' && !Array.isArray(rawExpect)) {
+      const type = String(rawExpect.type || '').trim();
+      const text = capPageText(
+        rawExpect.text ?? rawExpect[type] ?? rawExpect.text_appears ?? rawExpect.text_gone,
+        PAGE_DOM_CAPS.maxFindQueryChars
+      );
+      if (['text_appears', 'text_gone'].includes(type) && text) {
+        expect = { type, text };
+      } else if (type === 'url_changes') {
+        expect = { type };
+      }
+    }
   }
   const attachTitle = (value) => ({
     ...value,

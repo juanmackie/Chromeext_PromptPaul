@@ -201,7 +201,10 @@ describe('Model-maintained Act checklist', () => {
       [{ lastBlockReason: 'site_blocked' }, { status: 'blocked', reason: 'site_blocked' }],
       [{ lastBlockReason: 'loop_detected' }, { status: 'failed', reason: 'loop_detected' }],
       [
-        { lastActionReceipt: { disposition: 'delivered_unverified' } },
+        {
+          lastActionReceipt: { disposition: 'delivered_unverified' },
+          reverifiedAfterUnverified: false,
+        },
         { status: 'failed', reason: 'ambiguous' },
       ],
     ]) {
@@ -286,6 +289,7 @@ describe('Model-maintained Act checklist', () => {
 
   it('retains bounded counted-request quotas and deduplicated item records', () => {
     expect(extractQuotaTarget('Open 99 records')).toBe(12);
+    expect(extractQuotaTarget('Use pagination to reach page 2 on this local page.')).toBeNull();
     const planner = createPlannerState('Open 2 of the newest emails');
     expect(planner.quota).toEqual({ target: 2, done: [] });
     expect(recordPlannerQuotaItem(planner, 'Subject A')).toMatchObject({ added: true, count: 1 });

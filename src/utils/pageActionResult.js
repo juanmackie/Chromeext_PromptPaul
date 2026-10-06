@@ -17,6 +17,7 @@ function compactResult(result) {
       readableContent: snapshot.readableContent,
       scroll: snapshot.scroll,
       scrollContainers: snapshot.scrollContainers,
+      formNotices: snapshot.formNotices,
       routeChanged: snapshot.routeChanged,
       regions: snapshot.regions?.map(({ id, elementCount }) => ({ id, elementCount })),
       focusedElement: snapshot.focusedElement,

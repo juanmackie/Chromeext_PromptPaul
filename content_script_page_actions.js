@@ -151,6 +151,21 @@
     return rect.width > 0 || rect.height > 0 || element.tagName === 'OPTION';
   }
 
+  function getPageActionOwningDialog(element) {
+    for (
+      let current = element;
+      current;
+      current = current.parentElement || current.getRootNode()?.host
+    ) {
+      if (
+        current.nodeType === Node.ELEMENT_NODE &&
+        current.matches('dialog[open], [role="dialog"], [aria-modal="true"]')
+      )
+        return current;
+    }
+    return null;
+  }
+
   function isPageActionControl(element) {
     if (!element || (!isPageActionVisible(element) && !getPageActionLabelProxy(element)))
       return false;
@@ -423,6 +438,10 @@
     const text = capPageActionText(element.textContent || '');
     const type = capPageActionText(element.getAttribute('type') || '', 32).toLowerCase();
     const link = getPageActionLinkMetadata(element);
+    const invalid = isPageActionInvalid(element);
+    const fieldError = invalid
+      ? getPageActionFieldError(element, isPageActionSensitive(element, label, text))
+      : '';
     return [
       tag,
       element.getAttribute('role') || '',
@@ -446,6 +465,8 @@
       link?.download === true,
       getPageActionSubmitIdentity(element),
       getPageActionValue(element) ?? '',
+      invalid,
+      fieldError,
     ].join('\u001f');
   }
 
@@ -584,6 +605,37 @@
       : '';
   }
 
+  function getPageActionFieldError(element, sensitive) {
+    const ids =
+      `${element.getAttribute('aria-errormessage') || ''} ${element.getAttribute('aria-describedby') || ''}`
+        .split(/\s+/u)
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+    const root = element.getRootNode();
+    const parts = [];
+    for (const id of ids) {
+      const target = root.getElementById?.(id);
+      if (!target || target === element) continue;
+      const text = capPageActionText(redactPageActionText(target.textContent || ''), 160);
+      if (text) parts.push(text);
+    }
+    const message = parts.join(' ').trim().slice(0, 160);
+    if (!message) return '';
+    return sensitive ? redactPageActionText(message).slice(0, 160) : message;
+  }
+
+  function isPageActionInvalid(element) {
+    if (element.getAttribute('aria-invalid') === 'true') return true;
+    try {
+      if (element.willValidate === true && element.validity && element.validity.valid === false)
+        return true;
+    } catch (_) {
+      // Native validity is best-effort; aria-invalid remains authoritative.
+    }
+    return false;
+  }
+
   function getPageActionElementRecord(element, index, includeSubmit = true) {
     const tag = element.tagName.toLowerCase();
     const label = getPageActionLabel(element);
@@ -591,6 +643,7 @@
     const type = capPageActionText(element.getAttribute('type') || '', 32).toLowerCase();
     const sensitive = isPageActionSensitive(element, label, text);
     const link = getPageActionLinkMetadata(element);
+    const invalid = isPageActionInvalid(element);
     const record = {
       index,
       tag,
@@ -612,6 +665,11 @@
       focused: element === getPageActionFocusedElement(),
       inForm: Boolean(element.form),
       sensitive,
+      invalid: invalid || undefined,
+      error:
+        invalid && !sensitive
+          ? getPageActionFieldError(element, sensitive) || undefined
+          : undefined,
       value: getPageActionValue(element),
       fingerprint: getPageActionFingerprint(element),
       newlyVisible: false,
@@ -654,6 +712,8 @@
     if (record.disabled) attrs.push('disabled=true');
     if (record.editable) attrs.push('editable=true');
     if (record.focused) attrs.push('focused=true');
+    if (record.invalid) attrs.push('invalid=true');
+    if (record.error && !record.sensitive) attrs.push(`error=${JSON.stringify(record.error)}`);
     if (record.sensitive) attrs.push('sensitive=true');
     if (typeof record.value === 'string' && !record.sensitive)
       attrs.push(`value=${JSON.stringify(record.value)}`);
@@ -824,6 +884,30 @@
       }));
   }
 
+  function collectPageActionFormNotices() {
+    const notices = [];
+    const seen = new Set();
+    for (const node of walkPageActionNodes()) {
+      if (notices.length >= 8) break;
+      if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
+      if (isPageActionIgnored(node) || !isPageActionVisible(node)) continue;
+      const role = String(node.getAttribute?.('role') || '').toLowerCase();
+      const live = String(node.getAttribute?.('aria-live') || '').toLowerCase();
+      let kind = '';
+      if (role === 'alert') kind = 'alert';
+      else if (role === 'status' || role === 'log') kind = 'status';
+      else if (live === 'assertive') kind = 'alert';
+      else if (live === 'polite') kind = 'status';
+      else continue;
+      if (live === 'off') continue;
+      const text = capPageActionText(redactPageActionText(node.textContent || ''), 200);
+      if (!text || seen.has(`${kind}:${text}`)) continue;
+      seen.add(`${kind}:${text}`);
+      notices.push({ kind, text });
+    }
+    return notices;
+  }
+
   function createPageActionSnapshot(session, options = {}) {
     const startedAt = performance.now();
     const records = collectPageActionElements(session);
@@ -896,13 +980,15 @@
       .map((record) =>
         record.sensitive
           ? ''
-          : `${record.fingerprint}:${record.value ?? ''}:${record.checked === true ? 1 : 0}`
+          : `${record.fingerprint}:${record.value ?? ''}:${record.checked === true ? 1 : 0}:${record.invalid === true ? 1 : 0}`
       )
       .join('~');
+    const formNotices = collectPageActionFormNotices();
     const fingerprintSource = [
       url,
       capPageActionText(document.body?.innerText || '', 12_000),
       records.map((record) => record.fingerprint).join('\\n'),
+      formNotices.map((notice) => `${notice.kind}:${notice.text}`).join('\\n'),
       routeId,
     ].join('\\u001e');
     const fingerprint = pageStateHash(`${fingerprintSource}~${controlState}`);
@@ -912,8 +998,17 @@
     // Assigned inside the loop (which may trim records) and read by the return
     // below, so it cannot be a loop-scoped const.
     let payloadHeader = header;
+    const formNoticeLines = formNotices
+      .map((notice) => `${notice.kind}: ${notice.text}`)
+      .join('\n')
+      .slice(0, 2_000);
+    // Notices are the page's own answer to the last action, so reserve room for
+    // them inside the outline cap instead of letting a full outline clip them.
+    const noticeBudget = formNoticeLines ? formNoticeLines.length + 1 : 0;
+    const outlineBudget = Math.max(0, PAGE_ACTION_MAX_OUTLINE_CHARS - noticeBudget);
     for (;;) {
-      content = buildPageActionOutline(boundedRecords);
+      const outline = buildPageActionOutline(boundedRecords).slice(0, outlineBudget);
+      content = formNoticeLines ? `${outline}\n${formNoticeLines}` : outline;
       elements = boundedRecords.map((record) =>
         Object.fromEntries(
           Object.entries(record).filter(
@@ -955,6 +1050,7 @@
           height: Math.max(0, Math.round(scrollHeight)),
         },
         scrollContainers,
+        formNotices,
         metrics: { buildMs: Math.round(performance.now() - startedAt) },
       };
       if (utf8ByteLengthOf(JSON.stringify(payload)) <= PAGE_ACTION_MAX_PAYLOAD_BYTES) {
@@ -1006,6 +1102,7 @@
         height: Math.max(0, Math.round(scrollHeight)),
       },
       scrollContainers,
+      formNotices,
       metrics: { buildMs: Math.round(performance.now() - startedAt) },
     };
   }
@@ -1718,6 +1815,14 @@
             isPageActionVisible(node)
         )
       );
+    const owningDialog = precisePending
+      ? precisePending.owningDialog
+      : action === 'page_click'
+        ? getPageActionOwningDialog(record.ref)
+        : null;
+    const owningDialogWasVisible = precisePending
+      ? precisePending.owningDialogWasVisible === true
+      : Boolean(owningDialog && isPageActionVisible(owningDialog));
     try {
       const element = record.ref;
       const tag = element.tagName.toLowerCase();
@@ -1791,6 +1896,8 @@
             beforeFocus,
             beforeAria,
             beforePopups,
+            owningDialog,
+            owningDialogWasVisible,
             point: clickTarget.point,
             count,
           });
@@ -2092,6 +2199,19 @@
           'declared_postcondition',
           { matched }
         );
+      }
+      const owningDialogDismissed =
+        action === 'page_click' &&
+        owningDialogWasVisible &&
+        owningDialog &&
+        (!owningDialog.isConnected || !isPageActionVisible(owningDialog));
+      if (
+        owningDialogDismissed &&
+        (!request.args?.expect || actionReceipt.evidence?.matched === true)
+      ) {
+        actionReceipt = buildPageActionReceipt('delivered_verified', 'dialog_dismissed', {
+          changed: true,
+        });
       }
       return {
         success: true,

@@ -9,6 +9,9 @@ export const PAGE_DOM_CAPS = Object.freeze({
   maxOutlineChars: 24_000,
   maxValueChars: 160,
   maxTotalValueChars: 8_000,
+  maxErrorChars: 160,
+  maxFormNotices: 8,
+  maxFormNoticeChars: 200,
   maxReadableContentChars: 16_000,
   maxElementTextChars: 320,
   maxAttributeChars: 120,
@@ -144,6 +147,14 @@ export function normalizePageElement(raw = {}, index = 0) {
     newlyVisible: raw.newlyVisible === true ? true : undefined,
     focused: raw.focused === true ? true : undefined,
     inForm: raw.inForm === true ? true : undefined,
+    invalid: raw.invalid === true ? true : undefined,
+    // Field errors can restate what was typed (for example a rejected email or
+    // account name), so a sensitive control keeps the invalid flag but never
+    // its error text.
+    error:
+      !sensitive && typeof raw.error === 'string' && raw.error.trim()
+        ? capPageValue(raw.error, PAGE_DOM_CAPS.maxErrorChars)
+        : undefined,
     sensitive,
     value: !sensitive && typeof raw.value === 'string' ? capPageValue(raw.value) : undefined,
   };
@@ -222,6 +233,9 @@ export function formatPageElement(element = {}) {
   if (element.disabled) attrs.push('disabled=true');
   if (element.editable) attrs.push('editable=true');
   if (element.newlyVisible) attrs.push('new=true');
+  if (element.invalid) attrs.push('invalid=true');
+  if (element.error && !element.sensitive)
+    attrs.push(`error=${JSON.stringify(capPageText(element.error, 160))}`);
   if (element.sensitive) attrs.push('sensitive=true');
   if (typeof element.value === 'string' && !element.sensitive)
     attrs.push(`value=${JSON.stringify(element.value)}`);
@@ -353,6 +367,18 @@ export function normalizePageSnapshot(input = {}) {
         }))
         .filter((region) => region.indices.length > 0)
     : undefined;
+  const formNotices = Array.isArray(input.formNotices)
+    ? input.formNotices
+        .slice(0, PAGE_DOM_CAPS.maxFormNotices)
+        .map((notice) => {
+          const kind = String(notice?.kind || '').toLowerCase();
+          if (!['alert', 'status', 'error'].includes(kind)) return null;
+          const text = capPageValue(notice?.text, PAGE_DOM_CAPS.maxFormNoticeChars).trim();
+          if (!text) return null;
+          return { kind, text };
+        })
+        .filter(Boolean)
+    : undefined;
   const payloadBase = {
     snapshotId: capPageText(input.snapshotId || '', 128),
     url: sanitizePageActionUrl(input.url),
@@ -377,6 +403,7 @@ export function normalizePageSnapshot(input = {}) {
     scrollContainers: Array.isArray(input.scrollContainers)
       ? input.scrollContainers.slice(0, 16)
       : undefined,
+    formNotices: formNotices?.length ? formNotices : undefined,
     metrics: input.metrics && typeof input.metrics === 'object' ? input.metrics : undefined,
   };
 

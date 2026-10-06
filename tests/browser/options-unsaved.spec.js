@@ -8,7 +8,114 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { expect, test } = require('@playwright/test');
+const { prepareCodexProfile } = require('../../scripts/act-benchmark.js');
 const { launchTestBrowser, openHarness, removeUserDataDir } = require('./browserTestSupport.js');
+
+test('Codex benchmark setup uses the extension sign-in flow without adding tokens to profiles', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-codex-benchmark-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+
+  let modelDiscoveryRequests = 0;
+  try {
+    await context.route('**/*', async (route) => {
+      const url = new URL(route.request().url());
+      if (
+        url.protocol === 'chrome-extension:' ||
+        ['127.0.0.1', 'localhost'].includes(url.hostname)
+      ) {
+        await route.continue();
+      } else {
+        await route.abort();
+      }
+    });
+    await context.route('https://auth.openai.com/**', async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === '/api/accounts/deviceauth/usercode') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            device_auth_id: 'fake-device',
+            user_code: 'TEST-CODE',
+            interval: 1,
+          }),
+        });
+      } else if (pathname === '/api/accounts/deviceauth/token') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ authorization_code: 'fake-code', code_verifier: 'fake-verifier' }),
+        });
+      } else if (pathname === '/oauth/token') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            access_token: 'fake-access',
+            refresh_token: 'fake-refresh',
+            expires_in: 3600,
+          }),
+        });
+      } else {
+        await route.fulfill({
+          contentType: 'text/html',
+          body: '<!doctype html><title>Mock sign-in</title>',
+        });
+      }
+    });
+    await context.route('https://chatgpt.com/backend-api/codex/models**', async (route) => {
+      modelDiscoveryRequests += 1;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          models: [
+            {
+              slug: 'codex-luna-2026',
+              display_name: 'Luna',
+              visibility: 'list',
+              supported_reasoning_levels: [{ effort: 'medium', display_name: 'Medium' }],
+            },
+          ],
+        }),
+      });
+    });
+
+    const model = await prepareCodexProfile({
+      context,
+      harness,
+      modelHint: 'Luna by OpenAI',
+      reasoningLevel: 'medium',
+    });
+    const stored = await harness.evaluate(async (profileId) => {
+      const { profiles = [], codexAuthByProfile = {} } = await chrome.storage.local.get([
+        'profiles',
+        'codexAuthByProfile',
+      ]);
+      const profile = profiles.find((entry) => entry.id === profileId);
+      const auth = codexAuthByProfile[profileId];
+      return {
+        provider: profile?.provider,
+        modelName: profile?.modelName,
+        reasoningLevel: profile?.reasoningLevel,
+        hasApiKey: Boolean(profile?.apiKey),
+        profileHasToken: Boolean(profile?.accessToken || profile?.refreshToken),
+        authStoredByExtension: Boolean(auth?.accessToken && auth?.refreshToken),
+      };
+    }, 'act-benchmark-local');
+
+    expect(model).toMatchObject({ id: 'codex-luna-2026', displayName: 'Luna' });
+    expect(modelDiscoveryRequests).toBeGreaterThanOrEqual(1);
+    expect(stored).toEqual({
+      provider: 'codex',
+      modelName: 'codex-luna-2026',
+      reasoningLevel: 'medium',
+      hasApiKey: false,
+      profileHasToken: false,
+      authStoredByExtension: true,
+    });
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
 
 test('saving one Options section keeps another section unsaved (P1-04)', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-options-unsaved-'));

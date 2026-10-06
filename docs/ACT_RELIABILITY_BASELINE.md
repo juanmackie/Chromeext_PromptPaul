@@ -126,7 +126,7 @@ record the substitution here.
 
 ## Roadmap evaluation boundary
 
-The local roadmap corpus and scripted Chrome journeys are delivery checks, not results for these live tasks. Model-driven A/B remains **not recorded** while `PROMPT_PAUL_BENCHMARK_API_KEY` is absent. Current traces preserve runtime `actOutcome` and ACT_* failure codes; end state is graded independently of model completion claims. Pre-outcome traces do not have comparable structured failure metadata.
+The local roadmap corpus and scripted Chrome journeys are delivery checks, not results for these live tasks. Model-driven A/B remains **not recorded** for these live WebVoyager tasks while `PROMPT_PAUL_BENCHMARK_API_KEY` is absent. The separate local-fixture benchmark (`npm run benchmark:act -- --run`) does now record model-driven results and bounded per-step traces under `artifacts/act-benchmark/`; those are local-fixture measurements and are not a substitute for this live-task baseline. Current traces preserve runtime `actOutcome` and ACT_* failure codes; end state is graded independently of model completion claims. Pre-outcome traces do not have comparable structured failure metadata.
 
 ## Deliberate omission
 

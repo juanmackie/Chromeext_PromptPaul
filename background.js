@@ -1599,15 +1599,22 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
   const routes = Object.create(null);
   const contentParts = [];
   let valueBudget = 8_000;
+  let topFrameRemap = null;
   for (const [frameIndex, frame] of frameSnapshots.entries()) {
     const local = frame.snapshot;
     if (!local) continue;
-    contentParts.push(
-      `Frame ${frameIndex + 1} — ${frame.isTop ? 'main page' : frame.origin}\n${String(local.content || '')}`
-    );
+    // Frame-local snapshots number controls with stable per-frame IDs, so the
+    // pre-rendered outline markers ([N]) generally differ from the merged
+    // positional numbering below. Remap this frame's markers to the merged
+    // global indices; otherwise the model reads one control and dispatches
+    // another whenever controls appear or reorder mid-run.
+    const markerRemap = new Map();
     for (const element of Array.isArray(local.elements) ? local.elements : []) {
       if (elements.length >= 200) break;
       const index = elements.length;
+      if (Number.isInteger(element?.index) && !markerRemap.has(element.index)) {
+        markerRemap.set(element.index, index);
+      }
       const mapped = {
         ...element,
         index,
@@ -1626,6 +1633,22 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
         elementKey: element.elementKey,
       };
     }
+    if (frame.isTop) topFrameRemap = markerRemap;
+    // Only rewrite record markers: a leading [N] followed by the formatted
+    // control (` <tag ...>`). Prose or control text that merely contains
+    // brackets is left untouched.
+    const frameContent = String(local.content || '')
+      .split('\n')
+      .map((line) =>
+        line.replace(/^(\s*)\[(\d+)\](?=\s<)/, (match, indent, digits) => {
+          const remapped = markerRemap.get(Number(digits));
+          return remapped === undefined ? match : `${indent}[${remapped}]`;
+        })
+      )
+      .join('\n');
+    contentParts.push(
+      `Frame ${frameIndex + 1} — ${frame.isTop ? 'main page' : frame.origin}\n${frameContent}`
+    );
   }
   if (omittedFrameCount > 0) {
     contentParts.push(
@@ -1649,13 +1672,26 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
       elementKey: focusedFrame.snapshot.focusedElement.elementKey,
     };
   }
+  // Region index lists are frame-local like the outline markers, so translate
+  // the top frame's regions into the same merged numbering; entries without a
+  // merged control are dropped instead of pointing at the wrong index.
+  const mergedRegions = Array.isArray(topFrame.snapshot.regions)
+    ? topFrame.snapshot.regions
+        .map((region) => ({
+          ...region,
+          indices: (Array.isArray(region?.indices) ? region.indices : [])
+            .map((value) => topFrameRemap?.get(Number(value)))
+            .filter((value) => Number.isInteger(value)),
+        }))
+        .filter((region) => region.indices.length > 0)
+    : [];
   const merged = {
     ...topFrame.snapshot,
     snapshotId,
     content,
     elements,
     ...(focusedElement ? { focusedElement } : { focusedElement: undefined }),
-    regions: topFrame.snapshot.regions || [],
+    regions: mergedRegions,
     truncated: contentParts.join('').length > content.length || elements.length >= 200,
   };
   pageActionFrameSnapshotMaps.set(runId, { snapshotId, routes });

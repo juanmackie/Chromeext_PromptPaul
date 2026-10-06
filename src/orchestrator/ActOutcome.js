@@ -38,13 +38,22 @@ export function deriveActOutcome(run, terminalType = run?.status) {
   const unresolvedPlan =
     pa.planner?.active &&
     (!hasReceiptConsistentProgress(pa.planner) || !pa.finalVerificationCompleted);
+  // The last receipt only tracks mutations, so a fresh verified inspection after
+  // an unverified mutation means the run re-observed state through the mandated
+  // verify loop instead of flying blind. Only an in-flight mutation stays
+  // ambiguous on receipt grounds; quota, skipped, blocked and confirmation
+  // grounds below are unchanged.
+  const lastReceiptUnresolved =
+    pa.lastActionReceipt?.disposition === 'in_flight' ||
+    (pa.lastActionReceipt?.disposition === 'delivered_unverified' &&
+      pa.reverifiedAfterUnverified !== true);
   if (
     !reason &&
     (unresolvedPlan ||
       !isActQuotaComplete(pa.planner) ||
       pa.planner?.subGoals?.some((goal) => goal.status === 'skipped') ||
       !pa.snapshot ||
-      ['in_flight', 'delivered_unverified'].includes(pa.lastActionReceipt?.disposition))
+      lastReceiptUnresolved)
   )
     reason = 'ambiguous';
   if (!reason && terminalType !== 'complete') reason = 'ambiguous';

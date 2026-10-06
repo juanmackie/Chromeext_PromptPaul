@@ -259,6 +259,7 @@
                 input.value = name;
                 mark('selection', name);
                 list.hidden = true;
+                input.setAttribute('aria-expanded', 'false');
               });
               list.append(option);
             }
@@ -366,6 +367,51 @@
           row.append(label, archive);
           root.append(row);
         }
+      } else if (kind === 'validation-error') {
+        // Succeeds only when the model reads the field error and corrects the
+        // rejected value. The email starts invalid with a visible error and an
+        // alert notice, mirroring an SPA form after a failed submit.
+        const alert = el(
+          'div',
+          { role: 'alert' },
+          'Submission failed. Correct the highlighted field.'
+        );
+        const emailError = el('p', { id: 'email-error' }, 'Enter a valid email address.');
+        const email = el('input', {
+          id: 'email',
+          type: 'email',
+          'aria-label': 'Email',
+          'aria-invalid': 'true',
+          'aria-errormessage': 'email-error',
+          value: 'not-an-email',
+        });
+        const submit = button('Submit');
+        email.addEventListener('input', () => {
+          const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value);
+          email.setAttribute('aria-invalid', String(!valid));
+          if (valid) {
+            email.removeAttribute('aria-errormessage');
+            emailError.textContent = '';
+            // Validation only clears the error. Submission is a separate step,
+            // so the notice must not read as success before Submit is pressed.
+            alert.textContent = 'Email looks valid. Submit to continue.';
+          } else {
+            email.setAttribute('aria-errormessage', 'email-error');
+            emailError.textContent = 'Enter a valid email address.';
+            alert.textContent = 'Submission failed. Correct the highlighted field.';
+          }
+        });
+        submit.addEventListener('click', () => {
+          const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value);
+          if (valid) {
+            alert.textContent = 'Submission accepted.';
+            mark('emailValid', 'true');
+          } else {
+            alert.textContent = 'Submission failed. Correct the highlighted field.';
+            mark('emailValid', 'false');
+          }
+        });
+        root.append(alert, email, emailError, submit);
       } else if (kind === 'iframe-child') {
         const form = el('form', { id: 'contact-form' });
         const name = el('input', { name: 'name', 'aria-label': 'Name' });

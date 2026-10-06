@@ -3,6 +3,7 @@ import {
   normalizePageElement,
   normalizePageSnapshot,
   PAGE_DOM_CAPS,
+  formatPageElement,
 } from '../src/utils/pageDom.js';
 import { normalizePageActionArgs } from '../src/utils/pageActionPolicy.js';
 import { diffPageActionSnapshots } from '../src/utils/pageActionScopeDiff.js';
@@ -161,7 +162,7 @@ describe('Phase 2 observation contracts', () => {
     ).toMatchObject({ valid: true, value: { snapshotId: 's', index: 500 } });
   });
 
-  it('preserves bounded declared postconditions and rejects unsupported expectations', () => {
+  it('preserves bounded declared postconditions and never lets a malformed one block an action', () => {
     for (const action of ['page_click', 'page_input', 'page_keypress']) {
       const args = {
         snapshotId: 's',
@@ -174,9 +175,99 @@ describe('Phase 2 observation contracts', () => {
         valid: true,
         value: { expect: args.expect },
       });
+      // An unsupported postcondition is omitted; the action itself still runs.
+      const unsupported = normalizePageActionArgs(action, {
+        ...args,
+        expect: { type: 'execute_script' },
+      });
+      expect(unsupported.valid).toBe(true);
+      expect(unsupported.value.expect).toBeUndefined();
+      // The same optional evidence accepts the common flattened spelling that
+      // models actually send (`expect: { type, text_appears }`).
       expect(
-        normalizePageActionArgs(action, { ...args, expect: { type: 'execute_script' } }).valid
-      ).toBe(false);
+        normalizePageActionArgs(action, {
+          ...args,
+          expect: { type: 'text_appears', text_appears: 'Found Cedar' },
+        })
+      ).toMatchObject({
+        valid: true,
+        value: { expect: { type: 'text_appears', text: 'Found Cedar' } },
+      });
     }
+  });
+
+  it('surfaces invalid state and bounded error text without leaking values', () => {
+    const element = normalizePageElement({
+      tag: 'input',
+      label: 'Email',
+      value: 'not-an-email',
+      invalid: true,
+      error: 'Enter a valid email address.',
+    });
+    expect(element.invalid).toBe(true);
+    expect(element.error).toBe('Enter a valid email address.');
+    const long = normalizePageElement({
+      tag: 'input',
+      label: 'Email',
+      invalid: true,
+      error: 'x'.repeat(400),
+    });
+    expect(long.error).toHaveLength(160);
+    const sensitive = normalizePageElement({
+      tag: 'input',
+      label: 'Password',
+      type: 'password',
+      invalid: true,
+      error: 'Password is required.',
+    });
+    expect(sensitive.sensitive).toBe(true);
+    expect(sensitive.value).toBeUndefined();
+  });
+
+  it('preserves bounded form notices for live regions and field errors', () => {
+    const snapshot = normalizePageSnapshot({
+      snapshotId: 'notices',
+      content: 'form',
+      elements: [{ index: 0, tag: 'input', label: 'Email' }],
+      formNotices: [
+        { kind: 'alert', text: "Couldn't find your account." },
+        { kind: 'status', text: 'Saved.' },
+      ],
+    });
+    expect(snapshot.formNotices).toHaveLength(2);
+    expect(snapshot.formNotices[0]).toMatchObject({
+      kind: 'alert',
+      text: "Couldn't find your account.",
+    });
+  });
+
+  it('masks error text on sensitive controls and keeps only bounded notices', () => {
+    const sensitive = normalizePageElement({
+      tag: 'input',
+      label: 'Password',
+      type: 'password',
+      sensitive: true,
+      invalid: true,
+      error: 'Password must contain 3 digits.',
+    });
+    expect(sensitive.invalid).toBe(true);
+    expect(sensitive.error).toBeUndefined();
+    expect(formatPageElement({ ...sensitive, index: 0 })).not.toContain('3 digits');
+    expect(formatPageElement({ ...sensitive, index: 0 })).toContain('invalid=true');
+
+    const snapshot = normalizePageSnapshot({
+      snapshotId: 'notice-bounds',
+      content: 'form',
+      elements: [],
+      formNotices: [
+        { kind: 'alert', text: 'x'.repeat(500) },
+        ...Array.from({ length: 12 }, (_, index) => ({
+          kind: 'status',
+          text: `notice ${index}`,
+        })),
+      ],
+    });
+    expect(snapshot.formNotices).toHaveLength(8);
+    expect(snapshot.formNotices[0].text).toHaveLength(200);
   });
 });

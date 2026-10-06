@@ -87,6 +87,16 @@ export function registerEvalRunHook(dependencies = {}) {
           evalTaskId: normalized.taskId,
           evalDryRun: normalized.dryRun,
         });
+        // Honor the opt-in precise-input preference exactly as the production
+        // startRun path does, so an eval task that exercises trusted input is
+        // not silently downgraded to DOM dispatch.
+        try {
+          const { pageActionsPreciseInput } =
+            await chrome.storage.local.get('pageActionsPreciseInput');
+          config.pageActionsPreciseInput = pageActionsPreciseInput === true;
+        } catch (_) {
+          config.pageActionsPreciseInput = false;
+        }
         const runId = await runOrchestrator.startRun(config, ownerToken);
         beginEvalTrace({
           taskId: normalized.taskId,

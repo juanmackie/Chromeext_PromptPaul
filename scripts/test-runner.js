@@ -771,7 +771,11 @@ function runUnitTests(runner) {
     const sourceFiles = [];
     const visit = (directory) => {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-        if (['node_modules', 'dist', 'libs', '.git', '.pi', '.pi-subagents'].includes(entry.name)) {
+        if (
+          ['artifacts', 'node_modules', 'dist', 'libs', '.git', '.pi', '.pi-subagents'].includes(
+            entry.name
+          )
+        ) {
           continue;
         }
         const fullPath = path.join(directory, entry.name);

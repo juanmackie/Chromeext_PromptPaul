@@ -654,6 +654,112 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('gmail sort option resolves to the same control in outline and dispatch map', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-gmail-sort-'));
+    const { context } = await launchTestBrowser(userDataDir);
+    const target = await context.newPage();
+    const harness = await openHarness(context);
+    const url = fixtureUrl(fixtureServer, 'act-benchmark.html?case=gmail-sort');
+    const task = benchmarkTasks.find((candidate) => candidate.id === 'gmail-sort');
+    try {
+      await target.goto(url);
+      await target.bringToFront();
+      expect(await readFixtureState(target, task), 'idle must fail').toBe(false);
+      const runId = 'gmail-sort-bridge';
+      const initial = await harness.evaluate(
+        ({ url, runId }) => window.pageActionHarness.directAction(url, runId, 'page_get_state'),
+        { url, runId }
+      );
+      const sortButton = initial.snapshot.elements.find((entry) => entry.label === 'Sort order');
+      expect(sortButton, 'missing Sort order button').toBeTruthy();
+      const opened = await harness.evaluate(
+        ({ url, runId, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, runId, 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url, runId, snapshotId: initial.snapshot.snapshotId, index: sortButton.index }
+      );
+      const afterOpen = opened.snapshot;
+      const option = afterOpen.elements.find((entry) => entry.label === 'Most recent');
+      expect(option, 'missing Most recent option after opening the menu').toBeTruthy();
+      // The outline the model reads must number the option the same way the
+      // dispatch map does; otherwise an outline-driven click lands elsewhere.
+      expect(afterOpen.content).toContain(
+        `[${option.index}] <div role="menuitemradio" label="Most recent"`
+      );
+      const selected = await harness.evaluate(
+        ({ url, runId, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, runId, 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url, runId, snapshotId: afterOpen.snapshotId, index: option.index }
+      );
+      expect(selected.actionReceipt.disposition).toBe('delivered_verified');
+      await expect
+        .poll(() => readFixtureState(target, task), { message: 'sort must switch' })
+        .toBe(true);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('autocomplete chooses the typed suggestion through the production bridge', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-autocomplete-'));
+    const { context } = await launchTestBrowser(userDataDir);
+    const target = await context.newPage();
+    const harness = await openHarness(context);
+    const url = fixtureUrl(fixtureServer, 'act-benchmark.html?case=autocomplete');
+    const task = benchmarkTasks.find((candidate) => candidate.id === 'autocomplete');
+    try {
+      await target.goto(url);
+      await target.bringToFront();
+      expect(await readFixtureState(target, task), 'idle must fail').toBe(false);
+      const state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'autocomplete', 'page_get_state'),
+        url
+      );
+      const combo = state.snapshot.elements.find((entry) => entry.label === 'Choose a spice');
+      expect(combo, 'missing autocomplete combobox').toBeTruthy();
+      const typed = await harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'autocomplete', 'page_input', {
+            snapshotId,
+            index,
+            text: 'Saffron',
+          }),
+        { url, snapshotId: state.snapshot.snapshotId, index: combo.index }
+      );
+      expect(typed.actionReceipt.disposition).toBe('delivered_verified');
+      const option = typed.snapshot.elements.find(
+        (entry) => entry.role === 'option' && entry.label === 'Saffron'
+      );
+      expect(option, 'missing Saffron option after typing').toBeTruthy();
+      await harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'autocomplete', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { url, snapshotId: typed.snapshot.snapshotId, index: option.index }
+      );
+      await expect
+        .poll(() => readFixtureState(target, task), { message: 'bridge selection must pass' })
+        .toBe(true);
+      const endState = await target.evaluate(() => ({
+        value: document.querySelector('input')?.value || null,
+        listHidden: document.querySelector('[role="listbox"]')?.hidden ?? 'no-listbox',
+        expanded: document.querySelector('input')?.getAttribute('aria-expanded'),
+      }));
+      expect(endState).toMatchObject({ value: 'Saffron', listHidden: true, expanded: 'false' });
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('Phase 2: scrolls an indexed or focused nested panel instead of the window', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-element-scroll-'));
     const { context } = await launchTestBrowser(userDataDir);
@@ -1055,6 +1161,7 @@ test.describe('page-agent-style page actions', () => {
         'nested-scroll',
         'cross-origin-iframe',
         'trusted-key-only',
+        'validation-error',
       ]) {
         const task = benchmarkTasks.find((candidate) => candidate.id === id);
         await target.goto(`${fixtureUrl(fixtureServer, 'act-benchmark.html')}?case=${id}`);
@@ -1095,6 +1202,11 @@ test.describe('page-agent-style page actions', () => {
           await target.getByLabel('Ready').dispatchEvent('keydown', { key: 'Enter' });
           expect(await readFixtureState(target, task), 'synthetic input must fail').toBe(false);
           await target.getByLabel('Ready').press('Enter');
+        } else if (id === 'validation-error') {
+          await target.getByRole('button', { name: 'Submit' }).click();
+          expect(await readFixtureState(target, task), 'wrong email must fail').toBe(false);
+          await target.getByLabel('Email').fill('ada@example.com');
+          await target.getByRole('button', { name: 'Submit' }).click();
         }
         await expect
           .poll(() => readFixtureState(target, task), { message: `${id}: oracle must pass` })
@@ -1833,6 +1945,81 @@ test.describe('page-agent-style page actions', () => {
       // A page that drops nothing must not claim an omission.
       const small = await inspect('act-select-label.html', 'no-overflow-run');
       expect(small.snapshot.header).not.toContain('were not listed');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('surfaces invalid fields and live-region notices without leaking sensitive error text', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const main = document.createElement('main');
+        main.style.cssText = 'padding:12px';
+
+        const email = document.createElement('input');
+        email.id = 'fixture-email';
+        email.type = 'email';
+        email.setAttribute('aria-label', 'Email');
+        email.setAttribute('aria-invalid', 'true');
+        email.setAttribute('aria-errormessage', 'fixture-email-error');
+        const emailError = document.createElement('p');
+        emailError.id = 'fixture-email-error';
+        emailError.textContent = 'Enter a valid email address.';
+
+        const password = document.createElement('input');
+        password.id = 'fixture-password';
+        password.type = 'password';
+        password.setAttribute('aria-label', 'Password');
+        password.setAttribute('aria-invalid', 'true');
+        password.setAttribute('aria-errormessage', 'fixture-password-error');
+        const passwordError = document.createElement('p');
+        passwordError.id = 'fixture-password-error';
+        passwordError.textContent = 'Password must contain three digits.';
+
+        const alert = document.createElement('div');
+        alert.setAttribute('role', 'alert');
+        alert.textContent = "Couldn't find your account.";
+        const status = document.createElement('p');
+        status.setAttribute('role', 'status');
+        status.textContent = 'Draft saved.';
+
+        main.append(alert, status, email, emailError, password, passwordError);
+        document.body.prepend(main);
+      });
+      const state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'invalid-notice-run', 'page_get_state'),
+        targetUrl
+      );
+      const email = state.snapshot.elements.find((element) => element.label === 'Email');
+      const password = state.snapshot.elements.find((element) => element.label === 'Password');
+      expect(email).toMatchObject({ invalid: true, error: 'Enter a valid email address.' });
+      expect(password).toMatchObject({ invalid: true, sensitive: true });
+      expect(password.error).toBeUndefined();
+      // The record line carries the invalid flag but never the sensitive control's
+      // associated error attribute. The error paragraph itself is ordinary visible
+      // page text and remains part of the pre-existing outline contract.
+      const passwordLine = state.snapshot.content
+        .split('\n')
+        .find((line) => line.includes('label="Password"'));
+      expect(passwordLine).toContain('invalid=true');
+      expect(passwordLine).toContain('sensitive=true');
+      expect(passwordLine).not.toContain('error=');
+      expect(state.snapshot.formNotices).toEqual(
+        expect.arrayContaining([
+          { kind: 'alert', text: "Couldn't find your account." },
+          { kind: 'status', text: 'Draft saved.' },
+        ])
+      );
+      expect(state.snapshot.content).toContain("alert: Couldn't find your account.");
     } finally {
       await context.close();
       removeUserDataDir(userDataDir);

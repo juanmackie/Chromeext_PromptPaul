@@ -46,6 +46,21 @@ npm run validate
 npm run audit
 ```
 
+## Act Benchmark
+
+The opt-in Act benchmark uses local fixtures and a headed temporary browser. Hold mode is single-run pilots toward the 80% overall target. To use Codex, set these PowerShell variables and start one run:
+
+```powershell
+$env:PROMPT_PAUL_BENCHMARK_PROVIDER = 'codex'
+$env:PROMPT_PAUL_BENCHMARK_MODEL = 'Luna by OpenAI'
+$env:PROMPT_PAUL_BENCHMARK_REASONING_LEVEL = 'medium'
+node scripts/act-benchmark.js --run --runs 1
+```
+
+Single-task pilots use `--task <id> --runs 1`. Use `--runs 2..10` only for repeatability checks.
+
+Complete the normal Prompt Paul device-code sign-in in the opened browser. The extension keeps authentication in its own dedicated profile at `artifacts/act-benchmark-codex-profile`; the runner does not read or export tokens, and later runs reuse that profile. It checks that the selected model advertises the requested reasoning level. If the model label does not match, set `PROMPT_PAUL_BENCHMARK_MODEL` to an exact ID from the available-model error. The benchmark replaces `artifacts/act-benchmark/` only after sign-in and model validation succeed. To remove the saved Codex session, close the benchmark browser and delete only `artifacts/act-benchmark-codex-profile`; this removes the local sign-in, and you can authenticate again later. API mode remains available with `PROMPT_PAUL_BENCHMARK_API_KEY` and an optional compatible endpoint.
+
 ## Working Loop
 
 1. State the user need, the smallest useful change, assumptions, edge cases, and security risks.

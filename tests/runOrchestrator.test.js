@@ -260,6 +260,12 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain('call page_get_state first');
     expect(prompt).toContain('use page_wait for expected text');
     expect(prompt).toContain('use page_batch for 2–6 read-only steps');
+    expect(prompt).toContain('For a required search or filter with no visible submit button');
+    expect(prompt).toContain('After PAGE_ACTION_TOGGLE_LOOP or PAGE_ACTION_LOOP_DETECTED');
+    expect(prompt).toContain('After a page-changing click, inspect the destination');
+    expect(prompt).toContain('set optional expect to an observed, non-sensitive');
+    expect(prompt).toContain('leaving no pending or in_progress steps');
+    expect(prompt).toContain('If you receive PAGE_STATE_STALE, the action was not delivered');
     expect(prompt).toContain('re-inspect after every mutation');
     expect(prompt).toContain('If the current tab changes documents during the run');
     expect(prompt).toContain('continue the same request');

@@ -334,7 +334,17 @@ function serveFixture(request, response, state) {
   }
   const fileName = path.basename(requestPath);
   const filePath = path.join(fixtureRoot, fileName);
-  if (!filePath.startsWith(fixtureRoot) || !fs.existsSync(filePath)) {
+  let isFile = false;
+  try {
+    isFile =
+      fileName.length > 0 &&
+      filePath.startsWith(fixtureRoot) &&
+      fs.existsSync(filePath) &&
+      fs.statSync(filePath).isFile();
+  } catch (_) {
+    isFile = false;
+  }
+  if (!isFile) {
     response.writeHead(404);
     response.end('Not found');
     return;
