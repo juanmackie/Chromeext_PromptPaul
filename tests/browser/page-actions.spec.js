@@ -916,7 +916,10 @@ test.describe('page-agent-style page actions', () => {
       expect(snapshot.content).toContain('input');
       expect(snapshot.elements).toBeUndefined();
       expect(snapshot.fingerprint).toBeUndefined();
-      expect(body.messages[0].content).toContain('8. If the current tab changes documents');
+      expect(body.messages[0].content).toContain('8. If you receive PAGE_STATE_STALE');
+      expect(body.messages[0].content).toContain(
+        'If the current tab changes documents during the run'
+      );
       expect(body.tools.some((tool) => tool.function.name === 'page_keypress')).toBe(true);
       await expect
         .poll(() => harness.evaluate((id) => window.pageActionHarness.getJournal(id), run.runId))
