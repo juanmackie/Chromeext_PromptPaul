@@ -6,7 +6,11 @@ browser suite, and the composer-led repair workflow (document drop, selected
 text, approval/recovery coverage). Companion docs: [UX_JOURNEYS.md](UX_JOURNEYS.md),
 [ARCHITECTURE.md](ARCHITECTURE.md), [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md).
 
-## Verification gates (current tree, actual output)
+## 2026-10-09 answer-card delivery update
+
+The OpenUI-inspired native answer cards, progressive rendering, local comparison controls, and explicit original-context follow-ups pass `npm run validate` (102 structural checks, 858 behavior tests). The production full run with the final source passed 131/132; its sole failure checked request count before the POST arrived. After correcting that wait, all 11 production card cases pass, verifying all 132 current browser cases across the full run and focused rerun. This is not a fresh single-pass full-suite result after that test-only correction. Production coverage includes retaining Add Page's extraction source through tab changes before cards and follow-up Send. The isolated Chrome walkthrough verified progressive disclosure state, local controls without provider calls, explicit follow-up sending, incomplete-payload fallback, and a 320-pixel layout. The exact evidence and earlier findings are recorded in [REVIEW_PLAN.md](../REVIEW_PLAN.md#2026-10-09-openui-inspired-answer-cards). Local provider fixtures measure delivery, not model answer quality. The sprint results below are historical.
+
+## Original sprint verification gates
 
 | Gate               | Command                                   | Result                                                                                                                                                                                                                    |
 | ------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

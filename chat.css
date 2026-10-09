@@ -655,6 +655,37 @@ body.dark-theme ::selection {
   overflow: hidden;
 }
 
+.answer-followup-context {
+  display: flex;
+  flex: 1 1 18rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius-interactive);
+  background: var(--ext-muted);
+  color: var(--ext-foreground);
+  font-size: var(--ext-font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.answer-followup-context span {
+  min-width: 0;
+}
+
+.answer-followup-cancel {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius-interactive);
+  background: var(--ext-card);
+  color: var(--ext-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
 #context-tray .attachment-copy {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1923,4 +1954,272 @@ td {
 
 .copy-code-label {
   pointer-events: none;
+}
+
+/* Read-only structured answer cards */
+.answer-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 8px 0 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.answer-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ext-border);
+  border-radius: 10px;
+  background: var(--ext-card);
+  color: var(--ext-foreground);
+}
+
+.answer-card h3,
+.answer-card-summary > summary {
+  margin: 0 0 8px;
+  color: var(--ext-foreground);
+  font: inherit;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.answer-card-summary > summary {
+  cursor: pointer;
+}
+
+.answer-card p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer-card ul {
+  margin: 6px 0 0;
+  padding-left: 1.25rem;
+}
+
+.answer-card li + li {
+  margin-top: 4px;
+}
+
+.answer-card li,
+.answer-card-key-values dt {
+  overflow-wrap: anywhere;
+}
+
+.answer-card-key-values {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.6fr);
+  gap: 7px 12px;
+  margin: 0;
+}
+
+.answer-card-key-values dt {
+  color: var(--ext-muted-foreground);
+  font-weight: 600;
+}
+
+.answer-card-key-values dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.answer-card-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: auto;
+  border: 1px solid var(--ext-border);
+  border-radius: 7px;
+}
+
+.answer-card-comparison {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+
+.answer-card-comparison th,
+.answer-card-comparison td {
+  min-width: 90px;
+  padding: 8px;
+  border-bottom: 1px solid var(--ext-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.answer-card-comparison th {
+  background: var(--ext-muted);
+  font-weight: 650;
+}
+
+.answer-table-sort-button {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.answer-table-sort-button:focus-visible {
+  outline: 2px solid var(--ext-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.answer-card-comparison th[aria-sort='ascending'] .answer-table-sort-button::after {
+  content: ' ↑';
+}
+
+.answer-card-comparison th[aria-sort='descending'] .answer-table-sort-button::after {
+  content: ' ↓';
+}
+
+.answer-comparison-controls,
+.answer-followups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  margin: 0 0 8px;
+}
+
+.answer-comparison-filter {
+  flex: 1 1 9rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius-interactive);
+  background: var(--ext-background);
+  color: var(--ext-foreground);
+  font: inherit;
+}
+
+.answer-comparison-reset,
+.answer-followup-button {
+  max-width: 100%;
+  min-height: 2rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--ext-border);
+  border-radius: var(--ext-radius-interactive);
+  background: var(--ext-card);
+  color: var(--ext-foreground);
+  font: inherit;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.answer-comparison-reset:hover,
+.answer-followup-button:hover {
+  background: var(--ext-muted);
+}
+
+.answer-followups {
+  margin-top: 8px;
+}
+
+.answer-card-comparison tr:last-child td {
+  border-bottom: 0;
+}
+
+.answer-card-sources {
+  margin-top: 10px !important;
+  font-size: 0.88em;
+}
+
+.answer-card-sources a {
+  color: var(--ext-primary);
+  overflow-wrap: anywhere;
+}
+
+.answer-text-fallback {
+  margin: 8px 0;
+  color: var(--ext-muted-foreground);
+  font-size: 0.92em;
+}
+
+.answer-text-fallback > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ext-primary);
+}
+
+.answer-text-fallback[open] > .llm-content-area {
+  margin-top: 8px;
+  color: var(--ext-foreground);
+}
+
+@media (max-width: 380px) {
+  .answer-card-key-values {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .answer-card-key-values dd + dt {
+    margin-top: 6px;
+  }
+
+  .answer-card-comparison thead {
+    position: static;
+    display: block;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  .answer-card-comparison thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px;
+  }
+
+  .answer-card-comparison thead th {
+    display: block;
+    min-width: 0;
+    padding: 3px 5px;
+    border: 1px solid var(--ext-border);
+    border-radius: 5px;
+    background: var(--ext-muted);
+  }
+
+  .answer-card-comparison,
+  .answer-card-comparison tbody,
+  .answer-card-comparison tr,
+  .answer-card-comparison td {
+    display: block;
+    width: 100%;
+  }
+
+  .answer-card-comparison tr + tr {
+    border-top: 1px solid var(--ext-border);
+  }
+
+  .answer-card-comparison td {
+    display: grid;
+    grid-template-columns: minmax(74px, 0.7fr) minmax(0, 1.4fr);
+    gap: 8px;
+    border: 0;
+  }
+
+  .answer-card-comparison td::before {
+    content: attr(data-label);
+    color: var(--ext-muted-foreground);
+    font-weight: 600;
+  }
 }

@@ -14,6 +14,7 @@
 import { loadingManager } from '../../loadingManager.js';
 import { renderMarkdown } from '../utils/domSanitizer.js';
 import { attachCopyListeners, postProcessRenderedContent } from './ChatClipboard.js';
+import { updateAnswerCards } from './ChatAnswerRenderer.js';
 
 /**
  * ChatUI class - Manages all UI operations for the chat interface
@@ -58,6 +59,122 @@ class ChatUI {
   }
 
   /**
+   * Replace a completed assistant bubble with bounded read-only cards while
+   * retaining the complete readable Markdown answer behind a native details
+   * disclosure. Copy controls remain bound to that fallback text.
+   * @param {HTMLElement} messageDiv
+   * @param {string} readableText
+   * @param {*} answerCards
+   * @param {Array} groundingSources
+   * @returns {boolean} Whether cards were rendered.
+   */
+  renderCompletedAnswer(
+    messageDiv,
+    readableText,
+    answerCards,
+    groundingSources = [],
+    options = {}
+  ) {
+    if (!messageDiv) return false;
+    const contentElement = messageDiv.querySelector('.llm-content-area');
+    if (!contentElement) return false;
+
+    const previousFallback = messageDiv.querySelector(':scope > .answer-text-fallback');
+    if (previousFallback?.contains(contentElement)) {
+      previousFallback.parentNode.insertBefore(contentElement, previousFallback);
+    }
+    contentElement.innerHTML = this.renderMarkdown(readableText || '');
+    postProcessRenderedContent(contentElement);
+    const copyIcon = messageDiv.querySelector(':scope > .copy-action-button[id^="copy-icon-"]');
+    const uid = copyIcon?.id.slice('copy-icon-'.length);
+    const formattedButton = uid
+      ? messageDiv.querySelector(`:scope > #copy-formatted-icon-${uid}`)
+      : null;
+    if (copyIcon && formattedButton) {
+      attachCopyListeners(readableText || '', contentElement, copyIcon, formattedButton);
+    }
+    const previousCards = messageDiv.querySelector(':scope > .answer-cards');
+    const cards = updateAnswerCards(previousCards, answerCards, groundingSources);
+    if (!cards) previousCards?.remove();
+    previousFallback?.remove();
+    if (!cards) return false;
+
+    const fallback = document.createElement('details');
+    fallback.className = 'answer-text-fallback';
+    const label = document.createElement('summary');
+    label.textContent = 'Read as text';
+    fallback.appendChild(label);
+    fallback.appendChild(contentElement);
+
+    const firstAction = messageDiv.querySelector(':scope > .copy-action-button');
+    if (cards.parentNode !== messageDiv) messageDiv.insertBefore(cards, firstAction || null);
+    messageDiv.insertBefore(fallback, firstAction || null);
+    this.addAnswerFollowups(messageDiv, options);
+
+    return true;
+  }
+
+  /**
+   * Render a valid progressive prefix beside the still-visible readable text.
+   * Existing blocks are reconciled in place so the user's open disclosures and
+   * comparison controls survive subsequent prefixes.
+   * @param {HTMLElement} messageDiv
+   * @param {*} answerCards
+   * @param {Array} groundingSources
+   * @returns {boolean}
+   */
+  renderProgressiveAnswer(messageDiv, answerCards, groundingSources = []) {
+    if (!messageDiv) return false;
+    const previousCards = messageDiv.querySelector(':scope > .answer-cards');
+    const cards = updateAnswerCards(previousCards, answerCards, groundingSources);
+    if (!cards) {
+      previousCards?.remove();
+      return false;
+    }
+    const firstAction = messageDiv.querySelector(':scope > .copy-action-button');
+    if (cards.parentNode !== messageDiv) messageDiv.insertBefore(cards, firstAction || null);
+    return true;
+  }
+
+  /** Remove only provisional/terminal card UI, leaving readable Markdown. */
+  clearProgressiveAnswer(messageDiv) {
+    messageDiv?.querySelector(':scope > .answer-cards')?.remove();
+    messageDiv?.querySelector(':scope > .answer-followups')?.remove();
+    const fallback = messageDiv?.querySelector(':scope > .answer-text-fallback');
+    const content = messageDiv?.querySelector('.llm-content-area');
+    if (fallback?.contains(content)) fallback.parentNode.insertBefore(content, fallback);
+    fallback?.remove();
+  }
+
+  addAnswerFollowups(messageDiv, options = {}) {
+    if (!options.followupIdentity || typeof options.onAnswerFollowup !== 'function') return;
+    let group = messageDiv.querySelector(':scope > .answer-followups');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'answer-followups';
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', 'Answer follow-ups');
+      for (const followup of [
+        { id: 'explain', label: 'Explain key findings' },
+        { id: 'tradeoffs', label: 'Compare tradeoffs' },
+      ]) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'answer-followup-button';
+        button.dataset.answerFollowup = followup.id;
+        button.textContent = followup.label;
+        button.title = `${followup.label} using the original answer context`;
+        button.addEventListener('click', () =>
+          options.onAnswerFollowup(followup.id, options.followupIdentity)
+        );
+        group.appendChild(button);
+      }
+      const copyAction = messageDiv.querySelector(':scope > .copy-action-button');
+      messageDiv.insertBefore(group, copyAction || null);
+    }
+  }
+
+  /**
    * Show chat area and hide one-off instruction area
    */
   showChatArea() {
@@ -82,7 +199,7 @@ class ChatUI {
    *   context the original response used.
    * @returns {Object} - Message element references
    */
-  addMessage(sender, message, requestIdentity) {
+  addMessage(sender, message, requestIdentity, presentation = null) {
     // Ensure chat area is initialized
     if (!this.chatArea) {
       this.chatArea = document.getElementById('chat-area');
@@ -107,7 +224,7 @@ class ChatUI {
       messageDiv.textContent = 'System: ' + message;
     } else if (sender === 'LLM') {
       messageDiv.classList.add('llm-message');
-      const llmContentSpan = document.createElement('span');
+      const llmContentSpan = document.createElement('div');
       llmContentSpan.classList.add('llm-content-area');
       llmContentSpan.innerHTML = this.renderMarkdown(message || '');
       messageDiv.appendChild(llmContentSpan);
@@ -142,6 +259,15 @@ class ChatUI {
     }
 
     this.chatArea.appendChild(messageDiv);
+    if (sender === 'LLM' && presentation?.answerCards) {
+      this.renderCompletedAnswer(
+        messageDiv,
+        message || '',
+        presentation.answerCards,
+        presentation.groundingSources || [],
+        presentation
+      );
+    }
     this.trimExcessMessages();
 
     setTimeout(() => {
@@ -158,12 +284,21 @@ class ChatUI {
    * @param {HTMLElement|null} messageDiv - Message container to move.
    * @returns {boolean} Whether the message was moved.
    */
-  moveMessageToEnd(messageDiv) {
+  moveMessageToEnd(messageDiv, { preserveViewport = false } = {}) {
     if (!this.chatArea || !messageDiv) return false;
     if (messageDiv.parentNode && messageDiv.parentNode !== this.chatArea) return false;
-
+    if (this.chatArea.lastElementChild === messageDiv) return false;
+    const previousScrollTop = this.chatArea.scrollTop;
+    const nearBottom =
+      this.chatArea.scrollHeight - previousScrollTop - this.chatArea.clientHeight <= 40;
+    const activeElement = document.activeElement;
+    const hadFocusedDescendant = messageDiv.contains(activeElement);
     this.chatArea.appendChild(messageDiv);
-    this.chatArea.scrollTop = this.chatArea.scrollHeight;
+    if (!preserveViewport || nearBottom) this.chatArea.scrollTop = this.chatArea.scrollHeight;
+    else this.chatArea.scrollTop = previousScrollTop;
+    if (hadFocusedDescendant && document.activeElement !== activeElement) {
+      activeElement.focus?.({ preventScroll: true });
+    }
     return true;
   }
 

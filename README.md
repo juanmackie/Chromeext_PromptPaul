@@ -10,6 +10,7 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 - Structured extraction for Reddit threads, GitHub repository/issue pages, and RSS/Atom feed URLs, plus YouTube transcripts
 - Composer-led chat: a visible context tray shows every attached context (selection, media, page) with one-click detach, and contextual quick actions (Analyze/Proofread/Explain, page Summary/TL;DR/Technical) sit right above the input
 - Inline recovery on every response: Stop, Retry, Edit, Continue
+- Choose **Summary cards** or **Compare cards** for attached page, selected text, or document context; read-only cards keep a readable text fallback
 - Save custom instructions and quick actions, surfaced as compact pinned prompts in the Top Notch
 - Support OpenClaw-compatible Agent Skills
 - Use page-aware action cards for sites like YouTube, GitHub, Gmail, and docs
@@ -97,6 +98,18 @@ cd Chromeext_PromptPaul
   - Remove the chip to run sidebar actions as conversation follow-ups instead
   - Sidebar action buttons enable when you have selected text or an active conversation
 - Invoke skills with `/skills`, `/skill <name>`, or `/<skill-name>`
+
+### Summary and comparison cards
+
+Attach a page, selected text, or text document, then choose **Summary cards** or **Compare cards** from the composer actions. Extra actions appear in the existing overflow menu. The request uses the attached material and your selected provider.
+
+Compatible responses show summary, key/value, and comparison cards. **Read as text** opens the complete readable answer; raw and formatted copy use that answer. If the model returns ordinary text or invalid card data, the readable answer stays available. Reconnecting to a completed run restores bounded text, with the existing partial-response notice if the answer was truncated.
+
+Complete validated blocks can appear while the answer streams. Existing cards keep their disclosure state and table controls as later blocks arrive. Comparison headers sort locally; **Filter rows** and **Reset table** make no provider requests. Interrupted or invalid structured responses remove provisional cards and retain readable text.
+
+**Explain key findings** and **Compare tradeoffs** prefill the composer for review. The context chip identifies the original answer context; cancel it to use the current composer context instead. Only **Send** starts the follow-up, using the originating page, selection, or document and its captured source tab.
+
+Cards are passive display data. They use the existing theme and do not grant page-action permission, invoke tools, or start automatic repair requests. No OpenUI service or new account is required.
 
 ## Skills
 

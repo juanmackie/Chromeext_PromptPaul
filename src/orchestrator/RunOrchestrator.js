@@ -14,6 +14,13 @@ import { extractGroundingPages } from '../utils/webFetchGrounding.js';
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 import { modelSupportsReasoning } from '../utils/profileRouting.js';
 import { createThinkParser } from '../utils/inlineReasoning.js';
+import {
+  ANSWER_CARD_INSTRUCTIONS,
+  ANSWER_FORMAT,
+  createAnswerCardDecoder,
+  createAnswerCardProgressiveParser,
+  normalizeAnswerCards,
+} from '../utils/answerSchema.js';
 import { MAX_TOOL_ARGUMENTS_BYTES, normalizeToolDefinition } from '../utils/validation.js';
 import { appendBoundedSseBuffer, readBoundedResponseText } from '../utils/streamSafety.js';
 import {
@@ -105,6 +112,7 @@ const BUDGET_WRAP_UP_PROMPT =
   'State any unfinished work or limitation clearly.';
 const REPETITION_ERROR =
   'The model returned repetitive output and the response was stopped. Retry the request.';
+const MAX_ANSWER_WIRE_CHARS = 256 * 1024;
 const MAX_ACT_PLANNER_CONTINUATIONS = 3;
 const MAX_READABLE_PAGES = 3;
 const ACT_PLANNER_CONTINUATION_PROMPT =
@@ -471,6 +479,9 @@ class RunOrchestrator {
   }
 
   _shouldRecoverEmptyResponse(run) {
+    // A payload-only structured answer is malformed, but must not trigger an
+    // automatic provider repair request. The terminal fallback explains it.
+    if (run.config?.answerFormat === ANSWER_FORMAT && run.answerWireText?.trim()) return false;
     if (
       run.recoveryAttempted ||
       run.accumulatedText.trim() ||
@@ -597,6 +608,13 @@ class RunOrchestrator {
       sourceTabId: config.sourceTabId || null, // Tab that initiated this run
       conversationHistory: config.messages || [],
       accumulatedText: '',
+      answerFormat: config.answerFormat === ANSWER_FORMAT ? ANSWER_FORMAT : null,
+      answerWireText: '',
+      answerCardDecoder: null,
+      answerProgressParser: null,
+      answerTurn: 0,
+      progressiveAnswerBlocks: 0,
+      answerCards: null,
       activeToolCall: null,
       hasReasoning: false,
       completionReason: null,
@@ -801,6 +819,9 @@ class RunOrchestrator {
     if (!run.accumulatedText.trim()) {
       run.accumulatedText =
         'The task reached its run limit before a final answer was available. Retry to continue.';
+      if (run.config?.answerFormat === ANSWER_FORMAT) {
+        run.answerRuntimeFallback = run.accumulatedText;
+      }
     }
     return this._finalizeTextResponse(run);
   }
@@ -833,6 +854,116 @@ class RunOrchestrator {
     error.code = 'REPETITIVE_OUTPUT';
     error.repetition = repetition;
     throw error;
+  }
+
+  _resetAnswerWire(run) {
+    this._invalidateAnswerCards(run);
+    run.answerWireText = '';
+    run.answerRuntimeFallback = '';
+    run.answerTurn = Math.max(0, Number(run.answerTurn) || 0) + 1;
+    run.answerCardDecoder =
+      run.config?.answerFormat === ANSWER_FORMAT ? createAnswerCardDecoder() : null;
+    run.answerProgressParser = run.answerCardDecoder
+      ? createAnswerCardProgressiveParser({ sources: run.webSearch?.sources || [] })
+      : null;
+    run.progressiveAnswerBlocks = 0;
+    run.answerCards = null;
+  }
+
+  _invalidateAnswerCards(run) {
+    if (!run?.progressiveAnswerBlocks) return;
+    run.progressiveAnswerBlocks = 0;
+    this._emitEvent(run.id, {
+      type: 'answer_cards',
+      answerTurn: Number(run.answerTurn) || 0,
+      answerCards: null,
+      invalid: true,
+    });
+  }
+
+  _emitAnswerCardProgress(run, update) {
+    if (!run?.answerProgressParser || !update) return;
+    if (update.invalid) {
+      this._invalidateAnswerCards(run);
+      return;
+    }
+    if (!Array.isArray(update.blocks) || update.blocks.length <= run.progressiveAnswerBlocks)
+      return;
+    run.progressiveAnswerBlocks = update.blocks.length;
+    const referencedIds = new Set(update.blocks.flatMap((block) => block.sourceIds || []));
+    const sources = (Array.isArray(run.webSearch?.sources) ? run.webSearch.sources : [])
+      .filter((source) => referencedIds.has(source?.id))
+      .slice(0, 12)
+      .map((source) => ({
+        id: String(source.id).slice(0, 64),
+        title: String(source.title || '').slice(0, 240),
+        url: String(source.url || '').slice(0, 2_000),
+      }));
+    this._emitEvent(run.id, {
+      type: 'answer_cards',
+      answerTurn: Number(run.answerTurn) || 0,
+      answerCards: update,
+      ...(sources.length ? { grounding: { sources } } : {}),
+    });
+  }
+
+  _emitReadableAnswer(run, content) {
+    if (!content) return;
+    run.accumulatedText += content;
+    this._checkOutputSafety(run);
+    this._emitEvent(run.id, { type: 'content', data: content });
+  }
+
+  _appendAnswerWire(run, delta) {
+    const text = String(delta || '');
+    if (!text) return;
+    if (!run.answerCardDecoder) {
+      this._emitReadableAnswer(run, text);
+      return;
+    }
+    if (run.answerWireText.length + text.length > MAX_ANSWER_WIRE_CHARS) {
+      const error = new Error('Structured answer output exceeded the run limit.');
+      error.code = 'ANSWER_FORMAT_OUTPUT_LIMIT';
+      throw error;
+    }
+    run.answerWireText += text;
+    this._emitReadableAnswer(run, run.answerCardDecoder.push(text));
+    if (run.answerProgressParser) {
+      this._emitAnswerCardProgress(run, run.answerProgressParser.push(text));
+    }
+  }
+
+  _finishAnswerWireTurn(run) {
+    if (!run.answerCardDecoder) return;
+    this._emitReadableAnswer(run, run.answerCardDecoder.finish());
+  }
+
+  _normalizeAnswerWireForHistory(run) {
+    if (run.config?.answerFormat !== ANSWER_FORMAT) return;
+    this._invalidateAnswerCards(run);
+    run.answerProgressParser?.disable();
+    const normalized = normalizeAnswerCards(run.answerWireText || '');
+    run.accumulatedText = normalized.status === 'missing_fallback' ? '' : normalized.content;
+    run.answerCards = null;
+  }
+
+  _replaceAnswerWire(run, wireText) {
+    if (!run.answerCardDecoder) {
+      run.accumulatedText = String(wireText || '');
+      return;
+    }
+    this._invalidateAnswerCards(run);
+    run.answerWireText = '';
+    run.answerCardDecoder = createAnswerCardDecoder();
+    run.answerProgressParser = createAnswerCardProgressiveParser({
+      sources: run.webSearch?.sources || [],
+    });
+    run.progressiveAnswerBlocks = 0;
+    run.answerRuntimeFallback = '';
+    run.answerCards = null;
+    run.accumulatedText = '';
+    run.outputSafetyCheckLength = 0;
+    this._appendAnswerWire(run, wireText);
   }
 
   async _recoverProviderError(run, error) {
@@ -910,6 +1041,7 @@ class RunOrchestrator {
       messageCount: Array.isArray(requestConfig?.messages) ? requestConfig.messages.length : 0,
     });
     run.accumulatedText = '';
+    this._resetAnswerWire(run);
     run.activeToolCall = null;
     run.activeToolCalls = null;
     // Per-turn Anthropic thinking block (text + signature) for tool-call continuity.
@@ -1095,6 +1227,7 @@ class RunOrchestrator {
   _terminateRun(runId, event, { abortSignal = false, run: providedRun = null } = {}) {
     const run = providedRun || this.activeRuns.get(runId);
     if (!run) return;
+    if (event.type !== 'complete') this._invalidateAnswerCards(run);
     if (run.pageActions?.enabled) {
       run.pageActions.actOutcome = deriveActOutcome(run, event.type);
       event.actOutcome = run.pageActions.actOutcome;
@@ -4317,6 +4450,16 @@ class RunOrchestrator {
 
   _buildSystemPrompt(run, eligibleSkills) {
     const parts = [CORE_INSTRUCTIONS];
+    if (run.config?.answerFormat === ANSWER_FORMAT) {
+      parts.push(ANSWER_CARD_INSTRUCTIONS);
+      const sourceIds = (Array.isArray(run.webSearch?.sources) ? run.webSearch.sources : [])
+        .slice(0, 100)
+        .map((source) => String(source?.id || ''))
+        .filter((id) => /^[A-Za-z0-9_-]{1,64}$/.test(id));
+      if (sourceIds.length) {
+        parts.push(`AVAILABLE CARD SOURCE IDS: ${sourceIds.join(', ')}. Use only these IDs.`);
+      }
+    }
     if (run.config.systemPrompt) parts.push(run.config.systemPrompt);
     if (run.resilience?.wrapUpNotice) {
       parts.push(
@@ -4575,19 +4718,22 @@ class RunOrchestrator {
   _applyHermesRecoveredOutput(run, output) {
     const recovered = extractHermesOutputText(output);
     if (!recovered) return;
-    const current = run.accumulatedText || '';
+    const current = run.answerCardDecoder ? run.answerWireText || '' : run.accumulatedText || '';
     if (!current) {
-      run.accumulatedText = recovered;
-      this._emitEvent(run.id, { type: 'content', data: recovered });
+      if (run.answerCardDecoder) this._replaceAnswerWire(run, recovered);
+      else {
+        run.accumulatedText = recovered;
+        this._emitEvent(run.id, { type: 'content', data: recovered });
+      }
     } else if (recovered.startsWith(current)) {
       const remainder = recovered.slice(current.length);
-      run.accumulatedText = recovered;
-      if (remainder) this._emitEvent(run.id, { type: 'content', data: remainder });
+      if (remainder) this._appendAnswerWire(run, remainder);
     } else {
       // The status payload is authoritative when the stream used a different
       // chunking or formatting. The terminal event replaces the stale partial
       // bubble, so do not append divergent text and duplicate the answer.
-      run.accumulatedText = recovered;
+      if (run.answerCardDecoder) this._replaceAnswerWire(run, recovered);
+      else run.accumulatedText = recovered;
     }
   }
 
@@ -4708,9 +4854,7 @@ class RunOrchestrator {
       const normalized = normalizeHermesEvent(event);
       if (!normalized) return;
       if (normalized.type === 'content') {
-        run.accumulatedText += normalized.data;
-        this._checkOutputSafety(run);
-        this._emitEvent(run.id, normalized);
+        this._appendAnswerWire(run, normalized.data);
       } else if (normalized.type === 'reasoning') {
         run.hasReasoning = true;
         this._emitEvent(run.id, normalized);
@@ -4720,6 +4864,8 @@ class RunOrchestrator {
           this._applyHermesRecoveredOutput(run, normalized.output);
         this._recordCompletionUsage(run, normalized.usage);
       } else if (normalized.type === 'hermes_client_tool_call') {
+        this._invalidateAnswerCards(run);
+        run.answerProgressParser?.disable();
         const toolCall = normalized.toolCall;
         const toolCallId = String(toolCall?.id || '').trim();
         const toolName = String(toolCall?.function?.name || '').trim();
@@ -4949,9 +5095,7 @@ class RunOrchestrator {
     if (type === 'response.output_text.delta') {
       const delta = String(event.delta || '');
       if (delta) {
-        run.accumulatedText += delta;
-        this._checkOutputSafety(run);
-        this._emitEvent(run.id, { type: 'content', data: delta });
+        this._appendAnswerWire(run, delta);
       }
       return;
     }
@@ -5141,9 +5285,7 @@ class RunOrchestrator {
       this._emitEvent(run.id, { type: 'reasoning', data: tail.reasoning });
     }
     if (tail.content) {
-      run.accumulatedText += tail.content;
-      this._checkOutputSafety(run);
-      this._emitEvent(run.id, { type: 'content', data: tail.content });
+      this._appendAnswerWire(run, tail.content);
     }
 
     // Finalize based on what we have. When there's no tool call we always finalize
@@ -5363,9 +5505,7 @@ class RunOrchestrator {
         this._emitEvent(run.id, { type: 'reasoning', data: reasoning });
       }
       if (content) {
-        run.accumulatedText += content;
-        this._checkOutputSafety(run);
-        this._emitEvent(run.id, { type: 'content', data: content });
+        this._appendAnswerWire(run, content);
       }
     }
 
@@ -5433,9 +5573,7 @@ class RunOrchestrator {
 
     if (event.type === 'content_block_delta') {
       if (event.delta.type === 'text_delta') {
-        run.accumulatedText += event.delta.text;
-        this._checkOutputSafety(run);
-        this._emitEvent(run.id, { type: 'content', data: event.delta.text });
+        this._appendAnswerWire(run, event.delta.text);
       } else if (event.delta.type === 'thinking_delta') {
         if (!run.thinkingBlock) run.thinkingBlock = { thinking: '', signature: '' };
         run.hasReasoning = true;
@@ -5479,6 +5617,8 @@ class RunOrchestrator {
    * Finalize tool call and execute
    */
   async _finalizeToolCall(run) {
+    this._finishAnswerWireTurn(run);
+    this._normalizeAnswerWireForHistory(run);
     run.status = 'executing_tool';
     run.toolCallIterations += 1;
 
@@ -5714,6 +5854,7 @@ class RunOrchestrator {
    * Finalize text response
    */
   async _finalizeTextResponse(run) {
+    this._finishAnswerWireTurn(run);
     try {
       this._checkOutputSafety(run, true);
     } catch (error) {
@@ -5721,6 +5862,23 @@ class RunOrchestrator {
       return;
     }
     if (await this._continueUnresolvedActPlanner(run)) return;
+    const grounding = this._getWebSearchMetadata(run);
+    if (run.config?.answerFormat === ANSWER_FORMAT) {
+      const normalized = normalizeAnswerCards(run.answerWireText || '', {
+        sources: grounding?.sources || [],
+      });
+      run.accumulatedText =
+        run.answerRuntimeFallback && normalized.status === 'missing_fallback'
+          ? run.answerRuntimeFallback
+          : normalized.content;
+      if (run.answerRuntimeFallback && normalized.status !== 'missing_fallback') {
+        run.accumulatedText = run.accumulatedText.trim()
+          ? `${run.accumulatedText.trim()}\n\n${run.answerRuntimeFallback}`
+          : run.answerRuntimeFallback;
+      }
+      run.answerCards = normalized.answerCards;
+      if (!run.answerCards) this._invalidateAnswerCards(run);
+    }
     const planner = run?.pageActions?.planner;
     if (
       planner?.active &&
@@ -5752,6 +5910,7 @@ class RunOrchestrator {
       type: 'complete',
       content: run.accumulatedText,
     };
+    if (run.answerCards) event.answerCards = run.answerCards;
     const completion = this._getCompletionMetadata(run);
     if (
       completion.hasReasoning ||
@@ -5760,7 +5919,6 @@ class RunOrchestrator {
     ) {
       event.completion = completion;
     }
-    const grounding = this._getWebSearchMetadata(run);
     if (grounding) event.grounding = grounding;
     this._terminateRun(run.id, event, { run });
   }

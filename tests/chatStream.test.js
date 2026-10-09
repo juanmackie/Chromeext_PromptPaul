@@ -90,10 +90,16 @@ describe('ChatUI message placement', () => {
   });
 
   it('moves the completed response after tool activity', () => {
+    const previousDocument = globalThis.document;
+    globalThis.document = { activeElement: null };
     const chatArea = {
       children: [],
       scrollHeight: 100,
       scrollTop: 0,
+      clientHeight: 40,
+      get lastElementChild() {
+        return this.children[this.children.length - 1] || null;
+      },
       appendChild(node) {
         const existingIndex = this.children.indexOf(node);
         if (existingIndex >= 0) this.children.splice(existingIndex, 1);
@@ -101,15 +107,67 @@ describe('ChatUI message placement', () => {
         node.parentNode = this;
       },
     };
-    const response = { parentNode: chatArea };
+    const response = { parentNode: chatArea, contains: () => false };
     const toolTrace = { parentNode: chatArea };
     chatArea.children.push(response, toolTrace);
 
     const ui = new ChatUI();
     ui.chatArea = chatArea;
 
-    expect(ui.moveMessageToEnd(response)).toBe(true);
-    expect(chatArea.children).toEqual([toolTrace, response]);
-    expect(chatArea.scrollTop).toBe(chatArea.scrollHeight);
+    try {
+      expect(ui.moveMessageToEnd(response)).toBe(true);
+      expect(chatArea.children).toEqual([toolTrace, response]);
+      expect(chatArea.scrollTop).toBe(chatArea.scrollHeight);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('preserves the reader scroll position and focus when a card response moves', () => {
+    const focusedFilter = { focus: vi.fn() };
+    const doc = {
+      body: {},
+      activeElement: focusedFilter,
+    };
+    focusedFilter.focus.mockImplementation(() => {
+      doc.activeElement = focusedFilter;
+    });
+    const previousDocument = globalThis.document;
+    globalThis.document = doc;
+    const chatArea = {
+      children: [],
+      scrollHeight: 700,
+      scrollTop: 220,
+      clientHeight: 400,
+      get lastElementChild() {
+        return this.children[this.children.length - 1] || null;
+      },
+      appendChild(node) {
+        if (node.contains?.(doc.activeElement)) doc.activeElement = doc.body;
+        const existingIndex = this.children.indexOf(node);
+        if (existingIndex >= 0) this.children.splice(existingIndex, 1);
+        this.children.push(node);
+        node.parentNode = this;
+      },
+    };
+    const response = {
+      parentNode: chatArea,
+      contains: (node) => node === focusedFilter,
+    };
+    const toolTrace = { parentNode: chatArea };
+    chatArea.children.push(response, toolTrace);
+
+    const ui = new ChatUI();
+    ui.chatArea = chatArea;
+
+    try {
+      expect(ui.moveMessageToEnd(response, { preserveViewport: true })).toBe(true);
+      expect(chatArea.children).toEqual([toolTrace, response]);
+      expect(chatArea.scrollTop).toBe(220);
+      expect(doc.activeElement).toBe(focusedFilter);
+      expect(focusedFilter.focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      globalThis.document = previousDocument;
+    }
   });
 });

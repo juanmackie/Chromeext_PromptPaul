@@ -549,6 +549,20 @@ function runUnitTests(runner) {
     }
   });
 
+  runner.test('Passive answer-card schema and renderer modules exist', () => {
+    checkModule('src/utils/answerSchema.js', [
+      'function validateAnswerCards',
+      'function normalizeAnswerCards',
+      'function createAnswerCardDecoder',
+    ]);
+    checkModule('src/chat/ChatAnswerRenderer.js', ['function renderAnswerCards']);
+    for (const file of ['src/orchestrator/RunOrchestrator.js', 'src/chat/ChatAnswerRenderer.js']) {
+      if (!readFileSafe(file).includes('answerSchema.js')) {
+        throw new Error(`${file} must use the shared bounded answer-card contract`);
+      }
+    }
+  });
+
   runner.test('permissionGuards module structure valid', () => {
     checkModule('src/utils/permissionGuards.js');
     const content = readFileSafe('src/utils/permissionGuards.js');

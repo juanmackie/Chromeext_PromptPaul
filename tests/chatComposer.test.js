@@ -12,6 +12,8 @@ import {
   ensureRecoveryRow,
   resolveDocumentDrop,
   buildDocumentPromptRequest,
+  buildAnswerFollowupIdentity,
+  buildAnswerFollowupRequest,
 } from '../src/chat/ChatComposer.js';
 
 function makeElement(id, hidden = true) {
@@ -95,6 +97,39 @@ describe('getContextState', () => {
   });
 });
 
+describe('answer follow-up identity', () => {
+  it('keeps a structured card source bound and excludes missing identities', () => {
+    const request = {
+      instruction: 'Summarize the page',
+      answerFormat: 'cards',
+      context: { type: 'page_content', text: 'Original page text' },
+    };
+    const identity = buildAnswerFollowupIdentity(request, 42);
+    expect(identity).toEqual({ context: request.context, sourceTabId: 42 });
+    expect(buildAnswerFollowupRequest(identity, 'Explain these findings')).toEqual({
+      instruction: 'Explain these findings',
+      context: request.context,
+    });
+    expect(buildAnswerFollowupIdentity(request, null)).toBeNull();
+    expect(buildAnswerFollowupIdentity({ ...request, context: null }, 42)).toBeNull();
+    expect(buildAnswerFollowupIdentity({ ...request, answerFormat: undefined }, 42)).toBeNull();
+  });
+
+  it('does not mutate the originating request when building follow-up prompts', () => {
+    const request = {
+      answerFormat: 'cards',
+      context: { type: 'document', text: 'Original document' },
+    };
+    const identity = buildAnswerFollowupIdentity(request, 17);
+    const followup = buildAnswerFollowupRequest(identity, 'Compare tradeoffs');
+    expect(followup).toEqual({ instruction: 'Compare tradeoffs', context: request.context });
+    expect(request).toEqual({
+      answerFormat: 'cards',
+      context: { type: 'document', text: 'Original document' },
+    });
+  });
+});
+
 describe('getQuickActions / getContextActions / getOverflowActions', () => {
   it('offers text actions when text is attached', () => {
     const actions = getQuickActions({ hasSelectedText: true, hasPageContext: false });
@@ -103,6 +138,9 @@ describe('getQuickActions / getContextActions / getOverflowActions', () => {
     expect(labels).toContain('Proofread');
     expect(labels).toContain('Explain');
     expect(labels).not.toContain('TL;DR');
+    expect(getContextActions({ hasSelectedText: true }).map((action) => action.label)).toContain(
+      'Summary cards'
+    );
   });
 
   it('offers page actions when page content is attached', () => {
@@ -111,6 +149,9 @@ describe('getQuickActions / getContextActions / getOverflowActions', () => {
     expect(labels).toContain('Summary');
     expect(labels).toContain('TL;DR');
     expect(labels).toContain('Technical');
+    expect(getContextActions({ hasPageContext: true }).map((action) => action.label)).toContain(
+      'Compare cards'
+    );
   });
 
   it('caps the combined row at four actions and keeps the rest in overflow', () => {
@@ -118,9 +159,9 @@ describe('getQuickActions / getContextActions / getOverflowActions', () => {
     const visible = getQuickActions(state);
     const overflow = getOverflowActions(state);
     expect(visible).toHaveLength(4);
-    expect(overflow).toHaveLength(2);
+    expect(overflow).toHaveLength(4);
     const all = [...visible, ...overflow];
-    expect(all).toHaveLength(6);
+    expect(all).toHaveLength(8);
   });
 
   it('shows starter actions when no context is attached', () => {
@@ -149,6 +190,8 @@ describe('getQuickActions / getContextActions / getOverflowActions', () => {
     expect(labels).not.toContain('Summarize page');
     expect(labels).not.toContain('Ask about page');
     expect(labels).not.toContain('Act on page');
+    expect(labels).toContain('Summary cards');
+    expect(labels).toContain('Compare cards');
   });
 
   it('includes site suggestions only while page context is attached', () => {

@@ -18,6 +18,7 @@ import { loadingManager } from './loadingManager.js';
 import { normalizeToolChoice } from './src/utils/toolChoiceBuilder.js';
 import { PAGE_ACTION_NAMES, PAGE_TAB_ACTION_NAMES } from './src/utils/pageActionPolicy.js';
 import { chatUI } from './src/chat/ChatUI.js';
+import './src/chat/ChatAnswerRenderer.js';
 import { attachCopyListeners, postProcessRenderedContent } from './src/chat/ChatClipboard.js';
 import {
   getApiConfig,
@@ -310,6 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function clearSelectedTextState() {
+    composer?.clearAnswerFollowup?.();
     selectedText = null;
     // Releasing the sticky selection also releases the source-tab identity
     // that arrived with it (so the next live selection read follows the
@@ -383,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Restores the originating selected-text context into the tray so an Edit
   // replays the same request the original response used, not the current one.
   function applySelectedTextContext(text) {
+    composer?.clearAnswerFollowup?.();
     selectedText = String(text || '').trim();
     if (selectedText) {
       activateSelectedTextActionView();
@@ -496,6 +499,10 @@ document.addEventListener('DOMContentLoaded', () => {
     lastLoadedPageContext = prepared.pageContext;
     lastLoadedPageRequest = {
       text: prepared.fitted.text,
+      sourceTabId:
+        Number.isInteger(response.sourceTabId) && response.sourceTabId > 0
+          ? response.sourceTabId
+          : null,
       metadata: {
         title: response.title,
         siteName: response.siteName,
@@ -540,6 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
         title: title || response.title || 'PDF document',
         siteName: 'PDF document',
         url: response.pdfUrl,
+        sourceTabId: response.sourceTabId,
         platform: 'pdf',
         platformInfo: null,
         readStrategy: 'auto',
@@ -972,6 +980,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // the composer's recovery row so a generic Retry never blindly replays an Act
   // run that ended with an unverified/in-flight mutation. Resets each new run.
   let lastActOutcome = null;
+  let progressiveAnswerTurn = null;
+  let progressiveAnswerSeen = false;
   const inputArea = document.getElementById('input-area');
   let currentAttachmentPreviewUrl = null;
   const contextTray = document.getElementById('context-tray');
@@ -1016,6 +1026,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isResponseInFlight = true;
     lastActOutcome = null;
+    progressiveAnswerTurn = null;
+    progressiveAnswerSeen = false;
     return true;
   }
 
@@ -1066,6 +1078,10 @@ document.addEventListener('DOMContentLoaded', () => {
     streamState.setRunId(runId);
     streamState.setSourceTabId(
       latestRecovery.pointer?.sourceTabId ?? latestRecovery.journal?.sourceTabId ?? null
+    );
+    messageDiv.answerFollowupIdentity = chatComposer.buildAnswerFollowupIdentity(
+      chatComposer.getLastUserRequest(chatArea),
+      streamState.getSourceTabId()
     );
     streamState.setNextOrchestratorEventSequence(latestRecovery.journal?.eventSequence || 0);
     setPageActionsRunActive(latestRecovery.journal?.pageActions?.enabled === true);
@@ -1180,6 +1196,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // a truncated journal never shows as complete and grounding sources are
       // preserved alongside any visible partial-notice.
       const body = buildRecoveredBody(event);
+      // Journals persist readable text and grounding metadata only; cards are
+      // a live terminal projection and are intentionally not recovered.
       chatUI.addMessage('LLM', body);
       streamState.addMessageToHistory({ role: 'assistant', content: body });
     } else if (event.type === 'aborted') {
@@ -1243,6 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Shared failure cleanup for both run entry points.
   function handleRunFailure(error, source) {
     console.error(`${source} Error:`, error);
+    chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
     chatUI.addMessage('System', 'Error: ' + friendlyRuntimeErrorMessage(error));
     resetRunUi(RUN_STATES.ERROR);
     userInput.focus();
@@ -1283,6 +1302,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setCurrentMediaData(data) {
+    composer?.clearAnswerFollowup?.();
     revokeAttachmentPreviewUrl();
     streamState.setMediaData(data);
     currentAttachmentPreviewUrl = data?.previewUrl || null;
@@ -1488,6 +1508,40 @@ document.addEventListener('DOMContentLoaded', () => {
     await runSelectedTextPrompt(instruction, 'auto', actionLabel);
   }
 
+  async function runAnswerCards(kind) {
+    const label = kind === 'comparison' ? 'Compare cards' : 'Summary cards';
+    const instruction =
+      kind === 'comparison'
+        ? 'Compare the main options, entities, or approaches in the attached material.'
+        : 'Summarize the attached material with its key findings.';
+    let promptRequest;
+    let sourceTabIdOverride;
+    const selected = getSelectedText();
+    const pendingDocument = composer.getPendingDocument();
+    if (selected) {
+      promptRequest = { instruction, context: { type: 'selected_text', text: selected } };
+    } else if (pendingDocument) {
+      promptRequest = chatComposer.buildDocumentPromptRequest(instruction, pendingDocument);
+      composer.beginDocumentSend();
+    } else if (lastLoadedPageRequest) {
+      promptRequest = buildPageScopedRequest(instruction);
+      sourceTabIdOverride = lastLoadedPageRequest.sourceTabId;
+    } else {
+      loadingManager.showToast(
+        `Attach page, selected text, or a document to ${label.toLowerCase()}.`,
+        'warning'
+      );
+      return;
+    }
+    activateSelectedTextActionView();
+    await makeApiCall(
+      { ...promptRequest, answerFormat: 'cards' },
+      'auto',
+      null,
+      sourceTabIdOverride
+    );
+  }
+
   // Composer-led UI: context tray, quick actions, inline recovery. All new
   // composer logic lives in ChatComposer.js; chat.js only supplies handlers.
   const composer = chatComposer.initComposer({
@@ -1501,13 +1555,18 @@ document.addEventListener('DOMContentLoaded', () => {
       onStop: () => stopApiRequest(),
       onAnalyze: () => executePagePresetMode(lastUsedPreset),
       onMode: (modeKey) => executeSelectedTextMode(modeKey),
-      onPrompt: (instruction, actionLabel) => sendComposerPrompt(instruction, actionLabel),
+      onPrompt: (instruction, actionLabel) => {
+        composer.clearAnswerFollowup();
+        return sendComposerPrompt(instruction, actionLabel);
+      },
+      onAnswerCards: (kind) => void runAnswerCards(kind),
       getRunActOutcome: () => lastActOutcome,
       onActFreshInspection: () => onActFreshInspection(),
       onPageSummary: () => void runStarterPageSummary(),
       onAskPage: () => void runStarterAskPage(),
       onActPage: () => void toggleActStarter(),
       onEdit: (instruction, request) => {
+        composer.clearAnswerFollowup();
         // Edit replays the ORIGINAL request context: restore the originating
         // selection/attachment context into the composer tray alongside the
         // prompt text so the user edits the same request that produced it.
@@ -2022,6 +2081,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return chatUI.moveMessageToEnd(messageDiv);
   }
 
+  function interruptedAnswerText(message) {
+    if (!progressiveAnswerSeen) return message;
+    const contentElement = streamState.getCurrentStreamingContentElement();
+    const readable = String(
+      streamState.getStreamedText() || contentElement?.textContent || ''
+    ).trim();
+    return readable ? `${readable}\n\n${message}` : message;
+  }
+
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Capture panel's owning tab on first message (establishes identity)
     if (sender.tab?.id && panelTabId === null) {
@@ -2131,13 +2199,16 @@ document.addEventListener('DOMContentLoaded', () => {
               event.completion
             );
             renderMarkdownInto(streamState.getCurrentStreamingContentElement(), body);
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
             if (body.trim()) streamState.addMessageToHistory({ role: 'assistant', content: body });
           } else if (event.type === 'error') {
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
             renderMarkdownInto(
               streamState.getCurrentStreamingContentElement(),
               '❌ Error: ' + (event.error || 'unknown error')
             );
           } else if (event.type === 'aborted') {
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
             renderMarkdownInto(streamState.getCurrentStreamingContentElement(), 'Response stopped');
           }
           chatUI.moveMessageToEnd(streamState.getCurrentStreamingMessageDiv());
@@ -2189,6 +2260,26 @@ document.addEventListener('DOMContentLoaded', () => {
               streamState.queueRenderChunk(event.data);
             }
             break;
+          case 'answer_cards': {
+            const bubble = streamState.getCurrentStreamingMessageDiv();
+            if (!bubble || !Number.isInteger(event.answerTurn)) break;
+            if (progressiveAnswerTurn !== null && event.answerTurn < progressiveAnswerTurn) break;
+            if (progressiveAnswerTurn === null || event.answerTurn > progressiveAnswerTurn) {
+              chatUI.clearProgressiveAnswer(bubble);
+              progressiveAnswerTurn = event.answerTurn;
+            }
+            if (event.invalid === true || !event.answerCards) {
+              chatUI.clearProgressiveAnswer(bubble);
+              break;
+            }
+            chatUI.renderProgressiveAnswer(
+              bubble,
+              event.answerCards,
+              event.grounding?.sources || []
+            );
+            if (bubble.querySelector(':scope > .answer-cards')) progressiveAnswerSeen = true;
+            break;
+          }
           case 'page_action_confirmation':
             renderPageActionConfirmation(
               chatArea,
@@ -2312,12 +2403,16 @@ document.addEventListener('DOMContentLoaded', () => {
             );
             break;
           case 'continuation_start':
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
+            progressiveAnswerSeen = false;
             streamState.startNewTurn();
             if (streamState.getCurrentStreamingContentElement()) {
               streamState.getCurrentStreamingContentElement().innerHTML = '';
             }
             break;
           case 'tool_start':
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
+            progressiveAnswerSeen = false;
             if (streamState.getReasoningContentElement()) {
               chatUI.finalizeReasoningPanel(
                 streamState.getCurrentStreamingMessageDiv(),
@@ -2416,13 +2511,36 @@ document.addEventListener('DOMContentLoaded', () => {
               event.completion
             );
 
-            if (streamState.getCurrentStreamingContentElement()) {
+            const completedMessageDiv = streamState.getCurrentStreamingMessageDiv();
+            const sources = event.grounding?.sources || [];
+            if (completedMessageDiv?.querySelector(':scope > .answer-cards') || event.answerCards) {
+              const followupIdentity = completedMessageDiv?.answerFollowupIdentity || null;
+              const presentation = {
+                followupIdentity,
+                onAnswerFollowup: (kind, identity) =>
+                  composer.prefillAnswerFollowup(kind, identity),
+              };
+              if (completedMessageDiv) {
+                chatUI.renderCompletedAnswer(
+                  completedMessageDiv,
+                  body,
+                  event.answerCards,
+                  sources,
+                  presentation
+                );
+              } else {
+                chatUI.addMessage('LLM', body, null, {
+                  answerCards: event.answerCards,
+                  groundingSources: sources,
+                  ...presentation,
+                });
+              }
+            } else if (streamState.getCurrentStreamingContentElement()) {
               renderMarkdownInto(streamState.getCurrentStreamingContentElement(), body);
               postProcessRenderedContent(streamState.getCurrentStreamingContentElement());
 
-              const msgDiv = streamState.getCurrentStreamingMessageDiv();
               const uid = streamState.getCurrentStreamingUniqueId();
-              if (msgDiv && uid) {
+              if (completedMessageDiv && uid) {
                 const rawIcon = document.getElementById(`copy-icon-${uid}`);
                 const formattedIcon = document.getElementById(`copy-formatted-icon-${uid}`);
                 if (rawIcon && formattedIcon) {
@@ -2438,8 +2556,11 @@ document.addEventListener('DOMContentLoaded', () => {
               chatUI.addMessage('LLM', body);
             }
 
-            const completedMessageDiv = streamState.getCurrentStreamingMessageDiv();
-            if (completedMessageDiv) chatUI.moveMessageToEnd(completedMessageDiv);
+            if (completedMessageDiv) {
+              chatUI.moveMessageToEnd(completedMessageDiv, {
+                preserveViewport: Boolean(event.answerCards),
+              });
+            }
 
             if (body.trim()) {
               streamState.addMessageToHistory({
@@ -2457,6 +2578,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearRunOwnerToken(runId);
             streamState.setRunId(null);
             streamState.setSourceTabId(null);
+            progressiveAnswerTurn = null;
 
             // A conversation now exists, so sidebar actions can run as follow-ups.
             refreshSelectedTextActionState();
@@ -2465,7 +2587,8 @@ document.addEventListener('DOMContentLoaded', () => {
           case 'aborted': {
             hermesChat.settleHermesApprovals(chatArea, 'aborted');
             cancelPageActionConfirmations(chatArea);
-            if (!settleStreamingBubble('Response stopped')) {
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
+            if (!settleStreamingBubble(interruptedAnswerText('Response stopped'))) {
               chatUI.addMessage('System', 'Response stopped');
             }
             resetRunUi(RUN_STATES.STOPPED);
@@ -2477,13 +2600,16 @@ document.addEventListener('DOMContentLoaded', () => {
             clearRunOwnerToken(runId);
             streamState.setRunId(null);
             streamState.setSourceTabId(null);
+            progressiveAnswerTurn = null;
+            progressiveAnswerSeen = false;
             break;
           }
           case 'error': {
             hermesChat.settleHermesApprovals(chatArea, 'error');
+            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
             // Terminal page-action cards use the same explicit state === 'error' guard.
             cancelPageActionConfirmations(chatArea);
-            if (!settleStreamingBubble(`❌ Error: ${event.error}`)) {
+            if (!settleStreamingBubble(interruptedAnswerText(`❌ Error: ${event.error}`))) {
               chatUI.addMessage('System', `❌ Error: ${event.error}`);
             }
             resetRunUi(RUN_STATES.ERROR);
@@ -2496,6 +2622,8 @@ document.addEventListener('DOMContentLoaded', () => {
             clearRunOwnerToken(runId);
             streamState.setRunId(null);
             streamState.setSourceTabId(null);
+            progressiveAnswerTurn = null;
+            progressiveAnswerSeen = false;
             break;
           }
         }
@@ -2524,6 +2652,7 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     clearLocal: () => {
       chatUI.clearChat();
+      composer.clearAnswerFollowup();
       streamState.startNewConversation();
       clearCurrentMediaData();
       clearSelectedTextState();
@@ -2836,6 +2965,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
+      if (!hasMedia && !hasDocument) {
+        const answerFollowup = composer.getAnswerFollowup(effectiveMessage);
+        if (answerFollowup) {
+          const accepted = await makeApiCall(
+            answerFollowup.request,
+            'auto',
+            requestedSkill,
+            answerFollowup.sourceTabId
+          );
+          if (!accepted) return;
+          composer.clearAnswerFollowup();
+          userInput.value = '';
+          return;
+        }
+      }
+
       if (hasMedia) {
         // A pending document rides along as structured context: the media still
         // attaches through makeApiCallWithMedia's mediaData, but the prompt
@@ -2876,10 +3021,33 @@ document.addEventListener('DOMContentLoaded', () => {
    * @param {string|null} [requestedSkill=null] - Name of skill to preload via orchestrator.
    * @returns {Promise<void>}
    */
-  async function makeApiCall(promptRequest = null, tool_choice = 'auto', requestedSkill = null) {
-    if (!beginResponseRun()) return;
+  async function makeApiCall(
+    promptRequest = null,
+    tool_choice = 'auto',
+    requestedSkill = null,
+    sourceTabIdOverride = undefined
+  ) {
+    if (!beginResponseRun()) return false;
 
     try {
+      if (sourceTabIdOverride !== undefined) {
+        if (!Number.isInteger(sourceTabIdOverride) || sourceTabIdOverride <= 0) {
+          loadingManager.showToast(
+            'The original answer source is unavailable. Attach its context again.',
+            'warning'
+          );
+          return false;
+        }
+        try {
+          await chrome.tabs.get(sourceTabIdOverride);
+        } catch (_) {
+          loadingManager.showToast(
+            'The original source tab is no longer available. Attach its context again to continue.',
+            'warning'
+          );
+          return false;
+        }
+      }
       const config = await getApiConfigCached();
       const userMessage = composeUserPrompt(promptRequest);
 
@@ -2957,8 +3125,11 @@ document.addEventListener('DOMContentLoaded', () => {
         pageActions: pageActionsEnabled,
         pageActionsMultiTab: pageActionsEnabled,
         requestedSkill,
+        ...(promptRequest && promptRequest.answerFormat === 'cards'
+          ? { answerFormat: 'cards' }
+          : {}),
         conversationId: streamState.getConversationId(),
-        sourceTabId: getRunSourceTabId(),
+        sourceTabId: sourceTabIdOverride === undefined ? getRunSourceTabId() : sourceTabIdOverride,
       };
       const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
       streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
@@ -2966,14 +3137,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       streamState.setRunId(await startRun(runConfig));
       streamState.setSourceTabId(runConfig.sourceTabId);
+      messageDiv.answerFollowupIdentity = chatComposer.buildAnswerFollowupIdentity(
+        promptRequest,
+        runConfig.sourceTabId
+      );
       if (pageActionsEnabled) setPageActionsRunActive(true);
 
       await executeRun(
         streamState.getRunId(),
         prepareRunMessages(runConfig, streamState.getConversationHistory())
       );
+      return true;
     } catch (error) {
       handleRunFailure(error, 'makeApiCall');
+      return false;
     } finally {
       endResponseRun();
     }

@@ -7,6 +7,7 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 ## Ownership
 
 - `ChatUI.js` owns chat DOM rendering, message controls, and attachment previews.
+- `ChatAnswerRenderer.js` owns read-only summary, key/value, and comparison cards, stable progressive block reconciliation, and local comparison sorting/filtering. It revalidates the projection, inserts untrusted strings through text nodes, and resolves source references only against host-provided metadata. `ChatUI` preserves the readable answer, copy controls, focus, and scroll intent; terminal validation replaces or clears provisional state. Composer actions request cards explicitly through the existing run path. Card follow-ups use extension-authored instructions and prefill only; the visible cancellable composer context binds the original bounded request and source tab until an explicit Send or context replacement. No local card control grants consent or starts a provider request.
 - `ChatModelStatus.js` owns the compact sidebar readout for the selected profile's mode, model, and reasoning level, including storage-change refreshes.
 - `ChatAPI.js` owns profile/config resolution and run bridge calls to the background worker. It must resolve the selected profile through the shared valid-profile fallback so an incomplete selected profile does not hide a usable Default profile.
 - `ChatAPI.js` passes only the selected profile provider, ID, model, and saved reasoning level to the background run bridge. It must not include provider credentials in run messages. The background re-resolves provider credentials and configuration from storage, and ChatAPI keeps the opaque run owner token only in memory; a fresh panel may adopt an active run token returned by the background reconnect check, and approval decisions recover a missing token from the active-run journal before sending. Codex credentials are never read by chat modules. When the background resolves a missing Act source tab, ChatAPI adopts the returned source identity before registering the local run so later page-action approvals, clarification responses, and manual-resume responses remain bound to that tab.
@@ -28,6 +29,8 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 - Hermes run preparation keeps the visible local transcript authoritative across profile changes and sends a bounded provider-specific history through the background bridge.
 
 ## Local Contracts
+
+- Page-card requests use the positive source tab ID returned by the trusted Add Page extraction response, retained only in memory with the attachment and cleared on detach/replacement. A later active tab cannot replace that source. Selection, document, and Act source routing retain their existing contracts.
 
 - Chat modules are imported from `chat.js`; tests expect every `src/chat/*.js` module to be referenced there.
 - Hermes approval cards must use text nodes, show bounded server summaries, default to one-time approval, bind decisions to the opaque pending approval ID, visibly settle accepted/closed cards, and never render raw command arguments or credentials.
@@ -80,4 +83,4 @@ The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
 ## Work Guidance
 
 - Keep `chat.js` under its enforced line guard; move composer wiring and helpers into `ChatComposer.js` and `ChatGrounding.js` rather than expanding the entry point.
-- Grounding metadata travels only in terminal events and through `braveSearch.js` helpers - never carry the Brave key in LLM request payloads, events, or logs.
+- Bounded grounding source metadata travels in live card and terminal events and through search helpers; never carry the Brave key in LLM request payloads, events, or logs.

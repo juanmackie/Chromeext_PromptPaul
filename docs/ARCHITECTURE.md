@@ -21,6 +21,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 ### Chat Layer
 
 - `src/chat/ChatUI.js` renders messages and attachments
+- `src/chat/ChatAnswerRenderer.js` renders bounded read-only summary, key/value, and comparison cards with host-resolved source links; `ChatUI` keeps the readable text and copy controls
 - `src/chat/ChatAPI.js` resolves profiles and starts runs
 - `src/chat/ChatGrounding.js` web-search toggle state, active-provider status bridge, and Sources formatting
 - `src/chat/ChatSkills.js` parses `/skills` and `/skill` commands
@@ -35,6 +36,7 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 ### Shared Utilities
 
 - `src/utils/contextBudget.js` trims loaded page content to fit the model window
+- `src/utils/answerSchema.js` validates the native answer-card schema and decodes its tagged wire section without exposing that section as chat text
 - `src/utils/hermesContext.js` builds bounded Hermes current-turn input and explicit transcript history while removing historical binary media
 - `src/utils/siteExtractors.js` owns bounded Reddit-thread, GitHub-metadata, and RSS/Atom feed formatting with explicit caps. It is mirrored structurally inside the classic `content_script_unified.js` runtime; keep caps and behavior aligned on both sides.
 - `src/utils/permissionGuards.js` blocks unsupported browser pages
@@ -101,6 +103,18 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 3. Context boundaries (e.g. `--- Selected text ---`) mark where external content begins and ends; instruction/context text is bounded and context is explicitly treated as untrusted source material
 4. Page metadata and document names travel as bounded context metadata, never as instructions
 5. Media payloads are attached separately in `makeApiCallWithMedia`, not inlined in the text prompt
+
+### Optional answer cards
+
+1. The user chooses **Summary cards** or **Compare cards** for attached page, selected text, or document context. The composer sends a structured prompt request with the run-local `answerFormat: 'cards'`; ordinary requests retain their format.
+2. The shared orchestrator adds static formatting instructions. The model returns a complete readable Markdown answer, optionally followed by a `promptpaul-cards` fenced JSON payload.
+3. The bounded decoder streams readable text and withholds the card payload. A forward-only scanner validates complete block prefixes under the same byte, depth, block, and text caps. Progressive detection uses the canonical root order (`version`, then `blocks`); other valid ordering still renders on completion. Full terminal validation remains authoritative. Invalid or oversized data leaves readable text available, without repair calls.
+4. API, Anthropic, Codex, and Hermes content passes through the same normalization boundary. Ordered live `answer_cards` events carry a host-issued provider-turn identity and validated prefix; invalidity, Stop/error, and tool continuations clear provisional cards. Assistant history and terminal journal content use readable text; projections and local interaction state remain ephemeral.
+5. The side panel revalidates projections and reconciles unchanged native DOM blocks to preserve focus, scroll, disclosures, filters, and sorting. Source IDs resolve only to host-provided grounding metadata. Cards hold no tool, page-action, form, or network authority.
+6. **Read as text** and copy retain the complete readable answer. Reconnect uses the existing 8,000-character journal text cap and truncation notice; card projections are not persisted.
+7. Static host-authored follow-ups prefill the composer without sending. A memory-only originating request and captured source tab bind the eventual explicit Send to its original bounded context. Add Page returns the exact extraction tab ID in its trusted background response; the attached page retains that ID in memory, including through PDF extraction. Page-card requests use this stored source even after the active tab changes, and an unavailable source fails visibly. Detach or replacement clears it. The pending context chip can be cancelled; replacing attachments or choosing another action clears it. Local table controls never invoke the provider.
+
+The implementation uses a small native schema rather than the full OpenUI runtime. The parser experiment and its limits are recorded in [OPENUI_EXPERIMENT.md](OPENUI_EXPERIMENT.md).
 
 ### Profile routing
 

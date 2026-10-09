@@ -3568,6 +3568,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({
               action: 'loadContentResponse',
               success: result.success,
+              sourceTabId: tabs[0].id,
               isPdf: result.isPdf || false,
               pdfUrl: result.pdfUrl || null,
               content: result.content || result.data,

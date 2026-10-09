@@ -66,6 +66,18 @@ Steps:
 Verification: axes 1 (history preserved while detaching), 3 (tray/labels in
 both themes), 4 (page context continuity + clean detach), 5 (page presets).
 
+## Optional journey - Summary and comparison cards
+
+1. Attach a page, selected text, or text document in the composer.
+2. Choose **Summary cards** or **Compare cards**, using the action overflow when needed. The visible row stays capped at four actions.
+3. The readable answer streams first. Complete validated summary, key/value, or comparison blocks can appear progressively. Close a summary, filter and sort a comparison, then verify the same controls retain their state and focus as another block arrives and the answer completes. Ordinary or malformed structured output retains readable text; invalidity or Stop removes provisional cards.
+4. Use the keyboard to expand a summary or **Read as text**. Check narrow panel widths and Light/Dark/System themes.
+5. Filter, sort, and reset a comparison locally. Copy the readable answer, then Retry/Edit with the original context. Cards grant no page-action permission and do not start repair requests.
+6. Choose **Explain key findings** or **Compare tradeoffs**. Verify the composer prefills with an original-context chip and makes no provider request. Switch tabs, review/edit the prompt, then explicitly Send and verify the originating context and source tab are used. Cancel the chip to return to current-context composition; a closed source tab must report that it is unavailable rather than retargeting.
+7. Reopen the chat after completion. Recovery shows bounded readable text and marks truncation; it does not replay card data, local table state, or the request.
+
+Verification: axes 1 (readable history/copy/recovery), 3 (responsive cards, stable focus, and theme), 4 (original context in follow-ups and Retry/Edit), and 5 (local controls, ordinary responses, and Act approvals preserved). Scripted provider delivery is separate from live model formatting quality.
+
 ## Journey 3 - Media attachment (right-click image + deep link)
 
 Steps:

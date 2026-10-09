@@ -34,6 +34,11 @@ const PAGE_ACTIONS = [
   { id: 'page-technical', label: 'Technical', type: 'mode', mode: 'technical' },
 ];
 
+const STRUCTURED_ACTIONS = [
+  { id: 'summary-cards', label: 'Summary cards', type: 'answer-cards', format: 'summary' },
+  { id: 'compare-cards', label: 'Compare cards', type: 'answer-cards', format: 'comparison' },
+];
+
 // Starter actions show beside the prompt when the composer has NO attached context.
 const STARTER_ACTIONS = [
   { id: 'page-summarize', label: 'Summarize page', type: 'page-summarize' },
@@ -84,6 +89,7 @@ export function getContextActions(state, siteActions = []) {
   if (hasSelectedText) actions.push(...TEXT_ACTIONS);
   if (hasPageContext) actions.push(...PAGE_ACTIONS);
   if (hasPageContext && Array.isArray(siteActions)) actions.push(...siteActions);
+  if (hasSelectedText || hasPageContext || hasDocument) actions.push(...STRUCTURED_ACTIONS);
   // No attached context: offer starter actions so the panel starts work.
   // Site suggestions stay page-scoped (only when page context is attached).
   if (!hasSelectedText && !hasPageContext && !hasMedia && !hasDocument) {
@@ -196,6 +202,42 @@ export function getLastUserRequest(chatArea) {
   const userMessages = chatArea.querySelectorAll('.user-message');
   if (userMessages.length === 0) return undefined;
   return userMessages[userMessages.length - 1].requestIdentity;
+}
+
+/**
+ * Capture only the structured source identity needed by a card follow-up.
+ * @param {*} request
+ * @param {*} sourceTabId
+ * @returns {{context:Object,sourceTabId:number}|null}
+ */
+export function buildAnswerFollowupIdentity(request, sourceTabId) {
+  const context = request?.context;
+  if (
+    request?.answerFormat !== 'cards' ||
+    !context ||
+    typeof context !== 'object' ||
+    !['selected_text', 'page_content', 'document'].includes(context.type) ||
+    !Number.isInteger(sourceTabId) ||
+    sourceTabId <= 0
+  ) {
+    return null;
+  }
+  return { context, sourceTabId };
+}
+
+/** @param {*} identity @param {string} instruction */
+export function buildAnswerFollowupRequest(identity, instruction) {
+  if (
+    !identity ||
+    !identity.context ||
+    typeof identity.context !== 'object' ||
+    !Number.isInteger(identity.sourceTabId) ||
+    identity.sourceTabId <= 0
+  ) {
+    return null;
+  }
+  const prompt = String(instruction || '').trim();
+  return prompt ? { instruction: prompt, context: identity.context } : null;
 }
 
 /**
@@ -436,13 +478,73 @@ export function buildDocumentPromptRequest(instruction, doc) {
  *   setSiteActions(), and setActEnabled() methods.
  */
 export function initComposer(options) {
-  const { container, tray, row, chatArea, overflowMenu, handlers } = options || {};
+  const { container, tray, row, chatArea, inputField, overflowMenu, handlers } = options || {};
   let actEnabled = Boolean(options && options.actEnabled);
   let currentSiteActions = (options && options.siteActions) || [];
   // Pending document attachment state. Memory only: never written to storage.
   let pendingDocument = null;
   let pendingDocumentConflict = null;
   let documentSentInRun = false;
+  let pendingAnswerFollowup = null;
+
+  function clearAnswerFollowup() {
+    pendingAnswerFollowup = null;
+    if (inputField) {
+      delete inputField.dataset.answerFollowup;
+      inputField.removeAttribute('aria-description');
+    }
+    if (typeof tray?.querySelector === 'function') {
+      tray.querySelector('#answer-followup-context')?.remove();
+    }
+    syncTrayVisibility();
+  }
+
+  function prefillAnswerFollowup(kind, identity) {
+    if (!inputField) return false;
+    const instructions = {
+      explain: 'Explain the key findings in more detail.',
+      tradeoffs: 'Compare the tradeoffs between the main options.',
+    };
+    const instruction = instructions[kind];
+    if (!instruction || !buildAnswerFollowupRequest(identity, instruction)) return false;
+    clearAnswerFollowup();
+    pendingAnswerFollowup = {
+      context: identity.context,
+      sourceTabId: identity.sourceTabId,
+    };
+    const status = document.createElement('div');
+    status.id = 'answer-followup-context';
+    status.className = 'answer-followup-context';
+    status.dataset.answerFollowupContext = 'true';
+    const label = document.createElement('span');
+    label.textContent = 'Follow-up uses original answer context';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'answer-followup-cancel';
+    cancel.dataset.cancelAnswerFollowup = 'true';
+    cancel.textContent = 'Cancel';
+    cancel.setAttribute('aria-label', 'Cancel original-context follow-up');
+    cancel.addEventListener('click', clearAnswerFollowup);
+    status.append(label, cancel);
+    tray?.appendChild(status);
+    inputField.value = instruction;
+    inputField.dataset.answerFollowup = 'true';
+    inputField.setAttribute(
+      'aria-description',
+      'This follow-up uses the source context from the original structured answer.'
+    );
+    inputField.dispatchEvent(new Event('input', { bubbles: true }));
+    inputField.focus();
+    syncTrayVisibility();
+    return true;
+  }
+
+  function getAnswerFollowup(instruction) {
+    if (!pendingAnswerFollowup) return null;
+    const request = buildAnswerFollowupRequest(pendingAnswerFollowup, instruction);
+    if (!request) return null;
+    return { request, sourceTabId: pendingAnswerFollowup.sourceTabId };
+  }
   const useMutationObserver =
     typeof MutationObserver === 'function' &&
     container &&
@@ -546,6 +648,7 @@ export function initComposer(options) {
 
   function dispatchAction(action) {
     if (!action) return;
+    clearAnswerFollowup();
     switch (action.type) {
       case 'analyze':
         if (typeof handlers.onAnalyze === 'function') handlers.onAnalyze();
@@ -556,6 +659,11 @@ export function initComposer(options) {
       case 'prompt':
         if (typeof handlers.onPrompt === 'function') {
           handlers.onPrompt(action.instruction, action.actionLabel || action.label);
+        }
+        return;
+      case 'answer-cards':
+        if (typeof handlers.onAnswerCards === 'function') {
+          handlers.onAnswerCards(action.format);
         }
         return;
       case 'page-summarize':
@@ -585,6 +693,7 @@ export function initComposer(options) {
       if (bubble) ensureStopButton(bubble, handlers.onStop);
       return;
     }
+    chatArea.querySelectorAll?.('[data-inline-stop]')?.forEach((button) => button.remove());
     if (state.runState === RUN_STATES.COMPLETE) {
       const bubble = getLastAssistantBubble(chatArea);
       if (bubble) renderRecovery(bubble, { retry: true, edit: true, continue: true });
@@ -658,6 +767,7 @@ export function initComposer(options) {
   }
 
   function clearPendingDocument() {
+    clearAnswerFollowup();
     pendingDocument = null;
     pendingDocumentConflict = null;
     documentSentInRun = false;
@@ -728,6 +838,7 @@ export function initComposer(options) {
     wireDocumentButton('#document-remove-button', () => clearPendingDocument());
     wireDocumentButton('#document-replace-button', () => {
       if (!pendingDocumentConflict) return;
+      clearAnswerFollowup();
       pendingDocument = pendingDocumentConflict;
       pendingDocumentConflict = null;
       renderPendingDocument();
@@ -744,6 +855,7 @@ export function initComposer(options) {
   return {
     refresh,
     setPageContext(page) {
+      clearAnswerFollowup();
       if (!tray) return;
       const strip = Array.from(tray.children || []).find(
         (child) => child.id === 'page-context-strip'
@@ -798,6 +910,7 @@ export function initComposer(options) {
     setPendingDocument(doc) {
       const next = normalizePendingDocument(doc);
       if (!next) return;
+      clearAnswerFollowup();
       if (pendingDocument) {
         pendingDocumentConflict = next;
       } else {
@@ -814,6 +927,9 @@ export function initComposer(options) {
       return pendingDocument;
     },
     clearPendingDocument,
+    prefillAnswerFollowup,
+    getAnswerFollowup,
+    clearAnswerFollowup,
     /** Mark the pending document as included in the run now starting. */
     beginDocumentSend() {
       if (pendingDocument) documentSentInRun = true;
@@ -847,6 +963,7 @@ export const chatComposer = {
   getContextActions,
   getQuickActions,
   getOverflowActions,
+  STRUCTURED_ACTIONS,
   createConversationController,
   getLastUserPrompt,
   getLastUserRequest,
@@ -855,4 +972,6 @@ export const chatComposer = {
   ensureRecoveryRow,
   resolveDocumentDrop,
   buildDocumentPromptRequest,
+  buildAnswerFollowupIdentity,
+  buildAnswerFollowupRequest,
 };

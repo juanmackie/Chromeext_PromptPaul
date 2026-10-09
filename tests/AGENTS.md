@@ -7,6 +7,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 ## Ownership
 
 - Root-level test files cover shared runtime and regression behavior.
+- `answerSchema.test.js` and `answerRuntime.test.js` cover passive answer-card bounds, split-wire framing, incremental parsing/work limits, complete-prefix validation and turn identity, provider parity, readable history, and journal omission of live card projections.
 - `page-action-evaluation.json`, `pageActionEvaluation.test.js`, and `pageActionEvaluationExecution.test.js` own the credential-free browser-action evaluation corpus, schema guards, provider matrix, and bounded metric execution.
 - `hermesTransport.test.js` covers Hermes endpoint validation, capability/error handling, approval choices, output adaptation, and event adaptation without real credentials or a live gateway.
 - `runtimeAuthorization.test.js` covers extension sender, content-script tab, and opaque run-owner checks without Chrome runtime state.
