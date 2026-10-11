@@ -348,6 +348,35 @@
       text += ' ' + redactPageActionText(node.textContent);
       if (text.length >= PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS) break;
     }
+    // Field values the snapshot already discloses for non-sensitive controls
+    // are searchable too: a typed value is real page state even though it is
+    // not visible text. Sensitive, hidden, and non-textual controls stay out.
+    if (text.length < PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS) {
+      for (const element of document.querySelectorAll('input')) {
+        if (text.length >= PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS) break;
+        const type = String(element.getAttribute('type') || '').toLowerCase();
+        if (
+          [
+            'checkbox',
+            'radio',
+            'button',
+            'submit',
+            'reset',
+            'image',
+            'file',
+            'hidden',
+            'password',
+          ].includes(type)
+        )
+          continue;
+        if (!isPageActionVisible(element) || isPageActionIgnored(element)) continue;
+        const label = getPageActionLabel(element);
+        if (isPageActionSensitive(element, label, element.value)) continue;
+        const value = capPageActionText(element.value, PAGE_ACTION_MAX_VALUE_CHARS);
+        if (!value || !value.trim()) continue;
+        text += ' ' + redactPageActionText(value);
+      }
+    }
     return text.trim().slice(0, PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS);
   }
 

@@ -9,6 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { createBenchmarkFingerprint } = require('./benchmark-fingerprint.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const PROFILE_ID = 'act-benchmark-local';
@@ -17,6 +18,7 @@ const CODEX_PROFILE_RELATIVE_PATH = 'artifacts/act-benchmark-codex-profile';
 // 80% overall pass-rate target. Multi-run repeats stay opt-in via --runs.
 const PASS_TARGET_RATE = 0.8;
 const DEFAULT_RUNS = 1;
+const BENCHMARK_SCHEMA_VERSION = 2;
 const RUN_TIMEOUT_MS = 8 * 60 * 1_000;
 const TASKS = [
   {
@@ -894,6 +896,8 @@ async function runBenchmark(options) {
   let fixtureServer;
   let context;
   const records = [];
+  const benchmarkSchemaVersion = BENCHMARK_SCHEMA_VERSION;
+  let configFingerprint = '';
   const selectedTasks = options.tasks?.length
     ? TASKS.filter((task) => options.tasks.includes(task.id))
     : TASKS;
@@ -915,6 +919,16 @@ async function runBenchmark(options) {
       model = selectedModel.id;
       console.log(`Using Codex model ${selectedModel.displayName} at ${reasoningLevel} reasoning.`);
     }
+    configFingerprint = createBenchmarkFingerprint({
+      benchmarkSchemaVersion,
+      provider,
+      model,
+      reasoningLevel,
+      runsPerTask: options.runs,
+      tasks: selectedTasks,
+      endpoint,
+      extensionDirectory: extensionDir,
+    });
     // Preserve previous results if sign-in or model validation fails.
     fs.rmSync(outputDir, { recursive: true, force: true });
     traceDir = path.join(outputDir, 'traces');
@@ -983,7 +997,8 @@ async function runBenchmark(options) {
     (record) => record.endStateMatches === true && record.success !== true
   ).length;
   const report = {
-    schemaVersion: 1,
+    schemaVersion: benchmarkSchemaVersion,
+    configFingerprint,
     createdAt: new Date().toISOString(),
     fixtureOrigin: '127.0.0.1 (ephemeral port)',
     provider,
