@@ -12,6 +12,21 @@ import {
 } from '../src/utils/pageDom.js';
 
 describe('pageDom', () => {
+  it('retains only a boolean marker when a link query or fragment was stripped', () => {
+    const element = normalizePageElement({
+      tag: 'a',
+      role: 'link',
+      href: 'https://example.com/path',
+      linkHasQueryOrFragment: true,
+    });
+
+    expect(element).toMatchObject({
+      href: 'https://example.com/path',
+      linkHasQueryOrFragment: true,
+    });
+    expect(JSON.stringify(element)).not.toContain('token');
+  });
+
   it('masks sensitive fields and never includes their values', () => {
     const element = normalizePageElement(
       {
@@ -29,6 +44,7 @@ describe('pageDom', () => {
     expect(element.value).toBeUndefined();
     expect(element.text).toBeUndefined();
     expect(element.placeholder).toBeUndefined();
+    expect(element.title).toBeUndefined();
     expect(formatPageElement(element)).not.toContain('super-secret');
   });
 
@@ -84,6 +100,20 @@ describe('pageDom', () => {
     expect(formatPageElement(element)).toContain('[4]');
   });
 
+  it('retains bounded title metadata for semantic target identification', () => {
+    const element = normalizePageElement({
+      tag: 'a',
+      label: 'Build Your Own Custom PC',
+      title: 'PC Builder',
+    });
+
+    expect(element.title).toBe('PC Builder');
+    expect(formatPageElement(element)).toContain('title="PC Builder"');
+    expect(normalizePageElement({ tag: 'button', title: 'a'.repeat(500) }).title).toHaveLength(
+      PAGE_DOM_CAPS.maxAttributeChars
+    );
+  });
+
   it('retains only a safe HTTP(S) frame origin for site-policy routing', () => {
     expect(
       normalizePageElement({
@@ -94,6 +124,20 @@ describe('pageDom', () => {
     expect(
       normalizePageElement({ tag: 'button', frameOrigin: 'javascript:alert(1)' }).frameOrigin
     ).toBeUndefined();
+  });
+
+  it('keeps safe form method metadata without retaining form paths or query strings', () => {
+    const element = normalizePageElement({
+      tag: 'textarea',
+      frameOrigin: 'https://www.google.com',
+      formMethod: 'GET',
+      formActionOrigin: 'https://www.google.com/search?source=private',
+    });
+    expect(element.formMethod).toBe('get');
+    expect(element.formActionOrigin).toBe('https://www.google.com');
+    expect(formatPageElement(element)).toContain('formMethod="get"');
+    expect(JSON.stringify(element)).not.toContain('private');
+    expect(normalizePageElement({ tag: 'input', formMethod: 'DELETE' }).formMethod).toBeUndefined();
   });
 
   it('keeps safe link destinations while removing query strings and fragments', () => {
@@ -110,6 +154,21 @@ describe('pageDom', () => {
     expect(element.href).toBe('https://example.com/docs');
     expect(element.target).toBe('_self');
     expect(element.href).not.toContain('secret');
+  });
+
+  it('removes link credentials before exposing an HTTP destination', () => {
+    const element = normalizePageElement(
+      {
+        tag: 'a',
+        role: 'link',
+        href: 'https://user:password@example.com/docs?token=secret#top',
+        target: '_blank',
+      },
+      0
+    );
+
+    expect(element.href).toBe('https://example.com/docs');
+    expect(formatPageElement(element)).not.toMatch(/user|password|token=secret|top/);
   });
 
   it('caps element count and serialized snapshot content', () => {
@@ -162,6 +221,9 @@ describe('pageDom', () => {
     expect(isSensitivePageElement({ tag: 'input', autocomplete: 'one-time-code' })).toBe(true);
     expect(isSensitivePageElement({ role: 'textbox', label: 'API token' })).toBe(true);
     expect(isSensitivePageElement({ tag: 'button', text: 'Save draft' })).toBe(false);
+    const sensitiveTitle = normalizePageElement({ tag: 'button', title: 'Enter API token' });
+    expect(sensitiveTitle.sensitive).toBe(true);
+    expect(sensitiveTitle.title).toBeUndefined();
   });
 
   it('does not classify ordinary card navigation as a sensitive control', () => {

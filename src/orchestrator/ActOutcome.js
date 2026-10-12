@@ -47,13 +47,16 @@ export function deriveActOutcome(run, terminalType = run?.status) {
     pa.lastActionReceipt?.disposition === 'in_flight' ||
     (pa.lastActionReceipt?.disposition === 'delivered_unverified' &&
       pa.reverifiedAfterUnverified !== true);
+  const requiredFinalVerificationMissing =
+    pa.pageMutationOccurred === true && pa.finalVerificationCompleted !== true;
   if (
     !reason &&
     (unresolvedPlan ||
       !isActQuotaComplete(pa.planner) ||
       pa.planner?.subGoals?.some((goal) => goal.status === 'skipped') ||
       !pa.snapshot ||
-      lastReceiptUnresolved)
+      lastReceiptUnresolved ||
+      requiredFinalVerificationMissing)
   )
     reason = 'ambiguous';
   if (!reason && terminalType !== 'complete') reason = 'ambiguous';
@@ -83,6 +86,7 @@ export function recordActOutcomeResult(pa, result = {}) {
     PAGE_ACTION_LOOP_DETECTED: 'loop_detected',
     PAGE_ACTION_TOGGLE_LOOP: 'loop_detected',
     PAGE_ACTION_NO_PROGRESS: 'loop_detected',
+    PAGE_ACTION_OCCLUDED_REPEATED: 'loop_detected',
     PAGE_ACTION_LIMIT: 'budget_exhausted',
     PAGE_ACTION_SIGN_IN_REQUIRED: 'sign_in_required',
     PAGE_ACTION_CAPTCHA: 'captcha',

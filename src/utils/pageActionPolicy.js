@@ -105,6 +105,7 @@ const RISK_PATTERN =
   /\b(?:submit|send|delete|remove|purchase|buy|checkout|pay|payment|transfer|publish|post|sign out|log out|account|security|password|passcode|one[-_ ]?time|otp|2fa|credential|api[-_ ]?key|token|secret|permission|authorize|allow|deny)\b/i;
 const NAVIGATION_PATTERN =
   /\b(?:log ?in|sign ?in|register|create account|continue|next|back|open|navigate)\b/i;
+const SEARCH_FORM_PATTERN = /\b(?:search|query|find)\b|\bq\b/i;
 
 /**
  * @param {unknown} value
@@ -169,6 +170,28 @@ export function normalizePageActionTitle(raw) {
  * @param {object} args
  * @returns {{valid: boolean, value?: object, error?: string}}
  */
+/**
+ * Resolve one batch entry's action arguments.
+ *
+ * The tool schema nests arguments under `args`, but a model routinely writes
+ * them inline (`{name: 'page_find_text', query: 'Results'}`). Both shapes reach
+ * the same normalization; rejecting the inline form wasted a whole provider
+ * turn on "Search text cannot be empty" and pushed models back into
+ * one-observation-per-turn loops.
+ *
+ * @param {object} entry - batch entry with a `name` and either nested or flat args.
+ * @returns {object}
+ */
+function pageBatchEntryArgs(entry) {
+  if (entry.args && typeof entry.args === 'object' && !Array.isArray(entry.args)) return entry.args;
+  const args = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (key === 'name' || key === 'args' || key === 'title') continue;
+    args[key] = value;
+  }
+  return args;
+}
+
 export function normalizePageActionArgs(actionName, args = {}) {
   if (!isPageActionName(actionName)) return { valid: false, error: 'Unknown page action.' };
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
@@ -208,7 +231,11 @@ export function normalizePageActionArgs(actionName, args = {}) {
     if (args.regionId == null) return { valid: true, value: attachTitle({}) };
     const regionId = normalizeRegionId(args.regionId);
     if (!regionId)
-      return { valid: false, error: 'Region must be a content-script region-N identifier.' };
+      return {
+        valid: false,
+        error:
+          'Region must be region-N from the latest snapshot regions list (for example region-0), not a snapshotId.',
+      };
     return { valid: true, value: attachTitle({ regionId }) };
   }
   if (actionName === 'page_wait') {
@@ -232,7 +259,11 @@ export function normalizePageActionArgs(actionName, args = {}) {
     if (args.regionId != null) {
       const regionId = normalizeRegionId(args.regionId);
       if (!regionId)
-        return { valid: false, error: 'Region must be a content-script region-N identifier.' };
+        return {
+          valid: false,
+          error:
+            'Region must be region-N from the latest snapshot regions list (for example region-0), not a snapshotId.',
+        };
       return {
         valid: true,
         value: attachTitle({ condition, timeoutMs, ...(text ? { text } : {}), regionId }),
@@ -262,7 +293,7 @@ export function normalizePageActionArgs(actionName, args = {}) {
       if (!READ_ONLY_PAGE_ACTIONS.includes(name) || name === 'page_batch') {
         return { valid: false, error: 'Page batches support only non-nested read-only actions.' };
       }
-      const normalized = normalizePageActionArgs(name, entry.args || {});
+      const normalized = normalizePageActionArgs(name, pageBatchEntryArgs(entry));
       if (!normalized.valid) return normalized;
       actions.push({ name, args: normalized.value });
     }
@@ -274,7 +305,11 @@ export function normalizePageActionArgs(actionName, args = {}) {
     if (args.regionId == null) return { valid: true, value: attachTitle({ query }) };
     const regionId = normalizeRegionId(args.regionId);
     if (!regionId)
-      return { valid: false, error: 'Region must be a content-script region-N identifier.' };
+      return {
+        valid: false,
+        error:
+          'Region must be region-N from the latest snapshot regions list (for example region-0), not a snapshotId.',
+      };
     return { valid: true, value: attachTitle({ query, regionId }) };
   }
   if (actionName === 'page_scroll') {
@@ -535,6 +570,19 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
   }
 
   if (
+    ((actionName === 'page_keypress' && args.key === 'Enter') ||
+      (actionName === 'page_input' && args.submit === true)) &&
+    isSameOriginSearchForm(target)
+  ) {
+    return {
+      risk: PAGE_ACTION_RISKS.LOW,
+      requiresConfirmation: false,
+      prohibited: false,
+      reason: 'This submits a search query through a same-origin GET form.',
+    };
+  }
+
+  if (
     (actionName === 'page_keypress' && args.key === 'Enter') ||
     (actionName === 'page_input' && args.submit === true)
   ) {
@@ -629,6 +677,37 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
     prohibited: false,
     reason: 'This action changes a page control or field.',
   };
+}
+
+function isSameOriginSearchForm(target) {
+  const formMethod = String(
+    target.submitControl?.formMethod || target.formMethod || ''
+  ).toLowerCase();
+  const targetOrigin = String(target.frameOrigin || '');
+  const formActionOrigin = String(
+    target.submitControl?.formActionOrigin || target.formActionOrigin || ''
+  );
+  const descriptor = [
+    target.name,
+    target.label,
+    target.placeholder,
+    target.role,
+    target.type,
+    target.submitControl?.name,
+    target.submitControl?.label,
+    target.submitControl?.role,
+    target.submitControl?.type,
+  ]
+    .map((value) => String(value || ''))
+    .join(' ')
+    .replace(/\bsubmit\b/giu, '');
+  return (
+    formMethod === 'get' &&
+    Boolean(targetOrigin) &&
+    formActionOrigin === targetOrigin &&
+    SEARCH_FORM_PATTERN.test(descriptor) &&
+    !RISK_PATTERN.test(descriptor)
+  );
 }
 
 /**

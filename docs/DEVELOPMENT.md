@@ -48,7 +48,9 @@ npm run audit
 
 ## Act Benchmark
 
-The opt-in Act benchmark uses local fixtures and a headed temporary browser. Hold mode is single-run pilots toward the 80% overall target. To use Codex, set these PowerShell variables and start one run:
+This repository's opt-in Act benchmark uses local fixtures for diagnostics. The Mind2Web model benchmark and dataset download steps live in the separate `prompt-paul-agent-eval` repository. The extension checkout does not contain the Mind2Web dataset.
+
+The local diagnostic uses a headed temporary browser. Hold mode is single-run pilots toward the 80% overall target. To use Codex, set these PowerShell variables and start one run:
 
 ```powershell
 $env:PROMPT_PAUL_BENCHMARK_PROVIDER = 'codex'

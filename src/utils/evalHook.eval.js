@@ -29,12 +29,25 @@ function normalizeRequest(request) {
   if (!Number.isInteger(sourceTabId) || sourceTabId < 1) {
     return { error: 'A valid sourceTabId is required.' };
   }
+  const taskMode = request?.taskMode == null ? null : String(request.taskMode);
+  if (taskMode !== null && taskMode !== 'mind2web') {
+    return { error: 'Unsupported evaluation task mode.' };
+  }
+  const evalTemperature = request?.temperature == null ? null : Number(request.temperature);
+  if (
+    evalTemperature !== null &&
+    (!Number.isFinite(evalTemperature) || evalTemperature < 0 || evalTemperature > 1)
+  ) {
+    return { error: 'Evaluation temperature must be between 0 and 1.' };
+  }
   return {
     taskId,
     task,
     profileId,
     sourceTabId,
     dryRun: request?.dryRun !== false,
+    taskMode,
+    evalTemperature,
   };
 }
 
@@ -86,6 +99,8 @@ export function registerEvalRunHook(dependencies = {}) {
           messages: [],
           evalTaskId: normalized.taskId,
           evalDryRun: normalized.dryRun,
+          evalTaskMode: normalized.taskMode,
+          evalTemperature: normalized.evalTemperature,
         });
         // Honor the opt-in precise-input preference exactly as the production
         // startRun path does, so an eval task that exercises trusted input is

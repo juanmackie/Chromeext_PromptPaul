@@ -5,7 +5,12 @@
 import { describe, expect, it } from 'vitest';
 import { deriveActOutcome } from '../src/orchestrator/ActOutcome.js';
 
-function runWith({ receipt = null, reverified = false } = {}) {
+function runWith({
+  receipt = null,
+  reverified = false,
+  pageMutationOccurred = false,
+  finalVerificationCompleted = false,
+} = {}) {
   return {
     status: 'complete',
     resilience: { wrapUp: false },
@@ -20,6 +25,8 @@ function runWith({ receipt = null, reverified = false } = {}) {
       pendingUserInput: null,
       lastActionReceipt: receipt,
       reverifiedAfterUnverified: reverified,
+      pageMutationOccurred,
+      finalVerificationCompleted,
       snapshot: { snapshotId: 'evaluation-snapshot' },
       planner: null,
     },
@@ -51,9 +58,28 @@ describe('deriveActOutcome re-verification', () => {
     ).toEqual({ status: 'failed', reason: 'ambiguous' });
   });
 
-  it('reports done for a verified last mutation without re-inspection', () => {
+  it('requires a fresh final inspection after a delivered page mutation', () => {
     expect(
-      deriveActOutcome(runWith({ receipt: { disposition: 'delivered_verified' } }), 'complete')
+      deriveActOutcome(
+        runWith({
+          receipt: { disposition: 'delivered_verified' },
+          pageMutationOccurred: true,
+        }),
+        'complete'
+      )
+    ).toEqual({ status: 'failed', reason: 'ambiguous' });
+  });
+
+  it('reports done after a delivered mutation receives fresh final verification', () => {
+    expect(
+      deriveActOutcome(
+        runWith({
+          receipt: { disposition: 'delivered_verified' },
+          pageMutationOccurred: true,
+          finalVerificationCompleted: true,
+        }),
+        'complete'
+      )
     ).toEqual({ status: 'done', reason: null });
   });
 });

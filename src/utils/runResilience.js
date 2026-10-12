@@ -15,7 +15,7 @@ export const RUN_RESILIENCE_DEFAULTS = Object.freeze({
 
 const REASONING_TIMEOUT_FLOORS = Object.freeze([
   [
-    /\b(?:o1(?:-pro|-preview)?(?!-)|o3(?:-pro)?(?!-)|deepseek[- ]?(?:r1|v4)|nemotron[^\s]*ultra)\b/i,
+    /\b(?:o1(?:-pro|-preview)?(?!-)|o3(?:-pro)?(?!-)|deepseek[- ]?(?:r1|v4)(?!-?flash)|nemotron[^\s]*ultra)\b/i,
     600_000,
   ],
   [/\b(?:o3-mini|o4-mini|grok[- ]?4)\b/i, 300_000],

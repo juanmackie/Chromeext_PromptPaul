@@ -426,6 +426,48 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('marks a link stale when a query is added after inspection', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-link-query-stale-'));
+    const { context } = await launchTestBrowser(userDataDir);
+    const target = await context.newPage();
+    const harness = await openHarness(context);
+    const url = fixtureUrl(fixtureServer, 'links.html');
+    try {
+      await target.goto(url);
+      const inspected = await harness.evaluate(
+        (currentUrl) =>
+          window.pageActionHarness.directAction(currentUrl, 'link-query', 'page_get_state'),
+        url
+      );
+      const link = inspected.snapshot.elements.find((element) => element.label === 'Open same tab');
+      expect(link?.linkHasQueryOrFragment).toBeUndefined();
+      await target.evaluate(() => {
+        document.querySelector('#same-tab').href += '?session=private';
+      });
+
+      const result = await harness.evaluate(
+        ({ url, snapshotId, index, elementKey }) =>
+          window.pageActionHarness.directAction(url, 'link-query', 'page_open_link', {
+            snapshotId,
+            index,
+            elementKey,
+          }),
+        {
+          url,
+          snapshotId: inspected.snapshot.snapshotId,
+          index: link.index,
+          elementKey: link.elementKey,
+        }
+      );
+
+      expect(result.code).toBe('PAGE_STATE_STALE');
+      expect(target.url()).toBe(url);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('Phase 2: discloses safe prefilled values and masks secret values', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-values-'));
     const { context } = await launchTestBrowser(userDataDir);
@@ -772,6 +814,20 @@ test.describe('page-agent-style page actions', () => {
         (url) => window.pageActionHarness.directAction(url, 'scroll', 'page_get_state'),
         url
       );
+      const noMovement = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'scroll', 'page_scroll', {
+            direction: 'up',
+            pages: 1,
+          }),
+        url
+      );
+      expect(noMovement.message).toMatch(/page did not move/i);
+      expect(noMovement.actionReceipt.disposition).toBe('delivered_unverified');
+      state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'scroll', 'page_get_state'),
+        url
+      );
       const panel = state.snapshot.elements.find((entry) => entry.label === 'Activity panel');
       const first = await harness.evaluate(
         ({ url, snapshotId, index }) =>
@@ -1030,7 +1086,11 @@ test.describe('page-agent-style page actions', () => {
         }
       );
       expect(enter.result.snapshot.content).toContain('Found Cedar');
-      const message = enter.result.snapshot.elements.find((entry) => entry.label === 'Message');
+      state = await harness.evaluate(
+        (id) => window.pageActionHarness.executeTool(id, 'message-state', 'page_get_state', {}),
+        runId
+      );
+      const message = state.result.snapshot.elements.find((entry) => entry.label === 'Message');
       await harness.evaluate(
         ({ id, args }) => (
           void window.pageActionHarness.executeTool(id, 'send-input', 'page_input', args),
@@ -1039,7 +1099,7 @@ test.describe('page-agent-style page actions', () => {
         {
           id: runId,
           args: {
-            snapshotId: enter.result.snapshot.snapshotId,
+            snapshotId: state.result.snapshot.snapshotId,
             index: message.index,
             text: 'Hello',
             submit: true,
@@ -1886,6 +1946,16 @@ test.describe('page-agent-style page actions', () => {
       ).toBe(true);
       const select = initial.snapshot.elements.find((element) => element.tag === 'select');
       expect(select, JSON.stringify(initial.snapshot.elements)).toBeTruthy();
+      const optionIndex = initial.snapshot.elements.find(
+        (element) => element.tag === 'option'
+      )?.index;
+      const wrongTarget = await selectOption({
+        snapshotId: initial.snapshot.snapshotId,
+        index: optionIndex,
+        option: 'North America',
+      });
+      expect(wrongTarget.success).toBe(false);
+      expect(String(wrongTarget.error)).toContain('Use the index of the <select> control itself');
 
       // An option that does not exist still fails loudly instead of fuzzy-matching.
       const missing = await selectOption({
@@ -2063,6 +2133,384 @@ test.describe('page-agent-style page actions', () => {
       });
       expect(found.matches.join(' ')).toContain('Open same tab');
       expect(await target.url()).toBe(targetUrl);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('maps a non-sensitive field value match to its current control index', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.setAttribute('aria-label', 'Paper title');
+        input.value = 'On the Sentence Embeddings from Pre-trained Language Models';
+        document.querySelector('main').append(input);
+      });
+      const state = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'field-value-search-run', 'page_get_state'),
+        targetUrl
+      );
+      const input = state.snapshot.elements.find((element) => element.label === 'Paper title');
+      expect(input).toBeTruthy();
+
+      const found = await harness.evaluate(
+        ({ url, snapshotId, query }) =>
+          window.pageActionHarness.directAction(url, 'field-value-search-run', 'page_find_text', {
+            query,
+            snapshotId,
+          }),
+        {
+          url: targetUrl,
+          snapshotId: state.snapshot.snapshotId,
+          query: 'On the Sentence Embeddings from Pre-trained Language Models',
+        }
+      );
+
+      expect(found.found).toBe(true);
+      expect(found.elementIndices).toEqual([input.index]);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('maps a non-sensitive field value inside an open shadow root', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.setAttribute('aria-label', 'Shadow paper title');
+        input.value = 'On the Sentence Embeddings from Pre-trained Language Models';
+        shadow.append(input);
+        document.querySelector('main').append(host);
+      });
+      const state = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'shadow-field-value-run', 'page_get_state'),
+        targetUrl
+      );
+      const input = state.snapshot.elements.find(
+        (element) => element.label === 'Shadow paper title'
+      );
+      expect(input).toBeTruthy();
+      const found = await harness.evaluate(
+        ({ url, snapshotId, query }) =>
+          window.pageActionHarness.directAction(url, 'shadow-field-value-run', 'page_find_text', {
+            query,
+            snapshotId,
+          }),
+        {
+          url: targetUrl,
+          snapshotId: state.snapshot.snapshotId,
+          query: 'On the Sentence Embeddings from Pre-trained Language Models',
+        }
+      );
+
+      expect(found).toMatchObject({ found: true, elementIndices: [input.index] });
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('reports submit-button method and destination overrides on search fields', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const form = document.createElement('form');
+        form.method = 'get';
+        form.action = location.href;
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.name = 'q';
+        input.setAttribute('aria-label', 'Override search');
+        const submit = document.createElement('button');
+        submit.type = 'submit';
+        submit.textContent = 'Search';
+        submit.setAttribute('formmethod', 'post');
+        submit.setAttribute('formaction', 'https://example.org/write');
+        form.append(input, submit);
+        document.querySelector('main').append(form);
+      });
+      const state = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'submit-override-run', 'page_get_state'),
+        targetUrl
+      );
+      const input = state.snapshot.elements.find((element) => element.label === 'Override search');
+
+      expect(input).toMatchObject({
+        formMethod: 'post',
+        formActionOrigin: 'https://example.org',
+        submitControl: {
+          formMethod: 'post',
+          formActionOrigin: 'https://example.org',
+        },
+      });
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('rejects search submission when submit-button overrides change after inspection', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const form = document.createElement('form');
+        form.method = 'get';
+        form.action = location.href;
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          document.body.dataset.overrideSubmitted = 'true';
+        });
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.name = 'q';
+        input.value = 'paper title';
+        input.setAttribute('aria-label', 'Stale override search');
+        const submit = document.createElement('button');
+        submit.type = 'submit';
+        submit.textContent = 'Search';
+        form.append(input, submit);
+        document.querySelector('main').append(form);
+      });
+      const state = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'stale-submit-override-run', 'page_get_state'),
+        targetUrl
+      );
+      const input = state.snapshot.elements.find(
+        (element) => element.label === 'Stale override search'
+      );
+      expect(input).toBeTruthy();
+      await target
+        .locator('button:has-text("Search")')
+        .last()
+        .evaluate((button) => {
+          button.setAttribute('formmethod', 'post');
+          button.setAttribute('formaction', 'https://example.org/write');
+        });
+
+      const result = await harness.evaluate(
+        ({ url, snapshotId, index }) =>
+          window.pageActionHarness.directAction(url, 'stale-submit-override-run', 'page_input', {
+            snapshotId,
+            index,
+            text: 'paper title',
+            submit: true,
+          }),
+        { url: targetUrl, snapshotId: state.snapshot.snapshotId, index: input.index }
+      );
+
+      expect(result.code).toBe('PAGE_STATE_STALE');
+      await expect(target.locator('body')).not.toHaveAttribute('data-override-submitted', 'true');
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('maps a result title to links inside the same semantic result card', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const results = document.createElement('ul');
+        results.innerHTML =
+          '<li><a href="/other">arXiv:9999.00001</a><span>Unrelated paper</span></li>' +
+          '<li><a href="/target">arXiv:2011.05864</a><span>On the Sentence Embeddings from Pre-trained Language Models</span></li>';
+        document.querySelector('main').append(results);
+      });
+      const state = await harness.evaluate(
+        (url) => window.pageActionHarness.directAction(url, 'result-context-run', 'page_get_state'),
+        targetUrl
+      );
+      const targetLink = state.snapshot.elements.find((element) =>
+        element.href?.endsWith('/target')
+      );
+      const unrelatedLink = state.snapshot.elements.find((element) =>
+        element.href?.endsWith('/other')
+      );
+      expect(targetLink).toBeTruthy();
+      expect(unrelatedLink).toBeTruthy();
+      expect(state.snapshot.content).toContain(
+        'resultContext="arXiv:2011.05864 On the Sentence Embeddings from Pre-trained Language Models"'
+      );
+
+      const found = await harness.evaluate(
+        ({ url, query }) =>
+          window.pageActionHarness.directAction(url, 'result-context-run', 'page_find_text', {
+            query,
+          }),
+        {
+          url: targetUrl,
+          query: 'On the Sentence Embeddings from Pre-trained Language Models',
+        }
+      );
+      expect(found.elementIndices).toEqual([targetLink.index]);
+      expect(found.elementIndices).not.toContain(unrelatedLink.index);
+      expect(found.message).toContain(`Matching control indices: ${targetLink.index}`);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('does not match result links from excluded editable card text', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const result = document.createElement('li');
+        result.innerHTML =
+          '<a href="/target">arXiv:2011.05864</a>' +
+          '<div contenteditable="true">Private note used only to exclude card matching</div>';
+        document.querySelector('main').append(result);
+      });
+      const found = await harness.evaluate(
+        ({ url, query }) =>
+          window.pageActionHarness.directAction(url, 'excluded-card-text-run', 'page_find_text', {
+            query,
+          }),
+        {
+          url: targetUrl,
+          query: 'Private note used only to exclude card matching',
+        }
+      );
+
+      expect(found).toMatchObject({ found: false, elementIndices: [] });
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('returns a grounded link for an exact offscreen text match', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const result = document.createElement('li');
+        result.style.marginTop = '5000px';
+        result.innerHTML =
+          '<a href="/target?tracking=private#section">arXiv:2011.05864</a>' +
+          '<span>On the Sentence Embeddings from Pre-trained Language Models</span>';
+        document.querySelector('main').append(result);
+      });
+      const state = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'offscreen-result-run', 'page_get_state'),
+        targetUrl
+      );
+      expect(state.snapshot.elements.some((element) => element.href?.endsWith('/target'))).toBe(
+        false
+      );
+
+      const found = await harness.evaluate(
+        ({ url, snapshotId }) =>
+          window.pageActionHarness.directAction(url, 'offscreen-result-run', 'page_find_text', {
+            query: 'On the Sentence Embeddings from Pre-trained Language Models',
+            snapshotId,
+          }),
+        { url: targetUrl, snapshotId: state.snapshot.snapshotId }
+      );
+
+      expect(found.found).toBe(true);
+      expect(found.elementIndices).toEqual([]);
+      expect(found.resultLinks).toEqual([
+        expect.objectContaining({
+          label: 'arXiv:2011.05864',
+          url: new URL('/target', targetUrl).href,
+          resultContext: expect.stringContaining(
+            'On the Sentence Embeddings from Pre-trained Language Models'
+          ),
+        }),
+      ]);
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('redacts sensitive values that cross the bounded text-search edge', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'links.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+
+    try {
+      await target.evaluate(() => {
+        const main = document.createElement('main');
+        main.append(document.createTextNode('x'.repeat(119_980) + ' marker 4111 1111 1111 1111'));
+        document.body.replaceChildren(main);
+      });
+      const found = await harness.evaluate(
+        (url) =>
+          window.pageActionHarness.directAction(url, 'bounded-redaction-run', 'page_find_text', {
+            query: 'marker',
+          }),
+        targetUrl
+      );
+
+      expect(found.found).toBe(true);
+      expect(found.matches.join(' ')).not.toContain('4111');
     } finally {
       await context.close();
       removeUserDataDir(userDataDir);
@@ -3098,7 +3546,7 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
-  test('records uncertain delivery when a page action hits an injected server failure', async () => {
+  test('uses the post-action snapshot to continue after an uncertain delivery', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
     const { context } = launched;
@@ -3134,6 +3582,23 @@ test.describe('page-agent-style page actions', () => {
         evidence: { kind: 'action_dispatched' },
       });
       await expect(target.locator('#status')).toHaveText('The server result was unavailable.');
+
+      const dismiss = result.result.snapshot.elements.find((element) =>
+        /dismiss unavailable result/i.test(element.label)
+      );
+      expect(dismiss).toBeTruthy();
+      const continued = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'network-failure-dismiss', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { runId, snapshotId: result.result.snapshot.snapshotId, index: dismiss.index }
+      );
+      expect(continued.error).toBeUndefined();
+      expect(continued.result.error).toBeUndefined();
+      expect(continued.result.snapshot.snapshotId).toBeTruthy();
+      await expect(target.locator('#status')).toHaveText('Unavailable result dismissed.');
     } finally {
       await abortRun(harness, runId);
       await context.close();

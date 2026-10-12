@@ -177,6 +177,11 @@ describe('Model-maintained Act checklist', () => {
           .find((event) => event.type === 'complete').actOutcome
       ).toEqual({ status: 'done', reason: null });
     }
+    expect(
+      extractQuotaTarget(
+        'Find a French ratatouille recipe with a 4-star rating and at least 15 reviews.'
+      )
+    ).toBeNull();
   });
 
   it('continues unresolved explicit plans without interpreting keywords in notes', async () => {

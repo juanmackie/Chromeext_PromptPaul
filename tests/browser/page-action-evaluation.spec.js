@@ -205,16 +205,31 @@ test('executor-regression: executes browser-safe corpus cases and records bounde
         ),
       { runId: falseSuccess.runId, args: retryArgs }
     );
-    expect(retry.result.error).toBe(falseSuccessCase.failureCode);
+    expect(retry.result.actionReceipt.disposition).toBe('delivered_unverified');
+    const blockedLoop = await harness.evaluate(
+      ({ runId, args }) =>
+        window.pageActionHarness.executeTool(
+          runId,
+          'evaluation-false-success-3',
+          'page_click',
+          args
+        ),
+      {
+        runId: falseSuccess.runId,
+        args: { ...retryArgs, snapshotId: retry.result.snapshot.snapshotId },
+      }
+    );
+    expect(blockedLoop.result.error).toBe(expectedCase('repeated-mutation').failureCode);
     records.push(
       evaluationRecord(falseSuccessCase.id, firstClick, 2, toolArgChars(clickArgs), {
         toolCallCount: 2,
       })
     );
     records.push(
-      evaluationRecord('repeated-mutation', retry, 2, toolArgChars(clickArgs) * 2, {
+      evaluationRecord('repeated-mutation', blockedLoop, 3, toolArgChars(clickArgs) * 3, {
         firstReceiptDisposition: firstClick.result.actionReceipt.disposition,
-        toolCallCount: 3,
+        receiptDisposition: retry.result.actionReceipt.disposition,
+        toolCallCount: 4,
       })
     );
     await finish(falseSuccess.runId);

@@ -84,6 +84,47 @@ describe('evaluation trace', () => {
     clearEvalTrace(runId);
   });
 
+  it('records a bounded, redacted view of the messages sent to the provider', () => {
+    const runId = 'eval-provider-messages';
+    clearEvalTrace(runId);
+    beginEvalTrace({ runId });
+    const step = recordEvalTrace(runId, {
+      kind: 'provider_request',
+      providerMessages: [
+        { role: 'system', content: 'Use only the observed controls.' },
+        { role: 'user', content: 'Find the requested item.' },
+        { role: 'tool', content: JSON.stringify({ text: 'snapshot', apiKey: 'secret-key' }) },
+        { role: 'tool', content: 'x'.repeat(20_000) },
+      ],
+    });
+
+    expect(step.providerMessages).toHaveLength(4);
+    expect(step.providerMessages[0].content).toContain('observed controls');
+    expect(step.providerMessages[3].content).toHaveLength(20_000);
+    expect(JSON.stringify(step.providerMessages)).not.toContain('secret-key');
+    clearEvalTrace(runId);
+  });
+
+  it('records provider timing stages and bounded serving model identity', () => {
+    const runId = 'eval-provider-timing';
+    clearEvalTrace(runId);
+    beginEvalTrace({ runId });
+    const step = recordEvalTrace(runId, {
+      kind: 'provider_timing',
+      eventType: 'first_stream_chunk',
+      providerCallIndex: 2,
+      durationMs: 1_234,
+      servedModelId: 'provider/model-name',
+    });
+    expect(step).toMatchObject({
+      eventType: 'first_stream_chunk',
+      providerCallIndex: 2,
+      durationMs: 1_234,
+      servedModelId: 'provider/model-name',
+    });
+    clearEvalTrace(runId);
+  });
+
   it('retains bounded machine outcomes even after the step cap', () => {
     const runId = 'terminal-outcome-cap';
     beginEvalTrace({ runId });

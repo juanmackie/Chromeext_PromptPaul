@@ -14,7 +14,6 @@
     "fixture": "form.html",
     "operation": "page_click",
     "expected": "delivered_unverified",
-    "failureCode": "PAGE_ACTION_UNVERIFIED_RETRY_BLOCKED",
     "providers": ["api", "codex"],
     "sensitive": false
   },
@@ -44,7 +43,7 @@
     "fixture": "form.html",
     "operation": "page_click",
     "expected": "error",
-    "failureCode": "PAGE_ACTION_UNVERIFIED_RETRY_BLOCKED",
+    "failureCode": "PAGE_ACTION_LOOP_DETECTED",
     "providers": ["api", "codex"],
     "sensitive": false
   },

@@ -383,7 +383,7 @@ test.describe('page action dialog-dismissal receipts', () => {
     }
   });
 
-  test('blocks a repeated unverified click and never calls it a dismissal', async () => {
+  test('uses refreshed snapshots before blocking repeated unverified clicks', async () => {
     const browser = await openFixtureBrowser();
     let runId;
     try {
@@ -417,9 +417,26 @@ test.describe('page action dialog-dismissal receipts', () => {
             .index,
         }
       );
-      expect(second.result.error).toBe('PAGE_ACTION_UNVERIFIED_RETRY_BLOCKED');
+      expect(second.result.error).toBeUndefined();
+      expect(second.result.actionReceipt).toMatchObject({ disposition: 'delivered_unverified' });
+      expect(await browser.target.evaluate(() => window.__dialogDismissClicks.own)).toBe(2);
+
+      const third = await browser.harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'dialog-retry-third', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        {
+          runId,
+          snapshotId: second.result.snapshot.snapshotId,
+          index: started.snapshot.elements.find((element) => element.label === 'No-op button')
+            .index,
+        }
+      );
+      expect(third.result.error).toBe('PAGE_ACTION_LOOP_DETECTED');
       expect(await browser.target.locator('[data-dialog-id="own"]').isVisible()).toBe(true);
-      expect(await browser.target.evaluate(() => window.__dialogDismissClicks.own)).toBe(1);
+      expect(await browser.target.evaluate(() => window.__dialogDismissClicks.own)).toBe(2);
     } finally {
       await abortRun(browser.harness, runId);
       await browser.context.close();

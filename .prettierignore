@@ -1,6 +1,8 @@
 libs/
 node_modules/
 dist/
+dist-dev/
+dist-eval/
 test-results/
 .pi/
 .pi-subagents/

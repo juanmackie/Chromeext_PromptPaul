@@ -12,6 +12,15 @@ export const MAX_REPLAN_COUNT = 5;
 export const MAX_PLANNER_PROMPT_CHARS = 6_000;
 const STATUSES = ['pending', 'in_progress', 'completed', 'skipped'];
 const NON_PLURAL_QUANTITY_WORDS = new Set(['this', 'his', 'its']);
+const ATTRIBUTE_COUNT_WORDS = new Set([
+  'ratings',
+  'reviews',
+  'stars',
+  'prices',
+  'dollars',
+  'euros',
+  'percentages',
+]);
 
 /** Track explicit multi-item requests without decomposing prose into steps. */
 export function extractQuotaTarget(instruction) {
@@ -37,6 +46,7 @@ export function extractQuotaTarget(instruction) {
   if (
     quantity &&
     !NON_PLURAL_QUANTITY_WORDS.has(quantity[2].toLowerCase()) &&
+    !ATTRIBUTE_COUNT_WORDS.has(quantity[2].toLowerCase()) &&
     !/\b(?:second|minute|hour|day|week|month|year|pixel|byte|token|character|dollar|euro|percent|degree)s?\b/i.test(
       quantity[0]
     )

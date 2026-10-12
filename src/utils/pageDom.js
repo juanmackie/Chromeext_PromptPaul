@@ -91,6 +91,7 @@ export function isSensitivePageElement(element = {}) {
     element.name,
     element.role,
     element.label,
+    element.title,
     element.placeholder,
     element.text,
     type,
@@ -133,8 +134,12 @@ export function normalizePageElement(raw = {}, index = 0) {
     role: capPageText(raw.role, PAGE_DOM_CAPS.maxAttributeChars),
     name: capPageText(raw.name, PAGE_DOM_CAPS.maxAttributeChars),
     label: capPageText(raw.label, PAGE_DOM_CAPS.maxAttributeChars),
+    title: capPageText(raw.title, PAGE_DOM_CAPS.maxAttributeChars),
     placeholder: capPageText(raw.placeholder, PAGE_DOM_CAPS.maxAttributeChars),
     type: capPageText(raw.type, 32).toLowerCase(),
+    formMethod: ['get', 'post', 'dialog'].includes(String(raw.formMethod || '').toLowerCase())
+      ? String(raw.formMethod).toLowerCase()
+      : undefined,
     text: capPageText(raw.text),
     disabled: Boolean(raw.disabled),
     checked: typeof raw.checked === 'boolean' || raw.checked === 'mixed' ? raw.checked : undefined,
@@ -158,6 +163,16 @@ export function normalizePageElement(raw = {}, index = 0) {
     sensitive,
     value: !sensitive && typeof raw.value === 'string' ? capPageValue(raw.value) : undefined,
   };
+  if (raw.formActionOrigin) {
+    try {
+      const formOrigin = new URL(String(raw.formActionOrigin));
+      if (['http:', 'https:'].includes(formOrigin.protocol)) {
+        normalized.formActionOrigin = formOrigin.origin;
+      }
+    } catch (_) {
+      // Invalid form destinations stay unavailable to page-action policy.
+    }
+  }
   if (raw.submitControl && typeof raw.submitControl === 'object') {
     normalized.submitControl = normalizePageElement(
       { ...raw.submitControl, submitControl: undefined, value: undefined },
@@ -166,12 +181,13 @@ export function normalizePageElement(raw = {}, index = 0) {
   }
 
   if ((tag === 'a' || normalized.role === 'link') && raw.href) {
+    if (raw.linkHasQueryOrFragment === true) normalized.linkHasQueryOrFragment = true;
     try {
       const link = new URL(String(raw.href));
       if (['http:', 'https:'].includes(link.protocol)) {
         link.search = '';
         link.hash = '';
-        normalized.href = link.href;
+        normalized.href = sanitizePageActionUrl(link.href);
       }
     } catch (_) {
       // Invalid link destinations stay unavailable to page actions.
@@ -184,6 +200,7 @@ export function normalizePageElement(raw = {}, index = 0) {
   if (sensitive) {
     normalized.text = '';
     normalized.placeholder = '';
+    normalized.title = '';
   }
 
   for (const key of Object.keys(normalized)) {
@@ -221,7 +238,17 @@ export function isSupportedPageControl(value) {
  */
 export function formatPageElement(element = {}) {
   const attrs = [];
-  for (const key of ['role', 'name', 'label', 'placeholder', 'type', 'href', 'target']) {
+  for (const key of [
+    'role',
+    'name',
+    'label',
+    'title',
+    'placeholder',
+    'type',
+    'formMethod',
+    'href',
+    'target',
+  ]) {
     if (element[key]) attrs.push(`${key}=${JSON.stringify(capPageText(element[key], 80))}`);
   }
   if (element.checked !== undefined) attrs.push(`checked=${element.checked}`);

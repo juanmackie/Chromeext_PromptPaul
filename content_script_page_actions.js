@@ -41,6 +41,8 @@
   const PAGE_ACTION_MAX_FIND_QUERY_CHARS = 160;
   const PAGE_ACTION_MAX_FIND_RESULTS = 8;
   const PAGE_ACTION_MAX_FIND_SNIPPET_CHARS = 280;
+  const PAGE_ACTION_MAX_MATCH_COUNT = 999;
+  const PAGE_ACTION_MAX_INDEXED_LABELS = 32;
   const PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS = 120_000;
   const PAGE_ACTION_MAX_WAIT_MS = 10_000;
   const PAGE_ACTION_MAX_BATCH_ACTIONS = 6;
@@ -259,7 +261,7 @@
     return getPageActionLabel(entry).toLowerCase() === option;
   }
 
-  function isPageActionSensitive(element, label, text) {
+  function isPageActionSensitive(element, label, text, title = '') {
     const type = String(element.getAttribute('type') || '').toLowerCase();
     const autocomplete = String(element.getAttribute('autocomplete') || '').toLowerCase();
     const tag = String(element.tagName || '').toLowerCase();
@@ -273,7 +275,7 @@
       ['file', 'hidden'].includes(type) ||
       autocomplete.includes('password') ||
       autocomplete.includes('one-time-code') ||
-      pattern.test(`${label} ${text} ${element.getAttribute('name') || ''}`)
+      pattern.test(`${label} ${text} ${title} ${element.getAttribute('name') || ''}`)
     );
   }
 
@@ -333,10 +335,10 @@
           .slice(0, PAGE_ACTION_MAX_VALUE_CHARS);
   }
 
-  function buildPageActionSearchText() {
-    if (!document.body) return '';
+  function buildPageActionTextFromRoot(root, maxChars) {
+    if (!root || maxChars <= 0) return '';
     let text = '';
-    for (const node of walkPageActionNodes()) {
+    for (const node of walkPageActionNodes(root)) {
       if (node.nodeType !== Node.TEXT_NODE || !isPageActionVisible(node.parentElement)) continue;
       const parent = node.parentElement;
       if (
@@ -345,15 +347,24 @@
         )
       )
         continue;
-      text += ' ' + redactPageActionText(node.textContent);
-      if (text.length >= PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS) break;
+      const remaining = maxChars - text.length;
+      if (remaining <= 0) break;
+      const value = redactPageActionText(String(node.textContent || ''));
+      text += ` ${value.slice(0, remaining)}`;
     }
+    return text.trim().slice(0, maxChars);
+  }
+
+  function buildPageActionSearchText() {
+    if (!document.body) return '';
+    let text = buildPageActionTextFromRoot(document.body, PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS);
     // Field values the snapshot already discloses for non-sensitive controls
     // are searchable too: a typed value is real page state even though it is
     // not visible text. Sensitive, hidden, and non-textual controls stay out.
     if (text.length < PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS) {
-      for (const element of document.querySelectorAll('input')) {
+      for (const element of walkPageActionNodes()) {
         if (text.length >= PAGE_ACTION_MAX_SEARCH_SOURCE_CHARS) break;
+        if (element.nodeType !== Node.ELEMENT_NODE || element.tagName !== 'INPUT') continue;
         const type = String(element.getAttribute('type') || '').toLowerCase();
         if (
           [
@@ -490,6 +501,7 @@
       parseAriaChecked(element.getAttribute('aria-checked')) ?? '',
       isPageActionSensitive(element, label, text),
       link?.safeHref || '',
+      link?.hasQueryOrFragment === true,
       link?.target || '',
       link?.download === true,
       getPageActionSubmitIdentity(element),
@@ -499,15 +511,85 @@
     ].join('\u001f');
   }
 
-  function findPageActionText(session, query, options = {}) {
-    const regionIndex = options.regionId ? parsePageActionRegionId(options.regionId) : -1;
+  function normalizePageActionMatchText(value) {
+    return String(value || '')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+      .replace(/\s+/gu, ' ');
+  }
+
+  /**
+   * Number of further occurrences of a term in bounded search text.
+   *
+   * The snippet loop stops at the display cap, so the remaining occurrences are
+   * counted without building snippets. The count itself stays bounded.
+   *
+   * @param {string} lowerSource - lowercased bounded page text.
+   * @param {string} normalizedQuery - lowercased search term.
+   * @param {number} fromOffset - index the snippet loop already passed.
+   * @returns {number}
+   */
+  function countRemainingMatches(lowerSource, normalizedQuery, fromOffset) {
+    let count = 0;
+    let cursor = fromOffset;
+    while (count < PAGE_ACTION_MAX_MATCH_COUNT) {
+      const matchIndex = lowerSource.indexOf(normalizedQuery, cursor);
+      if (matchIndex < 0) break;
+      count += 1;
+      cursor = matchIndex + Math.max(1, normalizedQuery.length);
+    }
+    return count;
+  }
+
+  /**
+   * Distinct numbered labels that follow a found term, in numeric order.
+   *
+   * "Table" on a long article yields "Table 1", "Table 2", ... so a counting
+   * question is answered by one observation. Matching stays whole-word, so
+   * "lookup table" does not produce a spurious "Table 1" label.
+   *
+   * @param {string} source - bounded page text.
+   * @param {string} normalizedQuery - lowercased search term.
+   * @returns {string[]}
+   */
+  function collectIndexedPageLabels(source, normalizedQuery) {
+    const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    if (!escaped) return [];
+    const lowerSource = source.toLocaleLowerCase();
+    const pattern = new RegExp(
+      `(?<![\\p{L}\\p{N}])${escaped}\\s*[#(]?\\s*(\\d{1,4})(?![\\p{L}\\p{N}])`,
+      'gu'
+    );
+    const byNumber = new Map();
+    let match;
+    while ((match = pattern.exec(lowerSource)) !== null) {
+      const number = Number(match[1]);
+      if (byNumber.has(number)) continue;
+      const raw = source
+        .slice(match.index, match.index + normalizedQuery.length + 10)
+        .replace(/[\s:;,.)]+\$/u, '')
+        .trim();
+      byNumber.set(number, capPageActionText(raw || `${normalizedQuery} ${number}`, 40));
+      if (byNumber.size >= PAGE_ACTION_MAX_INDEXED_LABELS) break;
+    }
+    return [...byNumber.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map(([, label]) => label);
+  }
+
+  function findPageActionText(session, query, options = {}) {    const regionIndex = options.regionId ? parsePageActionRegionId(options.regionId) : -1;
     if (options.regionId && regionIndex < 0) {
-      const error = new Error('Region must be a content-script region-N identifier.');
+      const error = new Error(
+        'Region must be a content-script region-N identifier such as region-0. Do not pass a snapshotId (frames-... or page-...); omit regionId to search the full page.'
+      );
       error.code = 'PAGE_ACTION_INVALID';
       throw error;
     }
     const boundedQuery = capPageActionText(query, PAGE_ACTION_MAX_FIND_QUERY_CHARS);
     const normalizedQuery = boundedQuery.toLocaleLowerCase();
+    const normalizedMatchQuery = normalizePageActionMatchText(boundedQuery);
     if (!normalizedQuery) {
       const error = new Error('Search text cannot be empty.');
       error.code = 'PAGE_ACTION_INVALID';
@@ -517,9 +599,11 @@
     const lowerSource = source.toLocaleLowerCase();
     const matches = [];
     let offset = 0;
+    let matchCount = 0;
     while (matches.length < PAGE_ACTION_MAX_FIND_RESULTS) {
       const matchIndex = lowerSource.indexOf(normalizedQuery, offset);
       if (matchIndex < 0) break;
+      matchCount += 1;
       const start = Math.max(0, matchIndex - 100);
       const end = Math.min(source.length, matchIndex + normalizedQuery.length + 140);
       const snippet = capPageActionText(
@@ -529,33 +613,119 @@
       if (snippet && !matches.includes(snippet)) matches.push(snippet);
       offset = matchIndex + Math.max(1, normalizedQuery.length);
     }
+    // The snippet list is capped at eight results, so a counting question
+    // ("how many tables are in this paper?") cannot be answered from it. Report
+    // every occurrence in the bounded search text plus the numbered label
+    // variants of the term, so one observation answers the question instead of
+    // triggering nine single-label probes.
+    const totalMatches = matchCount + countRemainingMatches(lowerSource, normalizedQuery, offset);
+    const indexedLabels = collectIndexedPageLabels(source, normalizedQuery);
     const regionIndices =
       regionIndex >= 0
         ? new Set(
             filterRecordsByRegion(session.records, options.regionId).map((record) => record.index)
           )
         : null;
-    const elementIndices = session.records
-      .filter((record) => {
-        if (regionIndices && !regionIndices.has(record.index)) {
-          return false;
-        }
-        return `${record.label || ''} ${record.text || ''}`
+    const elementIndices = [];
+    const seenIndices = new Set();
+    const containerSearchText = new WeakMap();
+    const addIndex = (record) => {
+      if (
+        !record ||
+        (regionIndices && !regionIndices.has(record.index)) ||
+        seenIndices.has(record.index)
+      ) {
+        return;
+      }
+      seenIndices.add(record.index);
+      elementIndices.push(record.index);
+    };
+    for (const record of session.records) {
+      if (regionIndices && !regionIndices.has(record.index)) continue;
+      if (
+        `${record.label || ''} ${record.text || ''} ${record.sensitive ? '' : record.value || ''}`
           .toLocaleLowerCase()
-          .includes(normalizedQuery);
-      })
-      .map((record) => record.index)
-      .slice(0, PAGE_ACTION_MAX_FIND_RESULTS);
+          .includes(normalizedQuery)
+      ) {
+        addIndex(record);
+        continue;
+      }
+      // Search-result titles are often plain text beside the clickable result
+      // link. Associate the query with links in that same semantic result card
+      // so the caller can act on the exact observed match without guessing an
+      // unrelated positional index.
+      if (record.tag !== 'a' && record.role !== 'link') continue;
+      const container = record.ref?.closest?.(
+        'li, article, [role="listitem"], .arxiv-result, .search-result, .result-item'
+      );
+      if (!container || !isPageActionVisible(container)) continue;
+      let contextText = containerSearchText.get(container);
+      if (contextText === undefined) {
+        contextText = buildPageActionTextFromRoot(
+          container,
+          PAGE_ACTION_MAX_FIND_SNIPPET_CHARS * 4
+        ).toLocaleLowerCase();
+        containerSearchText.set(container, contextText);
+      }
+      if (normalizePageActionMatchText(contextText).includes(normalizedMatchQuery))
+        addIndex(record);
+      if (elementIndices.length >= PAGE_ACTION_MAX_FIND_RESULTS) break;
+    }
+    elementIndices.length = Math.min(elementIndices.length, PAGE_ACTION_MAX_FIND_RESULTS);
     const found = matches.length > 0;
+    const resultLinks = [];
+    const resultLinkUrls = new Set();
+    if (found && normalizedMatchQuery && !options.regionId) {
+      const resultContexts = new WeakMap();
+      const resultContainers = new WeakSet();
+      let inspectedLinks = 0;
+      for (const node of walkPageActionNodes()) {
+        if (node.nodeType !== Node.ELEMENT_NODE || node.tagName !== 'A') continue;
+        inspectedLinks += 1;
+        if (inspectedLinks > PAGE_ACTION_MAX_ELEMENTS * 4) break;
+        const container = node.closest?.(
+          'li, article, [role="listitem"], .arxiv-result, .search-result, .result-item'
+        );
+        if (!container || resultContainers.has(container) || !isPageActionVisible(container))
+          continue;
+        let context = resultContexts.get(container);
+        if (context === undefined) {
+          context = normalizePageActionMatchText(buildPageActionTextFromRoot(container, 1_120));
+          resultContexts.set(container, context);
+        }
+        if (!context.includes(normalizedMatchQuery)) continue;
+        const link = getPageActionLinkMetadata(node);
+        if (!link?.safeHref || resultLinkUrls.has(link.safeHref)) continue;
+        resultLinkUrls.add(link.safeHref);
+        resultContainers.add(container);
+        resultLinks.push({
+          label: capPageActionText(getPageActionLabel(node), 120),
+          url: link.safeHref,
+          resultContext: capPageActionText(buildPageActionTextFromRoot(container, 280), 280),
+        });
+        if (resultLinks.length >= 4) break;
+      }
+    }
     return {
       success: true,
       query: capPageActionText(query, PAGE_ACTION_MAX_FIND_QUERY_CHARS),
       found,
       matches,
+      matchCount: totalMatches,
+      ...(indexedLabels.length ? { indexedLabels } : {}),
       elementIndices,
+      resultLinks,
       snapshotId: session.snapshotId || null,
       message: found
-        ? `Found ${matches.length} matching page-text result(s). Inspect matching controls or call page_get_state after scrolling.`
+        ? elementIndices.length
+          ? `Found ${totalMatches} page-text match(es) (${matches.length} shown). Matching control indices: ${elementIndices.join(', ')}. Use a listed index only after confirming its label and destination.`
+          : resultLinks.length
+            ? `Found ${totalMatches} page-text match(es) (${matches.length} shown) and ${resultLinks.length} observed result link(s). Open only a listed resultLinks URL whose resultContext matches the requested item.`
+            : `Found ${totalMatches} page-text match(es) (${matches.length} shown), but no matching control in the current snapshot.${
+                indexedLabels.length
+                  ? ` Numbered labels present in the page text: ${indexedLabels.join(', ')}.`
+                  : ''
+              } Read the shown match context, or scroll the matching text into view and call page_get_state before acting.`
         : 'No matching page text was found in the bounded page content.',
       actionReceipt: buildPageActionReceipt('delivered_verified', 'text_search', {
         matched: found,
@@ -580,6 +750,14 @@
     return {
       href,
       safeHref: href ? sanitizePageActionUrl(href) : '',
+      hasQueryOrFragment: (() => {
+        try {
+          const parsed = new URL(href);
+          return Boolean(parsed.search || parsed.hash);
+        } catch (_) {
+          return false;
+        }
+      })(),
       target: capPageActionText(element.getAttribute('target') || '', 32).toLowerCase(),
       download: element.hasAttribute('download'),
     };
@@ -625,8 +803,8 @@
     return element.form
       ? [
           getPageActionLabel(submit || element.form),
-          element.form.action,
-          element.form.method,
+          submit?.getAttribute('formmethod') || element.form.method,
+          submit?.hasAttribute('formaction') ? submit.formAction : element.form.action,
           submit
             ? isPageActionSensitive(submit, getPageActionLabel(submit), submit.textContent)
             : false,
@@ -670,15 +848,28 @@
     const label = getPageActionLabel(element);
     const text = element.isContentEditable ? '' : capPageActionText(element.textContent || '');
     const type = capPageActionText(element.getAttribute('type') || '', 32).toLowerCase();
-    const sensitive = isPageActionSensitive(element, label, text);
+    const title = capPageActionText(
+      element.getAttribute('title') || '',
+      PAGE_ACTION_MAX_ATTRIBUTE_CHARS
+    );
+    const sensitive = isPageActionSensitive(element, label, text, title);
     const link = getPageActionLinkMetadata(element);
     const invalid = isPageActionInvalid(element);
+    const submit = includeSubmit ? getPageActionSubmitControl(element) : null;
+    const formSubmitter = submit || (['submit', 'image'].includes(type) ? element : null);
+    const formMethod = String(
+      formSubmitter?.getAttribute('formmethod') || element.form?.method || ''
+    ).toLowerCase();
+    const formAction = formSubmitter?.hasAttribute('formaction')
+      ? formSubmitter.formAction
+      : element.form?.action;
     const record = {
       index,
       tag,
       role: capPageActionText(element.getAttribute('role') || '', PAGE_ACTION_MAX_ATTRIBUTE_CHARS),
       name: capPageActionText(element.getAttribute('name') || '', PAGE_ACTION_MAX_ATTRIBUTE_CHARS),
       label,
+      title: sensitive ? '' : title,
       placeholder: sensitive
         ? ''
         : capPageActionText(
@@ -693,6 +884,14 @@
       editable: Boolean(element.isContentEditable),
       focused: element === getPageActionFocusedElement(),
       inForm: Boolean(element.form),
+      formMethod: formMethod || undefined,
+      formActionOrigin: (() => {
+        try {
+          return element.form && formAction ? new URL(formAction, location.href).origin : undefined;
+        } catch (_) {
+          return undefined;
+        }
+      })(),
       sensitive,
       invalid: invalid || undefined,
       error:
@@ -704,13 +903,14 @@
       newlyVisible: false,
       ref: element,
       linkHref: link?.href || '',
+      linkHasQueryOrFragment: link?.hasQueryOrFragment === true || undefined,
     };
-    const submit = includeSubmit ? getPageActionSubmitControl(element) : null;
     if (submit) {
       const submitRecord = getPageActionElementRecord(submit, 0, false);
       record.submitControl = Object.fromEntries(
         Object.entries(submitRecord).filter(
-          ([key]) => !['ref', 'fingerprint', 'linkHref', 'value'].includes(key)
+          ([key]) =>
+            !['ref', 'fingerprint', 'linkHref', 'linkHasQueryOrFragment', 'value'].includes(key)
         )
       );
     }
@@ -729,9 +929,20 @@
 
   function formatPageActionRecord(record) {
     const attrs = [];
-    for (const key of ['role', 'name', 'label', 'placeholder', 'type', 'href', 'target']) {
+    for (const key of [
+      'role',
+      'name',
+      'label',
+      'title',
+      'placeholder',
+      'type',
+      'formMethod',
+      'href',
+      'target',
+    ]) {
       if (record[key]) attrs.push(`${key}=${JSON.stringify(record[key])}`);
     }
+    if (record.resultContext) attrs.push(`resultContext=${JSON.stringify(record.resultContext)}`);
     if (record.checked !== undefined) attrs.push(`checked=${record.checked}`);
     if (record.expanded !== undefined) attrs.push(`expanded=${record.expanded}`);
     if (record.haspopup) attrs.push(`haspopup=${record.haspopup}`);
@@ -892,25 +1103,47 @@
     return records.slice(start, start + PAGE_ACTION_REGION_SIZE);
   }
 
+  /**
+   * Bounded list of containers the run can actually scroll.
+   *
+   * Navigation menus dominate any raw "element is scrollable" scan: they are
+   * tall, already at their end, and their labels are concatenated link text.
+   * Offering them first made models spend whole provider turns scrolling
+   * sidebars that never moved. Site chrome (nav landmarks, hidden or
+   * zero-height boxes) is skipped, and the widest scroll range sorts first so
+   * index 0 is the main content area.
+   *
+   * @returns {object[]}
+   */
   function collectPageActionScrollContainers() {
     return Array.from(walkPageActionNodes())
       .filter((element) => {
         if (element.nodeType !== Node.ELEMENT_NODE || isPageActionIgnored(element)) return false;
+        if (!isPageActionVisible(element)) return false;
+        // The window scrolls the document; reporting html/body would duplicate it.
+        if (element === document.documentElement || element === document.body) return false;
+        if (element.closest('nav, [role="navigation"], [aria-hidden="true"]')) return false;
         return (
           element.scrollHeight > element.clientHeight + 80 ||
           element.scrollWidth > element.clientWidth + 80
         );
       })
-      .slice(0, 16)
-      .map((element, index) => ({
+      .map((element) => ({
         element,
-        index,
         label: capPageActionText(getPageActionLabel(element), 120),
         top: Math.max(0, Math.round(element.scrollTop || 0)),
         left: Math.max(0, Math.round(element.scrollLeft || 0)),
         vertical: element.scrollHeight > element.clientHeight + 80,
         horizontal: element.scrollWidth > element.clientWidth + 80,
-      }));
+        range: Math.max(
+          0,
+          element.scrollHeight - element.clientHeight,
+          element.scrollWidth - element.clientWidth
+        ),
+      }))
+      .sort((left, right) => right.range - left.range)
+      .slice(0, 16)
+      .map((entry, index) => ({ ...entry, index }));
   }
 
   function collectPageActionFormNotices() {
@@ -955,7 +1188,9 @@
         : []
       : records;
     if (regionId && regionIndex < 0) {
-      const error = new Error('Region must be a content-script region-N identifier.');
+      const error = new Error(
+        'Region must be a content-script region-N identifier such as region-0. Do not pass a snapshotId (frames-... or page-...); omit regionId to inspect the full page.'
+      );
       error.code = 'PAGE_ACTION_INVALID';
       throw error;
     }
@@ -996,6 +1231,25 @@
       pixelsBelow > 0 ? `More content is below (${pixelsBelow}px).` : 'End of page.',
       1_000
     );
+
+    // Search-result links often expose only an ID or a generic label while
+    // the matching title is adjacent text. Attach one bounded, redacted text
+    // hint to the first link in each semantic result card so the model can
+    // choose the observed result without a separate lookup call.
+    const resultContextByContainer = new WeakMap();
+    for (const record of records) {
+      if (record.tag !== 'a' && record.role !== 'link') continue;
+      const container = record.ref?.closest?.(
+        'li, article, [role="listitem"], .arxiv-result, .search-result, .result-item'
+      );
+      if (!container || resultContextByContainer.has(container)) continue;
+      const context = buildPageActionTextFromRoot(container, 280);
+      if (!context) continue;
+      resultContextByContainer.set(container, true);
+      if (context.toLocaleLowerCase() !== String(record.label || '').toLocaleLowerCase()) {
+        record.resultContext = context;
+      }
+    }
 
     // Bound the complete serialized payload (content + elements array), not
     // just the content string, so a large control set cannot blow the message
@@ -1041,7 +1295,7 @@
       elements = boundedRecords.map((record) =>
         Object.fromEntries(
           Object.entries(record).filter(
-            ([key]) => !['ref', 'fingerprint', 'linkHref'].includes(key)
+            ([key]) => !['ref', 'fingerprint', 'linkHref', 'resultContext'].includes(key)
           )
         )
       );
@@ -1455,12 +1709,27 @@
           });
         }
       };
-      const schedule = () => {
+      const schedule = (mutations) => {
         if (finished || settling) return;
+        if (Array.isArray(mutations) && mutations.length > 0 && isOwnUiMutationBatch(mutations))
+          return;
         if (isNewlyBusy()) extend('busy');
         clearTimeout(quietTimer);
         quietTimer = setTimeout(finish, PAGE_ACTION_SETTLE_QUIET_MS);
       };
+      const isOwnUiMutationBatch = (mutations) =>
+        mutations.every((mutation) => {
+          const target = mutation?.target;
+          if (target?.closest?.('[data-prompt-paul-act-glow],[data-prompt-paul-notch-host]'))
+            return true;
+          const nodes = [...(mutation?.addedNodes || []), ...(mutation?.removedNodes || [])];
+          return nodes.some(
+            (node) =>
+              node?.hasAttribute?.('data-prompt-paul-act-glow') ||
+              node?.hasAttribute?.('data-prompt-paul-notch-host') ||
+              node?.querySelector?.('[data-prompt-paul-act-glow],[data-prompt-paul-notch-host]')
+          );
+        });
       observer = new MutationObserver(schedule);
       observer.observe(document.documentElement, {
         subtree: true,
@@ -1501,7 +1770,9 @@
     const text = capPageActionText(args.text, PAGE_ACTION_MAX_FIND_QUERY_CHARS).toLocaleLowerCase();
     const regionIndex = args.regionId ? parsePageActionRegionId(args.regionId) : -1;
     if (args.regionId && regionIndex < 0) {
-      const error = new Error('Region must be a content-script region-N identifier.');
+      const error = new Error(
+        'Region must be a content-script region-N identifier such as region-0. Do not pass a snapshotId (frames-... or page-...); omit regionId to wait on the full page.'
+      );
       error.code = 'PAGE_ACTION_INVALID';
       throw error;
     }
@@ -1634,6 +1905,25 @@
     element.click();
   }
 
+  /**
+   * Resolve one batch entry's action arguments.
+   *
+   * The schema nests arguments under `args`; models also write them inline.
+   * Accepting both shapes keeps a rejected batch from costing a provider turn.
+   *
+   * @param {object} entry - batch entry with `name` plus nested or flat args.
+   * @returns {object}
+   */
+  function pageBatchEntryArgs(entry) {
+    if (entry.args && typeof entry.args === 'object' && !Array.isArray(entry.args)) return entry.args;
+    const args = {};
+    for (const [key, value] of Object.entries(entry)) {
+      if (key === 'name' || key === 'args' || key === 'title') continue;
+      args[key] = value;
+    }
+    return args;
+  }
+
   function buildPageActionReceipt(disposition, kind, details = {}) {
     return {
       disposition,
@@ -1695,9 +1985,14 @@
       const results = [];
       let latestSnapshot = null;
       for (let index = 0; index < entries.length; index += 1) {
+        const entry = entries[index];
         try {
           const result = await executePageAction(
-            { ...request, pageAction: entries[index].name, args: entries[index].args || {} },
+            {
+              ...request,
+              pageAction: entry.name,
+              args: pageBatchEntryArgs(entry),
+            },
             false
           );
           if (result?.snapshot) {
@@ -1803,7 +2098,9 @@
         (container ? container.scrollTop : snapshot.scroll.y) !== beforeScroll.y;
       return {
         success: true,
-        message: `Scrolled ${directionName} ${pages} page(s).`,
+        message: changed
+          ? `Scrolled ${directionName} ${pages} page(s).`
+          : 'The page did not move. Omit containerIndex to scroll the window, or pick an observed scrollContainers index whose vertical value is true and whose top is less than its height; do not repeat the same scroll target.',
         settle,
         snapshot,
         actionReceipt: buildPageActionReceipt(
@@ -2071,7 +2368,9 @@
           .toLowerCase();
         if (tag !== 'select') {
           if (!['combobox', 'listbox'].includes(element.getAttribute('role')))
-            throw new Error('The target is not a select or supported custom list.');
+            throw new Error(
+              'The target is not a select or supported custom list. Use the index of the <select> control itself, not one of its <option> items.'
+            );
           const openingTarget = resolvePageActionClickTarget(element);
           if (openingTarget.covered) {
             const error = new Error('The custom dropdown is covered.');

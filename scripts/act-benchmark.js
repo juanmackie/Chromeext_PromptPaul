@@ -139,6 +139,11 @@ const TASKS = [
     prompt:
       'This local checkout form rejected the current email. Read the error message, correct the Email field to ada@example.com, and then submit. Stay on this local page.',
   },
+  {
+    id: 'validation-error-recovery',
+    prompt:
+      'This local checkout form rejected two fields. Read both error messages, keep Name as Ada without editing it, correct only the Email field to ada@example.com and the Phone field to 555-0100, and then submit. Stay on this local page.',
+  },
 ];
 
 function parseArgs(argv) {
@@ -594,6 +599,15 @@ async function readFixtureState(page, task, excludedTabIds = []) {
         body.dataset.emailValid === 'true' &&
         root.querySelector('#email')?.value === 'ada@example.com' &&
         root.querySelector('#email')?.getAttribute('aria-invalid') === 'false',
+      'validation-error-recovery': (body) =>
+        body.dataset.recoveryValid === 'true' &&
+        root.querySelector('#email')?.value === 'ada@example.com' &&
+        root.querySelector('#email')?.getAttribute('aria-invalid') === 'false' &&
+        root.querySelector('#phone')?.value === '555-0100' &&
+        root.querySelector('#phone')?.getAttribute('aria-invalid') === 'false' &&
+        [...root.querySelectorAll('input')].find(
+          (input) => input.getAttribute('aria-label') === 'Name'
+        )?.dataset.edits === '0',
     };
     return Boolean(successById[taskId]?.(document.body));
   }, task.id);

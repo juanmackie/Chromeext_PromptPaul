@@ -7,6 +7,7 @@
   <body>
     <main>
       <button id="load" type="button">Load server result</button>
+      <button id="dismiss" type="button">Dismiss unavailable result</button>
       <p id="status">Ready</p>
     </main>
     <script>
@@ -19,6 +20,9 @@
         } catch (_) {
           status.textContent = 'The server result was unavailable.';
         }
+      });
+      document.getElementById('dismiss').addEventListener('click', () => {
+        document.getElementById('status').textContent = 'Unavailable result dismissed.';
       });
     </script>
   </body>

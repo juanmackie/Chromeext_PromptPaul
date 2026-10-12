@@ -42,6 +42,12 @@ describe('run resilience helpers', () => {
     expect(getProviderTimeoutMs('o3-mini', 120_000)).toBe(300_000);
     expect(getProviderTimeoutMs('claude-sonnet-4-5', 120_000)).toBe(180_000);
     expect(getProviderTimeoutMs('gpt-4o', 120_000)).toBe(120_000);
+    expect(getProviderTimeoutMs('deepseek-r1', 120_000)).toBe(600_000);
+  });
+
+  it('does not apply the reasoning timeout floor to flash models', () => {
+    expect(getProviderTimeoutMs('deepseek-v4-flash-0731', 120_000)).toBe(120_000);
+    expect(getProviderTimeoutMs('deepseek-v4', 120_000)).toBe(600_000);
   });
 
   it('classifies provider failures before selecting recovery', () => {

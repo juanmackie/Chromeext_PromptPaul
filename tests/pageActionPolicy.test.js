@@ -58,6 +58,76 @@ describe('pageActionPolicy', () => {
       })
     ).toMatchObject({ allowed: false });
   });
+
+  it('allows same-origin search GET submissions without weakening write-form confirmation', () => {
+    const searchTarget = {
+      tag: 'textarea',
+      role: 'combobox',
+      name: 'q',
+      label: 'Search',
+      frameOrigin: 'https://www.google.com',
+      formMethod: 'get',
+      formActionOrigin: 'https://www.google.com',
+      submitControl: {
+        tag: 'input',
+        name: 'btnK',
+        label: 'Google Search',
+        type: 'submit',
+        formMethod: 'get',
+      },
+    };
+    for (const [actionName, args] of [
+      ['page_input', { submit: true }],
+      ['page_keypress', { key: 'Enter' }],
+    ]) {
+      expect(evaluatePageActionPolicy({ actionName, target: searchTarget, args })).toMatchObject({
+        risk: 'low',
+        requiresConfirmation: false,
+        allowed: true,
+      });
+    }
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target: {
+          ...searchTarget,
+          formMethod: 'post',
+          submitControl: { ...searchTarget.submitControl, formMethod: 'post' },
+        },
+        args: { submit: true },
+      })
+    ).toMatchObject({ risk: 'high', requiresConfirmation: true });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target: { ...searchTarget, formActionOrigin: 'https://search.example' },
+        args: { submit: true },
+      })
+    ).toMatchObject({ risk: 'high', requiresConfirmation: true });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target: {
+          ...searchTarget,
+          submitControl: { ...searchTarget.submitControl, formMethod: 'post' },
+        },
+        args: { submit: true },
+      })
+    ).toMatchObject({ risk: 'high', requiresConfirmation: true });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target: {
+          ...searchTarget,
+          submitControl: {
+            ...searchTarget.submitControl,
+            formActionOrigin: 'https://submit.example',
+          },
+        },
+        args: { submit: true },
+      })
+    ).toMatchObject({ risk: 'high', requiresConfirmation: true });
+  });
   it('bounds double-click and hover arguments', () => {
     expect(
       normalizePageActionArgs('page_click', { snapshotId: 's', index: 1, count: 2 })
@@ -161,7 +231,7 @@ describe('pageActionPolicy', () => {
     expect(
       normalizePageActionArgs('page_batch', {
         actions: [
-          { name: 'page_find_text', args: { query: 'a' } },
+          { name: 'page_find_text', args: { query: 'Results' } },
           { name: 'page_click', args: { snapshotId: 'snap', index: 1 } },
         ],
       })
@@ -169,6 +239,36 @@ describe('pageActionPolicy', () => {
       valid: false,
       error: 'Page batches support only non-nested read-only actions.',
     });
+  });
+
+  it('accepts batch arguments written inline as well as nested under args', () => {
+    // The schema nests arguments under `args`, but models routinely write them
+    // flat. Rejecting the flat shape failed every entry in the batch with
+    // "Search text cannot be empty" and cost a whole provider turn.
+    const flat = normalizePageActionArgs('page_batch', {
+      actions: [
+        { name: 'page_find_text', query: 'Results' },
+        { name: 'page_scroll', direction: 'down', pages: 0.5 },
+      ],
+    });
+    expect(flat).toEqual({
+      valid: true,
+      value: {
+        actions: [
+          { name: 'page_find_text', args: { query: 'Results' } },
+          { name: 'page_scroll', args: { direction: 'down', pages: 0.5 } },
+        ],
+      },
+    });
+    // Mixed shapes normalize the same way.
+    const mixed = normalizePageActionArgs('page_batch', {
+      actions: [{ name: 'page_find_text', args: { query: 'Price' } }, { name: 'page_wait', condition: 'text', text: 'Done' }],
+    });
+    expect(mixed.valid).toBe(true);
+    expect(mixed.value.actions).toEqual([
+      { name: 'page_find_text', args: { query: 'Price' } },
+      { name: 'page_wait', args: { condition: 'text', text: 'Done', timeoutMs: 5_000 } },
+    ]);
   });
 
   it('bounds multi-tab actions to safe http(s) URLs and integer tab ids', () => {

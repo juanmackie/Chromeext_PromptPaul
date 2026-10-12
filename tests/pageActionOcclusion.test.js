@@ -138,11 +138,20 @@ describe('pre-dispatch occlusion gate', () => {
   it('does not trip the no-progress mutation lockout after three occluded clicks', async () => {
     const { orchestrator, runId, run, events } = await startOccludedRun();
 
-    for (const id of ['click-1', 'click-2', 'click-3']) {
+    for (const id of ['click-1', 'click-2']) {
       const outcome = await clickTarget(orchestrator, runId, run, id);
       expect(outcome.result.error).toBe('PAGE_ACTION_TARGET_OCCLUDED');
       expect(outcome.result.actionReceipt.disposition).toBe('not_delivered');
     }
+    // A third consecutive occlusion of the same covered target redirects the
+    // model to another strategy instead of allowing an unbounded retry loop.
+    // The redirect is still not_delivered and stays outside the lockout guards.
+    const redirected = await clickTarget(orchestrator, runId, run, 'click-3');
+    expect(redirected.result.error).toBe('PAGE_ACTION_OCCLUDED_REPEATED');
+    expect(redirected.result.actionReceipt).toMatchObject({
+      disposition: 'not_delivered',
+      evidence: { kind: 'occluded_target_repeated' },
+    });
 
     expect(run.pageActions.noProgressMutationCount).toBe(0);
     expect(run.pageActions.budgets.mutation).toBe(0);

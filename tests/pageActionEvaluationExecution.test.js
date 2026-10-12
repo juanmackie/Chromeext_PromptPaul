@@ -206,17 +206,30 @@ describe('executor regression coverage (page-action evaluation matrix)', () => {
         call(`${provider}-false-click-2`, 'page_click', clickArgs)
       );
       expect(firstClick.result.actionReceipt.disposition).toBe('delivered_unverified');
-      expect(retry.result.error).toBe(expected('repeated-mutation').failureCode);
+      expect(retry.result.actionReceipt.disposition).toBe('delivered_unverified');
       records.push(
         record('false-success-click', provider, firstClick, 2, JSON.stringify(clickArgs).length, {
           toolCallCount: 2,
         })
       );
+      const blockedLoopClick = await falseOrch.executeTool(
+        falseRun,
+        call(`${provider}-loop-click-3`, 'page_click', clickArgs)
+      );
+      expect(blockedLoopClick.result.error).toBe(expected('repeated-mutation').failureCode);
       records.push(
-        record('repeated-mutation', provider, retry, 2, JSON.stringify(clickArgs).length * 2, {
-          firstReceiptDisposition: firstClick.result.actionReceipt.disposition,
-          toolCallCount: 3,
-        })
+        record(
+          'repeated-mutation',
+          provider,
+          blockedLoopClick,
+          3,
+          JSON.stringify(clickArgs).length * 3,
+          {
+            firstReceiptDisposition: firstClick.result.actionReceipt.disposition,
+            receiptDisposition: retry.result.actionReceipt.disposition,
+            toolCallCount: 4,
+          }
+        )
       );
       falseOrch.abort(falseRun);
 

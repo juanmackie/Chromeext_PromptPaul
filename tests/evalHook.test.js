@@ -14,6 +14,7 @@ describe('evaluation run hook', () => {
   it('returns structured acceptance and emits a terminal result', async () => {
     const listeners = [];
     const messages = [];
+    const startedConfigs = [];
     globalThis.chrome = {
       runtime: {
         onMessage: { addListener: (listener) => listeners.push(listener) },
@@ -21,7 +22,10 @@ describe('evaluation run hook', () => {
       },
     };
     const runOrchestrator = {
-      startRun: async () => 'run-1',
+      startRun: async (config) => {
+        startedConfigs.push(config);
+        return 'run-1';
+      },
       execute: async () => undefined,
     };
 
@@ -41,11 +45,18 @@ describe('evaluation run hook', () => {
           task: 'Complete the public fixture task.',
           profileId: 'eval-profile',
           sourceTabId: 7,
+          taskMode: 'mind2web',
+          temperature: 0,
           dryRun: true,
         },
         { url: 'chrome-extension://eval/bridge.html' },
         resolve
       );
+    });
+    expect(startedConfigs[0]).toMatchObject({
+      evalTaskMode: 'mind2web',
+      evalTemperature: 0,
+      evalDryRun: true,
     });
 
     expect(response).toMatchObject({
