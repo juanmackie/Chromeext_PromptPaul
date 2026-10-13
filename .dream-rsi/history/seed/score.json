@@ -1,0 +1,1 @@
+{"score": 0.4, "fail_class": "ok", "valid": true, "adapter_note": "Adapter reads harness output; does not recompute. Verify this translation against manual harness run before live cycle.", "source_artifact": "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/artifacts/runs/mind2web-1791842611570-wr05df.jsonl", "harness_lines_read": 10, "exact_matches": 4}

@@ -433,6 +433,7 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain(
       'explicitly asking for a city or point of interest, enter the city only'
     );
+    expect(prompt).toContain('check privately that the control performs the first unfinished task step');
     expect(prompt).toContain('Available page tools: page_click, page_input, page_select.');
     expect(prompt).not.toContain('TAB SCOPE:');
     expect(prompt).not.toContain('For multi-step work, write a concise checklist');

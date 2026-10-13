@@ -1,0 +1,40 @@
+{
+  "name": "PromptPaul_Mind2Web_ExactAction",
+  "workspace": "C:/Users/juanm/Documents/GitHub/Chromeext_PromptPaul",
+  "eval_program": "src/orchestrator/RunOrchestrator.js",
+  "problem_file": "C:/Users/juanm/Documents/GitHub/Chromeext_PromptPaul/task/problem.md",
+  "score_program": "C:/Users/juanm/Documents/GitHub/pi Dream-RSI/adapter/measure.sh C:/Users/juanm/Documents/GitHub/Chromeext_PromptPaul",
+  "higher_is_better": true,
+  "agent_command": "pi",
+  "agent_args": [
+    "-p",
+    "--no-session",
+    "-na",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files",
+    "--mode",
+    "json"
+  ],
+  "workers": 2,
+  "max_loops": 2,
+  "k1": 3,
+  "k2": 4,
+  "revisions": 2,
+  "beta_grid": [0.1, 0.3, 0.6, 0.9],
+  "beta1": 0.01,
+  "beta2": 0.01,
+  "measure_seed": false,
+  "model": null,
+  "agent": {
+    "output_format": "auto"
+  },
+  "notes": [
+    "Fresh setup; freeze (no live cycle).",
+    "Adapter (measure.sh) is NOT verified against the Mind2Web harness; dataset (C:/datasets/Mind2Web) not confirmed present.",
+    "Baseline skipped (measure_seed=false). Must verify adapter + measure baseline before any live cycle.",
+    "Seed workspace is 765MB; consider a smaller sub-workspace for live attempts.",
+    "Inferred eval_program = src/orchestrator/RunOrchestrator.js (user said 'unsure'); confirm if different file should be optimized."
+  ]
+}

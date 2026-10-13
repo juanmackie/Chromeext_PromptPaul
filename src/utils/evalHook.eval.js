@@ -3,7 +3,13 @@
  * @module evalHookEvaluation
  */
 
-import { beginEvalTrace, finishEvalTrace, getEvalTrace } from './evalTrace.js';
+import {
+  beginEvalTrace,
+  finishEvalTrace,
+  getEvalTrace,
+  recordEvalTrace,
+  setEvalTraceActionCallback,
+} from './evalTrace.js';
 
 const MAX_TASK_ID_CHARS = 128;
 const MAX_TASK_CHARS = 4_000;
@@ -51,6 +57,24 @@ function normalizeRequest(request) {
   };
 }
 
+function normalizeInspectionRequest(request) {
+  const taskId = String(request?.taskId || '').trim();
+  const task = String(request?.task || '').trim();
+  const profileId = String(request?.profileId || '').trim();
+  const sourceTabId = Number(request?.sourceTabId);
+  if (!TASK_ID_PATTERN.test(taskId) || taskId.length > MAX_TASK_ID_CHARS) {
+    return { error: 'A bounded taskId is required.' };
+  }
+  if (!task || task.length > MAX_TASK_CHARS) {
+    return { error: `Task text must contain 1-${MAX_TASK_CHARS} characters.` };
+  }
+  if (!profileId || profileId.length > 128) return { error: 'A saved profileId is required.' };
+  if (!Number.isInteger(sourceTabId) || sourceTabId < 1) {
+    return { error: 'A valid sourceTabId is required.' };
+  }
+  return { taskId, task, profileId, sourceTabId };
+}
+
 /**
  * Install the direct test hook. This implementation is copied only into the
  * generated evaluation extension build.
@@ -75,7 +99,9 @@ export function registerEvalRunHook(dependencies = {}) {
   }
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request?.action !== 'TEST_RUN_TASK') return false;
+    if (!['TEST_RUN_TASK', 'TEST_INSPECT_PAGE', 'TEST_GET_TRACE'].includes(request?.action)) {
+      return false;
+    }
     if (!isExtensionSender(sender, getExtensionOrigin?.())) {
       return fail(
         sendResponse,
@@ -83,10 +109,141 @@ export function registerEvalRunHook(dependencies = {}) {
         'UNAUTHORIZED'
       );
     }
+    if (request.action === 'TEST_GET_TRACE') {
+      const runId = String(request?.runId || '').trim();
+      if (!TASK_ID_PATTERN.test(runId) || runId.length > MAX_TASK_ID_CHARS) {
+        return fail(sendResponse, 'A bounded runId is required.');
+      }
+      sendResponse({ success: true, trace: getEvalTrace(runId) });
+      return false;
+    }
+    if (request.action === 'TEST_INSPECT_PAGE') {
+      const normalized = normalizeInspectionRequest(request);
+      if (normalized.error) return fail(sendResponse, normalized.error);
+      const ownerToken = createOwnerToken();
+      let runId = '';
+      let runAbortAttempted = false;
+      let abortPromise = null;
+      let abortFailure = null;
+      const recordAbortFailure = (error) => {
+        abortFailure = error;
+        recordEvalTrace(runId, {
+          kind: 'abort_error',
+          error: error?.message || String(error),
+        });
+      };
+      Promise.resolve()
+        .then(async () => {
+          const config = await resolveStoredRunConfig({
+            profileId: normalized.profileId,
+            pageActions: true,
+            pageActionsMultiTab: true,
+            sourceTabId: normalized.sourceTabId,
+            tool_choice: 'auto',
+            webSearch: false,
+            messages: [],
+            evalTaskId: normalized.taskId,
+            evalDryRun: true,
+            evalTaskMode: 'mind2web',
+          });
+          try {
+            const { pageActionsPreciseInput } =
+              await chrome.storage.local.get('pageActionsPreciseInput');
+            config.pageActionsPreciseInput = pageActionsPreciseInput === true;
+          } catch (_) {
+            config.pageActionsPreciseInput = false;
+          }
+          runId = await runOrchestrator.startRun(config, ownerToken);
+          beginEvalTrace({
+            taskId: normalized.taskId,
+            runId,
+            task: normalized.task,
+            dryRun: true,
+          });
+          const toolCall = {
+            id: `eval-inspect-${normalized.taskId}`.slice(0, 128),
+            function: { name: 'page_get_state', arguments: '{}' },
+          };
+          let inspectionError = null;
+          try {
+            const result = await runOrchestrator.executeTool(runId, toolCall);
+            recordEvalTrace(runId, {
+              kind: 'action',
+              action: toolCall,
+              actionResult: result,
+            });
+            const snapshot = result?.result?.snapshot || result?.snapshot;
+            const actionError = result?.result?.error || result?.error;
+            if (result?.success === false || actionError || !snapshot) {
+              throw new Error(
+                result?.result?.message || actionError || 'Page inspection returned no snapshot.'
+              );
+            }
+          } catch (error) {
+            inspectionError = error;
+            if (!getEvalTrace(runId)?.steps.some((step) => step.action_taken?.id === toolCall.id)) {
+              recordEvalTrace(runId, {
+                kind: 'action',
+                action: toolCall,
+                actionResult: { error: error?.message || String(error) },
+                error: error?.message || String(error),
+              });
+            }
+            throw error;
+          } finally {
+            runAbortAttempted = true;
+            try {
+              await runOrchestrator.abort(runId);
+            } catch (error) {
+              recordAbortFailure(error);
+              throw error;
+            }
+            finishEvalTrace(runId, {
+              type: inspectionError ? 'error' : 'inspection_preflight',
+              error: inspectionError?.message || undefined,
+            });
+          }
+          return getEvalTrace(runId);
+        })
+        .then((trace) => sendResponse({ success: true, trace }))
+        .catch((error) => {
+          if (runId && !runAbortAttempted) {
+            runAbortAttempted = true;
+            try {
+              const pendingAbort = runOrchestrator.abort(runId);
+              Promise.resolve(pendingAbort).catch(recordAbortFailure);
+            } catch (abortError) {
+              recordAbortFailure(abortError);
+            }
+          }
+          if (runId) {
+            finishEvalTrace(runId, { type: 'error', error: error?.message || String(error) });
+          }
+          sendResponse({ success: false, error: error?.message || String(error) });
+        });
+      return true;
+    }
     const normalized = normalizeRequest(request);
     if (normalized.error) return fail(sendResponse, normalized.error);
 
     const ownerToken = createOwnerToken();
+    let abortPromise = null;
+    let abortFailure = null;
+    const recordAbortFailure = (runId, error) => {
+      abortFailure = error;
+      recordEvalTrace(runId, {
+        kind: 'abort_error',
+        error: error?.message || String(error),
+      });
+      const activeRun = runOrchestrator.activeRuns?.get?.(runId);
+      if (
+        activeRun &&
+        activeRun.config?.provider !== 'hermes' &&
+        typeof runOrchestrator._terminateRun === 'function'
+      ) {
+        runOrchestrator._terminateRun(runId, { type: 'aborted' }, { abortSignal: true });
+      }
+    };
     Promise.resolve()
       .then(async () => {
         const config = await resolveStoredRunConfig({
@@ -119,6 +276,23 @@ export function registerEvalRunHook(dependencies = {}) {
           task: normalized.task,
           dryRun: normalized.dryRun,
         });
+        if (normalized.taskMode === 'mind2web' && normalized.dryRun) {
+          setEvalTraceActionCallback(runId, () => {
+            runOrchestrator.activeRuns?.get?.(runId)?.abortController?.abort();
+            try {
+              abortPromise = Promise.resolve(runOrchestrator.abort(runId)).then(
+                () => null,
+                (error) => {
+                  recordAbortFailure(runId, error);
+                  return error;
+                }
+              );
+            } catch (error) {
+              recordAbortFailure(runId, error);
+              abortPromise = Promise.resolve(error);
+            }
+          });
+        }
         return { runId, ownerToken };
       })
       .then(({ runId, ownerToken: token }) => {
@@ -133,8 +307,19 @@ export function registerEvalRunHook(dependencies = {}) {
         });
         void runOrchestrator
           .execute(runId, { messages: [{ role: 'user', content: normalized.task }] })
-          .then(() => {
-            const result = finishEvalTrace(runId, { type: 'complete' }) || getEvalTrace(runId);
+          .then(async () => {
+            if (abortPromise) await abortPromise;
+            const trace = getEvalTrace(runId);
+            const captured =
+              normalized.taskMode === 'mind2web' &&
+              normalized.dryRun &&
+              trace?.measurement?.terminalReason === 'prediction_captured';
+            const abortError = abortFailure?.message || (abortFailure ? String(abortFailure) : '');
+            const result =
+              finishEvalTrace(runId, {
+                type: abortError ? 'abort_error' : captured ? 'prediction_captured' : 'complete',
+                error: abortError || undefined,
+              }) || getEvalTrace(runId);
             chrome.runtime.sendMessage({
               action: 'TEST_RUN_TASK_RESULT',
               taskId: normalized.taskId,
@@ -142,10 +327,17 @@ export function registerEvalRunHook(dependencies = {}) {
               result,
             });
           })
-          .catch((error) => {
+          .catch(async (error) => {
+            if (abortPromise) await abortPromise;
+            const trace = getEvalTrace(runId);
+            const captured =
+              normalized.taskMode === 'mind2web' &&
+              normalized.dryRun &&
+              trace?.measurement?.terminalReason === 'prediction_captured';
+            const abortError = abortFailure?.message || (abortFailure ? String(abortFailure) : '');
             const result = finishEvalTrace(runId, {
-              type: 'error',
-              error: error?.message || String(error),
+              type: abortError ? 'abort_error' : captured ? 'prediction_captured' : 'error',
+              error: abortError || (captured ? undefined : error?.message || String(error)),
             });
             chrome.runtime.sendMessage({
               action: 'TEST_RUN_TASK_RESULT',

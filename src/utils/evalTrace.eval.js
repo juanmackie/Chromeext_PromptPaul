@@ -24,6 +24,21 @@ const SECRET_ASSIGNMENT_PATTERN =
   /((?:["']?)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|cookie|password|passcode|otp|credential|client[_-]?secret|secret|private[_-]?key|token)(?:["']?\s*[:=]\s*["']?))[^"',}\s]+/gi;
 
 const traces = new Map();
+const actionCallbacks = new Map();
+const MUTATING_PAGE_ACTIONS = new Set([
+  'page_click',
+  'page_input',
+  'page_set_value',
+  'page_keypress',
+  'page_select',
+  'page_scroll',
+  'page_open_tab',
+  'page_open_link',
+  'page_navigate_tab',
+  'page_switch_tab',
+  'page_go_back',
+  'page_close_tab',
+]);
 
 function redactString(value, maxChars) {
   return String(value ?? '')
@@ -38,9 +53,7 @@ function sanitize(value, key = '', depth = 0, maxStringChars = MAX_RESULT_CHARS)
   if (typeof value === 'string') return redactString(value, maxStringChars);
   if (depth >= 5) return '[depth limit]';
   if (Array.isArray(value)) {
-    return value
-      .slice(0, 64)
-      .map((item) => sanitize(item, '', depth + 1, maxStringChars));
+    return value.slice(0, 64).map((item) => sanitize(item, '', depth + 1, maxStringChars));
   }
   if (typeof value !== 'object') return redactString(value, maxStringChars);
   const result = {};
@@ -50,10 +63,33 @@ function sanitize(value, key = '', depth = 0, maxStringChars = MAX_RESULT_CHARS)
   return result;
 }
 
+function isInitialPageInspectionStep(step) {
+  return step?.kind === 'action' && step.action_taken?.function?.name === 'page_get_state';
+}
+
+function isMutatingPageActionStep(step) {
+  return step?.kind === 'action' && MUTATING_PAGE_ACTIONS.has(step.action_taken?.function?.name);
+}
+
+function protectedTraceStepIndices(steps) {
+  const protectedIndices = new Set();
+  const firstInspection = steps.findIndex(isInitialPageInspectionStep);
+  const firstMutation = steps.findIndex(isMutatingPageActionStep);
+  if (firstInspection >= 0) protectedIndices.add(firstInspection);
+  if (firstMutation >= 0) protectedIndices.add(firstMutation);
+  return protectedIndices;
+}
+
 function boundedTrace(trace) {
   let result = trace;
   while (JSON.stringify(result).length > MAX_TRACE_CHARS && result.steps.length > 1) {
-    result = { ...result, steps: result.steps.slice(1) };
+    const protectedIndices = protectedTraceStepIndices(result.steps);
+    const dropIndex = result.steps.findIndex((_, index) => !protectedIndices.has(index));
+    if (dropIndex < 0) break;
+    result = {
+      ...result,
+      steps: result.steps.filter((_, index) => index !== dropIndex),
+    };
   }
   return result;
 }
@@ -103,9 +139,32 @@ export function beginEvalTrace(details = {}) {
     startedAt: Date.now(),
     steps: [],
     terminal: null,
+    measurement: {
+      predictionCaptured: false,
+      timeToFirstActionMs: null,
+      cleanupTimeMs: null,
+      terminalReason: null,
+    },
   };
+  actionCallbacks.delete(runId);
   traces.set(runId, trace);
   return trace;
+}
+
+/**
+ * Register a one-shot callback for the first proposed mutating page action.
+ * The callback is runtime-only and is never included in serialized traces.
+ * @param {string} runId
+ * @param {(details: object) => void} callback
+ * @returns {void}
+ */
+export function setEvalTraceActionCallback(runId, callback) {
+  const key = String(runId);
+  if (!traces.has(key) || typeof callback !== 'function') {
+    actionCallbacks.delete(key);
+    return;
+  }
+  actionCallbacks.set(key, callback);
 }
 
 /**
@@ -116,7 +175,25 @@ export function beginEvalTrace(details = {}) {
  */
 export function recordEvalTrace(runId, details = {}) {
   const trace = traces.get(String(runId));
-  if (!trace || (trace.steps.length >= MAX_STEPS && details.kind !== 'terminal')) return null;
+  if (!trace) return null;
+  const actionName = String(details.action?.function?.name || details.actionName || '');
+  const capturesFirstMutation =
+    details.kind === 'action' &&
+    MUTATING_PAGE_ACTIONS.has(actionName) &&
+    trace.measurement.predictionCaptured !== true;
+  if (trace.steps.length >= MAX_STEPS && details.kind !== 'terminal') {
+    if (!capturesFirstMutation) return null;
+    const protectedIndices = protectedTraceStepIndices(trace.steps);
+    let replaceIndex = -1;
+    for (let index = trace.steps.length - 1; index >= 0; index -= 1) {
+      if (!protectedIndices.has(index)) {
+        replaceIndex = index;
+        break;
+      }
+    }
+    if (replaceIndex < 0) return null;
+    trace.steps.splice(replaceIndex, 1);
+  }
   const step = {
     stepIndex: trace.steps.length,
     timestamp: Date.now(),
@@ -171,8 +248,24 @@ export function recordEvalTrace(runId, details = {}) {
   if (details.tokenUsage && typeof details.tokenUsage === 'object') {
     step.tokenUsage = sanitize(details.tokenUsage);
   }
-  if (trace.steps.length < MAX_STEPS) trace.steps.push(step);
+  if (trace.steps.length < MAX_STEPS) {
+    step.stepIndex = trace.steps.length;
+    trace.steps.push(step);
+  }
+  let callback = null;
+  if (capturesFirstMutation) {
+    const capturedAt = Date.now();
+    callback = actionCallbacks.get(String(runId)) || null;
+    trace.measurement = {
+      ...trace.measurement,
+      predictionCaptured: true,
+      timeToFirstActionMs: Math.max(0, capturedAt - trace.startedAt),
+      terminalReason: callback ? 'prediction_captured' : trace.measurement.terminalReason,
+    };
+    actionCallbacks.delete(String(runId));
+  }
   if (details.kind === 'terminal') {
+    actionCallbacks.delete(String(runId));
     trace.terminal = sanitize({
       type: String(details.terminalType || 'complete').slice(0, 32),
       content: details.llmResponse,
@@ -183,6 +276,13 @@ export function recordEvalTrace(runId, details = {}) {
   }
   const bounded = boundedTrace(trace);
   traces.set(String(runId), bounded);
+  if (callback) {
+    try {
+      callback({ runId: String(runId), step, actionName: step.action_taken?.function?.name });
+    } catch (_) {
+      // Evaluation callbacks are best-effort controls and must not break trace recording.
+    }
+  }
   return step;
 }
 
@@ -205,6 +305,14 @@ export function finishEvalTrace(runId, terminal = {}) {
     });
   }
   trace.finishedAt = Date.now();
+  trace.measurement = {
+    ...trace.measurement,
+    cleanupTimeMs:
+      trace.measurement.predictionCaptured === true
+        ? Math.max(0, trace.finishedAt - trace.startedAt - trace.measurement.timeToFirstActionMs)
+        : null,
+  };
+  actionCallbacks.delete(String(runId));
   const bounded = boundedTrace(trace);
   traces.set(String(runId), bounded);
   return bounded;
@@ -215,5 +323,6 @@ export function getEvalTrace(runId) {
 }
 
 export function clearEvalTrace(runId) {
+  actionCallbacks.delete(String(runId));
   traces.delete(String(runId));
 }
