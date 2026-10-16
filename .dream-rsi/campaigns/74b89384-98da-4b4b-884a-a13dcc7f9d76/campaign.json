@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "id": "74b89384-98da-4b4b-884a-a13dcc7f9d76",
+  "baseRoot": "C:\\Users\\juanm\\Documents\\GitHub\\Chromeext_PromptPaul\\.dream-rsi",
+  "campaignRoot": "C:\\Users\\juanm\\Documents\\GitHub\\Chromeext_PromptPaul\\.dream-rsi\\campaigns\\74b89384-98da-4b4b-884a-a13dcc7f9d76",
+  "projectDir": "C:\\Users\\juanm\\Documents\\GitHub\\Chromeext_PromptPaul",
+  "targetRoot": "C:\\Users\\juanm\\Documents\\GitHub\\Chromeext_PromptPaul",
+  "goal": "Improve Mind2Web exact next-action accuracy on the pinned 10-case held-out test_domain corpus, from the current baseline toward 10/10. Make generalizable changes only in the declared orchestrator/prompt/tool scope; do not special-case evaluation examples or change the grader, evaluation data, or evaluator.",
+  "task": {
+    "name": "PromptPaul_Mind2Web_ExactAction_verified_v3",
+    "problem_file": null,
+    "workspace": ".",
+    "eval_program": "src/orchestrator/RunOrchestrator.js",
+    "score_program": "node \"C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/adapter/dream-rsi-mind2web-score.mjs\"",
+    "score_path": "eval/score.json",
+    "score_field": "score",
+    "valid_field": "valid",
+    "fail_class_field": "fail_class",
+    "error_field": "error",
+    "higher_is_better": true,
+    "workers": 2,
+    "max_loops": 1,
+    "k1": 3,
+    "k2": 4,
+    "revisions": 2,
+    "beta1": 0.01,
+    "beta2": 0.01,
+    "beta_grid": [
+      0.1,
+      0.3,
+      0.6,
+      0.9
+    ],
+    "default_beta": 0.6,
+    "agent_timeout_ms": 480000,
+    "evaluator_timeout_ms": 120000,
+    "copy_exclude": [
+      "node_modules",
+      ".git",
+      "artifacts",
+      "dist",
+      "dist-dev",
+      "dist-eval",
+      ".dream-rsi"
+    ],
+    "work_retention": 20,
+    "guidance": "off",
+    "agent": {
+      "command": "pi",
+      "args": [
+        "-p",
+        "--no-session",
+        "-na",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-context-files"
+      ],
+      "model": "openai-codex/gpt-6-luna",
+      "thinking": "high",
+      "prompt_via": "stdin"
+    }
+  },
+  "scope": [
+    "src/orchestrator/RunOrchestrator.js",
+    "src/utils/pageActionResult.js",
+    "tests/runOrchestrator.test.js",
+    "tests/pageActionResult.test.js"
+  ],
+  "verifierInputs": [
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/adapter/dream-rsi-mind2web-score.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/artifacts/mind2web/test_domain-cases-10.json",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/artifacts/mind2web/test_domain.jsonl",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/artifacts/mind2web/test_domain.manifest.json",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/bridge/extension-bridge.html",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/bridge/extension-bridge.js",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/package-lock.json",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/package.json",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/scripts/build-extension.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/scripts/mind2web-live.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/src/liveNetworkPolicy.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/src/scoring/scoreMind2WebAction.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/src/tasks/mind2web.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/src/tasks/mind2webCases.mjs",
+    "C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/src/tasks/mind2webRunOutcome.mjs"
+  ],
+  "verifierIdentity": "c1f08f7734ae4748fab414158fc810ec77201a69ef5dfbf95c13e26c47f84b8e",
+  "taskFingerprint": "b41958603394221d",
+  "minimumGain": 0.1,
+  "limits": {
+    "maxCycles": 1,
+    "maxAgentStarts": 10,
+    "maxEvaluatorRuns": 3,
+    "deadlineMs": 3600000,
+    "plateauCycles": 2,
+    "maxCandidatesPerCycle": 3
+  },
+  "startedAt": "2026-10-14T08:10:50.567Z",
+  "deadlineAt": "2026-10-14T09:10:50.567Z",
+  "completedCycles": [],
+  "currentScore": 0,
+  "bestScore": 0,
+  "noGainCycles": 0,
+  "state": {
+    "kind": "failed",
+    "reason": "target verifier did not produce a trustworthy baseline: evaluator timed out"
+  }
+}

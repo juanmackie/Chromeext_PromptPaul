@@ -83,7 +83,42 @@ describe('run resilience helpers', () => {
   it('detects long exact repetition but ignores short repetition', () => {
     const fragment = 'This is a repeated provider fragment that is long enough to detect. ';
     expect(detectRepeatedOutput(fragment.repeat(8))).toMatchObject({ repetitions: 8 });
+    expect(detectRepeatedOutput(`Prefix: ${fragment.repeat(5)} trailing note.`)).toMatchObject({
+      repetitions: 5,
+    });
     expect(detectRepeatedOutput('repeat '.repeat(200))).toBeNull();
+  });
+
+  it('accepts a long varied response without classifying it as repetition', () => {
+    const response = Array.from(
+      { length: 100 },
+      (_, index) => `Paragraph ${index + 1}: observation ${index * 7919} has value ${index ** 3}.`
+    ).join('\n\n');
+
+    expect(detectRepeatedOutput(response)).toBeNull();
+  });
+
+  it('rejects large low-diversity output', () => {
+    expect(detectRepeatedOutput('ab'.repeat(50_000))).toBeNull();
+  });
+
+  it('ignores a large repeated prefix that does not cover the response', () => {
+    const prefix = 'abcdefghijkl'.repeat(5).repeat(600);
+    let seed = 98_342;
+    const tail = Array.from({ length: 64_000 }, () => {
+      seed = (seed * 48_271) % 2_147_483_647;
+      return String.fromCharCode(65 + (seed % 26));
+    }).join('');
+
+    expect(detectRepeatedOutput(prefix + tail)).toBeNull();
+  });
+
+  it('counts Unicode code points across cached repeated-prefix matches', () => {
+    const fragment = Array.from({ length: 12 }, (_, index) => String.fromCodePoint(0x1f600 + index))
+      .join('')
+      .repeat(3);
+
+    expect(detectRepeatedOutput(fragment.repeat(400))).toMatchObject({ repetitions: 400 });
   });
 
   it('redacts credential-shaped provider details', () => {

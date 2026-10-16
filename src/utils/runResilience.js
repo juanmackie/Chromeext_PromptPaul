@@ -312,6 +312,31 @@ function contentText(content) {
     .join('\n');
 }
 
+function buildPrefixMatchLengths(text, start) {
+  const length = text.length - start;
+  const matches = new Uint32Array(length);
+  let windowStart = 0;
+  let windowEnd = 0;
+
+  for (let index = 1; index < length; index += 1) {
+    if (index < windowEnd) {
+      matches[index] = Math.min(windowEnd - index, matches[index - windowStart]);
+    }
+    while (
+      index + matches[index] < length &&
+      text[start + matches[index]] === text[start + index + matches[index]]
+    ) {
+      matches[index] += 1;
+    }
+    if (index + matches[index] > windowEnd) {
+      windowStart = index;
+      windowEnd = index + matches[index];
+    }
+  }
+
+  return matches;
+}
+
 /**
  * Detect a conservative exact-fragment repetition loop.
  * @param {string} value
@@ -327,17 +352,65 @@ export function detectRepeatedOutput(value, options = {}) {
   const maxFragmentChars = Math.min(2_048, Math.floor(text.length / 2));
   const scanLimit = Math.min(128, text.length - minChars * 2);
   for (let start = 0; start <= scanLimit; start += 1) {
-    for (let size = minChars; size <= maxFragmentChars; size += 1) {
-      const fragment = text.slice(start, start + size);
-      if (new Set(fragment).size < 12) continue;
-      let cursor = start;
-      let repetitions = 0;
-      while (text.startsWith(fragment, cursor)) {
-        repetitions += 1;
-        cursor += size;
+    const characterCounts = new Map();
+    let distinctCharacters = 0;
+    let repeatedPrefixMatches = null;
+    let repeatedCharsScanned = 0;
+    const startMaxFragmentChars = Math.min(maxFragmentChars, text.length - start - 1);
+    for (let size = 1; size <= startMaxFragmentChars; size += 1) {
+      const addedIndex = start + size - 1;
+      const addedCharacter = text[addedIndex];
+      const addedCode = text.charCodeAt(addedIndex);
+      const previousCode = addedIndex > start ? text.charCodeAt(addedIndex - 1) : 0;
+      if (
+        addedCode >= 0xdc00 &&
+        addedCode <= 0xdfff &&
+        previousCode >= 0xd800 &&
+        previousCode <= 0xdbff
+      ) {
+        const highSurrogate = text[addedIndex - 1];
+        const highCount = characterCounts.get(highSurrogate);
+        if (highCount === 1) {
+          characterCounts.delete(highSurrogate);
+          distinctCharacters -= 1;
+        } else {
+          characterCounts.set(highSurrogate, highCount - 1);
+        }
+        const codePoint = text.slice(addedIndex - 1, addedIndex + 1);
+        const codePointCount = characterCounts.get(codePoint) || 0;
+        characterCounts.set(codePoint, codePointCount + 1);
+        if (codePointCount === 0) distinctCharacters += 1;
+      } else {
+        const characterCount = characterCounts.get(addedCharacter) || 0;
+        characterCounts.set(addedCharacter, characterCount + 1);
+        if (characterCount === 0) distinctCharacters += 1;
       }
+
+      if (size < minChars) continue;
+      // Most candidate periods fail on the first character. Reject them before
+      // slicing and comparing the full fragment. The rolling character count
+      // also rejects low-diversity candidates without rescanning each slice.
+      if (text[start] !== text[start + size] || distinctCharacters < 12) continue;
+      let repetitions;
+      if (repeatedPrefixMatches) {
+        repetitions = 1 + Math.floor(repeatedPrefixMatches[size] / size);
+      } else {
+        const fragment = text.slice(start, start + size);
+        let cursor = start;
+        repetitions = 0;
+        while (text.startsWith(fragment, cursor)) {
+          repetitions += 1;
+          cursor += size;
+        }
+        repeatedCharsScanned += repetitions * size;
+        if (repeatedCharsScanned > 8_192) {
+          repeatedPrefixMatches = buildPrefixMatchLengths(text, start);
+          repetitions = 1 + Math.floor(repeatedPrefixMatches[size] / size);
+        }
+      }
+      if (repetitions < 2) continue;
       const coverage = (repetitions * size) / text.length;
-      if (repetitions >= 2 && coverage >= coverageRatio) {
+      if (coverage >= coverageRatio) {
         return { fragmentChars: size, repetitions, coverage };
       }
     }

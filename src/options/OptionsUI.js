@@ -122,6 +122,9 @@ export function initUnsavedGuard(tracker, options = {}) {
 
   function onBeforeUnload(event) {
     if (tracker && tracker.isDirty()) {
+      if (typeof navigator !== 'undefined' && navigator.userActivation?.hasBeenActive === false) {
+        return undefined;
+      }
       event.preventDefault();
       event.returnValue = '';
       return '';

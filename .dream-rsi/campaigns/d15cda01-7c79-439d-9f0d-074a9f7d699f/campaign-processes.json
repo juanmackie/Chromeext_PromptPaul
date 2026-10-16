@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "agent_limit": 9,
+  "evaluator_limit": 3,
+  "agent_starts": 1,
+  "evaluator_runs": 1,
+  "last_start": {
+    "kind": "evaluator",
+    "key": "seed-measurement",
+    "reserved_at": "2026-10-14T08:15:47.936Z"
+  }
+}

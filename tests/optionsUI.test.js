@@ -288,11 +288,84 @@ describe('endpointHost', () => {
 });
 
 describe('initUnsavedGuard', () => {
+  function runBeforeUnload(activation, { dirty = true, onBeforeUnload } = {}) {
+    const listeners = new Map();
+    const windowMock = {
+      addEventListener: vi.fn((type, listener) => listeners.set(type, listener)),
+      removeEventListener: vi.fn(),
+    };
+    vi.stubGlobal('window', windowMock);
+    vi.stubGlobal('document', {});
+    if (activation === undefined) {
+      vi.stubGlobal('navigator', {});
+    } else {
+      vi.stubGlobal('navigator', { userActivation: activation });
+    }
+
+    const field = makeInput('initial');
+    const tracker = createDirtyTracker([{ element: field }]);
+    if (dirty) field.value = 'changed';
+    const teardown = initUnsavedGuard(tracker, { confirmBeforeUnload: true });
+    const event = { preventDefault: vi.fn(), returnValue: undefined };
+    const beforeUnload = listeners.get('beforeunload');
+    const result = onBeforeUnload ? onBeforeUnload(beforeUnload, event) : beforeUnload(event);
+    teardown();
+    vi.unstubAllGlobals();
+    return { event, result };
+  }
+
   it('returns a teardown function in non-browser environments', () => {
     const tracker = createDirtyTracker([{ element: makeInput('a') }]);
     const teardown = initUnsavedGuard(tracker, { confirmBeforeUnload: true });
     expect(typeof teardown).toBe('function');
     teardown();
+  });
+
+  it('does not request a beforeunload prompt without sticky user activation', () => {
+    const { event, result } = runBeforeUnload({ hasBeenActive: false });
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.returnValue).toBeUndefined();
+    expect(result).toBeUndefined();
+  });
+
+  it('requests a beforeunload prompt after sticky user activation', () => {
+    const { event, result } = runBeforeUnload({ hasBeenActive: true });
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.returnValue).toBe('');
+    expect(result).toBe('');
+  });
+
+  it('checks sticky activation when beforeunload fires', () => {
+    const activation = { hasBeenActive: false };
+    const laterEvent = { preventDefault: vi.fn(), returnValue: undefined };
+    let laterResult;
+    const { event, result } = runBeforeUnload(activation, {
+      onBeforeUnload(beforeUnload, initialEvent) {
+        const initialResult = beforeUnload(initialEvent);
+        activation.hasBeenActive = true;
+        laterResult = beforeUnload(laterEvent);
+        return initialResult;
+      },
+    });
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(result).toBeUndefined();
+    expect(laterEvent.preventDefault).toHaveBeenCalledOnce();
+    expect(laterEvent.returnValue).toBe('');
+    expect(laterResult).toBe('');
+  });
+
+  it('preserves the prompt when the user activation API is unavailable', () => {
+    const { event, result } = runBeforeUnload();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.returnValue).toBe('');
+    expect(result).toBe('');
+  });
+
+  it('does not request a prompt after the dirty tracker is clean', () => {
+    const { event, result } = runBeforeUnload({ hasBeenActive: true }, { dirty: false });
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.returnValue).toBeUndefined();
+    expect(result).toBeUndefined();
   });
 
   it('announceDirtyChange is a safe no-op without a window', () => {

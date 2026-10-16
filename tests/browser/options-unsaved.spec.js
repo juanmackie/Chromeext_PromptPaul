@@ -11,6 +11,186 @@ const { expect, test } = require('@playwright/test');
 const { prepareCodexProfile } = require('../../scripts/act-benchmark.js');
 const { launchTestBrowser, openHarness, removeUserDataDir } = require('./browserTestSupport.js');
 
+const blockedBeforeUnloadWarning =
+  "Blocked attempt to show a 'beforeunload' confirmation panel for a frame that never had a user gesture since its load.";
+
+async function openOptionsWithProfile(context, harness) {
+  const extensionId = new URL(harness.url()).hostname;
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  const cdp = await context.newCDPSession(page);
+  const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+  await expect
+    .poll(
+      async () => {
+        const { result } = await cdp.send('Runtime.evaluate', {
+          expression: `JSON.stringify({
+            endpoint: document.querySelector('#llmEndpoint')?.value,
+            clean: document.querySelector('#unsaved-banner')?.hidden === true
+          })`,
+          returnByValue: true,
+          userGesture: false,
+        });
+        return JSON.parse(result.value);
+      },
+      { timeout: 10_000 }
+    )
+    .toEqual({ endpoint, clean: true });
+  const initialActivation = await cdp.send('Runtime.evaluate', {
+    expression: 'navigator.userActivation.hasBeenActive',
+    returnByValue: true,
+    userGesture: false,
+  });
+  return { page, cdp, initialActivation: initialActivation.result.value };
+}
+
+test('script-generated dirty state reloads without a blocked beforeunload warning', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-options-script-dirty-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  let options;
+  let cdp;
+  let initialActivation;
+  const consoleMessages = [];
+  const dialogs = [];
+
+  try {
+    ({ page: options, cdp, initialActivation } = await openOptionsWithProfile(context, harness));
+    options.on('console', (message) => consoleMessages.push(message.text()));
+    options.on('dialog', (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    });
+
+    // Change the control and notify the dirty tracker without a trusted input
+    // event. Use CDP without its userGesture flag because Playwright evaluate
+    // grants activation to the target frame.
+    expect(initialActivation).toBe(false);
+    const { result: activationResult } = await cdp.send('Runtime.evaluate', {
+      expression: `(() => {
+        document.querySelector('#llmEndpoint').value = 'https://script-edited.example.com/v1';
+        document.querySelector('#llmEndpoint').dispatchEvent(new Event('input', { bubbles: true }));
+        return navigator.userActivation.hasBeenActive;
+      })()`,
+      returnByValue: true,
+      userGesture: false,
+    });
+    const activation = activationResult.value;
+    expect(activation).toBe(false);
+    const dirty = await cdp.send('Runtime.evaluate', {
+      expression: "!document.querySelector('#unsaved-banner').hidden",
+      returnByValue: true,
+      userGesture: false,
+    });
+    expect(dirty.result.value).toBe(true);
+    await cdp.send('Runtime.evaluate', {
+      expression: 'window.__optionsBeforeUnloadRegressionMarker = true',
+      returnByValue: true,
+      userGesture: false,
+    });
+
+    await options.reload();
+
+    expect(dialogs).toEqual([]);
+    expect(
+      consoleMessages.filter((message) => message.includes(blockedBeforeUnloadWarning))
+    ).toEqual([]);
+    const markerAfterReload = await cdp.send('Runtime.evaluate', {
+      expression: 'Boolean(window.__optionsBeforeUnloadRegressionMarker)',
+      returnByValue: true,
+      userGesture: false,
+    });
+    expect(markerAfterReload.result.value).toBe(false);
+    await expect(options.locator('#unsaved-banner')).toBeHidden();
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+test('trusted edits prompt on reload and honor cancel and accept', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-options-trusted-dirty-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  let options;
+  let cdp;
+
+  try {
+    ({ page: options, cdp } = await openOptionsWithProfile(context, harness));
+    await options.locator('#llmEndpoint').fill('https://trusted-edit.example.com/v1');
+    const activated = await cdp.send('Runtime.evaluate', {
+      expression: 'navigator.userActivation.hasBeenActive',
+      returnByValue: true,
+      userGesture: false,
+    });
+    expect(activated.result.value).toBe(true);
+    await expect(options.locator('#unsaved-banner')).toBeVisible();
+
+    const cancelDialogEvent = options.waitForEvent('dialog', { timeout: 5_000 });
+    const canceledReload = options.reload().catch((error) => error);
+    const cancelDialog = await cancelDialogEvent;
+    expect(cancelDialog.type()).toBe('beforeunload');
+    await cancelDialog.dismiss();
+    // A canceled reload may leave Playwright's navigation promise pending even
+    // though the original document remains live; absorb any later rejection.
+    void canceledReload;
+    await expect(options.locator('#llmEndpoint')).toHaveValue(
+      'https://trusted-edit.example.com/v1'
+    );
+    await expect(options.locator('#unsaved-banner')).toBeVisible();
+
+    const acceptDialogEvent = options.waitForEvent('dialog', { timeout: 5_000 });
+    const acceptedReload = options.reload().catch((error) => error);
+    const acceptDialog = await acceptDialogEvent;
+    expect(acceptDialog.type()).toBe('beforeunload');
+    await acceptDialog.accept();
+    const acceptedResult = await acceptedReload;
+    if (acceptedResult instanceof Error) throw acceptedResult;
+    await expect(options.locator('#llmEndpoint')).toHaveValue(
+      'https://openrouter.ai/api/v1/chat/completions'
+    );
+    await expect(options.locator('#unsaved-banner')).toBeHidden();
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+test('saving a trusted edit clears beforeunload protection', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-options-saved-dirty-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  let options;
+  let cdp;
+  let dialogCount = 0;
+
+  try {
+    ({ page: options, cdp } = await openOptionsWithProfile(context, harness));
+    options.on('dialog', (dialog) => {
+      dialogCount += 1;
+      void dialog.accept();
+    });
+    await options.locator('#notchEnabledToggle').click();
+    const activated = await cdp.send('Runtime.evaluate', {
+      expression: 'navigator.userActivation.hasBeenActive',
+      returnByValue: true,
+      userGesture: false,
+    });
+    expect(activated.result.value).toBe(true);
+    await expect(options.locator('#unsaved-banner')).toBeVisible();
+
+    await options.locator('#saveNotch').click();
+    await expect(options.locator('#unsaved-banner')).toBeHidden();
+    await options.reload();
+
+    expect(dialogCount).toBe(0);
+    await expect(options.locator('#unsaved-banner')).toBeHidden();
+  } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
 test('Codex benchmark setup uses the extension sign-in flow without adding tokens to profiles', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-codex-benchmark-'));
   const { context } = await launchTestBrowser(userDataDir);

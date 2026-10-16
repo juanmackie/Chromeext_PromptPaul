@@ -1,0 +1,13 @@
+{
+  "score": null,
+  "raw_score": null,
+  "fail_class": "eval_error",
+  "valid": false,
+  "error": "evaluator exited with code 2: C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/adapter/dream-rsi-mind2web-score.sh: line 5: dirname: command not found | Usage: dream-rsi-mind2web-score.sh <workspace>",
+  "measured_at": "2026-10-14T07:45:00.994Z",
+  "workspace": "C:\\Users\\juanm\\Documents\\GitHub\\Chromeext_PromptPaul",
+  "score_program": "bash \"C:/Users/juanm/Documents/GitHub/prompt-paul-agent-eval/adapter/dream-rsi-mind2web-score.sh\" \"$PWD\"",
+  "fingerprint": "a563fdff888b8464",
+  "program_fingerprint": "29fb30e6c0fa38be",
+  "seconds": 1
+}

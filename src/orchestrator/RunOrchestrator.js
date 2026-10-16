@@ -376,6 +376,9 @@ class RunOrchestrator {
     this.toolExecutions = new Set(); // Set of "runId:toolCallId"
     this.toolImplementations = new Map();
     this.journalWrite = Promise.resolve();
+    // Coalesce storage work to one safe snapshot per run while a drain is busy.
+    this.pendingJournalSnapshots = new Map();
+    this.journalDrainActive = false;
 
     // Register built-in tools
     this._registerBuiltInTools();
@@ -7406,27 +7409,66 @@ class RunOrchestrator {
 
   _persistRunJournal(run) {
     if (typeof chrome === 'undefined' || !chrome.storage?.session || !run) return;
-    const snapshot = this._getJournalSnapshot(run);
-    let serialized = JSON.stringify(snapshot);
-    if (serialized.length > RUN_JOURNAL_MAX_BYTES) {
-      snapshot.events = snapshot.events.slice(-32);
-      serialized = JSON.stringify(snapshot);
+    this.pendingJournalSnapshots.set(run.id, this._getJournalSnapshot(run));
+    this._limitPendingJournalSnapshots();
+    this._startRunJournalDrain();
+  }
+
+  _limitPendingJournalSnapshots() {
+    while (this.pendingJournalSnapshots.size > RUN_JOURNAL_MAX_RUNS) {
+      const oldestRunId = [...this.pendingJournalSnapshots.entries()].sort(
+        (left, right) => Number(left[1]?.updatedAt || 0) - Number(right[1]?.updatedAt || 0)
+      )[0][0];
+      this.pendingJournalSnapshots.delete(oldestRunId);
     }
-    this.journalWrite = this.journalWrite
-      .catch(() => {})
-      .then(async () => {
-        const result = await chrome.storage.session.get([RUN_JOURNAL_STORAGE_KEY]);
-        const journals = result?.[RUN_JOURNAL_STORAGE_KEY] || {};
-        journals[run.id] = snapshot;
-        const ordered = Object.entries(journals).sort(
-          (left, right) => Number(right[1]?.updatedAt || 0) - Number(left[1]?.updatedAt || 0)
-        );
-        for (const [staleRunId] of ordered.slice(RUN_JOURNAL_MAX_RUNS)) {
-          delete journals[staleRunId];
+  }
+
+  _startRunJournalDrain() {
+    if (this.journalDrainActive || this.pendingJournalSnapshots.size === 0) return;
+    this.journalDrainActive = true;
+    this.journalWrite = this._drainRunJournalWrites();
+  }
+
+  async _drainRunJournalWrites() {
+    let latestRetryAttempted = false;
+    try {
+      while (this.pendingJournalSnapshots.size > 0) {
+        const snapshots = new Map(this.pendingJournalSnapshots);
+        this.pendingJournalSnapshots.clear();
+        try {
+          const result = await chrome.storage.session.get([RUN_JOURNAL_STORAGE_KEY]);
+          const journals = { ...(result?.[RUN_JOURNAL_STORAGE_KEY] || {}) };
+          for (const [runId, snapshot] of snapshots) {
+            if (JSON.stringify(snapshot).length > RUN_JOURNAL_MAX_BYTES) {
+              snapshot.events = snapshot.events.slice(-32);
+            }
+            journals[runId] = snapshot;
+          }
+          const ordered = Object.entries(journals).sort(
+            (left, right) => Number(right[1]?.updatedAt || 0) - Number(left[1]?.updatedAt || 0)
+          );
+          for (const [staleRunId] of ordered.slice(RUN_JOURNAL_MAX_RUNS)) {
+            delete journals[staleRunId];
+          }
+          await chrome.storage.session.set({ [RUN_JOURNAL_STORAGE_KEY]: journals });
+        } catch (_) {
+          const hasNewerPendingSnapshots = this.pendingJournalSnapshots.size > 0;
+          for (const [runId, snapshot] of snapshots) {
+            if (!this.pendingJournalSnapshots.has(runId)) {
+              this.pendingJournalSnapshots.set(runId, snapshot);
+            }
+          }
+          this._limitPendingJournalSnapshots();
+          if (hasNewerPendingSnapshots && !latestRetryAttempted) {
+            latestRetryAttempted = true;
+            continue;
+          }
+          return false;
         }
-        await chrome.storage.session.set({ [RUN_JOURNAL_STORAGE_KEY]: journals });
-      })
-      .catch(() => {});
+      }
+    } finally {
+      this.journalDrainActive = false;
+    }
   }
 
   getRunJournal(runId) {
