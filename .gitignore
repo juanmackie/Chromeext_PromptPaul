@@ -60,3 +60,6 @@ coverage/
 # Ignore Playwright artifacts
 test-results/
 artifacts/
+
+# Ignore dream-RSI
+.dream-rsi*
