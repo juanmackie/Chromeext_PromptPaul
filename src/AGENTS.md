@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `src/` subtree contains ES modules shared by the extension entry points, including chat-side modules, utility helpers, run orchestration, and shared prompt builders.
+The `src/` subtree contains ES modules used by the extension entry points. Organize new implementation by business capability and use case; keep each capability's implementation cohesive and give new durable folders an owning `AGENTS.md` contract. Existing `chat/`, `options/`, and `orchestrator/` folders remain valid owners for their current modules.
 
 ## Ownership
 
@@ -22,7 +22,7 @@ The `src/` subtree contains ES modules shared by the extension entry points, inc
 
 ## Work Guidance
 
-- Keep reusable logic out of large root entry points when it fits an existing `src/` boundary.
+- Keep implementation out of large root entry points. Put new logic in its owning capability and use-case folder; use `src/utils/` only for stable behavior genuinely shared across capabilities.
 - Update `scripts/test-runner.js` when a core module gains a required contract or regression guard.
 - Avoid Node-only APIs in browser modules.
 - Keep module imports extension-safe with explicit relative paths and `.js` extensions.

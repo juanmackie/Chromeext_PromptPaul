@@ -104,6 +104,8 @@
 
   function isPageActionIgnored(element) {
     // closest() stops at a shadow boundary. Carry exclusions through its host.
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return true;
+    // Include inert here because checkVisibility() does not report it.
     let ancestor = element;
     while (ancestor?.nodeType === Node.ELEMENT_NODE) {
       if (
@@ -114,18 +116,7 @@
         return true;
       ancestor = ancestor.parentElement || ancestor.getRootNode()?.host;
     }
-    return Boolean(
-      !element ||
-      element.nodeType !== Node.ELEMENT_NODE ||
-      element.closest('[data-page-agent-ignore], [data-browser-use-ignore]') ||
-      element.closest('[aria-hidden="true"]') ||
-      // An `inert` subtree is non-interactive by definition. Element.checkVisibility()
-      // does not report inertness, so it is excluded here instead of losing a
-      // cycle to a control the page will never accept input on.
-      element.closest('[inert]') ||
-      element.hidden ||
-      element.getAttribute('aria-hidden') === 'true'
-    );
+    return false;
   }
 
   function isPageActionVisible(element) {

@@ -8,6 +8,7 @@ The `scripts/` subtree contains Node.js scripts for building, testing, and smoke
 
 - `build.js` owns manifest validation, build directory recreation, source file copying, source directory copying, and build metadata generation.
 - `test-runner.js` owns structural tests, regression guards, manifest checks, and skill checks; measured coverage belongs to the Vitest toolchain, not this structural runner.
+- `test-runner.js` also enforces source import direction: application areas (`chat/`, `options/`, and `orchestrator/`) cannot import one another; shared modules cannot depend on application or capability areas; capability modules cannot import application areas or other capabilities; application areas use capability `index.js` entry points. New first-level `src/` folders default to capabilities. The eval-only trace adapter has one documented exception.
 - Act guards pin all built-in tool names and require the occlusion gate before pointer dispatch, including dispatch through an associated visible label.
 - `smoke-check.js` owns the cheapest manifest and vendored dependency sanity checks.
 - `verify-vendored-licenses.js` owns reproducible local hash and license-record checks for vendored libraries.

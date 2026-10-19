@@ -9,7 +9,7 @@
 
 - Root owns project-wide contracts, `manifest.json`, package metadata, root extension entry points (`background.js`, `chat.js`, `options.js`), content scripts, HTML/CSS entries, theme/loading helpers, `ui-primitives.css`, README/changelog files, and the durable `REVIEW_PLAN.md` review record. Transient `PLAN.md`/`plans/` drafts stay untracked.
 - Child docs own the durable subtrees listed under Child contracts below. Read the applicable child contract before editing inside its scope.
-- Shared logic belongs in `src/chat/`, `src/utils/`, or `src/orchestrator/`, not in growing root entry points.
+- Put new business-capability logic under an owning `src/<capability>/<use-case>/` area. Keep `src/utils/` for stable behavior genuinely shared across capabilities; root entry points compose modules instead of owning growing implementations.
 - `dist/`, `dist-dev/`, and `dist-eval/` are generated build output, not source of truth; never edit them directly. `dist-dev/` and `dist-eval/` are local-only development output and must never be packaged or published.
 - Do not edit vendored libraries or binary assets unless the task is specifically about them.
 

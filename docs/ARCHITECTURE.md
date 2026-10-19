@@ -8,6 +8,37 @@ Prompt Paul is a Manifest V3 Chrome extension with three main surfaces:
 
 ## System Layers
 
+### Capability Ownership and Imports
+
+The current source tree has application areas in `chat/`, `options/`, and
+`orchestrator/`, plus shared modules in `utils/` and `prompts.js`. Root entry
+points compose these modules. The structural runner checks imports under
+`src/`: application areas cannot import one another; shared modules cannot
+depend on application or capability areas; capability modules cannot import
+application areas or other capabilities; and application areas import a
+capability through its `index.js`. Any new first-level folder under `src/`
+defaults to a capability. The only current exception is the evaluation-only
+`utils/evalTrace.eval.js` adapter importing `orchestrator/ActOutcome.js`.
+
+Treat `utils/` as a compatibility area for existing shared modules, not the
+default home for new capability logic. New work should start from its business
+capability and use a vertical slice for the use case. As a capability gets a
+cohesive set of modules, move that set behind an explicit entry point and keep
+its implementation private to the capability. Shared code belongs in a common
+area only when multiple capabilities use the same stable behavior.
+
+Candidate capability areas include `conversation/`, `page-actions/`,
+`provider-connections/`, `profiles/`, `search/`, and `content-extraction/`.
+Within them, group new work by use case (for example,
+`page-actions/fill-form/`) and expose only the capability's consumer-facing
+interface from its `index.js`. `chat/` and `options/` remain presentation
+surfaces; `orchestrator/` coordinates runs and adapters.
+
+The import check protects direction while this migration happens. It does not
+make directory moves safe by itself: preserve storage, message, provider, and
+run-event contracts, and update the nearest owning contract and focused tests
+with each capability-sized move.
+
 ### Browser Layer
 
 - `content_script_notch.js` renders the optional edge-pinnable browser-viewport quick-action notch in an isolated Shadow DOM

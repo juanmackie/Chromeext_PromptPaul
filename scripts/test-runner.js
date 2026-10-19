@@ -130,6 +130,106 @@ function checkModule(relativePath, expectedExportPatterns = []) {
 }
 
 /**
+ * Find browser source modules so architectural import rules cover new files too.
+ * @param {string} directory
+ * @returns {string[]}
+ */
+function listSourceModules(directory) {
+  const entries = fs.readdirSync(path.join(repoRoot, directory), { withFileTypes: true });
+  return entries.flatMap((entry) => {
+    const relativePath = path.posix.join(directory, entry.name);
+    if (entry.isDirectory()) return listSourceModules(relativePath);
+    return entry.isFile() && entry.name.endsWith('.js') ? [relativePath] : [];
+  });
+}
+
+/**
+ * Read local static and dynamic import specifiers from a source module.
+ * The project uses plain JavaScript imports, so this small scanner keeps the
+ * structural runner independent of a separate parser dependency.
+ * @param {string} source
+ * @returns {string[]}
+ */
+function getImportSpecifiers(source) {
+  const imports = [];
+  const pattern = /\bimport\s+(?:[^'";]+?\s+from\s+)?(['"])([^'"]+)\1|\bimport\s*\(\s*(['"])([^'"]+)\3\s*\)/g;
+  for (const match of source.matchAll(pattern)) {
+    imports.push(match[2] || match[4]);
+  }
+  return imports;
+}
+
+/**
+ * Resolve a relative source import to a repository-relative path.
+ * @param {string} fromPath
+ * @param {string} specifier
+ * @returns {string|null}
+ */
+function resolveSourceImport(fromPath, specifier) {
+  if (!specifier.startsWith('.')) return null;
+  const absolutePath = path.resolve(repoRoot, path.dirname(fromPath), specifier);
+  const relativePath = path.relative(repoRoot, absolutePath).split(path.sep).join('/');
+  return relativePath.startsWith('src/') ? relativePath : null;
+}
+
+/**
+ * Treat files directly under src/ as shared entry modules; folders own areas.
+ * @param {string} relativePath
+ * @returns {string}
+ */
+function getSourceArea(relativePath) {
+  const segments = relativePath.split('/');
+  return segments.length === 2 ? 'shared' : segments[1];
+}
+
+/**
+ * Validate current source ownership rules. Entry points compose capabilities;
+ * capability modules do not import other capability internals. Shared helpers
+ * do not depend on UI or orchestration modules, except for the eval-only trace
+ * adapter that normalizes terminal outcomes in evaluation builds.
+ */
+function checkSourceImportDirections() {
+  const sharedAreas = new Set(['utils', 'shared', 'prompts.js']);
+  const applicationAreas = new Set(['chat', 'options', 'orchestrator']);
+  const evaluationAdapterImports = new Set([
+    'src/utils/evalTrace.eval.js -> src/orchestrator/ActOutcome.js',
+  ]);
+
+  for (const fromPath of listSourceModules('src')) {
+    const fromArea = getSourceArea(fromPath);
+    const isShared = sharedAreas.has(fromArea);
+    const isApplication = applicationAreas.has(fromArea);
+    const source = readFileSafe(fromPath);
+
+    for (const specifier of getImportSpecifiers(source)) {
+      const toPath = resolveSourceImport(fromPath, specifier);
+      if (!toPath) continue;
+      const toArea = getSourceArea(toPath);
+      const toIsShared = sharedAreas.has(toArea);
+      const toIsApplication = applicationAreas.has(toArea);
+      const toIsCapability = !toIsShared && !toIsApplication;
+      const edge = `${fromPath} -> ${toPath}`;
+
+      if (isApplication && toIsApplication && fromArea !== toArea) {
+        throw new Error(`Application areas must not import one another: ${edge}`);
+      }
+      if (isShared && !toIsShared && !evaluationAdapterImports.has(edge)) {
+        throw new Error(`Shared source must not depend on application or capability areas: ${edge}`);
+      }
+      if (!isShared && !isApplication && toIsApplication) {
+        throw new Error(`Capability modules must not import application areas: ${edge}`);
+      }
+      if (!isShared && !isApplication && toIsCapability && fromArea !== toArea) {
+        throw new Error(`Capability modules must not import another capability: ${edge}`);
+      }
+      if (isApplication && toIsCapability && path.posix.basename(toPath) !== 'index.js') {
+        throw new Error(`Application areas must import capabilities through index.js: ${edge}`);
+      }
+    }
+  }
+}
+
+/**
  * ============================================================
  * UNIT TESTS
  * ============================================================
@@ -1233,6 +1333,10 @@ function runUnitTests(runner) {
  */
 function runIntegrationTests(runner) {
   console.log('🔗 Running integration tests...\n');
+
+  runner.test('Source modules respect capability import directions', () => {
+    checkSourceImportDirections();
+  });
 
   runner.test('OptionsUI module structure valid', () => {
     checkModule('src/options/OptionsUI.js', [
