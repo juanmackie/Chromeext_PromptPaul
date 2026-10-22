@@ -262,7 +262,10 @@ describe('pageActionPolicy', () => {
     });
     // Mixed shapes normalize the same way.
     const mixed = normalizePageActionArgs('page_batch', {
-      actions: [{ name: 'page_find_text', args: { query: 'Price' } }, { name: 'page_wait', condition: 'text', text: 'Done' }],
+      actions: [
+        { name: 'page_find_text', args: { query: 'Price' } },
+        { name: 'page_wait', condition: 'text', text: 'Done' },
+      ],
     });
     expect(mixed.valid).toBe(true);
     expect(mixed.value.actions).toEqual([

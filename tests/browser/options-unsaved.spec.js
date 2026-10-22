@@ -15,9 +15,16 @@ const blockedBeforeUnloadWarning =
   "Blocked attempt to show a 'beforeunload' confirmation panel for a frame that never had a user gesture since its load.";
 
 async function openOptionsWithProfile(context, harness) {
-  const extensionId = new URL(harness.url()).hostname;
-  const page = await context.newPage();
-  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  // Foreground extension-page navigation can set sticky activation without input.
+  const pagePromise = context.waitForEvent('page');
+  await harness.evaluate(async () => {
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL('options.html'),
+      active: false,
+    });
+  });
+  const page = await pagePromise;
+  await page.waitForLoadState('load');
   const cdp = await context.newCDPSession(page);
   const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
   await expect

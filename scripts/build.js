@@ -180,6 +180,8 @@ function copyFiles(manifest) {
     'themeUtils.js',
     'theme-toggle.js',
     'content_script_unified.js',
+    'content_script_notch.js',
+    'content_script_act_feedback.js',
     'content_script_page_actions.js',
     'content_script_diagnostics.js',
     'pdfContentScript.js',

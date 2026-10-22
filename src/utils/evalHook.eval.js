@@ -123,10 +123,7 @@ export function registerEvalRunHook(dependencies = {}) {
       const ownerToken = createOwnerToken();
       let runId = '';
       let runAbortAttempted = false;
-      let abortPromise = null;
-      let abortFailure = null;
       const recordAbortFailure = (error) => {
-        abortFailure = error;
         recordEvalTrace(runId, {
           kind: 'abort_error',
           error: error?.message || String(error),
@@ -189,20 +186,21 @@ export function registerEvalRunHook(dependencies = {}) {
                 error: error?.message || String(error),
               });
             }
-            throw error;
-          } finally {
-            runAbortAttempted = true;
-            try {
-              await runOrchestrator.abort(runId);
-            } catch (error) {
-              recordAbortFailure(error);
-              throw error;
-            }
-            finishEvalTrace(runId, {
-              type: inspectionError ? 'error' : 'inspection_preflight',
-              error: inspectionError?.message || undefined,
-            });
           }
+          runAbortAttempted = true;
+          let abortError = null;
+          try {
+            await runOrchestrator.abort(runId);
+          } catch (error) {
+            recordAbortFailure(error);
+            abortError = error;
+          }
+          finishEvalTrace(runId, {
+            type: inspectionError ? 'error' : 'inspection_preflight',
+            error: inspectionError?.message || undefined,
+          });
+          if (abortError) throw abortError;
+          if (inspectionError) throw inspectionError;
           return getEvalTrace(runId);
         })
         .then((trace) => sendResponse({ success: true, trace }))

@@ -42,6 +42,16 @@ test('shows an isolated quick-action notch when enabled', async () => {
           chrome.storage.sync.set({ themePreference: 'light', darkTheme: false }, resolve)
         )
     );
+    // Options seeds the starter profile asynchronously on a fresh install.
+    // Wait for that write before replacing it with this test profile.
+    await expect
+      .poll(() =>
+        harness.evaluate(async () => {
+          const { profiles = [] } = await chrome.storage.local.get('profiles');
+          return profiles.some((profile) => profile.id === 'default');
+        })
+      )
+      .toBe(true);
     await harness.evaluate(
       () =>
         new Promise((resolve) =>
@@ -155,23 +165,15 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await expect(host.locator('.notch-panel')).toBeVisible();
-    // Wait for the open transition to settle instead of sleeping a fixed
-    // interval: under load a fixed sleep can sample the panel mid-animation
-    // and report a false misalignment. The tolerance below is unchanged.
-    await expect
-      .poll(
-        async () => {
-          const railNow = await host.locator('.notch-rail').boundingBox();
-          const panelNow = await host.locator('.notch-panel').boundingBox();
-          if (!railNow || !panelNow) return Number.POSITIVE_INFINITY;
-          return Math.max(
-            Math.abs(railNow.x - panelNow.x),
-            Math.abs(railNow.width - panelNow.width)
-          );
-        },
-        { timeout: 5_000 }
-      )
-      .toBeLessThanOrEqual(4);
+    // Wait for the actual CSS transition and panel animations to finish before
+    // measuring transformed bounding boxes. Keep the alignment tolerance exact.
+    await host.locator('.notch-shell').evaluate(async (shell) => {
+      await Promise.all(
+        shell
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished.catch(() => {}))
+      );
+    });
     const railBox = await host.locator('.notch-rail').boundingBox();
     const panelBox = await host.locator('.notch-panel').boundingBox();
     expect(railBox).not.toBeNull();
@@ -336,7 +338,79 @@ test('shows an isolated quick-action notch when enabled', async () => {
     await options.locator('#saveNotch').click();
     await expect(options.locator('#notchSaveStatus')).toHaveText('Notch is off.');
     await expect(host).toHaveCount(0);
+
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) =>
+          chrome.storage.local.set({ notchEnabled: false }, () =>
+            chrome.storage.local.set({ notchEnabled: true }, resolve)
+          )
+        )
+    );
+    await expect(host).toHaveCount(1);
+    const laterPage = await context.newPage();
+    await laterPage.goto(fixtureUrl(fixtureServer, 'form.html'));
+    await expect(laterPage.locator('[data-prompt-paul-notch-host]')).toHaveCount(1);
+
+    await harness.evaluate(
+      () => new Promise((resolve) => chrome.storage.local.set({ notchEnabled: false }, resolve))
+    );
+    await expect(host).toHaveCount(0);
+    await expect(laterPage.locator('[data-prompt-paul-notch-host]')).toHaveCount(0);
+    await laterPage.close();
   } finally {
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
+test('shows Act activity feedback on demand while the notch stays disabled', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-act-feedback-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const target = await context.newPage();
+  const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+  await target.goto(targetUrl);
+  const harness = await openHarness(context);
+  let runId;
+
+  try {
+    expect(await target.locator('[data-prompt-paul-notch-host]').count()).toBe(0);
+    const started = await harness.evaluate(
+      (url) => window.pageActionHarness.startRun(url, false, { messages: [] }),
+      targetUrl
+    );
+    expect(started.runId).toBeTruthy();
+    runId = started.runId;
+    const inspected = await harness.evaluate(
+      (id) => window.pageActionHarness.executeTool(id, 'feedback-inspect', 'page_get_state', {}),
+      runId
+    );
+    expect(inspected.result?.snapshot).toBeTruthy();
+
+    await harness.evaluate(
+      ({ id }) => {
+        void window.pageActionHarness.executeTool(id, 'feedback-wait', 'page_wait', {
+          condition: 'text',
+          text: 'Act feedback sentinel is absent',
+          timeoutMs: 1_000,
+        });
+        return true;
+      },
+      { id: runId }
+    );
+    await expect(target.locator('[data-prompt-paul-act-glow]')).toHaveCount(1);
+    await expect
+      .poll(() =>
+        harness.evaluate(({ run, tool }) => window.pageActionHarness.getToolResult(run, tool), {
+          run: runId,
+          tool: 'feedback-wait',
+        })
+      )
+      .not.toBeNull();
+    await expect(target.locator('[data-prompt-paul-act-glow]')).toHaveCount(0);
+    await expect(target.locator('[data-prompt-paul-notch-host]')).toHaveCount(0);
+  } finally {
+    if (runId) await harness.evaluate((id) => window.pageActionHarness.abortRun(id), runId);
     await context.close();
     removeUserDataDir(userDataDir);
   }

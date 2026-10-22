@@ -11,6 +11,9 @@ import {
   initPageActionsToggle,
   formatPlainLanguageDisposition,
   handlePageUserInputRequest,
+  updatePageActionActivity,
+  updatePageTaskProgress,
+  renderPageActionConfirmation,
 } from '../src/chat/ChatPageAutomation.js';
 
 describe('ChatPageAutomation Act permission', () => {
@@ -111,6 +114,100 @@ describe('ChatPageAutomation Act permission', () => {
   });
 });
 
+describe('ChatPageAutomation run-card reuse', () => {
+  class CardElement {
+    constructor(tag) {
+      this.tagName = tag;
+      this.children = [];
+      this.dataset = {};
+      this.attributes = {};
+      this.style = {};
+      this.hidden = false;
+      this.parentElement = null;
+      this.scrollHeight = 0;
+      this.scrollTop = 0;
+      this.clientHeight = 0;
+      this.textContent = '';
+      this.querySelectorAllCalls = 0;
+    }
+
+    appendChild(child) {
+      child.parentElement = this;
+      this.children.push(child);
+      return child;
+    }
+
+    append(...children) {
+      children.forEach((child) => this.appendChild(child));
+    }
+
+    removeChild(child) {
+      const index = this.children.indexOf(child);
+      if (index >= 0) this.children.splice(index, 1);
+      child.parentElement = null;
+      return child;
+    }
+
+    querySelectorAll(selector) {
+      this.querySelectorAllCalls += 1;
+      return this.children.filter((child) =>
+        selector === '[data-page-action-activity]'
+          ? child.dataset.pageActionActivity === 'true'
+          : selector === '[data-page-task-progress]'
+            ? child.dataset.pageTaskProgress === 'true'
+            : false
+      );
+    }
+
+    querySelector(selector) {
+      const className = selector.startsWith('.') ? selector.slice(1) : '';
+      for (const child of this.children) {
+        if (child.className === className) return child;
+        const nested = child.querySelector(selector);
+        if (nested) return nested;
+      }
+      return null;
+    }
+
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    }
+
+    get childElementCount() {
+      return this.children.length;
+    }
+
+    get firstElementChild() {
+      return this.children[0] || null;
+    }
+  }
+
+  it('reuses progress and activity cards without rescanning the transcript', () => {
+    const originalDocument = globalThis.document;
+    globalThis.document = {
+      createElement: (tag) => new CardElement(tag),
+      createTextNode: (text) => ({ textContent: text, parentElement: null }),
+    };
+    const chatArea = new CardElement('main');
+    try {
+      const progress = { runId: 'run-cache', currentAction: 'page_get_state', sequence: 1 };
+      updatePageTaskProgress(chatArea, progress);
+      updatePageTaskProgress(chatArea, { ...progress, sequence: 2 });
+      const activity = { runId: 'run-cache', action: 'page_click', state: 'complete', sequence: 1 };
+      updatePageActionActivity(chatArea, activity);
+      updatePageActionActivity(chatArea, { ...activity, sequence: 2 });
+
+      expect(chatArea.querySelectorAllCalls).toBe(2);
+      expect(chatArea.children).toHaveLength(2);
+      expect(chatArea.children[0].dataset.pageTaskProgress).toBe('true');
+      expect(chatArea.children[1].dataset.pageActionActivity).toBe('true');
+    } finally {
+      if (originalDocument === undefined) delete globalThis.document;
+      else globalThis.document = originalDocument;
+    }
+  });
+});
+
 describe('ChatPageAutomation plain-language delivery mapping', () => {
   it('maps each receipt disposition to plain language', () => {
     expect(formatPlainLanguageDisposition('delivered_verified')).toBe('Verified');
@@ -153,6 +250,9 @@ describe('ChatPageAutomation clarification card', () => {
     addEventListener(name, handler) {
       this.listeners[name] = handler;
     }
+    querySelectorAll() {
+      return [];
+    }
     querySelector(selector) {
       const cls = selector.replace('.', '');
       for (const child of this.children) {
@@ -162,7 +262,9 @@ describe('ChatPageAutomation clarification card', () => {
       }
       return null;
     }
-    focus() {}
+    focus() {
+      globalThis.document.activeElement = this;
+    }
   }
 
   let sent;
@@ -197,6 +299,52 @@ describe('ChatPageAutomation clarification card', () => {
     const controls = card.children.find((child) => child.className.includes('controls'));
     return controls.children.find((child) => child.tag === 'input');
   };
+
+  it('hides persistent and run-wide trust choices on a host-marked sensitive site', () => {
+    const chatArea = new FakeElement('div');
+    chatArea.scrollHeight = 0;
+    chatArea.scrollTop = 0;
+    chatArea.clientHeight = 0;
+    const card = renderPageActionConfirmation(
+      chatArea,
+      {
+        confirmationId: 'sensitive-confirm',
+        action: 'Click Save',
+        siteOrigin: 'https://accounts.google.com',
+        siteTrustAllowed: false,
+      },
+      vi.fn()
+    );
+    const controls = card.children.find((child) => child.className.includes('controls'));
+    expect(
+      controls.children.find((child) => child.textContent.includes('Always allow')).hidden
+    ).toBe(true);
+    expect(
+      controls.children.find((child) => child.textContent.includes('Approve similar')).hidden
+    ).toBe(true);
+    expect(
+      card.children.some((child) =>
+        child.textContent.includes(
+          'Saved site trust and run-wide approvals are unavailable on this sensitive site.'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it('focuses the approval card rather than approving by default', () => {
+    const chatArea = new FakeElement('div');
+    chatArea.scrollHeight = 0;
+    chatArea.scrollTop = 0;
+    chatArea.clientHeight = 0;
+    const card = renderPageActionConfirmation(
+      chatArea,
+      { confirmationId: 'confirm-1', action: 'Click Save', summary: 'Click Save' },
+      vi.fn()
+    );
+    expect(globalThis.document.activeElement).toBe(card);
+    expect(card.tabIndex).toBe(-1);
+    expect(card.attributes['aria-label']).toContain('Click Save');
+  });
 
   const render = (resolveAuth) =>
     handlePageUserInputRequest(

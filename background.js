@@ -16,6 +16,7 @@ import { getCurrentPageSupport } from './src/utils/permissionGuards.js';
 import {
   classifyRuntimeMessageError,
   friendlyRuntimeErrorMessage,
+  isRuntimeMessageUndelivered,
 } from './src/utils/runtimeErrors.js';
 import {
   formatToolRequestError,
@@ -45,9 +46,11 @@ import {
   readMediaBlob,
 } from './src/utils/mediaFetch.js';
 import { waitForRetry } from './src/utils/retryBackoff.js';
+import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
 import { CdpInputBackend } from './src/orchestrator/CdpInputBackend.js';
+import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
 import { HermesTransport, supportsHermesClientTools } from './src/orchestrator/HermesTransport.js';
@@ -514,6 +517,169 @@ async function fetchMediaAsBase64(url) {
     clearTimeout(timeout);
   }
 }
+
+const pageActionReadinessCache = createPageActionReadinessCache({ ttlMs: 60_000, maxEntries: 32 });
+const extractionDependencyPromises = new Map();
+const dynamicNotchScriptId = 'prompt-paul-notch';
+const actFeedbackInjectionPromises = new Map();
+const notchActMessageQueues = new Map();
+let dynamicNotchSyncQueue = Promise.resolve();
+
+const ensureExtractionDependencies = (tabId, documentUrl) => {
+  const key = `${tabId}:${String(documentUrl || '').split(/[?#]/, 1)[0]}`;
+  if (extractionDependencyPromises.has(key)) return extractionDependencyPromises.get(key);
+  const promise = new Promise((resolve, reject) => {
+    try {
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['libs/readability.js', 'libs/turndown.js'] },
+        () => {
+          const error = chrome.runtime.lastError;
+          if (error) reject(new Error(error.message || 'Could not load extraction libraries.'));
+          else resolve(true);
+        }
+      );
+    } catch (error) {
+      reject(error);
+    }
+  }).catch((error) => {
+    extractionDependencyPromises.delete(key);
+    throw error;
+  });
+  extractionDependencyPromises.set(key, promise);
+  return promise;
+};
+
+const injectNotchIntoOpenTabs = async () => {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs
+      .filter((tab) => Number.isInteger(tab.id) && /^(?:https?:|file:)/u.test(tab.url || ''))
+      .map(
+        (tab) =>
+          new Promise((resolve) => {
+            chrome.scripting.executeScript(
+              {
+                target: { tabId: tab.id },
+                files: ['content_script_diagnostics.js', 'content_script_notch.js'],
+              },
+              () => {
+                void chrome.runtime.lastError;
+                resolve();
+              }
+            );
+          })
+      )
+  );
+};
+
+const notifyNotchPreference = async (enabled) => {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs
+      .filter((tab) => Number.isInteger(tab.id))
+      .map(
+        (tab) =>
+          new Promise((resolve) => {
+            try {
+              chrome.tabs.sendMessage(tab.id, { action: 'notchPreferenceChanged', enabled }, () => {
+                void chrome.runtime.lastError;
+                resolve();
+              });
+            } catch (_) {
+              resolve();
+            }
+          })
+      )
+  );
+};
+
+const syncDynamicNotchScript = () => {
+  const next = dynamicNotchSyncQueue
+    .catch(() => {})
+    .then(async () => {
+      const preference = await chrome.storage.local.get(['notchEnabled']);
+      const enabled = preference.notchEnabled === true;
+      const registered = await chrome.scripting.getRegisteredContentScripts({
+        ids: [dynamicNotchScriptId],
+      });
+      if (enabled) {
+        if (!registered.length) {
+          await chrome.scripting.registerContentScripts([
+            {
+              id: dynamicNotchScriptId,
+              matches: ['<all_urls>'],
+              js: ['content_script_diagnostics.js', 'content_script_notch.js'],
+              allFrames: false,
+              runAt: 'document_idle',
+              persistAcrossSessions: true,
+            },
+          ]);
+        }
+        await injectNotchIntoOpenTabs();
+      } else if (registered.length) {
+        await chrome.scripting.unregisterContentScripts({ ids: [dynamicNotchScriptId] });
+      }
+      await notifyNotchPreference(enabled);
+    });
+  dynamicNotchSyncQueue = next.catch(() => {});
+  return next;
+};
+
+function injectActFeedbackScript(tabId) {
+  const existing = actFeedbackInjectionPromises.get(tabId);
+  if (existing) return existing;
+  let pending;
+  pending = new Promise((resolve, reject) => {
+    try {
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['content_script_act_feedback.js'] },
+        () => {
+          const error = chrome.runtime.lastError;
+          if (error)
+            reject(new Error(error.message || 'Could not load the Act activity indicator.'));
+          else resolve();
+        }
+      );
+    } catch (error) {
+      reject(error);
+    }
+  }).catch((error) => {
+    if (actFeedbackInjectionPromises.get(tabId) === pending) {
+      actFeedbackInjectionPromises.delete(tabId);
+    }
+    throw error;
+  });
+  actFeedbackInjectionPromises.set(tabId, pending);
+  return pending;
+}
+
+const markPageActionReadiness = async (tabId, documentUrl) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab?.status === 'loading') return false;
+  } catch (_) {
+    return false;
+  }
+  return pageActionReadinessCache.mark(tabId, documentUrl);
+};
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading' || typeof changeInfo.url === 'string') {
+    pageActionReadinessCache.invalidate(tabId);
+    for (const key of extractionDependencyPromises.keys()) {
+      if (key.startsWith(`${tabId}:`)) extractionDependencyPromises.delete(key);
+    }
+    actFeedbackInjectionPromises.delete(tabId);
+  }
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pageActionReadinessCache.invalidate(tabId);
+  actFeedbackInjectionPromises.delete(tabId);
+  notchActMessageQueues.delete(tabId);
+  for (const key of extractionDependencyPromises.keys()) {
+    if (key.startsWith(`${tabId}:`)) extractionDependencyPromises.delete(key);
+  }
+});
 
 // Enable the side panel on all pages
 chrome.sidePanel.setOptions({ path: 'chat.html' }).catch((error) => console.error(error));
@@ -1207,6 +1373,34 @@ const injectPageActionFrameScripts = (tabId) =>
     }
   });
 
+const injectPageActionFrameScriptsInFrames = async (tabId, frames) => {
+  const results = await Promise.all(
+    frames.map(
+      (frame) =>
+        new Promise((resolve) => {
+          if (typeof frame.documentId !== 'string' || !frame.documentId) return resolve(false);
+          try {
+            chrome.scripting.executeScript(
+              {
+                target: { tabId, documentIds: [frame.documentId] },
+                files: ['content_script_page_actions.js'],
+              },
+              (results) =>
+                resolve(
+                  !chrome.runtime.lastError &&
+                    Array.isArray(results) &&
+                    results.some((result) => result.documentId === frame.documentId)
+                )
+            );
+          } catch (_) {
+            resolve(false);
+          }
+        })
+    )
+  );
+  return new Set(frames.filter((_, index) => results[index]).map((frame) => frame.frameId));
+};
+
 /**
  * Inject the unified page bridge when a tab was opened after the extension
  * content-script match was evaluated. Chrome can return from tabs.create while
@@ -1336,6 +1530,7 @@ const pageActionAvailabilityProvider = async (tabId) => {
     // page_get_state call would fail and the orchestrator would retry it
     // until the tool-call limit is reached.
     await ensurePageActionContentScript(tabId);
+    await markPageActionReadiness(tabId, tab?.url);
     return true;
   } catch (error) {
     if (['PAGE_ACTION_NO_CONTENT_SCRIPT', 'PAGE_ACTION_INJECTION_FAILED'].includes(error?.code)) {
@@ -1495,8 +1690,10 @@ const sendPageActionMessage = (
     try {
       const callback = (response) => {
         if (chrome.runtime.lastError) {
-          const error = new Error(friendlyRuntimeErrorMessage(chrome.runtime.lastError.message));
+          const runtimeMessage = chrome.runtime.lastError.message || '';
+          const error = new Error(friendlyRuntimeErrorMessage(runtimeMessage));
           error.code = 'PAGE_ACTION_MESSAGE_FAILED';
+          if (isRuntimeMessageUndelivered(runtimeMessage)) error.notDelivered = true;
           finish(null, error);
           return;
         }
@@ -1578,6 +1775,7 @@ const getPageActionFrameDescriptors = async (tabId) => {
           );
         return {
           frameId: entry.frameId,
+          documentId: typeof entry.documentId === 'string' ? entry.documentId : '',
           origin,
           isTop: entry.frameId === 0,
           restricted: !getCurrentPageSupport(origin).available,
@@ -1598,6 +1796,11 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
   const elements = [];
   const routes = Object.create(null);
   const contentParts = [];
+  let contentPartsChars = 0;
+  const addContentPart = (part) => {
+    contentParts.push(part);
+    contentPartsChars += part.length;
+  };
   let valueBudget = 8_000;
   let topFrameRemap = null;
   for (const [frameIndex, frame] of frameSnapshots.entries()) {
@@ -1646,16 +1849,21 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
         })
       )
       .join('\n');
-    contentParts.push(
+    addContentPart(
       `Frame ${frameIndex + 1} — ${frame.isTop ? 'main page' : frame.origin}\n${frameContent}`
     );
   }
   if (omittedFrameCount > 0) {
-    contentParts.push(
+    addContentPart(
       `${omittedFrameCount} embedded frame${omittedFrameCount === 1 ? '' : 's'} omitted by safety policy.`
     );
   }
-  const content = contentParts.join('\n\n').slice(0, 24_000);
+  let content = '';
+  for (const part of contentParts) {
+    const separator = content ? '\n\n' : '';
+    content += `${separator}${part}`.slice(0, Math.max(0, 24_000 - content.length));
+    if (content.length >= 24_000) break;
+  }
   const focusedFrame = frameSnapshots.find((frame) => frame.snapshot?.focusedElement);
   const focusedElement = focusedFrame?.snapshot?.focusedElement
     ? {
@@ -1692,7 +1900,7 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
     elements,
     ...(focusedElement ? { focusedElement } : { focusedElement: undefined }),
     regions: mergedRegions,
-    truncated: contentParts.join('').length > content.length || elements.length >= 200,
+    truncated: contentPartsChars > content.length || elements.length >= 200,
   };
   pageActionFrameSnapshotMaps.set(runId, { snapshotId, routes });
   return merged;
@@ -1715,42 +1923,93 @@ const collectPageActionFrameSnapshots = async ({
       return false;
     }
     if (frame.isTop && topResponse?.snapshot) {
-      frames.push({ ...frame, snapshot: topResponse.snapshot });
+      if (getPageActionSiteOrigin(topResponse.snapshot.url || '') === frame.origin) {
+        frames.push({ ...frame, snapshot: topResponse.snapshot });
+      } else {
+        omittedFrameCount += 1;
+      }
       return false;
     }
     return true;
   });
+  const requestFrameState = (frame) =>
+    sendPageActionMessage(
+      tabId,
+      {
+        action: 'pageAction',
+        runId,
+        pageAction: 'page_get_state',
+        args: {},
+        blockedOrigins,
+      },
+      signal,
+      PAGE_ACTION_MESSAGE_TIMEOUT_MS,
+      frame.frameId
+    );
   const childResponses = await Promise.all(
-    eligibleFrames.map((frame) =>
-      sendPageActionMessage(
-        tabId,
-        {
-          action: 'pageAction',
-          runId,
-          pageAction: 'page_get_state',
-          args: {},
-          blockedOrigins,
-        },
-        signal,
-        PAGE_ACTION_MESSAGE_TIMEOUT_MS,
-        frame.frameId
-      )
-        .then((response) => ({ frame, response }))
-        .catch(() => ({ frame, response: null }))
-    )
+    eligibleFrames.map(async (frame) => {
+      try {
+        return { frame, response: await requestFrameState(frame), error: null };
+      } catch (error) {
+        return { frame, response: null, error };
+      }
+    })
   );
+  const missingBridges = childResponses.filter(
+    ({ error }) => error?.code === 'PAGE_ACTION_MESSAGE_FAILED'
+  );
+  if (missingBridges.length && !signal?.aborted) {
+    const currentFrames = new Map(
+      (await getPageActionFrameDescriptors(tabId)).map((frame) => [frame.frameId, frame])
+    );
+    const recoverable = missingBridges.flatMap(({ frame }) => {
+      const current = currentFrames.get(frame.frameId);
+      if (
+        !current ||
+        current.origin !== frame.origin ||
+        !current.documentId ||
+        current.restricted ||
+        current.paymentFrame ||
+        blockedOrigins.includes(current.origin)
+      )
+        return [];
+      return [current];
+    });
+    const injectedFrames = await injectPageActionFrameScriptsInFrames(tabId, recoverable);
+    if (injectedFrames.size) {
+      const recovered = await Promise.all(
+        recoverable
+          .filter((frame) => injectedFrames.has(frame.frameId))
+          .map(async (frame) => {
+            try {
+              return { frame, response: await requestFrameState(frame) };
+            } catch (_) {
+              return { frame, response: null };
+            }
+          })
+      );
+      const recoveredByFrameId = new Map(recovered.map((item) => [item.frame.frameId, item]));
+      for (let index = 0; index < childResponses.length; index += 1) {
+        const replacement = recoveredByFrameId.get(childResponses[index].frame.frameId);
+        if (replacement) childResponses[index] = replacement;
+      }
+    }
+  }
   for (const { frame, response } of childResponses) {
-    if (response?.snapshot) frames.push({ ...frame, snapshot: response.snapshot });
-    else omittedFrameCount += 1;
+    const responseOrigin = getPageActionSiteOrigin(response?.snapshot?.url || '');
+    if (
+      response?.snapshot &&
+      responseOrigin === frame.origin &&
+      !blockedOrigins.includes(responseOrigin)
+    ) {
+      frames.push({ ...frame, snapshot: response.snapshot });
+    } else omittedFrameCount += 1;
   }
   if (!frames.some((frame) => frame.isTop) && topResponse?.snapshot) {
-    let origin = '';
-    try {
-      origin = new URL(topResponse.snapshot.url).origin;
-    } catch (_) {
-      // The content script should already return a valid page URL.
+    const origin = getPageActionSiteOrigin(topResponse.snapshot.url || '');
+    if (origin && !blockedOrigins.includes(origin)) {
+      frames.unshift({ frameId: 0, origin, isTop: true, snapshot: topResponse.snapshot });
     }
-    frames.unshift({ frameId: 0, origin, isTop: true, snapshot: topResponse.snapshot });
   }
   return mergePageActionFrameSnapshots(runId, frames, omittedFrameCount);
 };
@@ -1846,6 +2105,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       'The indexed frame target is no longer available. Inspect the page again.'
     );
     error.code = 'PAGE_STATE_STALE';
+    error.preDispatch = true;
     throw error;
   }
   const frameArgs = frameRoute
@@ -1867,10 +2127,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
           blockedOrigins,
         };
   const expectNavigation = options.expectNavigation === true;
-  if (actionName !== 'clearPageActionSession') {
-    await assertSiteAllowed();
-    await ensurePageActionContentScript(tabId, options.signal);
-  }
   let previousUrl = '';
   try {
     previousUrl = await getPageActionTabUrl(tabId);
@@ -1878,20 +2134,101 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     // Preserve the existing executor error path if the tab disappears before
     // the message can be sent.
   }
+  let usedCachedReadiness = false;
+  if (actionName === 'clearPageActionSession') pageActionReadinessCache.invalidate(tabId);
+  else {
+    await assertSiteAllowed(previousUrl);
+    usedCachedReadiness = pageActionReadinessCache.get(tabId, previousUrl);
+    if (!usedCachedReadiness) {
+      pageActionReadinessCache.invalidate(tabId);
+      await ensurePageActionContentScript(tabId, options.signal);
+      const verifiedUrl = await getPageActionTabUrl(tabId);
+      await assertSiteAllowed(verifiedUrl);
+      await markPageActionReadiness(tabId, verifiedUrl);
+      previousUrl = verifiedUrl;
+    }
+  }
 
   const messageTimeoutMs = getPageActionMessageTimeoutMs(actionName, args);
+  const mapFindTextIndices = (result, map = pageActionFrameSnapshotMaps.get(options.runId)) => {
+    if (!result || typeof result !== 'object') return result;
+    const sourceIndices = Array.isArray(result.elementIndices) ? result.elementIndices : [];
+    const localSnapshotId = result.snapshotId;
+    const mappedIndices = [];
+    if (localSnapshotId && map?.routes) {
+      const topFrameIndices = new Map();
+      for (const [mergedIndex, route] of Object.entries(map.routes)) {
+        if (route.frameId === 0 && route.snapshotId === localSnapshotId) {
+          topFrameIndices.set(route.index, Number(mergedIndex));
+        }
+      }
+      for (const localIndex of sourceIndices) {
+        const mergedIndex = topFrameIndices.get(localIndex);
+        if (mergedIndex !== undefined) mappedIndices.push(mergedIndex);
+      }
+    }
+    const safeResult = { ...result };
+    delete safeResult.snapshotId;
+    return {
+      ...safeResult,
+      ...(map?.snapshotId ? { snapshotId: map.snapshotId } : {}),
+      ...(Array.isArray(result.elementIndices) ? { elementIndices: mappedIndices } : {}),
+      ...(sourceIndices.length
+        ? {
+            message: mappedIndices.length
+              ? String(result.message || '').replace(
+                  /Matching control indices: [^.]+/,
+                  `Matching control indices: ${mappedIndices.join(', ')}`
+                )
+              : 'Found page text, but no matching control index is available in the current merged snapshot. Inspect the page again before acting.',
+          }
+        : {}),
+    };
+  };
+  let retriedCachedBridge = false;
   const checkedSend = async (
     messageOverride = message,
     targetFrameId = frameRoute?.frameId ?? 0
   ) => {
     await assertSiteAllowed();
-    const response = await sendPageActionMessage(
-      tabId,
-      messageOverride,
-      options.signal,
-      messageTimeoutMs,
-      targetFrameId
-    );
+    let response;
+    try {
+      response = await sendPageActionMessage(
+        tabId,
+        messageOverride,
+        options.signal,
+        messageTimeoutMs,
+        targetFrameId
+      );
+    } catch (error) {
+      const currentUrl = await getPageActionTabUrl(tabId).catch(() => '');
+      if (
+        actionName !== 'clearPageActionSession' &&
+        usedCachedReadiness &&
+        !retriedCachedBridge &&
+        error?.code === 'PAGE_ACTION_MESSAGE_FAILED' &&
+        error?.notDelivered === true &&
+        currentUrl === previousUrl
+      ) {
+        retriedCachedBridge = true;
+        usedCachedReadiness = false;
+        pageActionReadinessCache.invalidate(tabId);
+        await ensurePageActionContentScript(tabId, options.signal);
+        const verifiedUrl = await getPageActionTabUrl(tabId);
+        await assertSiteAllowed(verifiedUrl);
+        previousUrl = verifiedUrl;
+        await markPageActionReadiness(tabId, verifiedUrl);
+        response = await sendPageActionMessage(
+          tabId,
+          messageOverride,
+          options.signal,
+          messageTimeoutMs,
+          targetFrameId
+        );
+      } else {
+        throw error;
+      }
+    }
     await assertSiteAllowed();
     if (response?.snapshot?.url) await assertSiteAllowed(response.snapshot.url);
     return response;
@@ -2027,6 +2364,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
         });
       } catch (error) {
         await cdpInputBackend.detachRun(options.runId);
+        if (error?.code === 'PAGE_ACTION_TIMEOUT') throw error;
         if (deliveryStarted) {
           runOrchestrator.setPreciseInputState(options.runId, 'fallback');
           const changedUrl = await getPageActionTabUrl(tabId).catch(() => '');
@@ -2078,19 +2416,22 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       response = await checkedSend();
     }
     if (response?.snapshot && actionName !== 'clearPageActionSession') {
+      const canReuseTopSnapshot = response?.snapshot && (!frameRoute || frameRoute.frameId === 0);
       const topResponse =
         actionName === 'page_get_state' && !frameRoute
           ? response
-          : await checkedSend(
-              {
-                action: 'pageAction',
-                runId: options.runId,
-                pageAction: 'page_get_state',
-                args: {},
-                blockedOrigins,
-              },
-              0
-            ).catch(() => null);
+          : canReuseTopSnapshot
+            ? { success: true, snapshot: response.snapshot }
+            : await checkedSend(
+                {
+                  action: 'pageAction',
+                  runId: options.runId,
+                  pageAction: 'page_get_state',
+                  args: {},
+                  blockedOrigins,
+                },
+                0
+              ).catch(() => null);
       if (topResponse?.snapshot) {
         const mergedSnapshot = await collectPageActionFrameSnapshots({
           tabId,
@@ -2141,8 +2482,20 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       durationMs: Date.now() - startedAt,
     });
 
+    if (actionName === 'page_find_text') {
+      response = mapFindTextIndices(response);
+    } else if (actionName === 'page_batch' && Array.isArray(response?.results)) {
+      response = {
+        ...response,
+        results: response.results.map((item, index) =>
+          args?.actions?.[index]?.name === 'page_find_text' ? mapFindTextIndices(item) : item
+        ),
+      };
+    }
+
     const responseUrl = sanitizePageActionUrl(response?.snapshot?.url || '');
     if (responseUrl && previousUrl && responseUrl !== previousUrl) {
+      pageActionReadinessCache.invalidate(tabId);
       return { ...response, navigated: true, navigationUrl: responseUrl };
     }
 
@@ -2157,11 +2510,25 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     if (currentUrl && previousUrl && currentUrl !== previousUrl) {
       const connected = await pingPageActionContentScript(tabId);
       if (connected.connected) {
+        pageActionReadinessCache.invalidate(tabId);
         return { ...response, navigated: true, navigationUrl: currentUrl };
       }
     }
+    if (actionName !== 'clearPageActionSession' && response?.success !== false) {
+      await markPageActionReadiness(tabId, currentUrl || previousUrl);
+    }
     return response;
   } catch (error) {
+    if (
+      [
+        'PAGE_ACTION_MESSAGE_FAILED',
+        'PAGE_ACTION_NO_CONTENT_SCRIPT',
+        'PAGE_ACTION_INJECTION_FAILED',
+        'PAGE_ACTION_TIMEOUT',
+      ].includes(error?.code)
+    ) {
+      pageActionReadinessCache.invalidate(tabId);
+    }
     const wasPreciseInputAttached = cdpInputBackend.isAttached(options.runId);
     await cdpInputBackend.detachRun(options.runId);
     if (wasPreciseInputAttached) runOrchestrator.setPreciseInputState(options.runId, 'fallback');
@@ -2185,6 +2552,17 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       currentUrl = await getPageActionTabUrl(tabId);
     } catch (_) {
       throw error;
+    }
+    if (
+      error?.code === 'PAGE_ACTION_TIMEOUT' &&
+      !isPageActionReadOnly(actionName) &&
+      currentUrl === previousUrl
+    ) {
+      const unresponsive = new Error(
+        'The page stopped responding after the action. It may be showing a browser dialog or still be busy.'
+      );
+      unresponsive.code = 'PAGE_ACTION_UNRESPONSIVE';
+      throw unresponsive;
     }
     if (expectNavigation) {
       const navigation = await waitForPageActionNavigation(tabId, previousUrl, options.signal);
@@ -2298,6 +2676,16 @@ runOrchestrator = new RunOrchestrator(skillManager, {
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
   pageActionActivityHandler: updateNotchActState,
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.pageActionSitePolicies) return;
+  const policies = changes.pageActionSitePolicies.newValue || {};
+  try {
+    runOrchestrator.applySitePolicyChange(policies);
+  } catch (error) {
+    console.warn('[Act] Could not apply live site-policy tightening:', error?.message || error);
+  }
 });
 
 // PageTabController owns tab scope; the background owns bridge readiness and
@@ -2632,11 +3020,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
     chrome.tabs.create({ url: chrome.runtime.getURL('options.html?firstRun=1') });
   }
+  await syncDynamicNotchScript();
 });
 
 // Also rebuild on browser startup (service worker may restart)
 chrome.runtime.onStartup.addListener(async () => {
   await queueMenuRebuild('onStartup');
+  await syncDynamicNotchScript();
 });
 
 // Update context menus when instructions change
@@ -2646,15 +3036,12 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
     await queueMenuRebuild('instructions-changed');
   }
   if (namespace === 'local' && changes.notchEnabled) {
-    const enabled = changes.notchEnabled.newValue === true;
-    chrome.tabs.query({}, (tabs) => {
-      for (const tab of tabs) {
-        if (!Number.isInteger(tab.id)) continue;
-        chrome.tabs.sendMessage(tab.id, { action: 'notchPreferenceChanged', enabled }, () => {
-          void chrome.runtime.lastError;
-        });
-      }
-    });
+    void syncDynamicNotchScript().catch((error) =>
+      console.warn(
+        'Prompt Paul: Could not update the optional notch script:',
+        error?.message || error
+      )
+    );
   }
 });
 
@@ -2885,82 +3272,90 @@ async function executeTabContentExtraction(tabId) {
         resolve({ success: false, error: 'Extraction timed out', readStrategy: 'auto' });
       }, 15000);
 
-      chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (response) => {
-        clearTimeout(timeoutId);
-        if (chrome.runtime.lastError) {
-          const runtimeError = chrome.runtime.lastError.message;
-          const errorKind = classifyRuntimeMessageError(runtimeError);
-          console.warn(
-            'Background: Tab message failed (script might not be loaded):',
-            runtimeError
-          );
-          isPdfTab(tab).then((isPdf) => {
-            if (isPdf) {
-              resolve(createPdfExtractionResult(tab));
-              return;
-            }
-            // Fallback: only inject if needed
-            chrome.scripting.executeScript(
-              {
-                target: { tabId: tabId },
-                files: [
-                  'libs/readability.js',
-                  'libs/turndown.js',
-                  'libs/dom-accessibility-api.js',
-                  'content_script_unified.js',
-                ],
-              },
-              () => {
-                if (chrome.runtime.lastError) {
-                  resolve({
-                    success: false,
-                    error: friendlyRuntimeErrorMessage(runtimeError),
-                    errorKind,
-                    readStrategy: 'auto',
-                  });
-                } else {
-                  // Try messaging again after injection
-                  chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
+      ensureExtractionDependencies(tabId, tab.url)
+        .then(() => {
+          chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (response) => {
+            clearTimeout(timeoutId);
+            if (chrome.runtime.lastError) {
+              const runtimeError = chrome.runtime.lastError.message;
+              const errorKind = classifyRuntimeMessageError(runtimeError);
+              console.warn(
+                'Background: Tab message failed (script might not be loaded):',
+                runtimeError
+              );
+              isPdfTab(tab).then((isPdf) => {
+                if (isPdf) {
+                  resolve(createPdfExtractionResult(tab));
+                  return;
+                }
+                // Fallback: only inject if needed
+                chrome.scripting.executeScript(
+                  {
+                    target: { tabId: tabId },
+                    files: ['libs/readability.js', 'libs/turndown.js', 'content_script_unified.js'],
+                  },
+                  () => {
                     if (chrome.runtime.lastError) {
                       resolve({
                         success: false,
-                        error: friendlyRuntimeErrorMessage(chrome.runtime.lastError.message),
-                        errorKind: classifyRuntimeMessageError(chrome.runtime.lastError.message),
+                        error: friendlyRuntimeErrorMessage(runtimeError),
+                        errorKind,
                         readStrategy: 'auto',
                       });
                     } else {
-                      resolve(
-                        res || {
-                          success: false,
-                          error: 'Empty response after injection',
-                          readStrategy: 'auto',
+                      // Try messaging again after injection
+                      chrome.tabs.sendMessage(tabId, { action: 'getTabContent' }, (res) => {
+                        if (chrome.runtime.lastError) {
+                          resolve({
+                            success: false,
+                            error: friendlyRuntimeErrorMessage(chrome.runtime.lastError.message),
+                            errorKind: classifyRuntimeMessageError(
+                              chrome.runtime.lastError.message
+                            ),
+                            readStrategy: 'auto',
+                          });
+                        } else {
+                          resolve(
+                            res || {
+                              success: false,
+                              error: 'Empty response after injection',
+                              readStrategy: 'auto',
+                            }
+                          );
                         }
-                      );
+                      });
                     }
-                  });
-                }
-              }
-            );
-          });
-        } else {
-          const result = response || {
-            success: false,
-            error: 'Empty response from content script',
-            readStrategy: 'auto',
-          };
-          if (result.success && result.content) {
-            resolve(result);
-            return;
-          }
-          isPdfTab(tab).then((isPdf) => {
-            if (isPdf) {
-              resolve(createPdfExtractionResult(tab));
+                  }
+                );
+              });
             } else {
-              resolve(result);
+              const result = response || {
+                success: false,
+                error: 'Empty response from content script',
+                readStrategy: 'auto',
+              };
+              if (result.success && result.content) {
+                resolve(result);
+                return;
+              }
+              isPdfTab(tab).then((isPdf) => {
+                if (isPdf) {
+                  resolve(createPdfExtractionResult(tab));
+                } else {
+                  resolve(result);
+                }
+              });
             }
           });
-        }
-      });
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          resolve({
+            success: false,
+            error: friendlyRuntimeErrorMessage(error?.message || 'Could not prepare extraction.'),
+            readStrategy: 'auto',
+          });
+        });
     });
   });
 }
@@ -3032,16 +3427,35 @@ function getExtensionOrigin() {
 
 function sendNotchActState(tabId, active, runId) {
   if (!Number.isInteger(tabId) || !runId) return;
-  try {
-    chrome.tabs.sendMessage(
-      tabId,
-      { action: 'notchActRunState', active, runId },
-      () => void chrome.runtime.lastError
-    );
-  } catch (_) {
-    // The tab may be navigating or closed; the next page-action event will
-    // notify the current target when its content script is ready.
-  }
+  const previous = notchActMessageQueues.get(tabId) || Promise.resolve();
+  const operation = previous
+    .catch(() => {})
+    .then(async () => {
+      if (active) {
+        try {
+          await injectActFeedbackScript(tabId);
+        } catch (_) {
+          // Restricted or closing tabs cannot show the activity indicator.
+        }
+      }
+      await new Promise((resolve) => {
+        try {
+          chrome.tabs.sendMessage(tabId, { action: 'notchActRunState', active, runId }, () => {
+            void chrome.runtime.lastError;
+            resolve();
+          });
+        } catch (_) {
+          resolve();
+        }
+      });
+    });
+  let settled;
+  settled = operation
+    .catch(() => {})
+    .then(() => {
+      if (notchActMessageQueues.get(tabId) === settled) notchActMessageQueues.delete(tabId);
+    });
+  notchActMessageQueues.set(tabId, settled);
 }
 
 function updateNotchActState(run, event) {
@@ -4166,7 +4580,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const current = await pageActionDocumentProvider(
           decisionRun.pageActions.targetTabId || decisionRun.sourceTabId
         );
-        if (getPageActionSiteOrigin(current?.url) !== pending.siteOrigin)
+        if (getPageActionSiteOrigin(current?.url) !== pending.documentOrigin)
           throw new Error('The target site changed. Re-inspect before approving a site policy.');
         await pageActionSitePolicyStore.update(pending.siteOrigin, 'allow_low_risk');
         if (decisionRun.pageActions.pendingConfirmation !== pending) {

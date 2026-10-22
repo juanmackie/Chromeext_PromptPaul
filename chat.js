@@ -2074,7 +2074,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const contentElement = streamState.getCurrentStreamingContentElement();
     if (!messageDiv || !contentElement) return false;
     if (streamState.getReasoningContentElement()) {
+      streamState.finalizeReasoning();
       chatUI.finalizeReasoningPanel(messageDiv, streamState.getReasoningElapsedMs());
+      streamState.setReasoningContentElement(null);
     }
     renderMarkdownInto(contentElement, content);
     postProcessRenderedContent(contentElement);
@@ -2223,13 +2225,6 @@ document.addEventListener('DOMContentLoaded', () => {
           if (sendResponse) sendResponse({ success: true });
           return true;
         }
-        console.log('Chat: Ignoring orchestratorEvent for other run/tab', {
-          runId,
-          sourceTabId,
-          panelTabId,
-          currentRunId,
-          currentSourceTabId,
-        });
         if (sendResponse) sendResponse({ success: true, ignored: true });
         return true;
       }
@@ -2252,10 +2247,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (streamState.getCurrentStreamingContentElement() && event.data) {
               // First answer token after reasoning: collapse the thinking panel.
               if (streamState.getReasoningContentElement()) {
+                streamState.finalizeReasoning();
                 chatUI.finalizeReasoningPanel(
                   streamState.getCurrentStreamingMessageDiv(),
                   streamState.getReasoningElapsedMs()
                 );
+                streamState.setReasoningContentElement(null);
               }
               streamState.queueRenderChunk(event.data);
             }
@@ -2414,6 +2411,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
             progressiveAnswerSeen = false;
             if (streamState.getReasoningContentElement()) {
+              streamState.finalizeReasoning();
               chatUI.finalizeReasoningPanel(
                 streamState.getCurrentStreamingMessageDiv(),
                 streamState.getReasoningElapsedMs()
@@ -2495,13 +2493,16 @@ document.addEventListener('DOMContentLoaded', () => {
             break;
 
           case 'complete': {
+            const wasNearBottom = chatUI.isNearBottom();
             hermesChat.settleHermesApprovals(chatArea, 'complete');
             // Collapse the thinking panel if it never got collapsed (e.g. reasoning-only turn).
             if (streamState.getReasoningContentElement()) {
+              streamState.finalizeReasoning();
               chatUI.finalizeReasoningPanel(
                 streamState.getCurrentStreamingMessageDiv(),
                 streamState.getReasoningElapsedMs()
               );
+              streamState.setReasoningContentElement(null);
             }
 
             const body = buildFinalResponseBody(
@@ -2559,6 +2560,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (completedMessageDiv) {
               chatUI.moveMessageToEnd(completedMessageDiv, {
                 preserveViewport: Boolean(event.answerCards),
+                wasNearBottom,
               });
             }
 

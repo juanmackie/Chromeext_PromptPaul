@@ -96,6 +96,35 @@ export class PageTabController {
     }
   }
 
+  async _getOwnedTabs(state) {
+    const ownedIds = Array.from(state.ownedTabIds);
+    let tabsById;
+    try {
+      tabsById = new Map((await chrome.tabs.query({})).map((tab) => [tab.id, tab]));
+    } catch (_) {
+      const results = await Promise.all(
+        ownedIds.map(async (tabId) => {
+          try {
+            return [tabId, await chrome.tabs.get(tabId)];
+          } catch (_) {
+            return [tabId, null];
+          }
+        })
+      );
+      tabsById = new Map(results);
+    }
+    const ownedTabs = [];
+    for (const tabId of ownedIds) {
+      const tab = tabsById.get(tabId);
+      if (!tab) {
+        state.ownedTabIds.delete(tabId);
+        continue;
+      }
+      ownedTabs.push({ tabId, tab });
+    }
+    return ownedTabs;
+  }
+
   /**
    * Select an owned tab (foreground unless background was requested), run the
    * readiness check, and return the reused-tab result shape.
@@ -172,16 +201,11 @@ export class PageTabController {
     const state = this._get(runId);
     if (actionName === 'page_list_tabs') {
       const tabs = [];
-      for (const tabId of state.ownedTabIds) {
-        try {
-          const tab = await chrome.tabs.get(tabId);
-          const metadata = safeTab(tab);
-          if (metadata) tabs.push(metadata);
-          if (!state.tabStates.has(tabId))
-            state.tabStates.set(tabId, { status: 'unknown', failures: 0 });
-        } catch (_) {
-          state.ownedTabIds.delete(tabId);
-        }
+      for (const { tabId, tab } of await this._getOwnedTabs(state)) {
+        const metadata = safeTab(tab);
+        if (metadata) tabs.push(metadata);
+        if (!state.tabStates.has(tabId))
+          state.tabStates.set(tabId, { status: 'unknown', failures: 0 });
       }
       return {
         tabs,
@@ -222,14 +246,7 @@ export class PageTabController {
       const requestedOrigin = destinationOrigin(args.url);
       if (requestedKey) {
         let sameOriginTabId = null;
-        for (const tabId of state.ownedTabIds) {
-          let existing;
-          try {
-            existing = await chrome.tabs.get(tabId);
-          } catch (_) {
-            state.ownedTabIds.delete(tabId);
-            continue;
-          }
+        for (const { tabId, tab: existing } of await this._getOwnedTabs(state)) {
           if (destinationKey(existing?.url) === requestedKey) {
             return this._adoptOwnedTab(state, tabId, args);
           }

@@ -18,6 +18,41 @@ function createDebuggerApi() {
 }
 
 describe('CdpInputBackend', () => {
+  it('bounds a debugger command that never replies without retrying it', async () => {
+    vi.useFakeTimers();
+    const debuggerApi = createDebuggerApi();
+    debuggerApi.sendCommand.mockImplementation(() => {});
+    const backend = new CdpInputBackend({ debuggerApi });
+    const pending = backend.dispatch('run-timeout', 7, 'Input.insertText', { text: 'once' });
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'PAGE_ACTION_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await rejection;
+    expect(debuggerApi.sendCommand).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+  it('detaches a debugger attachment that succeeds after its timeout', async () => {
+    vi.useFakeTimers();
+    const debuggerApi = createDebuggerApi();
+    let completeAttach;
+    debuggerApi.attach.mockImplementation((_target, _version, callback) => {
+      completeAttach = callback;
+    });
+    const backend = new CdpInputBackend({ debuggerApi });
+    const pending = backend.dispatch('late-attach', 7, 'Input.insertText', { text: 'once' });
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'CDP_ATTACH_TIMEOUT' });
+    try {
+      await vi.advanceTimersByTimeAsync(15_000);
+      await rejection;
+      expect(backend.isAttached('late-attach')).toBe(false);
+      completeAttach();
+      expect(debuggerApi.detach).toHaveBeenCalledTimes(1);
+      expect(debuggerApi.detach).toHaveBeenCalledWith({ tabId: 7 }, expect.any(Function));
+      expect(backend.isAttached('late-attach')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('attaches lazily and dispatches only allow-listed Input commands', async () => {
     const debuggerApi = createDebuggerApi();
     const backend = new CdpInputBackend({ debuggerApi });

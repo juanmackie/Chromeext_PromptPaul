@@ -361,17 +361,91 @@ test('executor-regression: executes browser-safe corpus cases and records bounde
     await finish(sensitive.runId);
 
     const timeoutCase = expectedCase('partial-mutation-timeout');
-    const timeout = await startCase('hang.html', 'evaluation-timeout');
-    const freeze = timeout.snapshot.elements.find((element) => element.label === 'Freeze me');
-    const timeoutArgs = { snapshotId: timeout.snapshot.snapshotId, index: freeze.index };
-    const timeoutResult = await harness.evaluate(
+    const timeout = await startCase('form.html', 'evaluation-timeout');
+    let dialog;
+    await target.evaluate(() => {
+      const button = document.createElement('button');
+      button.textContent = 'Show evaluation alert';
+      button.addEventListener('click', () => {
+        button.dataset.clicks = String(Number(button.dataset.clicks || 0) + 1);
+        alert('Confirm this action');
+      });
+      document.body.append(button);
+    });
+    const timeoutInspection = await harness.evaluate(
+      (runId) =>
+        window.pageActionHarness.executeTool(
+          runId,
+          'evaluation-timeout-reinspect',
+          'page_get_state',
+          {}
+        ),
+      timeout.runId
+    );
+    expect(timeoutInspection.result?.snapshot, JSON.stringify(timeoutInspection)).toBeTruthy();
+    const timeoutSnapshot = timeoutInspection.result.snapshot;
+    const alertButton = timeoutSnapshot.elements.find(
+      (element) => element.label === 'Show evaluation alert'
+    );
+    expect(alertButton).toBeTruthy();
+    const timeoutArgs = { snapshotId: timeoutSnapshot.snapshotId, index: alertButton.index };
+    target.once('dialog', (pendingDialog) => {
+      dialog = pendingDialog;
+    });
+    const pendingTimeout = harness.evaluate(
       ({ runId, args }) =>
         window.pageActionHarness.executeTool(runId, 'evaluation-timeout', 'page_click', args),
       { runId: timeout.runId, args: timeoutArgs }
     );
+    await expect
+      .poll(
+        async () =>
+          Boolean(dialog) ||
+          Boolean(
+            await harness.evaluate(
+              (runId) => window.pageActionHarness.getConfirmation(runId),
+              timeout.runId
+            )
+          ),
+        { timeout: 8_000 }
+      )
+      .toBe(true);
+    const timeoutConfirmation = await harness.evaluate(
+      (runId) => window.pageActionHarness.getConfirmation(runId),
+      timeout.runId
+    );
+    if (timeoutConfirmation) {
+      const decision = await harness.evaluate(
+        ({ url, runId }) => window.pageActionHarness.resolveConfirmation(url, runId, true),
+        { url: timeout.url, runId: timeout.runId }
+      );
+      expect(decision.success).toBe(true);
+    }
+    await expect.poll(() => Boolean(dialog), { timeout: 20_000 }).toBe(true);
+    await expect
+      .poll(
+        () =>
+          harness.evaluate(
+            (runId) => window.pageActionHarness.getManualIntervention(runId),
+            timeout.runId
+          ),
+        { timeout: 25_000 }
+      )
+      .toMatchObject({ state: 'paused', question: expect.stringContaining('browser dialog') });
+    await dialog.accept();
+    const resumed = await harness.evaluate(
+      (runId) => window.pageActionHarness.resumeManualIntervention(runId),
+      timeout.runId
+    );
+    expect(resumed.success).toBe(true);
+    const timeoutResult = await pendingTimeout;
     const timeoutPayload = timeoutResult.result || timeoutResult;
-    expect(timeoutPayload.error).toBe('PAGE_TAB_UNAVAILABLE');
-    expect(timeoutPayload.code).toBe(timeoutCase.failureCode);
+    expect(timeoutPayload.actionReceipt.disposition).toBe(timeoutCase.expected);
+    expect(timeoutPayload.snapshot.snapshotId).toBeTruthy();
+    await expect(target.getByRole('button', { name: 'Show evaluation alert' })).toHaveAttribute(
+      'data-clicks',
+      '1'
+    );
     records.push(
       evaluationRecord(timeoutCase.id, timeoutResult, 2, toolArgChars(timeoutArgs), {
         toolCallCount: 2,

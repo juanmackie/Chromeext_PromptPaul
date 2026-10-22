@@ -570,7 +570,8 @@
       .map(([, label]) => label);
   }
 
-  function findPageActionText(session, query, options = {}) {    const regionIndex = options.regionId ? parsePageActionRegionId(options.regionId) : -1;
+  function findPageActionText(session, query, options = {}) {
+    const regionIndex = options.regionId ? parsePageActionRegionId(options.regionId) : -1;
     if (options.regionId && regionIndex < 0) {
       const error = new Error(
         'Region must be a content-script region-N identifier such as region-0. Do not pass a snapshotId (frames-... or page-...); omit regionId to search the full page.'
@@ -1409,6 +1410,7 @@
         'The page changed since the last snapshot. Call page_get_state again.'
       );
       error.code = 'PAGE_STATE_STALE';
+      error.preDispatch = true;
       throw error;
     }
     if (args.focused === true) {
@@ -1432,6 +1434,7 @@
         'The indexed target changed after the snapshot. Inspect the page again.'
       );
       error.code = 'PAGE_STATE_STALE';
+      error.preDispatch = true;
       throw error;
     }
     const current =
@@ -1906,7 +1909,8 @@
    * @returns {object}
    */
   function pageBatchEntryArgs(entry) {
-    if (entry.args && typeof entry.args === 'object' && !Array.isArray(entry.args)) return entry.args;
+    if (entry.args && typeof entry.args === 'object' && !Array.isArray(entry.args))
+      return entry.args;
     const args = {};
     for (const [key, value] of Object.entries(entry)) {
       if (key === 'name' || key === 'args' || key === 'title') continue;
@@ -2109,7 +2113,6 @@
       throw error;
     }
     if (record.sensitive) throw new Error('Sensitive controls are blocked.');
-    highlightPageActionTarget(session, record);
     const beforeUrl = precisePending?.beforeUrl || sanitizePageActionUrl(window.location.href);
     const beforeChecked = precisePending
       ? precisePending.beforeChecked
@@ -2141,6 +2144,7 @@
       ? precisePending.owningDialogWasVisible === true
       : Boolean(owningDialog && isPageActionVisible(owningDialog));
     try {
+      highlightPageActionTarget(session, record);
       const element = record.ref;
       const tag = element.tagName.toLowerCase();
       let actionReceipt = buildPageActionReceipt('delivered_unverified', 'action_dispatched');

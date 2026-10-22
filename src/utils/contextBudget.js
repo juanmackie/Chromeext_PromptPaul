@@ -100,8 +100,11 @@ export function estimateTextTokens(text) {
   let whitespaceChars = 0;
 
   for (const char of String(text || '')) {
-    if (/\s/u.test(char)) {
+    const codePoint = char.codePointAt(0);
+    if (isWhitespaceCodePoint(codePoint)) {
       whitespaceChars += 1;
+    } else if (codePoint < 0x0080) {
+      compactAsciiChars += 1;
     } else if (isDenseTokenScript(char)) {
       denseScriptChars += 1;
     } else {
@@ -110,6 +113,22 @@ export function estimateTextTokens(text) {
   }
 
   return Math.ceil(compactAsciiChars / 3.2 + denseScriptChars / 1.15 + whitespaceChars / 8);
+}
+
+function isWhitespaceCodePoint(codePoint) {
+  return (
+    (codePoint >= 0x0009 && codePoint <= 0x000d) ||
+    codePoint === 0x0020 ||
+    codePoint === 0x00a0 ||
+    codePoint === 0x1680 ||
+    (codePoint >= 0x2000 && codePoint <= 0x200a) ||
+    codePoint === 0x2028 ||
+    codePoint === 0x2029 ||
+    codePoint === 0x202f ||
+    codePoint === 0x205f ||
+    codePoint === 0x3000 ||
+    codePoint === 0xfeff
+  );
 }
 
 function inferModelContextTokens(modelId) {

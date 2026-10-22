@@ -160,3 +160,76 @@ test('a long streamed response finishes promptly and stays scrollable after idle
     removeUserDataDir(userDataDir);
   }
 });
+
+test('finalizes streamed reasoning with canonical cross-block Markdown', async () => {
+  const reasoning = 'See [docs][d].\n\n[d]: https://example.com';
+  let requestCount = 0;
+  const server = http.createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      requestCount += 1;
+      response.writeHead(200, { 'content-type': 'text/event-stream' });
+      const base = {
+        id: 'chatcmpl-reasoning',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'fixture-model',
+      };
+      const deltas = [{ role: 'assistant' }, { reasoning }, { content: 'Answer.' }];
+      for (const delta of deltas) {
+        response.write(
+          `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`
+        );
+      }
+      response.write(
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`
+      );
+      response.end('data: [DONE]\n\n');
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-reasoning-'));
+  let context;
+  try {
+    ({ context } = await launchTestBrowser(userDataDir));
+    const harness = await openHarness(context);
+    await expect
+      .poll(() =>
+        harness.evaluate(async () => {
+          const { profiles } = await chrome.storage.local.get('profiles');
+          return Boolean(profiles?.length);
+        })
+      )
+      .toBe(true);
+    await harness.evaluate(async (endpoint) => {
+      await chrome.storage.local.set({
+        profiles: [
+          {
+            id: 'reasoning-fixture',
+            name: 'Reasoning fixture',
+            provider: 'api',
+            llmEndpoint: endpoint,
+            apiKey: 'fixture-placeholder',
+            modelName: 'fixture-model',
+          },
+        ],
+        lastSelectedProfileId: 'reasoning-fixture',
+      });
+    }, `http://127.0.0.1:${server.address().port}/chat`);
+    const chat = await context.newPage();
+    await chat.goto(`chrome-extension://${new URL(harness.url()).hostname}/chat.html`);
+    await chat.locator('#user-input').fill('Summarize the reference.');
+    await chat.locator('#send-button').click();
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete', {
+      timeout: 45000,
+    });
+    expect(requestCount).toBe(1);
+    const reference = chat.locator('.reasoning-content a');
+    await expect(reference).toHaveText('docs');
+    await expect(reference).toHaveAttribute('href', 'https://example.com');
+  } finally {
+    await context?.close();
+    await new Promise((resolve) => server.close(resolve));
+    removeUserDataDir(userDataDir);
+  }
+});

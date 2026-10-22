@@ -25,7 +25,8 @@
   window.PROMPT_PAUL_LOADED = true;
 
   let turndownService = null;
-  if (typeof TurndownService !== 'undefined') {
+  function getTurndownService() {
+    if (turndownService || typeof TurndownService === 'undefined') return turndownService;
     turndownService = new TurndownService({
       headingStyle: 'atx',
       codeBlockStyle: 'fenced',
@@ -46,6 +47,7 @@
       'object',
       'embed',
     ]);
+    return turndownService;
   }
 
   // --- 2. VIDEO DETECTION ---
@@ -362,8 +364,9 @@
           publishedTime: getPublishedTime(),
         };
 
-        if (turndownService) {
-          const markdown = turndownService.turndown(article.content);
+        const converter = getTurndownService();
+        if (converter) {
+          const markdown = converter.turndown(article.content);
           if (markdown.length > 50) {
             return { ...result, type: 'readability-markdown', data: markdown };
           }
@@ -381,7 +384,8 @@
   // --- 4a. STRATEGY: FALLBACK (web2md-style) ---
 
   function extractFallback() {
-    if (typeof TurndownService === 'undefined') return null;
+    const converter = getTurndownService();
+    if (!converter) return null;
 
     try {
       const clone = document.body.cloneNode(true);
@@ -392,7 +396,7 @@
         '#header, #footer, #sidebar';
       clone.querySelectorAll(NOISE).forEach((el) => el.remove());
 
-      const markdown = turndownService.turndown(clone.innerHTML);
+      const markdown = converter.turndown(clone.innerHTML);
 
       if (markdown.length > 100) {
         return {

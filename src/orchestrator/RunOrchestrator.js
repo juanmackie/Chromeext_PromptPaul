@@ -53,6 +53,7 @@ import {
   normalizePageManualInterventionArgs,
 } from '../utils/pageActionPolicy.js';
 import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../utils/pageDom.js';
+import { isPageActionSensitiveOrigin } from '../utils/pageActionSitePolicies.js';
 import {
   serializeMind2WebPageActionResult,
   serializePageActionResult,
@@ -289,6 +290,10 @@ const RUN_JOURNAL_STORAGE_KEY = 'promptPaulRunJournalsV1';
 const RUN_JOURNAL_MAX_EVENTS = 128;
 const RUN_JOURNAL_MAX_BYTES = 512 * 1024;
 const RUN_JOURNAL_MAX_RUNS = 24;
+const RUN_JOURNAL_COALESCE_MS = 25;
+const STREAM_COALESCE_MS = 100;
+const STREAM_COALESCE_MAX_CHARS = 8_000;
+const STREAM_EVENT_TYPES = new Set(['content', 'reasoning', 'stream_batch']);
 
 function isTokenLimitReason(reason) {
   return TOKEN_LIMIT_REASONS.has(
@@ -379,6 +384,9 @@ class RunOrchestrator {
     // Coalesce storage work to one safe snapshot per run while a drain is busy.
     this.pendingJournalSnapshots = new Map();
     this.journalDrainActive = false;
+    this.journalDrainTimer = null;
+    this.journalDrainResolve = null;
+    this.streamEventBuffers = new Map();
 
     // Register built-in tools
     this._registerBuiltInTools();
@@ -930,7 +938,7 @@ class RunOrchestrator {
       this.pageTabRunRegistrar?.(runId, runState.sourceTabId);
     }
     this._registerConfiguredTools(runState);
-    this._persistRunJournal(runState);
+    this._persistRunJournal(runState, true);
     console.log(
       `[Orchestrator] Started run ${runId}${runState.sourceTabId ? ' from tab ' + runState.sourceTabId : ''}`
     );
@@ -1414,6 +1422,7 @@ class RunOrchestrator {
       run.pageActions.pendingManualIntervention.reject();
       run.pageActions.pendingManualIntervention = null;
     }
+    this._flushStreamEvents(runId);
     if (abortSignal) run.abortController.abort();
     recordEvalTrace(runId, {
       kind: 'terminal',
@@ -1816,7 +1825,13 @@ class RunOrchestrator {
     const plannerInstruction = run?.pageActions?.planner?.originalInstruction;
     if (plannerInstruction) return String(plannerInstruction).slice(0, 2_000);
     const messages = Array.isArray(run?.conversationHistory) ? run.conversationHistory : [];
-    const latest = [...messages].reverse().find((message) => message?.role === 'user');
+    let latest = null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.role === 'user') {
+        latest = messages[index];
+        break;
+      }
+    }
     const content =
       typeof latest?.content === 'string'
         ? latest.content
@@ -2364,6 +2379,26 @@ class RunOrchestrator {
     return this._blockPageActionSite(run);
   }
 
+  async _staleSnapshotRecovery(run, toolCall) {
+    const refreshed = await this._executePageAction(run.id, 'page_get_state', {
+      id: `stale-recovery-${toolCall?.id || Date.now()}`,
+      type: 'function',
+      function: { name: 'page_get_state', arguments: '{}' },
+    });
+    const snapshot = refreshed?.result?.snapshot || null;
+    return {
+      success: true,
+      result: {
+        error: 'PAGE_STATE_STALE',
+        message: snapshot
+          ? 'The requested action was not delivered. A fresh page snapshot is included below; use its snapshotId and current indices for the next action.'
+          : 'The page snapshot is stale and automatic reinspection did not succeed. Call page_get_state before acting.',
+        ...(snapshot ? { snapshot } : {}),
+        actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'stale_snapshot' } },
+      },
+    };
+  }
+
   async _executePageAction(runId, actionName, toolCall) {
     const actionStartedAt = Date.now();
     const run = this.activeRuns.get(runId);
@@ -2444,26 +2479,7 @@ class RunOrchestrator {
       (!isPageActionReadOnly(actionName) || indexedObservation) &&
       args.snapshotId !== run.pageActions.snapshot?.snapshotId
     ) {
-      const refreshed = await this._executePageAction(runId, 'page_get_state', {
-        id: `stale-recovery-${toolCall?.id || Date.now()}`,
-        type: 'function',
-        function: { name: 'page_get_state', arguments: '{}' },
-      });
-      const snapshot = refreshed?.result?.snapshot || null;
-      return {
-        success: true,
-        result: {
-          error: 'PAGE_STATE_STALE',
-          message: snapshot
-            ? 'The requested action was not delivered. A fresh page snapshot is included below; use its snapshotId and current indices for the next action.'
-            : 'The page snapshot is stale and automatic reinspection did not succeed. Call page_get_state before acting.',
-          ...(snapshot ? { snapshot } : {}),
-          actionReceipt: {
-            disposition: 'not_delivered',
-            evidence: { kind: 'stale_snapshot' },
-          },
-        },
-      };
+      return this._staleSnapshotRecovery(run, toolCall);
     }
 
     const isMutation = !isPageActionReadOnly(actionName);
@@ -2747,14 +2763,22 @@ class RunOrchestrator {
     if (isMutation && this._needsFreshPageInspection(run))
       return this._pageActionInspectionRequiredResult();
 
+    const actionOrigin = getPageActionSiteOrigin(
+      actionTarget?.frameOrigin || run.pageActions.snapshot?.url || run.pageActions.documentUrl
+    );
+    const documentOrigin = getPageActionSiteOrigin(
+      run.pageActions.snapshot?.url || run.pageActions.documentUrl
+    );
+    const sensitiveOrigin =
+      isPageActionSensitiveOrigin(actionOrigin) || isPageActionSensitiveOrigin(documentOrigin);
+    const sessionApproval = run.pageActions.sessionApproval && !sensitiveOrigin;
     const policy = evaluatePageActionPolicy({
       actionName,
       target,
       args,
       trustedMode: run.pageActions.trustedMode,
-      origin: getPageActionSiteOrigin(
-        actionTarget?.frameOrigin || run.pageActions.snapshot?.url || run.pageActions.documentUrl
-      ),
+      origin: actionOrigin,
+      documentOrigin,
       sitePolicies: run.pageActions.sitePolicies,
     });
     const diagnosticTarget = target
@@ -2837,7 +2861,7 @@ class RunOrchestrator {
     // use the normal confirmation policy.
     const requiresConfirmation =
       policy.risk === PAGE_ACTION_RISKS.HIGH ||
-      (policy.requiresConfirmation && !safeLinkNavigation && !run.pageActions.sessionApproval);
+      (policy.requiresConfirmation && !safeLinkNavigation && !sessionApproval);
     let explicitlyApproved = false;
     if (requiresConfirmation) {
       recordDevDiagnostic('page_action_approval_requested', {
@@ -2921,7 +2945,7 @@ class RunOrchestrator {
       ((actionName === 'page_click' ||
         (actionName === 'page_keypress' && args.key === 'Enter') ||
         (actionName === 'page_input' && args.submit === true)) &&
-        (explicitlyApproved || run.pageActions.sessionApproval));
+        (explicitlyApproved || sessionApproval));
     run.pageActions.navigationPending = expectedNavigation;
     let result;
     const previousSnapshot = run.pageActions.snapshot;
@@ -3351,24 +3375,80 @@ class RunOrchestrator {
         action: actionName,
         error: message,
       });
+      if (error.code === 'PAGE_ACTION_UNRESPONSIVE' && isMutation) {
+        const pause = await this._executePageManualIntervention(runId, {
+          id: `unresponsive-${toolCall?.id || Date.now()}`,
+          function: {
+            name: 'page_pause_for_user',
+            arguments: JSON.stringify({
+              question:
+                'The page stopped responding after the last action. It may be showing a browser dialog (alert, confirmation, or Leave site?). Switch to the tab, answer it, then press Resume.',
+            }),
+          },
+        });
+        if (pause?.result?.error === 'PAGE_MANUAL_INTERVENTION_TIMEOUT') {
+          const recovery = this._quarantinePageActionTab(run, error);
+          return {
+            success: true,
+            result: {
+              error: 'PAGE_ACTION_UNRESPONSIVE',
+              message:
+                'The page did not resume before the manual-intervention timeout; the tab was quarantined.',
+              tabId: recovery.tabId,
+              actionReceipt: {
+                disposition: 'delivered_unverified',
+                evidence: { kind: 'page_unresponsive' },
+              },
+            },
+          };
+        }
+        if (pause?.result?.resumed !== true) {
+          return {
+            success: true,
+            result: {
+              error: pause?.result?.error || 'PAGE_ACTION_UNRESPONSIVE',
+              message: pause?.result?.message
+                ? `Manual intervention did not resume: ${pause.result.message} The previous action was not replayed and remains unverified.`
+                : 'Manual intervention did not resume. The previous action was not replayed and remains unverified.',
+              actionReceipt: {
+                disposition: 'delivered_unverified',
+                evidence: { kind: 'page_unresponsive' },
+              },
+            },
+          };
+        }
+        const inspected = await this._executePageAction(runId, 'page_get_state', {
+          id: `unresponsive-inspect-${toolCall?.id || Date.now()}`,
+          function: { name: 'page_get_state', arguments: '{}' },
+        });
+        const hasFreshSnapshot = Boolean(inspected?.result?.snapshot);
+        return {
+          ...inspected,
+          result: {
+            ...inspected?.result,
+            message: hasFreshSnapshot
+              ? 'The user resumed. Use this fresh snapshot; the previous action was not replayed.'
+              : 'The user resumed, but fresh inspection failed. Inspect the page again before acting; the previous action was not replayed.',
+            actionReceipt: {
+              disposition: 'delivered_unverified',
+              evidence: { kind: 'page_unresponsive' },
+            },
+          },
+        };
+      }
       if (isMutation && isPageActionPreDispatchFailure(error)) {
         // Nothing reached the page: the click was withheld because the target is
         // covered. Record not_delivered, return the mutation slot, and leave the
         // no-progress streak alone so one covered control cannot lock the run out
         // of every other mutation.
         this._refundPageActionBudget(run, budgetBucket);
-        const failure =
-          error.code === 'PAGE_STATE_STALE'
-            ? {
-                code: error.code,
-                message: error.message,
-                suggestion: 'Call page_get_state before acting on the focused element.',
-                occluder: null,
-              }
-            : buildPageActionOcclusionFailure({
-                occluder: error.occluder,
-                targetLabel: target?.label || target?.name || target?.tag || '',
-              });
+        if (error.code === 'PAGE_STATE_STALE') {
+          return this._staleSnapshotRecovery(run, toolCall);
+        }
+        const failure = buildPageActionOcclusionFailure({
+          occluder: error.occluder,
+          targetLabel: target?.label || target?.name || target?.tag || '',
+        });
         // Occluded clicks never reach the page, so the delivered-mutation loop
         // guards cannot see a model retrying the same covered control forever.
         // Count consecutive occlusions per target on the current snapshot only:
@@ -3546,7 +3626,7 @@ class RunOrchestrator {
         destination.origin !== sourceOrigin &&
         !explicitlyRequested &&
         !observedLink &&
-        !run.pageActions.sessionApproval
+        (!run.pageActions.sessionApproval || isPageActionSensitiveOrigin(destination.origin))
       ) {
         const approved = await this._requestPageActionConfirmation(
           run,
@@ -4257,6 +4337,7 @@ class RunOrchestrator {
         id: confirmationId,
         action: actionName,
         siteOrigin: getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url),
+        documentOrigin: getPageActionSiteOrigin(snapshot?.url || run.pageActions.documentUrl),
         resolve: (approved, timedOut = false) => {
           clearTimeout(timer);
           run.abortController.signal.removeEventListener('abort', onAbort);
@@ -4294,6 +4375,13 @@ class RunOrchestrator {
         summary,
         origin: origin.slice(0, 120),
         siteOrigin: getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url),
+        siteTrustAllowed:
+          !isPageActionSensitiveOrigin(
+            getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url)
+          ) &&
+          !isPageActionSensitiveOrigin(
+            getPageActionSiteOrigin(snapshot?.url || run.pageActions.documentUrl)
+          ),
         destination,
         destinationOrigin,
         destinationHasQueryOrFragment,
@@ -4314,7 +4402,11 @@ class RunOrchestrator {
     const pending = run?.pageActions?.pendingConfirmation;
     if (!pending || pending.id !== confirmationId) return false;
     const isApproved = approved === true;
-    const sessionApproved = isApproved && approveAll === true;
+    const sessionApproved =
+      isApproved &&
+      approveAll === true &&
+      !isPageActionSensitiveOrigin(pending.siteOrigin) &&
+      !isPageActionSensitiveOrigin(pending.documentOrigin);
     if (sessionApproved) run.pageActions.sessionApproval = true;
     pending.resolve(isApproved);
     this._emitEvent(runId, {
@@ -4348,6 +4440,27 @@ class RunOrchestrator {
 
     // Trigger next LLM call
     return this.execute(runId, { continueConversation: true }, true);
+  }
+
+  applySitePolicyChange(rawPolicies) {
+    const normalized = normalizePageActionSitePolicies(rawPolicies || {});
+    if (!normalized.valid) return false;
+    for (const run of this.activeRuns.values()) {
+      if (!run.pageActions?.enabled) continue;
+      const previous = run.pageActions.sitePolicies || {};
+      const tightened = { ...previous };
+      for (const [origin, rule] of Object.entries(normalized.value)) {
+        if (rule === 'block') tightened[origin] = 'block';
+      }
+      for (const [origin, rule] of Object.entries(previous)) {
+        if (rule === 'allow_low_risk' && normalized.value[origin] !== 'allow_low_risk') {
+          delete tightened[origin];
+          if (normalized.value[origin] === 'block') tightened[origin] = 'block';
+        }
+      }
+      run.pageActions.sitePolicies = tightened;
+    }
+    return true;
   }
 
   /**
@@ -4410,6 +4523,8 @@ class RunOrchestrator {
     for (const [runId] of this.activeRuns) {
       this.abort(runId);
     }
+    for (const buffer of this.streamEventBuffers.values()) clearTimeout(buffer.timer);
+    this.streamEventBuffers.clear();
     // Clear all tool executions
     this.toolExecutions.clear();
     console.log('[Orchestrator] Full cleanup completed - all runs terminated and caches cleared');
@@ -4458,7 +4573,8 @@ class RunOrchestrator {
   }
 
   _getPageActionTools() {
-    return [
+    if (this.pageActionToolSchemas) return this.pageActionToolSchemas;
+    this.pageActionToolSchemas = [
       {
         type: 'function',
         function: {
@@ -4729,6 +4845,7 @@ class RunOrchestrator {
         },
       },
     ];
+    return this.pageActionToolSchemas;
   }
 
   _getMind2WebPageTools() {
@@ -5247,7 +5364,7 @@ class RunOrchestrator {
     }
 
     const tabScope =
-      'This Act lease includes bounded tabs: list, open, switch, and close only tabs owned by this run (maximum twelve). Work in the current target tab by default. Follow links in that tab and use page_open_link without background unless the task genuinely needs a separate page for parallel research or a retained reference. Use page_list_tabs before opening anything; page_open_tab reuses an existing destination and keeps one work tab per site, so open another tab only when separate pages are necessary. Never close tabs for tidiness; the run tears down owned tabs automatically, and an unnecessary close risks a denied confirmation that blocks an otherwise complete task. Only close a tab the task itself requires. Following links found in the page is allowed across origins, but an unrequested model-entered cross-origin URL requires user confirmation. Writes, sensitive controls, downloads, and destructive actions remain gated or blocked.';
+      'This Act lease includes bounded tabs: list, open, switch, and close only tabs owned by this run (maximum twelve). Work in the current target tab by default. Follow links in that tab and use page_open_link without background unless the task genuinely needs a separate page for parallel research or a retained reference. Use page_list_tabs before opening anything; page_open_tab reuses an existing destination and keeps one work tab per site, so open another tab only when separate pages are necessary. Never close tabs for tidiness: tabs this run opens stay open in their tab group after the run for the user to review, and an unnecessary close risks a denied confirmation that blocks an otherwise complete task. Only close a tab the task itself requires. Following links found in the page is allowed across origins, but an unrequested model-entered cross-origin URL requires user confirmation. Writes, sensitive controls, downloads, and destructive actions remain gated or blocked.';
     if (run.pageActions?.enabled) {
       const pageToolNames = mind2webEval
         ? (run.pageActions.snapshot
@@ -6032,7 +6149,7 @@ class RunOrchestrator {
       response = await fetch(llmEndpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body),
+        body: payload,
         signal: requestTimeout.signal,
       });
     } catch (error) {
@@ -7139,9 +7256,44 @@ class RunOrchestrator {
   }
 
   /**
-   * Emit event to chat.js
+   * Emit ordered provider stream deltas at a bounded cadence. Lifecycle events
+   * flush pending deltas first so event ordering remains authoritative.
    */
   _emitEvent(runId, event) {
+    const run = this.activeRuns.get(runId);
+    if (
+      run &&
+      STREAM_EVENT_TYPES.has(event?.type) &&
+      typeof event.data === 'string' &&
+      event.data
+    ) {
+      let buffer = this.streamEventBuffers.get(runId);
+      if (!buffer) {
+        buffer = { segments: [], chars: 0, timer: null };
+        this.streamEventBuffers.set(runId, buffer);
+        buffer.timer = setTimeout(() => this._flushStreamEvents(runId), STREAM_COALESCE_MS);
+      }
+      const previous = buffer.segments.at(-1);
+      if (previous?.type === event.type) previous.data += event.data;
+      else buffer.segments.push({ type: event.type, data: event.data });
+      buffer.chars += event.data.length;
+      if (buffer.chars >= STREAM_COALESCE_MAX_CHARS) this._flushStreamEvents(runId);
+      return;
+    }
+    this._flushStreamEvents(runId);
+    this._emitEventNow(runId, event);
+  }
+
+  _flushStreamEvents(runId) {
+    const buffer = this.streamEventBuffers.get(runId);
+    if (!buffer) return;
+    clearTimeout(buffer.timer);
+    this.streamEventBuffers.delete(runId);
+    if (!this.activeRuns.has(runId)) return;
+    this._emitEventNow(runId, { type: 'stream_batch', events: buffer.segments });
+  }
+
+  _emitEventNow(runId, event) {
     const run = this.activeRuns.get(runId);
     const enrichedEvent = {
       ...event,
@@ -7154,32 +7306,33 @@ class RunOrchestrator {
         run.terminal = true;
         run.status = enrichedEvent.type === 'complete' ? 'complete' : enrichedEvent.type;
       }
-      run.eventJournal = [...(run.eventJournal || []), this._journalEvent(enrichedEvent)].slice(
-        -RUN_JOURNAL_MAX_EVENTS
-      );
-      this._persistRunJournal(run);
+      if (!STREAM_EVENT_TYPES.has(enrichedEvent.type)) {
+        run.eventJournal = [...(run.eventJournal || []), this._journalEvent(enrichedEvent)].slice(
+          -RUN_JOURNAL_MAX_EVENTS
+        );
+        this._persistRunJournal(run);
+      }
     }
     try {
       this.pageActionActivityHandler?.(run, enrichedEvent);
     } catch (error) {
       console.warn(`[RunOrchestrator] Page activity notification failed for run ${runId}:`, error);
     }
-    chrome.runtime
-      .sendMessage({
-        action: 'orchestratorEvent',
-        runId,
-        sourceTabId: run?.sourceTabId || null,
-        event: enrichedEvent,
-      })
-      .catch((err) => {
-        console.warn(`[RunOrchestrator] Emit failed for run ${runId}:`, err.message);
-        if (run) {
-          run.lastEmitError = { event: enrichedEvent, error: err.message, timestamp: Date.now() };
-        }
-      });
-    // Keep the readable Act progress card in sync with page-action activity.
-    // The progress event rides the same monotonic per-run sequence and, like
-    // every journal event, persists only its bounded safe fields.
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime
+        .sendMessage({
+          action: 'orchestratorEvent',
+          runId,
+          sourceTabId: run?.sourceTabId || null,
+          event: enrichedEvent,
+        })
+        .catch((err) => {
+          console.warn(`[RunOrchestrator] Emit failed for run ${runId}:`, err.message);
+          if (run) {
+            run.lastEmitError = { event: enrichedEvent, error: err.message, timestamp: Date.now() };
+          }
+        });
+    }
     if (
       run &&
       enrichedEvent.type !== 'page_task_progress' &&
@@ -7407,26 +7560,57 @@ class RunOrchestrator {
     };
   }
 
-  _persistRunJournal(run) {
+  _persistRunJournal(run, immediate = false) {
     if (typeof chrome === 'undefined' || !chrome.storage?.session || !run) return;
     this.pendingJournalSnapshots.set(run.id, this._getJournalSnapshot(run));
     this._limitPendingJournalSnapshots();
-    this._startRunJournalDrain();
+    this._startRunJournalDrain(immediate || run.terminal === true);
   }
 
   _limitPendingJournalSnapshots() {
     while (this.pendingJournalSnapshots.size > RUN_JOURNAL_MAX_RUNS) {
-      const oldestRunId = [...this.pendingJournalSnapshots.entries()].sort(
-        (left, right) => Number(left[1]?.updatedAt || 0) - Number(right[1]?.updatedAt || 0)
-      )[0][0];
+      let oldestRunId = null;
+      let oldestUpdatedAt = Infinity;
+      for (const [runId, snapshot] of this.pendingJournalSnapshots) {
+        const updatedAt = Number(snapshot?.updatedAt || 0);
+        if (updatedAt < oldestUpdatedAt) {
+          oldestRunId = runId;
+          oldestUpdatedAt = updatedAt;
+        }
+      }
+      if (oldestRunId === null) break;
       this.pendingJournalSnapshots.delete(oldestRunId);
     }
   }
 
-  _startRunJournalDrain() {
+  _startRunJournalDrain(force = false) {
+    if (this.journalDrainActive || this.pendingJournalSnapshots.size === 0) return;
+    if (this.journalDrainTimer !== null) {
+      if (!force) return;
+      clearTimeout(this.journalDrainTimer);
+      this.journalDrainTimer = null;
+    }
+    if (!force) {
+      this.journalWrite = new Promise((resolve) => {
+        this.journalDrainResolve = resolve;
+        this.journalDrainTimer = setTimeout(() => {
+          this.journalDrainTimer = null;
+          this._beginRunJournalDrain();
+        }, RUN_JOURNAL_COALESCE_MS);
+      });
+      return;
+    }
+    this._beginRunJournalDrain();
+  }
+
+  _beginRunJournalDrain() {
     if (this.journalDrainActive || this.pendingJournalSnapshots.size === 0) return;
     this.journalDrainActive = true;
-    this.journalWrite = this._drainRunJournalWrites();
+    const scheduledResolve = this.journalDrainResolve;
+    this.journalDrainResolve = null;
+    this.journalWrite = this._drainRunJournalWrites().finally(() => {
+      scheduledResolve?.();
+    });
   }
 
   async _drainRunJournalWrites() {

@@ -1,4 +1,7 @@
+import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
+
+const marked = createRequire(import.meta.url)('../marked.min.js');
 
 vi.mock('../loadingManager.js', () => ({
   loadingManager: { showToast: vi.fn() },
@@ -6,6 +9,7 @@ vi.mock('../loadingManager.js', () => ({
 
 import { ChatUI } from '../src/chat/ChatUI.js';
 import { StreamStateManager } from '../src/chat/ChatStream.js';
+import { renderMarkdown } from '../src/utils/domSanitizer.js';
 
 describe('StreamStateManager orchestrator event ordering', () => {
   it('keeps a conversation identity until an explicit new chat', () => {
@@ -55,6 +59,210 @@ describe('StreamStateManager orchestrator event ordering', () => {
 
     expect(state.queueOrchestratorEvent(event)).toEqual([event]);
   });
+
+  it('expands coalesced stream batches in original segment order', () => {
+    const state = new StreamStateManager();
+    const batch = {
+      type: 'stream_batch',
+      sequence: 1,
+      timestamp: 10,
+      events: [
+        { type: 'content', data: 'Hello ' },
+        { type: 'reasoning', data: 'thinking' },
+        { type: 'content', data: 'world' },
+        { type: 'ignored', data: 'x' },
+      ],
+    };
+
+    expect(state.queueOrchestratorEvent(batch)).toEqual([
+      { type: 'content', data: 'Hello ', sequence: 1, timestamp: 10 },
+      { type: 'reasoning', data: 'thinking', sequence: 1, timestamp: 10 },
+      { type: 'content', data: 'world', sequence: 1, timestamp: 10 },
+    ]);
+  });
+
+  it('includes queued deltas when reading streamed text before the next render frame', () => {
+    vi.useFakeTimers();
+    const state = new StreamStateManager();
+    state.queueRenderChunk('queued tail');
+    expect(state.getStreamedText()).toBe('queued tail');
+    state.clearStreamedText();
+    vi.useRealTimers();
+  });
+
+  it('flushes queued reasoning before starting the next model turn', () => {
+    vi.useFakeTimers();
+    try {
+      const state = new StreamStateManager();
+      const reasoningElement = { innerHTML: '' };
+      state.setReasoningContentElement(reasoningElement);
+      state.queueRenderReasoning('short reasoning tail');
+
+      state.startNewTurn();
+
+      expect(reasoningElement.innerHTML).toContain('short reasoning tail');
+      expect(state._reasoningBuffer).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])(
+    'renders all accumulated reasoning on finalization after hidden flush (visibility restored: %s)',
+    (restoreVisibility) => {
+      const previousDocument = globalThis.document;
+      const previousDOMParser = globalThis.DOMParser;
+      const createElement = (tagName) => ({
+        tagName: tagName.toUpperCase(),
+        children: [],
+        _html: '',
+        appendChild(child) {
+          this.children.push(child);
+          child.parentElement = this;
+          return child;
+        },
+        replaceChildren() {
+          this._html = '';
+          this.children = [];
+        },
+        set innerHTML(value) {
+          this._html = String(value);
+          this.children = [];
+        },
+        get innerHTML() {
+          return (
+            this._html +
+            this.children.map((child) => child.innerHTML || child.textContent || '').join('')
+          );
+        },
+      });
+      globalThis.document = {
+        visibilityState: 'hidden',
+        createElement,
+        createDocumentFragment: () => createElement('fragment'),
+        createTextNode: (textContent) => ({ textContent }),
+        importNode: (node) => node,
+      };
+      globalThis.DOMParser = class {};
+
+      try {
+        const state = new StreamStateManager();
+        const reasoningElement = createElement('div');
+        state.setReasoningContentElement(reasoningElement);
+        state.queueRenderReasoning('hidden reasoning stays complete');
+
+        state.flushPendingReasoning();
+        expect(state._reasoningBuffer).toBe('');
+        expect(state._reasoningMarkdownState.needsFullRender).toBe(true);
+        if (restoreVisibility) globalThis.document.visibilityState = 'visible';
+
+        state.finalizeReasoning();
+
+        expect(reasoningElement.innerHTML).toContain('hidden reasoning stays complete');
+      } finally {
+        globalThis.document = previousDocument;
+        globalThis.DOMParser = previousDOMParser;
+      }
+    }
+  );
+
+  it.each([
+    [
+      'reference links across blocks',
+      'See [docs][d].\n\n[d]: https://example.com',
+      ['See [docs][d].\n\n', '[d]: https://example.com'],
+    ],
+    ['unfinished fenced blocks', '```\ncode', ['```\ncode']],
+  ])(
+    'renders canonical full Markdown for reasoning when finalizing (%s)',
+    (_case, markdown, chunks) => {
+      const previousDocument = globalThis.document;
+      const previousDOMParser = globalThis.DOMParser;
+      const previousMarked = globalThis.marked;
+      const previousDOMPurify = globalThis.DOMPurify;
+      const makeElement = (tagName = 'div') => ({
+        tagName: tagName.toUpperCase(),
+        children: [],
+        parentElement: null,
+        _html: '',
+        appendChild(child) {
+          this.children.push(child);
+          child.parentElement = this;
+          return child;
+        },
+        replaceChildren() {
+          this._html = '';
+          this.children = [];
+        },
+        remove() {
+          if (!this.parentElement) return;
+          this.parentElement.children = this.parentElement.children.filter(
+            (child) => child !== this
+          );
+          this.parentElement = null;
+        },
+        set innerHTML(value) {
+          this._html = String(value);
+          this.children = [];
+        },
+        get innerHTML() {
+          return (
+            this._html +
+            this.children.map((child) => child.innerHTML || child.textContent || '').join('')
+          );
+        },
+      });
+      globalThis.document = {
+        visibilityState: 'visible',
+        createElement: makeElement,
+        createDocumentFragment: () => makeElement('fragment'),
+        createTextNode: (textContent) => ({ textContent }),
+        importNode: (node) => node,
+      };
+      globalThis.DOMParser = class {
+        parseFromString(markdownHtml) {
+          const node = makeElement('span');
+          node.innerHTML = markdownHtml;
+          return { body: { childNodes: [node] } };
+        }
+      };
+      globalThis.marked = marked;
+      delete globalThis.DOMPurify;
+      const parseSpy = vi.spyOn(marked, 'parse');
+
+      try {
+        const state = new StreamStateManager();
+        const reasoningElement = makeElement();
+        state.setReasoningContentElement(reasoningElement);
+        for (const chunk of chunks) {
+          state.queueRenderReasoning(chunk);
+          state.flushPendingReasoning();
+        }
+
+        state.finalizeReasoning();
+        const canonicalHtml = reasoningElement.innerHTML;
+        const parseCount = parseSpy.mock.calls.length;
+        state.finalizeReasoning();
+
+        expect(parseSpy).toHaveBeenCalledTimes(parseCount);
+        expect(canonicalHtml).toBe(renderMarkdown(markdown));
+        const continuation = `${markdown}\nMore.`;
+        state.queueRenderReasoning('\nMore.');
+        state.flushPendingReasoning();
+        state.finalizeReasoning();
+
+        expect(reasoningElement.innerHTML).toBe(renderMarkdown(continuation));
+      } finally {
+        parseSpy.mockRestore();
+        globalThis.document = previousDocument;
+        globalThis.DOMParser = previousDOMParser;
+        if (previousMarked === undefined) delete globalThis.marked;
+        else globalThis.marked = previousMarked;
+        if (previousDOMPurify === undefined) delete globalThis.DOMPurify;
+        else globalThis.DOMPurify = previousDOMPurify;
+      }
+    }
+  );
 
   it('passes through events from legacy senders without sequence metadata', () => {
     const state = new StreamStateManager();

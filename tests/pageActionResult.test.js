@@ -80,7 +80,7 @@ describe('compact Act results', () => {
         snapshot: {
           snapshotId: 'mind2web-state',
           content:
-            '[0] <a label="Find a doctor">\n[12] <input placeholder="Specialty">\n        [5] <button label="Resources">\n          [6] <a label="Guidance & Resources">\n[99] <input label="INPUT" value="<div class=\"alert alert-danger\">Image is not internal. Cannot convert SVG to code.</div>">',
+            '[0] <a label="Find a doctor">\n[12] <input placeholder="Specialty">\n        [5] <button label="Resources">\n          [6] <a label="Guidance & Resources">\n[99] <input label="INPUT" value="<div class="alert alert-danger">Image is not internal. Cannot convert SVG to code.</div>">',
           elements: [
             {
               index: 12,

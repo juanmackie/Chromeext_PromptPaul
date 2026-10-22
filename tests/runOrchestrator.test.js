@@ -433,7 +433,9 @@ describe('RunOrchestrator._buildSystemPrompt', () => {
     expect(prompt).toContain(
       'explicitly asking for a city or point of interest, enter the city only'
     );
-    expect(prompt).toContain('check privately that the control performs the first unfinished task step');
+    expect(prompt).toContain(
+      'check privately that the control performs the first unfinished task step'
+    );
     expect(prompt).toContain('Available page tools: page_click, page_input, page_select.');
     expect(prompt).not.toContain('TAB SCOPE:');
     expect(prompt).not.toContain('For multi-step work, write a concise checklist');
@@ -2671,6 +2673,7 @@ describe('RunOrchestrator page actions', () => {
     const currentElementKey = 'page-new:0';
     let inspections = 0;
     let delivered = false;
+    let mutationBudgetAtDispatch = null;
     const currentSnapshot = {
       ...makeSnapshot(),
       snapshotId: 'page-new',
@@ -2693,8 +2696,12 @@ describe('RunOrchestrator page actions', () => {
                 : currentSnapshot,
           };
         }
+        mutationBudgetAtDispatch = [...orch.activeRuns.values()][0].pageActions.budgets.mutation;
         if (args.elementKey !== currentElementKey) {
-          return { success: true, error: 'PAGE_STATE_STALE' };
+          const error = new Error('The indexed target changed after the snapshot. Inspect again.');
+          error.code = 'PAGE_STATE_STALE';
+          error.preDispatch = true;
+          throw error;
         }
         delivered = true;
         return { success: true, message: 'clicked' };
@@ -2710,6 +2717,7 @@ describe('RunOrchestrator page actions', () => {
       makeCall('key-state-2', 'page_get_state', { regionId: 'region-0' })
     );
 
+    const mutationBudgetBefore = run.pageActions.budgets.mutation;
     const outcome = await orch.executeTool(
       runId,
       makeCall('key-stale-click', 'page_click', {
@@ -2719,6 +2727,14 @@ describe('RunOrchestrator page actions', () => {
     );
 
     expect(outcome.result.error).toBe('PAGE_STATE_STALE');
+    expect(outcome.result.snapshot).toMatchObject({ snapshotId: 'page-new' });
+    expect(outcome.result.actionReceipt).toEqual({
+      disposition: 'not_delivered',
+      evidence: { kind: 'stale_snapshot' },
+    });
+    expect(mutationBudgetAtDispatch).toBeGreaterThan(mutationBudgetBefore);
+    expect(run.pageActions.budgets.mutation).toBe(mutationBudgetBefore);
+    expect(inspections).toBe(3);
     expect(delivered).toBe(false);
   });
 
@@ -3050,6 +3066,183 @@ describe('RunOrchestrator page actions', () => {
       makeCall('manual-refresh', 'page_get_state', {})
     );
     expect(refreshed.result.snapshot.snapshotId).toBe('page-snap-1');
+  });
+
+  it('pauses on an unresponsive mutation, resumes with inspection, and never replays it', async () => {
+    const events = [];
+    let mutations = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state' || actionName === 'clearPageActionSession')
+          return { success: true, snapshot: makeSnapshot() };
+        mutations += 1;
+        const error = new Error('May be showing a dialog.');
+        error.code = 'PAGE_ACTION_UNRESPONSIVE';
+        throw error;
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('unresponsive-state', 'page_get_state', {}));
+    const pending = orch.executeTool(
+      runId,
+      makeCall('unresponsive-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_action_confirmation')).toBe(true)
+    );
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    orch.resolvePageActionDecision(runId, confirmation.confirmationId, true);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_manual_intervention_request')).toBe(true)
+    );
+    const request = events.find((event) => event.type === 'page_manual_intervention_request');
+    expect(request.question).toContain('browser dialog');
+    expect(orch.resolvePageManualIntervention(runId, request.requestId, true)).toBe(true);
+    const result = await pending;
+    expect(result.result.actionReceipt).toEqual({
+      disposition: 'delivered_unverified',
+      evidence: { kind: 'page_unresponsive' },
+    });
+    expect(result.result.snapshot.snapshotId).toBe('page-snap-1');
+    expect(mutations).toBe(1);
+  });
+
+  it('does not claim manual intervention resumed or inspect again when pause is refused', async () => {
+    let stateReads = 0;
+    let mutations = 0;
+    const events = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') {
+          stateReads += 1;
+          return { success: true, snapshot: makeSnapshot() };
+        }
+        mutations += 1;
+        throw Object.assign(new Error('The page stopped responding.'), {
+          code: 'PAGE_ACTION_UNRESPONSIVE',
+        });
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    vi.spyOn(orch, '_executePageManualIntervention').mockResolvedValue({
+      success: true,
+      result: {
+        error: 'PAGE_MANUAL_INTERVENTION_PENDING',
+        message: 'Another user interaction is already active.',
+      },
+    });
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('unresumed-state', 'page_get_state', {}));
+    const pending = orch.executeTool(
+      runId,
+      makeCall('unresumed-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_action_confirmation')).toBe(true)
+    );
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    orch.resolvePageActionDecision(runId, confirmation.confirmationId, true);
+    const result = await pending;
+    expect(result.result.error).toBe('PAGE_MANUAL_INTERVENTION_PENDING');
+    expect(result.result.message).toContain('did not resume');
+    expect(result.result.snapshot).toBeUndefined();
+    expect(result.result.actionReceipt).toMatchObject({ disposition: 'delivered_unverified' });
+    expect(stateReads).toBe(1);
+    expect(mutations).toBe(1);
+  });
+
+  it('does not claim a fresh snapshot when inspection fails after manual resume', async () => {
+    const events = [];
+    let stateReads = 0;
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'clearPageActionSession') return { success: true };
+        if (actionName === 'page_get_state') {
+          stateReads += 1;
+          return stateReads === 1
+            ? { success: true, snapshot: makeSnapshot() }
+            : { success: false, error: 'PAGE_ACTION_TIMEOUT', message: 'Inspection timed out.' };
+        }
+        throw Object.assign(new Error('The page stopped responding.'), {
+          code: 'PAGE_ACTION_UNRESPONSIVE',
+        });
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('failed-inspection-state', 'page_get_state', {}));
+    const pending = orch.executeTool(
+      runId,
+      makeCall('failed-inspection-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_action_confirmation')).toBe(true)
+    );
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    orch.resolvePageActionDecision(runId, confirmation.confirmationId, true);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_manual_intervention_request')).toBe(true)
+    );
+    const request = events.find((event) => event.type === 'page_manual_intervention_request');
+    orch.resolvePageManualIntervention(runId, request.requestId, true);
+    const result = await pending;
+    expect(result.result.snapshot).toBeUndefined();
+    expect(result.result.message).toContain('fresh inspection failed');
+    expect(result.result.message).not.toContain('Use this fresh snapshot');
+    expect(stateReads).toBe(2);
+  });
+
+  it('quarantines an unresponsive tab when its manual-intervention pause expires', async () => {
+    vi.useFakeTimers();
+    const events = [];
+    const quarantine = vi.fn(() => ({ tabId: 7, nextTargetTabId: null, available: false }));
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionTabFailureHandler: quarantine,
+      pageActionExecutor: async (_tabId, actionName) => {
+        if (actionName === 'page_get_state') return { success: true, snapshot: makeSnapshot() };
+        const error = new Error('The page stopped responding.');
+        error.code = 'PAGE_ACTION_UNRESPONSIVE';
+        throw error;
+      },
+    });
+    orch._emitEvent = (_runId, event) => events.push(event);
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    await orch.executeTool(runId, makeCall('timeout-state', 'page_get_state', {}));
+    const pending = orch.executeTool(
+      runId,
+      makeCall('timeout-click', 'page_click', { snapshotId: 'page-snap-1', index: 1 })
+    );
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_action_confirmation')).toBe(true)
+    );
+    const confirmation = events.find((event) => event.type === 'page_action_confirmation');
+    orch.resolvePageActionDecision(runId, confirmation.confirmationId, true);
+    await vi.waitFor(() =>
+      expect(events.some((event) => event.type === 'page_manual_intervention_request')).toBe(true)
+    );
+    const manual = events.find((event) => event.type === 'page_manual_intervention_request');
+    expect(manual).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(300_000);
+    const result = await pending;
+    expect(result.result).toMatchObject({
+      error: 'PAGE_ACTION_UNRESPONSIVE',
+      actionReceipt: {
+        disposition: 'delivered_unverified',
+        evidence: { kind: 'page_unresponsive' },
+      },
+    });
+    expect(quarantine).toHaveBeenCalledWith(
+      runId,
+      7,
+      expect.objectContaining({ code: 'PAGE_ACTION_UNRESPONSIVE' })
+    );
+    expect(orch.activeRuns.get(runId).pageActions.unavailableTabs.has(7)).toBe(true);
+    vi.useRealTimers();
   });
 
   it('navigates a cross-origin HTTP link under the bounded Act lease', async () => {

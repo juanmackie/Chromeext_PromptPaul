@@ -144,8 +144,11 @@ export function serializeMind2WebPageActionResult(result) {
       .map((key) => {
         const rawValue = element?.[key];
         if (typeof rawValue === 'boolean') return `${key}=${rawValue}`;
-        const value = String(rawValue || '')
-          .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+        const value = Array.from(String(rawValue || ''), (character) => {
+          const code = character.charCodeAt(0);
+          return code < 0x20 || code === 0x7f ? ' ' : character;
+        })
+          .join('')
           .replace(/\s+/gu, ' ')
           .trim()
           .slice(0, 96);

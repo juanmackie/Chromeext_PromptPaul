@@ -25,6 +25,10 @@ function safeCheckpointText(value, maxLength) {
 }
 
 const memoryCheckpoints = new Map();
+let sessionRecordsPromise = null;
+let sessionCacheGeneration = 0;
+let storageChangeEvent = null;
+let storageChangeListener = null;
 let storageQueue = Promise.resolve();
 
 function hasSessionStorage() {
@@ -33,6 +37,27 @@ function hasSessionStorage() {
 
 function getSessionStorage() {
   return chrome.storage.session;
+}
+
+function invalidateSessionRecordCache() {
+  sessionCacheGeneration += 1;
+  sessionRecordsPromise = null;
+}
+
+function ensureStorageChangeListener() {
+  const event = globalThis.chrome?.storage?.onChanged;
+  if (storageChangeEvent === event || typeof event?.addListener !== 'function') return;
+  storageChangeEvent?.removeListener?.(storageChangeListener);
+  storageChangeEvent = event;
+  storageChangeListener = (changes, areaName) => {
+    if (
+      areaName === 'session' &&
+      Object.hasOwn(changes || {}, PAGE_ACTION_CHECKPOINT_STORAGE_KEY)
+    ) {
+      invalidateSessionRecordCache();
+    }
+  };
+  event.addListener(storageChangeListener);
 }
 
 function storageGet(key) {
@@ -140,13 +165,31 @@ function normalizeRecord(record = {}) {
 
 async function readRecords() {
   if (!hasSessionStorage()) return Array.from(memoryCheckpoints.values());
-  const result = await storageGet(PAGE_ACTION_CHECKPOINT_STORAGE_KEY);
-  const records = result?.[PAGE_ACTION_CHECKPOINT_STORAGE_KEY];
-  if (!Array.isArray(records)) return [];
-  return records
-    .map(normalizeRecord)
-    .filter(Boolean)
-    .slice(-PAGE_ACTION_CHECKPOINT_CAPS.maxRecords);
+  ensureStorageChangeListener();
+  if (!sessionRecordsPromise) {
+    let pending;
+    pending = storageGet(PAGE_ACTION_CHECKPOINT_STORAGE_KEY)
+      .then((result) => {
+        const records = result?.[PAGE_ACTION_CHECKPOINT_STORAGE_KEY];
+        const normalized = Array.isArray(records)
+          ? records
+              .map(normalizeRecord)
+              .filter(Boolean)
+              .slice(-PAGE_ACTION_CHECKPOINT_CAPS.maxRecords)
+          : [];
+        return normalized;
+      })
+      .catch((error) => {
+        if (sessionRecordsPromise === pending) sessionRecordsPromise = null;
+        throw error;
+      });
+    sessionRecordsPromise = pending;
+  }
+  const generation = sessionCacheGeneration;
+  const pending = sessionRecordsPromise;
+  const records = await pending;
+  if (generation !== sessionCacheGeneration) return readRecords();
+  return records.map(normalizeRecord).filter(Boolean);
 }
 
 async function writeRecords(records) {
@@ -159,7 +202,11 @@ async function writeRecords(records) {
     bounded.forEach((record) => memoryCheckpoints.set(record.runId, record));
     return;
   }
+  const generation = sessionCacheGeneration;
   await storageSet({ [PAGE_ACTION_CHECKPOINT_STORAGE_KEY]: bounded });
+  if (generation === sessionCacheGeneration) {
+    sessionRecordsPromise = Promise.resolve(bounded);
+  }
 }
 
 function queueStorage(operation) {
@@ -225,4 +272,10 @@ export async function getPageActionCheckpoint(runId) {
  */
 export function resetPageActionCheckpointsForTests() {
   memoryCheckpoints.clear();
+  storageChangeEvent?.removeListener?.(storageChangeListener);
+  storageChangeEvent = null;
+  storageChangeListener = null;
+  sessionCacheGeneration += 1;
+  sessionRecordsPromise = null;
+  storageQueue = Promise.resolve();
 }

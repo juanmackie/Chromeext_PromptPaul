@@ -27,13 +27,14 @@ test.afterAll(async () => {
 
 test('expands and collapses the prompt input', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
-  const { context } = await launchTestBrowser(userDataDir);
-  const harness = await openHarness(context);
-  const extensionId = new URL(harness.url()).hostname;
-  const chat = await context.newPage();
-  await chat.goto(`chrome-extension://${extensionId}/chat.html`);
-
+  let context;
   try {
+    ({ context } = await launchTestBrowser(userDataDir));
+    const harness = await openHarness(context);
+    const extensionId = new URL(harness.url()).hostname;
+    const chat = await context.newPage();
+    await chat.goto(`chrome-extension://${extensionId}/chat.html`);
+
     const toggle = chat.locator('#input-expand-toggle');
     const inputArea = chat.locator('#input-area');
     const userInput = chat.locator('#user-input');
@@ -69,8 +70,11 @@ test('expands and collapses the prompt input', async () => {
     await expect(inputArea).not.toHaveClass(/input-area-expanded/);
     await expect(icon).toHaveText('open_in_full');
   } finally {
-    await context.close();
-    removeUserDataDir(userDataDir);
+    try {
+      await context?.close();
+    } finally {
+      removeUserDataDir(userDataDir);
+    }
   }
 });
 

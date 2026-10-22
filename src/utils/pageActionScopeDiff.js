@@ -66,6 +66,30 @@ export function buildIndexedPageRegions(snapshot = {}, limits = {}) {
   }));
 }
 
+const COMPARABLE_ELEMENT_KEYS = Object.freeze([
+  'index',
+  'tag',
+  'role',
+  'label',
+  'region',
+  'disabled',
+  'checked',
+  'expanded',
+  'haspopup',
+  'selected',
+  'pressed',
+  'current',
+  'valuePresent',
+  'value',
+  'sensitive',
+]);
+
+function comparableElementsEqual(left, right) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return COMPARABLE_ELEMENT_KEYS.every((key) => left[key] === right[key]);
+}
+
 function comparableElement(element, index) {
   const metadata = safeElementMetadata(element, index);
   return {
@@ -121,7 +145,7 @@ export function diffPageActionSnapshots(before = {}, after = {}, limits = {}) {
   for (const index of [...indices].sort((a, b) => a - b)) {
     const previous = beforeByIndex.get(index) || null;
     const current = afterByIndex.get(index) || null;
-    if (JSON.stringify(previous) === JSON.stringify(current)) continue;
+    if (comparableElementsEqual(previous, current)) continue;
     changes.push({
       index,
       kind: !previous ? 'added' : !current ? 'removed' : 'changed',

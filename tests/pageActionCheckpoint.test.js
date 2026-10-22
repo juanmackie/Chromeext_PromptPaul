@@ -4,12 +4,14 @@ import {
   clearPageActionCheckpoint,
   getPageActionCheckpoint,
   listPageActionCheckpoints,
+  PAGE_ACTION_CHECKPOINT_STORAGE_KEY,
   resetPageActionCheckpointsForTests,
   savePageActionCheckpoint,
 } from '../src/utils/pageActionCheckpoint.js';
 
 afterEach(() => {
   resetPageActionCheckpointsForTests();
+  delete globalThis.chrome;
 });
 
 function createSkillManager() {
@@ -22,6 +24,77 @@ function createSkillManager() {
 }
 
 describe('pageActionCheckpoint', () => {
+  it('hydrates session records once and avoids read-modify-write for each checkpoint update', async () => {
+    const storageData = {};
+    const session = {
+      get: vi.fn((keys, callback) => {
+        const key = Array.isArray(keys) ? keys[0] : keys;
+        callback({ [key]: structuredClone(storageData[key] || []) });
+      }),
+      set: vi.fn((value, callback) => {
+        Object.assign(storageData, structuredClone(value));
+        callback();
+      }),
+    };
+    globalThis.chrome = { runtime: {}, storage: { session } };
+    resetPageActionCheckpointsForTests();
+
+    await savePageActionCheckpoint({ runId: 'run-cache', status: 'in_flight' });
+    await savePageActionCheckpoint({ runId: 'run-cache', status: 'uncertain_delivery' });
+    await clearPageActionCheckpoint('run-cache');
+
+    expect(session.get).toHaveBeenCalledTimes(1);
+    expect(session.set).toHaveBeenCalledTimes(3);
+    expect(storageData.promptPaulActCheckpointsV1).toEqual([]);
+  });
+
+  it('invalidates the session cache when another extension context writes checkpoints', async () => {
+    const storageData = {};
+    const listeners = new Set();
+    const session = {
+      get: vi.fn((keys, callback) => {
+        callback({
+          [PAGE_ACTION_CHECKPOINT_STORAGE_KEY]: structuredClone(
+            storageData[PAGE_ACTION_CHECKPOINT_STORAGE_KEY] || []
+          ),
+        });
+      }),
+      set: vi.fn((value, callback) => {
+        Object.assign(storageData, structuredClone(value));
+        callback();
+      }),
+    };
+    globalThis.chrome = {
+      runtime: {},
+      storage: {
+        session,
+        onChanged: {
+          addListener: (listener) => listeners.add(listener),
+          removeListener: (listener) => listeners.delete(listener),
+        },
+      },
+    };
+    resetPageActionCheckpointsForTests();
+
+    expect(await listPageActionCheckpoints()).toEqual([]);
+    storageData[PAGE_ACTION_CHECKPOINT_STORAGE_KEY] = [
+      { runId: 'background-run', status: 'in_flight' },
+    ];
+    for (const listener of listeners) {
+      listener(
+        {
+          [PAGE_ACTION_CHECKPOINT_STORAGE_KEY]: {
+            newValue: storageData[PAGE_ACTION_CHECKPOINT_STORAGE_KEY],
+          },
+        },
+        'session'
+      );
+    }
+
+    expect(await listPageActionCheckpoints()).toMatchObject([{ runId: 'background-run' }]);
+    expect(session.get).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves twelve short checklist descriptions and restores one active step', async () => {
     await savePageActionCheckpoint({
       runId: 'twelve',

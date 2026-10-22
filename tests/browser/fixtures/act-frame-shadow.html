@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Shadow frame host</title>
+<h1>Shadow frame host</h1>
+<div id="shadow-host"></div>
+<script>
+  const root = document.querySelector('#shadow-host').attachShadow({ mode: 'open' });
+  const frame = document.createElement('iframe');
+  frame.title = 'Shadow DOM frame';
+  frame.src = 'act-frame-child.html';
+  root.append(frame);
+</script>

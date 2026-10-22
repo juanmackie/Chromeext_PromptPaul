@@ -284,13 +284,20 @@ class ChatUI {
    * @param {HTMLElement|null} messageDiv - Message container to move.
    * @returns {boolean} Whether the message was moved.
    */
-  moveMessageToEnd(messageDiv, { preserveViewport = false } = {}) {
+  isNearBottom() {
+    if (!this.chatArea) return false;
+    return this.chatArea.scrollHeight - this.chatArea.scrollTop - this.chatArea.clientHeight <= 40;
+  }
+
+  moveMessageToEnd(messageDiv, { preserveViewport = false, wasNearBottom = null } = {}) {
     if (!this.chatArea || !messageDiv) return false;
     if (messageDiv.parentNode && messageDiv.parentNode !== this.chatArea) return false;
-    if (this.chatArea.lastElementChild === messageDiv) return false;
     const previousScrollTop = this.chatArea.scrollTop;
-    const nearBottom =
-      this.chatArea.scrollHeight - previousScrollTop - this.chatArea.clientHeight <= 40;
+    const nearBottom = typeof wasNearBottom === 'boolean' ? wasNearBottom : this.isNearBottom();
+    if (this.chatArea.lastElementChild === messageDiv) {
+      if (nearBottom) this.chatArea.scrollTop = this.chatArea.scrollHeight;
+      return false;
+    }
     const activeElement = document.activeElement;
     const hadFocusedDescendant = messageDiv.contains(activeElement);
     this.chatArea.appendChild(messageDiv);
@@ -624,12 +631,15 @@ class ChatUI {
    */
   trimExcessMessages(protectedMessage = this.currentStreamingMessageDiv) {
     if (!this.chatArea) return;
+    let index = 0;
     while (this.chatArea.children.length > ChatUI.MAX_VISIBLE) {
-      const firstRemovable = Array.from(this.chatArea.children).find(
-        (child) => child !== protectedMessage
-      );
-      if (!firstRemovable) break;
-      this.chatArea.removeChild(firstRemovable);
+      const candidate = this.chatArea.children[index];
+      if (!candidate) break;
+      if (candidate === protectedMessage) {
+        index += 1;
+        continue;
+      }
+      this.chatArea.removeChild(candidate);
     }
   }
 

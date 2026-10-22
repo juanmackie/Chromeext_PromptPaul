@@ -4,6 +4,40 @@
  */
 export const PAGE_ACTION_SITE_POLICY_KEY = 'pageActionSitePolicies';
 export const MAX_PAGE_ACTION_SITE_POLICIES = 200;
+const SENSITIVE_PAGE_ACTION_HOSTS = Object.freeze([
+  'vault.bitwarden.com',
+  'vault.bitwarden.eu',
+  '1password.com',
+  '1password.eu',
+  '1password.ca',
+  'lastpass.com',
+  'app.dashlane.com',
+  'keepersecurity.com',
+  'keepersecurity.eu',
+  'accounts.google.com',
+  'myaccount.google.com',
+  'passwords.google.com',
+  'account.microsoft.com',
+  'login.microsoftonline.com',
+  'login.live.com',
+  'account.live.com',
+  'appleid.apple.com',
+  'account.apple.com',
+  'idmsa.apple.com',
+  'promptpaul.juanmackie.com',
+]);
+
+export function isPageActionSensitiveOrigin(value) {
+  let hostname;
+  try {
+    hostname = new URL(value).hostname.toLowerCase().replace(/\.$/u, '');
+  } catch (_) {
+    return false;
+  }
+  return SENSITIVE_PAGE_ACTION_HOSTS.some(
+    (host) => hostname === host || hostname.endsWith(`.${host}`)
+  );
+}
 
 export function getPageActionSiteOrigin(value) {
   try {
@@ -71,6 +105,8 @@ export function createPageActionSitePolicyStore(storage) {
       if (!origin || (rule !== null && !['block', 'allow_low_risk'].includes(rule)))
         throw new Error('A valid site origin and policy are required.');
       return read().then((policies) => {
+        if (rule === 'allow_low_risk' && isPageActionSensitiveOrigin(origin))
+          throw new Error('Low-risk site approval is not available for sensitive sites.');
         if (rule === null) delete policies[origin];
         else policies[origin] = rule;
         if (Object.keys(policies).length > MAX_PAGE_ACTION_SITE_POLICIES)

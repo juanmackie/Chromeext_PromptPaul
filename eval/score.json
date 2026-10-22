@@ -1,1 +1,7 @@
-{"score": 0.0, "fail_class": "adapter_read_error", "valid": false, "error": ".jsonl artifact is stale (mtime 1791842646.0449247, adapter start 1791876741); the adapter reads harness output, not previous runs. Check adapter/manual harness invocation.", "adapter_note": "Adapter failed to read harness artifact; check harness invocation manually."}
+{
+  "score": 0.0,
+  "fail_class": "adapter_read_error",
+  "valid": false,
+  "error": ".jsonl artifact is stale (mtime 1791842646.0449247, adapter start 1791876741); the adapter reads harness output, not previous runs. Check adapter/manual harness invocation.",
+  "adapter_note": "Adapter failed to read harness artifact; check harness invocation manually."
+}

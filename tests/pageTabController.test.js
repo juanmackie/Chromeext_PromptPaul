@@ -12,6 +12,7 @@ describe('PageTabController', () => {
     let nextTabId = 2;
     globalThis.chrome = {
       tabs: {
+        query: vi.fn(async () => Array.from(tabs.values())),
         get: vi.fn(async (tabId) => {
           const tab = tabs.get(tabId);
           if (!tab) throw new Error('missing tab');
@@ -41,6 +42,8 @@ describe('PageTabController', () => {
     expect(result.tabs).toEqual([
       { tabId: 1, title: 'Source', url: 'https://example.com/start', active: true },
     ]);
+    expect(chrome.tabs.query).toHaveBeenCalledTimes(1);
+    expect(chrome.tabs.get).not.toHaveBeenCalled();
   });
 
   it('goes back only in an owned tab and checks readiness before returning', async () => {

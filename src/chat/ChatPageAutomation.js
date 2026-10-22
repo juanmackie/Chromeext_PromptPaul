@@ -83,6 +83,32 @@ export function setPageActionsRunActive(active) {
   renderPageActionsToggle();
 }
 
+const activityCardCache = new WeakMap();
+const progressCardCache = new WeakMap();
+
+function getCachedRunCard(chatArea, runId, selector, cacheByArea) {
+  if (!chatArea) return null;
+  let cache = cacheByArea.get(chatArea);
+  if (!cache) {
+    cache = new Map();
+    cacheByArea.set(chatArea, cache);
+  }
+  const cached = cache.get(runId);
+  if (cached?.parentElement === chatArea) return cached;
+  cache.delete(runId);
+  const card = Array.from(chatArea.querySelectorAll(selector)).find(
+    (candidate) => candidate.dataset.pageActionRunId === runId
+  );
+  if (card) rememberRunCard(cache, runId, card);
+  return card || null;
+}
+
+function rememberRunCard(cache, runId, card) {
+  cache.delete(runId);
+  cache.set(runId, card);
+  while (cache.size > 64) cache.delete(cache.keys().next().value);
+}
+
 function findConfirmationCard(chatArea, confirmationId) {
   return Array.from(chatArea?.querySelectorAll?.('[data-page-action-confirmation]') || []).find(
     (card) => card.dataset.pageActionConfirmation === confirmationId
@@ -90,8 +116,7 @@ function findConfirmationCard(chatArea, confirmationId) {
 }
 
 function getActivityCard(chatArea, runId = '') {
-  const cards = Array.from(chatArea?.querySelectorAll?.('[data-page-action-activity]') || []);
-  return cards.find((card) => card.dataset.pageActionRunId === runId) || (runId ? null : cards[0]);
+  return getCachedRunCard(chatArea, runId, '[data-page-action-activity]', activityCardCache);
 }
 
 /**
@@ -114,8 +139,7 @@ export function formatPlainLanguageDisposition(disposition) {
 }
 
 function getProgressCard(chatArea, runId = '') {
-  const cards = Array.from(chatArea?.querySelectorAll?.('[data-page-task-progress]') || []);
-  return cards.find((card) => card.dataset.pageActionRunId === runId) || (runId ? null : cards[0]);
+  return getCachedRunCard(chatArea, runId, '[data-page-task-progress]', progressCardCache);
 }
 
 const WAITING_LABELS = {
@@ -148,6 +172,9 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
     card.dataset.pageActionRunId = runKey;
     card.setAttribute('role', 'status');
     card.setAttribute('aria-live', 'polite');
+    const cache = progressCardCache.get(chatArea) || new Map();
+    progressCardCache.set(chatArea, cache);
+    rememberRunCard(cache, runKey, card);
 
     const heading = document.createElement('strong');
     heading.textContent = 'Act progress';
@@ -377,6 +404,9 @@ export function updatePageActionActivity(chatArea, event = {}) {
     card.dataset.pageActionRunId = runId;
     card.setAttribute('role', 'status');
     card.setAttribute('aria-live', 'polite');
+    const cache = activityCardCache.get(chatArea) || new Map();
+    activityCardCache.set(chatArea, cache);
+    rememberRunCard(cache, runId, card);
     const heading = document.createElement('strong');
     heading.textContent = 'Page activity';
     card.appendChild(heading);
@@ -718,6 +748,11 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
   card.setAttribute('role', 'alertdialog');
   card.setAttribute('aria-live', 'assertive');
   card.setAttribute('aria-modal', 'true');
+  card.tabIndex = -1;
+  card.setAttribute(
+    'aria-label',
+    `Approval needed for ${event.summary || event.action || 'page action'}`
+  );
 
   const title = document.createElement('strong');
   title.textContent = 'Approval needed for page action';
@@ -795,7 +830,15 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
   allowSite.textContent = 'Always allow low-risk actions on this site';
   allowSite.title =
     'Approve this action once and save low-risk site trust. High-risk actions always ask.';
-  allowSite.hidden = !event.siteOrigin;
+  allowSite.hidden = !event.siteOrigin || event.siteTrustAllowed === false;
+  approveAll.hidden = approveAll.hidden || event.siteTrustAllowed === false;
+  if (event.siteTrustAllowed === false) {
+    const sensitiveNotice = document.createElement('p');
+    sensitiveNotice.className = 'page-action-sensitive-site-notice';
+    sensitiveNotice.textContent =
+      'Saved site trust and run-wide approvals are unavailable on this sensitive site.';
+    card.appendChild(sensitiveNotice);
+  }
   const disableAll = () => {
     allowSite.disabled = true;
     approve.disabled = true;
@@ -868,7 +911,7 @@ export function renderPageActionConfirmation(chatArea, event, onDecision, onStop
   card._restorePageActionFocus = () => {
     if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
   };
-  approve.focus();
+  card.focus();
   const remaining = chatArea.scrollHeight - chatArea.scrollTop - (chatArea.clientHeight || 0);
   if (!Number.isFinite(remaining) || remaining <= 40) chatArea.scrollTop = chatArea.scrollHeight;
   return card;

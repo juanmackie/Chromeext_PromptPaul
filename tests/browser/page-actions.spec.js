@@ -31,12 +31,15 @@ test.afterAll(async () => {
 test.describe('page-agent-style page actions', () => {
   test('experimental precise-input preparation accepts only a later trusted input dispatch', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-precise-input-'));
-    const { context } = await launchTestBrowser(userDataDir);
-    const target = await context.newPage();
-    const harness = await openHarness(context);
+    let context;
+    let target;
+    let harness;
     const url = fixtureUrl(fixtureServer, 'act-precise-input.html');
     let runId;
     try {
+      ({ context } = await launchTestBrowser(userDataDir));
+      target = await context.newPage();
+      harness = await openHarness(context);
       await target.goto(url);
       ({ runId } = await startAndInspect(harness, url, 'precise-input'));
       let snapshot = await harness
@@ -165,9 +168,15 @@ test.describe('page-agent-style page actions', () => {
       await expect(target.locator('#message')).toHaveValue('trusted value');
       await expect(target.locator('#input-trusted')).toHaveText('true');
     } finally {
-      await abortRun(harness, runId);
-      await context.close();
-      removeUserDataDir(userDataDir);
+      try {
+        if (harness) await abortRun(harness, runId);
+      } finally {
+        try {
+          await context?.close();
+        } finally {
+          removeUserDataDir(userDataDir);
+        }
+      }
     }
   });
 
@@ -247,6 +256,49 @@ test.describe('page-agent-style page actions', () => {
       expect(
         started.snapshot.elements.some((element) => /card number/i.test(element.label || ''))
       ).toBe(false);
+      await target.evaluate(
+        (src) => {
+          const frame = document.createElement('iframe');
+          frame.title = 'Late same-origin frame';
+          frame.src = src;
+          document.body.append(frame);
+        },
+        fixtureUrl(fixtureServer, 'act-frame-child.html')
+      );
+      await expect.poll(() => target.locator('iframe').count()).toBe(4);
+      await target.frameLocator('iframe').nth(3).locator('#frame-action').waitFor();
+      const reinspection = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(
+            runId,
+            'frames-late-inspection',
+            'page_get_state',
+            {}
+          ),
+        { runId: started.runId }
+      );
+      expect(reinspection.error, JSON.stringify(reinspection)).toBeUndefined();
+      const refreshedSnapshot = reinspection.result?.snapshot;
+      expect(refreshedSnapshot, JSON.stringify(reinspection)).toBeTruthy();
+      const sameOriginControls = refreshedSnapshot.elements.filter(
+        (element) => element.label === 'Frame action' && element.frameOrigin === parentUrl.origin
+      );
+      expect(sameOriginControls).toHaveLength(2);
+      const lateFrameAction = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'late-frame-click', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        {
+          runId: started.runId,
+          snapshotId: refreshedSnapshot.snapshotId,
+          index: sameOriginControls[1].index,
+        }
+      );
+      expect(lateFrameAction.result.actionReceipt.disposition).toBe('delivered_verified');
+      await expect(target.frameLocator('iframe').nth(3).locator('#frame-clicked')).toHaveText('1');
+      started.snapshot = lateFrameAction.result.snapshot;
       const currentTab = await harness.evaluate(async (targetUrl) => {
         const tab = (await chrome.tabs.query({})).find((entry) => entry.url === targetUrl);
         return tab?.url;
@@ -281,6 +333,46 @@ test.describe('page-agent-style page actions', () => {
         blockedRun.snapshot.elements.some((element) => element.frameOrigin === childUrl.origin)
       ).toBe(false);
       expect(blockedRun.snapshot.content).toContain('omitted by safety policy');
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('discovers and routes an iframe inside an open shadow root', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-shadow-frame-'));
+    const { context } = await launchTestBrowser(userDataDir);
+    const target = await context.newPage();
+    const harness = await openHarness(context);
+    const url = fixtureUrl(fixtureServer, 'act-frame-shadow.html');
+    let runId;
+    try {
+      await target.goto(url);
+      await expect
+        .poll(() => target.frames().some((frame) => frame.url().includes('act-frame-child.html')))
+        .toBe(true);
+      await harness.evaluate(() => chrome.storage.local.set({ pageActionsTrustedMode: true }));
+      const started = await startAndInspect(harness, url, 'shadow-frame');
+      runId = started.runId;
+      const frame = target
+        .frames()
+        .find((candidate) => candidate.url().includes('act-frame-child.html'));
+      expect(frame, 'the shadow-root iframe must be present').toBeTruthy();
+      const control = started.snapshot.elements.find(
+        (element) => element.label === 'Frame action' && element.frameOrigin === new URL(url).origin
+      );
+      expect(control, JSON.stringify(started.snapshot.elements)).toBeTruthy();
+      const result = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'shadow-frame-click', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { runId, snapshotId: started.snapshot.snapshotId, index: control.index }
+      );
+      expect(result.result.actionReceipt.disposition).toBe('delivered_verified');
+      await expect(frame.locator('#frame-clicked')).toHaveText('1');
     } finally {
       await abortRun(harness, runId);
       await context.close();
@@ -1231,11 +1323,14 @@ test.describe('page-agent-style page actions', () => {
         await target.bringToFront();
         expect(await readFixtureState(target, task), `${id}: idle must fail`).toBe(false);
         if (id === 'search-enter') {
-          await target.getByLabel('Search').fill('Birch');
-          await target.getByLabel('Search').press('Enter');
+          const search = target.getByLabel('Search');
+          // Establish focus with trusted pointer input before sending the key.
+          await search.click();
+          await search.fill('Birch');
+          await search.press('Enter');
           expect(await readFixtureState(target, task)).toBe(false);
-          await target.getByLabel('Search').fill('Cedar');
-          await target.getByLabel('Search').press('Enter');
+          await search.fill('Cedar');
+          await search.press('Enter');
         } else if (id === 'escape-modal') {
           await target.getByRole('dialog').press('Escape');
         } else if (id === 'hover-menu') {
@@ -1262,9 +1357,11 @@ test.describe('page-agent-style page actions', () => {
           );
           await expect.poll(() => readFixtureState(target, task)).toBe(true);
         } else if (id === 'trusted-key-only') {
-          await target.getByLabel('Ready').dispatchEvent('keydown', { key: 'Enter' });
+          const ready = target.getByLabel('Ready');
+          await ready.dispatchEvent('keydown', { key: 'Enter' });
           expect(await readFixtureState(target, task), 'synthetic input must fail').toBe(false);
-          await target.getByLabel('Ready').press('Enter');
+          await ready.click();
+          await ready.press('Enter');
         } else if (id === 'validation-error') {
           await target.getByRole('button', { name: 'Submit' }).click();
           expect(await readFixtureState(target, task), 'wrong email must fail').toBe(false);
@@ -2139,6 +2236,71 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('saves iframe site trust against the frame origin while verifying the top document origin', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-frame-trust-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'act-frame-host.html');
+    const childUrl = new URL(fixtureUrl(fixtureServer, 'act-frame-child.html'));
+    const hostUrl = new URL(targetUrl);
+    childUrl.hostname = hostUrl.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+    try {
+      await target
+        .locator('iframe')
+        .first()
+        .evaluate((frame, src) => {
+          frame.src = src;
+        }, childUrl.href);
+      await target.frameLocator('iframe').first().locator('#frame-note').waitFor();
+      const started = await startAndInspect(harness, targetUrl, 'iframe-site-trust');
+      runId = started.runId;
+      const input = started.snapshot.elements.find(
+        (element) => element.label === 'Frame note' && element.frameOrigin === childUrl.origin
+      );
+      expect(input).toBeTruthy();
+      const pending = harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'iframe-trust-input', 'page_input', {
+            snapshotId,
+            index,
+            text: 'Frame-approved note',
+          }),
+        { runId, snapshotId: started.snapshot.snapshotId, index: input.index }
+      );
+      await expect
+        .poll(() => harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId))
+        .toMatchObject({ siteOrigin: childUrl.origin });
+      const decision = await harness.evaluate(
+        ({ url, runId }) =>
+          window.pageActionHarness.resolveConfirmation(url, runId, true, false, {
+            allowSite: true,
+          }),
+        { url: targetUrl, runId }
+      );
+      expect(decision.success).toBe(true);
+      await expect(pending).resolves.toMatchObject({
+        result: { actionReceipt: { disposition: 'delivered_verified' } },
+      });
+      await expect(target.frameLocator('iframe').first().locator('#frame-note')).toHaveValue(
+        'Frame-approved note'
+      );
+      expect(
+        await harness.evaluate(
+          async () =>
+            (await chrome.storage.local.get(['pageActionSitePolicies'])).pageActionSitePolicies
+        )
+      ).toMatchObject({ [childUrl.origin]: 'allow_low_risk' });
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('maps a non-sensitive field value match to its current control index', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -2147,6 +2309,7 @@ test.describe('page-agent-style page actions', () => {
     const targetUrl = fixtureUrl(fixtureServer, 'links.html');
     await target.goto(targetUrl);
     const harness = await openHarness(context);
+    let runId;
 
     try {
       await target.evaluate(() => {
@@ -2156,30 +2319,83 @@ test.describe('page-agent-style page actions', () => {
         input.value = 'On the Sentence Embeddings from Pre-trained Language Models';
         document.querySelector('main').append(input);
       });
-      const state = await harness.evaluate(
-        (url) =>
-          window.pageActionHarness.directAction(url, 'field-value-search-run', 'page_get_state'),
-        targetUrl
+      await harness.evaluate(() => chrome.storage.local.set({ pageActionsTrustedMode: true }));
+      const started = await startAndInspect(harness, targetUrl, 'field-value-search-run');
+      runId = started.runId;
+      await target.evaluate(() => {
+        const inserted = document.createElement('button');
+        inserted.textContent = 'Inserted before target';
+        inserted.addEventListener('click', () => {
+          inserted.dataset.clicked = 'true';
+        });
+        const targetInput = document.querySelector('[aria-label="Paper title"]');
+        targetInput.parentElement.insertBefore(inserted, targetInput);
+      });
+      const refreshed = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(
+            runId,
+            'field-value-reinspect',
+            'page_get_state',
+            {}
+          ),
+        { runId }
       );
-      const input = state.snapshot.elements.find((element) => element.label === 'Paper title');
-      expect(input).toBeTruthy();
-
+      const refreshedSnapshot = refreshed.result.snapshot;
+      const refreshedInput = refreshedSnapshot.elements.find(
+        (element) => element.label === 'Paper title'
+      );
+      expect(refreshedInput).toBeTruthy();
+      const initialInput = started.snapshot.elements.find(
+        (element) => element.label === 'Paper title'
+      );
+      expect(refreshedInput.index).toBe(initialInput.index + 1);
       const found = await harness.evaluate(
-        ({ url, snapshotId, query }) =>
-          window.pageActionHarness.directAction(url, 'field-value-search-run', 'page_find_text', {
+        ({ runId, query }) =>
+          window.pageActionHarness.executeTool(runId, 'field-value-search', 'page_find_text', {
             query,
+          }),
+        { runId, query: 'On the Sentence Embeddings from Pre-trained Language Models' }
+      );
+      expect(found.result.found).toBe(true);
+      expect(found.result.elementIndices).toEqual([refreshedInput.index]);
+      const noControlMatch = await harness.evaluate(
+        ({ runId }) =>
+          window.pageActionHarness.executeTool(runId, 'text-without-control', 'page_find_text', {
+            query: 'Link actions',
+          }),
+        { runId }
+      );
+      expect(noControlMatch.result.found).toBe(true);
+      expect(noControlMatch.result.elementIndices).toEqual([]);
+      expect(noControlMatch.result.snapshotId).toBe(refreshedSnapshot.snapshotId);
+      const batch = await harness.evaluate(
+        ({ runId, query }) =>
+          window.pageActionHarness.executeTool(runId, 'field-value-batch', 'page_batch', {
+            actions: [{ name: 'page_get_state' }, { name: 'page_find_text', query }],
+          }),
+        { runId, query: 'On the Sentence Embeddings from Pre-trained Language Models' }
+      );
+      expect(batch.result.results[1].elementIndices, JSON.stringify(batch)).toEqual([
+        refreshedInput.index,
+      ]);
+      expect(batch.result.results[1].snapshotId).toBe(batch.result.snapshot.snapshotId);
+      const clicked = await harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'field-value-click', 'page_click', {
             snapshotId,
+            index,
           }),
         {
-          url: targetUrl,
-          snapshotId: state.snapshot.snapshotId,
-          query: 'On the Sentence Embeddings from Pre-trained Language Models',
+          runId,
+          snapshotId: batch.result.results[1].snapshotId,
+          index: batch.result.results[1].elementIndices[0],
         }
       );
-
-      expect(found.found).toBe(true);
-      expect(found.elementIndices).toEqual([input.index]);
+      expect(clicked.result.actionReceipt.disposition).toMatch(/^delivered_/);
+      await expect(target.getByLabel('Paper title')).toBeFocused();
     } finally {
+      await abortRun(harness, runId);
       await context.close();
       removeUserDataDir(userDataDir);
     }
@@ -3227,6 +3443,96 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
+  test('pauses when a page click opens a JavaScript dialog and resumes without replay', async () => {
+    test.setTimeout(45_000);
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-dialog-'));
+    const launched = await launchTestBrowser(userDataDir);
+    const { context } = launched;
+    const harness = await openHarness(context);
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    let runId;
+    let dialog;
+    try {
+      await target.evaluate(() => {
+        const button = document.createElement('button');
+        button.textContent = 'Show alert';
+        button.addEventListener('click', () => {
+          button.dataset.clicks = String(Number(button.dataset.clicks || 0) + 1);
+          alert('Confirm this action');
+        });
+        document.body.append(button);
+      });
+      const started = await startAndInspect(harness, targetUrl, 'dialog-run');
+      runId = started.runId;
+      const button = started.snapshot.elements.find((element) => element.label === 'Show alert');
+      expect(button).toBeTruthy();
+      target.once('dialog', (pendingDialog) => {
+        dialog = pendingDialog;
+      });
+      const action = harness.evaluate(
+        ({ runId, snapshotId, index }) =>
+          window.pageActionHarness.executeTool(runId, 'dialog-click', 'page_click', {
+            snapshotId,
+            index,
+          }),
+        { runId, snapshotId: started.snapshot.snapshotId, index: button.index }
+      );
+      await expect
+        .poll(
+          async () =>
+            Boolean(dialog) ||
+            Boolean(
+              await harness.evaluate((id) => window.pageActionHarness.getConfirmation(id), runId)
+            ),
+          { timeout: 8_000 }
+        )
+        .toBe(true);
+      const confirmation = await harness.evaluate(
+        (id) => window.pageActionHarness.getConfirmation(id),
+        runId
+      );
+      expect(confirmation).toBeTruthy();
+      if (confirmation) {
+        const decision = await harness.evaluate(
+          ({ targetUrl, runId }) =>
+            window.pageActionHarness.resolveConfirmation(targetUrl, runId, true),
+          { targetUrl, runId }
+        );
+        expect(decision.success).toBe(true);
+      }
+      await expect.poll(() => Boolean(dialog), { timeout: 8_000 }).toBe(true);
+      await expect
+        .poll(
+          () => harness.evaluate((id) => window.pageActionHarness.getManualIntervention(id), runId),
+          { timeout: 20_000 }
+        )
+        .toMatchObject({ state: 'paused', question: expect.stringContaining('browser dialog') });
+      await dialog.accept();
+      const resumed = await harness.evaluate(
+        (id) => window.pageActionHarness.resumeManualIntervention(id),
+        runId
+      );
+      expect(resumed.success).toBe(true);
+      const result = await action;
+      expect(result.result.actionReceipt).toEqual({
+        disposition: 'delivered_unverified',
+        evidence: { kind: 'page_unresponsive' },
+      });
+      expect(result.result.snapshot.snapshotId).toBeTruthy();
+      await expect(target.locator('button').filter({ hasText: 'Show alert' })).toHaveAttribute(
+        'data-clicks',
+        '1'
+      );
+    } finally {
+      if (dialog) await dialog.accept().catch(() => {});
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
   test('keeps prompt-injection text as untrusted page data', async () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -3503,7 +3809,7 @@ test.describe('page-agent-style page actions', () => {
     }
   });
 
-  test('returns the executor timeout instead of retaining a pending abort listener', async () => {
+  test('pauses for user intervention after a state-changing action leaves the page unresponsive', async () => {
     test.setTimeout(45_000);
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
     const launched = await launchTestBrowser(userDataDir);
@@ -3520,8 +3826,7 @@ test.describe('page-agent-style page actions', () => {
       runId = inspected.runId;
       const button = inspected.snapshot.elements.find((element) => element.label === 'Freeze me');
       expect(button).toBeTruthy();
-      const startedAt = Date.now();
-      const result = await harness.evaluate(
+      const action = harness.evaluate(
         ({ runId, snapshotId, index }) =>
           window.pageActionHarness.executeTool(runId, 'timeout-click', 'page_click', {
             snapshotId,
@@ -3529,16 +3834,15 @@ test.describe('page-agent-style page actions', () => {
           }),
         { runId, snapshotId: inspected.snapshot.snapshotId, index: button.index }
       );
-      expect(Date.now() - startedAt).toBeLessThan(25_000);
-      const tabFailure = result.result || result;
-      expect(tabFailure.message).toContain('content script is disconnected');
-      expect(tabFailure.message).toContain('Reload the tab and try again');
-      expect(tabFailure.message).not.toContain('Maximum tool call retries exceeded');
-      expect(tabFailure).toMatchObject({
-        error: 'PAGE_TAB_UNAVAILABLE',
-        handled: true,
-        scope: 'tab',
-      });
+      await expect
+        .poll(
+          () => harness.evaluate((id) => window.pageActionHarness.getManualIntervention(id), runId),
+          { timeout: 25_000 }
+        )
+        .toMatchObject({ state: 'paused', question: expect.stringContaining('browser dialog') });
+      await abortRun(harness, runId);
+      runId = null;
+      await action.catch(() => undefined);
     } finally {
       await abortRun(harness, runId);
       await context.close();
@@ -3671,6 +3975,34 @@ test.describe('page-agent-style page actions', () => {
       await expect(target.locator('[contenteditable="true"]').first()).toContainText(
         'continued after navigation'
       );
+    } finally {
+      await abortRun(harness, runId);
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('reconnects the page-action bridge after a same-URL document reload', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-same-url-reload-'));
+    const { context } = await launchTestBrowser(userDataDir);
+    const target = await context.newPage();
+    const targetUrl = fixtureUrl(fixtureServer, 'form.html');
+    await target.goto(targetUrl);
+    const harness = await openHarness(context);
+    let runId;
+
+    try {
+      const initial = await startAndInspect(harness, targetUrl, 'same-url-reload');
+      runId = initial.runId;
+      await target.reload();
+      await expect(target).toHaveURL(targetUrl);
+      const refreshed = await harness.evaluate(
+        (id) =>
+          window.pageActionHarness.executeTool(id, 'same-url-after-reload', 'page_get_state', {}),
+        runId
+      );
+      expect(refreshed.result?.snapshot, JSON.stringify(refreshed)).toBeTruthy();
+      expect(refreshed.result.snapshot.url).toBe(targetUrl);
     } finally {
       await abortRun(harness, runId);
       await context.close();

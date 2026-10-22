@@ -286,6 +286,17 @@ describe('pageDom', () => {
     expect(payloadBytes).toBeLessThanOrEqual(PAGE_DOM_CAPS.maxPayloadBytes);
     // The control set must have been trimmed, not silently truncated only in content.
     expect(snapshot.elements.length).toBeLessThan(PAGE_DOM_CAPS.maxElements);
+    expect(snapshot.elements.map((element) => element.index)).toEqual(
+      Array.from({ length: snapshot.elements.length }, (_, index) => index)
+    );
+    // The retained prefix is maximal under the byte cap, matching the previous
+    // one-at-a-time trim contract while keeping indexes stable.
+    const oneMore = normalizePageSnapshot({
+      snapshotId: 'snap-big',
+      url: 'https://example.com/form',
+      elements: oversized.slice(0, snapshot.elements.length + 1),
+    });
+    expect(oneMore.elements).toHaveLength(snapshot.elements.length);
     // Content and elements stay index-consistent after trimming.
     expect(snapshot.content.length).toBeLessThanOrEqual(PAGE_DOM_CAPS.maxSnapshotChars);
   });

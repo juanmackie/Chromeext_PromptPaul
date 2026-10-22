@@ -50,6 +50,7 @@
 - Phase 1 fixtures cover keyboard/focus identity and Send confirmation, label-backed hidden toggles, semantic widget roles, double-click and hover. The local mock provider can reject named tool choice; assert the first request carries a compact snapshot and record only before/after byte counts as measurement artifacts.
 - Provider fixtures seeded immediately after install must wait for the Options starter-profile write before replacing storage, so bootstrap cannot overwrite the test connection.
 
+- `page-actions.spec.js` verifies that a same-origin iframe added after run-start bridge readiness and an iframe inside an open shadow root can still be inspected and acted on; frame-bridge recovery pins injection to the revalidated document ID.
 - Run `npm run test:browser` from the repository root; the command runs every spec in this directory.
 - Run `npx prettier --check` and `npx eslint` for changed browser test files.
 

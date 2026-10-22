@@ -28,6 +28,39 @@ describe('contextBudget', () => {
     });
   });
 
+  describe('estimateTextTokens equivalence', () => {
+    const dense =
+      /[\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Thai}\p{Script=Devanagari}\p{Script=Bengali}\p{Script=Tamil}\p{Script=Telugu}\p{Script=Sinhala}]/u;
+    const reference = (text) => {
+      let compact = 0;
+      let denseCount = 0;
+      let whitespace = 0;
+      for (const char of String(text || '')) {
+        if (/\s/u.test(char)) whitespace += 1;
+        else if (dense.test(char)) denseCount += 1;
+        else compact += 1;
+      }
+      return Math.ceil(compact / 3.2 + denseCount / 1.15 + whitespace / 8);
+    };
+
+    it.each([
+      '',
+      'ASCII text with words and punctuation.',
+      '\t\n\r\v\f \u00a0\u1680\u2000\u200a\u2028\u2029\u202f\u205f\u3000\ufeff',
+      '汉字かなカナ 한글',
+      'العَرَبِيَّة עברית ภาษาไทย हिन्दी বাংলা தமிழ் తెలుగు සිංහල',
+      'Emoji 😀 🧑🏽‍💻 and surrogate boundaries',
+      'Latin 😀 漢字\n  x\u00a0y',
+    ])('matches the prior formula for a sample', (sample) => {
+      expect(estimateTextTokens(sample)).toBe(reference(sample));
+    });
+
+    it('matches the prior formula for a long mixed transcript', () => {
+      const text = 'A long mixed transcript 漢字\n'.repeat(12_000);
+      expect(estimateTextTokens(text)).toBe(reference(text));
+    });
+  });
+
   describe('resolveDomContextBudget', () => {
     it('returns valid budget for default input', () => {
       const budget = resolveDomContextBudget({});

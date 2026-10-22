@@ -174,9 +174,9 @@ test('site approval persists low-risk trust; Options can block/remove; active ru
     await expect(list).toContainText(origin);
     await list.getByRole('button', { name: `Block ${origin}`, exact: true }).click();
     await expect(list).toContainText('Blocked');
-    expect(
-      (await tool(harness, runId, 'old-policy-read', 'page_get_state')).result.snapshot
-    ).toBeTruthy();
+    const blockedActiveRun = await tool(harness, runId, 'old-policy-read', 'page_get_state');
+    expect(blockedActiveRun.result).toMatchObject({ error: 'PAGE_ACTION_SITE_BLOCKED' });
+    expect(blockedActiveRun.result.snapshot).toBeUndefined();
     const started = await harness.evaluate((url) => window.pageActionHarness.startRun(url), url);
     runs.push(started.runId);
     const blocked = await tool(harness, started.runId, 'blocked-read', 'page_get_state');

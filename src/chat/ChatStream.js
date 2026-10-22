@@ -11,6 +11,10 @@
 
 import { renderMarkdown } from '../utils/domSanitizer.js';
 import { randomId } from '../utils/ids.js';
+import {
+  createStreamingMarkdownState,
+  renderStreamingMarkdownDelta,
+} from '../utils/streamMarkdown.js';
 
 /**
  * Stream state manager - tracks streaming and API call state.
@@ -29,16 +33,23 @@ export class StreamStateManager {
     this.accumulatedStreamedText = '';
     this.activeStreamingToolCall = null;
 
-    // Streaming render buffer: accumulates deltas and flushes at 60fps
+    // Coalesce token deltas and render Markdown at a bounded cadence.
     this._renderBuffer = '';
     this._renderQueued = false;
+    this._lastRenderAt = 0;
+    this._renderTimer = null;
+    this._markdownState = createStreamingMarkdownState();
     this._chatAreaRef = null;
 
     // Reasoning ("thinking") stream: rendered into a separate panel above the answer
     this.currentReasoningContentElement = null;
+    this._reasoningFinalized = false;
     this.accumulatedReasoningText = '';
     this._reasoningBuffer = '';
+    this._reasoningTimer = null;
     this._reasoningQueued = false;
+    this._lastReasoningRenderAt = 0;
+    this._reasoningMarkdownState = createStreamingMarkdownState();
     this._reasoningStartTime = null;
 
     // API call state
@@ -86,26 +97,39 @@ export class StreamStateManager {
    */
   queueRenderChunk(delta) {
     this._renderBuffer += delta;
-    if (!this._renderQueued) {
-      this._renderQueued = true;
+    if (this._renderQueued) return;
+    this._renderQueued = true;
+    const delay = Math.max(0, 100 - (Date.now() - this._lastRenderAt));
+    this._renderTimer = setTimeout(() => {
+      this._renderTimer = null;
       requestAnimationFrame(() => this._flushRender());
-    }
+    }, delay);
+  }
+
+  _renderMarkdownDelta(el, delta, state, accumulatedText) {
+    renderStreamingMarkdownDelta({
+      element: el,
+      delta,
+      state,
+      accumulatedText,
+      renderMarkdown,
+      documentRef: typeof document === 'undefined' ? null : document,
+      DOMParserCtor: typeof DOMParser === 'undefined' ? null : DOMParser,
+      hidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+    });
   }
 
   _flushRender() {
     this._renderQueued = false;
     const el = this.currentStreamingContentElement;
     if (!el || !this._renderBuffer) return;
-
-    // Measure before mutating the DOM: if the user was already at the bottom,
-    // keep them pinned; if they scrolled up, don't yank them back down.
-    const stick = this._isNearBottom();
-    this.accumulatedStreamedText += this._renderBuffer;
+    const delta = this._renderBuffer;
     this._renderBuffer = '';
-    el.innerHTML = renderMarkdown(this.accumulatedStreamedText);
-    if (this._chatAreaRef && stick) {
-      this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
-    }
+    this.accumulatedStreamedText += delta;
+    const stick = this._isNearBottom();
+    this._renderMarkdownDelta(el, delta, this._markdownState, this.accumulatedStreamedText);
+    this._lastRenderAt = Date.now();
+    if (this._chatAreaRef && stick) this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
   }
 
   /**
@@ -113,11 +137,35 @@ export class StreamStateManager {
    * @param {string} delta
    */
   queueRenderReasoning(delta) {
+    this._reasoningFinalized = false;
     this._reasoningBuffer += delta;
-    if (!this._reasoningQueued) {
-      this._reasoningQueued = true;
+    if (this._reasoningQueued) return;
+    this._reasoningQueued = true;
+    const delay = Math.max(0, 100 - (Date.now() - this._lastReasoningRenderAt));
+    this._reasoningTimer = setTimeout(() => {
+      this._reasoningTimer = null;
       requestAnimationFrame(() => this._flushReasoningRender());
-    }
+    }, delay);
+  }
+
+  flushPendingReasoning() {
+    clearTimeout(this._reasoningTimer);
+    this._reasoningTimer = null;
+    this._reasoningQueued = false;
+    this._flushReasoningRender();
+  }
+
+  finalizeReasoning() {
+    this.flushPendingReasoning();
+    const element = this.currentReasoningContentElement;
+    if (!element || this._reasoningFinalized) return;
+    const stick = this._isNearBottom();
+    element.innerHTML = renderMarkdown(this.accumulatedReasoningText);
+    this._reasoningMarkdownState = createStreamingMarkdownState();
+    // Rebuild parser state from full text if reasoning resumes after finalization.
+    this._reasoningMarkdownState.needsFullRender = true;
+    this._reasoningFinalized = true;
+    if (this._chatAreaRef && stick) this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
   }
 
   _flushReasoningRender() {
@@ -125,13 +173,18 @@ export class StreamStateManager {
     const el = this.currentReasoningContentElement;
     if (!el || !this._reasoningBuffer) return;
 
-    const stick = this._isNearBottom();
-    this.accumulatedReasoningText += this._reasoningBuffer;
+    const delta = this._reasoningBuffer;
     this._reasoningBuffer = '';
-    el.innerHTML = renderMarkdown(this.accumulatedReasoningText);
-    if (this._chatAreaRef && stick) {
-      this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
-    }
+    this.accumulatedReasoningText += delta;
+    const stick = this._isNearBottom();
+    this._renderMarkdownDelta(
+      el,
+      delta,
+      this._reasoningMarkdownState,
+      this.accumulatedReasoningText
+    );
+    this._lastReasoningRenderAt = Date.now();
+    if (this._chatAreaRef && stick) this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
   }
 
   /**
@@ -139,6 +192,7 @@ export class StreamStateManager {
    * @param {HTMLElement|null} element
    */
   setReasoningContentElement(element) {
+    if (element !== this.currentReasoningContentElement) this._reasoningFinalized = false;
     this.currentReasoningContentElement = element;
   }
 
@@ -174,11 +228,20 @@ export class StreamStateManager {
     this.accumulatedStreamedText = '';
     this.activeStreamingToolCall = null;
     this._renderBuffer = '';
+    clearTimeout(this._renderTimer);
+    this._renderTimer = null;
     this._renderQueued = false;
+    this._lastRenderAt = 0;
+    this._markdownState = createStreamingMarkdownState();
     this.currentReasoningContentElement = null;
+    this._reasoningFinalized = false;
     this.accumulatedReasoningText = '';
     this._reasoningBuffer = '';
+    clearTimeout(this._reasoningTimer);
+    this._reasoningTimer = null;
     this._reasoningQueued = false;
+    this._lastReasoningRenderAt = 0;
+    this._reasoningMarkdownState = createStreamingMarkdownState();
     this._reasoningStartTime = null;
     this.resetOrchestratorEventOrdering();
   }
@@ -230,9 +293,14 @@ export class StreamStateManager {
   clearStreamingElements() {
     this.setStreamingElements(null, null, null);
     this.currentReasoningContentElement = null;
+    this._reasoningFinalized = false;
     this.accumulatedReasoningText = '';
     this._reasoningBuffer = '';
+    clearTimeout(this._reasoningTimer);
+    this._reasoningTimer = null;
     this._reasoningQueued = false;
+    this._lastReasoningRenderAt = 0;
+    this._reasoningMarkdownState = createStreamingMarkdownState();
     this._reasoningStartTime = null;
   }
 
@@ -265,8 +333,21 @@ export class StreamStateManager {
    * @returns {Array<Object>} Events ready for rendering.
    */
   queueOrchestratorEvent(event) {
+    const expand = (ordered) =>
+      ordered.flatMap((entry) =>
+        entry?.type === 'stream_batch' && Array.isArray(entry.events)
+          ? entry.events
+              .filter((segment) => ['content', 'reasoning'].includes(segment?.type))
+              .map((segment) => ({
+                type: segment.type,
+                data: String(segment.data || ''),
+                sequence: entry.sequence,
+                timestamp: entry.timestamp,
+              }))
+          : [entry]
+      );
     const sequence = Number(event?.sequence);
-    if (!Number.isInteger(sequence) || sequence <= 0) return [event];
+    if (!Number.isInteger(sequence) || sequence <= 0) return expand([event]);
     if (
       sequence < this.nextOrchestratorEventSequence ||
       this.pendingOrchestratorEvents.has(sequence)
@@ -294,7 +375,7 @@ export class StreamStateManager {
       }
     }
 
-    return ordered;
+    return expand(ordered);
   }
 
   /**
@@ -334,7 +415,7 @@ export class StreamStateManager {
    * @returns {string} - Accumulated text
    */
   getStreamedText() {
-    return this.accumulatedStreamedText;
+    return this.accumulatedStreamedText + this._renderBuffer;
   }
 
   /**
@@ -344,7 +425,11 @@ export class StreamStateManager {
   clearStreamedText() {
     this.accumulatedStreamedText = '';
     this._renderBuffer = '';
+    clearTimeout(this._renderTimer);
+    this._renderTimer = null;
     this._renderQueued = false;
+    this._lastRenderAt = 0;
+    this._markdownState = createStreamingMarkdownState();
   }
 
   /**
@@ -354,14 +439,18 @@ export class StreamStateManager {
    * Call from tool_start to wipe stale turn-1 text before the model's final answer.
    */
   startNewTurn() {
-    this.accumulatedStreamedText = '';
-    this._renderBuffer = '';
-    this._renderQueued = false;
+    this.finalizeReasoning();
+    this.clearStreamedText();
     this.activeStreamingToolCall = null;
     this.currentReasoningContentElement = null;
+    this._reasoningFinalized = false;
     this.accumulatedReasoningText = '';
     this._reasoningBuffer = '';
+    clearTimeout(this._reasoningTimer);
+    this._reasoningTimer = null;
     this._reasoningQueued = false;
+    this._lastReasoningRenderAt = 0;
+    this._reasoningMarkdownState = createStreamingMarkdownState();
     this._reasoningStartTime = null;
   }
 

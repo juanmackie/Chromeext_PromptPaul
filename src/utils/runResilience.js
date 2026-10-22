@@ -182,7 +182,14 @@ export function redactProviderErrorMessage(value, maxChars = 400) {
 export function compactConversationHistory(messages, maxTokens, options = {}) {
   const source = Array.isArray(messages) ? messages : [];
   const budget = Math.max(1, Math.floor(Number(maxTokens) || 0));
-  const total = source.reduce((sum, message) => sum + messageTokens(message), 0);
+  // Every character contributes at most one estimated token. This cheap upper
+  // bound avoids scanning every message's Unicode text when history is plainly
+  // below budget; oversized histories still use the exact estimator below.
+  const preparedMessages = source.map(getMessageText);
+  const characterUpperBound = preparedMessages.reduce((sum, text) => sum + text.length, 0);
+  if (characterUpperBound <= budget)
+    return { messages: source, compacted: false, droppedMessages: 0 };
+  const total = preparedMessages.reduce((sum, text) => sum + estimateTextTokens(text), 0);
   if (total <= budget) return { messages: source, compacted: false, droppedMessages: 0 };
   if (source.length <= 2)
     return { messages: boundMessages(source, budget), compacted: true, droppedMessages: 0 };
@@ -287,10 +294,12 @@ function removeOldestTailTurn(messages) {
   return removed;
 }
 
+function getMessageText(message) {
+  return `${message?.role || ''}: ${contentText(message?.content)} ${toolNames(message)} ${toolArguments(message)}`;
+}
+
 function messageTokens(message) {
-  return estimateTextTokens(
-    `${message?.role || ''}: ${contentText(message?.content)} ${toolNames(message)} ${toolArguments(message)}`
-  );
+  return estimateTextTokens(getMessageText(message));
 }
 
 function toolNames(message) {

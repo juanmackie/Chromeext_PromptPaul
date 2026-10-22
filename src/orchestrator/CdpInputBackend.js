@@ -5,6 +5,7 @@
 
 const CDP_VERSION = '1.3';
 const MAX_COORDINATE = 100_000;
+const CDP_OPERATION_TIMEOUT_MS = 15_000;
 const MAX_INSERT_TEXT_CHARS = 2_000;
 const ALLOWED_MOUSE_TYPES = new Set(['mousePressed', 'mouseReleased', 'mouseMoved']);
 const ALLOWED_KEY_TYPES = new Set(['rawKeyDown', 'keyDown', 'keyUp']);
@@ -105,16 +106,46 @@ function validateCommand(method, params) {
   throw createError('CDP_METHOD_BLOCKED', 'Only allow-listed CDP Input methods are available.');
 }
 
-function callChromeApi(api, method, args, getLastError) {
+function callChromeApi(
+  api,
+  method,
+  args,
+  getLastError,
+  onLateSuccess = null,
+  timeoutCode = 'PAGE_ACTION_TIMEOUT'
+) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      const error = createError(timeoutCode, 'The debugger operation timed out.');
+      reject(error);
+    }, CDP_OPERATION_TIMEOUT_MS);
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
     try {
       api[method](...args, (result) => {
         const lastError = getLastError?.();
-        if (lastError) reject(new Error(lastError.message || 'Chrome debugger request failed.'));
-        else resolve(result);
+        if (settled) {
+          if (!lastError && onLateSuccess) {
+            try {
+              Promise.resolve(onLateSuccess(result)).catch(() => {});
+            } catch (_) {
+              // A timed-out request must not create an unhandled late callback error.
+            }
+          }
+          return;
+        }
+        if (lastError)
+          finish(reject, new Error(lastError.message || 'Chrome debugger request failed.'));
+        else finish(resolve, result);
       });
     } catch (error) {
-      reject(error);
+      finish(reject, error);
     }
   });
 }
@@ -159,7 +190,16 @@ export class CdpInputBackend {
       );
     }
     if (!this.debuggerApi) throw new Error('Chrome debugger API is unavailable.');
-    await callChromeApi(this.debuggerApi, 'attach', [{ tabId }, CDP_VERSION], this.getLastError);
+    const detachLateAttachment = () =>
+      callChromeApi(this.debuggerApi, 'detach', [{ tabId }], this.getLastError).catch(() => {});
+    await callChromeApi(
+      this.debuggerApi,
+      'attach',
+      [{ tabId }, CDP_VERSION],
+      this.getLastError,
+      detachLateAttachment,
+      'CDP_ATTACH_TIMEOUT'
+    );
     this.sessions.set(runId, tabId);
     this.runByTab.set(tabId, runId);
   }

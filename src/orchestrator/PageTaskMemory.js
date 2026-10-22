@@ -124,9 +124,11 @@ export function compactPageTaskHistory(messages, options = {}) {
   if (!Array.isArray(messages)) return [];
   const activeTabId = Number(options.activeTabId || 0) || null;
   const latestByTab = new Map();
+  const parsedToolPayloads = new Map();
   messages.forEach((message, index) => {
     if (message?.role !== 'tool') return;
     const payload = parseToolContent(message.content);
+    parsedToolPayloads.set(index, payload);
     const snapshot = payload?.result?.snapshot;
     if (!snapshot) return;
     const tabId = Number(payload?.result?.tabId || activeTabId || 0) || 0;
@@ -135,7 +137,7 @@ export function compactPageTaskHistory(messages, options = {}) {
 
   const compacted = messages.map((message, index) => {
     if (message?.role !== 'tool') return boundHistoricalMessage(message);
-    const payload = parseToolContent(message.content);
+    const payload = parsedToolPayloads.get(index);
     const snapshot = payload?.result?.snapshot;
     // Preserve non-page-action tool results (web_search, skill_view, etc.) unchanged.
     // They're already bounded by their respective extraction pipelines.
@@ -160,7 +162,8 @@ export function compactPageTaskHistory(messages, options = {}) {
     return { ...message, content: JSON.stringify(compactPayload) };
   });
 
-  let size = compacted.reduce((total, message) => total + JSON.stringify(message).length, 0);
+  const serializedSizes = compacted.map((message) => JSON.stringify(message).length);
+  let size = serializedSizes.reduce((total, messageSize) => total + messageSize, 0);
   if (size <= PAGE_TASK_MEMORY_CAPS.maxHistoryChars) return compacted;
   const trimmed = [...compacted];
   for (
@@ -170,11 +173,13 @@ export function compactPageTaskHistory(messages, options = {}) {
   ) {
     const message = trimmed[index];
     if (message?.role !== 'tool' || !String(message.content || '').includes('compacted')) continue;
-    size -= JSON.stringify(message).length;
+    size -= serializedSizes[index];
     trimmed[index] = {
       ...message,
       content: JSON.stringify({ success: true, result: { notice: 'Older page result omitted.' } }),
     };
+    serializedSizes[index] = JSON.stringify(trimmed[index]).length;
+    size += serializedSizes[index];
   }
   // A page task can also accumulate large user/assistant messages or custom
   // tool payloads. Minimize the oldest messages as a final bounded-context
@@ -186,10 +191,11 @@ export function compactPageTaskHistory(messages, options = {}) {
   ) {
     const message = trimmed[index];
     const minimized = minimizeHistoricalMessage(message);
-    const previousSize = JSON.stringify(message).length;
+    const previousSize = serializedSizes[index];
     const nextSize = JSON.stringify(minimized).length;
     if (nextSize >= previousSize) continue;
     trimmed[index] = minimized;
+    serializedSizes[index] = nextSize;
     size -= previousSize - nextSize;
   }
   return trimmed;

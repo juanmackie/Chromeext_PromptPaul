@@ -557,9 +557,24 @@ export function initComposer(options) {
     syncRunState(state);
   }
 
+  let lastRenderedQuickActionState = null;
+  let lastRenderedSiteActions = null;
+  let lastRenderedActEnabled = null;
+
   function renderQuickActions(state) {
     if (!row) return;
     if (typeof document === 'undefined') return;
+    const stateKey = JSON.stringify(state || {});
+    if (
+      stateKey === lastRenderedQuickActionState &&
+      currentSiteActions === lastRenderedSiteActions &&
+      actEnabled === lastRenderedActEnabled
+    ) {
+      return;
+    }
+    lastRenderedQuickActionState = stateKey;
+    lastRenderedSiteActions = currentSiteActions;
+    lastRenderedActEnabled = actEnabled;
     // Hide the action row during an active run rather than leave orphaned chips.
     if (state && state.isActive) {
       row.innerHTML = '';
@@ -774,20 +789,6 @@ export function initComposer(options) {
     renderPendingDocument();
   }
 
-  // Tray visibility follows its items' hidden attributes.
-  if (useMutationObserver) {
-    if (tray) {
-      if (tray.__ppVisibilityObserver) tray.__ppVisibilityObserver.disconnect();
-      tray.__ppVisibilityObserver = new MutationObserver(syncTrayVisibility);
-      tray.__ppVisibilityObserver.observe(tray, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['hidden'],
-      });
-    }
-  }
-
   // Run state drives inline recovery; quick actions follow context.
   if (useMutationObserver) {
     if (container) {
@@ -892,6 +893,7 @@ export function initComposer(options) {
     },
     setSiteActions(actions) {
       currentSiteActions = Array.isArray(actions) ? actions : [];
+      lastRenderedSiteActions = null;
       refresh();
     },
     setActEnabled(enabled) {

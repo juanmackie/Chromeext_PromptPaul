@@ -89,7 +89,10 @@ test('coalesces a journal burst and persists the latest terminal event', async (
         pageActions: null,
       });
 
-      orchestrator._emitEvent(runId, { type: 'content', data: 'first live chunk' });
+      orchestrator._emitEvent(runId, {
+        type: 'tool_start',
+        toolCall: { function: { name: 'probe' } },
+      });
       await firstGetEntered;
       const burstCount = 240;
       for (let index = 0; index < burstCount; index += 1) {
@@ -117,16 +120,16 @@ test('coalesces a journal burst and persists the latest terminal event', async (
     expect(emitted.getCount).toBeLessThanOrEqual(2);
     expect(emitted.setCount).toBeLessThanOrEqual(2);
 
-    await receiver.waitForFunction(
-      (expectedCount) => window.journalEvents.length === expectedCount,
-      emitted.burstCount + 2
-    );
+    await receiver.waitForFunction(() => window.journalEvents.length === 3);
     const liveEvents = await receiver.evaluate(() => window.journalEvents);
-    expect(liveEvents).toHaveLength(emitted.burstCount + 2);
-    expect(liveEvents.map((event) => event.sequence)).toEqual(
-      Array.from({ length: emitted.burstCount + 2 }, (_, index) => index + 1)
+    expect(liveEvents).toHaveLength(3);
+    expect(liveEvents.map((event) => event.sequence)).toEqual([1, 2, 3]);
+    expect(liveEvents[0].type).toBe('tool_start');
+    expect(liveEvents[1].type).toBe('stream_batch');
+    expect(liveEvents[1].events.map((event) => event.data).join('')).toBe(
+      Array.from({ length: emitted.burstCount }, (_, index) => `live chunk ${index}`).join('')
     );
-    expect(liveEvents.at(-1)).toMatchObject({ type: 'complete', sequence: emitted.burstCount + 2 });
+    expect(liveEvents.at(-1)).toMatchObject({ type: 'complete', sequence: 3 });
 
     const runId = 'journal-burst-test';
     const journalResponse = await receiver.evaluate(
@@ -139,7 +142,7 @@ test('coalesces a journal burst and persists the latest terminal event', async (
       runId,
       status: 'complete',
       terminal: true,
-      eventSequence: emitted.burstCount + 2,
+      eventSequence: 3,
     });
     const terminalEvent = journalResponse.journal.events.at(-1);
     expect(terminalEvent).toMatchObject({

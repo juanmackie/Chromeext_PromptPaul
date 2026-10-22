@@ -152,7 +152,8 @@ function listSourceModules(directory) {
  */
 function getImportSpecifiers(source) {
   const imports = [];
-  const pattern = /\bimport\s+(?:[^'";]+?\s+from\s+)?(['"])([^'"]+)\1|\bimport\s*\(\s*(['"])([^'"]+)\3\s*\)/g;
+  const pattern =
+    /\bimport\s+(?:[^'";]+?\s+from\s+)?(['"])([^'"]+)\1|\bimport\s*\(\s*(['"])([^'"]+)\3\s*\)/g;
   for (const match of source.matchAll(pattern)) {
     imports.push(match[2] || match[4]);
   }
@@ -214,7 +215,9 @@ function checkSourceImportDirections() {
         throw new Error(`Application areas must not import one another: ${edge}`);
       }
       if (isShared && !toIsShared && !evaluationAdapterImports.has(edge)) {
-        throw new Error(`Shared source must not depend on application or capability areas: ${edge}`);
+        throw new Error(
+          `Shared source must not depend on application or capability areas: ${edge}`
+        );
       }
       if (!isShared && !isApplication && toIsApplication) {
         throw new Error(`Capability modules must not import application areas: ${edge}`);
@@ -476,6 +479,17 @@ function runUnitTests(runner) {
     if (!content.includes('export function fitTextToTokenBudget')) {
       throw new Error('contextBudget.js missing fitTextToTokenBudget export');
     }
+  });
+
+  runner.test('streamMarkdown module structure valid', () => {
+    checkModule('src/utils/streamMarkdown.js', [
+      'function advanceStreamingMarkdown',
+      'function createStreamingMarkdownState',
+    ]);
+  });
+
+  runner.test('pageActionReadiness module structure valid', () => {
+    checkModule('src/utils/pageActionReadiness.js', ['function createPageActionReadinessCache']);
   });
 
   runner.test('runResilience module structure valid', () => {
@@ -740,13 +754,21 @@ function runUnitTests(runner) {
     }
   });
 
-  runner.test('Optional notch is registered and isolated', () => {
+  runner.test('Optional notch is registered dynamically and isolated', () => {
     const manifest = readJson('manifest.json');
-    const notchScript = manifest.content_scripts?.find((entry) =>
-      entry.js?.includes('content_script_notch.js')
-    );
-    if (!notchScript || !notchScript.matches?.includes('<all_urls>')) {
-      throw new Error('Manifest is missing the browser-page notch content script');
+    if (manifest.content_scripts?.some((entry) => entry.js?.includes('content_script_notch.js'))) {
+      throw new Error('Optional notch must not load on every page');
+    }
+    const background = readFileSafe('background.js');
+    if (
+      !background.includes("const dynamicNotchScriptId = 'prompt-paul-notch'") ||
+      !background.includes('chrome.scripting.registerContentScripts') ||
+      !background.includes('syncDynamicNotchScript')
+    ) {
+      throw new Error('Background must register the notch only while the preference is enabled');
+    }
+    if (!readFileSafe('scripts/build.js').includes("'content_script_notch.js'")) {
+      throw new Error('Build must package the on-demand notch script');
     }
     const notch = readFileSafe('content_script_notch.js');
     if (!notch.includes("attachShadow({ mode: 'open' })")) {
@@ -2321,6 +2343,7 @@ function runIntegrationTests(runner) {
       'content_script_diagnostics.prod.js',
       'content_script_page_diagnostics.js',
       'content_script_notch.js',
+      'content_script_act_feedback.js',
       'input-controls.js',
       'content_script_outlook_compose.js',
       'loadingManager.js',

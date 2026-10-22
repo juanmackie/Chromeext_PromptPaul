@@ -232,6 +232,15 @@ async function preparePageChat() {
   const { context } = await launchTestBrowser(userDataDir);
   const harness = await openHarness(context);
   const chat = await openChat(context, harness);
+  // First-run Options profile creation is asynchronous; wait before replacing it.
+  await expect
+    .poll(() =>
+      chat.evaluate(async () => {
+        const { profiles = [] } = await chrome.storage.local.get('profiles');
+        return profiles.some((profile) => profile.id === 'default');
+      })
+    )
+    .toBe(true);
   await seedMockProfile(chat);
   await expect(chat.locator('#sidebar-model-value')).toHaveText('fixture-model');
   const article = await attachArticle(chat);

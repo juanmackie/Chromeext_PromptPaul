@@ -436,12 +436,25 @@ export function normalizePageSnapshot(input = {}) {
 
   // Bound the complete serialized payload (content + elements array), not just
   // the content string, so a large control set cannot exceed the message budget.
-  while (
-    elements.length > 0 &&
+  if (
     utf8ByteLength(JSON.stringify({ ...payloadBase, content, elements })) >
-      PAGE_DOM_CAPS.maxPayloadBytes
+    PAGE_DOM_CAPS.maxPayloadBytes
   ) {
-    elements = elements.slice(0, elements.length - 1);
+    // The payload size is monotonic as controls are removed. Binary search the
+    // same retained prefix the old one-at-a-time trim loop would have produced.
+    let low = 0;
+    let high = elements.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      const candidateElements = elements.slice(0, middle);
+      const candidateContent = buildContent(candidateElements);
+      const candidateBytes = utf8ByteLength(
+        JSON.stringify({ ...payloadBase, content: candidateContent, elements: candidateElements })
+      );
+      if (candidateBytes <= PAGE_DOM_CAPS.maxPayloadBytes) low = middle;
+      else high = middle - 1;
+    }
+    elements = elements.slice(0, low);
     content = buildContent(elements);
   }
 

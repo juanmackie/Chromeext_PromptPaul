@@ -69,7 +69,7 @@ export function setupPageActionSitePolicies({ list, form, originInput, ruleInput
     revision += 1;
     render(response.policies);
     notify(
-      'Site policy saved. It applies to new runs. High-risk actions always require approval.',
+      'New blocks and removed allowances apply to active runs; new allowances and removed blocks apply to new runs. High-risk actions always require approval.',
       false,
       true
     );

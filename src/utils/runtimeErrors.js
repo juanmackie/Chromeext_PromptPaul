@@ -27,6 +27,10 @@ const AUTH_OR_CONFIG_PATTERNS = [
   /401|403/,
 ];
 
+export function isRuntimeMessageUndelivered(error) {
+  return /receiving end does not exist/i.test(toErrorMessage(error));
+}
+
 export function classifyRuntimeMessageError(error) {
   const message = toErrorMessage(error);
   if (TRANSIENT_DISCONNECT_PATTERNS.some((pattern) => pattern.test(message))) {

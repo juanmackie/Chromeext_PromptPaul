@@ -17,6 +17,15 @@
 
 ## [Unreleased]
 
+- Act `page_find_text` now returns indices from the merged frame snapshot; stale pre-dispatch targets trigger an automatic fresh inspection and a `not_delivered` receipt instead of a plain failure.
+- Unresponsive pages after state-changing actions now pause for the user to handle a possible browser dialog, then inspect again without replaying the action; precise CDP commands have a 15-second bound.
+- Act approval cards focus the card instead of Approve. Password-manager, sign-in/account, and Prompt Paul origins do not offer or honor saved low-risk or run-wide similar-action approval.
+- Act site-policy blocks and allowance removals tighten active runs at the next action boundary; new allowances apply to new runs.
+- Act no longer claims that run-created tabs are closed automatically. Target highlights and the notch activity glow have bounded cleanup paths.
+- Long streamed answers now batch provider deltas into ordered live events, render bounded Markdown tails incrementally at up to 10 updates/second, and avoid per-delta session-journal writes. Canonical terminal rendering remains unchanged.
+- Act bridge readiness now uses a bounded 60-second per-document cache with navigation/removal/failure invalidation; runs still verify the bridge at startup. Frame snapshots skip descriptor and child-frame round trips when the top document reports no child frames.
+- Token estimation no longer tests a Unicode whitespace regex for each character, and conversation history below budget uses a cheap character upper bound before exact token scans.
+
 - Split the semantic Act runtime into `content_script_page_actions.js` and inject it only when an Act run needs the page bridge; navigation recovery reinstalls it on the destination document. The extraction script remains separate, and page-action message shapes are unchanged. Chrome groups tabs created by one Act run when tab groups are available; this uses the existing `tabs` permission.
 - Added default-off experimental precise input, limited to Chrome CDP `Input` mouse/key/text commands. Act still resolves semantic targets and applies its normal policy first; the debugger attaches only for approved input on a supported page and detaches on Stop or run teardown. Standard DOM delivery remains the fallback.
 - Improved Act reliability on ARIA-heavy SPA pages: snapshots expose bounded menu/tab/switch state and digest-only hash/query route changes; a 16-action run-only memory ledger detects toggle loops, while counted plural requests track up to 12 distinct completed items. Added Gmail-like local browser and benchmark cases without retaining route fragments or action memory in checkpoints/journals.

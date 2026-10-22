@@ -3,6 +3,7 @@
  * @module pageActionPolicy
  */
 
+import { isPageActionSensitiveOrigin } from './pageActionSitePolicies.js';
 import {
   PAGE_DOM_CAPS,
   capPageText,
@@ -717,7 +718,12 @@ function isSameOriginSearchForm(target) {
  */
 export function evaluatePageActionPolicy(input = {}) {
   const actionName = String(input.actionName || '');
-  const sitePolicy = input.sitePolicies?.[input.origin];
+  const storedSitePolicy = input.sitePolicies?.[input.origin];
+  const sensitiveOrigin =
+    isPageActionSensitiveOrigin(input.origin) ||
+    isPageActionSensitiveOrigin(input.documentOrigin || '');
+  const sitePolicy =
+    storedSitePolicy === 'allow_low_risk' && sensitiveOrigin ? undefined : storedSitePolicy;
   if (sitePolicy === 'block')
     return {
       allowed: false,

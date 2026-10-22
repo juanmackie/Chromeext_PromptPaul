@@ -56,6 +56,29 @@ describe('run journal persistence', () => {
     delete globalThis.chrome;
   });
 
+  it('coalesces a synchronous lifecycle-event burst into one storage batch', async () => {
+    const { storageData, session } = createStorageMock();
+    globalThis.chrome = {
+      runtime: { sendMessage: vi.fn(async () => {}) },
+      storage: { session },
+    };
+    const orch = new RunOrchestrator({});
+    const run = createRun('burst-run');
+    orch.activeRuns.set(run.id, run);
+
+    for (let index = 0; index < 20; index += 1) {
+      orch._emitEvent(run.id, {
+        type: 'tool_start',
+        toolCall: { function: { name: `tool-${index}` } },
+      });
+    }
+    await orch.journalWrite;
+
+    expect(journalReadCount(session)).toBe(1);
+    expect(journalWriteCount(session)).toBe(1);
+    expect(storageData[RUN_JOURNAL_STORAGE_KEY][run.id].eventSequence).toBe(20);
+  });
+
   it('coalesces stream events while storage is blocked and persists the terminal snapshot', async () => {
     const firstGet = deferred();
     const { storageData, session } = createStorageMock();
@@ -74,7 +97,7 @@ describe('run journal persistence', () => {
     const run = createRun('streamed-run');
     orch.activeRuns.set(run.id, run);
 
-    orch._emitEvent(run.id, { type: 'content', data: 'start' });
+    orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
     await vi.waitFor(() => expect(journalReadCount(session)).toBe(1));
     for (let index = 0; index < 250; index += 1) {
       orch._emitEvent(run.id, { type: index % 2 ? 'content' : 'reasoning', data: 'x' });
@@ -107,7 +130,7 @@ describe('run journal persistence', () => {
     const orch = new RunOrchestrator({});
     const run = createRun('set-burst-run');
     orch.activeRuns.set(run.id, run);
-    orch._emitEvent(run.id, { type: 'content', data: 'start' });
+    orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
     await vi.waitFor(() => expect(journalWriteCount(session)).toBe(1));
     for (let index = 0; index < 250; index += 1) {
       orch._emitEvent(run.id, { type: index % 2 ? 'content' : 'reasoning', data: 'x' });
@@ -141,13 +164,13 @@ describe('run journal persistence', () => {
     const orch = new RunOrchestrator({});
     const run = createRun('microtask-run');
     orch.activeRuns.set(run.id, run);
-    orch._emitEvent(run.id, { type: 'content', data: 'first' });
+    orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
     await vi.waitFor(() => expect(journalWriteCount(session)).toBe(1));
 
     firstSet.resolve();
     await new Promise((resolve) => {
       queueMicrotask(() => {
-        orch._emitEvent(run.id, { type: 'reasoning', data: 'latest' });
+        orch._emitEvent(run.id, { type: 'tool_ready', toolCall: { function: { name: 'probe' } } });
         resolve();
       });
     });
@@ -198,7 +221,7 @@ describe('run journal persistence', () => {
     for (let index = 0; index < 30; index += 1) {
       const run = createRun(`pending-run-${index}`);
       orch.activeRuns.set(run.id, run);
-      orch._emitEvent(run.id, { type: 'content', data: 'private content' });
+      orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
     }
     await orch.journalWrite;
 
@@ -229,7 +252,7 @@ describe('run journal persistence', () => {
       const orch = new RunOrchestrator({});
       const run = createRun(`${method}-failure-run`);
       orch.activeRuns.set(run.id, run);
-      orch._emitEvent(run.id, { type: 'content', data: 'start' });
+      orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
       await vi.waitFor(() => {
         expect(method === 'get' ? journalReadCount(session) : journalWriteCount(session)).toBe(1);
       });
@@ -260,7 +283,7 @@ describe('run journal persistence', () => {
       const orch = new RunOrchestrator({});
       const run = createRun(`${method}-later-retry-run`);
       orch.activeRuns.set(run.id, run);
-      orch._emitEvent(run.id, { type: 'content', data: 'start' });
+      orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
       await orch.journalWrite;
       expect(method === 'get' ? journalReadCount(session) : journalWriteCount(session)).toBe(1);
 
@@ -302,7 +325,8 @@ describe('run journal persistence', () => {
     await boundedOrch.journalWrite;
 
     const journal = storageData[RUN_JOURNAL_STORAGE_KEY][boundedRun.id];
-    expect(journal.events).toHaveLength(128);
+    expect(journal.events).toHaveLength(1);
+    expect(journal.events.at(-1).type).toBe('complete');
     expect(journal.events.at(-1).content).toHaveLength(8_000);
     expect(JSON.stringify(journal)).not.toContain('private stream value');
   });

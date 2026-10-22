@@ -4,7 +4,9 @@
  */
 
 (() => {
-  if (window.top !== window || document.querySelector('[data-prompt-paul-notch-host]')) return;
+  if (window.top !== window || window.__promptPaulNotchRuntimeInstalled === true) return;
+  window.__promptPaulNotchRuntimeInstalled = true;
+  if (document.querySelector('[data-prompt-paul-notch-host]')) return;
 
   const STORAGE_KEY = 'notchEnabled';
   const POSITION_STORAGE_KEY = 'notchPosition';
@@ -20,6 +22,7 @@
   const INSTRUCTIONS_KEY = 'instructions';
   const HOST_ATTRIBUTE = 'data-prompt-paul-notch-host';
   const ACT_GLOW_HOST_ATTRIBUTE = 'data-prompt-paul-act-glow';
+  const ACT_GLOW_HOST_WINDOW_KEY = '__promptPaulActGlowHost';
   const ACT_GLOW_STYLE = `
     :host {
       all: initial;
@@ -84,6 +87,7 @@
   let hoverTimer = null;
   let glowHost = null;
   let glowRunId = null;
+  let glowExpiryTimer = null;
   let actEnabled = false;
   let dictationRecognition = null;
   let dictationPanelReady = null;
@@ -1290,14 +1294,24 @@
     const shell = shadow?.querySelector('.notch-shell');
     if (!active) {
       if (glowRunId && nextRunId && glowRunId !== nextRunId) return;
+      clearTimeout(glowExpiryTimer);
+      glowExpiryTimer = null;
       shell?.setAttribute('data-act-running', 'false');
       glowHost?.remove();
+      if (window[ACT_GLOW_HOST_WINDOW_KEY] === glowHost) {
+        window[ACT_GLOW_HOST_WINDOW_KEY] = null;
+      }
       glowHost = null;
       glowRunId = null;
       return;
     }
     if (!nextRunId) return;
     shell?.setAttribute('data-act-running', 'true');
+    if (!glowHost?.isConnected) {
+      glowHost = window[ACT_GLOW_HOST_WINDOW_KEY]?.isConnected
+        ? window[ACT_GLOW_HOST_WINDOW_KEY]
+        : null;
+    }
     if (!glowHost) {
       glowHost = document.createElement('div');
       glowHost.setAttribute(ACT_GLOW_HOST_ATTRIBUTE, '');
@@ -1305,8 +1319,11 @@
       const glowShadow = glowHost.attachShadow({ mode: 'open' });
       glowShadow.innerHTML = `<style>${ACT_GLOW_STYLE}</style><div class="act-glow-frame" aria-hidden="true"></div>`;
       document.documentElement.appendChild(glowHost);
+      window[ACT_GLOW_HOST_WINDOW_KEY] = glowHost;
     }
     glowRunId = nextRunId;
+    clearTimeout(glowExpiryTimer);
+    glowExpiryTimer = setTimeout(() => setActGlow(false, nextRunId), 90_000);
   }
 
   function readPinnedActions() {
@@ -1705,6 +1722,8 @@
     keydownListener = null;
     host?.remove();
     glowHost?.remove();
+    clearTimeout(glowExpiryTimer);
+    glowExpiryTimer = null;
     host = null;
     shadow = null;
     glowHost = null;
@@ -1922,12 +1941,13 @@
     }
   };
   chrome.storage.onChanged.addListener(storageListener);
-  runtimeListener = (request) => {
+  runtimeListener = (request, _sender, sendResponse) => {
     if (request?.action === 'notchPreferenceChanged') {
       applyEnabled(request.enabled === true);
     }
     if (request?.action === 'notchActRunState') {
       setActGlow(request.active === true, request.runId);
+      sendResponse?.({ received: true });
     }
   };
   chrome.runtime.onMessage.addListener(runtimeListener);
