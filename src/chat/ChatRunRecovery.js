@@ -161,6 +161,37 @@ export async function loadActiveRunJournal() {
 }
 
 /**
+ * Decide whether a panel-owned run is still live in the background worker.
+ * Only "inactive" proves the run can no longer emit events; "unknown" never
+ * clears local state. The background answers for the exact run id, so a
+ * reconnect pointer written by another panel cannot mask a stranded run.
+ * @param {string} runId
+ * @returns {Promise<{state: 'active'|'inactive'|'unknown', journal: object|null}>}
+ */
+export async function inspectRunLiveness(runId) {
+  const normalizedRunId = String(runId || '').trim();
+  if (!normalizedRunId || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+    return { state: 'unknown', journal: null };
+  }
+  let response = null;
+  try {
+    response = await chrome.runtime.sendMessage({
+      action: 'getRunJournal',
+      runId: normalizedRunId,
+    });
+  } catch (_) {
+    return { state: 'unknown', journal: null };
+  }
+  if (!response?.success) {
+    return { state: 'unknown', journal: null };
+  }
+  return {
+    state: response.active === true ? 'active' : 'inactive',
+    journal: response.journal || null,
+  };
+}
+
+/**
  * Render a reconnect notice using text nodes only.
  * @param {HTMLElement|null} chatArea
  * @param {object|null} recovery

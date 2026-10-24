@@ -1147,7 +1147,9 @@ function runUnitTests(runner) {
       'let isResponseInFlight = false',
       'function isResponseBusy()',
       'function beginResponseRun()',
-      'if (!beginResponseRun()) return;',
+      'function runWithResponseGuard(run)',
+      'const token = beginResponseRun()',
+      'endResponseRun(token)',
       'submitBtn.disabled = true',
       'submitBtn.disabled = false',
     ];
@@ -1155,6 +1157,69 @@ function runUnitTests(runner) {
     for (const token of required) {
       if (!content.includes(token)) {
         throw new Error(`chat.js missing response guard token: ${token}`);
+      }
+    }
+  });
+
+  runner.test('chat.js starts every response run through the guard wrapper', () => {
+    const content = readFileSafe('chat.js');
+    const definitionStart = content.indexOf('function beginResponseRun()');
+    const definitionEnd = content.indexOf('function rejectResponseRun()', definitionStart);
+    const wrapperStart = content.indexOf('async function runWithResponseGuard(');
+    const wrapperEnd = content.indexOf('function resetRunUi(', wrapperStart);
+    if (
+      definitionStart === -1 ||
+      definitionEnd === -1 ||
+      wrapperStart === -1 ||
+      wrapperEnd === -1
+    ) {
+      throw new Error('chat.js missing the response guard definition or wrapper');
+    }
+
+    for (
+      let index = content.indexOf('beginResponseRun(');
+      index !== -1;
+      index = content.indexOf('beginResponseRun(', index + 1)
+    ) {
+      const inDefinition = index >= definitionStart && index < definitionEnd;
+      const inWrapper = index >= wrapperStart && index < wrapperEnd;
+      if (!inDefinition && !inWrapper) {
+        throw new Error('chat.js claims a response run outside runWithResponseGuard');
+      }
+    }
+
+    const wrapperCalls = content.match(/runWithResponseGuard\(/g) || [];
+    if (wrapperCalls.length !== 4) {
+      throw new Error(
+        'Expected exactly one wrapper call per run entry point (makeApiCall, makeApiCallWithMedia, resumeActCheckpoint)'
+      );
+    }
+  });
+
+  runner.test('chat.js starts the resume entry point through the response guard wrapper', () => {
+    const content = readFileSafe('chat.js');
+    const start = content.indexOf('async function resumeActCheckpoint(');
+    const end = content.indexOf('\n  async function onActFreshInspection(', start);
+    if (start === -1 || end === -1) {
+      throw new Error('chat.js missing the resumeActCheckpoint run entry point');
+    }
+    const body = content.slice(start, end);
+    if (!body.includes('runWithResponseGuard(') || body.includes('beginResponseRun(')) {
+      throw new Error('resumeActCheckpoint must start through runWithResponseGuard');
+    }
+  });
+
+  runner.test('chat.js never lets a stale terminal finalize a live run', () => {
+    const content = readFileSafe('chat.js');
+    const required = [
+      'const terminalTargetsPanelRun =',
+      '(!currentRunId && !isResponseInFlight) || runId === currentRunId',
+      'finalizeStreamingBubbleForTerminal(event)',
+      'function finalizeStreamingBubbleForTerminal(event)',
+    ];
+    for (const token of required) {
+      if (!content.includes(token)) {
+        throw new Error(`chat.js missing stale-terminal ownership token: ${token}`);
       }
     }
   });
@@ -1583,6 +1648,19 @@ function runIntegrationTests(runner) {
     const content = readFileSafe('chat.js');
     if (!content.includes('request.textPrompt')) {
       throw new Error('chat.js does not consume deep-link textPrompt');
+    }
+  });
+
+  runner.test('background.js keeps one panel-action identity across retries and queueing', () => {
+    const content = readFileSafe('background.js');
+    for (const token of [
+      'const message = payload.actionId',
+      'chrome.runtime.sendMessage(message, (response) => {',
+      'await queuePendingPanelAction(message)',
+    ]) {
+      if (!content.includes(token)) {
+        throw new Error(`sendPanelMessage must reuse one actionId for every delivery: ${token}`);
+      }
     }
   });
 

@@ -17,6 +17,11 @@
 
 ## [Unreleased]
 
+- Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
+- Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
+- A busy send now checks the background journal before warning. A run that is provably inactive (for example after a worker restart or a lost terminal) is settled from its journal when available and its streaming bubble is cleared; a genuinely live run still shows "A response is already in progress".
+- Resuming an interrupted Act checkpoint now releases the panel's in-process response guard when the resumed run settles. Later sends and panel actions start normally instead of being rejected as "A response is already in progress" until the panel reloads.
+- Side-panel actions now keep one delivery identity across send retries and the session queue, so a repeated delivery cannot start the same action twice (for example a second media analysis run for one context-menu click).
 - Act `page_find_text` now returns indices from the merged frame snapshot; stale pre-dispatch targets trigger an automatic fresh inspection and a `not_delivered` receipt instead of a plain failure.
 - Unresponsive pages after state-changing actions now pause for the user to handle a possible browser dialog, then inspect again without replaying the action; precise CDP commands have a 15-second bound.
 - Act approval cards focus the card instead of Approve. Password-manager, sign-in/account, and Prompt Paul origins do not offer or honor saved low-risk or run-wide similar-action approval.

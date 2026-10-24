@@ -398,11 +398,18 @@ async function queuePendingPanelAction(payload) {
 async function sendPanelMessage(payload) {
   const MAX_RETRIES = 2;
   const RETRY_DELAY_MS = 150;
+  // Give the whole delivery chain one identity. A retry can race a delivery the
+  // panel already accepted (another panel can answer "ignored" first), and the
+  // queued fallback can duplicate a live message; a shared actionId lets the
+  // panel discard the repeat instead of starting the action twice.
+  const message = payload.actionId
+    ? payload
+    : { ...payload, actionId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const result = await new Promise((resolve) => {
       try {
-        chrome.runtime.sendMessage(payload, (response) => {
+        chrome.runtime.sendMessage(message, (response) => {
           if (chrome.runtime.lastError) {
             resolve({ error: chrome.runtime.lastError.message });
             return;
@@ -427,7 +434,7 @@ async function sendPanelMessage(payload) {
   }
 
   // All retries failed: queue for later consumption
-  const queued = await queuePendingPanelAction(payload);
+  const queued = await queuePendingPanelAction(message);
   if (!queued) {
     console.warn(
       `Background: sendMessage (${payload.action}) failed after ${MAX_RETRIES + 1} attempts and queue fallback failed`

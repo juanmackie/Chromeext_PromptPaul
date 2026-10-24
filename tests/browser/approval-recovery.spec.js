@@ -647,6 +647,63 @@ test('startup renders reconnect controls and Watch adopts the active run without
   }
 });
 
+test('a stale terminal event cannot finalize a live run or release its guard', async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
+  const { context } = await launchTestBrowser(userDataDir);
+  const harness = await openHarness(context);
+  let chat;
+
+  try {
+    await seedMockProfile(harness, `${fixtureUrl(fixtureServer, 'mock-chat')}?hold=1`);
+    fixtureServer.resetMockRequests();
+    chat = await openChat(context, harness);
+    await chat.locator('#user-input').fill('Keep this run alive while a stale terminal arrives.');
+    await chat.locator('#send-button').click();
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'streaming');
+    await expect.poll(() => fixtureServer.mockRequests().length).toBe(1);
+
+    // A terminal for an older run must not settle the live bubble or release
+    // the live run's in-process guard. The harness is a separate extension
+    // page, so chat.js receives this through its normal runtime listener.
+    await harness.evaluate(
+      () =>
+        new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              action: 'orchestratorEvent',
+              runId: 'stale-run-before-the-current-one',
+              sourceTabId: null,
+              event: { type: 'complete', content: 'STALE TERMINAL FROM AN OLDER RUN' },
+            },
+            resolve
+          );
+        })
+    );
+
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'streaming');
+    await expect(chat.locator('#user-input')).toBeDisabled();
+    await expect(
+      chat.locator('.message.llm-message .llm-content-area', { hasText: 'STALE TERMINAL' })
+    ).toHaveCount(0);
+
+    // The live run still owns its bubble and completes normally, with no
+    // second provider request and no duplicate output.
+    fixtureServer.releaseMockChat();
+    await expect(
+      chat.locator('.message.llm-message .llm-content-area', {
+        hasText: 'Mock provider reply',
+      })
+    ).toHaveCount(1);
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete');
+    await expect(chat.locator('#user-input')).toBeEnabled();
+    expect(fixtureServer.mockRequests()).toHaveLength(1);
+  } finally {
+    await chat?.close().catch(() => {});
+    await context.close();
+    removeUserDataDir(userDataDir);
+  }
+});
+
 test('a run completing during reconnect produces no duplicate output and no stale controls', async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-browser-'));
   const { context } = await launchTestBrowser(userDataDir);
@@ -816,6 +873,15 @@ test('checkpoint Resume requires an explicit user action and a fresh inspection,
       chrome.storage.session.get(['promptPaulActiveRunV1'])
     );
     expect(pointer.promptPaulActiveRunV1).toBeUndefined();
+
+    // The resumed run settled through its own entry point. Its in-process run
+    // guard must be released too, or every later send is rejected as "A
+    // response is already in progress" until the panel reloads.
+    fixtureServer.resetMockRequests();
+    await chat.locator('#user-input').fill('A plain follow-up after the resumed run.');
+    await chat.locator('#send-button').click();
+    await expect.poll(() => fixtureServer.mockRequests().length, { timeout: 20_000 }).toBe(1);
+    await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'complete');
   } finally {
     await chat?.close().catch(() => {});
     await context.close();

@@ -77,6 +77,7 @@ import {
 } from './src/chat/ChatPageAutomation.js';
 import {
   clearActiveRun,
+  inspectRunLiveness,
   loadActiveRunJournal,
   loadActRecovery,
   restoreRunJournal,
@@ -182,11 +183,6 @@ document.addEventListener('DOMContentLoaded', () => {
     marked.setOptions({
       highlight: function (code, lang) {
         if (lang && hljs.getLanguage(lang)) {
-          if (isResponseBusy()) {
-            loadingManager.showToast('A response is already in progress', 'warning');
-            return;
-          }
-          submitBtn.disabled = true;
           try {
             return hljs.highlight(code, { language: lang }).value;
           } catch (_) {
@@ -998,19 +994,17 @@ document.addEventListener('DOMContentLoaded', () => {
     return isResponseInFlight || hasLiveStreamingRun();
   }
 
-  function beginResponseRun() {
-    if (isResponseBusy()) {
-      console.warn('Chat: run start rejected - response already in flight', {
-        currentRunId: streamState.getRunId(),
-        sourceTabId: streamState.getSourceTabId(),
-      });
-      loadingManager.showToast('A response is already in progress', 'warning');
-      return false;
-    }
+  // The guard is token-scoped so a late `finally` from an older run can never
+  // release a newer run's claim. `0` means no run holds the guard.
+  let responseRunToken = 0;
+  let activeResponseRunToken = 0;
 
-    // Recover from a stranded run whose terminal event never arrived so it
-    // doesn't permanently block new runs. Also clear the streaming elements
-    // so any permanent "Loading…" or "Using tool:…" bubble is removed.
+  function beginResponseRun() {
+    if (isResponseBusy()) return 0;
+
+    // A run id without a streaming bubble is already stranded: no terminal
+    // event can target it, so clear it and its reconnect pointer before
+    // claiming. A stranded bubble is handled by settleStrandedRun() instead.
     if (streamState.getRunId()) {
       console.warn('Chat: clearing stranded run state before starting a new run', {
         strandedRunId: streamState.getRunId(),
@@ -1024,16 +1018,120 @@ document.addEventListener('DOMContentLoaded', () => {
       void clearActiveRun();
     }
 
+    activeResponseRunToken = ++responseRunToken;
     isResponseInFlight = true;
     lastActOutcome = null;
     progressiveAnswerTurn = null;
     progressiveAnswerSeen = false;
+    return activeResponseRunToken;
+  }
+
+  /**
+   * Release the guard. A token releases only its own claim; omit it to force a
+   * release for a run this panel no longer owns (stranded settlement).
+   * @param {number|null} [token]
+   */
+  function endResponseRun(token = null) {
+    if (token != null && token !== activeResponseRunToken) return;
+    activeResponseRunToken = 0;
+    isResponseInFlight = false;
+    void conversationControls?.refresh();
+  }
+
+  function rejectResponseRun() {
+    console.warn('Chat: run start rejected - response already in flight', {
+      currentRunId: streamState.getRunId(),
+      sourceTabId: streamState.getSourceTabId(),
+    });
+    loadingManager.showToast('A response is already in progress', 'warning');
+  }
+
+  let strandedRunSettlement = null;
+
+  /**
+   * Clear a streaming bubble whose run can no longer emit events. A stranded
+   * run happens when the worker restarts or a terminal message is lost: the
+   * panel keeps its bubble, but the background no longer owns the run. Only a
+   * definite "inactive" answer from the background clears local state, and only
+   * while the bubble still belongs to the inspected run.
+   * @returns {Promise<boolean>} True when stranded state was cleared.
+   */
+  function settleStrandedRun() {
+    if (!strandedRunSettlement) {
+      strandedRunSettlement = settleStrandedRunOnce().finally(() => {
+        strandedRunSettlement = null;
+      });
+    }
+    return strandedRunSettlement;
+  }
+
+  async function settleStrandedRunOnce() {
+    const runId = streamState.getRunId();
+    if (!runId || !streamState.getCurrentStreamingContentElement()) return false;
+    let liveness;
+    try {
+      liveness = await inspectRunLiveness(runId);
+    } catch (_) {
+      return false;
+    }
+    if (liveness.state !== 'inactive') return false;
+    // A terminal event or a different run may have settled the bubble while the
+    // journal request was in flight; never clear output that is no longer ours.
+    if (streamState.getRunId() !== runId) return false;
+
+    console.warn('Chat: clearing stranded run state before starting a new run', {
+      strandedRunId: runId,
+      sourceTabId: streamState.getSourceTabId(),
+    });
+    // The run cannot answer a pending approval or clarification anymore, so
+    // settle those cards instead of leaving them actionable-looking.
+    hermesChat.settleHermesApprovals(chatArea, 'aborted');
+    cancelPageActionConfirmations(chatArea);
+    const terminalEvent = [...(liveness.journal?.events || [])]
+      .reverse()
+      .find((entry) => ['complete', 'error', 'aborted'].includes(entry.type));
+    if (terminalEvent) {
+      finalizeStreamingBubbleForTerminal(terminalEvent);
+    } else {
+      settleStreamingBubble(interruptedAnswerText('Response interrupted before it finished.'));
+    }
+    resetRunUi(RUN_STATES.IDLE);
+    streamState.clearStreamingElements();
+    streamState.clearStreamedText();
+    streamState.setActiveToolCall(null);
+    clearRunOwnerToken(runId);
+    streamState.setRunId(null);
+    streamState.setSourceTabId(null);
+    progressiveAnswerTurn = null;
+    progressiveAnswerSeen = false;
+    // The stranded run can no longer emit a terminal event, so its in-process
+    // claim is stale too. Force-release it; a late finally from that run is
+    // token-scoped and cannot release a newer run.
+    endResponseRun();
     return true;
   }
 
-  function endResponseRun() {
-    isResponseInFlight = false;
-    void conversationControls?.refresh();
+  /**
+   * Single owner of the response guard. Every run entry point starts here so
+   * begin/end can never drift apart, and a busy guard first checks whether the
+   * previous run is actually still alive before warning the user.
+   * @param {Function} run
+   * @returns {Promise<{started: boolean, value?: *}>}
+   */
+  async function runWithResponseGuard(run) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = beginResponseRun();
+      if (token) {
+        try {
+          return { started: true, value: await run() };
+        } finally {
+          endResponseRun(token);
+        }
+      }
+      if (attempt > 0 || !(await settleStrandedRun())) break;
+    }
+    rejectResponseRun();
+    return { started: false };
   }
 
   function resetRunUi(runState) {
@@ -1209,31 +1307,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function resumeActCheckpoint(checkpoint, recoveryCard) {
-    if (!checkpoint || isResponseBusy()) {
-      loadingManager.showToast('A response is already in progress.', 'warning');
-      return;
-    }
-
-    if (!beginResponseRun()) return;
-    try {
-      const instruction = String(checkpoint.instruction || '').trim();
-      if (instruction && !instruction.startsWith('[Sensitive task detail omitted.]')) {
-        chatUI.addMessage('User', formatUserMessageForDisplay(instruction));
-        streamState.addMessageToHistory({ role: 'user', content: instruction });
+    if (!checkpoint) return;
+    await runWithResponseGuard(async () => {
+      try {
+        const instruction = String(checkpoint.instruction || '').trim();
+        if (instruction && !instruction.startsWith('[Sensitive task detail omitted.]')) {
+          chatUI.addMessage('User', formatUserMessageForDisplay(instruction));
+          streamState.addMessageToHistory({ role: 'user', content: instruction });
+        }
+        const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
+        streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
+        beginRunUi();
+        const resumed = await resumeActRun(checkpoint);
+        streamState.setRunId(resumed.runId);
+        streamState.setSourceTabId(resumed.sourceTabId);
+        setPageActionsRunActive(true);
+        recoveryCard?.remove();
+        await executeRun(resumed.runId, []);
+      } catch (error) {
+        handleRunFailure(error, 'resumeActCheckpoint');
+        throw error;
       }
-      const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
-      streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
-      beginRunUi();
-      const resumed = await resumeActRun(checkpoint);
-      streamState.setRunId(resumed.runId);
-      streamState.setSourceTabId(resumed.sourceTabId);
-      setPageActionsRunActive(true);
-      recoveryCard?.remove();
-      await executeRun(resumed.runId, []);
-    } catch (error) {
-      handleRunFailure(error, 'resumeActCheckpoint');
-      throw error;
-    }
+    });
   }
 
   // Gated Retry recovery for an Act run that ended with an unverified/in-flight
@@ -2069,6 +2164,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  /**
+   * Apply a terminal event to the visible streaming bubble. Used by the
+   * ownership fallback and by stranded-run settlement so both paths render the
+   * same bounded terminal output.
+   * @param {Object} event
+   * @returns {boolean} True when a bubble was finalized.
+   */
+  function finalizeStreamingBubbleForTerminal(event) {
+    const messageDiv = streamState.getCurrentStreamingMessageDiv();
+    const contentElement = streamState.getCurrentStreamingContentElement();
+    if (!messageDiv || !contentElement) return false;
+    if (event.type === 'complete') {
+      const body = buildFinalResponseBody(
+        event.content,
+        streamState.getStreamedText(),
+        event.grounding?.sources || [],
+        event.completion
+      );
+      renderMarkdownInto(contentElement, body);
+      chatUI.clearProgressiveAnswer(messageDiv);
+      if (body.trim()) streamState.addMessageToHistory({ role: 'assistant', content: body });
+    } else if (event.type === 'error') {
+      chatUI.clearProgressiveAnswer(messageDiv);
+      renderMarkdownInto(contentElement, '❌ Error: ' + (event.error || 'unknown error'));
+    } else if (event.type === 'aborted') {
+      chatUI.clearProgressiveAnswer(messageDiv);
+      renderMarkdownInto(contentElement, 'Response stopped');
+    } else {
+      return false;
+    }
+    chatUI.moveMessageToEnd(messageDiv);
+    return true;
+  }
+
   function settleStreamingBubble(content) {
     const messageDiv = streamState.getCurrentStreamingMessageDiv();
     const contentElement = streamState.getCurrentStreamingContentElement();
@@ -2185,7 +2314,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!isOwnedEvent) {
         const terminalTypes = ['complete', 'error', 'aborted'];
-        if (terminalTypes.includes(event.type) && streamState.getCurrentStreamingContentElement()) {
+        // A terminal event may finalize the visible bubble only when it cannot
+        // belong to a newer run: either the panel holds no run at all (no id and
+        // no start in progress), or the event names the panel's own run but its
+        // source-tab metadata did not match. A stale run's terminal must never
+        // finalize a live run's bubble or release its response guard.
+        const terminalTargetsPanelRun =
+          (!currentRunId && !isResponseInFlight) || runId === currentRunId;
+        if (
+          terminalTypes.includes(event.type) &&
+          terminalTargetsPanelRun &&
+          finalizeStreamingBubbleForTerminal(event)
+        ) {
           console.log('Chat: Finalizing stranded bubble for terminal event', {
             runId,
             eventType: event.type,
@@ -2193,27 +2333,6 @@ document.addEventListener('DOMContentLoaded', () => {
             sourceTabId,
             currentSourceTabId,
           });
-          if (event.type === 'complete') {
-            const body = buildFinalResponseBody(
-              event.content,
-              streamState.getStreamedText(),
-              event.grounding?.sources || [],
-              event.completion
-            );
-            renderMarkdownInto(streamState.getCurrentStreamingContentElement(), body);
-            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
-            if (body.trim()) streamState.addMessageToHistory({ role: 'assistant', content: body });
-          } else if (event.type === 'error') {
-            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
-            renderMarkdownInto(
-              streamState.getCurrentStreamingContentElement(),
-              '❌ Error: ' + (event.error || 'unknown error')
-            );
-          } else if (event.type === 'aborted') {
-            chatUI.clearProgressiveAnswer(streamState.getCurrentStreamingMessageDiv());
-            renderMarkdownInto(streamState.getCurrentStreamingContentElement(), 'Response stopped');
-          }
-          chatUI.moveMessageToEnd(streamState.getCurrentStreamingMessageDiv());
           resetRunUi(RUN_STATES.IDLE);
           streamState.clearStreamingElements();
           streamState.clearStreamedText();
@@ -2815,80 +2934,78 @@ document.addEventListener('DOMContentLoaded', () => {
     tool_choice = 'auto',
     requestedSkill = null
   ) {
-    if (!beginResponseRun()) return;
+    await runWithResponseGuard(async () => {
+      try {
+        clearCurrentMediaData();
+        const config = await getApiConfigCached();
+        const userMessage = composeUserPrompt(promptRequest);
 
-    try {
-      clearCurrentMediaData();
-      const config = await getApiConfigCached();
-      const userMessage = composeUserPrompt(promptRequest);
+        const effectiveToolChoice =
+          tool_choice === undefined || tool_choice === null || tool_choice === ''
+            ? 'auto'
+            : tool_choice;
 
-      const effectiveToolChoice =
-        tool_choice === undefined || tool_choice === null || tool_choice === ''
-          ? 'auto'
-          : tool_choice;
+        if (userMessage) {
+          chatUI.addMessage('User', formatUserMessageForDisplay(userMessage), {
+            promptRequest,
+            mediaData,
+          });
 
-      if (userMessage) {
-        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage), {
-          promptRequest,
-          mediaData,
-        });
+          // Create message content with media
+          const messageContent = [{ type: 'text', text: userMessage }];
 
-        // Create message content with media
-        const messageContent = [{ type: 'text', text: userMessage }];
+          // Add media content for vision models
+          if (mediaData.type === 'image') {
+            messageContent.push({
+              type: 'image_url',
+              image_url: { url: `data:${mediaData.mimeType};base64,${mediaData.base64}` },
+            });
+          }
 
-        // Add media content for vision models
-        if (mediaData.type === 'image') {
-          messageContent.push({
-            type: 'image_url',
-            image_url: { url: `data:${mediaData.mimeType};base64,${mediaData.base64}` },
+          streamState.addMessageToHistory({
+            role: 'user',
+            content: messageContent,
           });
         }
 
-        streamState.addMessageToHistory({
-          role: 'user',
-          content: messageContent,
-        });
+        const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
+        streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
+        beginRunUi();
+
+        const webSearchEnabled = await isWebSearchEnabled();
+        const pageActionsEnabled = await isPageActionsEnabled();
+        const runConfig = {
+          provider: config.provider || 'api',
+          profileId: config.profileId || config.id,
+          llmEndpoint: config.llmEndpoint,
+          hermesEndpoint: config.hermesEndpoint,
+          hermesProfile: config.hermesProfile,
+          hermesRemoteConfirmed: config.hermesRemoteConfirmed === true,
+          modelName: config.modelName,
+          reasoningLevel: config.reasoningLevel,
+          systemPrompt: config.systemPrompt,
+          tool_choice: effectiveToolChoice,
+          tools: await getTools(),
+          webSearch: webSearchEnabled,
+          pageActions: pageActionsEnabled,
+          pageActionsMultiTab: pageActionsEnabled,
+          mediaData: mediaData,
+          requestedSkill,
+          conversationId: streamState.getConversationId(),
+          sourceTabId: getRunSourceTabId(),
+        };
+        streamState.setRunId(await startRun(runConfig));
+        streamState.setSourceTabId(runConfig.sourceTabId);
+        if (pageActionsEnabled) setPageActionsRunActive(true);
+
+        await executeRun(
+          streamState.getRunId(),
+          prepareRunMessages(runConfig, streamState.getConversationHistory())
+        );
+      } catch (error) {
+        handleRunFailure(error, 'makeApiCallWithMedia');
       }
-
-      const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
-      streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
-      beginRunUi();
-
-      const webSearchEnabled = await isWebSearchEnabled();
-      const pageActionsEnabled = await isPageActionsEnabled();
-      const runConfig = {
-        provider: config.provider || 'api',
-        profileId: config.profileId || config.id,
-        llmEndpoint: config.llmEndpoint,
-        hermesEndpoint: config.hermesEndpoint,
-        hermesProfile: config.hermesProfile,
-        hermesRemoteConfirmed: config.hermesRemoteConfirmed === true,
-        modelName: config.modelName,
-        reasoningLevel: config.reasoningLevel,
-        systemPrompt: config.systemPrompt,
-        tool_choice: effectiveToolChoice,
-        tools: await getTools(),
-        webSearch: webSearchEnabled,
-        pageActions: pageActionsEnabled,
-        pageActionsMultiTab: pageActionsEnabled,
-        mediaData: mediaData,
-        requestedSkill,
-        conversationId: streamState.getConversationId(),
-        sourceTabId: getRunSourceTabId(),
-      };
-      streamState.setRunId(await startRun(runConfig));
-      streamState.setSourceTabId(runConfig.sourceTabId);
-      if (pageActionsEnabled) setPageActionsRunActive(true);
-
-      await executeRun(
-        streamState.getRunId(),
-        prepareRunMessages(runConfig, streamState.getConversationHistory())
-      );
-    } catch (error) {
-      handleRunFailure(error, 'makeApiCallWithMedia');
-    } finally {
-      endResponseRun();
-    }
+    });
   }
 
   /**
@@ -3029,133 +3146,133 @@ document.addEventListener('DOMContentLoaded', () => {
     requestedSkill = null,
     sourceTabIdOverride = undefined
   ) {
-    if (!beginResponseRun()) return false;
-
-    try {
-      if (sourceTabIdOverride !== undefined) {
-        if (!Number.isInteger(sourceTabIdOverride) || sourceTabIdOverride <= 0) {
-          loadingManager.showToast(
-            'The original answer source is unavailable. Attach its context again.',
-            'warning'
-          );
-          return false;
-        }
-        try {
-          await chrome.tabs.get(sourceTabIdOverride);
-        } catch (_) {
-          loadingManager.showToast(
-            'The original source tab is no longer available. Attach its context again to continue.',
-            'warning'
-          );
-          return false;
-        }
-      }
-      const config = await getApiConfigCached();
-      const userMessage = composeUserPrompt(promptRequest);
-
-      // Adaptive model routing: check if media context needs a vision-capable model
-      const mediaData = streamState.getMediaData();
-      let effectiveConfig = config;
-      if (mediaData && (mediaData.type === 'image' || mediaData.type === 'video')) {
-        try {
-          const { profiles } = await new Promise((resolve) => {
-            chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], resolve);
-          });
-          const routingResult = await selectOptimalProfile(
-            profiles || [],
-            config.id || 'default',
-            mediaData
-          );
-          if (routingResult.rerouted && routingResult.config) {
-            effectiveConfig = routingResult.config;
-            console.log(
-              `[Chat] Rerouted to vision-capable model: ${routingResult.config.modelName}`
+    const outcome = await runWithResponseGuard(async () => {
+      try {
+        if (sourceTabIdOverride !== undefined) {
+          if (!Number.isInteger(sourceTabIdOverride) || sourceTabIdOverride <= 0) {
+            loadingManager.showToast(
+              'The original answer source is unavailable. Attach its context again.',
+              'warning'
             );
-            chatUI.addMessage(
-              'System',
-              `Auto-switched to **${routingResult.config.modelName}** for image analysis.`
-            );
+            return false;
           }
-        } catch (e) {
-          // routing failure is non-fatal: fall back to current config
+          try {
+            await chrome.tabs.get(sourceTabIdOverride);
+          } catch (_) {
+            loadingManager.showToast(
+              'The original source tab is no longer available. Attach its context again to continue.',
+              'warning'
+            );
+            return false;
+          }
         }
-      }
+        const config = await getApiConfigCached();
+        const userMessage = composeUserPrompt(promptRequest);
 
-      const effectiveToolChoice =
-        tool_choice === undefined || tool_choice === null || tool_choice === ''
-          ? 'auto'
-          : tool_choice;
+        // Adaptive model routing: check if media context needs a vision-capable model
+        const mediaData = streamState.getMediaData();
+        let effectiveConfig = config;
+        if (mediaData && (mediaData.type === 'image' || mediaData.type === 'video')) {
+          try {
+            const { profiles } = await new Promise((resolve) => {
+              chrome.storage.local.get(['profiles', 'lastSelectedProfileId'], resolve);
+            });
+            const routingResult = await selectOptimalProfile(
+              profiles || [],
+              config.id || 'default',
+              mediaData
+            );
+            if (routingResult.rerouted && routingResult.config) {
+              effectiveConfig = routingResult.config;
+              console.log(
+                `[Chat] Rerouted to vision-capable model: ${routingResult.config.modelName}`
+              );
+              chatUI.addMessage(
+                'System',
+                `Auto-switched to **${routingResult.config.modelName}** for image analysis.`
+              );
+            }
+          } catch (e) {
+            // routing failure is non-fatal: fall back to current config
+          }
+        }
 
-      // Add user message to history if provided
-      if (userMessage) {
-        chatUI.addMessage('User', formatUserMessageForDisplay(userMessage), promptRequest);
+        const effectiveToolChoice =
+          tool_choice === undefined || tool_choice === null || tool_choice === ''
+            ? 'auto'
+            : tool_choice;
 
-        if (mediaData && mediaData.type === 'image') {
-          const messageContent = [
-            { type: 'text', text: userMessage },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mediaData.mimeType};base64,${mediaData.base64}`,
+        // Add user message to history if provided
+        if (userMessage) {
+          chatUI.addMessage('User', formatUserMessageForDisplay(userMessage), promptRequest);
+
+          if (mediaData && mediaData.type === 'image') {
+            const messageContent = [
+              { type: 'text', text: userMessage },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mediaData.mimeType};base64,${mediaData.base64}`,
+                },
               },
-            },
-          ];
-          streamState.addMessageToHistory({ role: 'user', content: messageContent });
-        } else {
-          streamState.addMessageToHistory({ role: 'user', content: userMessage });
+            ];
+            streamState.addMessageToHistory({ role: 'user', content: messageContent });
+          } else {
+            streamState.addMessageToHistory({ role: 'user', content: userMessage });
+          }
+
+          clearCurrentMediaData(); // Clear after use
         }
 
-        clearCurrentMediaData(); // Clear after use
+        // Prepare run configuration
+        const webSearchEnabled = await isWebSearchEnabled();
+        const pageActionsEnabled = await isPageActionsEnabled();
+        const runConfig = {
+          provider: effectiveConfig.provider || 'api',
+          profileId: effectiveConfig.profileId || effectiveConfig.id,
+          llmEndpoint: effectiveConfig.llmEndpoint,
+          hermesEndpoint: effectiveConfig.hermesEndpoint,
+          hermesProfile: effectiveConfig.hermesProfile,
+          hermesRemoteConfirmed: effectiveConfig.hermesRemoteConfirmed === true,
+          modelName: effectiveConfig.modelName,
+          reasoningLevel: effectiveConfig.reasoningLevel,
+          systemPrompt: effectiveConfig.systemPrompt,
+          tool_choice: effectiveToolChoice,
+          tools: await getTools(),
+          webSearch: webSearchEnabled,
+          pageActions: pageActionsEnabled,
+          pageActionsMultiTab: pageActionsEnabled,
+          requestedSkill,
+          ...(promptRequest && promptRequest.answerFormat === 'cards'
+            ? { answerFormat: 'cards' }
+            : {}),
+          conversationId: streamState.getConversationId(),
+          sourceTabId:
+            sourceTabIdOverride === undefined ? getRunSourceTabId() : sourceTabIdOverride,
+        };
+        const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
+        streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
+        beginRunUi();
+
+        streamState.setRunId(await startRun(runConfig));
+        streamState.setSourceTabId(runConfig.sourceTabId);
+        messageDiv.answerFollowupIdentity = chatComposer.buildAnswerFollowupIdentity(
+          promptRequest,
+          runConfig.sourceTabId
+        );
+        if (pageActionsEnabled) setPageActionsRunActive(true);
+
+        await executeRun(
+          streamState.getRunId(),
+          prepareRunMessages(runConfig, streamState.getConversationHistory())
+        );
+        return true;
+      } catch (error) {
+        handleRunFailure(error, 'makeApiCall');
+        return false;
       }
-
-      // Prepare run configuration
-      const webSearchEnabled = await isWebSearchEnabled();
-      const pageActionsEnabled = await isPageActionsEnabled();
-      const runConfig = {
-        provider: effectiveConfig.provider || 'api',
-        profileId: effectiveConfig.profileId || effectiveConfig.id,
-        llmEndpoint: effectiveConfig.llmEndpoint,
-        hermesEndpoint: effectiveConfig.hermesEndpoint,
-        hermesProfile: effectiveConfig.hermesProfile,
-        hermesRemoteConfirmed: effectiveConfig.hermesRemoteConfirmed === true,
-        modelName: effectiveConfig.modelName,
-        reasoningLevel: effectiveConfig.reasoningLevel,
-        systemPrompt: effectiveConfig.systemPrompt,
-        tool_choice: effectiveToolChoice,
-        tools: await getTools(),
-        webSearch: webSearchEnabled,
-        pageActions: pageActionsEnabled,
-        pageActionsMultiTab: pageActionsEnabled,
-        requestedSkill,
-        ...(promptRequest && promptRequest.answerFormat === 'cards'
-          ? { answerFormat: 'cards' }
-          : {}),
-        conversationId: streamState.getConversationId(),
-        sourceTabId: sourceTabIdOverride === undefined ? getRunSourceTabId() : sourceTabIdOverride,
-      };
-      const { messageDiv, contentElement, uniqueIdString } = chatUI.addMessage('LLM', '');
-      streamState.initStreamingElements(messageDiv, contentElement, uniqueIdString);
-      beginRunUi();
-
-      streamState.setRunId(await startRun(runConfig));
-      streamState.setSourceTabId(runConfig.sourceTabId);
-      messageDiv.answerFollowupIdentity = chatComposer.buildAnswerFollowupIdentity(
-        promptRequest,
-        runConfig.sourceTabId
-      );
-      if (pageActionsEnabled) setPageActionsRunActive(true);
-
-      await executeRun(
-        streamState.getRunId(),
-        prepareRunMessages(runConfig, streamState.getConversationHistory())
-      );
-      return true;
-    } catch (error) {
-      handleRunFailure(error, 'makeApiCall');
-      return false;
-    } finally {
-      endResponseRun();
-    }
+    });
+    return outcome.started ? outcome.value === true : false;
   }
 
   submitBtn.addEventListener('click', async () => {
@@ -3166,8 +3283,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (isResponseBusy()) {
-      loadingManager.showToast('A response is already in progress', 'warning');
+    if (isResponseBusy() && !(await settleStrandedRun())) {
+      rejectResponseRun();
       return;
     }
 
