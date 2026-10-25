@@ -4,14 +4,16 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { access, copyFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { checkReadiness } from './check.mjs';
 
 const execFileAsync = promisify(execFile);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = path.resolve(process.cwd());
 const args = process.argv.slice(2);
-const evalRootArgument = args.length === 2 && args[0] === '--eval-root' ? args[1] : null;
+const buildOnlyCount = args.filter((arg) => arg === '--build-only').length;
+const optionArgs = args.filter((arg) => arg !== '--build-only');
+const evalRootArgument =
+  optionArgs.length === 2 && optionArgs[0] === '--eval-root' ? optionArgs[1] : null;
 const EVAL_ROOT = path.resolve(
   evalRootArgument || path.resolve(ROOT, '..', 'prompt-paul-agent-eval')
 );
@@ -145,26 +147,33 @@ function emit(result, exitCode = 0) {
   if (exitCode !== 0) process.exitCode = exitCode;
 }
 
+async function buildEvaluationExtension() {
+  await runNode([path.join(ROOT, 'scripts', 'build.js'), '--eval'], {
+    cwd: ROOT,
+    timeout: 20 * 60 * 1000,
+  });
+  const bridgeDir = path.join(BUILD_PATH, 'eval-bridge');
+  await mkdir(bridgeDir, { recursive: true });
+  await Promise.all(
+    ['extension-bridge.html', 'extension-bridge.js'].map((file) =>
+      copyFile(path.join(EVAL_ROOT, 'bridge', file), path.join(bridgeDir, file))
+    )
+  );
+  await Promise.all([
+    readFile(path.join(BUILD_PATH, 'manifest.json')),
+    readFile(path.join(BUILD_PATH, 'src', 'utils', 'evalHook.js')),
+    readFile(path.join(BUILD_PATH, 'build-metadata.json')),
+    readFile(path.join(BUILD_PATH, 'eval-bridge', 'extension-bridge.html')),
+    readFile(path.join(BUILD_PATH, 'eval-bridge', 'extension-bridge.js')),
+  ]);
+  return BUILD_PATH;
+}
+
 async function main() {
   await ensureTrainingCorpus();
 
   try {
-    await runNode([path.join(ROOT, 'scripts', 'build.js'), '--eval'], {
-      cwd: ROOT,
-      timeout: 20 * 60 * 1000,
-    });
-    const bridgeDir = path.join(BUILD_PATH, 'eval-bridge');
-    await mkdir(bridgeDir, { recursive: true });
-    await Promise.all(
-      ['extension-bridge.html', 'extension-bridge.js'].map((file) =>
-        copyFile(path.join(EVAL_ROOT, 'bridge', file), path.join(bridgeDir, file))
-      )
-    );
-    await Promise.all([
-      readFile(path.join(BUILD_PATH, 'manifest.json')),
-      readFile(path.join(BUILD_PATH, 'src', 'utils', 'evalHook.js')),
-      readFile(path.join(BUILD_PATH, 'build-metadata.json')),
-    ]);
+    await buildEvaluationExtension();
   } catch {
     emit({ score: 0, valid: false, fail_class: 'extension_build_failed' }, 1);
     return;
@@ -258,12 +267,22 @@ async function main() {
 }
 
 if (args.includes('--help') || args.includes('-h')) {
-  console.log('Usage: node .dream-rsi-harness/measure.mjs [--eval-root <evaluation-repository>]');
+  console.log(
+    'Usage: node .dream-rsi-harness/measure.mjs [--eval-root <evaluation-repository>] [--build-only]'
+  );
 } else if (
-  args.length !== 0 &&
-  !(args.length === 2 && args[0] === '--eval-root' && Boolean(args[1]))
+  buildOnlyCount > 1 ||
+  (optionArgs.length !== 0 &&
+    !(optionArgs.length === 2 && optionArgs[0] === '--eval-root' && Boolean(optionArgs[1])))
 ) {
   emit({ score: 0, valid: false, fail_class: 'train_only_evaluator_rejects_arguments' }, 1);
+} else if (buildOnlyCount === 1) {
+  try {
+    const extensionDir = await buildEvaluationExtension();
+    console.log(JSON.stringify({ valid: true, extensionDir }));
+  } catch {
+    emit({ score: 0, valid: false, fail_class: 'extension_build_failed' }, 1);
+  }
 } else {
   try {
     await main();
