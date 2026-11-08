@@ -3,6 +3,7 @@
   "name": "Prompt Paul- AI Insights at the click of a mouse",
   "version": "6.4.0",
   "description": "A Chrome extension for processing selected text using an LLM endpoint",
+  "optional_permissions": ["debugger"],
   "permissions": ["activeTab", "contextMenus", "storage", "sidePanel", "scripting", "tabs"],
   "host_permissions": ["*://*/*", "file:///*", "https://cloud.umami.is/*"],
   "externally_connectable": {
