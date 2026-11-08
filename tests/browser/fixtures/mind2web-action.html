@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mind2Web local action fixture</title>
+  </head>
+  <body>
+    <main id="fixture-status">Loading fixed Mind2Web snapshot…</main>
+    <script>
+      (async () => {
+        const id = new URLSearchParams(location.search).get('id');
+        const response = await fetch('/mind2web-pages.json.gz');
+        if (!response.ok) throw new Error('Could not load local Mind2Web snapshot.');
+        const archive = await response.json();
+        const page = archive.pages.find((entry) => entry.id === id);
+        if (!page) throw new Error('Mind2Web snapshot ID is not in the fixed archive.');
+        document.querySelector('#fixture-status').outerHTML = page.html;
+      })().catch((error) => {
+        document.querySelector('#fixture-status').textContent = error.message;
+      });
+    </script>
+  </body>
+</html>

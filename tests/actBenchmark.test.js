@@ -3,6 +3,8 @@
  * @module actBenchmarkTests
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -78,6 +80,31 @@ describe('Act benchmark task registration', () => {
     ]) {
       expect(ids).toContain(id);
       expect(TASKS.find((task) => task.id === id).prompt.length).toBeGreaterThan(30);
+    }
+  });
+
+  it('loads a fixed, train-only Mind2Web subset with oracle data outside the page prompt', () => {
+    const mind2web = TASKS.filter((task) => task.mind2web);
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL('../eval/mind2web/manifest.json', import.meta.url), 'utf8')
+    );
+    const casesBytes = fs.readFileSync(new URL('../eval/mind2web/cases.json', import.meta.url));
+    const pageArchive = fs.readFileSync(
+      new URL('./browser/fixtures/mind2web-pages.json.gz', import.meta.url)
+    );
+    const pages = JSON.parse(zlib.gunzipSync(pageArchive).toString('utf8'));
+    const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+
+    expect(manifest.split).toBe('train');
+    expect(sha256(casesBytes)).toBe(manifest.casesSha256);
+    expect(sha256(pageArchive)).toBe(manifest.pageArchiveSha256);
+    expect(mind2web).toHaveLength(9);
+    expect(mind2web.map((task) => task.id)).toEqual(manifest.caseIds);
+    expect(pages.pages.map((page) => page.id)).toEqual(manifest.caseIds);
+    for (const task of mind2web) {
+      expect(task.taskMode).toBe('mind2web');
+      expect(task.oracle.targetBackendNodeId).toBeTruthy();
+      expect(task.prompt).not.toContain(task.oracle.targetBackendNodeId);
     }
   });
 

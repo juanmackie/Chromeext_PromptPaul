@@ -348,7 +348,14 @@ function serveFixture(request, response, state) {
     response.end('Not found');
     return;
   }
-  response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  if (fileName.endsWith('.json.gz')) {
+    response.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-encoding': 'gzip',
+    });
+  } else {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  }
   response.end(fs.readFileSync(filePath));
 }
 
