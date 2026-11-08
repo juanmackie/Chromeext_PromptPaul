@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import {
   HERMES_API_KEYS_KEY,
   HERMES_SESSIONS_KEY,
@@ -69,44 +67,6 @@ describe('validateHermesKey', () => {
     expect(validateHermesKey('key with space').ok).toBe(false);
     expect(validateHermesKey('key\nnewline').ok).toBe(false);
     expect(validateHermesKey('key\u0000null').ok).toBe(false);
-  });
-});
-
-describe('background sender gating and validation wiring', () => {
-  const backgroundSource = readFileSync(
-    fileURLToPath(new URL('../background.js', import.meta.url)),
-    'utf8'
-  );
-
-  // Each handler block is split from the following one by a blank line.
-  const block = (action, src) => {
-    const start = src.indexOf(`request.action === '${action}'`);
-    expect(start).toBeGreaterThan(-1);
-    return src.slice(start, src.indexOf('\n\n', start));
-  };
-
-  for (const action of [
-    'hermesKeyStatus',
-    'hermesKeySet',
-    'hermesKeyRemove',
-    'hermesProfileDeleted',
-  ]) {
-    it(`sender-gates ${action} to extension pages`, () => {
-      const text = block(action, backgroundSource);
-      expect(text).toContain('if (!extensionPageSender)');
-      expect(text).toContain('rejectUnauthorizedMessage');
-    });
-  }
-
-  it('validates the key before storing in hermesKeySet', () => {
-    const text = block('hermesKeySet', backgroundSource);
-    expect(text).toContain('validateHermesKey(request.value)');
-    expect(text.indexOf('validateHermesKey')).toBeLessThan(text.indexOf('setHermesCredential'));
-  });
-
-  it('routes hermesProfileDeleted through removeProfileHermesState', () => {
-    const text = block('hermesProfileDeleted', backgroundSource);
-    expect(text).toContain('removeProfileHermesState');
   });
 });
 

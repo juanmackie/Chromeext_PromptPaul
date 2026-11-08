@@ -4,6 +4,7 @@ import {
   handleImproveInstructionMessage,
   handleNotchMessage,
   handlePageActionMessage,
+  handleProviderMessage,
   handleRunMessage,
 } from '../src/background/index.js';
 
@@ -135,6 +136,87 @@ describe('background capability message handlers', () => {
     expect(handleRunMessage({ action: 'not-owned' }, {}, {})).toBeNull();
   });
 
+  it('keeps provider account messages behind the extension-page boundary', () => {
+    const sendResponse = vi.fn();
+    const setHermesCredential = vi.fn();
+    const deps = providerDependencies({
+      extensionPageSender: false,
+      rejectUnauthorizedMessage: (response) => {
+        response({ success: false, error: 'Unauthorized' });
+        return false;
+      },
+      sendResponse,
+      setHermesCredential,
+    });
+
+    expect(
+      handleProviderMessage({ action: 'hermesKeySet', profileId: 'p1', value: 'secret' }, {}, deps)
+    ).toBe(false);
+    expect(setHermesCredential).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ success: false, error: 'Unauthorized' });
+  });
+
+  it('never returns a saved Hermes credential in the response', async () => {
+    const sendResponse = vi.fn();
+    const setHermesCredential = vi.fn(async () => {});
+    const deps = providerDependencies({ sendResponse, setHermesCredential });
+
+    expect(
+      handleProviderMessage(
+        { action: 'hermesKeySet', profileId: 'p1', value: 'secret-value' },
+        {},
+        deps
+      )
+    ).toBe(true);
+    await Promise.resolve();
+    expect(setHermesCredential).toHaveBeenCalledWith('p1', 'secret-value');
+    expect(sendResponse).toHaveBeenCalledWith({ success: true });
+    expect(JSON.stringify(sendResponse.mock.calls)).not.toContain('secret-value');
+  });
+
+  it('does not store invalid Hermes credentials', () => {
+    const sendResponse = vi.fn();
+    const setHermesCredential = vi.fn();
+    const deps = providerDependencies({
+      sendResponse,
+      setHermesCredential,
+      validateHermesKey: vi.fn(() => ({ ok: false, error: 'Invalid key.' })),
+    });
+
+    expect(
+      handleProviderMessage({ action: 'hermesKeySet', profileId: 'p1', value: 'bad key' }, {}, deps)
+    ).toBe(true);
+    expect(setHermesCredential).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({ success: false, error: 'Invalid key.' });
+  });
+
+  it('reports only whether a Hermes credential is configured', async () => {
+    const sendResponse = vi.fn();
+    const deps = providerDependencies({
+      getHermesCredential: vi.fn(async () => 'secret-value'),
+      sendResponse,
+    });
+
+    expect(handleProviderMessage({ action: 'hermesKeyStatus', profileId: 'p1' }, {}, deps)).toBe(
+      true
+    );
+    await Promise.resolve();
+    expect(sendResponse).toHaveBeenCalledWith({ success: true, configured: true });
+    expect(JSON.stringify(sendResponse.mock.calls)).not.toContain('secret-value');
+  });
+
+  it('clears Hermes state through the provider handler on profile deletion', async () => {
+    const chrome = { storage: { local: {} } };
+    const removeProfileHermesState = vi.fn(async () => {});
+    const deps = providerDependencies({ chrome, removeProfileHermesState });
+
+    expect(
+      handleProviderMessage({ action: 'hermesProfileDeleted', profileId: 'p1' }, {}, deps)
+    ).toBe(true);
+    await Promise.resolve();
+    expect(removeProfileHermesState).toHaveBeenCalledWith('p1', chrome);
+  });
+
   it('only returns Act model support to an extension page', async () => {
     const sendResponse = vi.fn();
     const deps = actDependencies({ extensionPageSender: false, sendResponse });
@@ -232,6 +314,42 @@ function runDependencies(overrides = {}) {
     runOrchestrator: { getRun: vi.fn(), execute: vi.fn() },
     sendResponse: vi.fn(),
     logger: { error: vi.fn() },
+    ...overrides,
+  };
+}
+
+function providerDependencies(overrides = {}) {
+  return {
+    chrome: {
+      runtime: { getManifest: vi.fn(() => ({ version: '6.4.0' })) },
+      storage: { local: { get: vi.fn((_keys, callback) => callback({ profiles: [] })) } },
+    },
+    codexAuthManager: {
+      getAuthStatus: vi.fn(async () => ({})),
+      getValidAuth: vi.fn(async () => null),
+      startLogin: vi.fn(async () => ({})),
+      pollLogin: vi.fn(async () => ({})),
+      logout: vi.fn(async () => {}),
+    },
+    extensionPageSender: true,
+    fetchAvailableModels: vi.fn(async () => []),
+    getHermesCredential: vi.fn(async () => null),
+    getHermesEndpoint: vi.fn(() => 'https://gateway.test'),
+    hermesSessionResetLock: { tryRun: vi.fn(), isLocked: vi.fn(() => false) },
+    hermesTransport: {
+      checkConnection: vi.fn(async () => ({})),
+      getStoredSession: vi.fn(async () => null),
+      endSession: vi.fn(async () => {}),
+      clearStoredSession: vi.fn(async () => {}),
+    },
+    removeHermesCredential: vi.fn(async () => {}),
+    removeProfileHermesState: vi.fn(async () => {}),
+    rejectUnauthorizedMessage: vi.fn(() => false),
+    runOrchestrator: { activeRuns: new Map() },
+    sendResponse: vi.fn(),
+    setHermesCredential: vi.fn(async () => {}),
+    supportsHermesClientTools: vi.fn(() => true),
+    validateHermesKey: vi.fn((value) => ({ ok: true, value })),
     ...overrides,
   };
 }
