@@ -22,14 +22,13 @@ Documentation in this subtree explains Prompt Paul architecture, development wor
 
 - Update `docs/ARCHITECTURE.md` when module responsibilities or data flow change.
 - Update `docs/UX_JOURNEYS.md` when the representative journeys, verification axes, or WCAG best-effort checklist change.
-- Update `docs/ACCEPTANCE_SPRINT.md` when acceptance gate results, residual defects, or test-stability classifications change; record exact observed results, including remaining failures.
 - Update `docs/DEVELOPMENT.md` when setup, commands, testing, or workflow changes.
 - Update `docs/PRODUCTION_READINESS.md` when production gates, security rules, or review requirements change.
 - Update `docs/SKILL_EXAMPLES.md` when skill invocation behavior, supported patterns, or examples change.
 - Update `docs/STORE_LISTING.md` whenever the Chrome Web Store listing changes; keep its "What's new" entry aligned with the latest release section in the root changelog.
 - Keep relative links valid from the document being edited.
 
-- Act value disclosure changes require aligned privacy text in STORE_LISTING.md and omission/measurement wording in ACT_RELIABILITY_BASELINE.md; distinguish live model history from durable journal/checkpoint metadata.
+- Act value disclosure changes require aligned privacy text in `STORE_LISTING.md`; distinguish live model history from durable journal/checkpoint metadata.
 
 ## Verification
 

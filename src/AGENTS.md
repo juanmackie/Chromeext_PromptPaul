@@ -8,6 +8,8 @@ The `src/` subtree contains ES modules used by the extension entry points. Organ
 
 - Owns `src/prompts.js` and durable module folders under `src/`.
 - `src/chat/AGENTS.md` owns side panel chat modules, including `ChatGrounding.js`.
+- `src/act/AGENTS.md` owns Act capability modules; other source areas import them through `src/act/index.js`.
+- `src/background/AGENTS.md` owns background runtime-message handlers; `background.js` composes them.
 - `src/utils/AGENTS.md` owns shared helper modules, including `braveSearch.js`, `keylessSearch.js`, and `mediaFetch.js`.
 - `src/orchestrator/AGENTS.md` owns LLM run orchestration and web_search tool authorization.
 - Root entry points such as `chat.js`, `background.js`, and `options.js` are owned by the root AGENTS.md.
@@ -23,10 +25,10 @@ The `src/` subtree contains ES modules used by the extension entry points. Organ
 ## Work Guidance
 
 - Keep implementation out of large root entry points. Put new logic in its owning capability and use-case folder; use `src/utils/` only for stable behavior genuinely shared across capabilities.
-- Update `scripts/test-runner.js` when a core module gains a required contract or regression guard.
+- Put observable source behavior coverage in Vitest instead of source-text guards in `scripts/test-runner.js`.
 - Avoid Node-only APIs in browser modules.
 - Keep module imports extension-safe with explicit relative paths and `.js` extensions.
-- New prompt paths must return structured request objects; `composeUserPrompt` caps instruction/context text and the static guard in `scripts/test-runner.js` blocks raw context concatenation patterns.
+- New prompt paths must return structured request objects; `composeUserPrompt` caps instruction/context text.
 
 ## Verification
 

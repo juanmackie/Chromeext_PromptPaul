@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "dataset": "Mind2Web",
+  "datasetRepository": "https://huggingface.co/datasets/osunlp/Mind2Web",
+  "sourceFile": "data/train/train_10.json",
+  "sourceSha256": "182542d7947b3fa9e90fc57a3d82d4d8f2997ca5a06664217720d7a78a956e33",
+  "license": "CC-BY-4.0",
+  "split": "train",
+  "selection": "First action with an original positive target from each row in train_10.json. Snapshot HTML is modified to remove executable scripts, event handlers, and external resource/navigation URLs.",
+  "caseIds": [
+    "mind2web-37564222",
+    "mind2web-3e142eee",
+    "mind2web-56e4a9c1",
+    "mind2web-63d1f820",
+    "mind2web-1a16a98f",
+    "mind2web-0633c328",
+    "mind2web-1ba150cb",
+    "mind2web-1c1af35c",
+    "mind2web-33964bc4"
+  ],
+  "casesSha256": "5b10ab92ccf2a395fdb31e41016aae9fba96f88cb0b1e477e3d7fa1538daa181",
+  "pageArchiveSha256": "35efd7dcfbb4510be61b3f9393dc60c2f9f98c8f7fe3d3deac906c8a54a522dc",
+  "pageArchiveBytes": 147417
+}

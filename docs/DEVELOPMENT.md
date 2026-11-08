@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 20.19 or newer
+- Node.js 22 or newer
 - Chrome or Edge for extension testing
 - Git for source control
 
@@ -14,7 +14,7 @@ cd Chromeext_PromptPaul
 npm install
 ```
 
-Load the unpacked extension from `chrome://extensions/` and point Chrome at this repository or the `dist/` folder after building. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options. For detailed local troubleshooting, build and load `dist-dev/`; see [Development Diagnostics](DIAGNOSTICS.md).
+Run `npm run build:dev`, then load `dist-dev/` from `chrome://extensions/`. Browser libraries are copied from locked npm packages during the build, so the source checkout itself is not an unpacked extension. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options. For detailed local troubleshooting, see [Development Diagnostics](DIAGNOSTICS.md).
 
 ## Project Layout
 
@@ -44,11 +44,27 @@ npm run smoke
 npm run test:browser
 npm run validate
 npm run audit
+npm run release:prepare
 ```
+
+## Release
+
+Add the release notes under the newest version heading in `CHANGELOG.md`, then run
+`npm run release:prepare` to synchronize `package.json`, `package-lock.json`,
+`manifest.json`, and the Chrome Web Store “What's new” section. Commit and merge those
+files to `main`, configure the store secrets below, then push a matching `v<version>` tag
+(for example `v6.4.0`). The tag workflow reruns CI, builds and uploads the production zip,
+then creates a GitHub Release with checksums and build metadata. It checks the store
+secrets before installing dependencies so a tag without credentials fails immediately.
+
+Configure these repository Actions secrets before the first automated store upload:
+`CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_EXTENSION_ID`, and `CWS_PUBLISHER_ID`.
+
+Configure `OPENAI_API_KEY` for the Codex pull-request review workflow. In GitHub repository settings, enable auto-merge and protect `main` with the `validate`, `browser`, `build`, and `review` jobs as required checks. Those repository settings are not stored in this checkout.
 
 ## Act Benchmark
 
-This repository's opt-in Act benchmark uses local fixtures for diagnostics. The Mind2Web model benchmark and dataset download steps live in the separate `prompt-paul-agent-eval` repository. The extension checkout does not contain the Mind2Web dataset.
+The opt-in Act benchmark runs against local fixtures. Its fixed Mind2Web subset and sanitized page snapshots live in `eval/mind2web/` and `tests/browser/fixtures/`; the nightly workflow records the model score trend, and the pull request score gate compares the PR base and candidate on the same fixed local task set. Configure the repository Actions secret `ACT_EVAL_API_KEY` for the nightly and PR score workflows; without it those workflows skip with a notice so they do not fail every pull request. Configure `OPENAI_API_KEY` for automatic AI review; without it the review workflow skips with a notice. The checked-in subset comes from the Mind2Web training split and is hash-pinned with attribution in `eval/mind2web/README.md`.
 
 The local diagnostic uses a headed temporary browser. Hold mode is single-run pilots toward the 80% overall target. To use Codex, set these PowerShell variables and start one run:
 
@@ -83,11 +99,10 @@ See [Production Readiness](PRODUCTION_READINESS.md) for the concise review contr
 
 When you add a new module:
 
-1. Put it in `src/chat/` or `src/utils/`
-2. Add `@fileoverview` and `@module` JSDoc
-3. Export the public API explicitly
-4. Import it from the relevant entry point
-5. Add structural regression guards in `scripts/test-runner.js` when a core module gains a durable contract; add behavior coverage in `tests/` for runtime logic
+1. Put business logic under its owning `src/<capability>/` area; keep `src/utils/` for stable behavior shared by capabilities.
+2. Add `@fileoverview` and `@module` JSDoc.
+3. Export the public API explicitly and import it from the owning capability index or entry point.
+4. Add behavior coverage in `tests/` for runtime logic. Keep `scripts/test-runner.js` focused on manifest and build checks.
 
 ## Adding Skills
 

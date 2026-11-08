@@ -26,4 +26,19 @@ describe('fixture server path handling', () => {
       await server.close();
     }
   });
+
+  it('serves the fixed Mind2Web archive as browser-decompressed JSON', async () => {
+    const server = await startFixtureServer();
+    try {
+      const response = await fetch(server.url('mind2web-pages.json.gz'));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('application/json');
+      expect(response.headers.get('content-encoding')).toBe('gzip');
+      const archive = await response.json();
+      expect(archive.split).toBe('train');
+      expect(archive.pages).toHaveLength(9);
+    } finally {
+      await server.close();
+    }
+  });
 });

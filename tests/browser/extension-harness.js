@@ -195,7 +195,7 @@
       return { success: true };
     },
 
-    async startEvaluationTask(targetUrl, taskId, task, profileId) {
+    async startEvaluationTask(targetUrl, taskId, task, profileId, options = {}) {
       const sourceTabId = await getTabId(targetUrl);
       if (!sourceTabId) {
         return { success: false, code: 'PAGE_ACTION_NO_CONTENT_SCRIPT' };
@@ -205,6 +205,8 @@
         taskId,
         task,
         profileId,
+        ...(options.taskMode ? { taskMode: options.taskMode } : {}),
+        ...(Number.isFinite(options.temperature) ? { temperature: options.temperature } : {}),
         sourceTabId,
         dryRun: false,
       });

@@ -271,7 +271,7 @@ class ChatUI {
     this.trimExcessMessages();
 
     setTimeout(() => {
-      this.chatArea.scrollTop = this.chatArea.scrollHeight;
+      this.scrollToBottom();
     }, 10);
 
     return { messageDiv, contentElement, uniqueIdString };
@@ -289,19 +289,29 @@ class ChatUI {
     return this.chatArea.scrollHeight - this.chatArea.scrollTop - this.chatArea.clientHeight <= 40;
   }
 
+  scrollToBottom() {
+    if (!this.chatArea) return;
+    const top = this.chatArea.scrollHeight;
+    if (typeof this.chatArea.scrollTo === 'function') {
+      this.chatArea.scrollTo({ top, behavior: 'instant' });
+    } else {
+      this.chatArea.scrollTop = top;
+    }
+  }
+
   moveMessageToEnd(messageDiv, { preserveViewport = false, wasNearBottom = null } = {}) {
     if (!this.chatArea || !messageDiv) return false;
     if (messageDiv.parentNode && messageDiv.parentNode !== this.chatArea) return false;
     const previousScrollTop = this.chatArea.scrollTop;
     const nearBottom = typeof wasNearBottom === 'boolean' ? wasNearBottom : this.isNearBottom();
     if (this.chatArea.lastElementChild === messageDiv) {
-      if (nearBottom) this.chatArea.scrollTop = this.chatArea.scrollHeight;
+      if (nearBottom) this.scrollToBottom();
       return false;
     }
     const activeElement = document.activeElement;
     const hadFocusedDescendant = messageDiv.contains(activeElement);
     this.chatArea.appendChild(messageDiv);
-    if (!preserveViewport || nearBottom) this.chatArea.scrollTop = this.chatArea.scrollHeight;
+    if (!preserveViewport || nearBottom) this.scrollToBottom();
     else this.chatArea.scrollTop = previousScrollTop;
     if (hadFocusedDescendant && document.activeElement !== activeElement) {
       activeElement.focus?.({ preventScroll: true });
@@ -428,7 +438,7 @@ class ChatUI {
       }
 
       setTimeout(() => {
-        this.chatArea.scrollTop = this.chatArea.scrollHeight;
+        this.scrollToBottom();
       }, 10);
     });
 
@@ -463,7 +473,7 @@ class ChatUI {
     this.trimExcessMessages();
 
     setTimeout(() => {
-      this.chatArea.scrollTop = this.chatArea.scrollHeight;
+      this.scrollToBottom();
     }, 10);
 
     return container;
@@ -537,7 +547,7 @@ class ChatUI {
 
     this.chatArea.appendChild(previewDiv);
     this.trimExcessMessages();
-    this.chatArea.scrollTop = this.chatArea.scrollHeight;
+    this.scrollToBottom();
   }
 
   /**
@@ -676,7 +686,7 @@ class ChatUI {
     if (this.currentStreamingContentElement && content) {
       this.currentStreamingContentElement.innerHTML = this.renderMarkdown(content);
       postProcessRenderedContent(this.currentStreamingContentElement);
-      this.chatArea.scrollTop = this.chatArea.scrollHeight;
+      this.scrollToBottom();
     }
   }
 

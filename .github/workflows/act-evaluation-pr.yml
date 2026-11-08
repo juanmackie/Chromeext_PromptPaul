@@ -1,0 +1,134 @@
+name: Act score gate
+
+on:
+  pull_request:
+    paths:
+      - 'content_script_page_actions.js'
+      - 'background.js'
+      - 'src/background/**'
+      - 'src/act/**'
+      - 'src/orchestrator/**'
+      - 'src/utils/pageAction*.js'
+      - 'src/utils/pageDom.js'
+      - 'scripts/act-benchmark.js'
+      - 'scripts/compare-act-scores.js'
+      - 'tests/browser/fixtures/act-*.html'
+      - '.github/workflows/act-evaluation-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # A missing key cannot produce a score. Skip with a notice so the check does
+  # not fail every pull request by default; configure ACT_EVAL_API_KEY to enable
+  # the gate.
+  preflight:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.key.outputs.enabled }}
+    steps:
+      - name: Check Act evaluation key availability
+        id: key
+        env:
+          ACT_EVAL_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
+        run: |
+          if [ -n "$ACT_EVAL_API_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ACT_EVAL_API_KEY is not configured; skipping the Act score gate."
+          fi
+
+  baseline:
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PROMPT_PAUL_BENCHMARK_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
+      PROMPT_PAUL_BENCHMARK_MODEL: gpt-4.1-mini
+      PROMPT_PAUL_BENCHMARK_PROVIDER: api
+    steps:
+      # Score the base extension with the pull request's benchmark driver and
+      # corpus. Checking out the base alone fails whenever the gate change adds
+      # tasks that the base driver does not know about.
+      - name: Checkout pull request head and history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build baseline evaluation extension
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add .baseline "$BASE_SHA"
+          cd .baseline
+          npm run build:eval
+
+      - name: Score PR base on 15 local tasks and fixed Mind2Web subset
+        env:
+          PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: .baseline/dist-eval
+        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
+
+      - name: Preserve baseline score
+        uses: actions/upload-artifact@v4
+        with:
+          name: act-score-baseline
+          path: artifacts/act-benchmark/results.json
+          retention-days: 1
+
+  candidate:
+    runs-on: ubuntu-latest
+    needs: baseline
+    timeout-minutes: 180
+    env:
+      PROMPT_PAUL_BENCHMARK_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
+      PROMPT_PAUL_BENCHMARK_MODEL: gpt-4.1-mini
+      PROMPT_PAUL_BENCHMARK_PROVIDER: api
+      PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build candidate evaluation extension
+        run: npm run build:eval
+
+      - name: Score PR head on 15 local tasks and fixed Mind2Web subset
+        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
+
+      - name: Download baseline score
+        uses: actions/download-artifact@v4
+        with:
+          name: act-score-baseline
+          path: baseline
+
+      - name: Require score to hold or improve
+        run: node scripts/compare-act-scores.js baseline/results.json artifacts/act-benchmark/results.json

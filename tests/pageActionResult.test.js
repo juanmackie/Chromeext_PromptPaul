@@ -3,7 +3,7 @@ import {
   serializeMind2WebPageActionResult,
   serializePageActionResult,
 } from '../src/utils/pageActionResult.js';
-import { compactPageTaskHistory } from '../src/orchestrator/PageTaskMemory.js';
+import { compactPageTaskHistory } from '../src/act/PageTaskMemory.js';
 
 describe('compact Act results', () => {
   it('keeps one readable control list and receipts without modifying internal evidence', () => {

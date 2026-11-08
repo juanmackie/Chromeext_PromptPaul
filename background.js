@@ -49,7 +49,7 @@ import { waitForRetry } from './src/utils/retryBackoff.js';
 import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
-import { CdpInputBackend } from './src/orchestrator/CdpInputBackend.js';
+import { ACT_PAGE_DOM_CAPS, createPageFrameCoordinator } from './src/act/index.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -78,6 +78,19 @@ import {
   recordRemoteDevDiagnostic,
 } from './src/utils/devDiagnostics.js';
 import { registerEvalRunHook } from './src/utils/evalHook.js';
+import {
+  handleDevDiagnosticsMessage,
+  handleExternalPanelMessage,
+  handleImproveInstructionMessage,
+  handleNotchMessage,
+  handlePageActionMessage,
+  handlePageContentMessage,
+  handlePanelMessage,
+  handleProviderMessage,
+  handleRunMessage,
+  handleSearchMessage,
+  handleSkillMessage,
+} from './src/background/index.js';
 
 void initializeDevDiagnostics('background');
 installDevErrorHandlers('background');
@@ -357,6 +370,29 @@ async function trackInstructionUsed({ instruction, model, tools }) {
     tools: toolsSafe,
     count: 1,
   });
+}
+
+/**
+ * Tracks use of a built-in capability when the user has opted into analytics.
+ * Only a fixed capability label and count leave the extension.
+ * @param {string} feature - Stable capability label.
+ * @returns {Promise<void>}
+ */
+async function trackFeatureUsed(feature) {
+  try {
+    const featureName = sanitizeLabel(feature);
+    if (!featureName || !(await getConsent())) return;
+    const env = await getEnvInfo();
+    const instance = await getInstanceId();
+    void sendUmamiEvent('feature_used', {
+      ...env,
+      instance,
+      feature: featureName,
+      count: 1,
+    }).catch(() => {});
+  } catch (_) {
+    // Telemetry never changes a capability's user-visible result.
+  }
 }
 
 // Listen for options page consent changes
@@ -1740,322 +1776,14 @@ const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
 };
 
 let runOrchestrator = null;
-const cdpInputBackend = new CdpInputBackend({
-  onUnexpectedDetach: ({ runId }) => {
-    const run = runOrchestrator?.activeRuns.get(runId);
-    if (run?.pageActions?.enabled) runOrchestrator.setPreciseInputState(runId, 'fallback');
-  },
-});
 
-const pageActionFrameSnapshotMaps = new Map();
-const PAGE_ACTION_MAX_FRAMES = 16;
-
-const getPageActionFrameDescriptors = async (tabId) => {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      func: () => {
-        const parsed = new URL(location.href);
-        return {
-          origin: /^https?:$/u.test(parsed.protocol) ? parsed.origin : '',
-          title: String(document.title || '').slice(0, 120),
-          frameTitle: String(window.frameElement?.getAttribute('title') || '').slice(0, 120),
-          frameName: String(window.name || '').slice(0, 120),
-          isTop: window === window.top,
-        };
-      },
-    });
-    return (Array.isArray(results) ? results : [])
-      .filter((entry) => Number.isInteger(entry.frameId) && entry.result?.origin)
-      .map((entry) => {
-        const origin = String(entry.result.origin).slice(0, 256);
-        let hostname = '';
-        try {
-          hostname = new URL(origin).hostname;
-        } catch (_) {
-          return null;
-        }
-        const paymentFrame =
-          /stripe|paypal|adyen|braintree|checkout\.com|worldpay|squareup/i.test(hostname) ||
-          /payment|checkout|card|billing/i.test(
-            `${String(entry.result.title || '')} ${String(entry.result.frameTitle || '')} ${String(entry.result.frameName || '')}`
-          );
-        return {
-          frameId: entry.frameId,
-          documentId: typeof entry.documentId === 'string' ? entry.documentId : '',
-          origin,
-          isTop: entry.frameId === 0,
-          restricted: !getCurrentPageSupport(origin).available,
-          paymentFrame,
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => Number(b.isTop) - Number(a.isTop) || a.frameId - b.frameId);
-  } catch (_) {
-    return [];
-  }
-};
-
-const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount = 0) => {
-  const topFrame = frameSnapshots.find((frame) => frame.isTop) || frameSnapshots[0];
-  if (!topFrame?.snapshot) return null;
-  const snapshotId = `frames-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const elements = [];
-  const routes = Object.create(null);
-  const contentParts = [];
-  let contentPartsChars = 0;
-  const addContentPart = (part) => {
-    contentParts.push(part);
-    contentPartsChars += part.length;
-  };
-  let valueBudget = 8_000;
-  let topFrameRemap = null;
-  for (const [frameIndex, frame] of frameSnapshots.entries()) {
-    const local = frame.snapshot;
-    if (!local) continue;
-    // Frame-local snapshots number controls with stable per-frame IDs, so the
-    // pre-rendered outline markers ([N]) generally differ from the merged
-    // positional numbering below. Remap this frame's markers to the merged
-    // global indices; otherwise the model reads one control and dispatches
-    // another whenever controls appear or reorder mid-run.
-    const markerRemap = new Map();
-    for (const element of Array.isArray(local.elements) ? local.elements : []) {
-      if (elements.length >= 200) break;
-      const index = elements.length;
-      if (Number.isInteger(element?.index) && !markerRemap.has(element.index)) {
-        markerRemap.set(element.index, index);
-      }
-      const mapped = {
-        ...element,
-        index,
-        elementKey: `${snapshotId}:${index}`.slice(0, 64),
-        frameOrigin: frame.origin,
-      };
-      if (typeof mapped.value === 'string') {
-        mapped.value = mapped.value.slice(0, valueBudget);
-        valueBudget -= mapped.value.length;
-      }
-      elements.push(mapped);
-      routes[index] = {
-        frameId: frame.frameId,
-        snapshotId: local.snapshotId,
-        index: element.index,
-        elementKey: element.elementKey,
-      };
-    }
-    if (frame.isTop) topFrameRemap = markerRemap;
-    // Only rewrite record markers: a leading [N] followed by the formatted
-    // control (` <tag ...>`). Prose or control text that merely contains
-    // brackets is left untouched.
-    const frameContent = String(local.content || '')
-      .split('\n')
-      .map((line) =>
-        line.replace(/^(\s*)\[(\d+)\](?=\s<)/, (match, indent, digits) => {
-          const remapped = markerRemap.get(Number(digits));
-          return remapped === undefined ? match : `${indent}[${remapped}]`;
-        })
-      )
-      .join('\n');
-    addContentPart(
-      `Frame ${frameIndex + 1} — ${frame.isTop ? 'main page' : frame.origin}\n${frameContent}`
-    );
-  }
-  if (omittedFrameCount > 0) {
-    addContentPart(
-      `${omittedFrameCount} embedded frame${omittedFrameCount === 1 ? '' : 's'} omitted by safety policy.`
-    );
-  }
-  let content = '';
-  for (const part of contentParts) {
-    const separator = content ? '\n\n' : '';
-    content += `${separator}${part}`.slice(0, Math.max(0, 24_000 - content.length));
-    if (content.length >= 24_000) break;
-  }
-  const focusedFrame = frameSnapshots.find((frame) => frame.snapshot?.focusedElement);
-  const focusedElement = focusedFrame?.snapshot?.focusedElement
-    ? {
-        ...focusedFrame.snapshot.focusedElement,
-        elementKey: `${snapshotId}:focus`.slice(0, 64),
-        frameOrigin: focusedFrame.origin,
-      }
-    : undefined;
-  if (focusedFrame) {
-    routes.focused = {
-      frameId: focusedFrame.frameId,
-      snapshotId: focusedFrame.snapshot.snapshotId,
-      index: focusedFrame.snapshot.focusedElement.index,
-      elementKey: focusedFrame.snapshot.focusedElement.elementKey,
-    };
-  }
-  // Region index lists are frame-local like the outline markers, so translate
-  // the top frame's regions into the same merged numbering; entries without a
-  // merged control are dropped instead of pointing at the wrong index.
-  const mergedRegions = Array.isArray(topFrame.snapshot.regions)
-    ? topFrame.snapshot.regions
-        .map((region) => ({
-          ...region,
-          indices: (Array.isArray(region?.indices) ? region.indices : [])
-            .map((value) => topFrameRemap?.get(Number(value)))
-            .filter((value) => Number.isInteger(value)),
-        }))
-        .filter((region) => region.indices.length > 0)
-    : [];
-  const merged = {
-    ...topFrame.snapshot,
-    snapshotId,
-    content,
-    elements,
-    ...(focusedElement ? { focusedElement } : { focusedElement: undefined }),
-    regions: mergedRegions,
-    truncated: contentPartsChars > content.length || elements.length >= 200,
-  };
-  pageActionFrameSnapshotMaps.set(runId, { snapshotId, routes });
-  return merged;
-};
-
-const collectPageActionFrameSnapshots = async ({
-  tabId,
-  runId,
-  blockedOrigins,
-  signal,
-  topResponse = null,
-}) => {
-  const allDescriptors = await getPageActionFrameDescriptors(tabId);
-  const descriptors = allDescriptors.slice(0, PAGE_ACTION_MAX_FRAMES);
-  const frames = [];
-  let omittedFrameCount = Math.max(0, allDescriptors.length - descriptors.length);
-  const eligibleFrames = descriptors.filter((frame) => {
-    if (frame.restricted || frame.paymentFrame || blockedOrigins.includes(frame.origin)) {
-      omittedFrameCount += 1;
-      return false;
-    }
-    if (frame.isTop && topResponse?.snapshot) {
-      if (getPageActionSiteOrigin(topResponse.snapshot.url || '') === frame.origin) {
-        frames.push({ ...frame, snapshot: topResponse.snapshot });
-      } else {
-        omittedFrameCount += 1;
-      }
-      return false;
-    }
-    return true;
-  });
-  const requestFrameState = (frame) =>
-    sendPageActionMessage(
-      tabId,
-      {
-        action: 'pageAction',
-        runId,
-        pageAction: 'page_get_state',
-        args: {},
-        blockedOrigins,
-      },
-      signal,
-      PAGE_ACTION_MESSAGE_TIMEOUT_MS,
-      frame.frameId
-    );
-  const childResponses = await Promise.all(
-    eligibleFrames.map(async (frame) => {
-      try {
-        return { frame, response: await requestFrameState(frame), error: null };
-      } catch (error) {
-        return { frame, response: null, error };
-      }
-    })
-  );
-  const missingBridges = childResponses.filter(
-    ({ error }) => error?.code === 'PAGE_ACTION_MESSAGE_FAILED'
-  );
-  if (missingBridges.length && !signal?.aborted) {
-    const currentFrames = new Map(
-      (await getPageActionFrameDescriptors(tabId)).map((frame) => [frame.frameId, frame])
-    );
-    const recoverable = missingBridges.flatMap(({ frame }) => {
-      const current = currentFrames.get(frame.frameId);
-      if (
-        !current ||
-        current.origin !== frame.origin ||
-        !current.documentId ||
-        current.restricted ||
-        current.paymentFrame ||
-        blockedOrigins.includes(current.origin)
-      )
-        return [];
-      return [current];
-    });
-    const injectedFrames = await injectPageActionFrameScriptsInFrames(tabId, recoverable);
-    if (injectedFrames.size) {
-      const recovered = await Promise.all(
-        recoverable
-          .filter((frame) => injectedFrames.has(frame.frameId))
-          .map(async (frame) => {
-            try {
-              return { frame, response: await requestFrameState(frame) };
-            } catch (_) {
-              return { frame, response: null };
-            }
-          })
-      );
-      const recoveredByFrameId = new Map(recovered.map((item) => [item.frame.frameId, item]));
-      for (let index = 0; index < childResponses.length; index += 1) {
-        const replacement = recoveredByFrameId.get(childResponses[index].frame.frameId);
-        if (replacement) childResponses[index] = replacement;
-      }
-    }
-  }
-  for (const { frame, response } of childResponses) {
-    const responseOrigin = getPageActionSiteOrigin(response?.snapshot?.url || '');
-    if (
-      response?.snapshot &&
-      responseOrigin === frame.origin &&
-      !blockedOrigins.includes(responseOrigin)
-    ) {
-      frames.push({ ...frame, snapshot: response.snapshot });
-    } else omittedFrameCount += 1;
-  }
-  if (!frames.some((frame) => frame.isTop) && topResponse?.snapshot) {
-    const origin = getPageActionSiteOrigin(topResponse.snapshot.url || '');
-    if (origin && !blockedOrigins.includes(origin)) {
-      frames.unshift({ frameId: 0, origin, isTop: true, snapshot: topResponse.snapshot });
-    }
-  }
-  return mergePageActionFrameSnapshots(runId, frames, omittedFrameCount);
-};
-
-const dispatchCdpKey = (runId, tabId, key, options = {}) =>
-  cdpInputBackend.dispatch(runId, tabId, 'Input.dispatchKeyEvent', {
-    type: options.type || 'keyDown',
-    key,
-    code: options.code || '',
-    modifiers: options.modifiers || 0,
-    ...(options.windowsVirtualKeyCode === undefined
-      ? {}
-      : { windowsVirtualKeyCode: options.windowsVirtualKeyCode }),
-    ...(options.nativeVirtualKeyCode === undefined
-      ? {}
-      : { nativeVirtualKeyCode: options.nativeVirtualKeyCode }),
-  });
-
-const dispatchCdpKeyPair = async (runId, tabId, key, code, modifiers = 0) => {
-  await dispatchCdpKey(runId, tabId, key, { type: 'keyDown', code, modifiers });
-  await dispatchCdpKey(runId, tabId, key, { type: 'keyUp', code, modifiers });
-};
-
-const PRECISE_KEY_MAP = Object.freeze({
-  Enter: { key: 'Enter', code: 'Enter' },
-  Escape: { key: 'Escape', code: 'Escape' },
-  Tab: { key: 'Tab', code: 'Tab' },
-  'Shift+Tab': { key: 'Tab', code: 'Tab', modifiers: 8 },
-  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp' },
-  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown' },
-  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft' },
-  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight' },
-  Backspace: { key: 'Backspace', code: 'Backspace' },
-  Delete: { key: 'Delete', code: 'Delete' },
-  Space: { key: ' ', code: 'Space' },
-  Home: { key: 'Home', code: 'Home' },
-  End: { key: 'End', code: 'End' },
-  PageUp: { key: 'PageUp', code: 'PageUp' },
-  PageDown: { key: 'PageDown', code: 'PageDown' },
+const pageFrameCoordinator = createPageFrameCoordinator({
+  chrome,
+  getCurrentPageSupport,
+  getPageActionSiteOrigin,
+  sendPageActionMessage,
+  injectPageActionFrameScriptsInFrames,
+  messageTimeoutMs: PAGE_ACTION_MESSAGE_TIMEOUT_MS,
 });
 
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
@@ -2084,7 +1812,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   )
     .filter(([, policy]) => policy === 'block')
     .map(([origin]) => origin)
-    .slice(0, 200);
+    .slice(0, ACT_PAGE_DOM_CAPS.maxElements);
   const assertSiteAllowed = async (url = '') => {
     if (actionName === 'clearPageActionSession' || !blockedOrigins.length) return;
     if (
@@ -2095,17 +1823,12 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       throw error;
     }
   };
-  const frameMap = pageActionFrameSnapshotMaps.get(options.runId);
-  const frameRoute =
-    args?.snapshotId === frameMap?.snapshotId
-      ? Number.isInteger(args?.index)
-        ? frameMap.routes[args.index]
-        : args?.focused === true
-          ? frameMap.routes.focused
-          : null
-      : null;
+  const { isCurrentSnapshot, route: frameRoute } = pageFrameCoordinator.resolveRoute(
+    options.runId,
+    args
+  );
   if (
-    args?.snapshotId === frameMap?.snapshotId &&
+    isCurrentSnapshot &&
     ((Number.isInteger(args?.index) && !frameRoute) || (args?.focused === true && !frameRoute))
   ) {
     const error = new Error(
@@ -2157,41 +1880,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   }
 
   const messageTimeoutMs = getPageActionMessageTimeoutMs(actionName, args);
-  const mapFindTextIndices = (result, map = pageActionFrameSnapshotMaps.get(options.runId)) => {
-    if (!result || typeof result !== 'object') return result;
-    const sourceIndices = Array.isArray(result.elementIndices) ? result.elementIndices : [];
-    const localSnapshotId = result.snapshotId;
-    const mappedIndices = [];
-    if (localSnapshotId && map?.routes) {
-      const topFrameIndices = new Map();
-      for (const [mergedIndex, route] of Object.entries(map.routes)) {
-        if (route.frameId === 0 && route.snapshotId === localSnapshotId) {
-          topFrameIndices.set(route.index, Number(mergedIndex));
-        }
-      }
-      for (const localIndex of sourceIndices) {
-        const mergedIndex = topFrameIndices.get(localIndex);
-        if (mergedIndex !== undefined) mappedIndices.push(mergedIndex);
-      }
-    }
-    const safeResult = { ...result };
-    delete safeResult.snapshotId;
-    return {
-      ...safeResult,
-      ...(map?.snapshotId ? { snapshotId: map.snapshotId } : {}),
-      ...(Array.isArray(result.elementIndices) ? { elementIndices: mappedIndices } : {}),
-      ...(sourceIndices.length
-        ? {
-            message: mappedIndices.length
-              ? String(result.message || '').replace(
-                  /Matching control indices: [^.]+/,
-                  `Matching control indices: ${mappedIndices.join(', ')}`
-                )
-              : 'Found page text, but no matching control index is available in the current merged snapshot. Inspect the page again before acting.',
-          }
-        : {}),
-    };
-  };
   let retriedCachedBridge = false;
   const checkedSend = async (
     messageOverride = message,
@@ -2240,25 +1928,11 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     if (response?.snapshot?.url) await assertSiteAllowed(response.snapshot.url);
     return response;
   };
-  const run = runOrchestrator.activeRuns.get(options.runId);
-  if (
-    frameRoute &&
-    frameRoute.frameId !== 0 &&
-    ['enabled', 'active'].includes(run?.pageActions?.preciseInputState)
-  ) {
-    await cdpInputBackend.detachRun(options.runId);
-    runOrchestrator.setPreciseInputState(options.runId, 'fallback');
-  }
-  const wantsPrecise =
-    run?.pageActions?.enabled &&
-    ['enabled', 'active'].includes(run.pageActions.preciseInputState) &&
-    (!frameRoute || frameRoute.frameId === 0) &&
-    ['page_click', 'page_input', 'page_keypress'].includes(actionName);
   try {
     let response;
     if (actionName === 'clearPageActionSession') {
       response = await checkedSend(message, 0);
-      const frames = await getPageActionFrameDescriptors(tabId);
+      const frames = await pageFrameCoordinator.getFrameDescriptors(tabId);
       await Promise.all(
         frames
           .filter((frame) => !frame.isTop)
@@ -2272,153 +1946,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
             ).catch(() => null)
           )
       );
-    } else if (wantsPrecise) {
-      let deliveryStarted = false;
-      try {
-        const currentUrl = await getPageActionTabUrl(tabId);
-        if (!getCurrentPageSupport(currentUrl).available) throw new Error('restricted_page');
-        await assertSiteAllowed(currentUrl);
-        await cdpInputBackend.attach(options.runId, tabId);
-        runOrchestrator.setPreciseInputState(options.runId, 'active');
-        const prepared = await checkedSend({ ...message, precisePrepare: true });
-        const input = prepared?.preparedInput;
-        if (!input || typeof input.planId !== 'string') throw new Error('input_plan_unavailable');
-        if (input.type === 'key') {
-          const key = PRECISE_KEY_MAP[input.key];
-          if (!key) throw new Error('unsupported_key');
-          deliveryStarted = true;
-          await dispatchCdpKeyPair(options.runId, tabId, key.key, key.code, key.modifiers || 0);
-        } else if (input.type === 'click' || input.type === 'text') {
-          deliveryStarted = true;
-          await cdpInputBackend.dispatch(options.runId, tabId, 'Input.dispatchMouseEvent', {
-            type: 'mousePressed',
-            x: input.clientX,
-            y: input.clientY,
-            button: 'left',
-            clickCount: input.count || 1,
-          });
-          await cdpInputBackend.dispatch(options.runId, tabId, 'Input.dispatchMouseEvent', {
-            type: 'mouseReleased',
-            x: input.clientX,
-            y: input.clientY,
-            button: 'left',
-            clickCount: input.count || 1,
-          });
-          if (input.type === 'text') {
-            if (args?.mode === 'append') {
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyDown',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-              await dispatchCdpKeyPair(options.runId, tabId, 'End', 'End', 2);
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyUp',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-            } else {
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyDown',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'a', {
-                type: 'rawKeyDown',
-                code: 'KeyA',
-                modifiers: 2,
-                windowsVirtualKeyCode: 65,
-                nativeVirtualKeyCode: 65,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'a', {
-                type: 'keyUp',
-                code: 'KeyA',
-                modifiers: 2,
-                windowsVirtualKeyCode: 65,
-                nativeVirtualKeyCode: 65,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyUp',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-            }
-            await cdpInputBackend.dispatch(options.runId, tabId, 'Input.insertText', {
-              text: args.text,
-            });
-            if (args?.submit === true) {
-              await dispatchCdpKey(options.runId, tabId, 'Enter', {
-                type: 'keyDown',
-                code: 'Enter',
-                modifiers: 0,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'Enter', {
-                type: 'keyUp',
-                code: 'Enter',
-                modifiers: 0,
-              });
-            }
-          }
-        }
-        response = await checkedSend({
-          ...message,
-          preciseFinalize: true,
-          precisePlanId: input.planId,
-        });
-      } catch (error) {
-        await cdpInputBackend.detachRun(options.runId);
-        if (error?.code === 'PAGE_ACTION_TIMEOUT') throw error;
-        if (deliveryStarted) {
-          runOrchestrator.setPreciseInputState(options.runId, 'fallback');
-          const changedUrl = await getPageActionTabUrl(tabId).catch(() => '');
-          if (changedUrl && previousUrl && changedUrl !== previousUrl) {
-            const navigation = await waitForPageActionNavigation(
-              tabId,
-              previousUrl,
-              options.signal
-            );
-            await assertSiteAllowed(navigation.url);
-            response = {
-              success: true,
-              navigated: true,
-              navigationUrl: navigation.url,
-              actionReceipt: {
-                disposition: 'delivered_unverified',
-                evidence: { kind: 'input_dispatched' },
-              },
-            };
-          } else {
-            const snapshot = await checkedSend({
-              action: 'pageAction',
-              runId: options.runId,
-              pageAction: 'page_get_state',
-              args: {},
-              blockedOrigins,
-            })
-              .then((result) => result?.snapshot)
-              .catch(() => null);
-            response = {
-              success: true,
-              message:
-                'Precise input was dispatched, but verification failed. Inspect the page before retrying.',
-              ...(snapshot ? { snapshot } : {}),
-              actionReceipt: {
-                disposition: 'delivered_unverified',
-                evidence: { kind: 'input_dispatched' },
-              },
-            };
-          }
-        } else {
-          await cdpInputBackend.detachRun(options.runId);
-          runOrchestrator.setPreciseInputState(options.runId, 'fallback');
-          if (options.signal?.aborted) throw error;
-          response = await checkedSend();
-        }
-      }
     } else {
       response = await checkedSend();
     }
@@ -2440,7 +1967,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
                 0
               ).catch(() => null);
       if (topResponse?.snapshot) {
-        const mergedSnapshot = await collectPageActionFrameSnapshots({
+        const mergedSnapshot = await pageFrameCoordinator.collectSnapshots({
           tabId,
           runId: options.runId,
           blockedOrigins,
@@ -2490,12 +2017,14 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     });
 
     if (actionName === 'page_find_text') {
-      response = mapFindTextIndices(response);
+      response = pageFrameCoordinator.mapFindTextIndices(options.runId, response);
     } else if (actionName === 'page_batch' && Array.isArray(response?.results)) {
       response = {
         ...response,
         results: response.results.map((item, index) =>
-          args?.actions?.[index]?.name === 'page_find_text' ? mapFindTextIndices(item) : item
+          args?.actions?.[index]?.name === 'page_find_text'
+            ? pageFrameCoordinator.mapFindTextIndices(options.runId, item)
+            : item
         ),
       };
     }
@@ -2536,9 +2065,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     ) {
       pageActionReadinessCache.invalidate(tabId);
     }
-    const wasPreciseInputAttached = cdpInputBackend.isAttached(options.runId);
-    await cdpInputBackend.detachRun(options.runId);
-    if (wasPreciseInputAttached) runOrchestrator.setPreciseInputState(options.runId, 'fallback');
     recordDevDiagnostic('page_action_executor_error', {
       runId: options.runId,
       tabId,
@@ -2671,14 +2197,13 @@ runOrchestrator = new RunOrchestrator(skillManager, {
     pageTabController.execute(runId, actionName, { ...args, signal: options.signal }),
   pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
   pageTabRunDisposer: (runId) => {
-    pageActionFrameSnapshotMaps.delete(runId);
+    pageFrameCoordinator.deleteRun(runId);
     const ownedTabIds = pageTabController.getOwnedTabIds(runId);
-    return Promise.all([
-      cdpInputBackend.detachRun(runId),
-      ...ownedTabIds.map((tabId) =>
+    return Promise.all(
+      ownedTabIds.map((tabId) =>
         pageActionExecutor(tabId, 'clearPageActionSession', {}, { runId }).catch(() => undefined)
-      ),
-    ]).finally(() => pageTabController.disposeRun(runId));
+      )
+    ).finally(() => pageTabController.disposeRun(runId));
   },
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
@@ -3836,46 +3361,29 @@ async function handleNotchAction(request, sender) {
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request?.action === 'devDiagnostic') {
-    const extensionOrigin = getExtensionOrigin();
-    const authorized =
-      isExtensionSender(sender, extensionOrigin) ||
-      (isContentScriptSender(sender, extensionOrigin) &&
-        (request.tabId == null || requestMatchesSenderTab(sender, request.tabId)));
-    if (!authorized) return rejectUnauthorizedMessage(sendResponse);
-    sendResponse({ success: recordRemoteDevDiagnostic(request.entry) });
-    return false;
-  }
-  if (request?.action === 'devDiagnosticsStatus') {
-    const extensionOrigin = getExtensionOrigin();
-    const authorized =
-      isExtensionSender(sender, extensionOrigin) || isContentScriptSender(sender, extensionOrigin);
-    if (!authorized) return rejectUnauthorizedMessage(sendResponse);
-    sendResponse(getDevDiagnosticsStatus());
-    return false;
-  }
-  if (request?.action === 'notchAction') {
-    handleNotchAction(request, sender)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-  if (request?.action === 'improveInstruction') {
-    const extensionOrigin = getExtensionOrigin();
-    if (!isExtensionSender(sender, extensionOrigin)) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    improveInstructionForProfile(String(request.prompt || ''))
-      .then((content) => sendResponse({ success: true, content }))
-      .catch((error) =>
-        sendResponse({
-          success: false,
-          capability: error.capability === 'unsupported' ? 'unsupported' : undefined,
-          error: error.message,
-        })
-      );
-    return true;
-  }
+  const messageDependencies = {
+    extensionOrigin: getExtensionOrigin(),
+    isExtensionSender,
+    isContentScriptSender,
+    requestMatchesSenderTab,
+    rejectUnauthorizedMessage,
+    recordRemoteDevDiagnostic,
+    getDevDiagnosticsStatus,
+    handleNotchAction,
+    improveInstructionForProfile,
+    trackFeatureUsed,
+    sendResponse,
+  };
+  const diagnosticsMessage = handleDevDiagnosticsMessage(request, sender, messageDependencies);
+  if (diagnosticsMessage !== null) return diagnosticsMessage;
+  const notchMessage = handleNotchMessage(request, sender, messageDependencies);
+  if (notchMessage !== null) return notchMessage;
+  const improveInstructionMessage = handleImproveInstructionMessage(
+    request,
+    sender,
+    messageDependencies
+  );
+  if (improveInstructionMessage !== null) return improveInstructionMessage;
   const extensionOrigin = getExtensionOrigin();
   const extensionPageSender = isExtensionSender(sender, extensionOrigin);
   recordDevDiagnostic('runtime_message_received', {
@@ -3889,874 +3397,106 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     requestKeys: request && typeof request === 'object' ? Object.keys(request).sort() : [],
   });
 
-  if (request.action === 'openPromptPaulFromSelection') {
-    if (
-      !isContentScriptSender(sender, extensionOrigin) ||
-      !requestMatchesSenderTab(sender, request.tabId)
-    ) {
-      return rejectUnauthorizedMessage(sendResponse, 'Selection handoff must come from its tab.');
-    }
+  const panelMessage = handlePanelMessage(request, sender, {
+    chrome,
+    extensionOrigin,
+    extensionPageSender,
+    isContentScriptSender,
+    openChatInTab,
+    openChatWithContext,
+    openPromptPaulForSelection,
+    rejectUnauthorizedMessage,
+    requestMatchesSenderTab,
+    resolvePanelTabId,
+    trackFeatureUsed,
+    sendResponse,
+  });
+  if (panelMessage !== null) return panelMessage;
 
-    const tabId = sender.tab.id;
-    const selectedText = String(request.selectedText || '').trim();
-    if (!selectedText) {
-      sendResponse({ success: false, error: 'No selected text provided' });
-      return false;
-    }
+  const pageContentMessage = handlePageContentMessage(request, sender, {
+    chrome,
+    extensionOrigin,
+    extensionPageSender,
+    executeTabContentExtraction,
+    friendlyRuntimeErrorMessage,
+    isContentScriptSender,
+    rejectUnauthorizedMessage,
+    sendResponse,
+  });
+  if (pageContentMessage !== null) return pageContentMessage;
 
-    openPromptPaulForSelection(tabId, selectedText, sender.tab.windowId)
-      .then(() => sendResponse({ success: true }))
-      .catch((error) => {
-        console.error('Background: Failed to open Prompt Paul from selection:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  }
-
-  // Deep link into the canonical chat from any extension surface.
-  if (request.action === 'openChat') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Chat opening must come from Prompt Paul.');
-    }
-    const context =
-      request.context && typeof request.context === 'object' && !Array.isArray(request.context)
-        ? request.context
-        : {};
-    const requestedTabId = context.tabId || request.tabId || sender.tab?.id;
-    resolvePanelTabId(requestedTabId)
-      .then(async (tabId) => {
-        if (!tabId) return openChatInTab();
-
-        try {
-          return await openChatWithContext({ ...context, tabId });
-        } catch (error) {
-          // Opening a side panel from an extension page can fail when the
-          // resolved web tab is inactive or Chrome does not carry the user
-          // gesture through the service-worker message. Always give Options a
-          // visible fallback instead of making the button appear inert.
-          console.warn('Background: Side panel open failed; opening chat tab:', error.message);
-          return openChatInTab();
-        }
-      })
-      .then((result) => sendResponse(result))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'openOptionsPage') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Options must be opened by Prompt Paul.');
-    }
-    chrome.tabs.create({ url: chrome.runtime.getURL('options.html') });
-    sendResponse({ success: true });
-    return true;
-  }
-
-  if (request.action === 'captureScreenshot') {
-    if (!isContentScriptSender(sender, extensionOrigin) || !Number.isInteger(sender.tab.windowId)) {
-      return rejectUnauthorizedMessage(
-        sendResponse,
-        'Screenshot capture must come from a page content script.'
-      );
-    }
-    chrome.tabs.query({ active: true, windowId: sender.tab.windowId }, (tabs) => {
-      if (chrome.runtime.lastError || tabs[0]?.id !== sender.tab.id) {
-        sendResponse({
-          dataUrl: null,
-          error: 'Screenshot capture requires the source page to be active.',
-        });
-        return;
-      }
-      chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, (dataUrl) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({ dataUrl });
-        }
-      });
-    });
-    return true;
-  }
-
-  if (request.action === 'getLoadContent') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
-    }
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0] && tabs[0].id) {
-        executeTabContentExtraction(tabs[0].id)
-          .then((result) => {
-            sendResponse({
-              action: 'loadContentResponse',
-              success: result.success,
-              sourceTabId: tabs[0].id,
-              isPdf: result.isPdf || false,
-              pdfUrl: result.pdfUrl || null,
-              content: result.content || result.data,
-              title: result.title,
-              siteName: result.siteName,
-              byline: result.byline,
-              excerpt: result.excerpt,
-              lang: result.lang,
-              url: result.url,
-              platform: result.platform || null,
-              platformInfo: result.platformInfo || null,
-              readStrategy: result.readStrategy || 'auto',
-              screenshot: result.screenshot || null,
-              error: result.error,
-            });
-          })
-          .catch((error) => {
-            console.error('Background: Failed to load tab content:', error.message);
-            sendResponse({
-              action: 'loadContentResponse',
-              success: false,
-              error: friendlyRuntimeErrorMessage(error),
-              readStrategy: 'auto',
-            });
-          });
-      } else {
-        sendResponse({
-          action: 'loadContentResponse',
-          success: false,
-          error: 'No active tab found',
-        });
-      }
-    });
-    return true;
-  }
-
-  if (request.action === 'getTabContent') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
-    }
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0] && tabs[0].id) {
-        executeTabContentExtraction(tabs[0].id)
-          .then((result) => {
-            sendResponse({
-              action: 'tabContentResponse',
-              success: result.success,
-              isPdf: result.isPdf || false,
-              pdfUrl: result.pdfUrl || null,
-              content: result.content || result.data,
-              title: result.title,
-              siteName: result.siteName,
-              byline: result.byline,
-              excerpt: result.excerpt,
-              lang: result.lang,
-              url: result.url,
-              platform: result.platform || null,
-              platformInfo: result.platformInfo || null,
-              readStrategy: result.readStrategy || 'auto',
-              screenshot: result.screenshot || null,
-              error: result.error,
-            });
-          })
-          .catch((error) => {
-            console.error('Background: Failed to read tab content:', error.message);
-            sendResponse({
-              action: 'tabContentResponse',
-              success: false,
-              error: friendlyRuntimeErrorMessage(error),
-              readStrategy: 'auto',
-            });
-          });
-      } else {
-        sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
-      }
-    });
-    return true;
-  }
-
-  if (request.action === 'getSkills') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const skillsList = skillManager.getSkillsList();
-    const slashCommands = skillManager.getSlashCommands();
-    sendResponse({ skills: skillsList, slashCommands });
-    return true;
-  }
-
-  if (request.action === 'getSkillContent') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    skillManager
-      .getSkillContent(request.name)
-      .then((content) => {
-        sendResponse({ content });
-      })
-      .catch((error) => {
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
-
-  if (request.action === 'resolveSkill') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const resolved = skillManager.resolveSkill(request.name);
-    sendResponse({ skill: resolved });
-    return true;
-  }
-
-  if (request.action === 'getSkillSnapshot') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const snapshot = skillManager.getEligibleSnapshot();
-    const promptText = skillManager.formatForPrompt();
-    sendResponse({ snapshot, promptText });
-    return true;
-  }
+  const skillMessage = handleSkillMessage(request, sender, {
+    extensionPageSender,
+    rejectUnauthorizedMessage,
+    sendResponse,
+    skillManager,
+  });
+  if (skillMessage !== null) return skillMessage;
 
   // ===== Web Search Status =====
 
-  if (request.action === 'getWebSearchStatus') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    // Read-only: resolve a legacy 'duckduckgo' value as 'exa' in memory only.
-    chrome.storage.local.get(['searchProvider', 'braveSearchApiKey'], (result) => {
-      const provider = result.searchProvider === 'brave' ? 'brave' : 'exa';
-      const configured = provider === 'exa' || Boolean(result.braveSearchApiKey);
-      sendResponse({ configured, provider });
-    });
-    return true;
-  }
+  const searchMessage = handleSearchMessage(request, sender, {
+    chrome,
+    extensionPageSender,
+    rejectUnauthorizedMessage,
+    sendResponse,
+  });
+  if (searchMessage !== null) return searchMessage;
 
-  if (request.action === 'codexAuthStatus') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    codexAuthManager
-      .getAuthStatus(request.profileId)
-      .then((status) => sendResponse({ success: true, status }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'getAvailableModels') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    chrome.storage.local.get(['profiles'], (result) => {
-      const profile = (result.profiles || []).find((entry) => entry.id === request.profileId);
-      if (!profile) {
-        sendResponse({ success: false, error: 'The selected profile was not found.' });
-        return;
-      }
-      const authPromise =
-        profile.provider === 'codex'
-          ? codexAuthManager.getValidAuth(profile.id)
-          : Promise.resolve(null);
-      authPromise
-        .then((auth) =>
-          fetchAvailableModels({
-            profile,
-            auth,
-            clientVersion: chrome.runtime.getManifest()?.version || '0.0.0',
-          })
-        )
-        .then((models) => sendResponse({ success: true, models }))
-        .catch((error) => sendResponse({ success: false, error: error.message }));
-    });
-    return true;
-  }
-
-  if (request.action === 'codexLoginStart') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    codexAuthManager
-      .startLogin(request.profileId)
-      .then((login) => sendResponse({ success: true, login }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'codexLoginPoll') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    codexAuthManager
-      .pollLogin(request.profileId)
-      .then((result) => sendResponse({ success: true, ...result }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'codexLogout') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    codexAuthManager
-      .logout(request.profileId)
-      .then(() => sendResponse({ success: true }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'testHermesConnection') {
-    if (!extensionPageSender) {
-      sendResponse({
-        success: false,
-        error: 'Hermes connection tests must come from Prompt Paul.',
-      });
-      return true;
-    }
-    chrome.storage.local
-      .get(['profiles'])
-      .then(async ({ profiles = [] }) => {
-        const profile = profiles.find((entry) => entry.id === request.profileId);
-        if (!profile || profile.provider !== 'hermes') {
-          throw new Error('Save the selected profile as Hermes before testing the connection.');
-        }
-        const result = await hermesTransport.checkConnection({
-          ...profile,
-          hermesEndpoint: getHermesEndpoint(profile),
-        });
-        sendResponse({
-          success: true,
-          result: {
-            healthy: true,
-            healthWarning: result?.healthWarning || null,
-            capabilityCount:
-              result?.capabilities && typeof result.capabilities === 'object'
-                ? Object.keys(result.capabilities).length
-                : 0,
-            clientToolsAvailable: supportsHermesClientTools(result?.capabilities),
-          },
-        });
-      })
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'hermesKeyStatus') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
-    getHermesCredential(profileId)
-      .then((key) => sendResponse({ success: true, configured: Boolean(key) }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'hermesKeySet') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
-    if (!profileId) {
-      sendResponse({ success: false, error: 'A Hermes profile is required.' });
-      return true;
-    }
-    const validation = validateHermesKey(request.value);
-    if (!validation.ok) {
-      sendResponse({ success: false, error: validation.error });
-      return true;
-    }
-    setHermesCredential(profileId, validation.value)
-      .then(() => sendResponse({ success: true }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'hermesKeyRemove') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
-    if (!profileId) {
-      sendResponse({ success: false, error: 'A Hermes profile is required.' });
-      return true;
-    }
-    removeHermesCredential(profileId)
-      .then(() => sendResponse({ success: true }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'hermesProfileDeleted') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
-    if (!profileId) {
-      sendResponse({ success: false, error: 'A Hermes profile is required.' });
-      return true;
-    }
-    removeProfileHermesState(profileId, chrome)
-      .then(() => sendResponse({ success: true }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'endHermesConversation') {
-    if (!extensionPageSender) {
-      sendResponse({ success: false, error: 'Hermes chat resets must come from Prompt Paul.' });
-      return true;
-    }
-
-    const profileId = typeof request.profileId === 'string' ? request.profileId : '';
-    if (!profileId) {
-      sendResponse({ success: false, error: 'A Hermes profile is required.' });
-      return true;
-    }
-
-    const resetPromise = hermesSessionResetLock.tryRun(profileId, async () => {
-      const { profiles = [] } = await chrome.storage.local.get(['profiles']);
-      const profile = profiles.find((entry) => entry.id === profileId);
-      if (!profile || profile.provider !== 'hermes') {
-        throw new Error('The selected Hermes profile was not found.');
-      }
-
-      const activeHermesRun = [...runOrchestrator.activeRuns.values()].some(
-        (run) => run.config?.provider === 'hermes' && run.config?.profileId === profileId
-      );
-      if (activeHermesRun) {
-        throw new Error('Stop the active Hermes response before starting a new chat.');
-      }
-
-      const sessionId = await hermesTransport.getStoredSession(profileId);
-      if (sessionId) {
-        await hermesTransport.endSession(
-          {
-            ...profile,
-            hermesEndpoint: getHermesEndpoint(profile),
-          },
-          sessionId
-        );
-      }
-      await hermesTransport.clearStoredSession(profileId);
-      return { endedSession: Boolean(sessionId) };
-    });
-    if (!resetPromise) {
-      sendResponse({ success: false, error: 'A Hermes chat reset is already in progress.' });
-      return true;
-    }
-    resetPromise
-      .then((result) => sendResponse({ success: true, ...result }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
+  const providerMessage = handleProviderMessage(request, sender, {
+    chrome,
+    codexAuthManager,
+    extensionPageSender,
+    fetchAvailableModels,
+    getHermesCredential,
+    getHermesEndpoint,
+    hermesSessionResetLock,
+    hermesTransport,
+    removeHermesCredential,
+    removeProfileHermesState,
+    rejectUnauthorizedMessage,
+    runOrchestrator,
+    sendResponse,
+    setHermesCredential,
+    supportsHermesClientTools,
+    validateHermesKey,
+  });
+  if (providerMessage !== null) return providerMessage;
 
   // ===== Orchestration Handlers =====
 
-  if (request.action === 'startRun') {
-    if (!extensionPageSender) {
-      sendResponse({ error: 'Runs must start from a Prompt Paul page.' });
-      return true;
-    }
+  const runMessage = handleRunMessage(request, sender, {
+    chrome,
+    clearPageActionCheckpoint,
+    extensionPageSender,
+    getPageActionCheckpoint,
+    getRunJournalStorageKey: RunOrchestrator.getRunJournalStorageKey,
+    hermesSessionResetLock,
+    isAuthorizedRunRequest,
+    randomId,
+    rejectUnauthorizedMessage,
+    resolvePanelTabId,
+    resolveStoredRunConfig,
+    runOrchestrator,
+    trackFeatureUsed,
+    sendResponse,
+  });
+  if (runMessage !== null) return runMessage;
 
-    const config = request.config || {};
-    const ownerToken = randomId();
-    Promise.resolve()
-      .then(async () => {
-        const effectiveConfig = await resolveStoredRunConfig(config);
-        const { pageActionsPreciseInput } =
-          await chrome.storage.local.get('pageActionsPreciseInput');
-        effectiveConfig.pageActionsPreciseInput =
-          effectiveConfig.pageActions === true && pageActionsPreciseInput === true;
-        if (
-          effectiveConfig.provider === 'hermes' &&
-          hermesSessionResetLock.isLocked(effectiveConfig.profileId)
-        ) {
-          throw new Error('Hermes New chat is still resetting the previous session.');
-        }
-        if (effectiveConfig.pageActions && effectiveConfig.sourceTabId != null) {
-          try {
-            await chrome.tabs.get(Number(effectiveConfig.sourceTabId));
-          } catch (_) {
-            effectiveConfig.sourceTabId = null;
-          }
-        }
-        if (effectiveConfig.pageActions && effectiveConfig.sourceTabId == null) {
-          const sourceTabId = await resolvePanelTabId(sender?.tab?.id ?? null, {
-            rejectUnsupportedActive: true,
-          });
-          if (sourceTabId == null) {
-            throw new Error('Act needs an active web page. Open a web page and try again.');
-          }
-          effectiveConfig.sourceTabId = sourceTabId;
-        }
-        if (effectiveConfig.provider === 'hermes') effectiveConfig.webSearch = false;
-        return runOrchestrator.startRun(effectiveConfig, ownerToken);
-      })
-      .then((runId) =>
-        sendResponse({
-          runId,
-          ownerToken,
-          sourceTabId: runOrchestrator.getRun(runId)?.sourceTabId ?? null,
-        })
-      )
-      .catch((error) => sendResponse({ error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'resumeActRun') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Act resume must come from Prompt Paul.');
-    }
-    Promise.resolve()
-      .then(async () => {
-        const checkpointRunId = String(request.checkpointRunId || '').trim();
-        const checkpoint = await getPageActionCheckpoint(checkpointRunId);
-        if (!checkpoint) throw new Error('The Act checkpoint is no longer available.');
-        if (!checkpoint.sourceTabId || !checkpoint.profileId) {
-          throw new Error('The Act checkpoint is missing its saved page or connection.');
-        }
-        const instruction =
-          checkpoint.instruction ||
-          'Continue the interrupted Act task after inspecting the current page.';
-        const effectiveConfig = await resolveStoredRunConfig({
-          profileId: checkpoint.profileId,
-          pageActions: true,
-          pageActionsMultiTab: true,
-          sourceTabId: checkpoint.sourceTabId,
-          tool_choice: 'auto',
-          webSearch: false,
-          messages: [{ role: 'user', content: instruction }],
-          actCheckpoint: checkpoint,
-        });
-        const { pageActionsPreciseInput } =
-          await chrome.storage.local.get('pageActionsPreciseInput');
-        effectiveConfig.pageActionsPreciseInput = pageActionsPreciseInput === true;
-        const ownerToken = randomId();
-        const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
-        await clearPageActionCheckpoint(checkpointRunId);
-        return {
-          runId,
-          ownerToken,
-          sourceTabId: runOrchestrator.getRun(runId)?.sourceTabId ?? null,
-        };
-      })
-      .then((result) => sendResponse({ success: true, resumed: true, ...result }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'executeRun') {
-    const { runId, requestConfig } = request;
-    if (!isAuthorizedRunRequest(request, sender)) {
-      return rejectUnauthorizedMessage(sendResponse, 'Run execution is not authorized.');
-    }
-    // A run can span many model turns, approvals, navigations, and tab
-    // recoveries. Do not hold the runtime message channel open for that whole
-    // lifetime: Chrome may close a long-lived channel when the side panel or
-    // service-worker event is recycled, even though the run is still active.
-    // Terminal state is delivered through orchestratorEvent and persisted in
-    // the run journal; this response only acknowledges that execution was
-    // accepted by the worker.
-    if (!runOrchestrator.getRun(runId)) {
-      sendResponse({ error: `Run ${runId} not found` });
-      return false;
-    }
-    if (!requestConfig || typeof requestConfig !== 'object') {
-      sendResponse({ error: 'A valid run configuration is required.' });
-      return false;
-    }
-    void runOrchestrator.execute(runId, requestConfig).catch((error) => {
-      console.error('Background: Run execution failed after acknowledgement:', error);
-    });
-    sendResponse({ success: true, accepted: true });
-    return false;
-  }
-
-  if (request.action === 'executeTool') {
-    const { runId, toolCall } = request;
-    if (!isAuthorizedRunRequest(request, sender)) {
-      return rejectUnauthorizedMessage(sendResponse, 'Tool execution is not authorized.');
-    }
-    runOrchestrator
-      .executeTool(runId, toolCall)
-      .then((result) => {
-        sendResponse(result);
-      })
-      .catch((error) => {
-        sendResponse({ error: error.message, code: String(error.code || '').slice(0, 80) });
-      });
-    return true;
-  }
-
-  if (request.action === 'getActModelSupport') {
-    if (!extensionPageSender) {
-      sendResponse({
-        success: false,
-        error: 'Model support status requires a Prompt Paul extension page.',
-      });
-      return true;
-    }
-    chrome.storage.local
-      .get(['profiles', 'lastSelectedProfileId'])
-      .then(({ profiles, lastSelectedProfileId }) => {
-        const saved = Array.isArray(profiles) ? profiles : [];
-        const profile = resolvePreferredProfile({
-          selectedProfile: saved.find((entry) => entry.id === lastSelectedProfileId),
-          defaultProfile: saved.find((entry) => entry.id === 'default') || saved[0],
-        });
-        sendResponse({
-          success: true,
-          supportsTools: getProfileToolSupport(profile),
-          modelName: String(profile?.modelName || '').slice(0, 256),
-        });
-      })
-      .catch(() => sendResponse({ success: false, error: 'Model support status is unavailable.' }));
-    return true;
-  }
-
-  if (request.action === 'setPageActionSitePolicy') {
-    if (!extensionPageSender) {
-      sendResponse({
-        success: false,
-        error: 'Site policy changes require a Prompt Paul extension page.',
-      });
-      return true;
-    }
-    pageActionSitePolicyStore
-      .update(request.origin, request.policy)
-      .then((policies) => sendResponse({ success: true, policies }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'pageActionDecision') {
-    // Sender/run ownership validation: approval decisions must come from a
-    // Prompt Paul extension page (the side panel), and the supplied source tab
-    // must match the run's source tab: the opaque confirmation ID alone is
-    // not enough to authorize an action.
-    const decisionRun = runOrchestrator.activeRuns.get(request.runId);
-    if (!extensionPageSender) {
-      sendResponse({
-        success: false,
-        error: 'Approval decisions must come from the Prompt Paul extension.',
-      });
-      return true;
-    }
-    // A card can outlive its run (finished, stopped, timed out, or the worker
-    // restarted). Say so instead of reporting a misleading sender failure.
-    if (!decisionRun) {
-      sendResponse({
-        success: false,
-        expired: true,
-        error:
-          'This approval is no longer waiting (the run ended, timed out, or was stopped). Send a new message to continue.',
-      });
-      return true;
-    }
-    if (!isAuthorizedRunRequest(request, sender)) {
-      sendResponse({
-        success: false,
-        error:
-          'This approval could not be verified for the current run. Reload Prompt Paul and try again.',
-      });
-      return true;
-    }
-    // Extension pages can run in a dedicated harness/options tab whose
-    // sender.tab.id is not the web tab that owns the run. Prefer the explicit
-    // source-tab token from trusted extension surfaces, then fall back to the
-    // sender tab for side-panel messages that omit it.
-    const senderTabId = request.sourceTabId ?? sender?.tab?.id;
-    if (
-      !decisionRun ||
-      decisionRun.sourceTabId == null ||
-      senderTabId !== decisionRun.sourceTabId
-    ) {
-      sendResponse({
-        success: false,
-        error: 'Approval decision does not match the run source tab.',
-      });
-      return true;
-    }
-    if (request.allowSite === true && request.approved === true) {
-      const pending = decisionRun.pageActions?.pendingConfirmation;
-      if (!pending || pending.id !== request.confirmationId || !pending.siteOrigin) {
-        sendResponse({
-          success: false,
-          expired: true,
-          error: 'The site approval is no longer waiting.',
-        });
-        return true;
-      }
-      void (async () => {
-        const current = await pageActionDocumentProvider(
-          decisionRun.pageActions.targetTabId || decisionRun.sourceTabId
-        );
-        if (getPageActionSiteOrigin(current?.url) !== pending.documentOrigin)
-          throw new Error('The target site changed. Re-inspect before approving a site policy.');
-        await pageActionSitePolicyStore.update(pending.siteOrigin, 'allow_low_risk');
-        if (decisionRun.pageActions.pendingConfirmation !== pending) {
-          sendResponse({
-            success: false,
-            expired: true,
-            error: 'The approval expired. The site policy was saved, but no action was approved.',
-          });
-          return;
-        }
-        decisionRun.pageActions.sitePolicies = {
-          ...decisionRun.pageActions.sitePolicies,
-          [pending.siteOrigin]: 'allow_low_risk',
-        };
-        const accepted = runOrchestrator.resolvePageActionDecision(
-          request.runId,
-          request.confirmationId,
-          true,
-          false
-        );
-        sendResponse(
-          accepted
-            ? { success: true }
-            : { success: false, expired: true, error: 'The approval is no longer waiting.' }
-        );
-      })().catch((error) => sendResponse({ success: false, error: error.message }));
-      return true;
-    }
-    const accepted = runOrchestrator.resolvePageActionDecision(
-      request.runId,
-      request.confirmationId,
-      request.approved === true,
-      request.approveAll === true
-    );
-    sendResponse(
-      accepted
-        ? { success: true }
-        : {
-            success: false,
-            expired: true,
-            error: 'This approval is no longer waiting (it was already answered or timed out).',
-          }
-    );
-    return true;
-  }
-
-  if (request.action === 'pageUserInputResponse') {
-    const expiredMessage =
-      'This question is no longer waiting for an answer (it timed out or the run ended). Send a new message to continue.';
-    if (!runOrchestrator.activeRuns.has(request.runId)) {
-      sendResponse({ success: false, expired: true, error: expiredMessage });
-      return true;
-    }
-    if (!isAuthorizedRunRequest(request, sender)) {
-      sendResponse({ success: false, error: 'User input response is not authorized.' });
-      return true;
-    }
-    const run = runOrchestrator.activeRuns.get(request.runId);
-    if (run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
-      sendResponse({ success: false, error: 'User input response does not match the run.' });
-      return true;
-    }
-    const accepted = runOrchestrator.resolvePageUserInput(
-      request.runId,
-      request.requestId,
-      request.answer
-    );
-    sendResponse(
-      accepted ? { success: true } : { success: false, expired: true, error: expiredMessage }
-    );
-    return true;
-  }
-
-  if (request.action === 'pageManualInterventionResume') {
-    const expiredMessage = 'This step is no longer waiting (it timed out or the run ended).';
-    if (!runOrchestrator.activeRuns.has(request.runId)) {
-      sendResponse({ success: false, expired: true, error: expiredMessage });
-      return true;
-    }
-    if (!isAuthorizedRunRequest(request, sender)) {
-      sendResponse({ success: false, error: 'Manual-intervention response is not authorized.' });
-      return true;
-    }
-    const run = runOrchestrator.activeRuns.get(request.runId);
-    if (run.sourceTabId == null || request.sourceTabId !== run.sourceTabId) {
-      sendResponse({
-        success: false,
-        error: 'Manual-intervention response does not match the run.',
-      });
-      return true;
-    }
-    const resumed = runOrchestrator.resolvePageManualIntervention(
-      request.runId,
-      request.requestId,
-      request.resume === undefined ? true : request.resume === true
-    );
-    sendResponse(
-      resumed ? { success: true } : { success: false, expired: true, error: expiredMessage }
-    );
-    return true;
-  }
-
-  if (request.action === 'abortRun') {
-    const { runId } = request;
-    if (!isAuthorizedRunRequest(request, sender)) {
-      return rejectUnauthorizedMessage(sendResponse, 'Run abort is not authorized.');
-    }
-    void cdpInputBackend.detachRun(runId);
-    runOrchestrator
-      .abort(runId)
-      .then((success) => sendResponse({ success: success !== false }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'hermesApprovalDecision') {
-    if (!isAuthorizedRunRequest(request, sender)) {
-      sendResponse({ success: false, error: 'Hermes approval is not authorized.' });
-      return true;
-    }
-    const run = runOrchestrator.activeRuns.get(request.runId);
-    if (
-      !run ||
-      run.config?.provider !== 'hermes' ||
-      (run.sourceTabId != null && request.sourceTabId !== run.sourceTabId)
-    ) {
-      sendResponse({ success: false, error: 'Hermes run was not found.' });
-      return true;
-    }
-    runOrchestrator
-      .resolveHermesApproval(request.runId, request.approvalId, request.choice)
-      .then((success) => sendResponse({ success }))
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'getRunJournal') {
-    if (!extensionPageSender) {
-      sendResponse({
-        success: false,
-        error: 'Run journals are available only to Prompt Paul pages.',
-      });
-      return true;
-    }
-    const key = RunOrchestrator.getRunJournalStorageKey();
-    chrome.storage.session
-      .get([key])
-      .then((result) => {
-        const journals = result?.[key] || {};
-        const requested = request.runId ? journals[request.runId] : null;
-        const activeRun = request.runId ? runOrchestrator.getRun(request.runId) : null;
-        sendResponse({
-          success: true,
-          journal: activeRun ? runOrchestrator.getRunJournal(request.runId) : requested || null,
-          active: Boolean(activeRun),
-          ...(activeRun?.ownerToken ? { ownerToken: activeRun.ownerToken } : {}),
-        });
-      })
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-
-  if (request.action === 'getTools') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    sendResponse({ tools: runOrchestrator.getToolImplementations() });
-    return true;
-  }
+  const pageActionMessage = handlePageActionMessage(request, sender, {
+    chrome,
+    extensionPageSender,
+    getPageActionSiteOrigin,
+    getProfileToolSupport,
+    isAuthorizedRunRequest,
+    pageActionDocumentProvider,
+    pageActionSitePolicyStore,
+    rejectUnauthorizedMessage,
+    resolvePreferredProfile,
+    runOrchestrator,
+    sendResponse,
+  });
+  if (pageActionMessage !== null) return pageActionMessage;
 
   // Handle other actions if any
 });
@@ -4765,22 +3505,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // with context via chrome.runtime.sendMessage(EXTENSION_ID, { action: 'openChat',
 // context: { selectedText, mediaUrl, mediaType, instruction } }).
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-  if (!request || request.action !== 'openChat') {
-    sendResponse({ success: false, error: 'Unsupported external action' });
-    return;
-  }
-  const context =
-    request.context && typeof request.context === 'object' && !Array.isArray(request.context)
-      ? request.context
-      : {};
-  const externalTabId =
-    Number.isInteger(sender?.tab?.id) && sender.tab.id >= 0 ? sender.tab.id : null;
-  if (externalTabId === null) {
-    sendResponse({ success: false, error: 'External chat links must come from a browser tab.' });
-    return false;
-  }
-  openChatWithContext({ ...context, tabId: externalTabId })
-    .then((result) => sendResponse(result))
-    .catch((error) => sendResponse({ success: false, error: error.message }));
-  return true;
+  return handleExternalPanelMessage(request, sender, { openChatWithContext, sendResponse });
 });

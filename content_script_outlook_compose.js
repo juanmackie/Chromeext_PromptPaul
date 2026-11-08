@@ -408,6 +408,7 @@
       chrome.runtime.sendMessage(
         {
           action: 'openPromptPaulFromSelection',
+          source: 'outlook-compose',
           selectedText,
         },
         () => {

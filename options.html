@@ -1317,7 +1317,9 @@ What this skill does and when to use it.
       <section class="card mb-4 p-4">
         <div class="d-flex align-items-center gap-2 mb-3">
           <span class="material-symbols-outlined text-primary">touch_app</span>
-          <h2 class="fs-5 fw-semibold mb-0">Current-Page Actions</h2>
+          <h2 class="fs-5 fw-semibold mb-0">
+            Current-Page Actions <span class="badge text-bg-warning">Experimental</span>
+          </h2>
           <span class="ext-badge section-capability-badge" data-capability-badge>Capability</span>
         </div>
         <hr
@@ -1333,8 +1335,7 @@ What this skill does and when to use it.
           Turn on <strong>Act</strong> in the side panel to let Prompt Paul inspect and operate
           semantic controls on the current tab. Page text is treated as untrusted data. Act does not
           run page JavaScript, read cookies or storage, or operate passwords, one-time codes,
-          payment fields, or security controls. Optional precise input uses only allow-listed
-          browser input events and never captures screenshots or evaluates page code.
+          payment fields, or security controls. Page actions use standard semantic browser events.
         </p>
         <p class="text-secondary-emphasis small">
           When Act is enabled, the bounded page snapshot is sent to your configured LLM endpoint.
@@ -1350,17 +1351,6 @@ What this skill does and when to use it.
         <div class="form-text mb-3">
           Default: off. Submits, sends, deletes, purchases, navigation, account/security changes,
           and credential fields remain confirmation-gated or blocked.
-        </div>
-        <div class="form-check form-switch mb-2">
-          <input class="form-check-input" type="checkbox" id="pageActionsPreciseInput" />
-          <label class="form-check-label" for="pageActionsPreciseInput">
-            Precise input (experimental)
-          </label>
-        </div>
-        <div class="form-text mb-3">
-          Off by default. When enabled, Chrome shows its debugging notice while Act uses trusted
-          mouse/keyboard input. If attachment is denied or cancelled, Act falls back to standard
-          page interaction. Turn this off to avoid the debugger permission prompt.
         </div>
         <div class="d-flex gap-2 flex-wrap align-items-center">
           <button type="button" id="savePageActions" class="btn btn-primary">

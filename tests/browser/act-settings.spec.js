@@ -69,34 +69,6 @@ async function openOptions(context, harness) {
   return options;
 }
 
-test('precise input stays off by default and saves only after explicit confirmation', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-precise-setting-'));
-  const { context } = await launchTestBrowser(dir);
-  const harness = await openHarness(context);
-  try {
-    const options = await openOptions(context, harness);
-    const toggle = options.locator('#pageActionsPreciseInput');
-    await expect(toggle).not.toBeChecked();
-    await toggle.check();
-    await expect(options.locator('#unsaved-banner')).toBeVisible();
-    await options.locator('#savePageActions').click();
-    await expect(options.locator('#pageActionsSaveStatus')).toContainText('Precise input is on.');
-    await expect
-      .poll(() =>
-        harness.evaluate(
-          async () =>
-            (await chrome.storage.local.get('pageActionsPreciseInput')).pageActionsPreciseInput
-        )
-      )
-      .toBe(true);
-    await options.reload();
-    await expect(options.locator('#pageActionsPreciseInput')).toBeChecked();
-  } finally {
-    await context.close();
-    removeUserDataDir(dir);
-  }
-});
-
 test('site approval persists low-risk trust; Options can block/remove; active runs keep their snapshot', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-act-settings-'));
   const { context } = await launchTestBrowser(dir);

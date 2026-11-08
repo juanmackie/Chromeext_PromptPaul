@@ -108,7 +108,7 @@ test('coalesces a journal burst and persists the latest terminal event', async (
         completion: { finishReason: 'stop' },
       });
       releaseFirstGet();
-      await orchestrator.journalWrite;
+      await orchestrator.runJournal.writePromise;
 
       const writes = { getCount, setCount, burstCount, fullContentLength: fullContent.length };
       storage.get = originalGet;

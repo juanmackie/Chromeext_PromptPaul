@@ -26,7 +26,6 @@
   "ignorePatterns": [
     "artifacts/",
     "libs/",
-    "marked.min.js",
     "node_modules/",
     "dist/",
     "dist-dev/",

@@ -47,6 +47,7 @@ Prompt-Paul-*.zip
 dist/
 dist-dev/
 dist-eval/
+.baseline/
 
 # Ignore IDE project files
 .idea/

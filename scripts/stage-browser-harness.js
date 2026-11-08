@@ -29,15 +29,14 @@ const harnessFiles = ['extension-harness.html', 'extension-harness.js'];
  * @returns {string}
  */
 function loadDir() {
-  const target = process.env.PROMPT_PAUL_LOAD_EXTENSION_DIR || '';
-  return target ? path.resolve(repoRoot, target) : repoRoot;
+  return path.resolve(repoRoot, process.env.PROMPT_PAUL_LOAD_EXTENSION_DIR || 'dist-dev');
 }
 
 /**
  * Copy the harness files into the load dir under `tests/browser/`.
  * When testing the source checkout itself, the harness is already present, so
  * this is a no-op. Returns the list of staged destinations.
- * @returns {string[]}
+ * @returns {{files: string[]}}
  */
 function stage() {
   const target = loadDir();
@@ -53,12 +52,12 @@ function stage() {
     fs.copyFileSync(srcPath, destPath);
     staged.push(destPath);
   }
-  return staged;
+  return { files: staged };
 }
 
 if (require.main === module) {
-  const staged = stage();
-  for (const file of staged) {
+  const result = stage();
+  for (const file of result.files) {
     console.log(`Harness staged: ${file}`);
   }
 }

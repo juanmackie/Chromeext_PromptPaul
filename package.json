@@ -1,6 +1,6 @@
 {
   "name": "prompt-paul",
-  "version": "6.3.0",
+  "version": "6.4.0",
   "description": "Prompt Paul - Chrome extension for AI-powered text processing with context menus and side panel chat interface",
   "main": "background.js",
   "author": "Juan Mackie",
@@ -18,12 +18,13 @@
     "test:unit": "node scripts/test-runner.js --unit",
     "test:integration": "node scripts/test-runner.js --integration",
     "test:behavior": "vitest run",
-    "test:browser": "playwright test tests/browser",
-    "test:browser:prod": "node scripts/test-browser-prod.js",
+    "test:browser": "node scripts/test-browser.js",
+    "test:browser:prod": "node scripts/test-browser.js --prod",
     "build": "node scripts/build.js",
     "build:dev": "node scripts/build.js --dev",
     "build:eval": "node scripts/build.js --eval",
     "build:prod": "node scripts/build.js --prod",
+    "release:prepare": "python3 scripts/update-release-metadata.py",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "validate": "npm run lint && npm run format:check && npm run test && npm run test:behavior && npm run smoke && npm run verify:licenses",
@@ -45,5 +46,14 @@
     "mistral",
     "productivity"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@highlightjs/cdn-assets": "11.9.0",
+    "@mozilla/readability": "0.6.0",
+    "bootstrap": "5.3.3",
+    "dompurify": "3.4.17",
+    "marked": "4.3.0",
+    "pdfjs-dist": "6.5.438",
+    "turndown": "7.2.0"
+  }
 }

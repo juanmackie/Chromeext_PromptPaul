@@ -289,4 +289,15 @@ describe('structured answer runtime boundary', () => {
     run.config.answerFormat = 'other';
     expect(orch._buildSystemPrompt(run, [])).not.toContain('STRUCTURED ANSWER FORMAT');
   });
+
+  it('bounds accumulated structured answer wire before accepting another chunk', () => {
+    const { orch, run } = makeHarness();
+    orch._emitReadableAnswer = () => {};
+    orch._appendAnswerWire(run, 'x'.repeat(256 * 1024));
+
+    expect(run.answerWireText).toHaveLength(256 * 1024);
+    expect(() => orch._appendAnswerWire(run, 'x')).toThrow(
+      'Structured answer output exceeded the run limit.'
+    );
+  });
 });

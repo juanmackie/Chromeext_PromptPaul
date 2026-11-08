@@ -8,6 +8,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
+const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const { createBenchmarkFingerprint } = require('./benchmark-fingerprint.js');
 
@@ -20,7 +22,7 @@ const PASS_TARGET_RATE = 0.8;
 const DEFAULT_RUNS = 1;
 const BENCHMARK_SCHEMA_VERSION = 2;
 const RUN_TIMEOUT_MS = 8 * 60 * 1_000;
-const TASKS = [
+const LOCAL_TASKS = [
   {
     id: 'search-enter',
     prompt: 'Search for Cedar using the search box with no button. Stay on this local page.',
@@ -60,11 +62,6 @@ const TASKS = [
     id: 'cross-origin-iframe',
     prompt:
       'Enter Ada in Name in the Contact form frame and submit that form. Stay on these local fixture pages.',
-  },
-  {
-    id: 'trusted-key-only',
-    prompt:
-      'Press Enter in the Ready field to complete the local keyboard check. Stay on this local page.',
   },
   {
     id: 'spa-menu',
@@ -146,14 +143,113 @@ const TASKS = [
   },
 ];
 
+function readMind2WebTasks() {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(ROOT, 'eval/mind2web/manifest.json'), 'utf8')
+  );
+  const casesBytes = fs.readFileSync(path.join(ROOT, 'eval/mind2web/cases.json'));
+  const pageArchive = fs.readFileSync(
+    path.join(ROOT, 'tests/browser/fixtures/mind2web-pages.json.gz')
+  );
+  const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.split !== 'train' ||
+    manifest.license !== 'CC-BY-4.0' ||
+    digest(casesBytes) !== manifest.casesSha256 ||
+    digest(pageArchive) !== manifest.pageArchiveSha256
+  ) {
+    throw new Error('The fixed Mind2Web evaluation subset does not match its manifest.');
+  }
+  const cases = JSON.parse(casesBytes.toString('utf8'));
+  const pages = JSON.parse(zlib.gunzipSync(pageArchive).toString('utf8'));
+  const pageIds = new Set((pages.pages || []).map((page) => page.id));
+  if (
+    cases.split !== 'train' ||
+    pages.split !== 'train' ||
+    !Array.isArray(cases.cases) ||
+    cases.cases.length !== 9 ||
+    manifest.caseIds.length !== cases.cases.length ||
+    cases.cases.some(
+      (entry, index) =>
+        entry.id !== manifest.caseIds[index] ||
+        !pageIds.has(entry.id) ||
+        !['CLICK', 'TYPE', 'SELECT'].includes(entry.operation) ||
+        !entry.targetBackendNodeId
+    )
+  ) {
+    throw new Error('The fixed Mind2Web evaluation cases are invalid or incomplete.');
+  }
+  for (const entry of cases.cases) {
+    if (entry.targetTag !== 'a') continue;
+    const page = pages.pages.find((candidate) => candidate.id === entry.id);
+    const target = page.html.match(
+      new RegExp(`<a\\b(?=[^>]*\\bbackend_node_id="${entry.targetBackendNodeId}")[^>]*>`)
+    );
+    if (!target || !target[0].includes(`href="/mind2web-target/${entry.id}"`)) {
+      throw new Error(
+        `Mind2Web link target must resolve to its safe local fixture route: ${entry.id}`
+      );
+    }
+  }
+  return cases.cases.map((entry) => ({
+    id: entry.id,
+    prompt: `Task: ${entry.task}\nPrevious actions: None. Perform only the annotated next action from the current page.`,
+    mind2web: true,
+    taskMode: 'mind2web',
+    oracle: {
+      operation: entry.operation,
+      value: entry.value,
+      targetBackendNodeId: entry.targetBackendNodeId,
+    },
+  }));
+}
+
+const MIND2WEB_TASKS = readMind2WebTasks();
+const TASKS = [...LOCAL_TASKS, ...MIND2WEB_TASKS];
+const SCORECARD_TASK_IDS = Object.freeze([
+  'search-enter',
+  'escape-modal',
+  'hover-menu',
+  'background-tab',
+  'viewport-read',
+  'prefilled-form',
+  'range-date',
+  'nested-scroll',
+  'cross-origin-iframe',
+  'spa-menu',
+  'autocomplete',
+  'custom-radio',
+  'custom-dropdown',
+  'shadow-control',
+  'iframe-form',
+  'mind2web-37564222',
+  'mind2web-1a16a98f',
+  'mind2web-0633c328',
+]);
+
 function parseArgs(argv) {
-  const options = { run: false, list: false, help: false, runs: DEFAULT_RUNS, tasks: null };
+  const options = {
+    run: false,
+    list: false,
+    help: false,
+    runs: DEFAULT_RUNS,
+    tasks: null,
+    suite: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--run') options.run = true;
     else if (arg === '--list') options.list = true;
     else if (arg === '--help' || arg === '-h') options.help = true;
-    else if (arg === '--task') {
+    else if (arg === '--suite') {
+      const suite = String(argv[++index] || '').trim();
+      if (suite !== 'scorecard') throw new Error('--suite must be scorecard.');
+      if (options.tasks) throw new Error('--suite cannot be combined with --task.');
+      options.suite = suite;
+      options.tasks = [...SCORECARD_TASK_IDS];
+    } else if (arg === '--task') {
+      if (options.suite) throw new Error('--suite cannot be combined with --task.');
       const id = String(argv[++index] || '').trim();
       if (!TASKS.some((task) => task.id === id)) {
         throw new Error(`--task must name one benchmark task: ${id}`);
@@ -432,11 +528,12 @@ function printHelp() {
   console.log(
     `Local Act benchmark\n\n` +
       `  node scripts/act-benchmark.js --list\n` +
-      `  node scripts/act-benchmark.js --run [--runs 1] [--task <id> ...]\n\n` +
+      `  node scripts/act-benchmark.js --run [--runs 1] [--suite scorecard | --task <id> ...]\n\n` +
       `--run is required before a browser or model request is made. By default it builds the\n` +
       `isolated dist-eval extension; it uses only local fixtures and writes bounded metrics plus\n` +
       `redacted per-step traces beneath artifacts/act-benchmark/ (replaced on every run).\n` +
       `Pass one or more --task ids to run a subset.\n` +
+      `The scorecard suite runs 15 local fixtures plus three fixed Mind2Web cases.\n` +
       `Single-run pilots are the default hold mode (--runs 1); use --runs 2..10 only for\n` +
       `repeatability checks. The hold target is ${Math.round(PASS_TARGET_RATE * 100)}% overall.\n\n` +
       `Each of the ${TASKS.length} task attempts is capped at ${Math.round(
@@ -583,7 +680,6 @@ async function readFixtureState(page, task, excludedTabIds = []) {
       'nested-scroll': (body) =>
         body.dataset.selection === 'cedar' && root.querySelector('#scroll-list')?.scrollTop > 0,
       'cross-origin-iframe': (body) => body.dataset.submitted === 'Ada',
-      'trusted-key-only': (body) => body.dataset.trustedKey === 'true',
       'spa-menu': (body) => body.dataset.selection === 'analytics',
       autocomplete: (body) => body.dataset.selection === 'Saffron',
       'custom-radio': (body) => body.dataset.selection === 'vegetarian',
@@ -644,6 +740,29 @@ function safeCardOrigin(confirmation, fixtureOrigin) {
   }
 }
 
+function mind2WebFirstActionMatches(events, oracle) {
+  if (!Array.isArray(events) || !events.length || !oracle) return false;
+  const expectedType =
+    oracle.operation === 'CLICK' ? 'click' : oracle.operation === 'TYPE' ? 'input' : 'change';
+  const expectedIndex = events.findIndex((event) => event.type === expectedType);
+  if (expectedIndex < 0) return false;
+  const expected = events[expectedIndex];
+  if (
+    expected.targetBackendNodeId !== oracle.targetBackendNodeId ||
+    (oracle.operation !== 'CLICK' && expected.value !== oracle.value)
+  ) {
+    return false;
+  }
+  return events
+    .slice(0, expectedIndex)
+    .every(
+      (event) =>
+        oracle.operation === 'SELECT' &&
+        event.targetBackendNodeId === oracle.targetBackendNodeId &&
+        event.type === 'input'
+    );
+}
+
 async function runAttempt({
   context,
   harness,
@@ -658,27 +777,63 @@ async function runAttempt({
   traceDir,
 }) {
   const target = await context.newPage();
-  const targetUrl = `${fixtureServer.url('act-benchmark.html')}?case=${encodeURIComponent(task.id)}`;
+  const targetUrl = task.mind2web
+    ? `${fixtureServer.url('mind2web-action.html')}?id=${encodeURIComponent(task.id)}`
+    : `${fixtureServer.url('act-benchmark.html')}?case=${encodeURIComponent(task.id)}`;
   await target.goto(targetUrl);
+  if (task.mind2web) {
+    await target.locator('[backend_node_id]').first().waitFor({ timeout: 15_000 });
+  }
   await target.bringToFront();
   const taskId = `${task.id}-${runNumber}-${Date.now().toString(36)}`;
   const fixtureOrigin = parseUrl(targetUrl, 'Local fixture URL').origin;
   const startedAt = Date.now();
   let runId = null;
+  let mind2webFirstAction = null;
+  let mind2webAbortRequested = false;
   let resultMessage = null;
   const failureCodes = new Set();
-  const deadline = startedAt + RUN_TIMEOUT_MS;
+  const deadline = startedAt + (task.mind2web ? Math.min(RUN_TIMEOUT_MS, 90_000) : RUN_TIMEOUT_MS);
   const initialTabIds = await harness.evaluate(async () =>
     (await chrome.tabs.query({})).map((tab) => tab.id)
   );
   try {
-    // The trusted-key task exists to exercise the opt-in precise-input path:
-    // its fixture only accepts a trusted Enter event, which DOM dispatch cannot
-    // produce. Every other task runs with the default-off setting.
-    await harness.evaluate(
-      (enabled) => chrome.storage.local.set({ pageActionsPreciseInput: Boolean(enabled) }),
-      task.id === 'trusted-key-only'
-    );
+    if (task.mind2web) {
+      await target.exposeFunction('recordMind2WebAction', (events) => {
+        if (mind2webFirstAction !== null) return;
+        mind2webFirstAction = mind2WebFirstActionMatches(events, task.oracle);
+      });
+      await target.evaluate(() => {
+        let pendingEvents = [];
+        let flushQueued = false;
+        const flush = () => {
+          flushQueued = false;
+          const events = pendingEvents;
+          pendingEvents = [];
+          window.recordMind2WebAction(events);
+        };
+        for (const eventName of ['click', 'input', 'change']) {
+          document.addEventListener(
+            eventName,
+            (event) => {
+              const target = event.target instanceof Element ? event.target : null;
+              const owner = target?.closest('[backend_node_id]');
+              if (!owner) return;
+              pendingEvents.push({
+                type: event.type,
+                targetBackendNodeId: owner.getAttribute('backend_node_id'),
+                value: 'value' in target ? String(target.value) : '',
+              });
+              if (!flushQueued) {
+                flushQueued = true;
+                queueMicrotask(flush);
+              }
+            },
+            true
+          );
+        }
+      });
+    }
     await harness.evaluate(
       ({ endpoint, model, apiKey, provider, reasoningLevel, profileId }) =>
         chrome.storage.local.get(['profiles']).then(({ profiles = [] }) => {
@@ -699,9 +854,15 @@ async function runAttempt({
       { endpoint, model, apiKey, provider, reasoningLevel, profileId: PROFILE_ID }
     );
     const response = await harness.evaluate(
-      ({ url, taskId, task, profileId }) =>
-        window.pageActionHarness.startEvaluationTask(url, taskId, task, profileId),
-      { url: targetUrl, taskId, task: task.prompt, profileId: PROFILE_ID }
+      ({ url, taskId, task, profileId, taskMode }) =>
+        window.pageActionHarness.startEvaluationTask(url, taskId, task, profileId, { taskMode }),
+      {
+        url: targetUrl,
+        taskId,
+        task: task.prompt,
+        profileId: PROFILE_ID,
+        taskMode: task.taskMode,
+      }
     );
     if (!response?.accepted || !response.runId) {
       throw new Error(String(response?.code || 'EVAL_TASK_REJECTED'));
@@ -711,6 +872,10 @@ async function runAttempt({
     let lastConfirmationId = '';
     let manualInterventionHandled = false;
     while (Date.now() < deadline) {
+      if (task.mind2web && mind2webFirstAction !== null && !mind2webAbortRequested) {
+        mind2webAbortRequested = true;
+        await harness.evaluate((id) => window.pageActionHarness.abortRun(id), runId);
+      }
       resultMessage = await harness.evaluate(
         (id) => window.pageActionHarness.getEvaluationResult(id),
         taskId
@@ -744,7 +909,7 @@ async function runAttempt({
     }
 
     if (!resultMessage) {
-      failureCodes.add('RUN_TIMEOUT');
+      if (!task.mind2web || mind2webFirstAction === null) failureCodes.add('RUN_TIMEOUT');
       await harness.evaluate((id) => window.pageActionHarness.abortRun(id), runId);
       // The aborted run still settles and emits its bounded trace through the
       // eval hook. Wait a short grace period so a timed-out task keeps its
@@ -762,18 +927,26 @@ async function runAttempt({
     const trace = resultMessage?.result || null;
     const traceSummary = summarizeTrace(trace);
     for (const code of traceSummary.failureCodes) failureCodes.add(code);
-    const endStateMatches = await readFixtureState(target, task, initialTabIds);
+    const endStateMatches = task.mind2web
+      ? mind2webFirstAction === true
+      : await readFixtureState(target, task, initialTabIds);
+    if (task.mind2web && mind2webFirstAction !== true) {
+      failureCodes.add('MIND2WEB_ACTION_MISMATCH');
+    }
     // Record the independent end-state verdict separately from the model outcome:
     // a run can reach the right end state while reporting ambiguous/blocked, or
     // claim done while missing it. Persisting both sides tells an action failure
     // apart from an outcome-calibration failure without re-running the model.
-    const outcomeDone = !traceSummary.actOutcome || traceSummary.actOutcome.status === 'done';
+    const outcomeDone = task.mind2web
+      ? mind2webFirstAction === true
+      : !traceSummary.actOutcome || traceSummary.actOutcome.status === 'done';
     if (!endStateMatches) failureCodes.add('END_STATE_MISMATCH');
-    const success =
-      !failureCodes.has('RUN_TIMEOUT') &&
-      endStateMatches &&
-      outcomeDone &&
-      (task.id !== 'gmail-toggle-trap' || traceSummary.toggleProtectionObserved);
+    const success = task.mind2web
+      ? mind2webFirstAction === true
+      : !failureCodes.has('RUN_TIMEOUT') &&
+        endStateMatches &&
+        outcomeDone &&
+        (task.id !== 'gmail-toggle-trap' || traceSummary.toggleProtectionObserved);
     if (
       endStateMatches &&
       task.id === 'gmail-toggle-trap' &&
@@ -1054,7 +1227,10 @@ async function main() {
     return;
   }
   if (options.list) {
-    for (const task of TASKS) console.log(`${task.id}\t${task.prompt}`);
+    const selectedTasks = options.tasks?.length
+      ? TASKS.filter((task) => options.tasks.includes(task.id))
+      : TASKS;
+    for (const task of selectedTasks) console.log(`${task.id}\t${task.prompt}`);
     return;
   }
   if (!options.run) {
@@ -1073,9 +1249,11 @@ if (require.main === module) {
 
 module.exports = {
   TASKS,
+  SCORECARD_TASK_IDS,
   PASS_TARGET_RATE,
   DEFAULT_RUNS,
   buildSummary,
+  mind2WebFirstActionMatches,
   getBenchmarkConfig,
   getBenchmarkProfile,
   cleanupTemporaryProfile,

@@ -147,12 +147,6 @@
             mark('submitted', String(event.data.name || ''));
         });
         root.append(frame);
-      } else if (kind === 'trusted-key-only') {
-        const input = el('input', { 'aria-label': 'Ready', value: 'ready' });
-        input.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter' && event.isTrusted) mark('trustedKey', 'true');
-        });
-        root.append(input);
       } else if (kind.startsWith('gmail-')) {
         const sort = button('Showing most relevant', {
           'aria-label': 'Sort order',

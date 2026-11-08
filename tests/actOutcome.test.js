@@ -3,7 +3,7 @@
  * @module actOutcomeTests
  */
 import { describe, expect, it } from 'vitest';
-import { deriveActOutcome } from '../src/orchestrator/ActOutcome.js';
+import { deriveActOutcome } from '../src/act/index.js';
 
 function runWith({
   receipt = null,

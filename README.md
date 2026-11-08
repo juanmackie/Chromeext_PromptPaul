@@ -28,12 +28,14 @@ Prompt Paul is a Chrome extension for sending selected text or page content to a
 ```bash
 git clone https://github.com/juanmackie/Chromeext_PromptPaul.git
 cd Chromeext_PromptPaul
+npm ci
+npm run build:dev
 ```
 
 1. Open Chrome and go to `chrome://extensions/`
 2. Turn on Developer mode
 3. Click Load unpacked
-4. Select this repository
+4. Select the generated `dist-dev/` directory
 
 ## Configure
 
@@ -146,8 +148,7 @@ collection workflow. Production builds are written to `dist/`.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
-- [docs/FEATURE_REVIEW.md](docs/FEATURE_REVIEW.md)
-- [docs/BROWSER_AGENT_REPOSITORY_REVIEW.md](docs/BROWSER_AGENT_REPOSITORY_REVIEW.md)
+- [Archived project reviews](docs/archive/)
 - [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md)
 
 ## API Compatibility

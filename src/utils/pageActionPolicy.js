@@ -335,7 +335,9 @@ export function normalizePageActionArgs(actionName, args = {}) {
     }
     if (
       containerIndex !== null &&
-      (!Number.isInteger(containerIndex) || containerIndex < 0 || containerIndex >= 16)
+      (!Number.isInteger(containerIndex) ||
+        containerIndex < 0 ||
+        containerIndex >= PAGE_DOM_CAPS.maxScrollContainers)
     ) {
       return { valid: false, error: 'Scroll container index is outside the allowed range.' };
     }

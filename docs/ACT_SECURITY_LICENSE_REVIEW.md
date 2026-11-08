@@ -1,8 +1,8 @@
 # Act Security and License Review
 
 **Review date:** 2026-08-30
-**Status:** Implementation review recorded; human production security review is pending for persistent site trust and the new `debugger` permission.
-**Scope:** Browser control, semantic targeting, receipts, checkpoints, explicit Resume, scope/diff output, restricted precise input, and vendored code changed by this plan.
+**Status:** Implementation review recorded; human production security review is pending for persistent site trust.
+**Scope:** Browser control, semantic targeting, receipts, checkpoints, explicit Resume, scope/diff output, and vendored code changed by this plan.
 
 ## Security review
 
@@ -29,9 +29,7 @@ The implementation was reviewed against the Act contract and the relevant source
 - Retry/backoff is limited to reads, bridge recovery, readiness, and
   `not_delivered` results. `delivered_unverified` mutations are not retried.
 
-The precise-input backend in `src/orchestrator/CdpInputBackend.js` is default-off and limits CDP use to the `Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`, and `Input.insertText` methods. The page still resolves indexed semantic targets and enforces the existing policy before input. It does not use CDP for DOM access, JavaScript, screenshots, or network access. Stop and run teardown detach the debugger. If input may have been delivered, the runtime does not replay it through DOM events; it reports an unverified result and requires inspection.
-
-These implementation constraints are covered by unit and browser tests, but they do not replace the required human security review of the debugger permission, permission warning, and persistent site-trust model. Do not describe production use as approved until that review is complete.
+These implementation constraints are covered by unit and browser tests, but they do not replace the required human security review of the persistent site-trust model. Do not describe production use as approved until that review is complete.
 
 ## License review
 

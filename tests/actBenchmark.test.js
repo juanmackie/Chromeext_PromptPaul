@@ -3,6 +3,8 @@
  * @module actBenchmarkTests
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -10,9 +12,11 @@ import { describe, expect, it } from 'vitest';
 
 const {
   TASKS,
+  SCORECARD_TASK_IDS,
   PASS_TARGET_RATE,
   DEFAULT_RUNS,
   buildSummary,
+  mind2WebFirstActionMatches,
   getBenchmarkConfig,
   getBenchmarkProfile,
   cleanupTemporaryProfile,
@@ -23,6 +27,46 @@ const {
 } = createRequire(import.meta.url)('../scripts/act-benchmark.js');
 
 describe('Act benchmark task registration', () => {
+  it('grades the first Mind2Web mutation type and target while grouping select input/change events', () => {
+    const target = 'node-1';
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'input', targetBackendNodeId: 'wrong-node', value: 'x' },
+          { type: 'click', targetBackendNodeId: target, value: '' },
+        ],
+        { operation: 'CLICK', targetBackendNodeId: target }
+      )
+    ).toBe(false);
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'click', targetBackendNodeId: target, value: '' },
+          { type: 'input', targetBackendNodeId: target, value: 'Ada' },
+        ],
+        { operation: 'TYPE', targetBackendNodeId: target, value: 'Ada' }
+      )
+    ).toBe(false);
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'input', targetBackendNodeId: target, value: 'Cedar' },
+          { type: 'change', targetBackendNodeId: target, value: 'Cedar' },
+        ],
+        { operation: 'SELECT', targetBackendNodeId: target, value: 'Cedar' }
+      )
+    ).toBe(true);
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'change', targetBackendNodeId: 'wrong-node', value: 'Cedar' },
+          { type: 'change', targetBackendNodeId: target, value: 'Cedar' },
+        ],
+        { operation: 'SELECT', targetBackendNodeId: target, value: 'Cedar' }
+      )
+    ).toBe(false);
+  });
+
   it('reports settlement timing and measured snapshot bytes without inferring model scores', () => {
     const summary = summarizeTrace({
       steps: [
@@ -73,12 +117,74 @@ describe('Act benchmark task registration', () => {
       'range-date',
       'nested-scroll',
       'cross-origin-iframe',
-      'trusted-key-only',
       'validation-error',
     ]) {
       expect(ids).toContain(id);
       expect(TASKS.find((task) => task.id === id).prompt.length).toBeGreaterThan(30);
     }
+  });
+
+  it('loads a fixed, train-only Mind2Web subset with oracle data outside the page prompt', () => {
+    const mind2web = TASKS.filter((task) => task.mind2web);
+    const manifest = JSON.parse(
+      fs.readFileSync(new URL('../eval/mind2web/manifest.json', import.meta.url), 'utf8')
+    );
+    const casesBytes = fs.readFileSync(new URL('../eval/mind2web/cases.json', import.meta.url));
+    const pageArchive = fs.readFileSync(
+      new URL('./browser/fixtures/mind2web-pages.json.gz', import.meta.url)
+    );
+    const pages = JSON.parse(zlib.gunzipSync(pageArchive).toString('utf8'));
+    const pageById = new Map(pages.pages.map((page) => [page.id, page]));
+    const casesById = new Map(
+      JSON.parse(casesBytes.toString('utf8')).cases.map((item) => [item.id, item])
+    );
+    const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+
+    expect(manifest.split).toBe('train');
+    expect(sha256(casesBytes)).toBe(manifest.casesSha256);
+    expect(sha256(pageArchive)).toBe(manifest.pageArchiveSha256);
+    expect(mind2web).toHaveLength(9);
+    expect(mind2web.map((task) => task.id)).toEqual(manifest.caseIds);
+    expect(pages.pages.map((page) => page.id)).toEqual(manifest.caseIds);
+    for (const task of mind2web) {
+      expect(task.taskMode).toBe('mind2web');
+      expect(task.oracle.targetBackendNodeId).toBeTruthy();
+      expect(task.prompt).not.toContain(task.oracle.targetBackendNodeId);
+      const entry = casesById.get(task.id);
+      if (entry.targetTag === 'a') {
+        const page = pageById.get(task.id);
+        const target = page.html.match(
+          new RegExp(`<a\\b(?=[^>]*\\bbackend_node_id="${entry.targetBackendNodeId}")[^>]*>`)
+        );
+        expect(target?.[0]).toContain(`href="/mind2web-target/${task.id}"`);
+      }
+    }
+    const fixture = fs.readFileSync(
+      new URL('./browser/fixtures/mind2web-action.html', import.meta.url),
+      'utf8'
+    );
+    expect(fixture).toContain('event.preventDefault()');
+  });
+
+  it('selects the fixed 15-local plus three-Mind2Web model scorecard', () => {
+    const localIds = TASKS.filter((task) => !task.mind2web).map((task) => task.id);
+    const mind2webIds = TASKS.filter((task) => task.mind2web).map((task) => task.id);
+    expect(SCORECARD_TASK_IDS).toHaveLength(18);
+    expect(SCORECARD_TASK_IDS.slice(0, 15)).toEqual(localIds.slice(0, 15));
+    expect(SCORECARD_TASK_IDS.slice(15)).toEqual([
+      'mind2web-37564222',
+      'mind2web-1a16a98f',
+      'mind2web-0633c328',
+    ]);
+    expect(SCORECARD_TASK_IDS.slice(15).every((id) => mind2webIds.includes(id))).toBe(true);
+    expect(parseArgs(['--run', '--suite', 'scorecard'])).toMatchObject({
+      run: true,
+      suite: 'scorecard',
+      tasks: [...SCORECARD_TASK_IDS],
+    });
+    expect(() => parseArgs(['--suite', 'scorecard', '--task', 'search-enter'])).toThrow(
+      /cannot be combined/i
+    );
   });
 
   it('selects Codex mode with the requested model and supported medium reasoning', () => {

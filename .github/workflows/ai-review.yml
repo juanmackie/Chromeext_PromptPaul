@@ -1,0 +1,86 @@
+name: AI review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  # Without a key the review cannot run. Skip with a notice instead of failing
+  # every pull request; configure OPENAI_API_KEY to enable automatic review.
+  preflight:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.key.outputs.enabled }}
+    steps:
+      - name: Check review key availability
+        id: key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY is not configured; skipping automatic AI review."
+          fi
+
+  review:
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - name: Checkout pull request merge commit
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+
+      - name: Fetch pull request base and head
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "$BASE_REF" "+refs/pull/$PR_NUMBER/head"
+
+      - name: Review changes with Codex
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ':workspace'
+          prompt: |
+            Review only actionable bugs, security issues, or regressions introduced by this pull request.
+            Compare the pull request head with its base. Do not modify files or run project code.
+            Return a concise summary with findings first. If there are no findings, say so explicitly.
+
+            Pull request #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}
+            Base: ${{ github.event.pull_request.base.sha }}
+            Head: ${{ github.event.pull_request.head.sha }}
+
+  post-summary:
+    if: needs.review.outputs.summary != ''
+    needs: review
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Post review summary
+        uses: actions/github-script@v7
+        env:
+          REVIEW_SUMMARY: ${{ needs.review.outputs.summary }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: process.env.REVIEW_SUMMARY,
+            });

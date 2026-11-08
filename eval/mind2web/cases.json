@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "source": "OSU-NLP-Group/Mind2Web data/train/train_10.json",
+  "split": "train",
+  "cases": [
+    {
+      "id": "mind2web-37564222",
+      "annotationId": "37564222-bb58-4a55-b47b-e9ffbbc1d160",
+      "actionIndex": 0,
+      "website": "sports.yahoo",
+      "task": "Find the results of the most recent NFL games.",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "170",
+      "targetTag": "a"
+    },
+    {
+      "id": "mind2web-3e142eee",
+      "annotationId": "3e142eee-7a62-4ad7-ae16-419d596ab63b",
+      "actionIndex": 0,
+      "website": "sports.yahoo",
+      "task": "Find the list of injured NBA players.",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "105",
+      "targetTag": "a"
+    },
+    {
+      "id": "mind2web-56e4a9c1",
+      "annotationId": "56e4a9c1-d39e-4173-9857-9cf980c0fba9",
+      "actionIndex": 0,
+      "website": "sports.yahoo",
+      "task": "Follow the Denver Nuggets NBA team.",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "117",
+      "targetTag": "a"
+    },
+    {
+      "id": "mind2web-63d1f820",
+      "annotationId": "63d1f820-37bf-4adb-aabb-65eb7925790c",
+      "actionIndex": 0,
+      "website": "sports.yahoo",
+      "task": "Find the current roster of the Miami Heat.",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "96",
+      "targetTag": "a"
+    },
+    {
+      "id": "mind2web-1a16a98f",
+      "annotationId": "1a16a98f-4e8f-4ff9-9fa2-b97d2d403cc3",
+      "actionIndex": 0,
+      "website": "kohls",
+      "task": "Add a set of sonoma bath towels to the cart and apply a coupon code for free shipping.",
+      "previousActions": [],
+      "operation": "TYPE",
+      "value": "bath towels",
+      "targetBackendNodeId": "159",
+      "targetTag": "input"
+    },
+    {
+      "id": "mind2web-0633c328",
+      "annotationId": "0633c328-f1ad-42bd-8aec-7a1883b5898d",
+      "actionIndex": 0,
+      "website": "travelzoo",
+      "task": "Find a luxury trip deal anywhere to go in spring",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "101",
+      "targetTag": "input"
+    },
+    {
+      "id": "mind2web-1ba150cb",
+      "annotationId": "1ba150cb-3b4a-4f0a-bff0-b448c78608ae",
+      "actionIndex": 0,
+      "website": "travelzoo",
+      "task": "Find hotel deals in Las Vegas for four adults starting on May 17 and ending on May 20, and if deal is not available, set an alert for the same.",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "93",
+      "targetTag": "input"
+    },
+    {
+      "id": "mind2web-1c1af35c",
+      "annotationId": "1c1af35c-a0d7-4fe8-bcd3-baf30862235b",
+      "actionIndex": 0,
+      "website": "travelzoo",
+      "task": "Show most expensive cruise deals in Europe and Mediterranean.",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "655",
+      "targetTag": "a"
+    },
+    {
+      "id": "mind2web-33964bc4",
+      "annotationId": "33964bc4-fc1d-417c-ba5a-2c1c45ed8d8b",
+      "actionIndex": 0,
+      "website": "travelzoo",
+      "task": "Show me the most expensive things to do anywhere in December in a map",
+      "previousActions": [],
+      "operation": "CLICK",
+      "value": "",
+      "targetBackendNodeId": "114",
+      "targetTag": "input"
+    }
+  ]
+}

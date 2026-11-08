@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { isGeneratedRuntimeAsset, copyNpmRuntimeAssets } = require('./runtime-dependencies');
 
 const repoRoot = process.cwd();
 const srcDir = repoRoot;
@@ -80,7 +81,7 @@ function validateManifest(manifest) {
       if (contentScript.js) {
         contentScript.js.forEach((scriptPath) => {
           const fullPath = path.join(srcDir, scriptPath);
-          if (!fs.existsSync(fullPath)) {
+          if (!fs.existsSync(fullPath) && !isGeneratedRuntimeAsset(scriptPath)) {
             errors.push(`Content script does not exist: ${scriptPath}`);
           }
         });
@@ -91,7 +92,7 @@ function validateManifest(manifest) {
   // Validate background service worker
   if (manifest.background && manifest.background.service_worker) {
     const fullPath = path.join(srcDir, manifest.background.service_worker);
-    if (!fs.existsSync(fullPath)) {
+    if (!fs.existsSync(fullPath) && !isGeneratedRuntimeAsset(manifest.background.service_worker)) {
       errors.push(
         `Background service worker does not exist: ${manifest.background.service_worker}`
       );
@@ -101,7 +102,7 @@ function validateManifest(manifest) {
   // Validate options page
   if (manifest.options_page) {
     const fullPath = path.join(srcDir, manifest.options_page);
-    if (!fs.existsSync(fullPath)) {
+    if (!fs.existsSync(fullPath) && !isGeneratedRuntimeAsset(manifest.options_page)) {
       errors.push(`Options page does not exist: ${manifest.options_page}`);
     }
   }
@@ -191,8 +192,6 @@ function copyFiles(manifest) {
     'options.css',
     'loading-states.css',
     'ui-primitives.css',
-    // Root-level vendored assets referenced by extension pages
-    'marked.min.js',
   ];
 
   // Add content script files
@@ -419,6 +418,7 @@ function main() {
   // Copy files
   console.log('📦 Copying files...');
   copyFiles(buildManifest);
+  copyNpmRuntimeAssets(buildDir);
   fs.writeFileSync(
     path.join(buildDir, 'manifest.json'),
     `${JSON.stringify(buildManifest, null, 2)}\n`

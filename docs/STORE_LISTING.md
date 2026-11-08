@@ -10,13 +10,13 @@ Prompt Paul - AI Insights at the click of a mouse
 
 Context-aware AI in the browser. Short feedback loops for selected text, without ceremony.
 
-## What's new (version 6.3.0)
+## What's new (version 6.4.0)
 
-Web search now uses a keyless Exa client backed by Exa's hosted MCP endpoint (with optional background-owned `exaSearchApiKey` to lift free-tier rate limits), falling back to Parallel's keyless hosted Search MCP. The provider preference is `exa` (default) or `brave`; stored legacy `duckduckgo` values migrate to `exa` automatically. The Options page Web Search section reflects the new provider selection.
-
-## Next release permission notice (do not publish until release)
-
-The upcoming experimental precise-input option adds Chrome's `debugger` permission. Chrome will ask existing users to review the added permission when the extension updates. The option is off by default and limits debugger use to approved mouse, keyboard, and text input; it does not enable page JavaScript, DOM inspection, screenshots, or network access.
+Removed the unreleased precise-input prototype because Chrome does not allow the `debugger` permission to be optional; no debugger permission is requested.
+Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
+Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
+A busy send now checks the background journal before warning. A run that is provably inactive (for example after a worker restart or a lost terminal) is settled from its journal when available and its streaming bubble is cleared; a genuinely live run still shows "A response is already in progress".
+Resuming an interrupted Act checkpoint now releases the panel's in-process response guard when the resumed run settles. Later sends and panel actions start normally instead of being rejected as "A response is already in progress" until the panel reloads.
 
 ## Description
 
@@ -35,6 +35,9 @@ Analyze, explain, proofread, summarize, or run a custom instruction against sele
 
 **Page-aware chat**
 Load the current page into the side panel, ask follow-up questions, and keep the page context attached to the conversation.
+
+**Experimental current-page actions (Act)**
+Act can inspect and interact with page controls through a bounded workflow. It is off by default and asks before high-risk actions.
 
 **Media-aware prompts**
 Work with images, video, and audio when your provider and model support them. Codex connections in this release support text and images; video and audio require a compatible API profile. Right-click media, ask, and get a response. YouTube workflows can include transcript context and visual moments when available.
@@ -55,9 +58,6 @@ Use configured custom HTTP tools and OpenClaw-compatible Agent Skills with API-k
 
 **Optional web search**
 Enable web search grounding for API-key or Codex connections when current or verifiable information would improve the answer. Responses that use search include a Sources section. The selected model must support function calling.
-
-**Experimental precise input**
-Act uses semantic page controls by default. An optional, default-off setting can send approved mouse and keyboard input through Chrome's debugger Input API for pages where synthetic DOM events do not work. Chrome may show a debugger permission warning. The setting does not enable page JavaScript, DOM inspection through CDP, screenshots, or network access.
 
 ### Privacy
 

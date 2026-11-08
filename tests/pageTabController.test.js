@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ACT_TAB_CAPS } from '../src/act/ActLimits.js';
 import { PageTabController } from '../src/orchestrator/PageTabController.js';
 
 describe('PageTabController', () => {
@@ -74,6 +75,22 @@ describe('PageTabController', () => {
     );
     await controller.execute('run-1', 'page_close_tab', { tabId: 2 });
     expect(chrome.tabs.remove).toHaveBeenCalledWith(2);
+  });
+
+  it('enforces the canonical per-run owned-tab cap', async () => {
+    for (let index = 0; index < ACT_TAB_CAPS.maxOwnedTabs - 1; index += 1) {
+      await controller.execute('run-1', 'page_open_tab', {
+        url: `https://site-${index}.example/`,
+        background: true,
+      });
+    }
+    expect(controller.getOwnedTabIds('run-1')).toHaveLength(ACT_TAB_CAPS.maxOwnedTabs);
+    await expect(
+      controller.execute('run-1', 'page_open_tab', {
+        url: 'https://one-more.example/',
+        background: true,
+      })
+    ).rejects.toMatchObject({ code: 'PAGE_TAB_LIMIT' });
   });
 
   it('groups only run-created tabs and reuses the group for later tabs', async () => {

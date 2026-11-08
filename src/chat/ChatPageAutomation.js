@@ -232,12 +232,6 @@ export function updatePageTaskProgress(chatArea, event = {}, runId = '') {
         event.target.origin ? `Target: ${event.target.label}` : `On: ${event.target.label}`
       );
     }
-    const inputStatus = {
-      enabled: 'Precise input: enabled',
-      active: 'Precise input: active',
-      fallback: 'Precise input: unavailable; using standard input',
-    }[event.preciseInputState];
-    if (inputStatus) parts.push(inputStatus);
     status.textContent = parts.join(' · ');
   }
 

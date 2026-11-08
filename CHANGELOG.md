@@ -1,21 +1,8 @@
 # Changelog
 
-## [6.3.0] - 2026-09-12
+## [6.4.0] - 2026-11-08
 
-- Replaced the keyless DuckDuckGo Instant Answer provider with a keyless Exa search client (`src/utils/keylessSearch.js`) backed by Exa's hosted MCP endpoint, falling back to Parallel's keyless hosted Search MCP.
-- Added an optional background-owned Exa API key (`exaSearchApiKey`) that only raises Exa free-tier rate limits; it is excluded from backups and never exposed to the Options page as a value.
-- Updated the Options page provider UI: the Web Search section now offers Exa (default, free, no key required) and Brave (keyed).
-- `searchProvider` now accepts `exa` or `brave`; a stored legacy `duckduckgo` value migrates to `exa` automatically.
-
-## [6.2.0] - 2026-05-11
-
-- Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.
-- Added zero-dependency document attachments: dropping `.txt`, `.md`, `.markdown`, `.csv`, or `.json` files into the composer reads them as bounded text (200k-character cap) and sends them as a new `document` prompt context type instead of base64 media.
-- Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
-- Act runs now recover from active-tab document changes by discarding stale snapshots, re-inspecting the current supported page, and continuing the request. Mutations interrupted during navigation remain unverified and are never blindly repeated.
-- Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
-
-## [Unreleased]
+- Removed the unreleased precise-input prototype because Chrome does not allow the `debugger` permission to be optional; no debugger permission is requested.
 
 - Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
 - Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
@@ -23,7 +10,7 @@
 - Resuming an interrupted Act checkpoint now releases the panel's in-process response guard when the resumed run settles. Later sends and panel actions start normally instead of being rejected as "A response is already in progress" until the panel reloads.
 - Side-panel actions now keep one delivery identity across send retries and the session queue, so a repeated delivery cannot start the same action twice (for example a second media analysis run for one context-menu click).
 - Act `page_find_text` now returns indices from the merged frame snapshot; stale pre-dispatch targets trigger an automatic fresh inspection and a `not_delivered` receipt instead of a plain failure.
-- Unresponsive pages after state-changing actions now pause for the user to handle a possible browser dialog, then inspect again without replaying the action; precise CDP commands have a 15-second bound.
+- Unresponsive pages after state-changing actions now pause for the user to handle a possible browser dialog, then inspect again without replaying the action.
 - Act approval cards focus the card instead of Approve. Password-manager, sign-in/account, and Prompt Paul origins do not offer or honor saved low-risk or run-wide similar-action approval.
 - Act site-policy blocks and allowance removals tighten active runs at the next action boundary; new allowances apply to new runs.
 - Act no longer claims that run-created tabs are closed automatically. Target highlights and the notch activity glow have bounded cleanup paths.
@@ -32,7 +19,6 @@
 - Token estimation no longer tests a Unicode whitespace regex for each character, and conversation history below budget uses a cheap character upper bound before exact token scans.
 
 - Split the semantic Act runtime into `content_script_page_actions.js` and inject it only when an Act run needs the page bridge; navigation recovery reinstalls it on the destination document. The extraction script remains separate, and page-action message shapes are unchanged. Chrome groups tabs created by one Act run when tab groups are available; this uses the existing `tabs` permission.
-- Added default-off experimental precise input, limited to Chrome CDP `Input` mouse/key/text commands. Act still resolves semantic targets and applies its normal policy first; the debugger attaches only for approved input on a supported page and detaches on Stop or run teardown. Standard DOM delivery remains the fallback.
 - Improved Act reliability on ARIA-heavy SPA pages: snapshots expose bounded menu/tab/switch state and digest-only hash/query route changes; a 16-action run-only memory ledger detects toggle loops, while counted plural requests track up to 12 distinct completed items. Added Gmail-like local browser and benchmark cases without retaining route fragments or action memory in checkpoints/journals.
 - **Reliability/release hardening (P1 punchlist).** Act screenshots are disabled for release behind a static `ACT_SCREENSHOTS_ENABLED=false` gate with DOM-only fallback; Act vision payloads now preserve user text and uploaded images in their original order and replace only the ephemeral screen. Pinned-instruction backups validate pins as bounded string-ID arrays so pinning never blocks export. Each Options section tracks unsaved state independently. Pending page-user-input, manual-Resume, and Hermes-approval interactions replay correctly after a side-panel reconnect. Tool/skill/profile writes report errors instead of clearing drafts on storage failure. CI now gates release artifacts on browser tests of the production output.
 - Options status messages are visible again: `loadingManager` toasts were rendered with Bootstrap's `.toast` class, so Bootstrap's `.toast:not(.show){display:none}` outranked the loading-state styles and hid every `showStatus()` message (skill save/clear, section saves, and other feedback on the Options page looked like a no-op). Toasts now use their own `ext-toast`/`ext-toast-container` classes, and the browser suite asserts they are actually visible.
@@ -56,6 +42,21 @@
 - Act step titles: page-action tools accept an optional bounded model-supplied title (≤80 chars, control/credential wording rejected) shown on the progress card, falling back to the event-type label.
 - Declining an Act action now renders a distinct declined outcome on the progress card and nudges the planner to change approach instead of repeating the denied action.
 - **Packaging/release hardening (P3 punchlist).** The production package now filters a review-approved development-only file set (`AGENTS.md` and derived dev-off files) out of `src`/`libs`/`skills` directory copies while preserving every runtime skill file, vendored asset, and license notice, so development instructions no longer ship. The runtime package is also backed by a fail-closed provenance gate: every shipped third-party asset now maps to an exact source/version/hash record, any unlisted asset fails verification, and a root MIT `LICENSE` documents ownership. Build metadata now records the real git revision, working-tree clean/dirty status with the exact dirty paths, and a reproducible SHA-256 artifact root; a per-file `BUILD.sha256` manifest is written next to `build-metadata.json` so a downloaded candidate can be traced to its tested revision and verified byte-for-byte. Development and evaluation output remain excluded from the release package.
+
+## [6.3.0] - 2026-09-12
+
+- Replaced the keyless DuckDuckGo Instant Answer provider with a keyless Exa search client (`src/utils/keylessSearch.js`) backed by Exa's hosted MCP endpoint, falling back to Parallel's keyless hosted Search MCP.
+- Added an optional background-owned Exa API key (`exaSearchApiKey`) that only raises Exa free-tier rate limits; it is excluded from backups and never exposed to the Options page as a value.
+- Updated the Options page provider UI: the Web Search section now offers Exa (default, free, no key required) and Brave (keyed).
+- `searchProvider` now accepts `exa` or `brave`; a stored legacy `duckduckgo` value migrates to `exa` automatically.
+
+## [6.2.0] - 2026-05-11
+
+- Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.
+- Added zero-dependency document attachments: dropping `.txt`, `.md`, `.markdown`, `.csv`, or `.json` files into the composer reads them as bounded text (200k-character cap) and sends them as a new `document` prompt context type instead of base64 media.
+- Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
+- Act runs now recover from active-tab document changes by discarding stale snapshots, re-inspecting the current supported page, and continuing the request. Mutations interrupted during navigation remain unverified and are never blindly repeated.
+- Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
 
 ## [6.2.1] - 2026-08-31
 

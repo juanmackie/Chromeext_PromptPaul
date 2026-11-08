@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import RunOrchestrator from '../src/orchestrator/RunOrchestrator.js';
+import { RUN_JOURNAL_CAPS } from '../src/orchestrator/RunJournal.js';
 
 const RUN_JOURNAL_STORAGE_KEY = 'promptPaulRunJournalsV1';
 
@@ -72,7 +73,7 @@ describe('run journal persistence', () => {
         toolCall: { function: { name: `tool-${index}` } },
       });
     }
-    await orch.journalWrite;
+    await orch.runJournal.writePromise;
 
     expect(journalReadCount(session)).toBe(1);
     expect(journalWriteCount(session)).toBe(1);
@@ -105,7 +106,7 @@ describe('run journal persistence', () => {
     orch._terminateRun(run.id, { type: 'complete', content: 'Finished.' });
 
     firstGet.resolve();
-    await orch.journalWrite;
+    await orch.runJournal.writePromise;
 
     expect(journalReadCount(session)).toBeLessThanOrEqual(2);
     expect(journalWriteCount(session)).toBeLessThanOrEqual(2);
@@ -138,7 +139,7 @@ describe('run journal persistence', () => {
     orch._terminateRun(run.id, { type: 'complete', content: 'Finished.' });
 
     firstSet.resolve();
-    await orch.journalWrite;
+    await orch.runJournal.writePromise;
 
     expect(journalReadCount(session)).toBeLessThanOrEqual(2);
     expect(journalWriteCount(session)).toBeLessThanOrEqual(2);
@@ -174,7 +175,7 @@ describe('run journal persistence', () => {
         resolve();
       });
     });
-    await orch.journalWrite;
+    await orch.runJournal.writePromise;
 
     expect(storageData[RUN_JOURNAL_STORAGE_KEY][run.id].eventSequence).toBe(run.eventSequence);
     expect(journalReadCount(session)).toBe(2);
@@ -199,7 +200,7 @@ describe('run journal persistence', () => {
     orch._emitEvent(second.id, { type: 'content', data: 'private second text' });
     orch._terminateRun(first.id, { type: 'complete', content: 'First answer.' });
     orch._terminateRun(second.id, { type: 'complete', content: 'Second answer.' });
-    await orch.journalWrite;
+    await orch.runJournal.writePromise;
 
     const journals = storageData[RUN_JOURNAL_STORAGE_KEY];
     expect(journals.existing.runId).toBe('existing');
@@ -223,12 +224,12 @@ describe('run journal persistence', () => {
       orch.activeRuns.set(run.id, run);
       orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
     }
-    await orch.journalWrite;
+    await orch.runJournal.writePromise;
 
-    expect(orch.pendingJournalSnapshots.size).toBeLessThanOrEqual(24);
-    expect([...orch.pendingJournalSnapshots.keys()]).toContain('pending-run-29');
+    expect(orch.runJournal.pendingSnapshots.size).toBeLessThanOrEqual(RUN_JOURNAL_CAPS.maxRuns);
+    expect([...orch.runJournal.pendingSnapshots.keys()]).toContain('pending-run-29');
     expect(
-      [...orch.pendingJournalSnapshots.values()].every(
+      [...orch.runJournal.pendingSnapshots.values()].every(
         (snapshot) =>
           snapshot.runId && !('config' in snapshot) && !('conversationHistory' in snapshot)
       )
@@ -258,7 +259,7 @@ describe('run journal persistence', () => {
       });
       orch._terminateRun(run.id, { type: 'complete', content: 'Recovered.' });
       blockedOperation.reject(new Error('storage unavailable'));
-      await orch.journalWrite;
+      await orch.runJournal.writePromise;
 
       expect(storageData[RUN_JOURNAL_STORAGE_KEY][run.id]).toMatchObject({
         status: 'complete',
@@ -284,11 +285,11 @@ describe('run journal persistence', () => {
       const run = createRun(`${method}-later-retry-run`);
       orch.activeRuns.set(run.id, run);
       orch._emitEvent(run.id, { type: 'tool_start', toolCall: { function: { name: 'probe' } } });
-      await orch.journalWrite;
+      await orch.runJournal.writePromise;
       expect(method === 'get' ? journalReadCount(session) : journalWriteCount(session)).toBe(1);
 
       orch._terminateRun(run.id, { type: 'complete', content: 'Recovered later.' });
-      await orch.journalWrite;
+      await orch.runJournal.writePromise;
 
       expect(
         method === 'get' ? journalReadCount(session) : journalWriteCount(session)
@@ -322,7 +323,7 @@ describe('run journal persistence', () => {
       });
     }
     boundedOrch._terminateRun(boundedRun.id, { type: 'complete', content: 'x'.repeat(10_000) });
-    await boundedOrch.journalWrite;
+    await boundedOrch.runJournal.writePromise;
 
     const journal = storageData[RUN_JOURNAL_STORAGE_KEY][boundedRun.id];
     expect(journal.events).toHaveLength(1);
