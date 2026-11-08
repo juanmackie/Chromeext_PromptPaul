@@ -125,7 +125,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
 
       - name: Download baseline score
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: act-score-baseline
           path: baseline
