@@ -54,6 +54,6 @@
     "dompurify": "3.4.17",
     "marked": "4.3.0",
     "pdfjs-dist": "6.5.438",
-    "turndown": "7.2.0"
+    "turndown": "7.2.5"
   }
 }
