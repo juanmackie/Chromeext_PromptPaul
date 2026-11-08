@@ -73,7 +73,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Post review summary
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           REVIEW_SUMMARY: ${{ needs.review.outputs.summary }}
         with:
