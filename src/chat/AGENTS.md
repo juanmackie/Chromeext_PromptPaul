@@ -1,86 +1,30 @@
-# Chat DOX
+# Chat modules
 
-## Purpose
+## Purpose and ownership
 
-The `src/chat/` subtree contains side panel chat modules imported by `chat.js`.
+`chat.js` composes the side-panel modules. Keep cross-module DOM event wiring there and place capability behavior in its owning `src/chat/` module.
 
-## Ownership
+- `ChatAPI.js`: profile selection, request preparation, and background run bridge.
+- `ChatComposer.js`, `ChatUI.js`, `ChatActionMenu.js`: composer state, rendering, and local controls.
+- `ChatStream.js`, `ChatRunRecovery.js`: live event ownership, history, reconnect, and explicit recovery.
+- `ChatPageActions.js`, `ChatPageAutomation.js`, `PageContext.js`: page context and Act controls.
+- `ChatAnswerRenderer.js`, `ChatGrounding.js`: validated answer cards and search-source display.
+- `ChatMedia.js`, `ChatVoice.js`, `ChatSelection.js`, `ChatSkills.js`, `ChatHermes.js`, `ChatClipboard.js`, `ChatModelStatus.js`: media, voice, selection, skills, Hermes approvals, clipboard, and model status.
 
-- `ChatUI.js` owns chat DOM rendering, message controls, and attachment previews.
-- `ChatAnswerRenderer.js` owns read-only summary, key/value, and comparison cards, stable progressive block reconciliation, and local comparison sorting/filtering. It revalidates the projection, inserts untrusted strings through text nodes, and resolves source references only against host-provided metadata. `ChatUI` preserves the readable answer, copy controls, focus, and scroll intent; terminal validation replaces or clears provisional state. Composer actions request cards explicitly through the existing run path. Card follow-ups use extension-authored instructions and prefill only; the visible cancellable composer context binds the original bounded request and source tab until an explicit Send or context replacement. No local card control grants consent or starts a provider request.
-- `ChatModelStatus.js` owns the compact sidebar readout for the selected profile's mode, model, and reasoning level, including storage-change refreshes.
-- `ChatAPI.js` owns profile/config resolution and run bridge calls to the background worker. It must resolve the selected profile through the shared valid-profile fallback so an incomplete selected profile does not hide a usable Default profile.
-- `ChatAPI.js` passes only the selected profile provider, ID, model, and saved reasoning level to the background run bridge. It must not include provider credentials in run messages. The background re-resolves provider credentials and configuration from storage, and ChatAPI keeps the opaque run owner token only in memory; a fresh panel may adopt an active run token returned by the background reconnect check, and approval decisions recover a missing token from the active-run journal before sending. Codex credentials are never read by chat modules. When the background resolves a missing Act source tab, ChatAPI adopts the returned source identity before registering the local run so later page-action approvals, clarification responses, and manual-resume responses remain bound to that tab.
-- `executeRun` is an acknowledgement-only bridge: the background starts the long-running execution after returning `{ success: true, accepted: true }`, while terminal state arrives through `orchestratorEvent` and the session journal. ChatAPI keeps the run owner token until a terminal event or an acknowledged abort, and a fresh panel may adopt the active run token and continue from the journal's event sequence so a long task survives message-channel, tab, and side-panel lifecycle changes.
-- `ChatSkills.js` owns `/skills`, `/skill <name>`, per-skill shortcuts, natural-language skill intent detection, and the pure typeahead picker helpers (`buildSlashCandidates`, `filterSlashCandidates`).
-- `ChatMedia.js` owns media validation, media prompts, base64 conversion, attachment sizing, vision support checks, and document attachments. `prepareDroppedFile()` classifies dropped files: `.txt`/`.md`/`.markdown`/`.csv`/`.json` documents become bounded text (`MAX_DOCUMENT_CHARS`, 200k chars) and every other allowed file follows the existing base64 media pipeline.
-- `ChatStream.js` owns streaming state tracking, the in-memory conversation history, and the opaque conversation identity reused across provider/model switches until New chat or Clear.
-- `ChatVoice.js` owns speech recognition state and voice toggle behavior.
-- `ChatPageActions.js` owns page-aware quick actions and preset analysis prompts.
-- `ChatActionMenu.js` owns the compact chat action dock overflow menu, including focus management, keyboard navigation, and active-state indicators.
-- `ChatSelection.js` reads the live source-tab selection only when the user explicitly invokes a chat text action. Detaching a sticky selection (Remove chip, Clear, New chat) also releases the source-tab identity captured with it, so the next live read follows the browser's active tab instead of a detached tab.
-- `ChatPageAutomation.js` owns the default-off Act toggle, safe tool-support status bridge, preference bridge and sanitized approval cards. Unsupported/unknown model warnings appear on enable without provider calls. Approval cards can save low-risk trust for the displayed site; high-risk actions still ask. Late transport failures keep settled/expired cards disabled; pending transport failures permit retry.
-- `ChatPageAutomation.js` owns the single Act lease and approval-card rendering. `ChatRunRecovery.js` owns the bounded session run journal reconnect notice and the definitive run-liveness probe used before a stranded panel guard is cleared: an active run offers Watch run and adopts live events, while an interrupted checkpoint offers only explicit Resume. The visible chat surface uses the single Act lease for tab scope; the legacy multi-tab field remains a runtime compatibility value, not a second UI permission. The run-scoped progress card renders the bounded model-supplied step `title` when present (falling back to the event-type label) and shows a distinct declined outcome line when the user denied the last requested action.
-- `ChatHermes.js` owns bounded Hermes server-approval cards and sends only validated approval choices through the background worker.
-- `ChatPageAutomation.js` renders bounded clarification cards for `page_request_user_input`; answers are sent through the run/source ownership check in the background worker. Planner activation notices arrive as bounded `page_action_notice` events and render in the page-activity status card.
-- The Act permission is passed to each run unchanged. If an enabled Act run cannot use its source tab, startup reports an actionable error instead of silently falling back to plain chat. The sidebar Act toggle keeps its active shading and becomes unavailable for the lifetime of an Act run; the sticky session permission remains visible after each terminal run until the user disables it. The orchestrator owns the initial `page_get_state` inspection even when a custom tool choice is selected; the model-facing Act prompt must expose the callable page-tool list and must not imply that Act tools are unavailable. The single Act lease includes bounded run-owned tabs; background tabs are readiness-checked before use, and a failed tab is isolated rather than ending the run.
-- `ChatComposer.js` owns the composer-led UI: the visible context tray, the contextual quick-action row, starter actions when no context is attached, the Act permission indicator, the overflow split, inline Stop/Retry/Edit/Continue recovery, and the pending document attachment. The pending document lives in composer memory only (never storage), is rendered as a bounded tray chip with filename, truncation status, and Remove, enforces one pending document with an explicit Replace/Keep-current choice for a second drop, is sent only when the user sends (dropping never starts a provider request) through the structured `document` context, is cleared on terminal success or Clear/New chat, and is retained on failed submissions for Retry/Edit. It reads context from the DOM (tray item visibility, `data-run-state` on `#input-area`) and routes actions through handlers supplied by `chat.js`. Contextual and site suggestions share one composer-owned row capped at four visible actions, with the remainder in the existing overflow menu.
-- `PageContext.js` prepares loaded page/PDF metadata, budgeted text, and structured history messages before `chat.js` mutates the UI or conversation history.
-- Hermes run preparation keeps the visible local transcript authoritative across profile changes and sends a bounded provider-specific history through the background bridge.
+## Boundaries
 
-## Local Contracts
+- The root [AGENTS.md](../../AGENTS.md) is canonical for storage, credentials, structured prompts, run ownership, Act policy, answer cards, grounding, and UI state vocabulary. Read it before changing those contracts; read [`src/act/AGENTS.md`](../act/AGENTS.md) for Act behavior.
+- `ChatAPI.js` sends provider/profile/model configuration to the worker, never credentials. Opaque run-owner tokens stay in memory; the background journal supports reconnect and explicit recovery.
+- Context-bearing requests use structured `{ instruction, context }` data and `composeUserPrompt`. `PageContext.js` and `ChatPageActions.js` prepare bounded, untrusted context.
+- Dropped text documents use the `document` prompt context and plain request path. They stay in composer memory until Send and never enter the base64/vision flow.
+- `ChatStream.js` owns run/event ordering. It expands live `stream_batch` segments before rendering; live deltas are not persisted.
+- `ChatAnswerRenderer.js` renders only validated, allowlisted card projections. Readable answer text remains authoritative; local card controls never start a run or grant authority.
+- `ChatGrounding.js` displays search status and sources without reading Brave or Exa keys from panel storage. The background owns those values.
+- `ChatHermes.js` sends only validated approval choices. The idle Hermes action is **New chat**, which ends the gateway session through the background before clearing local state.
+- Render untrusted text with text nodes or the existing sanitized Markdown path. Keep focus and reader scroll stable during progressive updates.
 
-- Page-card requests use the positive source tab ID returned by the trusted Add Page extraction response, retained only in memory with the attachment and cleared on detach/replacement. A later active tab cannot replace that source. Selection, document, and Act source routing retain their existing contracts.
+## Work and verification
 
-- Chat modules are imported from `chat.js`; tests expect every `src/chat/*.js` module to be referenced there.
-- Hermes approval cards must use text nodes, show bounded server summaries, default to one-time approval, bind decisions to the opaque pending approval ID, visibly settle accepted/closed cards, and never render raw command arguments or credentials.
-- Source modules should stay under the current 600-line guard unless the test contract changes deliberately.
-- Skill intent support must preserve the documented patterns in root AGENTS.md and `docs/SKILL_EXAMPLES.md`.
-- Media handling must route image/video/audio requests through profile selection that supports vision when required.
-- Document attachments must use the `document` prompt context type from `src/prompts.js` and the plain `makeApiCall` path. Documents never enter the vision/base64 media pipeline and never trigger vision-profile rerouting. Dropping a document attaches it in the composer tray; only an explicit send starts the run, and a failed submission retains the attachment while terminal success spends it (follow-ups rely on conversation history).
-- UI state changes that affect buttons, attachments, streaming, or storage sync must stay coordinated with `chat.js`.
-- The idle Hermes chat action is **New chat**. It must end the selected Hermes session through the background worker before clearing local history, attachments, selection, and page context; API and Codex keep local **Clear** behavior.
-- `ChatStream.js` run ID (`currentRunId`) is the authoritative ownership token for orchestrator events; `chat.js` checks it against `streamState.getRunId()` before processing any event. Orchestrator events are applied in monotonic sequence order. The stream manager expands bounded `stream_batch` events into their original `content`/`reasoning` segment order before UI handling; live Markdown renders at a bounded cadence and terminal rendering remains canonical. The completed assistant bubble is placed after tool traces.
-- `ChatPageActions.js` returns structured `{instruction, context}` prompt request objects via `buildSmartPromptRequest`; callers pass these to `makeApiCall` which calls `composeUserPrompt` from `src/prompts.js`. Page metadata stays bounded untrusted context, not instruction text.
-- Media and document filenames are display metadata only. `ChatMedia.js` keeps generated analysis instructions static and sends document names through bounded `document` context metadata.
-- Composer surfaces (`#context-tray`, `#quick-actions-row`, `#page-context-strip`) are the single visible context surface near the composer; `ChatComposer.js` keeps their visibility synchronized with strip state and the run-state contract from `src/utils/runState.js`.
-- Inline recovery buttons (Stop/Retry/Edit/Continue) must route through the canonical run entry points (`stopApiRequest`, `runSelectedTextPrompt`, `makeApiCall`); Continue always builds on `previous_response` context, never on a stale sticky selection. Retry/Edit recovery binds the originating structured request/context identity (the prompt request object attached to the user message in `ChatUI.js`) at row creation time, so it replays the ORIGINAL attachments/selection/page context instead of the (possibly changed) current context; it falls back to the plain prompt when no identity was captured. Media identity replays route through `makeApiCallWithMedia`. A generic Retry on an Act run whose final mutation was unverified/in-flight is gated through `shouldGateActRetry` and surfaces a Re-inspect-first action that routes to the checkpoint/fresh-inspection path instead of replaying the mutation; the run-scoped page-task progress card renders a deterministic outcome block (verified work, unresolved work, next recovery action) from bounded `event.outcome` facts.
-- Run reconnect UI may show only bounded journal metadata. An active run may offer Watch run: the fresh panel adopts the background-issued opaque owner token, replays bounded activity and approval events, starts after the journal's last event sequence, and receives subsequent events and approval cards. Terminal journal content is restored once after a completed run. An active run is never started again. If a session-only Act checkpoint exists, it may offer an explicit Resume action. Resume starts a fresh owned run, clears stale page state, and forces `page_get_state`; it must never resume page actions automatically after a side-panel or worker restart.
-
-## Work Guidance
-
-- Navigation cards show bounded destination context when a state-changing control needs approval. Same-tab HTTP(S) links use `page_click`; `_blank` links use `page_open_link`, which navigates the current target by default and supports `background: true` for explicit multi-page work under the Act lease. Observed links may navigate across origins; an unrequested model-entered cross-origin `page_open_tab` URL requires confirmation. Writes and risky controls remain gated.
-
-- Keep DOM selection and page-level event wiring in `chat.js` unless a module already owns the behavior.
-- Keep pure formatting/parsing helpers exported for tests where possible.
-- Preserve user-friendly error messages for runtime, permission, profile, and media failures.
-- Update root docs or skill examples when chat command behavior changes.
-- New prompt paths must return structured request objects; do not concatenate raw context strings.
-- Act activity cards are scoped by run ID and preserve a reader's scroll position unless the view is already near the bottom. Page-action approval and manual-intervention cards use modal semantics, move focus into the card, wait for runtime acknowledgement before settling, and expose retryable transport errors. `page_action_decision` routes into the activity log with an explicit approved/declined/no-answer state so user decisions and confirmation timeouts remain distinct even when no state event follows.
-- Loading a new page replaces the prior page-context history entry and loaded-content card; detaching page context removes its local history entry without clearing the rest of the conversation.
-
-## Verification
-
-- Run `npm run test` after chat module changes.
-- For UI, media, voice, or streaming changes, reload the side panel and exercise the affected flow in Chrome or Edge.
-
-## Local Contracts
-
-- `ChatGrounding.js` owns the sidebar `webSearchEnabled` toggle, background-only search-provider status bridge (Brave key status and keyless Exa provider availability), safe `Sources` formatting, and nested tool-result classification. It must not read `braveSearchApiKey` or `exaSearchApiKey` from side-panel storage.
-- `ChatGrounding.formatSourcesBlock()`, `buildBodyWithSources()`, and `buildFinalResponseBody()` are the canonical rendering helpers for grounded completions; source titles and URLs must be normalized before rendering.
-- Tool traces must classify the inner payload of the orchestrator `{ success, result }` envelope so already-used, no-results, and failed searches are never displayed as successful executions.
-- The reserved tool names `web_search`, all page-action and owned-tab tools, `page_request_user_input`, `page_pause_for_user`, `page_record_note`, and `page_update_plan` must never be shadowed by user-defined tools or imports; they are guarded in runtime and Options save/import validation.
-- The Act toggle is a session-scoped permission, not a mandate to act. It is stored in `chrome.storage.session`, remains enabled across runs until the user disables it or the browser session ends, and fails with an actionable error when its source tab is unavailable. Act-enabled runs force an initial `page_get_state` inspection before the agent can respond and direct the model to perform page-achievable requests with the page tools instead of describing steps, re-inspecting after each mutation and summarizing what it did; observed HTTP(S) links may navigate across origins, while unrequested model-entered cross-origin `page_open_tab` URLs require confirmation. Non-sensitive `page_input` confirmation cards show the bounded text preview, which is excluded from the session journal. Writes and risky controls remain gated. Requests outside page scope (terminal/OS actions, JavaScript, unsupported navigation, or links without a safe supported destination) get a one-sentence capability boundary plus the closest achievable offer, never a fake action. The lease includes up to twelve owned tabs, readiness checks for opened/switched tabs, tab-local quarantine on bridge failure, separate observation/navigation/mutation budgets, bounded `page_record_note` memory, and bounded `page_update_plan` for model-maintained checklists. Every high-risk or navigation mutation remains subject to page-action policy and approval, including trusted-mode navigation-capable controls. Planning never changes consent. Approval cards offer one-time Approve/Deny or “Approve similar actions this run”, which skips allowed low/medium-risk confirmations only. High-risk actions always confirm; hard blocks remain unchanged. Manual-intervention cards show only bounded active-tab context and require explicit Resume. Receipt and activity cards show bounded delivery status and evidence. Terminal cards also show runtime-derived `actOutcome`; response completion is distinct from task success. A denied decision renders a distinct declined outcome on the progress card and logs “declined” in the activity log. Cards must be sanitized, tied to the current run/confirmation ID, and disabled on deny, timeout, stop, or error.
-- When grounding is disabled, responses must remain identical to the pre-grounding behavior - no Sources section, no changed payload shape.
-- Terminal response rendering consumes safe completion metadata; only confirmed token-limit exhaustion uses the token-budget warning, while reasoning-only responses may receive one bounded text-only recovery.
-
-## Child DOX Index
-
-- Current link contract: validated HTTP(S) same-tab links use `page_click`; `_blank` links use `page_open_link` in the current target by default, with `background: true` reserved for explicit multi-page work; observed links may navigate across origins, while unrequested model-entered cross-origin `page_open_tab` URLs require confirmation.
-
-- No child AGENTS.md files are currently needed under `src/chat/`.
-
-## Work Guidance
-
-- Keep `chat.js` under its enforced line guard; move composer wiring and helpers into `ChatComposer.js` and `ChatGrounding.js` rather than expanding the entry point.
-- Bounded grounding source metadata travels in live card and terminal events and through search helpers; never carry the Brave key in LLM request payloads, events, or logs.
+- Keep module exports explicit and remove dead paths when consolidating behavior.
+- Add behavior tests in `tests/` for changed runtime contracts. Run `npm run test:behavior` and `npm run validate` for source changes.
+- For UI, media, voice, or streaming changes, reload the side panel in Chrome or Edge and exercise the affected flow.

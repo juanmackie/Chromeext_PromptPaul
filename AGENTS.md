@@ -15,17 +15,17 @@ Apply the active global agent instructions. This file defines repository-wide ow
 - Secrets and provider credentials stay in Chrome storage and resolve in the background. Never expose them in Options, profiles, messages, logs, backups, or run records. Privileged background messages require an extension-page sender; content requests are bound to their sender tab.
 - Preserve canonical storage keys and backup rules. Keep remote calls user-initiated. Bound and validate external input, public media fetches, page context, and provider output. Block browser-internal, extension, and store pages before extraction.
 - Context-bearing prompts use structured prompt requests and `composeUserPrompt`; untrusted page/user context stays bounded and marked as source material.
-- Act is default-off, DOM/semantic, and confirmation-gated. Never execute page JavaScript. Sensitive controls stay masked or blocked; high-risk actions always confirm. Precise input is opt-in and limited to approved CDP Input commands. See `src/orchestrator/AGENTS.md` and `docs/PRODUCTION_READINESS.md` for current policy and limits.
+- Act is default-off, DOM/semantic, and confirmation-gated. Never execute page JavaScript. Sensitive controls stay masked or blocked; high-risk actions always confirm. Precise input is opt-in and limited to approved CDP Input commands. See `src/act/AGENTS.md` for policy and `src/act/ActLimits.js` for numeric limits.
 - Keep release and runtime behavior aligned with `CHANGELOG.md`, `docs/STORE_LISTING.md`, and the production readiness checklist. Never package development/evaluation output.
 
 ## Verification
 
-- `npm run validate` runs lint, formatting, regression checks, behavior tests, smoke checks, and license verification.
+- `npm run validate` runs lint, formatting, manifest/build checks, behavior tests, smoke checks, and license verification.
 - `npm run test:browser` covers browser runtime; manually exercise changed UI flows in Chrome/Edge. A build does not prove visual or interaction correctness.
 - `npm run build:prod` creates the production package. See `package.json` for component commands and `docs/PRODUCTION_READINESS.md` for release gates.
 
 ## Child contracts
 
-- `src/AGENTS.md` and deeper chat, options, utility, and orchestration contracts govern source modules.
+- `src/AGENTS.md` and the nearest child contract govern each source capability.
 - `scripts/AGENTS.md`, `tests/AGENTS.md`, `skills/AGENTS.md`, `libs/AGENTS.md`, and `icons/AGENTS.md` govern those subtrees.
 - `REVIEW_PLAN.md` is the durable review record. Keep transient plans untracked.
