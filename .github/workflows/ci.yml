@@ -64,7 +64,7 @@ jobs:
         run: npm run stage:browser-harness
 
       - name: Run browser tests against production output
-        run: xvfb-run --auto-servernum npm run test:browser -- --shard=${{ matrix.shard }}
+        run: xvfb-run --auto-servernum npm run test:browser -- --fully-parallel --shard=${{ matrix.shard }}
 
   build:
     runs-on: ubuntu-latest
