@@ -15,7 +15,7 @@ The `libs/` subtree contains vendored browser libraries used by extension pages 
 - Treat files here as third-party vendored assets.
 - Do not hand-edit minified or vendored code unless the task is specifically an upgrade or local patch.
 - If replacing a vendored library, preserve the filename expected by `manifest.json`, HTML files, and scripts, or update every reference.
-- Runtime npm assets are copied into `dist*/libs/` by `scripts/build.js`; do not check generated copies into source control.
+- Runtime npm assets are synced into `libs/` by `scripts/runtime-dependencies.js` (run on `npm install`/`npm ci`) and copied into `dist*/libs/` by `scripts/build.js`; generated copies are gitignored and must not be checked into source control.
 - Every shipped third-party asset must have one provenance record in `vendor-manifest.json`. The verifier checks the lockfile integrity, installed package asset hashes, copied build assets, and unlisted files.
 
 ## Work Guidance

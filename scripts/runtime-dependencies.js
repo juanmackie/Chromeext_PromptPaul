@@ -40,3 +40,8 @@ function copyNpmRuntimeAssets(destinationRoot) {
 }
 
 module.exports = { getNpmRuntimeAssets, isGeneratedRuntimeAsset, copyNpmRuntimeAssets };
+
+if (require.main === module) {
+  copyNpmRuntimeAssets(repoRoot);
+  console.log('Runtime assets synced into libs/.');
+}

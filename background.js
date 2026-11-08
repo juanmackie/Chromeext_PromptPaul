@@ -2446,13 +2446,13 @@ async function createAllMenus(instructions = []) {
   // 1. Static top-level items
   await createMenu({
     id: 'oneoff_instruction',
-    title: '✨ One-off Instruction',
+    title: 'One-off Instruction',
     contexts: modalities,
   });
 
   await createMenu({
     id: 'start_chat',
-    title: '💬 Start Chat',
+    title: 'Start Chat',
     contexts: modalities,
   });
 
@@ -2465,14 +2465,14 @@ async function createAllMenus(instructions = []) {
 
   // 3. Prompt Paul submenu items
   const promptPaulChildren = [
-    { id: 'summarize', title: '📝 Summarize' },
-    { id: 'analyze', title: '🔍 Analyze' },
-    { id: 'explain', title: '❓ Explain' },
-    { id: 'polish', title: '🪄 Polish' },
-    { id: 'shorten', title: '✂️ Shorten' },
-    { id: 'formal', title: '💼 Formal' },
-    { id: 'casual', title: '🤙 Casual' },
-    { id: 'proofread', title: '✅ Proof Read' },
+    { id: 'summarize', title: 'Summarize' },
+    { id: 'analyze', title: 'Analyze' },
+    { id: 'explain', title: 'Explain' },
+    { id: 'polish', title: 'Polish' },
+    { id: 'shorten', title: 'Shorten' },
+    { id: 'formal', title: 'Formal' },
+    { id: 'casual', title: 'Casual' },
+    { id: 'proofread', title: 'Proof Read' },
   ];
 
   for (const child of promptPaulChildren) {
@@ -2505,7 +2505,7 @@ async function createAllMenus(instructions = []) {
       await createMenu({
         id: menuId,
         parentId: 'customInstructions',
-        title: `✨ ${instruction.name}`,
+        title: instruction.name,
         contexts: modalities,
       });
     }

@@ -9,6 +9,7 @@
     "url": "https://github.com/juanmackie/Chromeext_PromptPaul"
   },
   "scripts": {
+    "postinstall": "node scripts/runtime-dependencies.js",
     "smoke": "node scripts/smoke-check.js",
     "verify:licenses": "node scripts/verify-vendored-licenses.js",
     "audit": "npm audit --audit-level=high --omit=optional",

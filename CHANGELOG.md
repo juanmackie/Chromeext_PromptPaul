@@ -2,6 +2,10 @@
 
 ## [6.4.0] - 2026-11-08
 
+- Context-menu labels are now plain text: the decorative emoji were removed so the native Chrome menu matches the extension's flat, monochrome visual language. Menu IDs, ordering, and routing are unchanged.
+
+- Fixed unformatted, wall-of-text responses when the extension is loaded from the source checkout: runtime assets are now synced into `libs/` on install and the renderer logs when the Markdown parser is missing.
+
 - Removed the unreleased precise-input prototype because Chrome does not allow the `debugger` permission to be optional; no debugger permission is requested.
 
 - Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.

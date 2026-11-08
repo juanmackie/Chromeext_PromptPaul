@@ -32,6 +32,8 @@ export function sanitizeHtml(html) {
   return escapeHtml(rawHtml);
 }
 
+let missingMarkedWarned = false;
+
 /**
  * Render markdown to sanitized HTML.
  * @param {string} markdown - Markdown text.
@@ -40,6 +42,12 @@ export function sanitizeHtml(html) {
 export function renderMarkdown(markdown) {
   if (typeof marked !== 'undefined' && marked.parse) {
     return sanitizeHtml(marked.parse(markdown || ''));
+  }
+  if (!missingMarkedWarned) {
+    missingMarkedWarned = true;
+    console.error(
+      'Prompt Paul: libs/marked.min.js did not load, so responses render as plain text. Run npm install or npm run build:dev.'
+    );
   }
   return escapeHtml(markdown || '');
 }

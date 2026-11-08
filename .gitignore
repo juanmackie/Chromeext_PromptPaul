@@ -51,6 +51,14 @@ dist-dev/
 dist-eval/
 .baseline/
 
+# Ignore runtime assets generated into libs/ by scripts/runtime-dependencies.js
+libs/*
+!libs/AGENTS.md
+!libs/vendor-manifest.json
+!libs/dom-accessibility-api.js
+!libs/dom-accessibility-api.LICENSE.md
+!libs/material-symbols-outlined.woff2
+
 # Ignore IDE project files
 .idea/
 *.swp
