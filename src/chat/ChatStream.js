@@ -90,6 +90,18 @@ export class StreamStateManager {
     return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
   }
 
+  _scrollToBottom() {
+    if (!this._chatAreaRef) return;
+    // Streaming layout changes are frequent; smooth scrolling can leave the
+    // viewport behind the next delta and make a reader-at-bottom look detached.
+    const top = this._chatAreaRef.scrollHeight;
+    if (typeof this._chatAreaRef.scrollTo === 'function') {
+      this._chatAreaRef.scrollTo({ top, behavior: 'instant' });
+    } else {
+      this._chatAreaRef.scrollTop = top;
+    }
+  }
+
   /**
    * Queue a content delta for batched rendering via requestAnimationFrame.
    * Multiple deltas within a 16ms frame are coalesced into a single DOM write.
@@ -129,7 +141,7 @@ export class StreamStateManager {
     const stick = this._isNearBottom();
     this._renderMarkdownDelta(el, delta, this._markdownState, this.accumulatedStreamedText);
     this._lastRenderAt = Date.now();
-    if (this._chatAreaRef && stick) this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
+    if (stick) this._scrollToBottom();
   }
 
   /**
@@ -165,7 +177,7 @@ export class StreamStateManager {
     // Rebuild parser state from full text if reasoning resumes after finalization.
     this._reasoningMarkdownState.needsFullRender = true;
     this._reasoningFinalized = true;
-    if (this._chatAreaRef && stick) this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
+    if (stick) this._scrollToBottom();
   }
 
   _flushReasoningRender() {
@@ -184,7 +196,7 @@ export class StreamStateManager {
       this.accumulatedReasoningText
     );
     this._lastReasoningRenderAt = Date.now();
-    if (this._chatAreaRef && stick) this._chatAreaRef.scrollTop = this._chatAreaRef.scrollHeight;
+    if (stick) this._scrollToBottom();
   }
 
   /**
