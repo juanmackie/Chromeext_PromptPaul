@@ -3,6 +3,7 @@ import {
   handleDevDiagnosticsMessage,
   handleImproveInstructionMessage,
   handleNotchMessage,
+  handlePageActionMessage,
 } from '../src/background/index.js';
 
 function dependencies(overrides = {}) {
@@ -89,4 +90,83 @@ describe('background capability message handlers', () => {
     expect(improveInstructionForProfile).toHaveBeenCalledWith('Make this clearer');
     expect(deps.sendResponse).toHaveBeenCalledWith({ success: true, content: 'Improved' });
   });
+
+  it('returns null when a message belongs to another capability', () => {
+    expect(handlePageActionMessage({ action: 'startRun' }, {}, {})).toBeNull();
+  });
+
+  it('only returns Act model support to an extension page', async () => {
+    const sendResponse = vi.fn();
+    const deps = actDependencies({ extensionPageSender: false, sendResponse });
+
+    expect(handlePageActionMessage({ action: 'getActModelSupport' }, {}, deps)).toBe(true);
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'Model support status requires a Prompt Paul extension page.',
+    });
+  });
+
+  it('binds page input answers to the active run source tab', () => {
+    const run = { sourceTabId: 7 };
+    const runOrchestrator = actRunOrchestrator(run);
+    const sendResponse = vi.fn();
+    const deps = actDependencies({ runOrchestrator, sendResponse });
+
+    expect(
+      handlePageActionMessage(
+        { action: 'pageUserInputResponse', runId: 'run-1', sourceTabId: 8 },
+        { origin: 'chrome-extension://prompt-paul' },
+        deps
+      )
+    ).toBe(true);
+    expect(runOrchestrator.resolvePageUserInput).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'User input response does not match the run.',
+    });
+  });
+
+  it('detaches precise input before an authorized run abort', async () => {
+    const runOrchestrator = actRunOrchestrator({ sourceTabId: 7 });
+    const cdpInputBackend = { detachRun: vi.fn() };
+    const sendResponse = vi.fn();
+    const deps = actDependencies({ runOrchestrator, cdpInputBackend, sendResponse });
+
+    expect(handlePageActionMessage({ action: 'abortRun', runId: 'run-1' }, {}, deps)).toBe(true);
+    await Promise.resolve();
+    expect(cdpInputBackend.detachRun).toHaveBeenCalledWith('run-1');
+    expect(runOrchestrator.abort).toHaveBeenCalledWith('run-1');
+    expect(sendResponse).toHaveBeenCalledWith({ success: true });
+  });
 });
+
+function actRunOrchestrator(run) {
+  return {
+    activeRuns: new Map([['run-1', run]]),
+    resolvePageUserInput: vi.fn(() => true),
+    resolvePageManualIntervention: vi.fn(() => true),
+    resolvePageActionDecision: vi.fn(() => true),
+    abort: vi.fn(async () => true),
+  };
+}
+
+function actDependencies(overrides = {}) {
+  return {
+    chrome: { storage: { local: { get: vi.fn(async () => ({})) } } },
+    cdpInputBackend: { detachRun: vi.fn() },
+    extensionPageSender: true,
+    getPageActionSiteOrigin: vi.fn(),
+    getProfileToolSupport: vi.fn(() => true),
+    isAuthorizedRunRequest: vi.fn(() => true),
+    pageActionDocumentProvider: vi.fn(),
+    pageActionSitePolicyStore: { update: vi.fn(async () => ({})) },
+    rejectUnauthorizedMessage: (sendResponse, error) => {
+      sendResponse({ success: false, error });
+      return true;
+    },
+    resolvePreferredProfile: vi.fn(() => null),
+    runOrchestrator: actRunOrchestrator({ sourceTabId: 7 }),
+    sendResponse: vi.fn(),
+    ...overrides,
+  };
+}
