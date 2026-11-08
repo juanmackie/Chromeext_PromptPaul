@@ -19,8 +19,30 @@ permissions:
   contents: read
 
 jobs:
-  baseline:
+  # A missing key cannot produce a score. Skip with a notice so the check does
+  # not fail every pull request by default; configure ACT_EVAL_API_KEY to enable
+  # the gate.
+  preflight:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.key.outputs.enabled }}
+    steps:
+      - name: Check Act evaluation key availability
+        id: key
+        env:
+          ACT_EVAL_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
+        run: |
+          if [ -n "$ACT_EVAL_API_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ACT_EVAL_API_KEY is not configured; skipping the Act score gate."
+          fi
+
+  baseline:
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -28,13 +50,6 @@ jobs:
       PROMPT_PAUL_BENCHMARK_MODEL: gpt-4.1-mini
       PROMPT_PAUL_BENCHMARK_PROVIDER: api
     steps:
-      - name: Require Act evaluation API key
-        run: |
-          if [ -z "$PROMPT_PAUL_BENCHMARK_API_KEY" ]; then
-            echo "::error::Configure the ACT_EVAL_API_KEY repository secret to run the Act score gate."
-            exit 1
-          fi
-
       # Score the base extension with the pull request's benchmark driver and
       # corpus. Checking out the base alone fails whenever the gate change adds
       # tasks that the base driver does not know about.
@@ -86,13 +101,6 @@ jobs:
       PROMPT_PAUL_BENCHMARK_PROVIDER: api
       PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
     steps:
-      - name: Require Act evaluation API key
-        run: |
-          if [ -z "$PROMPT_PAUL_BENCHMARK_API_KEY" ]; then
-            echo "::error::Configure the ACT_EVAL_API_KEY repository secret to run the Act score gate."
-            exit 1
-          fi
-
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:

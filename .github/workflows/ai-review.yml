@@ -8,11 +8,32 @@ permissions:
   contents: read
 
 jobs:
-  review:
+  # Without a key the review cannot run. Skip with a notice instead of failing
+  # every pull request; configure OPENAI_API_KEY to enable automatic review.
+  preflight:
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.key.outputs.enabled }}
+    steps:
+      - name: Check review key availability
+        id: key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_API_KEY is not configured; skipping automatic AI review."
+          fi
+
+  review:
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     outputs:
       summary: ${{ steps.codex.outputs.final-message }}
@@ -27,15 +48,6 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: git fetch --no-tags origin "$BASE_REF" "+refs/pull/$PR_NUMBER/head"
-
-      - name: Require OpenAI review key
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo "::error::Configure the OPENAI_API_KEY repository secret for automatic AI review."
-            exit 1
-          fi
 
       - name: Review changes with Codex
         id: codex
