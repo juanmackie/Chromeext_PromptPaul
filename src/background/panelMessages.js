@@ -17,6 +17,7 @@ export function handlePanelMessage(request, sender, dependencies) {
     rejectUnauthorizedMessage,
     requestMatchesSenderTab,
     resolvePanelTabId,
+    trackFeatureUsed = () => Promise.resolve(),
     sendResponse,
   } = dependencies;
 
@@ -36,7 +37,16 @@ export function handlePanelMessage(request, sender, dependencies) {
     }
 
     openPromptPaulForSelection(tabId, selectedText, sender.tab.windowId)
-      .then(() => sendResponse({ success: true }))
+      .then(async () => {
+        if (request.source === 'outlook-compose') {
+          try {
+            await trackFeatureUsed('outlook-compose');
+          } catch (_) {
+            // Capability telemetry is best-effort and cannot fail selection handoff.
+          }
+        }
+        return sendResponse({ success: true });
+      })
       .catch((error) => {
         console.error('Background: Failed to open Prompt Paul from selection:', error);
         sendResponse({ success: false, error: error.message });

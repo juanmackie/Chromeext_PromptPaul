@@ -19,6 +19,7 @@ export function handleRunMessage(request, sender, dependencies) {
     resolveStoredRunConfig,
     runOrchestrator,
     sendResponse,
+    trackFeatureUsed = () => Promise.resolve(),
     logger = console,
   } = dependencies;
 
@@ -56,7 +57,15 @@ export function handleRunMessage(request, sender, dependencies) {
           effectiveConfig.sourceTabId = sourceTabId;
         }
         if (effectiveConfig.provider === 'hermes') effectiveConfig.webSearch = false;
-        return runOrchestrator.startRun(effectiveConfig, ownerToken);
+        const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
+        if (effectiveConfig.provider === 'hermes') {
+          try {
+            await trackFeatureUsed('hermes');
+          } catch (_) {
+            // Capability telemetry is best-effort and cannot fail a run.
+          }
+        }
+        return runId;
       })
       .then((runId) =>
         sendResponse({
@@ -96,6 +105,13 @@ export function handleRunMessage(request, sender, dependencies) {
         });
         const ownerToken = randomId();
         const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
+        if (effectiveConfig.provider === 'hermes') {
+          try {
+            await trackFeatureUsed('hermes');
+          } catch (_) {
+            // Capability telemetry is best-effort and cannot fail a resumed run.
+          }
+        }
         await clearPageActionCheckpoint(checkpointRunId);
         return {
           runId,

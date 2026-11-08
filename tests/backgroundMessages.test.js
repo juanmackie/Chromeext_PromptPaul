@@ -129,6 +129,35 @@ describe('background capability message handlers', () => {
     });
   });
 
+  it('tracks an Outlook selection handoff without sending the selected text to analytics', async () => {
+    const openPromptPaulForSelection = vi.fn(async () => {});
+    const trackFeatureUsed = vi.fn(async () => {});
+    const sendResponse = vi.fn();
+    const deps = dependencies({
+      openPromptPaulForSelection,
+      trackFeatureUsed,
+      sendResponse,
+      requestMatchesSenderTab: (sender, tabId) => tabId == null || sender.tab?.id === tabId,
+    });
+
+    expect(
+      handlePanelMessage(
+        {
+          action: 'openPromptPaulFromSelection',
+          source: 'outlook-compose',
+          selectedText: 'private message text',
+        },
+        { contentScript: true, tab: { id: 7, windowId: 2 } },
+        deps
+      )
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(trackFeatureUsed).toHaveBeenCalledExactlyOnceWith('outlook-compose');
+    expect(JSON.stringify(trackFeatureUsed.mock.calls)).not.toContain('private message text');
+    expect(sendResponse).toHaveBeenCalledWith({ success: true });
+  });
+
   it('rejects external panel links without a browser tab', () => {
     const sendResponse = vi.fn();
     const openChatWithContext = vi.fn();
@@ -194,7 +223,8 @@ describe('background capability message handlers', () => {
 
   it('routes notch actions and reports capability errors', async () => {
     const handleNotchAction = vi.fn().mockRejectedValue(new Error('Notch unavailable'));
-    const deps = dependencies({ handleNotchAction });
+    const trackFeatureUsed = vi.fn(async () => {});
+    const deps = dependencies({ handleNotchAction, trackFeatureUsed });
 
     expect(handleNotchMessage({ action: 'notchAction' }, {}, deps)).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -202,6 +232,21 @@ describe('background capability message handlers', () => {
       success: false,
       error: 'Notch unavailable',
     });
+    expect(trackFeatureUsed).not.toHaveBeenCalled();
+  });
+
+  it('tracks a successful Notch action', async () => {
+    const trackFeatureUsed = vi.fn(async () => {});
+    const deps = dependencies({
+      handleNotchAction: vi.fn(async () => ({ success: true })),
+      trackFeatureUsed,
+    });
+
+    handleNotchMessage({ action: 'notchAction' }, {}, deps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(trackFeatureUsed).toHaveBeenCalledExactlyOnceWith('notch');
+    expect(deps.sendResponse).toHaveBeenCalledWith({ success: true });
   });
 
   it('requires an extension page to improve instructions', async () => {
@@ -236,6 +281,35 @@ describe('background capability message handlers', () => {
     expect(handleRunMessage(request, {}, deps)).toBe(false);
     expect(runOrchestrator.execute).toHaveBeenCalledWith('run-1', request.requestConfig);
     expect(sendResponse).toHaveBeenCalledWith({ success: true, accepted: true });
+  });
+
+  it('tracks Hermes only after a Hermes run starts successfully', async () => {
+    const trackFeatureUsed = vi.fn(async () => {});
+    const runOrchestrator = {
+      getRun: vi.fn(() => ({ sourceTabId: 7 })),
+      startRun: vi.fn(async () => 'hermes-run-1'),
+    };
+    const sendResponse = vi.fn();
+    const deps = runDependencies({
+      resolveStoredRunConfig: vi.fn(async () => ({ provider: 'hermes', profileId: 'hermes-1' })),
+      runOrchestrator,
+      sendResponse,
+      trackFeatureUsed,
+    });
+
+    expect(handleRunMessage({ action: 'startRun', config: {} }, {}, deps)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(trackFeatureUsed).toHaveBeenCalledExactlyOnceWith('hermes');
+    expect(runOrchestrator.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'hermes' }),
+      'owner-1'
+    );
+    expect(sendResponse).toHaveBeenCalledWith({
+      runId: 'hermes-run-1',
+      ownerToken: 'owner-1',
+      sourceTabId: 7,
+    });
   });
 
   it('rejects unauthorized run execution before accessing run state', () => {

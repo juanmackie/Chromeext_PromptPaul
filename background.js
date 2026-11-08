@@ -372,6 +372,29 @@ async function trackInstructionUsed({ instruction, model, tools }) {
   });
 }
 
+/**
+ * Tracks use of a built-in capability when the user has opted into analytics.
+ * Only a fixed capability label and count leave the extension.
+ * @param {string} feature - Stable capability label.
+ * @returns {Promise<void>}
+ */
+async function trackFeatureUsed(feature) {
+  try {
+    const featureName = sanitizeLabel(feature);
+    if (!featureName || !(await getConsent())) return;
+    const env = await getEnvInfo();
+    const instance = await getInstanceId();
+    void sendUmamiEvent('feature_used', {
+      ...env,
+      instance,
+      feature: featureName,
+      count: 1,
+    }).catch(() => {});
+  } catch (_) {
+    // Telemetry never changes a capability's user-visible result.
+  }
+}
+
 // Listen for options page consent changes
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[ANALYTICS_CONSENT_KEY]) {
@@ -3348,6 +3371,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     getDevDiagnosticsStatus,
     handleNotchAction,
     improveInstructionForProfile,
+    trackFeatureUsed,
     sendResponse,
   };
   const diagnosticsMessage = handleDevDiagnosticsMessage(request, sender, messageDependencies);
@@ -3384,6 +3408,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     rejectUnauthorizedMessage,
     requestMatchesSenderTab,
     resolvePanelTabId,
+    trackFeatureUsed,
     sendResponse,
   });
   if (panelMessage !== null) return panelMessage;
@@ -3453,6 +3478,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     resolvePanelTabId,
     resolveStoredRunConfig,
     runOrchestrator,
+    trackFeatureUsed,
     sendResponse,
   });
   if (runMessage !== null) return runMessage;
