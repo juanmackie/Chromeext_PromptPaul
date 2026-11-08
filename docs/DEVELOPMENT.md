@@ -63,7 +63,7 @@ Configure `OPENAI_API_KEY` for the Codex pull-request review workflow. In GitHub
 
 ## Act Benchmark
 
-The opt-in Act benchmark runs against local fixtures. Its fixed Mind2Web subset and sanitized page snapshots live in `eval/mind2web/` and `tests/browser/fixtures/`; the nightly workflow records the model score trend, and the pull request score gate compares the PR base and candidate on the same fixed local task set. Configure the repository Actions secret `ACT_EVAL_API_KEY` for both workflows; the PR score gate fails closed when it is missing. The checked-in subset comes from the Mind2Web training split and is hash-pinned with attribution in `eval/mind2web/README.md`.
+The opt-in Act benchmark runs against local fixtures. Its fixed Mind2Web subset and sanitized page snapshots live in `eval/mind2web/` and `tests/browser/fixtures/`; the nightly workflow records the model score trend, and the pull request score gate compares the PR base and candidate on the same fixed local task set. Configure the repository Actions secret `ACT_EVAL_API_KEY` for the nightly and PR score workflows; both fail closed when it is missing. Configure `OPENAI_API_KEY` for automatic AI review. The checked-in subset comes from the Mind2Web training split and is hash-pinned with attribution in `eval/mind2web/README.md`.
 
 The local diagnostic uses a headed temporary browser. Hold mode is single-run pilots toward the 80% overall target. To use Codex, set these PowerShell variables and start one run:
 

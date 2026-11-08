@@ -25,6 +25,15 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: git fetch --no-tags origin "$BASE_REF" "+refs/pull/$PR_NUMBER/head"
 
+      - name: Require OpenAI review key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Configure the OPENAI_API_KEY repository secret for automatic AI review."
+            exit 1
+          fi
+
       - name: Review changes with Codex
         id: codex
         uses: openai/codex-action@v1
