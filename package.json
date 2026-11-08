@@ -35,7 +35,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "eslint": "^8.57.1",
-    "prettier": "^3.8.3",
+    "prettier": "^3.9.10",
     "vitest": "^4.1.8"
   },
   "keywords": [
