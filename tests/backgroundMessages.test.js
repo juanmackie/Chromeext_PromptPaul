@@ -5,8 +5,10 @@ import {
   handleNotchMessage,
   handlePageActionMessage,
   handlePageContentMessage,
+  handlePanelMessage,
   handleProviderMessage,
   handleRunMessage,
+  handleSearchMessage,
   handleSkillMessage,
 } from '../src/background/index.js';
 
@@ -94,6 +96,58 @@ describe('background capability message handlers', () => {
     expect(skillManager.getSkillsList).toHaveBeenCalledOnce();
     expect(skillManager.getSlashCommands).toHaveBeenCalledOnce();
     expect(sendResponse).toHaveBeenCalledWith({ skills: undefined, slashCommands: undefined });
+  });
+
+  it('binds panel selection handoff to its sender tab', () => {
+    const sendResponse = vi.fn();
+    const openPromptPaulForSelection = vi.fn();
+    const deps = {
+      extensionOrigin: 'chrome-extension://prompt-paul',
+      extensionPageSender: false,
+      isContentScriptSender: vi.fn(() => true),
+      openPromptPaulForSelection,
+      rejectUnauthorizedMessage: (response, error) => {
+        response({ success: false, error });
+        return false;
+      },
+      requestMatchesSenderTab: vi.fn(() => false),
+      sendResponse,
+    };
+
+    expect(
+      handlePanelMessage(
+        { action: 'openPromptPaulFromSelection', tabId: 8, selectedText: 'text' },
+        { tab: { id: 7 } },
+        deps
+      )
+    ).toBe(false);
+    expect(openPromptPaulForSelection).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'Selection handoff must come from its tab.',
+    });
+  });
+
+  it('returns web-search readiness without exposing its stored key', () => {
+    const sendResponse = vi.fn();
+    const deps = {
+      chrome: {
+        storage: {
+          local: {
+            get: vi.fn((_keys, callback) =>
+              callback({ searchProvider: 'brave', braveSearchApiKey: 'secret-value' })
+            ),
+          },
+        },
+      },
+      extensionPageSender: true,
+      rejectUnauthorizedMessage: vi.fn(),
+      sendResponse,
+    };
+
+    expect(handleSearchMessage({ action: 'getWebSearchStatus' }, {}, deps)).toBe(true);
+    expect(sendResponse).toHaveBeenCalledWith({ configured: true, provider: 'brave' });
+    expect(JSON.stringify(sendResponse.mock.calls)).not.toContain('secret-value');
   });
 
   it('returns diagnostics status only to an authorized sender', () => {

@@ -98,11 +98,10 @@ See [Production Readiness](PRODUCTION_READINESS.md) for the concise review contr
 
 When you add a new module:
 
-1. Put it in `src/chat/` or `src/utils/`
-2. Add `@fileoverview` and `@module` JSDoc
-3. Export the public API explicitly
-4. Import it from the relevant entry point
-5. Add structural regression guards in `scripts/test-runner.js` when a core module gains a durable contract; add behavior coverage in `tests/` for runtime logic
+1. Put business logic under its owning `src/<capability>/` area; keep `src/utils/` for stable behavior shared by capabilities.
+2. Add `@fileoverview` and `@module` JSDoc.
+3. Export the public API explicitly and import it from the owning capability index or entry point.
+4. Add behavior coverage in `tests/` for runtime logic. Keep `scripts/test-runner.js` focused on manifest and build checks.
 
 ## Adding Skills
 
