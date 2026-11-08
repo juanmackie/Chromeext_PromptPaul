@@ -9,3 +9,5 @@ export { handleNotchMessage } from './notchMessages.js';
 export { handlePageActionMessage } from './pageActionMessages.js';
 export { handleRunMessage } from './runMessages.js';
 export { handleProviderMessage } from './providerMessages.js';
+export { handlePageContentMessage } from './pageContentMessages.js';
+export { handleSkillMessage } from './skillMessages.js';

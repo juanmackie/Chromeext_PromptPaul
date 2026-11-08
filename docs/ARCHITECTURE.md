@@ -77,6 +77,7 @@ with each capability-sized move.
 - `src/utils/toolChoiceBuilder.js` normalizes tool choice payloads
 - `src/utils/validation.js` owns HTTP(S)-only endpoint validation, custom-tool/profile normalization, and bounded backup restore validation
 - `src/utils/runtimeAuthorization.js` owns extension-sender, content-script-tab, and opaque run-owner checks for privileged background messages
+- `src/background/` owns injected capability handlers for diagnostics, notch, instructions, page extraction, skills, providers, runs, and Act messages; `background.js` composes them with browser orchestration
 - `src/utils/streamSafety.js` bounds provider SSE buffers and error-body reads
 - `src/utils/mediaFetch.js` validates public media URLs and bounds media response reads
 - `src/utils/runResilience.js` classifies provider failures, applies reasoning-model timeout floors, compacts long conversation histories, redacts provider error labels, and stops repetitive output

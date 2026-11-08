@@ -4,8 +4,10 @@ import {
   handleImproveInstructionMessage,
   handleNotchMessage,
   handlePageActionMessage,
+  handlePageContentMessage,
   handleProviderMessage,
   handleRunMessage,
+  handleSkillMessage,
 } from '../src/background/index.js';
 
 function dependencies(overrides = {}) {
@@ -54,6 +56,44 @@ describe('background capability message handlers', () => {
 
     expect(handleDevDiagnosticsMessage({ action: 'other' }, {}, deps)).toBeNull();
     expect(deps.sendResponse).not.toHaveBeenCalled();
+  });
+
+  it('requires an extension page before extracting active-tab content', () => {
+    const sendResponse = vi.fn();
+    const executeTabContentExtraction = vi.fn();
+    const deps = {
+      chrome: { tabs: { query: vi.fn() } },
+      extensionPageSender: false,
+      executeTabContentExtraction,
+      rejectUnauthorizedMessage: (response, error) => {
+        response({ success: false, error });
+        return false;
+      },
+      sendResponse,
+    };
+
+    expect(handlePageContentMessage({ action: 'getLoadContent' }, {}, deps)).toBe(false);
+    expect(executeTabContentExtraction).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'Page extraction must come from Prompt Paul.',
+    });
+  });
+
+  it('returns built-in skill listings only to extension pages', () => {
+    const sendResponse = vi.fn();
+    const skillManager = { getSkillsList: vi.fn(), getSlashCommands: vi.fn() };
+    const deps = {
+      extensionPageSender: true,
+      rejectUnauthorizedMessage: vi.fn(),
+      sendResponse,
+      skillManager,
+    };
+
+    expect(handleSkillMessage({ action: 'getSkills' }, {}, deps)).toBe(true);
+    expect(skillManager.getSkillsList).toHaveBeenCalledOnce();
+    expect(skillManager.getSlashCommands).toHaveBeenCalledOnce();
+    expect(sendResponse).toHaveBeenCalledWith({ skills: undefined, slashCommands: undefined });
   });
 
   it('returns diagnostics status only to an authorized sender', () => {

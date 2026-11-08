@@ -83,8 +83,10 @@ import {
   handleImproveInstructionMessage,
   handleNotchMessage,
   handlePageActionMessage,
+  handlePageContentMessage,
   handleProviderMessage,
   handleRunMessage,
+  handleSkillMessage,
 } from './src/background/index.js';
 
 void initializeDevDiagnostics('background');
@@ -3942,166 +3944,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'captureScreenshot') {
-    if (!isContentScriptSender(sender, extensionOrigin) || !Number.isInteger(sender.tab.windowId)) {
-      return rejectUnauthorizedMessage(
-        sendResponse,
-        'Screenshot capture must come from a page content script.'
-      );
-    }
-    chrome.tabs.query({ active: true, windowId: sender.tab.windowId }, (tabs) => {
-      if (chrome.runtime.lastError || tabs[0]?.id !== sender.tab.id) {
-        sendResponse({
-          dataUrl: null,
-          error: 'Screenshot capture requires the source page to be active.',
-        });
-        return;
-      }
-      chrome.tabs.captureVisibleTab(sender.tab.windowId, { format: 'png' }, (dataUrl) => {
-        if (chrome.runtime.lastError) {
-          sendResponse({ dataUrl: null, error: chrome.runtime.lastError.message });
-        } else {
-          sendResponse({ dataUrl });
-        }
-      });
-    });
-    return true;
-  }
+  const pageContentMessage = handlePageContentMessage(request, sender, {
+    chrome,
+    extensionOrigin,
+    extensionPageSender,
+    executeTabContentExtraction,
+    friendlyRuntimeErrorMessage,
+    isContentScriptSender,
+    rejectUnauthorizedMessage,
+    sendResponse,
+  });
+  if (pageContentMessage !== null) return pageContentMessage;
 
-  if (request.action === 'getLoadContent') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
-    }
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0] && tabs[0].id) {
-        executeTabContentExtraction(tabs[0].id)
-          .then((result) => {
-            sendResponse({
-              action: 'loadContentResponse',
-              success: result.success,
-              sourceTabId: tabs[0].id,
-              isPdf: result.isPdf || false,
-              pdfUrl: result.pdfUrl || null,
-              content: result.content || result.data,
-              title: result.title,
-              siteName: result.siteName,
-              byline: result.byline,
-              excerpt: result.excerpt,
-              lang: result.lang,
-              url: result.url,
-              platform: result.platform || null,
-              platformInfo: result.platformInfo || null,
-              readStrategy: result.readStrategy || 'auto',
-              screenshot: result.screenshot || null,
-              error: result.error,
-            });
-          })
-          .catch((error) => {
-            console.error('Background: Failed to load tab content:', error.message);
-            sendResponse({
-              action: 'loadContentResponse',
-              success: false,
-              error: friendlyRuntimeErrorMessage(error),
-              readStrategy: 'auto',
-            });
-          });
-      } else {
-        sendResponse({
-          action: 'loadContentResponse',
-          success: false,
-          error: 'No active tab found',
-        });
-      }
-    });
-    return true;
-  }
-
-  if (request.action === 'getTabContent') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse, 'Page extraction must come from Prompt Paul.');
-    }
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs[0] && tabs[0].id) {
-        executeTabContentExtraction(tabs[0].id)
-          .then((result) => {
-            sendResponse({
-              action: 'tabContentResponse',
-              success: result.success,
-              isPdf: result.isPdf || false,
-              pdfUrl: result.pdfUrl || null,
-              content: result.content || result.data,
-              title: result.title,
-              siteName: result.siteName,
-              byline: result.byline,
-              excerpt: result.excerpt,
-              lang: result.lang,
-              url: result.url,
-              platform: result.platform || null,
-              platformInfo: result.platformInfo || null,
-              readStrategy: result.readStrategy || 'auto',
-              screenshot: result.screenshot || null,
-              error: result.error,
-            });
-          })
-          .catch((error) => {
-            console.error('Background: Failed to read tab content:', error.message);
-            sendResponse({
-              action: 'tabContentResponse',
-              success: false,
-              error: friendlyRuntimeErrorMessage(error),
-              readStrategy: 'auto',
-            });
-          });
-      } else {
-        sendResponse({ action: 'tabContentResponse', success: false, error: 'No tab context' });
-      }
-    });
-    return true;
-  }
-
-  if (request.action === 'getSkills') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const skillsList = skillManager.getSkillsList();
-    const slashCommands = skillManager.getSlashCommands();
-    sendResponse({ skills: skillsList, slashCommands });
-    return true;
-  }
-
-  if (request.action === 'getSkillContent') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    skillManager
-      .getSkillContent(request.name)
-      .then((content) => {
-        sendResponse({ content });
-      })
-      .catch((error) => {
-        sendResponse({ error: error.message });
-      });
-    return true;
-  }
-
-  if (request.action === 'resolveSkill') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const resolved = skillManager.resolveSkill(request.name);
-    sendResponse({ skill: resolved });
-    return true;
-  }
-
-  if (request.action === 'getSkillSnapshot') {
-    if (!extensionPageSender) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    const snapshot = skillManager.getEligibleSnapshot();
-    const promptText = skillManager.formatForPrompt();
-    sendResponse({ snapshot, promptText });
-    return true;
-  }
+  const skillMessage = handleSkillMessage(request, sender, {
+    extensionPageSender,
+    rejectUnauthorizedMessage,
+    sendResponse,
+    skillManager,
+  });
+  if (skillMessage !== null) return skillMessage;
 
   // ===== Web Search Status =====
 
