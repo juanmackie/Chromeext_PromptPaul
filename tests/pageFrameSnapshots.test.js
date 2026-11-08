@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createPageFrameSnapshots } from '../src/act/PageFrameSnapshots.js';
+import { createPageFrameCoordinator } from '../src/act/PageFrameCoordinator.js';
 
 const snapshot = (snapshotId, elements, content, extras = {}) => ({
   snapshotId,
@@ -132,5 +133,47 @@ describe('page frame snapshots', () => {
       isCurrentSnapshot: false,
       route: null,
     });
+  });
+
+  it('collects only allowed frames and records omitted unsafe frames', async () => {
+    const sendPageActionMessage = vi.fn(async (_tabId, _message, _signal, _timeout, frameId) => ({
+      snapshot: snapshot(`frame-${frameId}`, [element(0)], `[0] <button>`, {
+        url: 'https://child.example/path',
+      }),
+    }));
+    const coordinator = createPageFrameCoordinator({
+      chrome: {
+        scripting: {
+          executeScript: async () => [
+            { frameId: 0, result: { origin: 'https://main.example' } },
+            { frameId: 4, result: { origin: 'https://child.example' } },
+            { frameId: 7, result: { origin: 'https://pay.example', title: 'Checkout payment' } },
+          ],
+        },
+      },
+      getCurrentPageSupport: () => ({ available: true }),
+      getPageActionSiteOrigin: (url) => new URL(url).origin,
+      sendPageActionMessage,
+      injectPageActionFrameScriptsInFrames: async () => new Set(),
+      messageTimeoutMs: 100,
+    });
+    const topResponse = {
+      snapshot: snapshot('top', [element(5)], '[5] <button>', { url: 'https://main.example/' }),
+    };
+
+    const merged = await coordinator.collectSnapshots({
+      tabId: 1,
+      runId: 'run-5',
+      blockedOrigins: [],
+      topResponse,
+    });
+
+    expect(merged.elements).toHaveLength(2);
+    expect(merged.content).toContain('1 embedded frame omitted by safety policy.');
+    expect(sendPageActionMessage).toHaveBeenCalledTimes(1);
+    expect(sendPageActionMessage.mock.calls[0][4]).toBe(4);
+    expect(
+      coordinator.resolveRoute('run-5', { snapshotId: merged.snapshotId, index: 1 }).route
+    ).toMatchObject({ frameId: 4, snapshotId: 'frame-4' });
   });
 });

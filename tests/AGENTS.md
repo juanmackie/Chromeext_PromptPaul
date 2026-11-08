@@ -51,7 +51,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - Run the narrow suite while iterating, then run the applicable full gates before closeout. Planner tests use `completed`/`skipped`; obsolete regex decomposition and automatic-approval assertions are replaced by the model-checklist contract.
 
 - pageObservation.test.js covers outline normalization, stable IDs, safe-value bounds/masking (including value-free focused-target metadata after the 8K allowance is exhausted), value-only diffs, scalar/append validation, indexed scroll and declared postconditions; shipped helper extraction verifies open-root traversal and node identity.
-- `pageFrameSnapshots.test.js` covers merged frame numbering, route translation, find-text index remapping, value/outline caps, and run-local route cleanup.
+- `pageFrameSnapshots.test.js` covers safe frame discovery/collection, merged numbering, route translation, find-text index remapping, value/outline caps, and run-local route cleanup.
 
 ## Verification
 

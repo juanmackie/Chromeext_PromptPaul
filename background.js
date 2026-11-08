@@ -49,7 +49,7 @@ import { waitForRetry } from './src/utils/retryBackoff.js';
 import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
-import { ACT_FRAME_CAPS, ACT_PAGE_DOM_CAPS, createPageFrameSnapshots } from './src/act/index.js';
+import { ACT_PAGE_DOM_CAPS, createPageFrameCoordinator } from './src/act/index.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -1754,162 +1754,14 @@ const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
 
 let runOrchestrator = null;
 
-const pageFrameSnapshots = createPageFrameSnapshots();
-const PAGE_ACTION_MAX_FRAMES = ACT_FRAME_CAPS.maxFrames;
-
-const getPageActionFrameDescriptors = async (tabId) => {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      func: () => {
-        const parsed = new URL(location.href);
-        return {
-          origin: /^https?:$/u.test(parsed.protocol) ? parsed.origin : '',
-          title: String(document.title || '').slice(0, 120),
-          frameTitle: String(window.frameElement?.getAttribute('title') || '').slice(0, 120),
-          frameName: String(window.name || '').slice(0, 120),
-          isTop: window === window.top,
-        };
-      },
-    });
-    return (Array.isArray(results) ? results : [])
-      .filter((entry) => Number.isInteger(entry.frameId) && entry.result?.origin)
-      .map((entry) => {
-        const origin = String(entry.result.origin).slice(0, 256);
-        let hostname = '';
-        try {
-          hostname = new URL(origin).hostname;
-        } catch (_) {
-          return null;
-        }
-        const paymentFrame =
-          /stripe|paypal|adyen|braintree|checkout\.com|worldpay|squareup/i.test(hostname) ||
-          /payment|checkout|card|billing/i.test(
-            `${String(entry.result.title || '')} ${String(entry.result.frameTitle || '')} ${String(entry.result.frameName || '')}`
-          );
-        return {
-          frameId: entry.frameId,
-          documentId: typeof entry.documentId === 'string' ? entry.documentId : '',
-          origin,
-          isTop: entry.frameId === 0,
-          restricted: !getCurrentPageSupport(origin).available,
-          paymentFrame,
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => Number(b.isTop) - Number(a.isTop) || a.frameId - b.frameId);
-  } catch (_) {
-    return [];
-  }
-};
-
-const collectPageActionFrameSnapshots = async ({
-  tabId,
-  runId,
-  blockedOrigins,
-  signal,
-  topResponse = null,
-}) => {
-  const allDescriptors = await getPageActionFrameDescriptors(tabId);
-  const descriptors = allDescriptors.slice(0, PAGE_ACTION_MAX_FRAMES);
-  const frames = [];
-  let omittedFrameCount = Math.max(0, allDescriptors.length - descriptors.length);
-  const eligibleFrames = descriptors.filter((frame) => {
-    if (frame.restricted || frame.paymentFrame || blockedOrigins.includes(frame.origin)) {
-      omittedFrameCount += 1;
-      return false;
-    }
-    if (frame.isTop && topResponse?.snapshot) {
-      if (getPageActionSiteOrigin(topResponse.snapshot.url || '') === frame.origin) {
-        frames.push({ ...frame, snapshot: topResponse.snapshot });
-      } else {
-        omittedFrameCount += 1;
-      }
-      return false;
-    }
-    return true;
-  });
-  const requestFrameState = (frame) =>
-    sendPageActionMessage(
-      tabId,
-      {
-        action: 'pageAction',
-        runId,
-        pageAction: 'page_get_state',
-        args: {},
-        blockedOrigins,
-      },
-      signal,
-      PAGE_ACTION_MESSAGE_TIMEOUT_MS,
-      frame.frameId
-    );
-  const childResponses = await Promise.all(
-    eligibleFrames.map(async (frame) => {
-      try {
-        return { frame, response: await requestFrameState(frame), error: null };
-      } catch (error) {
-        return { frame, response: null, error };
-      }
-    })
-  );
-  const missingBridges = childResponses.filter(
-    ({ error }) => error?.code === 'PAGE_ACTION_MESSAGE_FAILED'
-  );
-  if (missingBridges.length && !signal?.aborted) {
-    const currentFrames = new Map(
-      (await getPageActionFrameDescriptors(tabId)).map((frame) => [frame.frameId, frame])
-    );
-    const recoverable = missingBridges.flatMap(({ frame }) => {
-      const current = currentFrames.get(frame.frameId);
-      if (
-        !current ||
-        current.origin !== frame.origin ||
-        !current.documentId ||
-        current.restricted ||
-        current.paymentFrame ||
-        blockedOrigins.includes(current.origin)
-      )
-        return [];
-      return [current];
-    });
-    const injectedFrames = await injectPageActionFrameScriptsInFrames(tabId, recoverable);
-    if (injectedFrames.size) {
-      const recovered = await Promise.all(
-        recoverable
-          .filter((frame) => injectedFrames.has(frame.frameId))
-          .map(async (frame) => {
-            try {
-              return { frame, response: await requestFrameState(frame) };
-            } catch (_) {
-              return { frame, response: null };
-            }
-          })
-      );
-      const recoveredByFrameId = new Map(recovered.map((item) => [item.frame.frameId, item]));
-      for (let index = 0; index < childResponses.length; index += 1) {
-        const replacement = recoveredByFrameId.get(childResponses[index].frame.frameId);
-        if (replacement) childResponses[index] = replacement;
-      }
-    }
-  }
-  for (const { frame, response } of childResponses) {
-    const responseOrigin = getPageActionSiteOrigin(response?.snapshot?.url || '');
-    if (
-      response?.snapshot &&
-      responseOrigin === frame.origin &&
-      !blockedOrigins.includes(responseOrigin)
-    ) {
-      frames.push({ ...frame, snapshot: response.snapshot });
-    } else omittedFrameCount += 1;
-  }
-  if (!frames.some((frame) => frame.isTop) && topResponse?.snapshot) {
-    const origin = getPageActionSiteOrigin(topResponse.snapshot.url || '');
-    if (origin && !blockedOrigins.includes(origin)) {
-      frames.unshift({ frameId: 0, origin, isTop: true, snapshot: topResponse.snapshot });
-    }
-  }
-  return pageFrameSnapshots.merge(runId, frames, omittedFrameCount);
-};
+const pageFrameCoordinator = createPageFrameCoordinator({
+  chrome,
+  getCurrentPageSupport,
+  getPageActionSiteOrigin,
+  sendPageActionMessage,
+  injectPageActionFrameScriptsInFrames,
+  messageTimeoutMs: PAGE_ACTION_MESSAGE_TIMEOUT_MS,
+});
 
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   const startedAt = Date.now();
@@ -1948,7 +1800,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       throw error;
     }
   };
-  const { isCurrentSnapshot, route: frameRoute } = pageFrameSnapshots.resolveRoute(
+  const { isCurrentSnapshot, route: frameRoute } = pageFrameCoordinator.resolveRoute(
     options.runId,
     args
   );
@@ -2057,7 +1909,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     let response;
     if (actionName === 'clearPageActionSession') {
       response = await checkedSend(message, 0);
-      const frames = await getPageActionFrameDescriptors(tabId);
+      const frames = await pageFrameCoordinator.getFrameDescriptors(tabId);
       await Promise.all(
         frames
           .filter((frame) => !frame.isTop)
@@ -2092,7 +1944,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
                 0
               ).catch(() => null);
       if (topResponse?.snapshot) {
-        const mergedSnapshot = await collectPageActionFrameSnapshots({
+        const mergedSnapshot = await pageFrameCoordinator.collectSnapshots({
           tabId,
           runId: options.runId,
           blockedOrigins,
@@ -2142,13 +1994,13 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     });
 
     if (actionName === 'page_find_text') {
-      response = pageFrameSnapshots.mapFindTextIndices(options.runId, response);
+      response = pageFrameCoordinator.mapFindTextIndices(options.runId, response);
     } else if (actionName === 'page_batch' && Array.isArray(response?.results)) {
       response = {
         ...response,
         results: response.results.map((item, index) =>
           args?.actions?.[index]?.name === 'page_find_text'
-            ? pageFrameSnapshots.mapFindTextIndices(options.runId, item)
+            ? pageFrameCoordinator.mapFindTextIndices(options.runId, item)
             : item
         ),
       };
@@ -2322,7 +2174,7 @@ runOrchestrator = new RunOrchestrator(skillManager, {
     pageTabController.execute(runId, actionName, { ...args, signal: options.signal }),
   pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
   pageTabRunDisposer: (runId) => {
-    pageFrameSnapshots.deleteRun(runId);
+    pageFrameCoordinator.deleteRun(runId);
     const ownedTabIds = pageTabController.getOwnedTabIds(runId);
     return Promise.all(
       ownedTabIds.map((tabId) =>

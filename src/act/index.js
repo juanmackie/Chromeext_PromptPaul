@@ -12,3 +12,4 @@ export * from './ActTools.js';
 export * from './ActWorkingMemory.js';
 export * from './PageTaskMemory.js';
 export * from './PageFrameSnapshots.js';
+export * from './PageFrameCoordinator.js';
