@@ -27,7 +27,6 @@ jobs:
       PROMPT_PAUL_BENCHMARK_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
       PROMPT_PAUL_BENCHMARK_MODEL: gpt-4.1-mini
       PROMPT_PAUL_BENCHMARK_PROVIDER: api
-      PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
     steps:
       - name: Require Act evaluation API key
         run: |
@@ -36,10 +35,14 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout PR base
+      # Score the base extension with the pull request's benchmark driver and
+      # corpus. Checking out the base alone fails whenever the gate change adds
+      # tasks that the base driver does not know about.
+      - name: Checkout pull request head and history
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -54,9 +57,16 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Build baseline evaluation extension
-        run: npm run build:eval
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add .baseline "$BASE_SHA"
+          cd .baseline
+          npm run build:eval
 
       - name: Score PR base on 15 local tasks and fixed Mind2Web subset
+        env:
+          PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: .baseline/dist-eval
         run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
 
       - name: Preserve baseline score
