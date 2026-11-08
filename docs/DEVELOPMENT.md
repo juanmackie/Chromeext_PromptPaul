@@ -14,7 +14,7 @@ cd Chromeext_PromptPaul
 npm install
 ```
 
-Load the unpacked extension from `chrome://extensions/` and point Chrome at this repository or the `dist/` folder after building. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options. For detailed local troubleshooting, build and load `dist-dev/`; see [Development Diagnostics](DIAGNOSTICS.md).
+Run `npm run build:dev`, then load `dist-dev/` from `chrome://extensions/`. Browser libraries are copied from locked npm packages during the build, so the source checkout itself is not an unpacked extension. Source checkouts and release builds contain no starter credential; configure your own OpenRouter or other compatible endpoint and API key in Options. For detailed local troubleshooting, see [Development Diagnostics](DIAGNOSTICS.md).
 
 ## Project Layout
 

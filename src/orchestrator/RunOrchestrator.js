@@ -4440,7 +4440,6 @@ class RunOrchestrator {
     }
   }
 
-
   _getMind2WebPageTools() {
     const actionNames = new Set(['page_get_state', 'page_click', 'page_input', 'page_select']);
     const descriptions = {
@@ -4463,8 +4462,6 @@ class RunOrchestrator {
         },
       }));
   }
-
-
 
   /**
    * Build tools list with skill injection and optional web-search/page actions.

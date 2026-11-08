@@ -11,6 +11,9 @@ const path = require('path');
 
 const repoRoot = process.cwd();
 const manifestPath = path.join(repoRoot, 'libs', 'vendor-manifest.json');
+const lockPath = path.join(repoRoot, 'package-lock.json');
+const packageLock = readJson(lockPath);
+const packageManifest = readJson(path.join(repoRoot, 'package.json'));
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -43,7 +46,8 @@ function verifyLibrary(name, entry) {
       verifyFile(`${name}/${bundle.file}`, bundle.file, bundle.sha256, entry.licenseMarker);
     });
   }
-  if (!entry.bundle && !Array.isArray(entry.bundles)) {
+  if (entry.npmPackage) verifyNpmPackage(name, entry);
+  if (!entry.bundle && !Array.isArray(entry.bundles) && !entry.npmPackage) {
     throw new Error(`${name}: a bundle or bundles entry is required`);
   }
   if (entry.licenseFile) {
@@ -55,6 +59,50 @@ function verifyLibrary(name, entry) {
     }
   }
   console.log(`Verified ${name} ${entry.version} (${entry.license})`);
+}
+
+function verifyNpmPackage(name, entry) {
+  const packagePath = `node_modules/${entry.npmPackage}`;
+  if (packageManifest.dependencies?.[entry.npmPackage] !== entry.version) {
+    throw new Error(`${name}: direct dependency version does not match libs/vendor-manifest.json`);
+  }
+  const lockedPackage = packageLock.packages?.[packagePath];
+  if (!lockedPackage || lockedPackage.version !== entry.version) {
+    throw new Error(`${name}: package version does not match package-lock.json`);
+  }
+  if (!lockedPackage.resolved || !lockedPackage.integrity) {
+    throw new Error(`${name}: package-lock.json lacks resolved provenance or integrity`);
+  }
+
+  const packageJsonPath = path.join(repoRoot, packagePath, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    throw new Error(`${name}: install the locked npm dependency before verifying vendors`);
+  }
+  const packageJson = readJson(packageJsonPath);
+  if (
+    packageJson.license !== entry.license &&
+    !String(entry.license).includes(packageJson.license)
+  ) {
+    throw new Error(`${name}: npm package license does not match libs/vendor-manifest.json`);
+  }
+
+  for (const asset of entry.assets || []) {
+    verifyFile(name, asset.source, asset.sha256);
+    if (
+      asset.kind === 'license' &&
+      !fs.readFileSync(path.join(repoRoot, asset.source), 'utf8').trim()
+    ) {
+      throw new Error(`${name}: license file is empty`);
+    }
+    const builtFile = path.join(repoRoot, 'dist', asset.file);
+    if (fs.existsSync(path.join(repoRoot, 'dist'))) {
+      if (!fs.existsSync(builtFile) || sha256(builtFile) !== asset.sha256) {
+        throw new Error(
+          `${name}: built asset ${asset.file} is missing or differs from its lockfile source`
+        );
+      }
+    }
+  }
 }
 
 function verifyBenchmarkRecord(name, entry) {
@@ -78,6 +126,7 @@ function verifyNoUnlistedAssets(manifest) {
     if (Array.isArray(entry.bundles)) {
       entry.bundles.forEach((bundle) => covered.add(bundle.file));
     }
+    if (Array.isArray(entry.assets)) entry.assets.forEach((asset) => covered.add(asset.file));
     if (entry.licenseFile) covered.add(entry.licenseFile);
   }
 
@@ -85,9 +134,6 @@ function verifyNoUnlistedAssets(manifest) {
     .readdirSync(path.join(repoRoot, 'libs'))
     .filter((f) => fs.statSync(path.join(repoRoot, 'libs', f)).isFile())
     .map((f) => path.join('libs', f));
-  // The root-level marked.min.js bundle is referenced outside libs/.
-  candidates.push('marked.min.js');
-
   const unlisted = [];
   for (const file of candidates) {
     const norm = file.split(path.sep).join('/');
@@ -99,6 +145,17 @@ function verifyNoUnlistedAssets(manifest) {
     throw new Error(
       `Unlisted vendored asset(s) not covered by libs/vendor-manifest.json: ${unlisted.join(', ')}`
     );
+  }
+
+  const distLibs = path.join(repoRoot, 'dist', 'libs');
+  if (fs.existsSync(distLibs)) {
+    const built = fs.readdirSync(distLibs).map((file) => `libs/${file}`);
+    const unlistedBuilt = built.filter(
+      (file) => !covered.has(file) && !FIRST_PARTY_LIBS_FILES.has(file)
+    );
+    if (unlistedBuilt.length > 0) {
+      throw new Error(`Unlisted built vendor asset(s): ${unlistedBuilt.join(', ')}`);
+    }
   }
 }
 

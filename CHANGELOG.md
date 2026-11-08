@@ -59,7 +59,6 @@
 - Act runs now recover from active-tab document changes by discarding stale snapshots, re-inspecting the current supported page, and continuing the request. Mutations interrupted during navigation remain unverified and are never blindly repeated.
 - Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
 
-
 ## [6.2.1] - 2026-08-31
 
 ### Prompt Paul UX Refinement

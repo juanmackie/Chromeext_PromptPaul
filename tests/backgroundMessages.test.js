@@ -22,7 +22,7 @@ function dependencies(overrides = {}) {
   };
 }
 
-describe('background diagnostics message handler', () => {
+describe('background capability message handlers', () => {
   it('accepts diagnostics from extension pages', () => {
     const deps = dependencies();
     const result = handleDevDiagnosticsMessage(
@@ -67,7 +67,7 @@ describe('background diagnostics message handler', () => {
     const deps = dependencies({ handleNotchAction });
 
     expect(handleNotchMessage({ action: 'notchAction' }, {}, deps)).toBe(true);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(deps.sendResponse).toHaveBeenCalledWith({
       success: false,
       error: 'Notch unavailable',
@@ -80,7 +80,7 @@ describe('background diagnostics message handler', () => {
 
     expect(
       handleImproveInstructionMessage(
-        { action: 'improveInstruction', prompt: '  Make this clearer  ' },
+        { action: 'improveInstruction', prompt: 'Make this clearer' },
         { origin: deps.extensionOrigin },
         deps
       )

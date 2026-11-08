@@ -78,7 +78,8 @@ export function extendDeadlineForApprovalWait(state, now = Date.now()) {
   if (!startedAt) return false;
   const elapsed = now - Number(startedAt);
   if (elapsed > 0) {
-    state.deadlineAt = Number(state.deadlineAt || 0) + Math.min(elapsed, MAX_APPROVAL_WAIT_EXTENSION_MS);
+    state.deadlineAt =
+      Number(state.deadlineAt || 0) + Math.min(elapsed, MAX_APPROVAL_WAIT_EXTENSION_MS);
     state.approvalWaitExtensions = Number(state.approvalWaitExtensions || 0) + 1;
   }
   state.approvalWaitStartedAt = null;

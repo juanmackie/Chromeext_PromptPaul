@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 
-const marked = createRequire(import.meta.url)('../marked.min.js');
+const marked = createRequire(import.meta.url)('marked');
 
 vi.mock('../loadingManager.js', () => ({
   loadingManager: { showToast: vi.fn() },

@@ -13,15 +13,14 @@ const { chromium, expect } = require('@playwright/test');
 const repoRoot = path.resolve(__dirname, '../..');
 
 /**
- * The extension directory to load in browser tests. Defaults to the source
- * checkout, but can point at a built production output (for example dist)
- * via PROMPT_PAUL_LOAD_EXTENSION_DIR so release artifacts are exercised
- * against the exact packaged files (P1-08).
+ * The extension directory to load in browser tests. Defaults to the built
+ * development output; set PROMPT_PAUL_LOAD_EXTENSION_DIR to exercise another
+ * build such as dist/.
  * @returns {string}
  */
 function extensionLoadPath() {
-  const target = process.env.PROMPT_PAUL_LOAD_EXTENSION_DIR || '';
-  return target ? path.resolve(repoRoot, target) : repoRoot;
+  const target = process.env.PROMPT_PAUL_LOAD_EXTENSION_DIR || 'dist-dev';
+  return path.resolve(repoRoot, target);
 }
 const fixtureRoot = path.join(__dirname, 'fixtures');
 let diagnosticsCaptureIndex = 0;

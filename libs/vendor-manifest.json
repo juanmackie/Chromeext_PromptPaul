@@ -1,19 +1,28 @@
 {
   "libraries": {
     "bootstrap": {
+      "npmPackage": "bootstrap",
       "version": "5.3.3",
       "license": "MIT",
-      "source": "https://github.com/twbs/bootstrap/releases/tag/v5.3.3",
-      "bundles": [
+      "source": "https://registry.npmjs.org/",
+      "assets": [
         {
+          "source": "node_modules/bootstrap/dist/js/bootstrap.bundle.min.js",
           "file": "libs/bootstrap.bundle.min.js",
-          "sha256": "3c06f37595fa4f366dea7dda2c897dfe59d049156edf06a0407b4b952b71d8b6",
-          "licenseMarker": "Licensed under MIT"
+          "sha256": "0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c",
+          "kind": "bundle"
         },
         {
+          "source": "node_modules/bootstrap/dist/css/bootstrap.min.css",
           "file": "libs/bootstrap.min.css",
-          "sha256": "f3e2a939023d2a49402c5191520de9b3ff4e65902f7267e1027ef3a77c357200",
-          "licenseMarker": "Licensed under MIT"
+          "sha256": "3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/bootstrap/LICENSE",
+          "file": "libs/bootstrap.LICENSE",
+          "sha256": "8c14611ae41ac6fd543c13349f22188eb12c69b3e59105c5eca3925a8e4eca3e",
+          "kind": "license"
         }
       ]
     },
@@ -23,46 +32,81 @@
       "source": "https://registry.npmjs.org/dom-accessibility-api/-/dom-accessibility-api-0.7.1.tgz",
       "repository": "https://github.com/eps1lon/dom-accessibility-api",
       "bundle": "libs/dom-accessibility-api.js",
-      "bundleSha256": "cffdda43c10c392ac5236f4756c462db70ad3f9e296e983da978ea0ba0de7f3e",
+      "bundleSha256": "d81e0b48d3ae06d23b1386c72b6f6edb86894ffe59c7fb7d705dad5c1190cd80",
       "licenseFile": "libs/dom-accessibility-api.LICENSE.md",
-      "licenseSha256": "16d7856cc861131574f0e1376018d983154a590b98bf887965941123edf453f5"
+      "licenseSha256": "0ffe67fe630169de46df2d29dc18f5857b4c98f0f95b0cd9e3c21fef51f9a9b8"
     },
     "dompurify": {
-      "version": "3.2.6",
-      "license": "Apache-2.0 / MPL-2.0",
-      "source": "https://github.com/cure53/DOMPurify/releases/tag/3.2.6",
-      "bundle": "libs/dompurify.min.js",
-      "bundleSha256": "68f9773ad2c920d42cee504036e3621c756f45928fe3eb7a6bc8d6b413039760",
-      "licenseMarker": "Released under the Apache license 2.0 and Mozilla Public License 2.0"
+      "npmPackage": "dompurify",
+      "version": "3.4.17",
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "source": "https://registry.npmjs.org/",
+      "assets": [
+        {
+          "source": "node_modules/dompurify/dist/purify.min.js",
+          "file": "libs/dompurify.min.js",
+          "sha256": "cd37898f9782adf54820c413191b5691803f0f137c799d6edcfd38523b4c2c31",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/dompurify/LICENSE",
+          "file": "libs/dompurify.LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        }
+      ]
     },
     "highlight.js": {
+      "npmPackage": "@highlightjs/cdn-assets",
       "version": "11.9.0",
       "license": "BSD-3-Clause",
-      "source": "https://github.com/highlightjs/highlight.js/releases/tag/11.9.0",
-      "bundles": [
+      "source": "https://registry.npmjs.org/",
+      "assets": [
         {
+          "source": "node_modules/@highlightjs/cdn-assets/highlight.min.js",
           "file": "libs/highlight.min.js",
-          "sha256": "196522f14fcf28945c8c2066e4aee24a79de2ce2312d6082a4ec6095f5ed7644",
-          "licenseMarker": "License: BSD-3-Clause"
+          "sha256": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846",
+          "kind": "bundle"
         },
         {
+          "source": "node_modules/@highlightjs/cdn-assets/styles/github.min.css",
           "file": "libs/highlight-github.min.css",
-          "sha256": "b34735e24d5ffe2a4f69b3e081f8a8aa3d1a0ea92f6ceff5d37c36f972b9be02"
+          "sha256": "3a9a5def8b9c311e5ae43abde85c63133185eed4f0d9f67fea4b00a8308cf066",
+          "kind": "bundle"
         },
         {
+          "source": "node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css",
           "file": "libs/highlight-github-dark.min.css",
-          "sha256": "a530757f4fc77c72b78733c2ef084f4d6e0173a9466a091afbfe23b3bc9873fc"
+          "sha256": "9f208d022102b1d0c7aebfecd8e42ca7997d5de636649d2b31ea63093d809019",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/@highlightjs/cdn-assets/LICENSE",
+          "file": "libs/highlight.LICENSE",
+          "sha256": "6c081431591d9df696c82dc598fe1423765b8a299b200ed00b281afd0f64c490",
+          "kind": "license"
         }
       ]
     },
     "marked": {
-      "version": "4.x",
+      "npmPackage": "marked",
+      "version": "4.3.0",
       "license": "MIT",
-      "source": "https://github.com/markedjs/marked",
-      "bundle": "marked.min.js",
-      "bundleSha256": "2cc672219d94b27aee382e052159554818a68801b7469b379131a3d0def631d0",
-      "licenseMarker": "MIT Licensed",
-      "versionNote": "Root-level vendored bundle using the marked v4 API (marked.parse, Parser/Lexer/Tokenizer/Renderer); exact minor not individually identifiable from bundle content."
+      "source": "https://registry.npmjs.org/",
+      "assets": [
+        {
+          "source": "node_modules/marked/marked.min.js",
+          "file": "libs/marked.min.js",
+          "sha256": "c68075672d976e4777390560baa112194855bd4404b13647da4855aae1f9360c",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/marked/LICENSE.md",
+          "file": "libs/marked.LICENSE.md",
+          "sha256": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c",
+          "kind": "license"
+        }
+      ]
     },
     "material-symbols": {
       "version": "variable",
@@ -73,38 +117,70 @@
       "versionNote": "Google Material Symbols Outlined variable WOFF2 font (Apache-2.0); exact font version is not embedded in the binary."
     },
     "pdfjs": {
-      "version": "6.0.227",
+      "npmPackage": "pdfjs-dist",
+      "version": "6.5.438",
       "license": "Apache-2.0",
-      "source": "https://github.com/mozilla/pdf.js/releases/tag/v6.0.227",
-      "bundles": [
+      "source": "https://registry.npmjs.org/",
+      "assets": [
         {
+          "source": "node_modules/pdfjs-dist/build/pdf.min.mjs",
           "file": "libs/pdf.min.mjs",
-          "sha256": "71ab6d3ace0b285cc1feaf88f943b84238bf875f7a005674ac448a78940913bd"
+          "sha256": "3a88402882cfa3e7e72c2c9b5149f52f0f88baf1c5b62aa11a41abdbc2072440",
+          "kind": "bundle"
         },
         {
+          "source": "node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
           "file": "libs/pdf.worker.min.mjs",
-          "sha256": "9e3b3b7da0760e8468f4b20490cceab481a96b700803a96c46b0bb00d2e3741e"
+          "sha256": "1e64c8240e54735ec5913b37acd5134747799cb8c6bb3777c70adbc01232d2aa",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/pdfjs-dist/LICENSE",
+          "file": "libs/pdfjs.LICENSE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "kind": "license"
         }
-      ],
-      "licenseMarker": "Licensed under the Apache License, Version 2.0"
+      ]
     },
     "readability": {
-      "version": "0.5.x",
+      "npmPackage": "@mozilla/readability",
+      "version": "0.6.0",
       "license": "Apache-2.0",
-      "source": "https://github.com/mozilla/readability",
-      "bundle": "libs/readability.js",
-      "bundleSha256": "051fe2b8f07c8ef2ad0be40dcf25e174d021d6a86d8ac91c1bd4e3a27c613643",
-      "licenseMarker": "Licensed under the Apache License, Version 2.0",
-      "versionNote": "Identified as the 0.5.x-era standalone bundle: parse() returns publishedTime/siteName/excerpt (0.5.0+) and the constructor honors keepClasses; exact minor not embedded in bundle content."
+      "source": "https://registry.npmjs.org/",
+      "assets": [
+        {
+          "source": "node_modules/@mozilla/readability/Readability.js",
+          "file": "libs/readability.js",
+          "sha256": "34dcab3d0832d0019f02990eed6b6124e029e8c32b9f0c6f2550544ff8dff174",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/@mozilla/readability/LICENSE.md",
+          "file": "libs/readability.LICENSE.md",
+          "sha256": "a5b1e8181751ce05b85b7bfaa832b785e87086250a5148e679d17ca9bdcfa958",
+          "kind": "license"
+        }
+      ]
     },
     "turndown": {
-      "version": "7.x",
+      "npmPackage": "turndown",
+      "version": "7.2.0",
       "license": "MIT",
-      "source": "https://github.com/mixmark-io/turndown",
-      "bundle": "libs/turndown.js",
-      "bundleSha256": "9b3c8b97e5572bb63e14e20c75f49ef7cbe128aec96c90b5b9c8d3c7c6eee7a6",
-      "licenseMarker": "The MIT License (MIT)",
-      "versionNote": "Identified as the 7.x-era standalone UMD bundle: exposes TurndownService with addRule/keep/remove and the v7 option set (headingStyle, codeBlockStyle, emDelimiter, strongDelimiter, linkStyle, linkReferenceStyle, bulletListMarker) with no forbidding API; exact minor not embedded in bundle content."
+      "source": "https://registry.npmjs.org/",
+      "assets": [
+        {
+          "source": "node_modules/turndown/dist/turndown.js",
+          "file": "libs/turndown.js",
+          "sha256": "ae3605eb07ab920a2d181008ace692ec560fa6cd67d2e291f77cbc5c4322cd38",
+          "kind": "bundle"
+        },
+        {
+          "source": "node_modules/turndown/LICENSE",
+          "file": "libs/turndown.LICENSE",
+          "sha256": "a055e3a15db4b4cbb5af381230eba085603126d7d5d8c4dae45ee85b877a9729",
+          "kind": "license"
+        }
+      ]
     }
   },
   "benchmarkRecords": {

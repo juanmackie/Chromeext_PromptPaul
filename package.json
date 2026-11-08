@@ -46,5 +46,14 @@
     "mistral",
     "productivity"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@highlightjs/cdn-assets": "11.9.0",
+    "@mozilla/readability": "0.6.0",
+    "bootstrap": "5.3.3",
+    "dompurify": "3.4.17",
+    "marked": "4.3.0",
+    "pdfjs-dist": "6.5.438",
+    "turndown": "7.2.0"
+  }
 }

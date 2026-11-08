@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { isGeneratedRuntimeAsset } = require('./runtime-dependencies');
 
 const root = process.cwd();
 const failures = [];
@@ -45,10 +46,14 @@ function checkManifestAt(manifest, baseDir, label) {
   if (!manifest.name || !manifest.version) failures.push(`${label}: name and version are required`);
   const required = new Set(manifest.permissions || []);
   for (const permission of manifest.optional_permissions || []) {
-    if (required.has(permission)) failures.push(`${label}: duplicate required/optional permission ${permission}`);
+    if (required.has(permission))
+      failures.push(`${label}: duplicate required/optional permission ${permission}`);
   }
   for (const resource of addResourcePaths(manifest)) {
-    if (!fs.existsSync(path.join(baseDir, resource))) {
+    if (
+      !fs.existsSync(path.join(baseDir, resource)) &&
+      !(baseDir === root && isGeneratedRuntimeAsset(resource))
+    ) {
       failures.push(`${label}: manifest references missing file ${resource}`);
     }
   }
@@ -64,7 +69,11 @@ if (manifest && pkg && manifest.version !== pkg.version) {
 // CI builds after validation; when a build is present, check its manifest too.
 const distDir = path.join(root, 'dist');
 if (fs.existsSync(distDir)) {
-  checkManifestAt(readJson(path.relative(root, path.join(distDir, 'manifest.json'))), distDir, 'dist/manifest.json');
+  checkManifestAt(
+    readJson(path.relative(root, path.join(distDir, 'manifest.json'))),
+    distDir,
+    'dist/manifest.json'
+  );
 }
 
 if (failures.length) {
