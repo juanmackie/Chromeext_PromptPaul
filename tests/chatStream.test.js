@@ -226,9 +226,10 @@ describe('StreamStateManager orchestrator event ordering', () => {
           return { body: { childNodes: [node] } };
         }
       };
-      globalThis.marked = marked;
+      const markedWrapper = { ...marked, parse: vi.fn(marked.parse.bind(marked)) };
+      globalThis.marked = markedWrapper;
       delete globalThis.DOMPurify;
-      const parseSpy = vi.spyOn(marked, 'parse');
+      const parseSpy = markedWrapper.parse;
 
       try {
         const state = new StreamStateManager();

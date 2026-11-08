@@ -178,21 +178,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const analyzeDropdown = document.getElementById('analyze-dropdown');
   const proofreadButton = document.getElementById('proofread-button');
   const explainButton = document.getElementById('explain-button');
-  // Configure marked with highlight.js for syntax highlighting
-  if (typeof marked !== 'undefined' && typeof hljs !== 'undefined') {
-    marked.setOptions({
-      highlight: function (code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-          try {
-            return hljs.highlight(code, { language: lang }).value;
-          } catch (_) {
-            return code;
-          }
-        }
-        return code;
-      },
-    });
-  }
 
   // Initialize chatUI DOM references
   chatUI.initialize();

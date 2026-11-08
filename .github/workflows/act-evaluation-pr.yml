@@ -54,13 +54,13 @@ jobs:
       # corpus. Checking out the base alone fails whenever the gate change adds
       # tasks that the base driver does not know about.
       - name: Checkout pull request head and history
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -85,7 +85,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
 
       - name: Preserve baseline score
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: act-score-baseline
           path: artifacts/act-benchmark/results.json
@@ -102,12 +102,12 @@ jobs:
       PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -125,7 +125,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
 
       - name: Download baseline score
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: act-score-baseline
           path: baseline

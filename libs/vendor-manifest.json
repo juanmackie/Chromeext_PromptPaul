@@ -2,26 +2,26 @@
   "libraries": {
     "bootstrap": {
       "npmPackage": "bootstrap",
-      "version": "5.3.3",
+      "version": "5.3.8",
       "license": "MIT",
       "source": "https://registry.npmjs.org/",
       "assets": [
         {
           "source": "node_modules/bootstrap/dist/js/bootstrap.bundle.min.js",
           "file": "libs/bootstrap.bundle.min.js",
-          "sha256": "0833b2e9c3a26c258476c46266e6877fc75218625162e0460be9a3a098a61c6c",
+          "sha256": "e4fd49181388c48ec5040bd3fe66f57c29c8e67fcd8502b3354b96ec7ab47cc7",
           "kind": "bundle"
         },
         {
           "source": "node_modules/bootstrap/dist/css/bootstrap.min.css",
           "file": "libs/bootstrap.min.css",
-          "sha256": "3c8f27e6009ccfd710a905e6dcf12d0ee3c6f2ac7da05b0572d3e0d12e736fc8",
+          "sha256": "d85327d99c7a3ee1f9b5d0500d1370acea3ad2db39c163c2f51f232baedbdede",
           "kind": "bundle"
         },
         {
           "source": "node_modules/bootstrap/LICENSE",
           "file": "libs/bootstrap.LICENSE",
-          "sha256": "8c14611ae41ac6fd543c13349f22188eb12c69b3e59105c5eca3925a8e4eca3e",
+          "sha256": "4620c84ad5ce8602ff65640ed6b7c8b78ebb9e036584f0ebc1ccc88206a4bb51",
           "kind": "license"
         }
       ]
@@ -32,9 +32,9 @@
       "source": "https://registry.npmjs.org/dom-accessibility-api/-/dom-accessibility-api-0.7.1.tgz",
       "repository": "https://github.com/eps1lon/dom-accessibility-api",
       "bundle": "libs/dom-accessibility-api.js",
-      "bundleSha256": "d81e0b48d3ae06d23b1386c72b6f6edb86894ffe59c7fb7d705dad5c1190cd80",
+      "bundleSha256": "cffdda43c10c392ac5236f4756c462db70ad3f9e296e983da978ea0ba0de7f3e",
       "licenseFile": "libs/dom-accessibility-api.LICENSE.md",
-      "licenseSha256": "0ffe67fe630169de46df2d29dc18f5857b4c98f0f95b0cd9e3c21fef51f9a9b8"
+      "licenseSha256": "16d7856cc861131574f0e1376018d983154a590b98bf887965941123edf453f5"
     },
     "dompurify": {
       "npmPackage": "dompurify",
@@ -58,14 +58,14 @@
     },
     "highlight.js": {
       "npmPackage": "@highlightjs/cdn-assets",
-      "version": "11.9.0",
+      "version": "11.12.0",
       "license": "BSD-3-Clause",
       "source": "https://registry.npmjs.org/",
       "assets": [
         {
           "source": "node_modules/@highlightjs/cdn-assets/highlight.min.js",
           "file": "libs/highlight.min.js",
-          "sha256": "837a6fa5b0c736b52bbde2b2b6190f305da3fc9ed41681db5321507057b5c846",
+          "sha256": "8ab71eb09c51f501e5e25157d9cff100e46cc29bcbfc744d0b746d451fca7f53",
           "kind": "bundle"
         },
         {
@@ -90,19 +90,19 @@
     },
     "marked": {
       "npmPackage": "marked",
-      "version": "4.3.0",
+      "version": "18.1.3",
       "license": "MIT",
       "source": "https://registry.npmjs.org/",
       "assets": [
         {
-          "source": "node_modules/marked/marked.min.js",
+          "source": "node_modules/marked/lib/marked.umd.js",
           "file": "libs/marked.min.js",
-          "sha256": "c68075672d976e4777390560baa112194855bd4404b13647da4855aae1f9360c",
+          "sha256": "c34a221dc89e91833a88822e7717b8a0cf27118f8c9a8779dffb48a6be31f97a",
           "kind": "bundle"
         },
         {
-          "source": "node_modules/marked/LICENSE.md",
-          "file": "libs/marked.LICENSE.md",
+          "source": "node_modules/marked/LICENSE",
+          "file": "libs/marked.LICENSE",
           "sha256": "8e3a3f82f59a60958f56ca08f445647c32a4733dc7ca6c2c46f6eb898471ab9c",
           "kind": "license"
         }
@@ -164,14 +164,14 @@
     },
     "turndown": {
       "npmPackage": "turndown",
-      "version": "7.2.0",
+      "version": "7.2.5",
       "license": "MIT",
       "source": "https://registry.npmjs.org/",
       "assets": [
         {
           "source": "node_modules/turndown/dist/turndown.js",
           "file": "libs/turndown.js",
-          "sha256": "ae3605eb07ab920a2d181008ace692ec560fa6cd67d2e291f77cbc5c4322cd38",
+          "sha256": "f46330e27d6009ecc3b001237e735cf58293772d2a465436a61de6f536b59a81",
           "kind": "bundle"
         },
         {

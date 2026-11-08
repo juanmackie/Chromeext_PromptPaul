@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Files whose raw bytes are hash-verified must be identical on every platform.
+eval/mind2web/cases.json text eol=lf

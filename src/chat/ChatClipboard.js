@@ -99,6 +99,14 @@ export function postProcessRenderedContent(container) {
 
   const codeBlocks = container.querySelectorAll('pre code');
   codeBlocks.forEach((codeBlock) => {
+    if (typeof hljs !== 'undefined' && !codeBlock.dataset.highlighted) {
+      try {
+        hljs.highlightElement(codeBlock);
+      } catch (error) {
+        console.warn('Failed to highlight code block:', error);
+      }
+    }
+
     const pre = codeBlock.parentElement;
     // Avoid adding multiple wrappers
     if (pre.parentElement.classList.contains('code-block-wrapper')) return;
