@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import RunOrchestrator from '../src/orchestrator/RunOrchestrator.js';
+import { capturePageTaskTarget } from '../src/orchestrator/PageTaskProgress.js';
+import { ACT_PROGRESS_CAPS } from '../src/act/ActLimits.js';
 import { createStubSkillManager } from './helpers/runOrchestrator.js';
 
 describe('Day 3: Act progress card page_task_progress events', () => {
@@ -180,6 +182,27 @@ describe('Day 3: page_task_progress journal safety', () => {
     // 'done' is not a persisted status vocabulary value; it maps back to pending.
     expect(safe.steps[0].status).toBe('pending');
     expect(safe.steps[1].status).toBe('pending');
+  });
+});
+
+describe('page task progress target capture', () => {
+  it('stores a bounded title and origin without retaining the page URL', () => {
+    const run = { pageActions: {} };
+    capturePageTaskTarget(run, {
+      title: ` ${'x'.repeat(ACT_PROGRESS_CAPS.maxTargetLabelChars + 20)} `,
+      url: 'https://shop.example.com/checkout?token=private#payment',
+    });
+    expect(run.pageActions.currentTabTitle).toHaveLength(ACT_PROGRESS_CAPS.maxTargetLabelChars);
+    expect(run.pageActions.currentTabOrigin).toBe('https://shop.example.com');
+    expect(JSON.stringify(run)).not.toContain('private');
+    expect(JSON.stringify(run)).not.toContain('/checkout');
+  });
+
+  it('clears the origin when a snapshot URL is invalid', () => {
+    const run = { pageActions: { currentTabOrigin: 'https://old.example.com' } };
+    capturePageTaskTarget(run, { title: '', url: 'not-a-url' });
+    expect(run.pageActions.currentTabTitle).toBe('');
+    expect(run.pageActions.currentTabOrigin).toBe('');
   });
 });
 

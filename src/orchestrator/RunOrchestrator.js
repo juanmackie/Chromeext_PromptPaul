@@ -11,7 +11,6 @@
  */
 
 import { extractGroundingPages } from '../utils/webFetchGrounding.js';
-import { ACT_PROGRESS_CAPS } from '../act/ActLimits.js';
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 import { modelSupportsReasoning } from '../utils/profileRouting.js';
 import { createThinkParser } from '../utils/inlineReasoning.js';
@@ -32,7 +31,6 @@ import { waitForRetry } from '../utils/retryBackoff.js';
 import { withServiceWorkerKeepAlive } from './ServiceWorkerKeepAlive.js';
 import {
   ACT_ACTION_BUDGETS,
-  PAGE_ACTION_RECEIPT_DISPOSITIONS,
   PAGE_ACTION_TURN_MUTATIONS,
   buildActWorkingMemoryPrompt,
   buildPageTaskMemoryPrompt,
@@ -83,6 +81,7 @@ import { installCodexExecutionMethods } from './CodexExecution.js';
 import { clearPageActionCheckpoint } from '../utils/pageActionCheckpoint.js';
 import { RunJournal, RUN_JOURNAL_STORAGE_KEY } from './RunJournal.js';
 import { AnswerWireRuntime } from './AnswerWireRuntime.js';
+import { buildPageTaskProgressEvent, capturePageTaskTarget } from './PageTaskProgress.js';
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
 const MAX_TOOL_CALL_RETRIES = 3;
@@ -95,9 +94,6 @@ const MAX_ACT_PLANNER_CONTINUATIONS = 3;
 const MAX_READABLE_PAGES = 3;
 const ACT_PLANNER_CONTINUATION_PROMPT =
   'Continue the Act task. The planner still has unresolved sub-goals. Use the available page tools to complete or explicitly block each remaining goal; do not give a final answer until the planner has verified progress.';
-const PAGE_TASK_PROGRESS_STEP_LABEL_CAP = ACT_PROGRESS_CAPS.maxStepLabelChars;
-const PAGE_TASK_PROGRESS_TARGET_LABEL_CAP = ACT_PROGRESS_CAPS.maxTargetLabelChars;
-const PAGE_TASK_PROGRESS_MAX_STEPS = ACT_PROGRESS_CAPS.maxSteps;
 
 // Page-action event types that reflect a change in Act progress (current
 // action, planner, or a pending interaction). When one of these emits, the
@@ -2597,136 +2593,7 @@ class RunOrchestrator {
    * @private
    */
   _buildPageTaskProgressEvent(run) {
-    const pa = run?.pageActions;
-    const planner = pa?.planner;
-    const steps = [];
-    let hasPlanner = false;
-    if (planner?.active && Array.isArray(planner.subGoals)) {
-      hasPlanner = true;
-      const currentIndex = Number.isInteger(planner.currentSubGoalIndex)
-        ? planner.currentSubGoalIndex
-        : -1;
-      planner.subGoals.slice(0, PAGE_TASK_PROGRESS_MAX_STEPS).forEach((goal, index) => {
-        let status = 'pending';
-        if (goal?.status === 'completed') status = 'completed';
-        else if (goal?.status === 'skipped') status = 'blocked';
-        else if (index === currentIndex || goal?.status === 'in_progress') status = 'current';
-        steps.push({
-          index,
-          label: String(goal?.description || '').slice(0, PAGE_TASK_PROGRESS_STEP_LABEL_CAP),
-          status,
-        });
-      });
-    }
-
-    let currentStep = null;
-    if (planner?.active && Array.isArray(planner.subGoals)) {
-      const current = planner.subGoals[planner.currentSubGoalIndex];
-      currentStep = current
-        ? String(current.description || '').slice(0, PAGE_TASK_PROGRESS_STEP_LABEL_CAP)
-        : null;
-    } else if (pa?.currentActivityAction) {
-      currentStep = String(pa.currentActivityAction).slice(0, 64);
-    }
-
-    let waiting = null;
-    let waitingRequestId = null;
-    if (pa?.pendingConfirmation) {
-      waiting = 'approval';
-      waitingRequestId = pa.pendingConfirmation.id || null;
-    } else if (pa?.pendingUserInput) {
-      waiting = 'answer';
-      waitingRequestId = pa.pendingUserInput.id || null;
-    } else if (pa?.pendingManualIntervention) {
-      waiting = 'manual';
-      waitingRequestId = pa.pendingManualIntervention.id || null;
-    }
-
-    // Sanitized target identity: a tab title or a bounded origin label. Only
-    // one preferred label is emitted; the raw URL and any page content never
-    // leave the worker.
-    let target = null;
-    const title = String(pa?.currentTabTitle || '').trim();
-    const origin = String(pa?.currentTabOrigin || '').trim();
-    if (title) target = { label: title.slice(0, PAGE_TASK_PROGRESS_TARGET_LABEL_CAP) };
-    else if (origin) {
-      target = {
-        label: origin.slice(0, PAGE_TASK_PROGRESS_TARGET_LABEL_CAP),
-        origin: true,
-      };
-    }
-
-    // Reuse the existing receipt disposition so the card can translate it into
-    // plain language. It never distinguishes one verified action from whole-
-    // task completion (handled separately via taskComplete).
-    let receipt = null;
-    const lastReceipt = pa?.lastActionReceipt;
-    if (
-      pa?.currentActivityAction &&
-      lastReceipt &&
-      PAGE_ACTION_RECEIPT_DISPOSITIONS.has(lastReceipt.disposition)
-    ) {
-      receipt = {
-        disposition: lastReceipt.disposition,
-        actionName: String(pa.currentActivityAction).slice(0, 64),
-      };
-    }
-
-    const taskComplete = pa?.actOutcome
-      ? pa.actOutcome.status === 'done'
-      : hasPlanner
-        ? Boolean(planner.completedAt)
-        : false;
-
-    // Deterministic Act outcome facts for the recovery/outcome UI. Computed
-    // only from live run state (receipt dispositions, planner step statuses,
-    // pending interactions) and capped to bounded counts/booleans. Never DOM,
-    // URLs, tool arguments, or credentials. A true `unverified` means the last
-    // delivery could not be confirmed, so the UI must not blind-replay it.
-    const disposition = pa?.lastActionReceipt?.disposition
-      ? String(pa.lastActionReceipt.disposition).slice(0, 32)
-      : receipt?.disposition || null;
-    let completedSteps = 0;
-    let blockedSteps = 0;
-    let remainingSteps = 0;
-    for (const step of steps) {
-      if (step.status === 'completed') completedSteps += 1;
-      else if (step.status === 'blocked' || step.status === 'skipped') blockedSteps += 1;
-      else remainingSteps += 1;
-    }
-    const outcome = {
-      status: String(run.status || 'running').slice(0, 24),
-      waiting: waiting || null,
-      taskComplete,
-      unverified: disposition === 'delivered_unverified' || disposition === 'in_flight',
-      notDelivered: disposition === 'not_delivered',
-      verified: disposition === 'delivered_verified',
-      declined: Boolean(pa?.lastDeniedAction),
-      completedSteps: Math.min(completedSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
-      blockedSteps: Math.min(blockedSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
-      remainingSteps: Math.min(remainingSteps, PAGE_TASK_PROGRESS_MAX_STEPS),
-    };
-
-    return {
-      type: 'page_task_progress',
-      status: run.status || 'running',
-      hasPlanner,
-      steps,
-      currentStep,
-      currentAction: pa?.currentActivityAction
-        ? String(pa.currentActivityAction).slice(0, 64)
-        : null,
-      // Optional bounded model-supplied human label for the current action.
-      // Display-only; falls back to currentStep/currentAction in the renderer.
-      title: pa?.currentActionTitle ? String(pa.currentActionTitle).slice(0, 80) : null,
-      target,
-      waiting,
-      waitingRequestId,
-      receipt,
-      taskComplete,
-      outcome,
-      ...(pa?.actOutcome ? { actOutcome: pa.actOutcome } : {}),
-    };
+    return buildPageTaskProgressEvent(run);
   }
 
   _emitPageTaskProgress(run) {
@@ -2743,19 +2610,7 @@ class RunOrchestrator {
    * @private
    */
   _capturePageTaskTarget(run, snapshot) {
-    run.pageActions.currentTabTitle = String(snapshot?.title || '')
-      .trim()
-      .slice(0, PAGE_TASK_PROGRESS_TARGET_LABEL_CAP);
-    let origin = '';
-    try {
-      origin = new URL(String(snapshot?.url || '')).origin.slice(
-        0,
-        PAGE_TASK_PROGRESS_TARGET_LABEL_CAP
-      );
-    } catch (_) {
-      origin = '';
-    }
-    run.pageActions.currentTabOrigin = origin;
+    capturePageTaskTarget(run, snapshot);
   }
 
   /**
