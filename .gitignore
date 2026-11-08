@@ -30,7 +30,9 @@ plans/
 
 # Ignore local agent state and release archives
 .pi/
+.commandcode/
 Prompt-Paul-*.zip
+Prompt-Paul-*.zip.sha256
 
 # Ignore local editor settings
 .vscode/
