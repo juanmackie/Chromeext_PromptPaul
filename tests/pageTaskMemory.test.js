@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PAGE_TASK_MEMORY_CAPS,
   buildPageTaskMemoryPrompt,
   compactPageTaskHistory,
   normalizePageTaskNote,
   recordPageTaskNote,
-} from '../src/orchestrator/PageTaskMemory.js';
+} from '../src/act/PageTaskMemory.js';
 
 describe('PageTaskMemory', () => {
+  it('uses the shared bounded note and history limits', () => {
+    expect(PAGE_TASK_MEMORY_CAPS).toEqual({
+      maxNotes: 72,
+      maxNoteChars: 800,
+      maxHistoryChars: 360_000,
+    });
+    expect(Object.isFrozen(PAGE_TASK_MEMORY_CAPS)).toBe(true);
+  });
+
   it('bounds and records notes without persisting secrets or unbounded text', () => {
     expect(normalizePageTaskNote({ text: '' }).valid).toBe(false);
     expect(normalizePageTaskNote({ text: 'Use the API key from the page' })).toMatchObject({

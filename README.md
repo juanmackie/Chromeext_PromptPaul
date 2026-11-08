@@ -146,8 +146,7 @@ collection workflow. Production builds are written to `dist/`.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
-- [docs/FEATURE_REVIEW.md](docs/FEATURE_REVIEW.md)
-- [docs/BROWSER_AGENT_REPOSITORY_REVIEW.md](docs/BROWSER_AGENT_REPOSITORY_REVIEW.md)
+- [Archived project reviews](docs/archive/)
 - [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md)
 
 ## API Compatibility

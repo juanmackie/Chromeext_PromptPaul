@@ -122,7 +122,7 @@ test.describe('page action dialog-dismissal receipts', () => {
       expect(await browser.target.locator('body').getAttribute('data-dismissed')).toBe('true');
       expect(await browser.target.evaluate(() => window.__dismissDialogDispatches)).toBe(1);
 
-      const { deriveActOutcome } = await import('../../src/orchestrator/ActOutcome.js');
+      const { deriveActOutcome } = await import('../../src/act/ActOutcome.js');
       expect(
         deriveActOutcome(
           {

@@ -110,21 +110,21 @@
   "benchmarkRecords": {
     "WAInjectBench": {
       "license": "No stated repository license",
-      "source": "docs/BROWSER_AGENT_REPOSITORY_REVIEW.md",
+      "source": "docs/archive/BROWSER_AGENT_REPOSITORY_REVIEW.md",
       "licenseReviewed": true,
       "redistributed": false,
       "use": "Clean-room case ideas only"
     },
     "WASP": {
       "license": "CC BY-NC 4.0",
-      "source": "docs/BROWSER_AGENT_REPOSITORY_REVIEW.md",
+      "source": "docs/archive/BROWSER_AGENT_REPOSITORY_REVIEW.md",
       "licenseReviewed": true,
       "redistributed": false,
       "use": "Clean-room case ideas only"
     },
     "ST-WebAgentBench": {
       "license": "Apache-2.0",
-      "source": "docs/BROWSER_AGENT_REPOSITORY_REVIEW.md",
+      "source": "docs/archive/BROWSER_AGENT_REPOSITORY_REVIEW.md",
       "licenseReviewed": true,
       "redistributed": false,
       "use": "Clean-room case ideas only"

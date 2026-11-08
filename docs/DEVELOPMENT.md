@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 20.19 or newer
+- Node.js 22 or newer
 - Chrome or Edge for extension testing
 - Git for source control
 
@@ -44,7 +44,22 @@ npm run smoke
 npm run test:browser
 npm run validate
 npm run audit
+npm run release:prepare
 ```
+
+## Release
+
+Add the release notes under the newest version heading in `CHANGELOG.md`, then run
+`npm run release:prepare` to synchronize `package.json`, `package-lock.json`,
+`manifest.json`, and the Chrome Web Store “What's new” section. Commit those files and
+push a matching `v<version>` tag (for example `v6.4.0`). The tag workflow reruns CI,
+builds and uploads the production zip, then creates a GitHub Release with checksums and
+build metadata.
+
+Configure these repository Actions secrets before the first automated store upload:
+`CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_EXTENSION_ID`, and `CWS_PUBLISHER_ID`.
+
+Configure `OPENAI_API_KEY` for the Codex pull-request review workflow. In GitHub repository settings, enable auto-merge and protect `main` with the `validate`, `browser`, `build`, and `review` jobs as required checks. Those repository settings are not stored in this checkout.
 
 ## Act Benchmark
 

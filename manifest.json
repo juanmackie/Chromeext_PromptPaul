@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Paul- AI Insights at the click of a mouse",
-  "version": "6.3.0",
+  "version": "6.4.0",
   "description": "A Chrome extension for processing selected text using an LLM endpoint",
   "permissions": [
     "activeTab",
@@ -9,9 +9,9 @@
     "storage",
     "sidePanel",
     "scripting",
-    "tabs",
-    "debugger"
+    "tabs"
   ],
+  "optional_permissions": ["debugger"],
   "host_permissions": ["*://*/*", "file:///*", "https://cloud.umami.is/*"],
   "externally_connectable": {
     "matches": ["https://promptpaul.juanmackie.com/*"]

@@ -5,7 +5,8 @@ import {
   createPlannerState,
   extractQuotaTarget,
   recordPlannerQuotaItem,
-} from '../src/orchestrator/ActPlanner.js';
+} from '../src/act/ActPlanner.js';
+import { ACT_ACTION_BUDGETS, ACT_PLANNER_LIMITS } from '../src/act/ActLimits.js';
 
 const skills = {
   getSkillNames: () => [],
@@ -45,6 +46,30 @@ async function setup(instruction = 'Read this page', observation = {}) {
 }
 
 describe('Model-maintained Act checklist', () => {
+  it('uses the canonical action budgets in planner guidance and remaining counts', () => {
+    expect(ACT_ACTION_BUDGETS).toEqual({ observation: 256, navigation: 96, mutation: 64 });
+    expect(Object.isFrozen(ACT_ACTION_BUDGETS)).toBe(true);
+    const prompt = buildPlannerPromptBlock({ active: true, quota: null, subGoals: [] }, {}, {});
+    expect(prompt).toContain('Budget remaining: obs=256, nav=96, mut=64');
+    expect(
+      buildPlannerPromptBlock(
+        { active: true, quota: null, subGoals: [] },
+        { observation: 3, navigation: 4, mutation: 5 },
+        ACT_ACTION_BUDGETS
+      )
+    ).toContain('Budget remaining: obs=253, nav=92, mut=59');
+  });
+
+  it('keeps checklist limits in the shared Act limits module', () => {
+    expect(ACT_PLANNER_LIMITS).toEqual({
+      maxSubGoals: 12,
+      maxSubGoalChars: 200,
+      maxReplans: 5,
+      maxPromptChars: 6_000,
+    });
+    expect(Object.isFrozen(ACT_PLANNER_LIMITS)).toBe(true);
+  });
+
   it('never invents a checklist or changes consent from the instruction wording', async () => {
     for (const text of [
       'Read this page',

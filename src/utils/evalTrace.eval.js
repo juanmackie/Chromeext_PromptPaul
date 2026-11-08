@@ -4,7 +4,7 @@
  */
 
 import { serializePageActionResult } from './pageActionResult.js';
-import { normalizeActOutcome } from '../orchestrator/ActOutcome.js';
+import { normalizeActOutcome } from '../act/index.js';
 
 export const EVAL_TRACE_STORAGE_KEY = 'promptPaulEvalTraceV1';
 

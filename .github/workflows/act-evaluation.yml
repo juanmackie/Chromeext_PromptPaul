@@ -1,0 +1,101 @@
+name: Nightly Act evaluation
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  local-fixture-model-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PROMPT_PAUL_BENCHMARK_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
+      PROMPT_PAUL_BENCHMARK_MODEL: gpt-4.1-mini
+      PROMPT_PAUL_BENCHMARK_PROVIDER: api
+      PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build evaluation extension
+        run: npm run build:eval
+
+      - name: Run credential-free 15-case corpus
+        run: npm run test:behavior -- tests/pageActionEvaluationExecution.test.js
+
+      - name: Find previous successful score run
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list --workflow act-evaluation.yml --branch main --status success --json databaseId --jq '.[0].databaseId // empty')
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download previous score history
+        if: steps.previous.outputs.run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.previous.outputs.run_id }}
+          pattern: act-evaluation-*
+          path: previous-scores
+          merge-multiple: true
+          github-token: ${{ github.token }}
+
+      - name: Run fixed local-fixture task subset
+        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --task search-enter --task prefilled-form --task validation-error
+
+      - name: Upload score and bounded traces
+        if: always() && hashFiles('artifacts/act-benchmark/results.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: act-evaluation-${{ github.run_number }}
+          path: artifacts/act-benchmark/
+          retention-days: 90
+
+      - name: Generate score history and chart
+        if: always() && hashFiles('artifacts/act-benchmark/results.json') != ''
+        run: |
+          history=$(find previous-scores -name score-history.json -type f -print -quit 2>/dev/null || true)
+          if [ -n "$history" ]; then cp "$history" prior-score-history.json; fi
+          python3 scripts/act-score-history.py
+
+      - name: Upload score trend
+        if: always() && hashFiles('artifacts/act-benchmark/score-history.svg') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: act-evaluation-trend-${{ github.run_number }}
+          path: |
+            artifacts/act-benchmark/score-history.json
+            artifacts/act-benchmark/score-history.svg
+          retention-days: 90
+
+      - name: Add score to workflow summary
+        if: always() && hashFiles('artifacts/act-benchmark/results.json') != ''
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          report = json.load(open('artifacts/act-benchmark/results.json'))
+          print('## Nightly Act evaluation')
+          print(f"- Date: {report['createdAt']}")
+          print(f"- Model: {report['model']}")
+          print(f"- Fixture task pass rate: {report['overallPassRate']:.0%}")
+          print(f"- End-state pass rate: {report['endStatePassRate']:.0%}")
+          print(f"- Tasks: {', '.join(report['tasks'])}")
+          PY

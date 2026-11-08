@@ -3934,7 +3934,25 @@ function setupPageActionHandlers() {
     if (status) status.textContent = 'Unsaved changes. Click Save Page Action Settings.';
   };
   toggle.addEventListener('change', markChanged);
-  preciseInputToggle?.addEventListener('change', markChanged);
+  preciseInputToggle?.addEventListener('change', async () => {
+    if (preciseInputToggle.checked) {
+      try {
+        const granted = await new Promise((resolve) => {
+          chrome.permissions.request({ permissions: ['debugger'] }, resolve);
+        });
+        if (!granted) {
+          preciseInputToggle.checked = false;
+          if (status) status.textContent = 'Precise input needs debugger permission.';
+          return;
+        }
+      } catch {
+        preciseInputToggle.checked = false;
+        if (status) status.textContent = 'Could not request debugger permission.';
+        return;
+      }
+    }
+    markChanged();
+  });
 
   saveButton?.addEventListener(
     'click',

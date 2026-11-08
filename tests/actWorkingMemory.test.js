@@ -7,11 +7,21 @@ import {
   makeActTargetKey,
   recordActAction,
   shouldBlockActTarget,
-} from '../src/orchestrator/ActWorkingMemory.js';
+} from '../src/act/ActWorkingMemory.js';
 
 const delivered = { disposition: 'delivered_verified' };
 
 describe('ActWorkingMemory', () => {
+  it('uses the shared bounded memory limits', () => {
+    expect(ACT_WORKING_MEMORY_CAPS).toEqual({
+      maxEntries: 16,
+      maxVisited: 72,
+      maxPromptChars: 1_500,
+      maxLabelChars: 80,
+    });
+    expect(Object.isFrozen(ACT_WORKING_MEMORY_CAPS)).toBe(true);
+  });
+
   it('keeps a stable target identity across snapshots and excludes URL secrets', () => {
     const first = makeActTargetKey({
       role: 'button',

@@ -78,6 +78,11 @@ import {
   recordRemoteDevDiagnostic,
 } from './src/utils/devDiagnostics.js';
 import { registerEvalRunHook } from './src/utils/evalHook.js';
+import {
+  handleDevDiagnosticsMessage,
+  handleImproveInstructionMessage,
+  handleNotchMessage,
+} from './src/background/index.js';
 
 void initializeDevDiagnostics('background');
 installDevErrorHandlers('background');
@@ -3836,46 +3841,28 @@ async function handleNotchAction(request, sender) {
 
 // Listener for messages from content scripts or other extension parts (like chat.js)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request?.action === 'devDiagnostic') {
-    const extensionOrigin = getExtensionOrigin();
-    const authorized =
-      isExtensionSender(sender, extensionOrigin) ||
-      (isContentScriptSender(sender, extensionOrigin) &&
-        (request.tabId == null || requestMatchesSenderTab(sender, request.tabId)));
-    if (!authorized) return rejectUnauthorizedMessage(sendResponse);
-    sendResponse({ success: recordRemoteDevDiagnostic(request.entry) });
-    return false;
-  }
-  if (request?.action === 'devDiagnosticsStatus') {
-    const extensionOrigin = getExtensionOrigin();
-    const authorized =
-      isExtensionSender(sender, extensionOrigin) || isContentScriptSender(sender, extensionOrigin);
-    if (!authorized) return rejectUnauthorizedMessage(sendResponse);
-    sendResponse(getDevDiagnosticsStatus());
-    return false;
-  }
-  if (request?.action === 'notchAction') {
-    handleNotchAction(request, sender)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ success: false, error: error.message }));
-    return true;
-  }
-  if (request?.action === 'improveInstruction') {
-    const extensionOrigin = getExtensionOrigin();
-    if (!isExtensionSender(sender, extensionOrigin)) {
-      return rejectUnauthorizedMessage(sendResponse);
-    }
-    improveInstructionForProfile(String(request.prompt || ''))
-      .then((content) => sendResponse({ success: true, content }))
-      .catch((error) =>
-        sendResponse({
-          success: false,
-          capability: error.capability === 'unsupported' ? 'unsupported' : undefined,
-          error: error.message,
-        })
-      );
-    return true;
-  }
+  const messageDependencies = {
+    extensionOrigin: getExtensionOrigin(),
+    isExtensionSender,
+    isContentScriptSender,
+    requestMatchesSenderTab,
+    rejectUnauthorizedMessage,
+    recordRemoteDevDiagnostic,
+    getDevDiagnosticsStatus,
+    handleNotchAction,
+    improveInstructionForProfile,
+    sendResponse,
+  };
+  const diagnosticsMessage = handleDevDiagnosticsMessage(request, sender, messageDependencies);
+  if (diagnosticsMessage !== null) return diagnosticsMessage;
+  const notchMessage = handleNotchMessage(request, sender, messageDependencies);
+  if (notchMessage !== null) return notchMessage;
+  const improveInstructionMessage = handleImproveInstructionMessage(
+    request,
+    sender,
+    messageDependencies
+  );
+  if (improveInstructionMessage !== null) return improveInstructionMessage;
   const extensionOrigin = getExtensionOrigin();
   const extensionPageSender = isExtensionSender(sender, extensionOrigin);
   recordDevDiagnostic('runtime_message_received', {

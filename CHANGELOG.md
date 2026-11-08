@@ -1,21 +1,8 @@
 # Changelog
 
-## [6.3.0] - 2026-09-12
+## [6.4.0] - 2026-11-08
 
-- Replaced the keyless DuckDuckGo Instant Answer provider with a keyless Exa search client (`src/utils/keylessSearch.js`) backed by Exa's hosted MCP endpoint, falling back to Parallel's keyless hosted Search MCP.
-- Added an optional background-owned Exa API key (`exaSearchApiKey`) that only raises Exa free-tier rate limits; it is excluded from backups and never exposed to the Options page as a value.
-- Updated the Options page provider UI: the Web Search section now offers Exa (default, free, no key required) and Brave (keyed).
-- `searchProvider` now accepts `exa` or `brave`; a stored legacy `duckduckgo` value migrates to `exa` automatically.
-
-## [6.2.0] - 2026-05-11
-
-- Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.
-- Added zero-dependency document attachments: dropping `.txt`, `.md`, `.markdown`, `.csv`, or `.json` files into the composer reads them as bounded text (200k-character cap) and sends them as a new `document` prompt context type instead of base64 media.
-- Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
-- Act runs now recover from active-tab document changes by discarding stale snapshots, re-inspecting the current supported page, and continuing the request. Mutations interrupted during navigation remain unverified and are never blindly repeated.
-- Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
-
-## [Unreleased]
+- Made precise-input debugger access optional and request it only when enabled.
 
 - Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
 - Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
@@ -56,6 +43,22 @@
 - Act step titles: page-action tools accept an optional bounded model-supplied title (≤80 chars, control/credential wording rejected) shown on the progress card, falling back to the event-type label.
 - Declining an Act action now renders a distinct declined outcome on the progress card and nudges the planner to change approach instead of repeating the denied action.
 - **Packaging/release hardening (P3 punchlist).** The production package now filters a review-approved development-only file set (`AGENTS.md` and derived dev-off files) out of `src`/`libs`/`skills` directory copies while preserving every runtime skill file, vendored asset, and license notice, so development instructions no longer ship. The runtime package is also backed by a fail-closed provenance gate: every shipped third-party asset now maps to an exact source/version/hash record, any unlisted asset fails verification, and a root MIT `LICENSE` documents ownership. Build metadata now records the real git revision, working-tree clean/dirty status with the exact dirty paths, and a reproducible SHA-256 artifact root; a per-file `BUILD.sha256` manifest is written next to `build-metadata.json` so a downloaded candidate can be traced to its tested revision and verified byte-for-byte. Development and evaluation output remain excluded from the release package.
+
+## [6.3.0] - 2026-09-12
+
+- Replaced the keyless DuckDuckGo Instant Answer provider with a keyless Exa search client (`src/utils/keylessSearch.js`) backed by Exa's hosted MCP endpoint, falling back to Parallel's keyless hosted Search MCP.
+- Added an optional background-owned Exa API key (`exaSearchApiKey`) that only raises Exa free-tier rate limits; it is excluded from backups and never exposed to the Options page as a value.
+- Updated the Options page provider UI: the Web Search section now offers Exa (default, free, no key required) and Brave (keyed).
+- `searchProvider` now accepts `exa` or `brave`; a stored legacy `duckduckgo` value migrates to `exa` automatically.
+
+## [6.2.0] - 2026-05-11
+
+- Added structured site adapters for Reddit threads, GitHub repository/issue/pull pages, and RSS/Atom feed documents. Adapters fill the existing `adapterMatched` extraction slot, score against the two-pass extractors with a fail-open fallthrough, and are mirrored from the pure helpers in `src/utils/siteExtractors.js`.
+- Added zero-dependency document attachments: dropping `.txt`, `.md`, `.markdown`, `.csv`, or `.json` files into the composer reads them as bounded text (200k-character cap) and sends them as a new `document` prompt context type instead of base64 media.
+- Current-page actions now support approved HTTP(S) link navigation. Same-tab links use `page_click`; indexed `_blank` links can open owned tabs with `page_open_link`, while unsafe schemes, downloads, and new origins remain gated.
+- Act runs now recover from active-tab document changes by discarding stale snapshots, re-inspecting the current supported page, and continuing the request. Mutations interrupted during navigation remain unverified and are never blindly repeated.
+- Added profile-local Codex subscription sign-in through the ChatGPT device-code flow, automatic `Codex` profile creation, background token refresh, authenticated model discovery, model-specific thinking levels, and the ChatGPT Codex Responses transport. OAuth credentials are excluded from backups; restored Codex profiles require sign-in again.
+
 
 ## [6.2.1] - 2026-08-31
 

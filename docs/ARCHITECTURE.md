@@ -18,7 +18,7 @@ depend on application or capability areas; capability modules cannot import
 application areas or other capabilities; and application areas import a
 capability through its `index.js`. Any new first-level folder under `src/`
 defaults to a capability. The only current exception is the evaluation-only
-`utils/evalTrace.eval.js` adapter importing `orchestrator/ActOutcome.js`.
+`utils/evalTrace.eval.js` adapter importing `act/index.js`.
 
 Treat `utils/` as a compatibility area for existing shared modules, not the
 default home for new capability logic. New work should start from its business
@@ -88,7 +88,7 @@ with each capability-sized move.
 - `src/utils/pageDom.js` bounded semantic DOM snapshot normalization and sensitive-field masking
 - `src/utils/pageActionPolicy.js` page-action and bounded tab argument validation, including `page_wait` and non-nested read-only `page_batch`, risk classification, hard blocks, trusted-mode policy, and safe manual-intervention validation
 - `src/utils/pageActionSitePolicies.js` validates the persistent, backup-supported map of at most 200 origins and serializes background-owned policy writes
-- `src/orchestrator/ActPlanner.js` owns model-maintained, evidence-gated checklists and finite counted quotas; `ActOutcome.js` derives bounded terminal outcomes from runtime state
+- `src/act/` owns model-maintained, evidence-gated checklists, finite counted quotas, and bounded terminal outcomes from runtime state
 - `src/orchestrator/PageTabController.js` owns run-created tabs, reuses one work tab per site, and groups new tabs when the browser supports it
 - `src/orchestrator/CdpInputBackend.js` owns optional run-scoped debugger attachment and the strict CDP Input-method allowlist
 - `src/utils/pageActionCheckpoint.js` bounded session-only mutation checkpoints and explicit-recovery metadata, including twelve checklist steps

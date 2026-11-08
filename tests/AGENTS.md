@@ -14,6 +14,7 @@ The `tests/` subtree contains structural, unit, behavior, and real-browser verif
 - `validation.test.js` covers persistence and validation of the `notchEnabled`, bounded `notchPosition`, and `notchPlacement` backup preferences and `themePreference` values.
 - `streamSafety.test.js` covers bounded SSE buffers and provider error-body reads; `streamCoalescing.test.js` guards ordered live delta batching and journal-write avoidance; `streamMarkdown.test.js` guards block commits, bounded live parsing, and literal open-fence rendering; `pageActionReadiness.test.js` guards TTL, document matching, invalidation, and cache bounds.
 - `devDiagnostics.test.js` covers credential-shaped redaction and diagnostic payload bounds; it never enables browser tracing or uses real credentials.
+- `backgroundMessages.test.js` covers diagnostics, notch, and instruction-improvement message routing.
 - `chatModelStatus.test.js` covers the sidebar model-name formatting fallback.
 - `mediaFetch.test.js` covers public-media URL rejection, response MIME checks, and streamed size limits.
 - `domSanitizer.test.js` covers fail-closed HTML escaping when DOMPurify is unavailable.
