@@ -28,6 +28,13 @@ jobs:
       PROMPT_PAUL_BENCHMARK_PROVIDER: api
       PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
     steps:
+      - name: Require Act evaluation API key
+        run: |
+          if [ -z "$PROMPT_PAUL_BENCHMARK_API_KEY" ]; then
+            echo "::error::Configure the ACT_EVAL_API_KEY repository secret to run the Act score gate."
+            exit 1
+          fi
+
       - name: Checkout PR base
         uses: actions/checkout@v4
         with:
@@ -68,6 +75,13 @@ jobs:
       PROMPT_PAUL_BENCHMARK_PROVIDER: api
       PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
     steps:
+      - name: Require Act evaluation API key
+        run: |
+          if [ -z "$PROMPT_PAUL_BENCHMARK_API_KEY" ]; then
+            echo "::error::Configure the ACT_EVAL_API_KEY repository secret to run the Act score gate."
+            exit 1
+          fi
+
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
