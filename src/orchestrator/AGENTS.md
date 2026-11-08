@@ -10,6 +10,7 @@
 - `CodexExecution.js` owns subscription request setup, Responses event handling, and tool-call assembly.
 - `RunBudget.js` and `runResilience.js` own run limits, retries, timeouts, compaction, and repetitive-output protection.
 - `RunJournal.js` owns safe event projections, bounded snapshots, and coalesced session-storage writes for run recovery.
+- `AnswerWireRuntime.js` owns bounded structured-answer decoding and transient progressive card projections; readable text remains authoritative for history and journals.
 - `src/act/` owns Act planning and execution. Import its public API through [`src/act/index.js`](../act/index.js).
 - `PageTabController.js` owns tab leases and run-created tab cleanup.
 

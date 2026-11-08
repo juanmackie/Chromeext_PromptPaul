@@ -18,8 +18,6 @@ import { createThinkParser } from '../utils/inlineReasoning.js';
 import {
   ANSWER_CARD_INSTRUCTIONS,
   ANSWER_FORMAT,
-  createAnswerCardDecoder,
-  createAnswerCardProgressiveParser,
   normalizeAnswerCards,
 } from '../utils/answerSchema.js';
 import { MAX_TOOL_ARGUMENTS_BYTES, normalizeToolDefinition } from '../utils/validation.js';
@@ -84,6 +82,7 @@ import { installHermesExecutionMethods } from './HermesExecution.js';
 import { installCodexExecutionMethods } from './CodexExecution.js';
 import { clearPageActionCheckpoint } from '../utils/pageActionCheckpoint.js';
 import { RunJournal, RUN_JOURNAL_STORAGE_KEY } from './RunJournal.js';
+import { AnswerWireRuntime } from './AnswerWireRuntime.js';
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
 const MAX_TOOL_CALL_RETRIES = 3;
@@ -92,7 +91,6 @@ const BUDGET_WRAP_UP_PROMPT =
   'State any unfinished work or limitation clearly.';
 const REPETITION_ERROR =
   'The model returned repetitive output and the response was stopped. Retry the request.';
-const MAX_ANSWER_WIRE_CHARS = 256 * 1024;
 const MAX_ACT_PLANNER_CONTINUATIONS = 3;
 const MAX_READABLE_PAGES = 3;
 const ACT_PLANNER_CONTINUATION_PROMPT =
@@ -177,6 +175,10 @@ class RunOrchestrator {
     this.toolImplementations = new Map();
     this.runJournal = new RunJournal();
     this.streamEventBuffers = new Map();
+    this.answerWireRuntime = new AnswerWireRuntime({
+      emitEvent: (run, event) => this._emitEvent(run.id, event),
+      emitReadableAnswer: (run, content) => this._emitReadableAnswer(run, content),
+    });
 
     // Register built-in tools
     this._registerBuiltInTools();
@@ -785,54 +787,15 @@ class RunOrchestrator {
   }
 
   _resetAnswerWire(run) {
-    this._invalidateAnswerCards(run);
-    run.answerWireText = '';
-    run.answerRuntimeFallback = '';
-    run.answerTurn = Math.max(0, Number(run.answerTurn) || 0) + 1;
-    run.answerCardDecoder =
-      run.config?.answerFormat === ANSWER_FORMAT ? createAnswerCardDecoder() : null;
-    run.answerProgressParser = run.answerCardDecoder
-      ? createAnswerCardProgressiveParser({ sources: run.webSearch?.sources || [] })
-      : null;
-    run.progressiveAnswerBlocks = 0;
-    run.answerCards = null;
+    this.answerWireRuntime.reset(run);
   }
 
   _invalidateAnswerCards(run) {
-    if (!run?.progressiveAnswerBlocks) return;
-    run.progressiveAnswerBlocks = 0;
-    this._emitEvent(run.id, {
-      type: 'answer_cards',
-      answerTurn: Number(run.answerTurn) || 0,
-      answerCards: null,
-      invalid: true,
-    });
+    this.answerWireRuntime.invalidate(run);
   }
 
   _emitAnswerCardProgress(run, update) {
-    if (!run?.answerProgressParser || !update) return;
-    if (update.invalid) {
-      this._invalidateAnswerCards(run);
-      return;
-    }
-    if (!Array.isArray(update.blocks) || update.blocks.length <= run.progressiveAnswerBlocks)
-      return;
-    run.progressiveAnswerBlocks = update.blocks.length;
-    const referencedIds = new Set(update.blocks.flatMap((block) => block.sourceIds || []));
-    const sources = (Array.isArray(run.webSearch?.sources) ? run.webSearch.sources : [])
-      .filter((source) => referencedIds.has(source?.id))
-      .slice(0, 12)
-      .map((source) => ({
-        id: String(source.id).slice(0, 64),
-        title: String(source.title || '').slice(0, 240),
-        url: String(source.url || '').slice(0, 2_000),
-      }));
-    this._emitEvent(run.id, {
-      type: 'answer_cards',
-      answerTurn: Number(run.answerTurn) || 0,
-      answerCards: update,
-      ...(sources.length ? { grounding: { sources } } : {}),
-    });
+    this.answerWireRuntime.emitProgress(run, update);
   }
 
   _emitReadableAnswer(run, content) {
@@ -843,55 +806,19 @@ class RunOrchestrator {
   }
 
   _appendAnswerWire(run, delta) {
-    const text = String(delta || '');
-    if (!text) return;
-    if (!run.answerCardDecoder) {
-      this._emitReadableAnswer(run, text);
-      return;
-    }
-    if (run.answerWireText.length + text.length > MAX_ANSWER_WIRE_CHARS) {
-      const error = new Error('Structured answer output exceeded the run limit.');
-      error.code = 'ANSWER_FORMAT_OUTPUT_LIMIT';
-      throw error;
-    }
-    run.answerWireText += text;
-    this._emitReadableAnswer(run, run.answerCardDecoder.push(text));
-    if (run.answerProgressParser) {
-      this._emitAnswerCardProgress(run, run.answerProgressParser.push(text));
-    }
+    this.answerWireRuntime.append(run, delta);
   }
 
   _finishAnswerWireTurn(run) {
-    if (!run.answerCardDecoder) return;
-    this._emitReadableAnswer(run, run.answerCardDecoder.finish());
+    this.answerWireRuntime.finishTurn(run);
   }
 
   _normalizeAnswerWireForHistory(run) {
-    if (run.config?.answerFormat !== ANSWER_FORMAT) return;
-    this._invalidateAnswerCards(run);
-    run.answerProgressParser?.disable();
-    const normalized = normalizeAnswerCards(run.answerWireText || '');
-    run.accumulatedText = normalized.status === 'missing_fallback' ? '' : normalized.content;
-    run.answerCards = null;
+    this.answerWireRuntime.normalizeForHistory(run);
   }
 
   _replaceAnswerWire(run, wireText) {
-    if (!run.answerCardDecoder) {
-      run.accumulatedText = String(wireText || '');
-      return;
-    }
-    this._invalidateAnswerCards(run);
-    run.answerWireText = '';
-    run.answerCardDecoder = createAnswerCardDecoder();
-    run.answerProgressParser = createAnswerCardProgressiveParser({
-      sources: run.webSearch?.sources || [],
-    });
-    run.progressiveAnswerBlocks = 0;
-    run.answerRuntimeFallback = '';
-    run.answerCards = null;
-    run.accumulatedText = '';
-    run.outputSafetyCheckLength = 0;
-    this._appendAnswerWire(run, wireText);
+    this.answerWireRuntime.replace(run, wireText);
   }
 
   async _recoverProviderError(run, error) {
