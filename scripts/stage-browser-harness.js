@@ -34,13 +34,38 @@ function loadDir() {
 }
 
 /**
+ * Browser automation cannot accept Chrome's native optional-permission prompt.
+ * Grant debugger only in the generated test copy so the precise-input runtime
+ * path can be exercised; the source manifest and release build stay optional.
+ * @param {string} target
+ * @returns {boolean}
+ */
+function grantDebuggerForBrowserTests(target) {
+  if (target === repoRoot) return false;
+  const manifestPath = path.join(target, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return false;
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const optional = Array.isArray(manifest.optional_permissions)
+    ? manifest.optional_permissions
+    : [];
+  if (!optional.includes('debugger')) return false;
+  manifest.optional_permissions = optional.filter((permission) => permission !== 'debugger');
+  manifest.permissions = [...new Set([...(manifest.permissions || []), 'debugger'])];
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return true;
+}
+
+/**
  * Copy the harness files into the load dir under `tests/browser/`.
  * When testing the source checkout itself, the harness is already present, so
  * this is a no-op. Returns the list of staged destinations.
- * @returns {string[]}
+ * @returns {{files: string[], debuggerGranted: boolean}}
  */
 function stage() {
   const target = loadDir();
+  const debuggerGranted =
+    process.env.PROMPT_PAUL_BROWSER_TEST_GRANT_DEBUGGER === 'true' &&
+    grantDebuggerForBrowserTests(target);
   const destDir = path.join(target, 'tests', 'browser');
   fs.mkdirSync(destDir, { recursive: true });
   const staged = [];
@@ -53,14 +78,17 @@ function stage() {
     fs.copyFileSync(srcPath, destPath);
     staged.push(destPath);
   }
-  return staged;
+  return { files: staged, debuggerGranted };
 }
 
 if (require.main === module) {
-  const staged = stage();
-  for (const file of staged) {
+  const result = stage();
+  for (const file of result.files) {
     console.log(`Harness staged: ${file}`);
+  }
+  if (result.debuggerGranted) {
+    console.log('Debugger permission granted in the generated browser-test copy.');
   }
 }
 
-module.exports = { stage, loadDir };
+module.exports = { stage, loadDir, grantDebuggerForBrowserTests };

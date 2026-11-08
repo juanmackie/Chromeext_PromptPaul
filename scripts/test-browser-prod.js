@@ -34,6 +34,10 @@ run(process.execPath, [path.join('scripts', 'build.js'), '--prod']);
 // Point the loader and harness staging at the built output for the remainder
 // of this process (the playwright child inherits this env).
 process.env.PROMPT_PAUL_LOAD_EXTENSION_DIR = 'dist';
+// Chromium automation cannot accept the native optional-permission prompt.
+// The staged test copy gets debugger as a required permission; source and
+// release builds keep it optional.
+process.env.PROMPT_PAUL_BROWSER_TEST_GRANT_DEBUGGER = 'true';
 
 // Stage the test harness into dist/ so chrome-extension://.../tests/browser/
 // resolves against the built extension.
