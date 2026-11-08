@@ -54,7 +54,7 @@ jobs:
       # corpus. Checking out the base alone fails whenever the gate change adds
       # tasks that the base driver does not know about.
       - name: Checkout pull request head and history
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -102,7 +102,7 @@ jobs:
       PROMPT_PAUL_BENCHMARK_EXTENSION_DIR: dist-eval
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
