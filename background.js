@@ -49,6 +49,7 @@ import { waitForRetry } from './src/utils/retryBackoff.js';
 import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
+import { ACT_FRAME_CAPS, ACT_PAGE_DOM_CAPS } from './src/act/ActLimits.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -1754,7 +1755,7 @@ const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
 let runOrchestrator = null;
 
 const pageActionFrameSnapshotMaps = new Map();
-const PAGE_ACTION_MAX_FRAMES = 16;
+const PAGE_ACTION_MAX_FRAMES = ACT_FRAME_CAPS.maxFrames;
 
 const getPageActionFrameDescriptors = async (tabId) => {
   try {
@@ -1814,7 +1815,7 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
     contentParts.push(part);
     contentPartsChars += part.length;
   };
-  let valueBudget = 8_000;
+  let valueBudget = ACT_PAGE_DOM_CAPS.maxTotalValueChars;
   let topFrameRemap = null;
   for (const [frameIndex, frame] of frameSnapshots.entries()) {
     const local = frame.snapshot;
@@ -1826,7 +1827,7 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
     // another whenever controls appear or reorder mid-run.
     const markerRemap = new Map();
     for (const element of Array.isArray(local.elements) ? local.elements : []) {
-      if (elements.length >= 200) break;
+      if (elements.length >= ACT_PAGE_DOM_CAPS.maxElements) break;
       const index = elements.length;
       if (Number.isInteger(element?.index) && !markerRemap.has(element.index)) {
         markerRemap.set(element.index, index);
@@ -1874,8 +1875,11 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
   let content = '';
   for (const part of contentParts) {
     const separator = content ? '\n\n' : '';
-    content += `${separator}${part}`.slice(0, Math.max(0, 24_000 - content.length));
-    if (content.length >= 24_000) break;
+    content += `${separator}${part}`.slice(
+      0,
+      Math.max(0, ACT_PAGE_DOM_CAPS.maxOutlineChars - content.length)
+    );
+    if (content.length >= ACT_PAGE_DOM_CAPS.maxOutlineChars) break;
   }
   const focusedFrame = frameSnapshots.find((frame) => frame.snapshot?.focusedElement);
   const focusedElement = focusedFrame?.snapshot?.focusedElement
@@ -1913,7 +1917,8 @@ const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount 
     elements,
     ...(focusedElement ? { focusedElement } : { focusedElement: undefined }),
     regions: mergedRegions,
-    truncated: contentPartsChars > content.length || elements.length >= 200,
+    truncated:
+      contentPartsChars > content.length || elements.length >= ACT_PAGE_DOM_CAPS.maxElements,
   };
   pageActionFrameSnapshotMaps.set(runId, { snapshotId, routes });
   return merged;
@@ -2053,7 +2058,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   )
     .filter(([, policy]) => policy === 'block')
     .map(([origin]) => origin)
-    .slice(0, 200);
+    .slice(0, ACT_PAGE_DOM_CAPS.maxElements);
   const assertSiteAllowed = async (url = '') => {
     if (actionName === 'clearPageActionSession' || !blockedOrigins.length) return;
     if (

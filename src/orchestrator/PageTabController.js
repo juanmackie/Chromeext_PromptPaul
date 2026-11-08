@@ -4,8 +4,7 @@
  */
 
 import { sanitizePageActionUrl } from '../utils/pageDom.js';
-
-const MAX_OWNED_TABS = 12;
+import { ACT_TAB_CAPS } from '../act/ActLimits.js';
 
 /**
  * Keep tab metadata small and free of query strings or fragments.
@@ -265,8 +264,8 @@ export class PageTabController {
           return this._adoptOwnedTab(state, sameOriginTabId, args, true);
         }
       }
-      if (state.ownedTabIds.size >= MAX_OWNED_TABS) {
-        const error = new Error(`A run may own at most ${MAX_OWNED_TABS} tabs.`);
+      if (state.ownedTabIds.size >= ACT_TAB_CAPS.maxOwnedTabs) {
+        const error = new Error(`A run may own at most ${ACT_TAB_CAPS.maxOwnedTabs} tabs.`);
         error.code = 'PAGE_TAB_LIMIT';
         throw error;
       }

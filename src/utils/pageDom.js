@@ -3,29 +3,9 @@
  * @module pageDom
  */
 
-export const PAGE_DOM_CAPS = Object.freeze({
-  maxElements: 200,
-  maxSnapshotChars: 32_000,
-  maxOutlineChars: 24_000,
-  maxValueChars: 160,
-  maxTotalValueChars: 8_000,
-  maxErrorChars: 160,
-  maxFormNotices: 8,
-  maxFormNoticeChars: 200,
-  maxReadableContentChars: 16_000,
-  maxElementTextChars: 320,
-  maxAttributeChars: 120,
-  maxInputChars: 2_000,
-  maxFindQueryChars: 160,
-  maxWaitMs: 10_000,
-  maxBatchActions: 6,
-  maxScrollPages: 5,
-  maxUrlChars: 2_048,
-  // Total serialized snapshot budget (content + elements array). A control set
-  // can otherwise reach 200 records with many 120-character fields, far beyond
-  // the content-only cap.
-  maxPayloadBytes: 128 * 1024,
-});
+import { ACT_PAGE_DOM_CAPS } from '../act/ActLimits.js';
+
+export const PAGE_DOM_CAPS = ACT_PAGE_DOM_CAPS;
 
 export const PAGE_REGION_ID_PATTERN = /^region-\d+$/;
 

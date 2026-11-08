@@ -9,6 +9,36 @@ export const ACT_ACTION_BUDGETS = Object.freeze({
   mutation: 64,
 });
 
+export const ACT_FRAME_CAPS = Object.freeze({
+  maxFrames: 16,
+});
+
+export const ACT_TAB_CAPS = Object.freeze({
+  maxOwnedTabs: 12,
+});
+
+export const ACT_PAGE_DOM_CAPS = Object.freeze({
+  maxElements: 200,
+  maxSnapshotChars: 32_000,
+  maxOutlineChars: 24_000,
+  maxValueChars: 160,
+  maxTotalValueChars: 8_000,
+  maxErrorChars: 160,
+  maxFormNotices: 8,
+  maxFormNoticeChars: 200,
+  maxReadableContentChars: 16_000,
+  maxElementTextChars: 320,
+  maxAttributeChars: 120,
+  maxInputChars: 2_000,
+  maxFindQueryChars: 160,
+  maxWaitMs: 10_000,
+  maxBatchActions: 6,
+  maxScrollPages: 5,
+  maxScrollContainers: 16,
+  maxUrlChars: 2_048,
+  maxPayloadBytes: 128 * 1024,
+});
+
 export const PAGE_ACTION_TURN_MUTATIONS = new Set([
   'page_open_tab',
   'page_open_link',
