@@ -1297,10 +1297,6 @@ document.addEventListener('DOMContentLoaded', () => {
         element: document.getElementById('pageActionsTrustedMode'),
         getValue: (el) => String(Boolean(el && el.checked)),
       },
-      {
-        element: document.getElementById('pageActionsPreciseInput'),
-        getValue: (el) => String(Boolean(el && el.checked)),
-      },
     ],
     { onChange: () => syncDirtyBanner() }
   );
@@ -3244,14 +3240,12 @@ function setupPageActionHandlers() {
     notify: showStatus,
   });
   const toggle = document.getElementById('pageActionsTrustedMode');
-  const preciseInputToggle = document.getElementById('pageActionsPreciseInput');
   const saveButton = document.getElementById('savePageActions');
   const status = document.getElementById('pageActionsSaveStatus');
   if (!toggle) return;
 
-  chrome.storage.local.get(['pageActionsTrustedMode', 'pageActionsPreciseInput'], (result) => {
+  chrome.storage.local.get(['pageActionsTrustedMode'], (result) => {
     toggle.checked = result.pageActionsTrustedMode === true;
-    if (preciseInputToggle) preciseInputToggle.checked = result.pageActionsPreciseInput === true;
     if (status)
       status.textContent = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
     markPageActionsTrackerClean?.();
@@ -3262,25 +3256,6 @@ function setupPageActionHandlers() {
     if (status) status.textContent = 'Unsaved changes. Click Save Page Action Settings.';
   };
   toggle.addEventListener('change', markChanged);
-  preciseInputToggle?.addEventListener('change', async () => {
-    if (preciseInputToggle.checked) {
-      try {
-        const granted = await new Promise((resolve) => {
-          chrome.permissions.request({ permissions: ['debugger'] }, resolve);
-        });
-        if (!granted) {
-          preciseInputToggle.checked = false;
-          if (status) status.textContent = 'Precise input needs debugger permission.';
-          return;
-        }
-      } catch {
-        preciseInputToggle.checked = false;
-        if (status) status.textContent = 'Could not request debugger permission.';
-        return;
-      }
-    }
-    markChanged();
-  });
 
   saveButton?.addEventListener(
     'click',
@@ -3292,17 +3267,13 @@ function setupPageActionHandlers() {
       onSuccess: () => {
         if (status) {
           const modeStatus = toggle.checked ? 'Trusted mode is on.' : 'Trusted mode is off.';
-          const preciseStatus = preciseInputToggle?.checked
-            ? ' Precise input is on.'
-            : ' Precise input is off.';
-          status.textContent = modeStatus + preciseStatus;
+          status.textContent = modeStatus;
         }
       },
       markClean: markPageActionsTrackerClean,
       write: () =>
         setChromeStorage(chrome.storage.local, {
           pageActionsTrustedMode: toggle.checked,
-          pageActionsPreciseInput: Boolean(preciseInputToggle?.checked),
         }),
     })
   );

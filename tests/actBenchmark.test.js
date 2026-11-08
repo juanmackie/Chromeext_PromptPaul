@@ -15,6 +15,7 @@ const {
   PASS_TARGET_RATE,
   DEFAULT_RUNS,
   buildSummary,
+  mind2WebFirstActionMatches,
   getBenchmarkConfig,
   getBenchmarkProfile,
   cleanupTemporaryProfile,
@@ -25,6 +26,46 @@ const {
 } = createRequire(import.meta.url)('../scripts/act-benchmark.js');
 
 describe('Act benchmark task registration', () => {
+  it('grades the first Mind2Web mutation type and target while grouping select input/change events', () => {
+    const target = 'node-1';
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'input', targetBackendNodeId: 'wrong-node', value: 'x' },
+          { type: 'click', targetBackendNodeId: target, value: '' },
+        ],
+        { operation: 'CLICK', targetBackendNodeId: target }
+      )
+    ).toBe(false);
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'click', targetBackendNodeId: target, value: '' },
+          { type: 'input', targetBackendNodeId: target, value: 'Ada' },
+        ],
+        { operation: 'TYPE', targetBackendNodeId: target, value: 'Ada' }
+      )
+    ).toBe(false);
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'input', targetBackendNodeId: target, value: 'Cedar' },
+          { type: 'change', targetBackendNodeId: target, value: 'Cedar' },
+        ],
+        { operation: 'SELECT', targetBackendNodeId: target, value: 'Cedar' }
+      )
+    ).toBe(true);
+    expect(
+      mind2WebFirstActionMatches(
+        [
+          { type: 'change', targetBackendNodeId: 'wrong-node', value: 'Cedar' },
+          { type: 'change', targetBackendNodeId: target, value: 'Cedar' },
+        ],
+        { operation: 'SELECT', targetBackendNodeId: target, value: 'Cedar' }
+      )
+    ).toBe(false);
+  });
+
   it('reports settlement timing and measured snapshot bytes without inferring model scores', () => {
     const summary = summarizeTrace({
       steps: [
@@ -75,7 +116,6 @@ describe('Act benchmark task registration', () => {
       'range-date',
       'nested-scroll',
       'cross-origin-iframe',
-      'trusted-key-only',
       'validation-error',
     ]) {
       expect(ids).toContain(id);

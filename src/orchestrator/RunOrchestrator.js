@@ -590,8 +590,6 @@ class RunOrchestrator {
       pageActions: {
         enabled: pageActionsEnabled,
         trustedMode: trustedPageActions,
-        preciseInputState:
-          pageActionsEnabled && config.pageActionsPreciseInput === true ? 'enabled' : 'off',
         sitePolicies: sitePolicies.value,
         // Set only by an explicit approval-card choice. Scoped to this run;
         // skips allowed low/medium-risk confirmations only. High risk always asks;
@@ -3358,30 +3356,10 @@ class RunOrchestrator {
       waiting,
       waitingRequestId,
       receipt,
-      preciseInputState: ['enabled', 'active', 'fallback'].includes(pa?.preciseInputState)
-        ? pa.preciseInputState
-        : 'off',
       taskComplete,
       outcome,
       ...(pa?.actOutcome ? { actOutcome: pa.actOutcome } : {}),
     };
-  }
-
-  /**
-   * Emit the bounded Act progress event for a run. No-op for runs without
-   * page actions enabled.
-   * @param {object} run
-   * @returns {void}
-   * @private
-   */
-  setPreciseInputState(runId, state) {
-    const run = this.activeRuns.get(String(runId || ''));
-    if (!run?.pageActions?.enabled || !['enabled', 'active', 'fallback', 'off'].includes(state)) {
-      return false;
-    }
-    run.pageActions.preciseInputState = state;
-    this._emitPageTaskProgress(run);
-    return true;
   }
 
   _emitPageTaskProgress(run) {
@@ -3595,9 +3573,6 @@ class RunOrchestrator {
       // Full URLs, DOM, tool arguments, credentials, and screenshots never
       // reach the journal.
       safe.status = String(event.status || 'running').slice(0, 32);
-      if (['enabled', 'active', 'fallback', 'off'].includes(event.preciseInputState)) {
-        safe.preciseInputState = event.preciseInputState;
-      }
       safe.hasPlanner = Boolean(event.hasPlanner);
       safe.taskComplete = Boolean(event.taskComplete);
       if (typeof event.currentStep === 'string') {

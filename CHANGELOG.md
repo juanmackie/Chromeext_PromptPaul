@@ -2,7 +2,7 @@
 
 ## [6.4.0] - 2026-11-08
 
-- Made precise-input debugger access optional and request it only when enabled.
+- Removed the unreleased precise-input prototype because Chrome does not allow the `debugger` permission to be optional; no debugger permission is requested.
 
 - Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
 - Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
@@ -10,7 +10,7 @@
 - Resuming an interrupted Act checkpoint now releases the panel's in-process response guard when the resumed run settles. Later sends and panel actions start normally instead of being rejected as "A response is already in progress" until the panel reloads.
 - Side-panel actions now keep one delivery identity across send retries and the session queue, so a repeated delivery cannot start the same action twice (for example a second media analysis run for one context-menu click).
 - Act `page_find_text` now returns indices from the merged frame snapshot; stale pre-dispatch targets trigger an automatic fresh inspection and a `not_delivered` receipt instead of a plain failure.
-- Unresponsive pages after state-changing actions now pause for the user to handle a possible browser dialog, then inspect again without replaying the action; precise CDP commands have a 15-second bound.
+- Unresponsive pages after state-changing actions now pause for the user to handle a possible browser dialog, then inspect again without replaying the action.
 - Act approval cards focus the card instead of Approve. Password-manager, sign-in/account, and Prompt Paul origins do not offer or honor saved low-risk or run-wide similar-action approval.
 - Act site-policy blocks and allowance removals tighten active runs at the next action boundary; new allowances apply to new runs.
 - Act no longer claims that run-created tabs are closed automatically. Target highlights and the notch activity glow have bounded cleanup paths.
@@ -19,7 +19,6 @@
 - Token estimation no longer tests a Unicode whitespace regex for each character, and conversation history below budget uses a cheap character upper bound before exact token scans.
 
 - Split the semantic Act runtime into `content_script_page_actions.js` and inject it only when an Act run needs the page bridge; navigation recovery reinstalls it on the destination document. The extraction script remains separate, and page-action message shapes are unchanged. Chrome groups tabs created by one Act run when tab groups are available; this uses the existing `tabs` permission.
-- Added default-off experimental precise input, limited to Chrome CDP `Input` mouse/key/text commands. Act still resolves semantic targets and applies its normal policy first; the debugger attaches only for approved input on a supported page and detaches on Stop or run teardown. Standard DOM delivery remains the fallback.
 - Improved Act reliability on ARIA-heavy SPA pages: snapshots expose bounded menu/tab/switch state and digest-only hash/query route changes; a 16-action run-only memory ledger detects toggle loops, while counted plural requests track up to 12 distinct completed items. Added Gmail-like local browser and benchmark cases without retaining route fragments or action memory in checkpoints/journals.
 - **Reliability/release hardening (P1 punchlist).** Act screenshots are disabled for release behind a static `ACT_SCREENSHOTS_ENABLED=false` gate with DOM-only fallback; Act vision payloads now preserve user text and uploaded images in their original order and replace only the ephemeral screen. Pinned-instruction backups validate pins as bounded string-ID arrays so pinning never blocks export. Each Options section tracks unsaved state independently. Pending page-user-input, manual-Resume, and Hermes-approval interactions replay correctly after a side-panel reconnect. Tool/skill/profile writes report errors instead of clearing drafts on storage failure. CI now gates release artifacts on browser tests of the production output.
 - Options status messages are visible again: `loadingManager` toasts were rendered with Bootstrap's `.toast` class, so Bootstrap's `.toast:not(.show){display:none}` outranked the loading-state styles and hid every `showStatus()` message (skill save/clear, section saves, and other feedback on the Options page looked like a no-op). Toasts now use their own `ext-toast`/`ext-toast-container` classes, and the browser suite asserts they are actually visible.

@@ -33,10 +33,6 @@ export function handleRunMessage(request, sender, dependencies) {
     Promise.resolve()
       .then(async () => {
         const effectiveConfig = await resolveStoredRunConfig(config);
-        const { pageActionsPreciseInput } =
-          await chrome.storage.local.get('pageActionsPreciseInput');
-        effectiveConfig.pageActionsPreciseInput =
-          effectiveConfig.pageActions === true && pageActionsPreciseInput === true;
         if (
           effectiveConfig.provider === 'hermes' &&
           hermesSessionResetLock.isLocked(effectiveConfig.profileId)
@@ -98,9 +94,6 @@ export function handleRunMessage(request, sender, dependencies) {
           messages: [{ role: 'user', content: instruction }],
           actCheckpoint: checkpoint,
         });
-        const { pageActionsPreciseInput } =
-          await chrome.storage.local.get('pageActionsPreciseInput');
-        effectiveConfig.pageActionsPreciseInput = pageActionsPreciseInput === true;
         const ownerToken = randomId();
         const runId = await runOrchestrator.startRun(effectiveConfig, ownerToken);
         await clearPageActionCheckpoint(checkpointRunId);

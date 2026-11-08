@@ -7,7 +7,6 @@
 export function handlePageActionMessage(request, sender, dependencies) {
   const {
     chrome,
-    cdpInputBackend,
     extensionPageSender,
     getPageActionSiteOrigin,
     getProfileToolSupport,
@@ -231,7 +230,6 @@ export function handlePageActionMessage(request, sender, dependencies) {
     if (!isAuthorizedRunRequest(request, sender)) {
       return rejectUnauthorizedMessage(sendResponse, 'Run abort is not authorized.');
     }
-    void cdpInputBackend.detachRun(runId);
     runOrchestrator
       .abort(runId)
       .then((success) => sendResponse({ success: success !== false }))

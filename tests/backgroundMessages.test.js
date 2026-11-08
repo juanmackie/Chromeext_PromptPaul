@@ -374,19 +374,6 @@ describe('background capability message handlers', () => {
       error: 'User input response does not match the run.',
     });
   });
-
-  it('detaches precise input before an authorized run abort', async () => {
-    const runOrchestrator = actRunOrchestrator({ sourceTabId: 7 });
-    const cdpInputBackend = { detachRun: vi.fn() };
-    const sendResponse = vi.fn();
-    const deps = actDependencies({ runOrchestrator, cdpInputBackend, sendResponse });
-
-    expect(handlePageActionMessage({ action: 'abortRun', runId: 'run-1' }, {}, deps)).toBe(true);
-    await Promise.resolve();
-    expect(cdpInputBackend.detachRun).toHaveBeenCalledWith('run-1');
-    expect(runOrchestrator.abort).toHaveBeenCalledWith('run-1');
-    expect(sendResponse).toHaveBeenCalledWith({ success: true });
-  });
 });
 
 function actRunOrchestrator(run) {
@@ -402,7 +389,6 @@ function actRunOrchestrator(run) {
 function actDependencies(overrides = {}) {
   return {
     chrome: { storage: { local: { get: vi.fn(async () => ({})) } } },
-    cdpInputBackend: { detachRun: vi.fn() },
     extensionPageSender: true,
     getPageActionSiteOrigin: vi.fn(),
     getProfileToolSupport: vi.fn(() => true),

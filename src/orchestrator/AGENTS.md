@@ -8,7 +8,7 @@
 - `OpenAIExecution.js` and `AnthropicExecution.js` own API request and stream loops; `CodexTransport.js` and `HermesTransport.js` own provider-specific wire protocols.
 - `RunBudget.js` and `runResilience.js` own run limits, retries, timeouts, compaction, and repetitive-output protection.
 - `src/act/` owns Act planning and execution. Import its public API through [`src/act/index.js`](../act/index.js).
-- `PageTabController.js` and `CdpInputBackend.js` own tab leases and optional precise-input transport.
+- `PageTabController.js` owns tab leases and run-created tab cleanup.
 
 ## Boundaries
 

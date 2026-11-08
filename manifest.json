@@ -4,7 +4,6 @@
   "version": "6.4.0",
   "description": "A Chrome extension for processing selected text using an LLM endpoint",
   "permissions": ["activeTab", "contextMenus", "storage", "sidePanel", "scripting", "tabs"],
-  "optional_permissions": ["debugger"],
   "host_permissions": ["*://*/*", "file:///*", "https://cloud.umami.is/*"],
   "externally_connectable": {
     "matches": ["https://promptpaul.juanmackie.com/*"]

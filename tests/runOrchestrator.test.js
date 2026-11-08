@@ -2707,17 +2707,6 @@ describe('Day 3: Act progress card page_task_progress events', () => {
     expect(event.receipt.disposition).toBe('delivered_verified');
   });
 
-  it('renders precise-input state as a bounded progress field and persists only its enum', () => {
-    const { orch, run, events } = boot({ preciseInputState: 'active' });
-    orch._emitPageTaskProgress(run);
-    const event = events.find((entry) => entry.type === 'page_task_progress');
-    expect(event.preciseInputState).toBe('active');
-    expect(
-      orch._journalEvent({ ...event, preciseInputState: 'arbitrary-data' })
-    ).not.toHaveProperty('preciseInputState');
-    expect(orch._journalEvent(event).preciseInputState).toBe('active');
-  });
-
   it('uses a bounded origin label as target when no tab title is available', () => {
     const { orch, run, events } = boot({ currentTabTitle: '' });
     orch._emitPageTaskProgress(run);

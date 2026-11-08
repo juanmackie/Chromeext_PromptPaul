@@ -361,7 +361,7 @@ describe('evaluation run hook', () => {
         onMessage: { addListener: (listener) => listeners.push(listener) },
         sendMessage: async (message) => messages.push(message),
       },
-      storage: { local: { get: async () => ({ pageActionsPreciseInput: false }) } },
+      storage: { local: { get: async () => ({}) } },
     };
     registerEvalRunHook({
       getExtensionOrigin: () => 'chrome-extension://eval',

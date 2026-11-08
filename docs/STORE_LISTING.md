@@ -12,7 +12,7 @@ Context-aware AI in the browser. Short feedback loops for selected text, without
 
 ## What's new (version 6.4.0)
 
-Made precise-input debugger access optional and request it only when enabled.
+Removed the unreleased precise-input prototype because Chrome does not allow the `debugger` permission to be optional; no debugger permission is requested.
 Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
 Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
 A busy send now checks the background journal before warning. A run that is provably inactive (for example after a worker restart or a lost terminal) is settled from its journal when available and its streaming bubble is cleared; a genuinely live run still shows "A response is already in progress".
@@ -58,9 +58,6 @@ Use configured custom HTTP tools and OpenClaw-compatible Agent Skills with API-k
 
 **Optional web search**
 Enable web search grounding for API-key or Codex connections when current or verifiable information would improve the answer. Responses that use search include a Sources section. The selected model must support function calling.
-
-**Experimental precise input**
-Act uses semantic page controls by default. An optional, default-off setting can send approved mouse and keyboard input through Chrome's debugger Input API for pages where synthetic DOM events do not work. Chrome may show a debugger permission warning. The setting does not enable page JavaScript, DOM inspection through CDP, screenshots, or network access.
 
 ### Privacy
 

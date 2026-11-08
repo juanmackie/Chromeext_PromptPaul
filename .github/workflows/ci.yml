@@ -58,11 +58,6 @@ jobs:
       - name: Build production output
         run: npm run build:prod
 
-      - name: Stage browser-test harness into dist
-        env:
-          PROMPT_PAUL_BROWSER_TEST_GRANT_DEBUGGER: 'true'
-        run: npm run stage:browser-harness
-
       - name: Run browser tests against production output
         run: xvfb-run --auto-servernum npm run test:browser -- --fully-parallel --shard=${{ matrix.shard }}
 

@@ -64,11 +64,6 @@ const LOCAL_TASKS = [
       'Enter Ada in Name in the Contact form frame and submit that form. Stay on these local fixture pages.',
   },
   {
-    id: 'trusted-key-only',
-    prompt:
-      'Press Enter in the Ready field to complete the local keyboard check. Stay on this local page.',
-  },
-  {
     id: 'spa-menu',
     prompt:
       'On this local page, open the Products menu and choose Analytics. Do not leave this local page.',
@@ -638,7 +633,6 @@ async function readFixtureState(page, task, excludedTabIds = []) {
       'nested-scroll': (body) =>
         body.dataset.selection === 'cedar' && root.querySelector('#scroll-list')?.scrollTop > 0,
       'cross-origin-iframe': (body) => body.dataset.submitted === 'Ada',
-      'trusted-key-only': (body) => body.dataset.trustedKey === 'true',
       'spa-menu': (body) => body.dataset.selection === 'analytics',
       autocomplete: (body) => body.dataset.selection === 'Saffron',
       'custom-radio': (body) => body.dataset.selection === 'vegetarian',
@@ -699,6 +693,29 @@ function safeCardOrigin(confirmation, fixtureOrigin) {
   }
 }
 
+function mind2WebFirstActionMatches(events, oracle) {
+  if (!Array.isArray(events) || !events.length || !oracle) return false;
+  const expectedType =
+    oracle.operation === 'CLICK' ? 'click' : oracle.operation === 'TYPE' ? 'input' : 'change';
+  const expectedIndex = events.findIndex((event) => event.type === expectedType);
+  if (expectedIndex < 0) return false;
+  const expected = events[expectedIndex];
+  if (
+    expected.targetBackendNodeId !== oracle.targetBackendNodeId ||
+    (oracle.operation !== 'CLICK' && expected.value !== oracle.value)
+  ) {
+    return false;
+  }
+  return events
+    .slice(0, expectedIndex)
+    .every(
+      (event) =>
+        oracle.operation === 'SELECT' &&
+        event.targetBackendNodeId === oracle.targetBackendNodeId &&
+        event.type === 'input'
+    );
+}
+
 async function runAttempt({
   context,
   harness,
@@ -735,45 +752,41 @@ async function runAttempt({
   );
   try {
     if (task.mind2web) {
-      await target.exposeFunction('recordMind2WebAction', (action) => {
+      await target.exposeFunction('recordMind2WebAction', (events) => {
         if (mind2webFirstAction !== null) return;
-        const expectedEvent =
-          task.oracle.operation === 'CLICK'
-            ? 'click'
-            : task.oracle.operation === 'TYPE'
-              ? 'input'
-              : 'change';
-        mind2webFirstAction =
-          action.type === expectedEvent &&
-          action.targetBackendNodeId === task.oracle.targetBackendNodeId &&
-          (task.oracle.operation === 'CLICK' || action.value === task.oracle.value);
+        mind2webFirstAction = mind2WebFirstActionMatches(events, task.oracle);
       });
-      await target.evaluate((operation) => {
-        const eventName =
-          operation === 'CLICK' ? 'click' : operation === 'TYPE' ? 'input' : 'change';
-        document.addEventListener(
-          eventName,
-          (event) => {
-            const target = event.target instanceof Element ? event.target : null;
-            const owner = target?.closest('[backend_node_id]');
-            if (!owner) return;
-            window.recordMind2WebAction({
-              type: event.type,
-              targetBackendNodeId: owner.getAttribute('backend_node_id'),
-              value: 'value' in target ? String(target.value) : '',
-            });
-          },
-          true
-        );
-      }, task.oracle.operation);
+      await target.evaluate(() => {
+        let pendingEvents = [];
+        let flushQueued = false;
+        const flush = () => {
+          flushQueued = false;
+          const events = pendingEvents;
+          pendingEvents = [];
+          window.recordMind2WebAction(events);
+        };
+        for (const eventName of ['click', 'input', 'change']) {
+          document.addEventListener(
+            eventName,
+            (event) => {
+              const target = event.target instanceof Element ? event.target : null;
+              const owner = target?.closest('[backend_node_id]');
+              if (!owner) return;
+              pendingEvents.push({
+                type: event.type,
+                targetBackendNodeId: owner.getAttribute('backend_node_id'),
+                value: 'value' in target ? String(target.value) : '',
+              });
+              if (!flushQueued) {
+                flushQueued = true;
+                queueMicrotask(flush);
+              }
+            },
+            true
+          );
+        }
+      });
     }
-    // The trusted-key task exists to exercise the opt-in precise-input path:
-    // its fixture only accepts a trusted Enter event, which DOM dispatch cannot
-    // produce. Every other task runs with the default-off setting.
-    await harness.evaluate(
-      (enabled) => chrome.storage.local.set({ pageActionsPreciseInput: Boolean(enabled) }),
-      task.id === 'trusted-key-only'
-    );
     await harness.evaluate(
       ({ endpoint, model, apiKey, provider, reasoningLevel, profileId }) =>
         chrome.storage.local.get(['profiles']).then(({ profiles = [] }) => {
@@ -1189,6 +1202,7 @@ module.exports = {
   PASS_TARGET_RATE,
   DEFAULT_RUNS,
   buildSummary,
+  mind2WebFirstActionMatches,
   getBenchmarkConfig,
   getBenchmarkProfile,
   cleanupTemporaryProfile,

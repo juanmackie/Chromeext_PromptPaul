@@ -1397,7 +1397,6 @@
         highlighted: null,
         fingerprints: new Set(),
         fingerprint: '',
-        preciseInputs: new Map(),
       };
       pageActionSessions.set(key, session);
     }
@@ -2030,15 +2029,7 @@
     if (action === 'page_wait') {
       return waitForPageActionCondition(session, request.args || {});
     }
-    const precisePending = request.preciseFinalize
-      ? session.preciseInputs.get(String(request.precisePlanId || ''))
-      : null;
-    if (request.preciseFinalize && !precisePending) {
-      const error = new Error('The precise-input action expired or is no longer available.');
-      error.code = 'PAGE_ACTION_PRECISE_INPUT_EXPIRED';
-      throw error;
-    }
-    const settleContext = precisePending?.settleContext || {
+    const settleContext = {
       busyBefore: new Set(document.querySelectorAll('[aria-busy="true"], [role="progressbar"]')),
       startedAt: performance.now(),
     };
@@ -2106,43 +2097,30 @@
       };
     }
 
-    const record = precisePending?.record || getPageActionTarget(session, request.args || {});
+    const record = getPageActionTarget(session, request.args || {});
     if (record.disabled) {
       const error = new Error('The target is disabled or not yet available.');
       error.code = 'PAGE_ACTION_TARGET_DISABLED';
       throw error;
     }
     if (record.sensitive) throw new Error('Sensitive controls are blocked.');
-    const beforeUrl = precisePending?.beforeUrl || sanitizePageActionUrl(window.location.href);
-    const beforeChecked = precisePending
-      ? precisePending.beforeChecked
-      : typeof record.checked === 'boolean' || record.checked === 'mixed'
-        ? record.checked
-        : null;
-    const beforeFocus = precisePending?.beforeFocus || getPageActionFocusedElement();
-    const beforeAria =
-      precisePending?.beforeAria ||
-      ['aria-expanded', 'aria-selected', 'aria-pressed', 'aria-checked'].map((name) =>
-        record.ref.getAttribute(name)
-      );
-    const beforePopups =
-      precisePending?.beforePopups ||
-      new Set(
-        [...walkPageActionNodes()].filter(
-          (node) =>
-            node.nodeType === Node.ELEMENT_NODE &&
-            node.matches('dialog[open], [role="dialog"], [role="menu"]') &&
-            isPageActionVisible(node)
-        )
-      );
-    const owningDialog = precisePending
-      ? precisePending.owningDialog
-      : action === 'page_click'
-        ? getPageActionOwningDialog(record.ref)
-        : null;
-    const owningDialogWasVisible = precisePending
-      ? precisePending.owningDialogWasVisible === true
-      : Boolean(owningDialog && isPageActionVisible(owningDialog));
+    const beforeUrl = sanitizePageActionUrl(window.location.href);
+    const beforeChecked =
+      typeof record.checked === 'boolean' || record.checked === 'mixed' ? record.checked : null;
+    const beforeFocus = getPageActionFocusedElement();
+    const beforeAria = ['aria-expanded', 'aria-selected', 'aria-pressed', 'aria-checked'].map(
+      (name) => record.ref.getAttribute(name)
+    );
+    const beforePopups = new Set(
+      [...walkPageActionNodes()].filter(
+        (node) =>
+          node.nodeType === Node.ELEMENT_NODE &&
+          node.matches('dialog[open], [role="dialog"], [role="menu"]') &&
+          isPageActionVisible(node)
+      )
+    );
+    const owningDialog = action === 'page_click' ? getPageActionOwningDialog(record.ref) : null;
+    const owningDialogWasVisible = Boolean(owningDialog && isPageActionVisible(owningDialog));
     try {
       highlightPageActionTarget(session, record);
       const element = record.ref;
@@ -2192,9 +2170,7 @@
         // as a real interaction with the wrong control. Report the cover and
         // dispatch nothing; the orchestrator records this as not_delivered and
         // charges no mutation budget.
-        const clickTarget = precisePending
-          ? { deliveryElement: element, point: precisePending.point, covered: false }
-          : resolvePageActionClickTarget(element);
+        const clickTarget = resolvePageActionClickTarget(element);
         if (clickTarget.covered) {
           const error = new Error(
             'The target is covered by another element, so the click was not delivered.'
@@ -2206,40 +2182,17 @@
         }
         const count = request.args?.count ?? 1;
         if (![1, 2].includes(count)) throw new Error('Click count must be 1 or 2.');
-        if (request.precisePrepare === true) {
-          const planId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-          session.preciseInputs.set(planId, {
-            action,
-            record,
-            settleContext,
-            beforeUrl,
-            beforeChecked,
-            beforeFocus,
-            beforeAria,
-            beforePopups,
-            owningDialog,
-            owningDialogWasVisible,
-            point: clickTarget.point,
-            count,
-          });
-          return {
-            success: true,
-            preparedInput: { planId, type: 'click', ...clickTarget.point, count },
-          };
-        }
-        if (request.preciseFinalize !== true)
+        dispatchPageActionClick(clickTarget.deliveryElement, clickTarget.point);
+        if (count === 2) {
           dispatchPageActionClick(clickTarget.deliveryElement, clickTarget.point);
-        if (count === 2 && request.preciseFinalize !== true) {
-          dispatchPageActionClick(clickTarget.deliveryElement, clickTarget.point);
-          if (request.preciseFinalize !== true)
-            clickTarget.deliveryElement.dispatchEvent(
-              new MouseEvent('dblclick', {
-                bubbles: true,
-                cancelable: true,
-                detail: 2,
-                ...clickTarget.point,
-              })
-            );
+          clickTarget.deliveryElement.dispatchEvent(
+            new MouseEvent('dblclick', {
+              bubbles: true,
+              cancelable: true,
+              detail: 2,
+              ...clickTarget.point,
+            })
+          );
         }
       } else if (action === 'page_hover') {
         const hoverTarget = resolvePageActionClickTarget(element);
@@ -2258,84 +2211,20 @@
         }
       } else if (action === 'page_keypress') {
         const key = String(request.args?.key || '');
-        if (request.precisePrepare === true) {
-          dispatchPageActionKey(element, key, { focusOnly: true });
-          const planId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-          session.preciseInputs.set(planId, {
-            action,
-            record,
-            settleContext,
-            beforeUrl,
-            beforeChecked,
-            beforeFocus,
-            beforeAria,
-            beforePopups,
-            key,
-          });
-          return { success: true, preparedInput: { planId, type: 'key', key } };
-        }
-        if (request.preciseFinalize !== true) dispatchPageActionKey(element, key);
+        dispatchPageActionKey(element, key);
       } else if (action === 'page_input') {
         const text = String(request.args?.text || '');
         if (!text || text.length > PAGE_ACTION_MAX_INPUT_CHARS)
           throw new Error('Input text is empty or too long.');
         const expectedValue =
-          precisePending?.expectedValue ||
-          (request.args?.mode === 'append'
+          request.args?.mode === 'append'
             ? String(
                 element.isContentEditable
                   ? (element.innerText ?? element.textContent)
                   : element.value
               ) + text
-            : text);
-        if (request.precisePrepare === true) {
-          if (
-            element.disabled ||
-            element.readOnly ||
-            element.getAttribute('aria-disabled') === 'true'
-          ) {
-            const error = new Error('The target is disabled or read-only.');
-            error.code = 'PAGE_ACTION_TARGET_DISABLED';
-            throw error;
-          }
-          if (['password', 'file', 'hidden'].includes(String(element.type || '').toLowerCase())) {
-            throw new Error('Credential and file controls are not supported.');
-          }
-          if (
-            request.args?.mode === 'append' &&
-            element.tagName !== 'TEXTAREA' &&
-            !element.isContentEditable
-          ) {
-            throw new Error('Append supports textareas and contenteditable controls only.');
-          }
-          const inputTarget = resolvePageActionClickTarget(element);
-          if (inputTarget.covered) {
-            const error = new Error('The input target is covered.');
-            error.code = 'PAGE_ACTION_TARGET_OCCLUDED';
-            error.preDispatch = true;
-            error.occluder = describePageActionOccluder(inputTarget.top, session);
-            throw error;
-          }
-          const planId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-          session.preciseInputs.set(planId, {
-            action,
-            record,
-            settleContext,
-            beforeUrl,
-            beforeChecked,
-            beforeFocus,
-            beforeAria,
-            beforePopups,
-            expectedValue,
-            point: inputTarget.point,
-          });
-          return {
-            success: true,
-            preparedInput: { planId, type: 'text', ...inputTarget.point },
-          };
-        }
-        if (request.preciseFinalize !== true)
-          dispatchPageActionInput(element, text, request.args?.mode);
+            : text;
+        dispatchPageActionInput(element, text, request.args?.mode);
         const matched = element.isContentEditable
           ? String(element.innerText ?? element.textContent ?? '') === expectedValue
           : String(element.value || '') === expectedValue;
@@ -2346,11 +2235,9 @@
         );
         if (request.args?.submit === true) {
           actionReceipt = buildPageActionReceipt('delivered_unverified', 'submit_dispatched');
-          if (request.preciseFinalize !== true) {
-            if (element.form)
-              element.form.requestSubmit(getPageActionSubmitControl(element) || undefined);
-            else dispatchPageActionKey(element, 'Enter');
-          }
+          if (element.form)
+            element.form.requestSubmit(getPageActionSubmitControl(element) || undefined);
+          else dispatchPageActionKey(element, 'Enter');
         }
       } else if (action === 'page_set_value') {
         const value = String(request.args?.value ?? '');
@@ -2544,8 +2431,6 @@
         actionReceipt,
       };
     } finally {
-      if (request.preciseFinalize)
-        session.preciseInputs.delete(String(request.precisePlanId || ''));
       clearPageActionHighlight(session);
     }
   }
@@ -2567,7 +2452,7 @@
     }
 
     if (request.action === 'pageAction') {
-      executePageAction(request, request.preciseFinalize !== true)
+      executePageAction(request)
         .then((result) => {
           devTrace('content_page_action_completed', {
             action: request.pageAction,

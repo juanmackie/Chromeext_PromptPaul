@@ -143,13 +143,6 @@ export function registerEvalRunHook(dependencies = {}) {
             evalDryRun: true,
             evalTaskMode: 'mind2web',
           });
-          try {
-            const { pageActionsPreciseInput } =
-              await chrome.storage.local.get('pageActionsPreciseInput');
-            config.pageActionsPreciseInput = pageActionsPreciseInput === true;
-          } catch (_) {
-            config.pageActionsPreciseInput = false;
-          }
           runId = await runOrchestrator.startRun(config, ownerToken);
           beginEvalTrace({
             taskId: normalized.taskId,
@@ -257,16 +250,6 @@ export function registerEvalRunHook(dependencies = {}) {
           evalTaskMode: normalized.taskMode,
           evalTemperature: normalized.evalTemperature,
         });
-        // Honor the opt-in precise-input preference exactly as the production
-        // startRun path does, so an eval task that exercises trusted input is
-        // not silently downgraded to DOM dispatch.
-        try {
-          const { pageActionsPreciseInput } =
-            await chrome.storage.local.get('pageActionsPreciseInput');
-          config.pageActionsPreciseInput = pageActionsPreciseInput === true;
-        } catch (_) {
-          config.pageActionsPreciseInput = false;
-        }
         const runId = await runOrchestrator.startRun(config, ownerToken);
         beginEvalTrace({
           taskId: normalized.taskId,

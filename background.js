@@ -49,7 +49,6 @@ import { waitForRetry } from './src/utils/retryBackoff.js';
 import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
-import { CdpInputBackend } from './src/orchestrator/CdpInputBackend.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -1753,12 +1752,6 @@ const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
 };
 
 let runOrchestrator = null;
-const cdpInputBackend = new CdpInputBackend({
-  onUnexpectedDetach: ({ runId }) => {
-    const run = runOrchestrator?.activeRuns.get(runId);
-    if (run?.pageActions?.enabled) runOrchestrator.setPreciseInputState(runId, 'fallback');
-  },
-});
 
 const pageActionFrameSnapshotMaps = new Map();
 const PAGE_ACTION_MAX_FRAMES = 16;
@@ -2034,43 +2027,6 @@ const collectPageActionFrameSnapshots = async ({
   return mergePageActionFrameSnapshots(runId, frames, omittedFrameCount);
 };
 
-const dispatchCdpKey = (runId, tabId, key, options = {}) =>
-  cdpInputBackend.dispatch(runId, tabId, 'Input.dispatchKeyEvent', {
-    type: options.type || 'keyDown',
-    key,
-    code: options.code || '',
-    modifiers: options.modifiers || 0,
-    ...(options.windowsVirtualKeyCode === undefined
-      ? {}
-      : { windowsVirtualKeyCode: options.windowsVirtualKeyCode }),
-    ...(options.nativeVirtualKeyCode === undefined
-      ? {}
-      : { nativeVirtualKeyCode: options.nativeVirtualKeyCode }),
-  });
-
-const dispatchCdpKeyPair = async (runId, tabId, key, code, modifiers = 0) => {
-  await dispatchCdpKey(runId, tabId, key, { type: 'keyDown', code, modifiers });
-  await dispatchCdpKey(runId, tabId, key, { type: 'keyUp', code, modifiers });
-};
-
-const PRECISE_KEY_MAP = Object.freeze({
-  Enter: { key: 'Enter', code: 'Enter' },
-  Escape: { key: 'Escape', code: 'Escape' },
-  Tab: { key: 'Tab', code: 'Tab' },
-  'Shift+Tab': { key: 'Tab', code: 'Tab', modifiers: 8 },
-  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp' },
-  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown' },
-  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft' },
-  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight' },
-  Backspace: { key: 'Backspace', code: 'Backspace' },
-  Delete: { key: 'Delete', code: 'Delete' },
-  Space: { key: ' ', code: 'Space' },
-  Home: { key: 'Home', code: 'Home' },
-  End: { key: 'End', code: 'End' },
-  PageUp: { key: 'PageUp', code: 'PageUp' },
-  PageDown: { key: 'PageDown', code: 'PageDown' },
-});
-
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   const startedAt = Date.now();
   recordDevDiagnostic('page_action_executor_start', {
@@ -2253,20 +2209,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     if (response?.snapshot?.url) await assertSiteAllowed(response.snapshot.url);
     return response;
   };
-  const run = runOrchestrator.activeRuns.get(options.runId);
-  if (
-    frameRoute &&
-    frameRoute.frameId !== 0 &&
-    ['enabled', 'active'].includes(run?.pageActions?.preciseInputState)
-  ) {
-    await cdpInputBackend.detachRun(options.runId);
-    runOrchestrator.setPreciseInputState(options.runId, 'fallback');
-  }
-  const wantsPrecise =
-    run?.pageActions?.enabled &&
-    ['enabled', 'active'].includes(run.pageActions.preciseInputState) &&
-    (!frameRoute || frameRoute.frameId === 0) &&
-    ['page_click', 'page_input', 'page_keypress'].includes(actionName);
   try {
     let response;
     if (actionName === 'clearPageActionSession') {
@@ -2285,153 +2227,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
             ).catch(() => null)
           )
       );
-    } else if (wantsPrecise) {
-      let deliveryStarted = false;
-      try {
-        const currentUrl = await getPageActionTabUrl(tabId);
-        if (!getCurrentPageSupport(currentUrl).available) throw new Error('restricted_page');
-        await assertSiteAllowed(currentUrl);
-        await cdpInputBackend.attach(options.runId, tabId);
-        runOrchestrator.setPreciseInputState(options.runId, 'active');
-        const prepared = await checkedSend({ ...message, precisePrepare: true });
-        const input = prepared?.preparedInput;
-        if (!input || typeof input.planId !== 'string') throw new Error('input_plan_unavailable');
-        if (input.type === 'key') {
-          const key = PRECISE_KEY_MAP[input.key];
-          if (!key) throw new Error('unsupported_key');
-          deliveryStarted = true;
-          await dispatchCdpKeyPair(options.runId, tabId, key.key, key.code, key.modifiers || 0);
-        } else if (input.type === 'click' || input.type === 'text') {
-          deliveryStarted = true;
-          await cdpInputBackend.dispatch(options.runId, tabId, 'Input.dispatchMouseEvent', {
-            type: 'mousePressed',
-            x: input.clientX,
-            y: input.clientY,
-            button: 'left',
-            clickCount: input.count || 1,
-          });
-          await cdpInputBackend.dispatch(options.runId, tabId, 'Input.dispatchMouseEvent', {
-            type: 'mouseReleased',
-            x: input.clientX,
-            y: input.clientY,
-            button: 'left',
-            clickCount: input.count || 1,
-          });
-          if (input.type === 'text') {
-            if (args?.mode === 'append') {
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyDown',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-              await dispatchCdpKeyPair(options.runId, tabId, 'End', 'End', 2);
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyUp',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-            } else {
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyDown',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'a', {
-                type: 'rawKeyDown',
-                code: 'KeyA',
-                modifiers: 2,
-                windowsVirtualKeyCode: 65,
-                nativeVirtualKeyCode: 65,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'a', {
-                type: 'keyUp',
-                code: 'KeyA',
-                modifiers: 2,
-                windowsVirtualKeyCode: 65,
-                nativeVirtualKeyCode: 65,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'Control', {
-                type: 'keyUp',
-                code: 'ControlLeft',
-                modifiers: 2,
-                windowsVirtualKeyCode: 17,
-              });
-            }
-            await cdpInputBackend.dispatch(options.runId, tabId, 'Input.insertText', {
-              text: args.text,
-            });
-            if (args?.submit === true) {
-              await dispatchCdpKey(options.runId, tabId, 'Enter', {
-                type: 'keyDown',
-                code: 'Enter',
-                modifiers: 0,
-              });
-              await dispatchCdpKey(options.runId, tabId, 'Enter', {
-                type: 'keyUp',
-                code: 'Enter',
-                modifiers: 0,
-              });
-            }
-          }
-        }
-        response = await checkedSend({
-          ...message,
-          preciseFinalize: true,
-          precisePlanId: input.planId,
-        });
-      } catch (error) {
-        await cdpInputBackend.detachRun(options.runId);
-        if (error?.code === 'PAGE_ACTION_TIMEOUT') throw error;
-        if (deliveryStarted) {
-          runOrchestrator.setPreciseInputState(options.runId, 'fallback');
-          const changedUrl = await getPageActionTabUrl(tabId).catch(() => '');
-          if (changedUrl && previousUrl && changedUrl !== previousUrl) {
-            const navigation = await waitForPageActionNavigation(
-              tabId,
-              previousUrl,
-              options.signal
-            );
-            await assertSiteAllowed(navigation.url);
-            response = {
-              success: true,
-              navigated: true,
-              navigationUrl: navigation.url,
-              actionReceipt: {
-                disposition: 'delivered_unverified',
-                evidence: { kind: 'input_dispatched' },
-              },
-            };
-          } else {
-            const snapshot = await checkedSend({
-              action: 'pageAction',
-              runId: options.runId,
-              pageAction: 'page_get_state',
-              args: {},
-              blockedOrigins,
-            })
-              .then((result) => result?.snapshot)
-              .catch(() => null);
-            response = {
-              success: true,
-              message:
-                'Precise input was dispatched, but verification failed. Inspect the page before retrying.',
-              ...(snapshot ? { snapshot } : {}),
-              actionReceipt: {
-                disposition: 'delivered_unverified',
-                evidence: { kind: 'input_dispatched' },
-              },
-            };
-          }
-        } else {
-          await cdpInputBackend.detachRun(options.runId);
-          runOrchestrator.setPreciseInputState(options.runId, 'fallback');
-          if (options.signal?.aborted) throw error;
-          response = await checkedSend();
-        }
-      }
     } else {
       response = await checkedSend();
     }
@@ -2549,9 +2344,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     ) {
       pageActionReadinessCache.invalidate(tabId);
     }
-    const wasPreciseInputAttached = cdpInputBackend.isAttached(options.runId);
-    await cdpInputBackend.detachRun(options.runId);
-    if (wasPreciseInputAttached) runOrchestrator.setPreciseInputState(options.runId, 'fallback');
     recordDevDiagnostic('page_action_executor_error', {
       runId: options.runId,
       tabId,
@@ -2686,12 +2478,11 @@ runOrchestrator = new RunOrchestrator(skillManager, {
   pageTabRunDisposer: (runId) => {
     pageActionFrameSnapshotMaps.delete(runId);
     const ownedTabIds = pageTabController.getOwnedTabIds(runId);
-    return Promise.all([
-      cdpInputBackend.detachRun(runId),
-      ...ownedTabIds.map((tabId) =>
+    return Promise.all(
+      ownedTabIds.map((tabId) =>
         pageActionExecutor(tabId, 'clearPageActionSession', {}, { runId }).catch(() => undefined)
-      ),
-    ]).finally(() => pageTabController.disposeRun(runId));
+      )
+    ).finally(() => pageTabController.disposeRun(runId));
   },
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
@@ -3970,7 +3761,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   const pageActionMessage = handlePageActionMessage(request, sender, {
     chrome,
-    cdpInputBackend,
     extensionPageSender,
     getPageActionSiteOrigin,
     getProfileToolSupport,

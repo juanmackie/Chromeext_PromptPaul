@@ -19,9 +19,9 @@ This checklist links the release gates. The root [AGENTS.md](../AGENTS.md) and t
 ## Act release gates
 
 - Keep Act default-off and semantic/DOM-only. Mutations need bounded receipts, high-risk actions need confirmation, and unverified actions must not be retried blindly. The canonical rules live in [src/act/AGENTS.md](../src/act/AGENTS.md) and [src/orchestrator/AGENTS.md](../src/orchestrator/AGENTS.md).
-- Run the focused real-browser suite for frame routing, hidden-tab settlement, policy decisions, precise-input opt-in, and lifecycle cleanup. The browser contracts are listed in [tests/browser/AGENTS.md](../tests/browser/AGENTS.md).
+- Run the focused real-browser suite for frame routing, hidden-tab settlement, policy decisions, and lifecycle cleanup. The browser contracts are listed in [tests/browser/AGENTS.md](../tests/browser/AGENTS.md).
 - The nightly evaluator scores the local fixtures and fixed Mind2Web training subset. The PR score gate compares the same local tasks on base and candidate; configure the `ACT_EVAL_API_KEY` repository secret for model runs.
-- Review the debugger permission and user warning before publishing. The release workflow publishes only when a `v*` tag is pushed.
+- Review persistent site-trust behavior before publishing. The release workflow publishes only when a `v*` tag is pushed.
 
 ## Current file ownership
 
