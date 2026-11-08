@@ -11,6 +11,7 @@
  */
 
 import { extractGroundingPages } from '../utils/webFetchGrounding.js';
+import { ACT_PROGRESS_CAPS } from '../act/ActLimits.js';
 import { formatToolsForLlm, normalizeToolChoice } from '../utils/toolChoiceBuilder.js';
 import { modelSupportsReasoning } from '../utils/profileRouting.js';
 import { createThinkParser } from '../utils/inlineReasoning.js';
@@ -29,7 +30,6 @@ import {
   detectRepeatedOutput,
   getProviderTimeoutMs,
   isRetryableProviderError,
-  redactProviderErrorMessage,
 } from '../utils/runResilience.js';
 import { waitForRetry } from '../utils/retryBackoff.js';
 import { withServiceWorkerKeepAlive } from './ServiceWorkerKeepAlive.js';
@@ -37,7 +37,6 @@ import {
   ACT_ACTION_BUDGETS,
   PAGE_ACTION_RECEIPT_DISPOSITIONS,
   PAGE_ACTION_TURN_MUTATIONS,
-  ACT_OUTCOME_REASONS,
   buildActWorkingMemoryPrompt,
   buildPageTaskMemoryPrompt,
   buildPlannerPromptBlock,
@@ -89,7 +88,7 @@ import { normalizePageActionSitePolicies } from '../utils/pageActionSitePolicies
 import { installOpenAIExecutionMethods } from './OpenAIExecution.js';
 import { installAnthropicExecutionMethods } from './AnthropicExecution.js';
 import { clearPageActionCheckpoint } from '../utils/pageActionCheckpoint.js';
-import { getPageActionSiteOrigin } from '../utils/pageActionSitePolicies.js';
+import { RunJournal, RUN_JOURNAL_STORAGE_KEY } from './RunJournal.js';
 const CORE_INSTRUCTIONS =
   'OUTPUT FORMATTING: Always use plain text and Unicode characters. Never use LaTeX notation (e.g., write → instead of \\rightarrow, ≠ instead of \\neq, ≥ instead of \\geq, ≤ instead of \\leq). Use Unicode symbols directly.';
 const MAX_TOOL_CALL_RETRIES = 3;
@@ -103,9 +102,9 @@ const MAX_ACT_PLANNER_CONTINUATIONS = 3;
 const MAX_READABLE_PAGES = 3;
 const ACT_PLANNER_CONTINUATION_PROMPT =
   'Continue the Act task. The planner still has unresolved sub-goals. Use the available page tools to complete or explicitly block each remaining goal; do not give a final answer until the planner has verified progress.';
-const PAGE_TASK_PROGRESS_STEP_LABEL_CAP = 180;
-const PAGE_TASK_PROGRESS_TARGET_LABEL_CAP = 160;
-const PAGE_TASK_PROGRESS_MAX_STEPS = 12;
+const PAGE_TASK_PROGRESS_STEP_LABEL_CAP = ACT_PROGRESS_CAPS.maxStepLabelChars;
+const PAGE_TASK_PROGRESS_TARGET_LABEL_CAP = ACT_PROGRESS_CAPS.maxTargetLabelChars;
+const PAGE_TASK_PROGRESS_MAX_STEPS = ACT_PROGRESS_CAPS.maxSteps;
 
 // Page-action event types that reflect a change in Act progress (current
 // action, planner, or a pending interaction). When one of these emits, the
@@ -132,11 +131,6 @@ const TOKEN_LIMIT_REASONS = new Set([
   'model_length',
   'context_length',
 ]);
-const RUN_JOURNAL_STORAGE_KEY = 'promptPaulRunJournalsV1';
-const RUN_JOURNAL_MAX_EVENTS = 128;
-const RUN_JOURNAL_MAX_BYTES = 512 * 1024;
-const RUN_JOURNAL_MAX_RUNS = 24;
-const RUN_JOURNAL_COALESCE_MS = 25;
 const STREAM_COALESCE_MS = 100;
 const STREAM_COALESCE_MAX_CHARS = 8_000;
 const STREAM_EVENT_TYPES = new Set(['content', 'reasoning', 'stream_batch']);
@@ -186,12 +180,7 @@ class RunOrchestrator {
     this.hermesProfileRuns = new Map(); // profileId -> active runId
     this.toolExecutions = new Set(); // Set of "runId:toolCallId"
     this.toolImplementations = new Map();
-    this.journalWrite = Promise.resolve();
-    // Coalesce storage work to one safe snapshot per run while a drain is busy.
-    this.pendingJournalSnapshots = new Map();
-    this.journalDrainActive = false;
-    this.journalDrainTimer = null;
-    this.journalDrainResolve = null;
+    this.runJournal = new RunJournal();
     this.streamEventBuffers = new Map();
 
     // Register built-in tools
@@ -3443,10 +3432,7 @@ class RunOrchestrator {
         run.status = enrichedEvent.type === 'complete' ? 'complete' : enrichedEvent.type;
       }
       if (!STREAM_EVENT_TYPES.has(enrichedEvent.type)) {
-        run.eventJournal = [...(run.eventJournal || []), this._journalEvent(enrichedEvent)].slice(
-          -RUN_JOURNAL_MAX_EVENTS
-        );
-        this._persistRunJournal(run);
+        this.runJournal.recordEvent(run, enrichedEvent);
       }
     }
     try {
@@ -3478,319 +3464,17 @@ class RunOrchestrator {
     }
   }
 
-  /**
-   * Return a bounded event representation suitable for session persistence.
-   * Raw DOM snapshots, tool arguments, and high-frequency text deltas are not
-   * persisted; the live runtime still receives the complete event.
-   * @param {object} event
-   * @returns {object}
-   * @private
-   */
   _journalEvent(event) {
-    const safe = { sequence: event.sequence, timestamp: event.timestamp, type: event.type };
-    if (event.actOutcome && ['done', 'blocked', 'failed'].includes(event.actOutcome.status)) {
-      safe.actOutcome = {
-        status: event.actOutcome.status,
-        reason: ACT_OUTCOME_REASONS.includes(event.actOutcome.reason)
-          ? event.actOutcome.reason
-          : null,
-      };
-    }
-    for (const key of [
-      'state',
-      'action',
-      'code',
-      'message',
-      'summary',
-      'risk',
-      'confirmationId',
-      'approved',
-      'approveAll',
-      'timedOut',
-      'actions',
-      'limit',
-      'toolName',
-      'requestId',
-      'approvalId',
-    ]) {
-      if (event[key] !== undefined) {
-        safe[key] = typeof event[key] === 'string' ? event[key].slice(0, 240) : event[key];
-      }
-    }
-    if (event.type === 'complete') {
-      const fullContent = String(event.content || '');
-      if (fullContent.length > 8_000) {
-        safe.content = fullContent.slice(0, 8_000);
-        // Make truncation visible on recovery: bound the flag and the original
-        // length so a recovered long answer is never shown as a complete one.
-        safe.contentTruncated = true;
-        safe.originalLength = fullContent.length;
-      } else {
-        safe.content = fullContent;
-      }
-      // Preserve grounding/sources and completion metadata so a recovered
-      // grounded answer keeps its Sources section and reasoning status.
-      if (event.grounding) safe.grounding = event.grounding;
-      if (event.completion) safe.completion = event.completion;
-    }
-    if (event.type === 'error') safe.error = redactProviderErrorMessage(event.error, 240);
-    if (event.siteOrigin) safe.siteOrigin = getPageActionSiteOrigin(event.siteOrigin);
-    for (const key of ['title', 'origin', 'destination', 'reason']) {
-      if (typeof event[key] === 'string') safe[key] = event[key].slice(0, 240);
-    }
-    if (event.target?.label) safe.target = { label: String(event.target.label).slice(0, 160) };
-    // Preserve the bounded display fields needed to render a pending
-    // user/manual interaction after a panel reconnect. Only the opaque request
-    // id plus non-secret display text are kept; answers/decisions are never
-    // restored from the journal and must be re-submitted by the user.
-    if (
-      event.type === 'page_user_input_request' ||
-      event.type === 'page_manual_intervention_request'
-    ) {
-      if (typeof event.question === 'string') {
-        safe.question = event.question.slice(0, 600);
-      }
-      if (Array.isArray(event.options)) {
-        safe.options = event.options
-          .slice(0, 8)
-          .map((option) => (typeof option === 'string' ? option.slice(0, 120) : option));
-      }
-      if (event.activeTab) {
-        safe.activeTab = {
-          tabId: Number.isInteger(event.activeTab.tabId) ? event.activeTab.tabId : null,
-          title: String(event.activeTab.title || '')
-            .trim()
-            .slice(0, 120),
-          origin: String(event.activeTab.origin || '')
-            .trim()
-            .slice(0, 160),
-        };
-      }
-    }
-    if (event.type === 'page_task_progress') {
-      // Readable Act progress is safe to persist: only sanitized indices,
-      // bounded labels, an opaque pending-interaction id, and selected fields.
-      // Full URLs, DOM, tool arguments, credentials, and screenshots never
-      // reach the journal.
-      safe.status = String(event.status || 'running').slice(0, 32);
-      safe.hasPlanner = Boolean(event.hasPlanner);
-      safe.taskComplete = Boolean(event.taskComplete);
-      if (typeof event.currentStep === 'string') {
-        safe.currentStep = event.currentStep.slice(0, 240);
-      }
-      if (typeof event.currentAction === 'string') {
-        safe.currentAction = event.currentAction.slice(0, 64);
-      }
-      if (typeof event.title === 'string') {
-        safe.title = event.title.slice(0, 80);
-      }
-      if (event.target?.label) {
-        safe.target = {
-          label: String(event.target.label).slice(0, 160),
-          origin: Boolean(event.target.origin),
-        };
-      }
-      if (event.waiting) safe.waiting = String(event.waiting).slice(0, 16);
-      if (event.waitingRequestId) {
-        safe.waitingRequestId = String(event.waitingRequestId).slice(0, 64);
-      }
-      if (event.receipt?.disposition) {
-        safe.receipt = {
-          disposition: String(event.receipt.disposition).slice(0, 32),
-          actionName: String(event.receipt.actionName || '').slice(0, 64),
-        };
-      }
-      if (event.outcome && typeof event.outcome === 'object') {
-        // Deterministic outcome facts are safe: bounded booleans, an enum
-        // waiting label, and capped step counts. No DOM, URLs, or arguments.
-        safe.outcome = {
-          status: String(event.outcome.status || 'running').slice(0, 24),
-          waiting: ['approval', 'answer', 'manual'].includes(event.outcome.waiting)
-            ? event.outcome.waiting
-            : null,
-          taskComplete: Boolean(event.outcome.taskComplete),
-          unverified: Boolean(event.outcome.unverified),
-          notDelivered: Boolean(event.outcome.notDelivered),
-          verified: Boolean(event.outcome.verified),
-          declined: Boolean(event.outcome.declined),
-          completedSteps: Math.min(
-            Number(event.outcome.completedSteps) || 0,
-            PAGE_TASK_PROGRESS_MAX_STEPS
-          ),
-          blockedSteps: Math.min(
-            Number(event.outcome.blockedSteps) || 0,
-            PAGE_TASK_PROGRESS_MAX_STEPS
-          ),
-          remainingSteps: Math.min(
-            Number(event.outcome.remainingSteps) || 0,
-            PAGE_TASK_PROGRESS_MAX_STEPS
-          ),
-        };
-      }
-      if (Array.isArray(event.steps)) {
-        safe.steps = event.steps.slice(0, PAGE_TASK_PROGRESS_MAX_STEPS).map((step) => ({
-          index: Number.isInteger(step?.index) ? step.index : null,
-          label: String(step?.label || '').slice(0, PAGE_TASK_PROGRESS_STEP_LABEL_CAP),
-          status: ['pending', 'current', 'completed', 'blocked'].includes(step?.status)
-            ? step.status
-            : 'pending',
-        }));
-      }
-    }
-    return safe;
-  }
-
-  _getJournalSnapshot(run) {
-    return {
-      version: 1,
-      runId: run.id,
-      sourceTabId: run.sourceTabId || null,
-      status: run.status,
-      startedAt: run.startedAt || null,
-      updatedAt: run.journalUpdatedAt || Date.now(),
-      eventSequence: run.eventSequence || 0,
-      objective: String(run.objective || '').slice(0, 4_000),
-      resilience: run.resilience
-        ? {
-            apiCallCount: Number(run.resilience.apiCallCount || 0),
-            maxIterations: Number(run.resilience.maxIterations || 0),
-            runBudgetMs: Number(run.resilience.runBudgetMs || 0),
-            wrapUp: Boolean(run.resilience.wrapUp),
-            contextCompactions: Number(run.resilience.contextCompactions || 0),
-            approvalWaitExtensions: Number(run.resilience.approvalWaitExtensions || 0),
-          }
-        : null,
-      pageActions: run.pageActions
-        ? {
-            enabled: Boolean(run.pageActions.enabled),
-            actions: Number(run.pageActions.actions || 0),
-            budgets: { ...(run.pageActions.budgets || {}) },
-            noteCount: Array.isArray(run.pageActions.notes) ? run.pageActions.notes.length : 0,
-            documentUrl: run.pageActions.documentUrl || null,
-            fingerprint: run.pageActions.snapshot?.fingerprint || null,
-            loopWarnings: Number(run.pageActions.loopWarnings || 0),
-            lastDeniedAction: run.pageActions.lastDeniedAction
-              ? {
-                  action: String(run.pageActions.lastDeniedAction.action || '').slice(0, 64),
-                }
-              : null,
-            currentActionTitle: run.pageActions.currentActionTitle
-              ? String(run.pageActions.currentActionTitle).slice(0, 80)
-              : null,
-            recovery: run.pageActions.recoveryCheckpoint
-              ? {
-                  actionName: String(run.pageActions.recoveryCheckpoint.actionName || '').slice(
-                    0,
-                    64
-                  ),
-                  evidence: 'unknown_delivery_after_worker_restart',
-                }
-              : null,
-          }
-        : null,
-      events: run.eventJournal || [],
-      terminal: Boolean(run.terminal),
-    };
+    return this.runJournal.sanitizeEvent(event);
   }
 
   _persistRunJournal(run, immediate = false) {
-    if (typeof chrome === 'undefined' || !chrome.storage?.session || !run) return;
-    this.pendingJournalSnapshots.set(run.id, this._getJournalSnapshot(run));
-    this._limitPendingJournalSnapshots();
-    this._startRunJournalDrain(immediate || run.terminal === true);
-  }
-
-  _limitPendingJournalSnapshots() {
-    while (this.pendingJournalSnapshots.size > RUN_JOURNAL_MAX_RUNS) {
-      let oldestRunId = null;
-      let oldestUpdatedAt = Infinity;
-      for (const [runId, snapshot] of this.pendingJournalSnapshots) {
-        const updatedAt = Number(snapshot?.updatedAt || 0);
-        if (updatedAt < oldestUpdatedAt) {
-          oldestRunId = runId;
-          oldestUpdatedAt = updatedAt;
-        }
-      }
-      if (oldestRunId === null) break;
-      this.pendingJournalSnapshots.delete(oldestRunId);
-    }
-  }
-
-  _startRunJournalDrain(force = false) {
-    if (this.journalDrainActive || this.pendingJournalSnapshots.size === 0) return;
-    if (this.journalDrainTimer !== null) {
-      if (!force) return;
-      clearTimeout(this.journalDrainTimer);
-      this.journalDrainTimer = null;
-    }
-    if (!force) {
-      this.journalWrite = new Promise((resolve) => {
-        this.journalDrainResolve = resolve;
-        this.journalDrainTimer = setTimeout(() => {
-          this.journalDrainTimer = null;
-          this._beginRunJournalDrain();
-        }, RUN_JOURNAL_COALESCE_MS);
-      });
-      return;
-    }
-    this._beginRunJournalDrain();
-  }
-
-  _beginRunJournalDrain() {
-    if (this.journalDrainActive || this.pendingJournalSnapshots.size === 0) return;
-    this.journalDrainActive = true;
-    const scheduledResolve = this.journalDrainResolve;
-    this.journalDrainResolve = null;
-    this.journalWrite = this._drainRunJournalWrites().finally(() => {
-      scheduledResolve?.();
-    });
-  }
-
-  async _drainRunJournalWrites() {
-    let latestRetryAttempted = false;
-    try {
-      while (this.pendingJournalSnapshots.size > 0) {
-        const snapshots = new Map(this.pendingJournalSnapshots);
-        this.pendingJournalSnapshots.clear();
-        try {
-          const result = await chrome.storage.session.get([RUN_JOURNAL_STORAGE_KEY]);
-          const journals = { ...(result?.[RUN_JOURNAL_STORAGE_KEY] || {}) };
-          for (const [runId, snapshot] of snapshots) {
-            if (JSON.stringify(snapshot).length > RUN_JOURNAL_MAX_BYTES) {
-              snapshot.events = snapshot.events.slice(-32);
-            }
-            journals[runId] = snapshot;
-          }
-          const ordered = Object.entries(journals).sort(
-            (left, right) => Number(right[1]?.updatedAt || 0) - Number(left[1]?.updatedAt || 0)
-          );
-          for (const [staleRunId] of ordered.slice(RUN_JOURNAL_MAX_RUNS)) {
-            delete journals[staleRunId];
-          }
-          await chrome.storage.session.set({ [RUN_JOURNAL_STORAGE_KEY]: journals });
-        } catch (_) {
-          const hasNewerPendingSnapshots = this.pendingJournalSnapshots.size > 0;
-          for (const [runId, snapshot] of snapshots) {
-            if (!this.pendingJournalSnapshots.has(runId)) {
-              this.pendingJournalSnapshots.set(runId, snapshot);
-            }
-          }
-          this._limitPendingJournalSnapshots();
-          if (hasNewerPendingSnapshots && !latestRetryAttempted) {
-            latestRetryAttempted = true;
-            continue;
-          }
-          return false;
-        }
-      }
-    } finally {
-      this.journalDrainActive = false;
-    }
+    return this.runJournal.persist(run, immediate);
   }
 
   getRunJournal(runId) {
     const run = this.activeRuns.get(runId);
-    return run ? this._getJournalSnapshot(run) : null;
+    return run ? this.runJournal.getSnapshot(run) : null;
   }
 
   static getRunJournalStorageKey() {

@@ -17,6 +17,12 @@ export const ACT_TAB_CAPS = Object.freeze({
   maxOwnedTabs: 12,
 });
 
+export const ACT_PROGRESS_CAPS = Object.freeze({
+  maxSteps: 12,
+  maxStepLabelChars: 180,
+  maxTargetLabelChars: 160,
+});
+
 export const ACT_PAGE_DOM_CAPS = Object.freeze({
   maxElements: 200,
   maxSnapshotChars: 32_000,

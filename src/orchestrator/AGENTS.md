@@ -7,6 +7,7 @@
 - `RunOrchestrator.js` owns run state, shared tool execution/idempotency, common provider callbacks, and follow-up turns.
 - `OpenAIExecution.js` and `AnthropicExecution.js` own API request and stream loops; `CodexTransport.js` and `HermesTransport.js` own provider-specific wire protocols.
 - `RunBudget.js` and `runResilience.js` own run limits, retries, timeouts, compaction, and repetitive-output protection.
+- `RunJournal.js` owns safe event projections, bounded snapshots, and coalesced session-storage writes for run recovery.
 - `src/act/` owns Act planning and execution. Import its public API through [`src/act/index.js`](../act/index.js).
 - `PageTabController.js` owns tab leases and run-created tab cleanup.
 
