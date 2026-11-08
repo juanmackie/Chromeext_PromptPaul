@@ -4,6 +4,7 @@ import {
   getPageTabTools,
   getPageTaskMemoryTools,
   getPageUserInputTools,
+  getMind2WebPageTools,
 } from '../src/act/index.js';
 
 describe('Act tool schema provider', () => {
@@ -49,5 +50,16 @@ describe('Act tool schema provider', () => {
       'page_switch_tab',
       'page_close_tab',
     ]);
+  });
+
+  it('provides only snapshot-bound first-action tools for Mind2Web evaluation', () => {
+    const tools = getMind2WebPageTools();
+    expect(tools.map((tool) => tool.function.name)).toEqual([
+      'page_get_state',
+      'page_click',
+      'page_input',
+      'page_select',
+    ]);
+    expect(tools.every((tool) => tool.function.description.length > 30)).toBe(true);
   });
 });

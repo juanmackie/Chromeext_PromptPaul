@@ -471,3 +471,27 @@ export function getPageTaskMemoryTools() {
 export function getPageActionTools() {
   return PAGE_ACTION_TOOL_SCHEMAS;
 }
+
+/** Return the fixed first-action tool set used by the Mind2Web evaluator. */
+export function getMind2WebPageTools() {
+  const actionNames = new Set(['page_get_state', 'page_click', 'page_input', 'page_select']);
+  const descriptions = {
+    page_get_state:
+      'Inspect the current page and return the snapshot used to choose one next action. Use only IDs and indexes from that snapshot.',
+    page_click:
+      'Choose the observed control that performs the immediate next step in task order. When labels overlap, compare control role and menu state, not text alone. Open a relevant collapsed parent menu before a child; do not click an ancestor merely because it contains the target.',
+    page_input:
+      'Enter the shortest query that identifies the requested entity for this field. Remove task verbs and generic result words such as “recipe”; keep entity-defining modifiers when the field searches for an entity, and use only the category head noun when the field asks for a business/category. For a city-or-point-of-interest field, enter the city only; for a city/state/ZIP field, enter city plus the task’s two-letter state. Do not add qualifiers absent from the task. Use only the current snapshot ID and index.',
+    page_select:
+      'Set one indexed select control from the current snapshot to the option matching the next requested action.',
+  };
+  return getPageActionTools()
+    .filter((tool) => actionNames.has(tool.function?.name))
+    .map((tool) => ({
+      ...tool,
+      function: {
+        ...tool.function,
+        description: descriptions[tool.function.name],
+      },
+    }));
+}
