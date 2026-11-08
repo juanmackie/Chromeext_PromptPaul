@@ -49,7 +49,7 @@ import { waitForRetry } from './src/utils/retryBackoff.js';
 import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.js';
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
-import { ACT_FRAME_CAPS, ACT_PAGE_DOM_CAPS } from './src/act/ActLimits.js';
+import { ACT_FRAME_CAPS, ACT_PAGE_DOM_CAPS, createPageFrameSnapshots } from './src/act/index.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -1754,7 +1754,7 @@ const getPageActionMessageTimeoutMs = (actionName, args = {}) => {
 
 let runOrchestrator = null;
 
-const pageActionFrameSnapshotMaps = new Map();
+const pageFrameSnapshots = createPageFrameSnapshots();
 const PAGE_ACTION_MAX_FRAMES = ACT_FRAME_CAPS.maxFrames;
 
 const getPageActionFrameDescriptors = async (tabId) => {
@@ -1801,127 +1801,6 @@ const getPageActionFrameDescriptors = async (tabId) => {
   } catch (_) {
     return [];
   }
-};
-
-const mergePageActionFrameSnapshots = (runId, frameSnapshots, omittedFrameCount = 0) => {
-  const topFrame = frameSnapshots.find((frame) => frame.isTop) || frameSnapshots[0];
-  if (!topFrame?.snapshot) return null;
-  const snapshotId = `frames-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const elements = [];
-  const routes = Object.create(null);
-  const contentParts = [];
-  let contentPartsChars = 0;
-  const addContentPart = (part) => {
-    contentParts.push(part);
-    contentPartsChars += part.length;
-  };
-  let valueBudget = ACT_PAGE_DOM_CAPS.maxTotalValueChars;
-  let topFrameRemap = null;
-  for (const [frameIndex, frame] of frameSnapshots.entries()) {
-    const local = frame.snapshot;
-    if (!local) continue;
-    // Frame-local snapshots number controls with stable per-frame IDs, so the
-    // pre-rendered outline markers ([N]) generally differ from the merged
-    // positional numbering below. Remap this frame's markers to the merged
-    // global indices; otherwise the model reads one control and dispatches
-    // another whenever controls appear or reorder mid-run.
-    const markerRemap = new Map();
-    for (const element of Array.isArray(local.elements) ? local.elements : []) {
-      if (elements.length >= ACT_PAGE_DOM_CAPS.maxElements) break;
-      const index = elements.length;
-      if (Number.isInteger(element?.index) && !markerRemap.has(element.index)) {
-        markerRemap.set(element.index, index);
-      }
-      const mapped = {
-        ...element,
-        index,
-        elementKey: `${snapshotId}:${index}`.slice(0, 64),
-        frameOrigin: frame.origin,
-      };
-      if (typeof mapped.value === 'string') {
-        mapped.value = mapped.value.slice(0, valueBudget);
-        valueBudget -= mapped.value.length;
-      }
-      elements.push(mapped);
-      routes[index] = {
-        frameId: frame.frameId,
-        snapshotId: local.snapshotId,
-        index: element.index,
-        elementKey: element.elementKey,
-      };
-    }
-    if (frame.isTop) topFrameRemap = markerRemap;
-    // Only rewrite record markers: a leading [N] followed by the formatted
-    // control (` <tag ...>`). Prose or control text that merely contains
-    // brackets is left untouched.
-    const frameContent = String(local.content || '')
-      .split('\n')
-      .map((line) =>
-        line.replace(/^(\s*)\[(\d+)\](?=\s<)/, (match, indent, digits) => {
-          const remapped = markerRemap.get(Number(digits));
-          return remapped === undefined ? match : `${indent}[${remapped}]`;
-        })
-      )
-      .join('\n');
-    addContentPart(
-      `Frame ${frameIndex + 1} — ${frame.isTop ? 'main page' : frame.origin}\n${frameContent}`
-    );
-  }
-  if (omittedFrameCount > 0) {
-    addContentPart(
-      `${omittedFrameCount} embedded frame${omittedFrameCount === 1 ? '' : 's'} omitted by safety policy.`
-    );
-  }
-  let content = '';
-  for (const part of contentParts) {
-    const separator = content ? '\n\n' : '';
-    content += `${separator}${part}`.slice(
-      0,
-      Math.max(0, ACT_PAGE_DOM_CAPS.maxOutlineChars - content.length)
-    );
-    if (content.length >= ACT_PAGE_DOM_CAPS.maxOutlineChars) break;
-  }
-  const focusedFrame = frameSnapshots.find((frame) => frame.snapshot?.focusedElement);
-  const focusedElement = focusedFrame?.snapshot?.focusedElement
-    ? {
-        ...focusedFrame.snapshot.focusedElement,
-        elementKey: `${snapshotId}:focus`.slice(0, 64),
-        frameOrigin: focusedFrame.origin,
-      }
-    : undefined;
-  if (focusedFrame) {
-    routes.focused = {
-      frameId: focusedFrame.frameId,
-      snapshotId: focusedFrame.snapshot.snapshotId,
-      index: focusedFrame.snapshot.focusedElement.index,
-      elementKey: focusedFrame.snapshot.focusedElement.elementKey,
-    };
-  }
-  // Region index lists are frame-local like the outline markers, so translate
-  // the top frame's regions into the same merged numbering; entries without a
-  // merged control are dropped instead of pointing at the wrong index.
-  const mergedRegions = Array.isArray(topFrame.snapshot.regions)
-    ? topFrame.snapshot.regions
-        .map((region) => ({
-          ...region,
-          indices: (Array.isArray(region?.indices) ? region.indices : [])
-            .map((value) => topFrameRemap?.get(Number(value)))
-            .filter((value) => Number.isInteger(value)),
-        }))
-        .filter((region) => region.indices.length > 0)
-    : [];
-  const merged = {
-    ...topFrame.snapshot,
-    snapshotId,
-    content,
-    elements,
-    ...(focusedElement ? { focusedElement } : { focusedElement: undefined }),
-    regions: mergedRegions,
-    truncated:
-      contentPartsChars > content.length || elements.length >= ACT_PAGE_DOM_CAPS.maxElements,
-  };
-  pageActionFrameSnapshotMaps.set(runId, { snapshotId, routes });
-  return merged;
 };
 
 const collectPageActionFrameSnapshots = async ({
@@ -2029,7 +1908,7 @@ const collectPageActionFrameSnapshots = async ({
       frames.unshift({ frameId: 0, origin, isTop: true, snapshot: topResponse.snapshot });
     }
   }
-  return mergePageActionFrameSnapshots(runId, frames, omittedFrameCount);
+  return pageFrameSnapshots.merge(runId, frames, omittedFrameCount);
 };
 
 const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
@@ -2069,17 +1948,12 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
       throw error;
     }
   };
-  const frameMap = pageActionFrameSnapshotMaps.get(options.runId);
-  const frameRoute =
-    args?.snapshotId === frameMap?.snapshotId
-      ? Number.isInteger(args?.index)
-        ? frameMap.routes[args.index]
-        : args?.focused === true
-          ? frameMap.routes.focused
-          : null
-      : null;
+  const { isCurrentSnapshot, route: frameRoute } = pageFrameSnapshots.resolveRoute(
+    options.runId,
+    args
+  );
   if (
-    args?.snapshotId === frameMap?.snapshotId &&
+    isCurrentSnapshot &&
     ((Number.isInteger(args?.index) && !frameRoute) || (args?.focused === true && !frameRoute))
   ) {
     const error = new Error(
@@ -2131,41 +2005,6 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
   }
 
   const messageTimeoutMs = getPageActionMessageTimeoutMs(actionName, args);
-  const mapFindTextIndices = (result, map = pageActionFrameSnapshotMaps.get(options.runId)) => {
-    if (!result || typeof result !== 'object') return result;
-    const sourceIndices = Array.isArray(result.elementIndices) ? result.elementIndices : [];
-    const localSnapshotId = result.snapshotId;
-    const mappedIndices = [];
-    if (localSnapshotId && map?.routes) {
-      const topFrameIndices = new Map();
-      for (const [mergedIndex, route] of Object.entries(map.routes)) {
-        if (route.frameId === 0 && route.snapshotId === localSnapshotId) {
-          topFrameIndices.set(route.index, Number(mergedIndex));
-        }
-      }
-      for (const localIndex of sourceIndices) {
-        const mergedIndex = topFrameIndices.get(localIndex);
-        if (mergedIndex !== undefined) mappedIndices.push(mergedIndex);
-      }
-    }
-    const safeResult = { ...result };
-    delete safeResult.snapshotId;
-    return {
-      ...safeResult,
-      ...(map?.snapshotId ? { snapshotId: map.snapshotId } : {}),
-      ...(Array.isArray(result.elementIndices) ? { elementIndices: mappedIndices } : {}),
-      ...(sourceIndices.length
-        ? {
-            message: mappedIndices.length
-              ? String(result.message || '').replace(
-                  /Matching control indices: [^.]+/,
-                  `Matching control indices: ${mappedIndices.join(', ')}`
-                )
-              : 'Found page text, but no matching control index is available in the current merged snapshot. Inspect the page again before acting.',
-          }
-        : {}),
-    };
-  };
   let retriedCachedBridge = false;
   const checkedSend = async (
     messageOverride = message,
@@ -2303,12 +2142,14 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     });
 
     if (actionName === 'page_find_text') {
-      response = mapFindTextIndices(response);
+      response = pageFrameSnapshots.mapFindTextIndices(options.runId, response);
     } else if (actionName === 'page_batch' && Array.isArray(response?.results)) {
       response = {
         ...response,
         results: response.results.map((item, index) =>
-          args?.actions?.[index]?.name === 'page_find_text' ? mapFindTextIndices(item) : item
+          args?.actions?.[index]?.name === 'page_find_text'
+            ? pageFrameSnapshots.mapFindTextIndices(options.runId, item)
+            : item
         ),
       };
     }
@@ -2481,7 +2322,7 @@ runOrchestrator = new RunOrchestrator(skillManager, {
     pageTabController.execute(runId, actionName, { ...args, signal: options.signal }),
   pageTabRunRegistrar: (runId, sourceTabId) => pageTabController.registerRun(runId, sourceTabId),
   pageTabRunDisposer: (runId) => {
-    pageActionFrameSnapshotMaps.delete(runId);
+    pageFrameSnapshots.deleteRun(runId);
     const ownedTabIds = pageTabController.getOwnedTabIds(runId);
     return Promise.all(
       ownedTabIds.map((tabId) =>
