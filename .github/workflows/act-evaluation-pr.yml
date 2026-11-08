@@ -56,8 +56,8 @@ jobs:
       - name: Build baseline evaluation extension
         run: npm run build:eval
 
-      - name: Score PR base on the fixed local corpus
-        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 2 --task search-enter --task prefilled-form --task validation-error
+      - name: Score PR base on fixed local and Mind2Web tasks
+        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --task search-enter --task prefilled-form --task validation-error --task mind2web-37564222 --task mind2web-1a16a98f --task mind2web-0633c328
 
       - name: Preserve baseline score
         uses: actions/upload-artifact@v4
@@ -103,8 +103,8 @@ jobs:
       - name: Build candidate evaluation extension
         run: npm run build:eval
 
-      - name: Score PR head on the fixed local corpus
-        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 2 --task search-enter --task prefilled-form --task validation-error
+      - name: Score PR head on fixed local and Mind2Web tasks
+        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --task search-enter --task prefilled-form --task validation-error --task mind2web-37564222 --task mind2web-1a16a98f --task mind2web-0633c328
 
       - name: Download baseline score
         uses: actions/download-artifact@v4

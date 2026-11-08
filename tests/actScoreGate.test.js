@@ -10,8 +10,15 @@ const { compareActScores } = createRequire(import.meta.url)('../scripts/compare-
 const report = (overrides = {}) => ({
   provider: 'api',
   model: 'gpt-4.1-mini',
-  runsPerTask: 2,
-  tasks: ['search-enter', 'prefilled-form', 'validation-error'],
+  runsPerTask: 1,
+  tasks: [
+    'search-enter',
+    'prefilled-form',
+    'validation-error',
+    'mind2web-37564222',
+    'mind2web-1a16a98f',
+    'mind2web-0633c328',
+  ],
   overallPassRate: 2 / 3,
   ...overrides,
 });

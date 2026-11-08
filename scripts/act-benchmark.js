@@ -180,6 +180,18 @@ function readMind2WebTasks() {
   ) {
     throw new Error('The fixed Mind2Web evaluation cases are invalid or incomplete.');
   }
+  for (const entry of cases.cases) {
+    if (entry.targetTag !== 'a') continue;
+    const page = pages.pages.find((candidate) => candidate.id === entry.id);
+    const target = page.html.match(
+      new RegExp(`<a\\b(?=[^>]*\\bbackend_node_id="${entry.targetBackendNodeId}")[^>]*>`)
+    );
+    if (!target || !target[0].includes(`href="/mind2web-target/${entry.id}"`)) {
+      throw new Error(
+        `Mind2Web link target must resolve to its safe local fixture route: ${entry.id}`
+      );
+    }
+  }
   return cases.cases.map((entry) => ({
     id: entry.id,
     prompt: `Task: ${entry.task}\nPrevious actions: None. Perform only the annotated next action from the current page.`,

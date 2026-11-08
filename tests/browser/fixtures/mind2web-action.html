@@ -9,6 +9,18 @@
     <main id="fixture-status">Loading fixed Mind2Web snapshot…</main>
     <script>
       (async () => {
+        // Keep annotated link actions observable to the benchmark without
+        // navigating away from this local fixture or contacting an external site.
+        document.addEventListener(
+          'click',
+          (event) => {
+            const target = event.target instanceof Element ? event.target.closest('a') : null;
+            if (target?.getAttribute('href')?.startsWith('/mind2web-target/')) {
+              event.preventDefault();
+            }
+          },
+          true
+        );
         const id = new URLSearchParams(location.search).get('id');
         const response = await fetch('/mind2web-pages.json.gz');
         if (!response.ok) throw new Error('Could not load local Mind2Web snapshot.');

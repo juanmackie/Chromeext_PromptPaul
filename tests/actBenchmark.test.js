@@ -133,6 +133,10 @@ describe('Act benchmark task registration', () => {
       new URL('./browser/fixtures/mind2web-pages.json.gz', import.meta.url)
     );
     const pages = JSON.parse(zlib.gunzipSync(pageArchive).toString('utf8'));
+    const pageById = new Map(pages.pages.map((page) => [page.id, page]));
+    const casesById = new Map(
+      JSON.parse(casesBytes.toString('utf8')).cases.map((item) => [item.id, item])
+    );
     const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
     expect(manifest.split).toBe('train');
@@ -145,7 +149,20 @@ describe('Act benchmark task registration', () => {
       expect(task.taskMode).toBe('mind2web');
       expect(task.oracle.targetBackendNodeId).toBeTruthy();
       expect(task.prompt).not.toContain(task.oracle.targetBackendNodeId);
+      const entry = casesById.get(task.id);
+      if (entry.targetTag === 'a') {
+        const page = pageById.get(task.id);
+        const target = page.html.match(
+          new RegExp(`<a\\b(?=[^>]*\\bbackend_node_id="${entry.targetBackendNodeId}")[^>]*>`)
+        );
+        expect(target?.[0]).toContain(`href="/mind2web-target/${task.id}"`);
+      }
     }
+    const fixture = fs.readFileSync(
+      new URL('./browser/fixtures/mind2web-action.html', import.meta.url),
+      'utf8'
+    );
+    expect(fixture).toContain('event.preventDefault()');
   });
 
   it('selects Codex mode with the requested model and supported medium reasoning', () => {
