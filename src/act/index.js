@@ -4,6 +4,7 @@
  */
 
 export * from './ActLimits.js';
+export * from './ActExecution.js';
 export * from './ActOutcome.js';
 export * from './ActPlanner.js';
 export * from './ActScrollState.js';

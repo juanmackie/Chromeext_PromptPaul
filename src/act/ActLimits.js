@@ -9,6 +9,20 @@ export const ACT_ACTION_BUDGETS = Object.freeze({
   mutation: 64,
 });
 
+export const PAGE_ACTION_TURN_MUTATIONS = new Set([
+  'page_open_tab',
+  'page_open_link',
+  'page_switch_tab',
+  'page_go_back',
+  'page_close_tab',
+]);
+
+export const PAGE_ACTION_RECEIPT_DISPOSITIONS = new Set([
+  'not_delivered',
+  'delivered_unverified',
+  'delivered_verified',
+]);
+
 export const ACT_PLANNER_LIMITS = Object.freeze({
   maxSubGoals: 12,
   maxSubGoalChars: 200,

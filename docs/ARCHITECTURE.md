@@ -88,7 +88,7 @@ with each capability-sized move.
 - `src/utils/pageDom.js` bounded semantic DOM snapshot normalization and sensitive-field masking
 - `src/utils/pageActionPolicy.js` page-action and bounded tab argument validation, including `page_wait` and non-nested read-only `page_batch`, risk classification, hard blocks, trusted-mode policy, and safe manual-intervention validation
 - `src/utils/pageActionSitePolicies.js` validates the persistent, backup-supported map of at most 200 origins and serializes background-owned policy writes
-- `src/act/` owns model-maintained, evidence-gated checklists, finite counted quotas, and bounded terminal outcomes from runtime state
+- `src/act/` owns run-scoped page-action execution, policy coordination, model-maintained evidence-gated checklists, finite counted quotas, bounded terminal outcomes, and tool schemas; `ActExecution.js` is installed onto the shared `RunOrchestrator` host so Act uses the same run state and lifecycle
 - `src/orchestrator/PageTabController.js` owns run-created tabs, reuses one work tab per site, and groups new tabs when the browser supports it
 - `src/orchestrator/CdpInputBackend.js` owns optional run-scoped debugger attachment and the strict CDP Input-method allowlist
 - `src/utils/pageActionCheckpoint.js` bounded session-only mutation checkpoints and explicit-recovery metadata, including twelve checklist steps
