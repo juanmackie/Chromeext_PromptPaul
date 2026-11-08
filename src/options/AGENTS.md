@@ -8,7 +8,8 @@ The `src/options/` subtree contains shared modules for the Options page setup an
 
 - `OptionsUI.js` owns chat-led setup status rendering, dirty tracking, the unsaved-changes guard, credential masking helpers, and per-section save feedback.
 - `OptionsPageActions.js` owns the bounded Act site-policy list and explicit save/block/remove controls. It reads safe policy metadata and writes through the extension-page-only background bridge; successful writes apply to new runs and are included in backups.
-- `OptionsSkills.js` owns custom-skill editing, import/export, built-in skill display, and skills.sh import. `OptionsLimits.js` owns shared file, record, and skill-metadata bounds used by Options imports.
+- `OptionsInstructions.js` owns custom instruction normalization, editing, search, pinning, import/export, and provider-aware improvement requests. Its record and tag bounds are defined in `OptionsLimits.js`.
+- `OptionsSkills.js` owns custom-skill editing, import/export, built-in skill display, and skills.sh import. `OptionsLimits.js` owns shared import, record, instruction, and skill-metadata bounds.
 
 ## Local Contracts
 
