@@ -4,6 +4,7 @@ import {
   handleImproveInstructionMessage,
   handleNotchMessage,
   handlePageActionMessage,
+  handleRunMessage,
 } from '../src/background/index.js';
 
 function dependencies(overrides = {}) {
@@ -95,6 +96,45 @@ describe('background capability message handlers', () => {
     expect(handlePageActionMessage({ action: 'startRun' }, {}, {})).toBeNull();
   });
 
+  it('routes run execution through the authorized run handler', () => {
+    const runOrchestrator = {
+      getRun: vi.fn(() => ({ id: 'run-1' })),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    const sendResponse = vi.fn();
+    const deps = runDependencies({ runOrchestrator, sendResponse });
+    const request = { action: 'executeRun', runId: 'run-1', requestConfig: { messages: [] } };
+
+    expect(handleRunMessage(request, {}, deps)).toBe(false);
+    expect(runOrchestrator.execute).toHaveBeenCalledWith('run-1', request.requestConfig);
+    expect(sendResponse).toHaveBeenCalledWith({ success: true, accepted: true });
+  });
+
+  it('rejects unauthorized run execution before accessing run state', () => {
+    const runOrchestrator = { getRun: vi.fn(), execute: vi.fn() };
+    const sendResponse = vi.fn();
+    const deps = runDependencies({
+      isAuthorizedRunRequest: vi.fn(() => false),
+      rejectUnauthorizedMessage: (response, error) => {
+        response({ success: false, error });
+        return false;
+      },
+      runOrchestrator,
+      sendResponse,
+    });
+
+    expect(handleRunMessage({ action: 'executeRun', runId: 'run-1' }, {}, deps)).toBe(false);
+    expect(runOrchestrator.getRun).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'Run execution is not authorized.',
+    });
+  });
+
+  it('returns null when a message belongs to a different capability', () => {
+    expect(handleRunMessage({ action: 'not-owned' }, {}, {})).toBeNull();
+  });
+
   it('only returns Act model support to an extension page', async () => {
     const sendResponse = vi.fn();
     const deps = actDependencies({ extensionPageSender: false, sendResponse });
@@ -167,6 +207,31 @@ function actDependencies(overrides = {}) {
     resolvePreferredProfile: vi.fn(() => null),
     runOrchestrator: actRunOrchestrator({ sourceTabId: 7 }),
     sendResponse: vi.fn(),
+    ...overrides,
+  };
+}
+
+function runDependencies(overrides = {}) {
+  return {
+    chrome: {
+      storage: {
+        local: { get: vi.fn(async () => ({})) },
+        session: { get: vi.fn(async () => ({})) },
+      },
+    },
+    clearPageActionCheckpoint: vi.fn(async () => {}),
+    extensionPageSender: true,
+    getPageActionCheckpoint: vi.fn(async () => null),
+    getRunJournalStorageKey: vi.fn(() => 'run-journals'),
+    hermesSessionResetLock: { isLocked: vi.fn(() => false) },
+    isAuthorizedRunRequest: vi.fn(() => true),
+    randomId: vi.fn(() => 'owner-1'),
+    rejectUnauthorizedMessage: vi.fn(() => false),
+    resolvePanelTabId: vi.fn(async () => 7),
+    resolveStoredRunConfig: vi.fn(async (config) => config),
+    runOrchestrator: { getRun: vi.fn(), execute: vi.fn() },
+    sendResponse: vi.fn(),
+    logger: { error: vi.fn() },
     ...overrides,
   };
 }
