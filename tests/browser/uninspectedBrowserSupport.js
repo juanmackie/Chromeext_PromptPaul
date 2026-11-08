@@ -20,6 +20,7 @@ async function launchUninspectedBrowser(userDataDir) {
       ? getBrandedExecutable(requested === 'edge' ? 'edge' : 'chrome')
       : chromium.executablePath();
   if (!executable) throw new Error('No browser executable was found for the worker lifetime test.');
+  const stderr = [];
   const processHandle = spawn(
     executable,
     [
@@ -28,10 +29,18 @@ async function launchUninspectedBrowser(userDataDir) {
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-background-networking',
+      // GitHub's runners keep /dev/shm small and restrict user namespaces;
+      // without these the browser can exit before the DevTools port opens.
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
       ...(process.env.PROMPT_PAUL_HEADLESS === 'true' ? ['--headless=new'] : []),
     ],
-    { stdio: 'ignore', windowsHide: true }
+    { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true }
   );
+  processHandle.stderr.on('data', (chunk) => {
+    stderr.push(String(chunk));
+    if (stderr.length > 20) stderr.shift();
+  });
   let socket;
   let send;
   const close = async () => {
@@ -50,7 +59,16 @@ async function launchUninspectedBrowser(userDataDir) {
   };
   try {
     const portFile = path.join(userDataDir, 'DevToolsActivePort');
-    await expect.poll(() => fs.existsSync(portFile), { timeout: 10_000 }).toBe(true);
+    await expect
+      .poll(() => fs.existsSync(portFile) || processHandle.exitCode !== null, { timeout: 10_000 })
+      .toBe(true);
+    if (!fs.existsSync(portFile)) {
+      const detail = stderr.join('').trim().split(/\r?\n/).slice(-5).join(' | ');
+      throw new Error(
+        `Browser exited before exposing DevTools (code ${processHandle.exitCode})` +
+          (detail ? `: ${detail}` : '')
+      );
+    }
     const [port, route] = fs.readFileSync(portFile, 'utf8').trim().split(/\r?\n/);
     socket = new WebSocket(`ws://127.0.0.1:${port}${route}`);
     await new Promise((resolve, reject) => {
