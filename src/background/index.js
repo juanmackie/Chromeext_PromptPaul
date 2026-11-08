@@ -11,5 +11,5 @@ export { handleRunMessage } from './runMessages.js';
 export { handleProviderMessage } from './providerMessages.js';
 export { handlePageContentMessage } from './pageContentMessages.js';
 export { handleSkillMessage } from './skillMessages.js';
-export { handlePanelMessage } from './panelMessages.js';
+export { handleExternalPanelMessage, handlePanelMessage } from './panelMessages.js';
 export { handleSearchMessage } from './searchMessages.js';

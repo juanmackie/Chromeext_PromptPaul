@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   handleDevDiagnosticsMessage,
+  handleExternalPanelMessage,
   handleImproveInstructionMessage,
   handleNotchMessage,
   handlePageActionMessage,
@@ -126,6 +127,38 @@ describe('background capability message handlers', () => {
       success: false,
       error: 'Selection handoff must come from its tab.',
     });
+  });
+
+  it('rejects external panel links without a browser tab', () => {
+    const sendResponse = vi.fn();
+    const openChatWithContext = vi.fn();
+
+    expect(
+      handleExternalPanelMessage(
+        { action: 'openChat', context: { selectedText: 'text' } },
+        {},
+        { openChatWithContext, sendResponse }
+      )
+    ).toBe(false);
+    expect(openChatWithContext).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'External chat links must come from a browser tab.',
+    });
+  });
+
+  it('binds external panel links to the sending browser tab', () => {
+    const sendResponse = vi.fn();
+    const openChatWithContext = vi.fn(() => Promise.resolve({ success: true }));
+
+    expect(
+      handleExternalPanelMessage(
+        { action: 'openChat', context: { selectedText: 'text', tabId: 999 } },
+        { tab: { id: 7 } },
+        { openChatWithContext, sendResponse }
+      )
+    ).toBe(true);
+    expect(openChatWithContext).toHaveBeenCalledWith({ selectedText: 'text', tabId: 7 });
   });
 
   it('returns web-search readiness without exposing its stored key', () => {

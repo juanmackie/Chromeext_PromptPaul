@@ -80,6 +80,7 @@ import {
 import { registerEvalRunHook } from './src/utils/evalHook.js';
 import {
   handleDevDiagnosticsMessage,
+  handleExternalPanelMessage,
   handleImproveInstructionMessage,
   handleNotchMessage,
   handlePageActionMessage,
@@ -3990,22 +3991,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // with context via chrome.runtime.sendMessage(EXTENSION_ID, { action: 'openChat',
 // context: { selectedText, mediaUrl, mediaType, instruction } }).
 chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-  if (!request || request.action !== 'openChat') {
-    sendResponse({ success: false, error: 'Unsupported external action' });
-    return;
-  }
-  const context =
-    request.context && typeof request.context === 'object' && !Array.isArray(request.context)
-      ? request.context
-      : {};
-  const externalTabId =
-    Number.isInteger(sender?.tab?.id) && sender.tab.id >= 0 ? sender.tab.id : null;
-  if (externalTabId === null) {
-    sendResponse({ success: false, error: 'External chat links must come from a browser tab.' });
-    return false;
-  }
-  openChatWithContext({ ...context, tabId: externalTabId })
-    .then((result) => sendResponse(result))
-    .catch((error) => sendResponse({ success: false, error: error.message }));
-  return true;
+  return handleExternalPanelMessage(request, sender, { openChatWithContext, sendResponse });
 });
