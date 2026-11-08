@@ -3,6 +3,8 @@
  * @module ActTools
  */
 
+import { PAGE_ACTION_KEYS } from '../utils/pageActionPolicy.js';
+
 // Optional bounded model-supplied human label for one page action, shared by
 // the tool schemas. Display-only on the progress card; the policy layer
 // rejects control characters, credential/payment wording, and over-long text.
@@ -368,7 +370,7 @@ const PAGE_TAB_TOOLS = [
           },
         },
       },
-    ];;
+    ];
 
 /** Return the cached tool schemas. */
 export function getPageTabTools() {
@@ -404,7 +406,7 @@ const PAGE_USER_INPUT_TOOLS = [
           },
         },
       },
-    ];;
+    ];
 
 /** Return the cached tool schemas. */
 export function getPageUserInputTools() {
@@ -461,7 +463,7 @@ const PAGE_TASK_MEMORY_TOOLS = [
           },
         },
       },
-    ];;
+    ];
 
 /** Return the cached planner and task-memory tool schemas. */
 export function getPageTaskMemoryTools() {

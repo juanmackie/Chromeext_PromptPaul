@@ -73,11 +73,11 @@ import {
   createRunBudgetConfig,
   createRunBudgetState,
   extendDeadlineForApprovalWait,
+  MAX_APPROVAL_WAIT_EXTENSION_MS,
 } from './RunBudget.js';
 import {
   PAGE_ACTION_OCCLUSION_CODE,
   PAGE_ACTION_RISKS,
-  PAGE_ACTION_KEYS,
   buildPageActionOcclusionFailure,
   evaluatePageActionPolicy,
   isPageActionName,

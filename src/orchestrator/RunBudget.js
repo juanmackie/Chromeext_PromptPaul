@@ -5,7 +5,7 @@
 
 import { RUN_RESILIENCE_DEFAULTS } from '../utils/runResilience.js';
 
-const MAX_APPROVAL_WAIT_EXTENSION_MS = 10 * 60 * 1_000;
+export const MAX_APPROVAL_WAIT_EXTENSION_MS = 10 * 60 * 1_000;
 
 function clamp(value, fallback, min, max) {
   const normalized = Number(value);
