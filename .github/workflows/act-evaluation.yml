@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload score and bounded traces
         if: always() && hashFiles('artifacts/act-benchmark/results.json') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: act-evaluation-${{ github.run_number }}
           path: artifacts/act-benchmark/
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload score trend
         if: always() && hashFiles('artifacts/act-benchmark/score-history.svg') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: act-evaluation-trend-${{ github.run_number }}
           path: |

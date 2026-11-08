@@ -82,7 +82,7 @@ jobs:
         run: npm run build:prod
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prompt-paul-extension
           path: dist/

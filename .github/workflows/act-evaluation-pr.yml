@@ -85,7 +85,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
 
       - name: Preserve baseline score
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: act-score-baseline
           path: artifacts/act-benchmark/results.json
