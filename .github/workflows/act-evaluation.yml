@@ -12,7 +12,7 @@ permissions:
 jobs:
   local-fixture-model-evaluation:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       PROMPT_PAUL_BENCHMARK_API_KEY: ${{ secrets.ACT_EVAL_API_KEY }}
       PROMPT_PAUL_BENCHMARK_MODEL: gpt-4.1-mini
@@ -65,8 +65,8 @@ jobs:
           merge-multiple: true
           github-token: ${{ github.token }}
 
-      - name: Run fixed local and Mind2Web task subset
-        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --task search-enter --task prefilled-form --task validation-error --task mind2web-37564222 --task mind2web-1a16a98f --task mind2web-0633c328
+      - name: Score 15 local tasks and fixed Mind2Web subset
+        run: xvfb-run --auto-servernum npm run benchmark:act -- --run --runs 1 --suite scorecard
 
       - name: Upload score and bounded traces
         if: always() && hashFiles('artifacts/act-benchmark/results.json') != ''

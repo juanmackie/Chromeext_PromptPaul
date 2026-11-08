@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 const {
   TASKS,
+  SCORECARD_TASK_IDS,
   PASS_TARGET_RATE,
   DEFAULT_RUNS,
   buildSummary,
@@ -163,6 +164,27 @@ describe('Act benchmark task registration', () => {
       'utf8'
     );
     expect(fixture).toContain('event.preventDefault()');
+  });
+
+  it('selects the fixed 15-local plus three-Mind2Web model scorecard', () => {
+    const localIds = TASKS.filter((task) => !task.mind2web).map((task) => task.id);
+    const mind2webIds = TASKS.filter((task) => task.mind2web).map((task) => task.id);
+    expect(SCORECARD_TASK_IDS).toHaveLength(18);
+    expect(SCORECARD_TASK_IDS.slice(0, 15)).toEqual(localIds.slice(0, 15));
+    expect(SCORECARD_TASK_IDS.slice(15)).toEqual([
+      'mind2web-37564222',
+      'mind2web-1a16a98f',
+      'mind2web-0633c328',
+    ]);
+    expect(SCORECARD_TASK_IDS.slice(15).every((id) => mind2webIds.includes(id))).toBe(true);
+    expect(parseArgs(['--run', '--suite', 'scorecard'])).toMatchObject({
+      run: true,
+      suite: 'scorecard',
+      tasks: [...SCORECARD_TASK_IDS],
+    });
+    expect(() => parseArgs(['--suite', 'scorecard', '--task', 'search-enter'])).toThrow(
+      /cannot be combined/i
+    );
   });
 
   it('selects Codex mode with the requested model and supported medium reasoning', () => {

@@ -207,15 +207,49 @@ function readMind2WebTasks() {
 
 const MIND2WEB_TASKS = readMind2WebTasks();
 const TASKS = [...LOCAL_TASKS, ...MIND2WEB_TASKS];
+const SCORECARD_TASK_IDS = Object.freeze([
+  'search-enter',
+  'escape-modal',
+  'hover-menu',
+  'background-tab',
+  'viewport-read',
+  'prefilled-form',
+  'range-date',
+  'nested-scroll',
+  'cross-origin-iframe',
+  'spa-menu',
+  'autocomplete',
+  'custom-radio',
+  'custom-dropdown',
+  'shadow-control',
+  'iframe-form',
+  'mind2web-37564222',
+  'mind2web-1a16a98f',
+  'mind2web-0633c328',
+]);
 
 function parseArgs(argv) {
-  const options = { run: false, list: false, help: false, runs: DEFAULT_RUNS, tasks: null };
+  const options = {
+    run: false,
+    list: false,
+    help: false,
+    runs: DEFAULT_RUNS,
+    tasks: null,
+    suite: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--run') options.run = true;
     else if (arg === '--list') options.list = true;
     else if (arg === '--help' || arg === '-h') options.help = true;
-    else if (arg === '--task') {
+    else if (arg === '--suite') {
+      const suite = String(argv[++index] || '').trim();
+      if (suite !== 'scorecard') throw new Error('--suite must be scorecard.');
+      if (options.tasks) throw new Error('--suite cannot be combined with --task.');
+      options.suite = suite;
+      options.tasks = [...SCORECARD_TASK_IDS];
+    } else if (arg === '--task') {
+      if (options.suite) throw new Error('--suite cannot be combined with --task.');
       const id = String(argv[++index] || '').trim();
       if (!TASKS.some((task) => task.id === id)) {
         throw new Error(`--task must name one benchmark task: ${id}`);
@@ -494,11 +528,12 @@ function printHelp() {
   console.log(
     `Local Act benchmark\n\n` +
       `  node scripts/act-benchmark.js --list\n` +
-      `  node scripts/act-benchmark.js --run [--runs 1] [--task <id> ...]\n\n` +
+      `  node scripts/act-benchmark.js --run [--runs 1] [--suite scorecard | --task <id> ...]\n\n` +
       `--run is required before a browser or model request is made. By default it builds the\n` +
       `isolated dist-eval extension; it uses only local fixtures and writes bounded metrics plus\n` +
       `redacted per-step traces beneath artifacts/act-benchmark/ (replaced on every run).\n` +
       `Pass one or more --task ids to run a subset.\n` +
+      `The scorecard suite runs 15 local fixtures plus three fixed Mind2Web cases.\n` +
       `Single-run pilots are the default hold mode (--runs 1); use --runs 2..10 only for\n` +
       `repeatability checks. The hold target is ${Math.round(PASS_TARGET_RATE * 100)}% overall.\n\n` +
       `Each of the ${TASKS.length} task attempts is capped at ${Math.round(
@@ -1192,7 +1227,10 @@ async function main() {
     return;
   }
   if (options.list) {
-    for (const task of TASKS) console.log(`${task.id}\t${task.prompt}`);
+    const selectedTasks = options.tasks?.length
+      ? TASKS.filter((task) => options.tasks.includes(task.id))
+      : TASKS;
+    for (const task of selectedTasks) console.log(`${task.id}\t${task.prompt}`);
     return;
   }
   if (!options.run) {
@@ -1211,6 +1249,7 @@ if (require.main === module) {
 
 module.exports = {
   TASKS,
+  SCORECARD_TASK_IDS,
   PASS_TARGET_RATE,
   DEFAULT_RUNS,
   buildSummary,
