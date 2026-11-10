@@ -1147,7 +1147,7 @@
       if (isPageActionIgnored(node) || !isPageActionVisible(node)) continue;
       const role = String(node.getAttribute?.('role') || '').toLowerCase();
       const live = String(node.getAttribute?.('aria-live') || '').toLowerCase();
-      let kind = '';
+      let kind;
       if (role === 'alert') kind = 'alert';
       else if (role === 'status' || role === 'log') kind = 'status';
       else if (live === 'assertive') kind = 'alert';
@@ -1268,11 +1268,11 @@
     ].join('\\u001e');
     const fingerprint = pageStateHash(`${fingerprintSource}~${controlState}`);
     let boundedRecords = scopedRecords;
-    let content = '';
-    let elements = [];
+    let content;
+    let elements;
     // Assigned inside the loop (which may trim records) and read by the return
     // below, so it cannot be a loop-scoped const.
-    let payloadHeader = header;
+    let payloadHeader;
     const formNoticeLines = formNotices
       .map((notice) => `${notice.kind}: ${notice.text}`)
       .join('\n')

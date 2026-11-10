@@ -315,7 +315,8 @@ class HermesExecutionMethods {
           throw new Error(
             `Hermes did not accept the client-tool result: ${
               submitError?.message || 'submission failed.'
-            }`
+            }`,
+            { cause: submitError }
           );
         }
         this._emitEvent(run.id, {

@@ -3,3 +3,5 @@
 
 # Files whose raw bytes are hash-verified must be identical on every platform.
 eval/mind2web/cases.json text eol=lf
+libs/dom-accessibility-api.js text eol=lf
+libs/dom-accessibility-api.LICENSE.md text eol=lf

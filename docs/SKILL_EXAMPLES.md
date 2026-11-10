@@ -2,7 +2,7 @@
 
 This guide shows how to use Prompt Paul's Agent Skills system.
 
-For the full skill specification, see [AGENTS.md](../AGENTS.md).
+Built-in skills are registered in [skills/skills.json](../skills/skills.json); each `SKILL.md` uses YAML frontmatter with at least `name` and `description`.
 
 ## Commands
 

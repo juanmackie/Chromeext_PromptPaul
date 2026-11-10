@@ -12,11 +12,14 @@ Context-aware AI in the browser. Short feedback loops for selected text, without
 
 ## What's new (version 6.4.0)
 
-Removed the unreleased precise-input prototype because Chrome does not allow the `debugger` permission to be optional; no debugger permission is requested.
-Markdown code highlighting no longer treats a streaming response as a blocked send: code blocks highlight normally and the one-off instruction control is not disabled by rendering.
-Panel runs now start through one token-scoped response guard: `makeApiCall`, `makeApiCallWithMedia`, and checkpoint Resume share begin/release ownership, and a late `finally` or terminal from an older run cannot release a newer run's claim.
-A busy send now checks the background journal before warning. A run that is provably inactive (for example after a worker restart or a lost terminal) is settled from its journal when available and its streaming bubble is cleared; a genuinely live run still shows "A response is already in progress".
-Resuming an interrupted Act checkpoint now releases the panel's in-process response guard when the resumed run settles. Later sends and panel actions start normally instead of being rejected as "A response is already in progress" until the panel reloads.
+- Cleaner right-click menus: the decorative emoji are gone, so Prompt Paul's actions match Chrome's native menu style.
+- Markdown answers stay readable while they stream. Code blocks keep their highlighting, and the instruction box no longer locks up during rendering.
+- Fewer false "response already in progress" warnings. After a browser restart or a recovered Act run, your next message sends normally without reloading the side panel.
+- Retry and Edit now reuse the response they belong to, so the original selection, attachment, and context stay correct.
+- Act is steadier on modern web apps: menus, tabs, and toggles are recognized more reliably, repeated actions are avoided, and an interrupted task resumes only when you choose Resume.
+- Options feedback is visible again, each section guards its own unsaved changes, and **Connected** now means a real connection check passed.
+- The Top Notch can dock to any screen edge and rests as a slim pill until you hover or click it.
+- Removed the unfinished precise-input experiment. Prompt Paul does not request the debugger permission.
 
 ## Description
 

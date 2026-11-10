@@ -385,7 +385,7 @@ export function endpointHost(endpoint) {
   if (!endpoint) return '';
   try {
     return new URL(endpoint).hostname;
-  } catch (e) {
+  } catch {
     return endpoint;
   }
 }

@@ -1321,7 +1321,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // page state and forces page_get_state). NEVER blindly replays the mutation;
   // when no interrupted checkpoint exists, surface the uncertainty instead.
   async function onActFreshInspection() {
-    let checkpoint = null;
+    let checkpoint;
     try {
       const recovery = await loadActRecovery();
       checkpoint = recovery?.checkpoint || null;
@@ -2141,7 +2141,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
           return JSON.parse(normalized.slice(i));
-        } catch (innerError) {
+        } catch {
           // Keep scanning for a recoverable trailing JSON payload.
         }
       }
@@ -2564,7 +2564,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                   chatUI.addMessage('System', `⚠️ Skill **${args.name || 'unknown'}** not found.`);
                 }
-              } catch (e) {
+              } catch {
                 console.warn(
                   `Could not parse ${event.toolCall.function.name} arguments for traceability`
                 );
@@ -3177,7 +3177,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `Auto-switched to **${routingResult.config.modelName}** for image analysis.`
               );
             }
-          } catch (e) {
+          } catch {
             // routing failure is non-fatal: fall back to current config
           }
         }

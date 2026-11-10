@@ -4,7 +4,7 @@
 // PDF viewer and has no message listener; kept only for the manifest match.
 (function () {
   let content = '';
-  let success = false;
+  let success;
   let errorMessage = '';
 
   try {

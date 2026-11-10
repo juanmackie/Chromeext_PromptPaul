@@ -60,11 +60,11 @@ secrets before installing dependencies so a tag without credentials fails immedi
 Configure these repository Actions secrets before the first automated store upload:
 `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_EXTENSION_ID`, and `CWS_PUBLISHER_ID`.
 
-Configure `OPENAI_API_KEY` for the Codex pull-request review workflow. In GitHub repository settings, enable auto-merge and protect `main` with the `validate`, `browser`, `build`, and `review` jobs as required checks. Those repository settings are not stored in this checkout.
+In GitHub repository settings, protect `main` with the `validate`, `browser`, and `build` jobs as required checks. Those repository settings are not stored in this checkout.
 
 ## Act Benchmark
 
-The opt-in Act benchmark runs against local fixtures. Its fixed Mind2Web subset and sanitized page snapshots live in `eval/mind2web/` and `tests/browser/fixtures/`; the nightly workflow records the model score trend, and the pull request score gate compares the PR base and candidate on the same fixed local task set. Configure the repository Actions secret `ACT_EVAL_API_KEY` for the nightly and PR score workflows; without it those workflows skip with a notice so they do not fail every pull request. Configure `OPENAI_API_KEY` for automatic AI review; without it the review workflow skips with a notice. The checked-in subset comes from the Mind2Web training split and is hash-pinned with attribution in `eval/mind2web/README.md`.
+The opt-in Act benchmark runs against local fixtures. Its fixed Mind2Web subset and sanitized page snapshots live in `eval/mind2web/` and `tests/browser/fixtures/`. Run it by hand with `npm run benchmark:act -- --run`; it is not wired into CI until the score is stable across repeated manual runs. The checked-in subset comes from the Mind2Web training split and is hash-pinned with attribution in `eval/mind2web/README.md`.
 
 The local diagnostic uses a headed temporary browser. Hold mode is single-run pilots toward the 80% overall target. To use Codex, set these PowerShell variables and start one run:
 
@@ -109,7 +109,7 @@ When you add a new module:
 1. Create `skills/<skill-name>/SKILL.md`
 2. Register it in `skills/skills.json`
 3. Verify it with `/skills` in chat
-4. See [AGENTS.md](../AGENTS.md) for the full skill spec
+4. See [SKILL_EXAMPLES.md](SKILL_EXAMPLES.md) for the skill format
 
 ## Debugging
 

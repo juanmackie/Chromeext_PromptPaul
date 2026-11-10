@@ -69,7 +69,7 @@ function startAnswerServer() {
       if (raw.length > 1_000_000) request.destroy();
     });
     request.on('end', async () => {
-      let body = null;
+      let body;
       try {
         body = JSON.parse(raw);
       } catch (_) {

@@ -79,10 +79,10 @@
   let shadow = null;
   let expanded = false;
   let selectionListener = null;
-  let storageListener = null;
+  let storageListener;
   let documentClickListener = null;
   let keydownListener = null;
-  let runtimeListener = null;
+  let runtimeListener;
   let collapseTimer = null;
   let hoverTimer = null;
   let glowHost = null;

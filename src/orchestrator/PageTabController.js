@@ -153,7 +153,7 @@ export class PageTabController {
         });
       }
     }
-    let tab = null;
+    let tab;
     try {
       tab = await chrome.tabs.get(tabId);
     } catch (_) {

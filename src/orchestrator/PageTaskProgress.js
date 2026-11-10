@@ -132,7 +132,7 @@ export function capturePageTaskTarget(run, snapshot) {
   run.pageActions.currentTabTitle = String(snapshot?.title || '')
     .trim()
     .slice(0, TARGET_LABEL_CAP);
-  let origin = '';
+  let origin;
   try {
     origin = new URL(String(snapshot?.url || '')).origin.slice(0, TARGET_LABEL_CAP);
   } catch (_) {

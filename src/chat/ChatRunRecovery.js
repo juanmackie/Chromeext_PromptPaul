@@ -173,7 +173,7 @@ export async function inspectRunLiveness(runId) {
   if (!normalizedRunId || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
     return { state: 'unknown', journal: null };
   }
-  let response = null;
+  let response;
   try {
     response = await chrome.runtime.sendMessage({
       action: 'getRunJournal',

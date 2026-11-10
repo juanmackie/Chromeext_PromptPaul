@@ -116,7 +116,7 @@ function verifyBenchmarkRecord(name, entry) {
 }
 
 // First-party files inside libs/ that are not third-party vendored assets.
-const FIRST_PARTY_LIBS_FILES = new Set(['libs/AGENTS.md', 'libs/vendor-manifest.json']);
+const FIRST_PARTY_LIBS_FILES = new Set(['libs/vendor-manifest.json']);
 
 // Every third-party shipped asset must be covered by exactly one provenance record.
 function verifyNoUnlistedAssets(manifest) {

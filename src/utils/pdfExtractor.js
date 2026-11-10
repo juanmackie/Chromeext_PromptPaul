@@ -84,10 +84,11 @@ export async function extractPdfText(url) {
     if (isLocal) {
       throw new Error(
         'Cannot read this local PDF. Enable "Allow access to file URLs" for Prompt Paul ' +
-          `in chrome://extensions, then reload the PDF and try again. (${error.message})`
+          `in chrome://extensions, then reload the PDF and try again. (${error.message})`,
+        { cause: error }
       );
     }
-    throw new Error(`Could not download the PDF (${error.message}).`);
+    throw new Error(`Could not download the PDF (${error.message}).`, { cause: error });
   }
 
   let pdf;
@@ -97,7 +98,7 @@ export async function extractPdfText(url) {
     // as "TT: undefined function: 32" that pdf.js emits at the default level.
     pdf = await pdfjsLib.getDocument({ data: buffer, verbosity: 0 }).promise;
   } catch (error) {
-    throw new Error(`Could not parse the PDF (${error.message}).`);
+    throw new Error(`Could not parse the PDF (${error.message}).`, { cause: error });
   }
 
   const numPages = pdf.numPages;

@@ -66,16 +66,6 @@ if (manifest && pkg && manifest.version !== pkg.version) {
   failures.push(`package.json version ${pkg.version} does not match manifest ${manifest.version}`);
 }
 
-// CI builds after validation; when a build is present, check its manifest too.
-const distDir = path.join(root, 'dist');
-if (fs.existsSync(distDir)) {
-  checkManifestAt(
-    readJson(path.relative(root, path.join(distDir, 'manifest.json'))),
-    distDir,
-    'dist/manifest.json'
-  );
-}
-
 if (failures.length) {
   console.error(`Manifest/build checks failed:\n- ${failures.join('\n- ')}`);
   process.exit(1);

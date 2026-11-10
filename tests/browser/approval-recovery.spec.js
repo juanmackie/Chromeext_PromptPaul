@@ -820,7 +820,7 @@ test('checkpoint Resume requires an explicit user action and a fresh inspection,
     await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'idle');
     // Loading the panel never resumes automatically: no event exists for an
     // auto-resume to await, so this is a sanctioned bounded absence window
-    // (the sole fixed-wait exception, noted in tests/browser/AGENTS.md).
+    // (the sole fixed-wait exception in the browser suite).
     await chat.waitForTimeout(1_500);
     await expect(chat.locator('#input-area')).toHaveAttribute('data-run-state', 'idle');
     await expect(chat.locator('.message.llm-message')).toHaveCount(0);

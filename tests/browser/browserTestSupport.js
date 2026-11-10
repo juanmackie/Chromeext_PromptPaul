@@ -251,7 +251,7 @@ function openAiSsePayload(content) {
 function serveMockChat(request, response, state, requestUrl) {
   readMockRequestBody(request)
     .then((raw) => {
-      let body = null;
+      let body;
       try {
         body = JSON.parse(raw);
       } catch (_) {
@@ -333,7 +333,7 @@ function serveFixture(request, response, state) {
   }
   const fileName = path.basename(requestPath);
   const filePath = path.join(fixtureRoot, fileName);
-  let isFile = false;
+  let isFile;
   try {
     isFile =
       fileName.length > 0 &&

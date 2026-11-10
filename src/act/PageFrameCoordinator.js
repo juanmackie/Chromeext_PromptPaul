@@ -39,7 +39,7 @@ export const createPageFrameCoordinator = ({
         .filter((entry) => Number.isInteger(entry.frameId) && entry.result?.origin)
         .map((entry) => {
           const origin = String(entry.result.origin).slice(0, 256);
-          let hostname = '';
+          let hostname;
           try {
             hostname = new URL(origin).hostname;
           } catch (_) {

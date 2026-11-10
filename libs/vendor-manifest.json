@@ -32,9 +32,9 @@
       "source": "https://registry.npmjs.org/dom-accessibility-api/-/dom-accessibility-api-0.7.1.tgz",
       "repository": "https://github.com/eps1lon/dom-accessibility-api",
       "bundle": "libs/dom-accessibility-api.js",
-      "bundleSha256": "cffdda43c10c392ac5236f4756c462db70ad3f9e296e983da978ea0ba0de7f3e",
+      "bundleSha256": "d81e0b48d3ae06d23b1386c72b6f6edb86894ffe59c7fb7d705dad5c1190cd80",
       "licenseFile": "libs/dom-accessibility-api.LICENSE.md",
-      "licenseSha256": "16d7856cc861131574f0e1376018d983154a590b98bf887965941123edf453f5"
+      "licenseSha256": "0ffe67fe630169de46df2d29dc18f5857b4c98f0f95b0cd9e3c21fef51f9a9b8"
     },
     "dompurify": {
       "npmPackage": "dompurify",

@@ -215,7 +215,7 @@
         if (match && match[1]) {
           try {
             return JSON.parse(match[1]);
-          } catch (e) {
+          } catch {
             // continue
           }
         }
@@ -1105,7 +1105,7 @@
         if (screenshotResp && screenshotResp.dataUrl) {
           screenshotData = screenshotResp.dataUrl;
         }
-      } catch (e) {
+      } catch {
         // screenshot capture may fail in some contexts
       }
     }

@@ -65,7 +65,7 @@ const MAX_UNPRODUCTIVE_SCROLLS_PER_STATE = 3;
 // query without an explicit submit still counts (observed in openrouter/free
 // traces that typed then pressed Enter via page_keypress).
 function normalizeActQueryKey(actionName, args = {}) {
-  let raw = '';
+  let raw;
   if (actionName === 'page_find_text') raw = args?.query ?? '';
   else if (actionName === 'page_input' && typeof args?.text === 'string') raw = args.text;
   else if (actionName === 'page_wait' && args?.text) raw = args.text;
@@ -365,7 +365,7 @@ export class ActExecutionMethods {
     if (!this.pageActionDocumentProvider || !run.pageActions?.documentUrl) {
       return { changed: false };
     }
-    let current = null;
+    let current;
     try {
       current = await this.pageActionDocumentProvider(
         run.pageActions.targetTabId || run.sourceTabId
@@ -1879,7 +1879,7 @@ export class ActExecutionMethods {
           result: { error: 'PAGE_TAB_INVALID', message: 'A valid destination URL is required.' },
         };
       }
-      let sourceOrigin = '';
+      let sourceOrigin;
       try {
         sourceOrigin = new URL(run.pageActions.snapshot?.url || run.pageActions.documentUrl || '')
           .origin;
@@ -1966,7 +1966,7 @@ export class ActExecutionMethods {
           result: { error: 'PAGE_ACTION_BLOCKED', message: policy.reason, risk: policy.risk },
         };
       }
-      let origin = '';
+      let origin;
       try {
         origin = new URL(target.href).origin;
       } catch (_) {
@@ -2366,7 +2366,7 @@ export class ActExecutionMethods {
     const requestId = `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const observedSnapshot = run.pageActions.snapshot;
     run.pageActions.lastBlockReason = getActManualBlockReason(observedSnapshot);
-    let activeOrigin = '';
+    let activeOrigin;
     try {
       activeOrigin = new URL(observedSnapshot.url || '').origin.slice(0, 160);
     } catch (_) {

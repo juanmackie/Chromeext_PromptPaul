@@ -487,7 +487,7 @@ export function setupSkillHandlers({ showStatus, setChromeStorage }) {
                 return { skillMd, url: rawUrl };
               }
             }
-          } catch (e) {
+          } catch {
             // Continue to next path
           }
         }
@@ -546,7 +546,7 @@ export function setupSkillHandlers({ showStatus, setChromeStorage }) {
               return { skillMd: content, url: rawUrl };
             }
           }
-        } catch (e) {
+        } catch {
           // Continue to next file
         }
       }

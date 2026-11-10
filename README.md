@@ -120,7 +120,7 @@ Built-in skills:
 - `humanizer`
 - `weather-guide`
 
-See [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md) for usage examples and [AGENTS.md](AGENTS.md) for the full skill specification.
+See [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md) for usage examples and the built-in skill format.
 
 ## Development
 
@@ -148,7 +148,6 @@ collection workflow. Production builds are written to `dist/`.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)
-- [Archived project reviews](docs/archive/)
 - [docs/SKILL_EXAMPLES.md](docs/SKILL_EXAMPLES.md)
 
 ## API Compatibility

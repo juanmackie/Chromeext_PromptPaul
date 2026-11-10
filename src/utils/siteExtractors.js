@@ -219,7 +219,7 @@ export function parseFeedXml(xmlText, caps = {}) {
       xmlTextToPlainText(extractXmlTag(block, 'title')),
       limits.itemText
     );
-    let link = '';
+    let link;
     const hrefMatch = block.match(/<link\b[^>]*\bhref=["']([^"']+)["']/i);
     if (hrefMatch) {
       link = clampInlineText(hrefMatch[1], 500);

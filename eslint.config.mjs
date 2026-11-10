@@ -44,7 +44,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': 'warn',
+      'no-unused-vars': ['warn', { caughtErrorsIgnorePattern: '^_' }],
       'no-console': 'off',
       'no-empty': 'warn',
       'no-undef': 'error',

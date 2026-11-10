@@ -450,8 +450,8 @@ function summarizeRuns(records, runs, taskIds) {
 function parseUrl(value, label) {
   try {
     return new URL(value);
-  } catch (_) {
-    throw new Error(`${label} must be a valid URL.`);
+  } catch (error) {
+    throw new Error(`${label} must be a valid URL.`, { cause: error });
   }
 }
 
@@ -495,8 +495,10 @@ async function prepareCodexProfile({ context, harness, modelHint, reasoningLevel
           null,
           { timeout: 15 * 60 * 1_000 }
         );
-      } catch (_) {
-        throw new Error('Codex sign-in did not complete before the 15-minute device-code expiry.');
+      } catch (error) {
+        throw new Error('Codex sign-in did not complete before the 15-minute device-code expiry.', {
+          cause: error,
+        });
       }
     }
 
@@ -1089,7 +1091,7 @@ async function runBenchmark(options) {
     ? TASKS.filter((task) => options.tasks.includes(task.id))
     : TASKS;
   const outputDir = path.join(ROOT, 'artifacts', 'act-benchmark');
-  let traceDir = '';
+  let traceDir;
   let runError = null;
   let cleanupFailure = '';
   try {

@@ -553,7 +553,9 @@ async function fetchMediaAsBase64(url) {
       reader.readAsDataURL(blob);
     });
   } catch (error) {
-    if (error?.name === 'AbortError') throw new Error('Media request timed out.');
+    if (error?.name === 'AbortError') {
+      throw new Error('Media request timed out.', { cause: error });
+    }
     console.error('Error fetching media:', error);
     throw error;
   } finally {
@@ -1530,12 +1532,7 @@ const ensurePageActionContentScript = async (tabId, signal) => {
       // match decision. Inject once after the document commits, then continue
       // polling until the bridge answers.
       if (!injected && tab.status !== 'loading') {
-        try {
-          await injectPageActionContentScript(Number(tabId));
-        } catch (error) {
-          lastError = error;
-          throw error;
-        }
+        await injectPageActionContentScript(Number(tabId));
         injected = true;
       }
     } else if (url && !getCurrentPageSupport(url).available) {
@@ -1637,7 +1634,7 @@ const waitForPageActionNavigation = async (tabId, previousUrl, signal) => {
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new DOMException('The run was aborted.', 'AbortError');
 
-    let currentUrl = '';
+    let currentUrl;
     try {
       currentUrl = await getPageActionTabUrl(tabId);
     } catch (_) {
@@ -2080,7 +2077,7 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     if (!['PAGE_ACTION_MESSAGE_FAILED', 'PAGE_ACTION_TIMEOUT'].includes(error?.code)) {
       throw error;
     }
-    let currentUrl = '';
+    let currentUrl;
     try {
       currentUrl = await getPageActionTabUrl(tabId);
     } catch (_) {
@@ -2656,10 +2653,10 @@ async function callUserDefinedEndpoint(endpointUrl, args, userDefinedMethod = 'G
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
       console.warn('Background: User tool request timed out');
-      throw new Error('User tool request timed out after 60 seconds.');
+      throw new Error('User tool request timed out after 60 seconds.', { cause: error });
     }
     console.warn('Background: User tool request failed', { errorName: error.name || 'Error' });
-    throw new Error(formatToolRequestError());
+    throw new Error(formatToolRequestError(), { cause: error });
   }
 }
 
@@ -2733,8 +2730,8 @@ async function improveInstructionForProfile(prompt) {
     let responseData;
     try {
       responseData = JSON.parse(bodyText);
-    } catch (_) {
-      throw new Error('Invalid response format from API: not valid JSON.');
+    } catch (parseError) {
+      throw new Error('Invalid response format from API: not valid JSON.', { cause: parseError });
     }
     const content = responseData?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
@@ -2744,11 +2741,15 @@ async function improveInstructionForProfile(prompt) {
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('The improve request timed out. Your instruction was left unchanged.');
+      throw new Error('The improve request timed out. Your instruction was left unchanged.', {
+        cause: error,
+      });
     }
     if (error.capability === 'unsupported') throw error;
     if (error.message === 'Invalid response format from API: Missing message content.') throw error;
-    throw new Error('The improve request failed. Your instruction was left unchanged.');
+    throw new Error('The improve request failed. Your instruction was left unchanged.', {
+      cause: error,
+    });
   }
 }
 

@@ -124,8 +124,8 @@ export function normalizeHermesEndpoint(value, options = {}) {
   let url;
   try {
     url = new URL(raw);
-  } catch (_) {
-    throw new Error('Hermes endpoint must be a valid HTTP(S) URL.');
+  } catch (error) {
+    throw new Error('Hermes endpoint must be a valid HTTP(S) URL.', { cause: error });
   }
 
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
@@ -177,8 +177,8 @@ export function parseHermesEventData(data) {
   try {
     const parsed = JSON.parse(text);
     return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch (_) {
-    throw new Error('Hermes returned invalid event data.');
+  } catch (error) {
+    throw new Error('Hermes returned invalid event data.', { cause: error });
   }
 }
 
@@ -496,7 +496,7 @@ export class HermesTransport {
     });
     if (response.ok) return true;
 
-    let errorCode = '';
+    let errorCode;
     try {
       const source = typeof response?.clone === 'function' ? response.clone() : response;
       const raw = await readBoundedResponseText(source);
@@ -634,7 +634,9 @@ export class HermesTransport {
       }
       return true;
     } catch (error) {
-      if (requestTimeout.timedOut) throw new Error('Hermes stop request timed out.');
+      if (requestTimeout.timedOut) {
+        throw new Error('Hermes stop request timed out.', { cause: error });
+      }
       throw error;
     } finally {
       requestTimeout.cleanup();
