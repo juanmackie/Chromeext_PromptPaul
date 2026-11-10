@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Synchronize release versions and store notes from the latest changelog entry."""
+"""Synchronize release versions from the latest changelog entry."""
 
 import json
 import re
-import subprocess
 from pathlib import Path
 
 changelog = Path('CHANGELOG.md').read_text()
@@ -31,6 +30,4 @@ if lock.get('version') != version or lock.get('packages', {}).get('', {}).get('v
         count=2,
     )
     lock_path.write_text(lock_contents)
-
-subprocess.run(['python3', 'scripts/update-store-listing.py'], check=True)
 print(f'Synchronized release metadata to {version}')

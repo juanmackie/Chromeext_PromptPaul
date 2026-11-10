@@ -1,6 +1,6 @@
 # Chrome Web Store Listing - Prompt Paul
 
-Source of truth for the public Chrome Web Store listing. Update this file whenever the store listing changes, and keep the "What's new" entry aligned with the latest release section in `CHANGELOG.md`.
+Source of truth for the public Chrome Web Store listing. Update this file whenever the store listing changes. The "What's new" entry is written by hand in user language and kept aligned with the latest release section in `CHANGELOG.md`; `release:prepare` does not overwrite it.
 
 ## Product name
 
