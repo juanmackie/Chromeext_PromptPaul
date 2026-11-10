@@ -74,3 +74,6 @@ artifacts/
 
 # Ignore dream-RSI
 .dream-rsi*
+# Python bytecode
+__pycache__/
+*.pyc
