@@ -144,6 +144,10 @@ async function launchTestBrowser(userDataDir, options = {}) {
       `--remote-debugging-port=${port}`,
       '--no-first-run',
       '--no-default-browser-check',
+      // The raw CDP path does not inherit Playwright's launch defaults. CI
+      // containers disable user namespaces and have a small /dev/shm.
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
     ],
     { stdio: 'ignore', windowsHide: true }
   );
