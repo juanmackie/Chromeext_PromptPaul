@@ -2997,4 +2997,90 @@ describe('RunOrchestrator page actions', () => {
     expect(exhausted.result).toMatchObject({ error: 'PAGE_ACTION_LIMIT', budget: 'observation' });
     expect(orch.activeRuns.get(runId).pageActions.budgets.mutation).toBe(0);
   });
+
+  it('nudges the model after three consecutive identical page observations', async () => {
+    const stable = {
+      ...makeSnapshot(),
+      snapshotId: 'page-stable',
+      fingerprint: 'stable-fingerprint',
+    };
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: stable }
+          : { success: true, message: 'clicked' },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const first = await orch.executeTool(runId, makeCall('obs-1', 'page_get_state', {}));
+    const second = await orch.executeTool(runId, makeCall('obs-2', 'page_get_state', {}));
+    expect(first.result.notice).toBeUndefined();
+    expect(second.result.notice).toBeUndefined();
+    const third = await orch.executeTool(runId, makeCall('obs-3', 'page_get_state', {}));
+    expect(third.result.notice).toMatch(/identical page state three times/);
+    expect(third.result.message).toMatch(/identical page state three times/);
+  });
+
+  it('resets the identical-observation streak when an action dispatches', async () => {
+    const stable = {
+      ...makeSnapshot(),
+      snapshotId: 'page-stable',
+      fingerprint: 'stable-fingerprint',
+    };
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionPolicyProvider: async () => true,
+      pageActionExecutor: async (_tabId, actionName) =>
+        actionName === 'page_get_state'
+          ? { success: true, snapshot: stable }
+          : { success: true, message: 'clicked' },
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.sessionApproval = true;
+    await orch.executeTool(runId, makeCall('reset-1', 'page_get_state', {}));
+    await orch.executeTool(runId, makeCall('reset-2', 'page_get_state', {}));
+    await orch.executeTool(
+      runId,
+      makeCall('reset-click', 'page_click', { snapshotId: 'page-stable', index: 1 })
+    );
+    expect(run.pageActions.identicalObservationStreak).toBe(0);
+    const afterOne = await orch.executeTool(runId, makeCall('reset-3', 'page_get_state', {}));
+    const afterTwo = await orch.executeTool(runId, makeCall('reset-4', 'page_get_state', {}));
+    expect(afterOne.result.notice).toBeUndefined();
+    expect(afterTwo.result.notice).toBeUndefined();
+  });
+
+  it('advertises the planner nudge even when no checklist exists yet', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.planner = null;
+    const prompt = orch._buildSystemPrompt(run, []);
+    expect(prompt).toContain('PLAN: If this task takes more than a couple of steps');
+    expect(prompt).not.toContain('ACT CHECKLIST');
+  });
+
+  it('nudges an inactive checklist toward page_update_plan in the system prompt', async () => {
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    const inactivePrompt = orch._buildSystemPrompt(run, []);
+    expect(inactivePrompt).toContain('PLAN: If this task takes more than a couple of steps');
+    run.pageActions.planner = {
+      ...run.pageActions.planner,
+      active: true,
+      subGoals: [{ description: 'Search the catalog', status: 'in_progress' }],
+    };
+    const activePrompt = orch._buildSystemPrompt(run, []);
+    expect(activePrompt).not.toContain('PLAN: If this task takes more than a couple of steps');
+    expect(activePrompt).toContain('ACT CHECKLIST');
+  });
 });

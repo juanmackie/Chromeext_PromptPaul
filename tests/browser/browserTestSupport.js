@@ -137,6 +137,13 @@ async function launchTestBrowser(userDataDir, options = {}) {
     );
   }
   const port = await getFreePort();
+  const headlessArgs =
+    process.env.PROMPT_PAUL_HEADLESS === 'true'
+      ? // No display server (for example a headless Linux box without
+        // Xvfb). Chrome 109+ supports extensions in the new headless
+        // mode, so the benchmark and browser tests can load Prompt Paul.
+        ['--headless=new']
+      : [];
   const processHandle = spawn(
     executable,
     [
@@ -148,6 +155,7 @@ async function launchTestBrowser(userDataDir, options = {}) {
       // containers disable user namespaces and have a small /dev/shm.
       '--no-sandbox',
       '--disable-dev-shm-usage',
+      ...headlessArgs,
     ],
     { stdio: 'ignore', windowsHide: true }
   );

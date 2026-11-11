@@ -611,6 +611,11 @@ class RunOrchestrator {
         currentTabTitle: '',
         currentTabOrigin: '',
         repeatedActionCount: 0,
+        // Consecutive page_get_state calls that observed the identical page
+        // fingerprint. Run-local only; at the cap a nudge tells the model to
+        // act or finish instead of observing again.
+        identicalObservationStreak: 0,
+        lastObservedFingerprint: '',
         // Consecutive dispatched mutations that produced neither a page change nor
         // a verified receipt. Distinct from repeatedActionCount, which only sees
         // the same action requested repeatedly.
@@ -2069,6 +2074,20 @@ class RunOrchestrator {
       );
     }
 
+    // A checklist-inactive run gets no planner guidance at all; give it one
+    // short nudge so multi-step work starts with an evidence-based checklist.
+    if (
+      !mind2webEval &&
+      run.pageActions?.enabled &&
+      !run.pageActions?.planner?.active &&
+      !run.pageActions?.planner?.completedAt
+    ) {
+      parts.push(
+        'PLAN: If this task takes more than a couple of steps, create a short checklist with ' +
+          'page_update_plan before or after your first action and keep exactly one step in_progress. ' +
+          'Do not pad the checklist with invented requirements; single-step tasks need no plan.'
+      );
+    }
     // Inject sub-goal planner state when active so the model always knows
     // its current position in the plan and remaining budget.
     if (!mind2webEval && run.pageActions?.planner) {

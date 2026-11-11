@@ -244,3 +244,25 @@ export function hasActVisited(memory, kind, identity) {
     memory.visited.includes(`${kind}:${String(identity || '').slice(0, 32)}`)
   );
 }
+
+/** Nudge emitted when read-only observations stop adding information. */
+export const ACT_IDENTICAL_OBSERVATION_NOTICE =
+  'You observed the identical page state three times in a row. Do not observe again: act on an observed control, adjust a prior action, or finish with a summary of verified work.';
+
+/**
+ * Track consecutive read-only observations that all saw the identical page
+ * fingerprint. Run-local only; never checkpointed or journaled.
+ * @param {object} state Run-scoped page-action state (mutated in place).
+ * @param {string} fingerprint Current snapshot fingerprint.
+ * @returns {number} The updated streak.
+ */
+export function recordIdenticalObservation(state, fingerprint) {
+  if (!state || typeof state !== 'object') return 0;
+  const observed = String(fingerprint || '');
+  state.identicalObservationStreak =
+    observed && observed === state.lastObservedFingerprint
+      ? (Number(state.identicalObservationStreak) || 0) + 1
+      : 1;
+  state.lastObservedFingerprint = observed;
+  return state.identicalObservationStreak;
+}
