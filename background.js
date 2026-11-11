@@ -54,6 +54,12 @@ import {
   ACT_TELEMETRY_EVENT_NAME,
   buildActRunOutcomePayload,
 } from './src/background/actTelemetry.js';
+import {
+  buildUsageEventPayload,
+  normalizeAnalyticsTools,
+  sanitizeAnalyticsLabel,
+  sanitizeModelLabel,
+} from './src/background/usageAnalytics.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -84,6 +90,7 @@ import {
 import { registerEvalRunHook } from './src/utils/evalHook.js';
 import {
   handleDevDiagnosticsMessage,
+  handleAnalyticsMessage,
   handleExternalPanelMessage,
   handleImproveInstructionMessage,
   handleNotchMessage,
@@ -112,18 +119,7 @@ const ANALYTICS_CONSENT_KEY = 'analyticsConsent';
 const ANALYTICS_INSTANCE_KEY = 'analyticsInstance';
 const ANALYTICS_ROTATE_AT_KEY = 'analyticsRotateAt';
 const ANALYTICS_ROTATE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SAFE_LABEL_REGEX = /^[A-Za-z0-9._:-]{1,64}$/;
-const DENYLIST = [
-  'email',
-  'token',
-  'key',
-  'password',
-  'secret',
-  'auth',
-  'cookie',
-  'session',
-  'ssid',
-];
+const INSTRUCTION_SOURCES = new Set(['custom_menu', 'predefined_menu', 'side_panel', 'notch']);
 const PENDING_PANEL_ACTION_KEY = 'pendingPanelAction';
 const NOTCH_ACTIONS = new Set([
   'openChat',
@@ -209,27 +205,6 @@ async function getHermesSessionKey(profileId) {
 }
 
 /**
- * Sanitizes a label string for safe use in analytics.
- * Removes potentially sensitive information and enforces character restrictions.
- * @param {string} v - The label value to sanitize.
- * @returns {string|undefined} The sanitized label, or undefined if invalid.
- */
-function sanitizeLabel(v) {
-  if (typeof v !== 'string') return undefined;
-  let s = v.trim().toLowerCase();
-  if (!s) return undefined;
-  // quick deny if looks like an email or has spaces
-  if (s.includes('@') || s.includes(' ')) return undefined;
-  // denylisted keywords
-  for (const k of DENYLIST) {
-    if (s.includes(k)) return undefined;
-  }
-  // enforce charset and length
-  if (!SAFE_LABEL_REGEX.test(s)) return undefined;
-  return s;
-}
-
-/**
  * Retrieves environment information for analytics purposes.
  * @returns {Promise<{extVersion: string, platform: string, chromeMajor: string}>} Environment info object.
  */
@@ -291,41 +266,25 @@ async function sendUmamiEvent(name, data) {
     const consent = await getConsent();
     if (!consent) return;
 
-    // Send richer segmentation to Umami so you can filter by instruction/model/tools directly.
-    // Umami supports additional fields in the payload object such as event_name and data.
-    // We keep name as a stable event category (e.g., "instruction_used") and also include
-    // event_name set to the specific instruction for top-level segmentation.
-    const payload = {
-      type: 'event',
-      payload: {
-        website: UMAMI_WEBSITE_ID,
-        hostname: 'extension',
-        url: `/ext/usage/${data?.instruction || 'unknown'}`,
-        referrer: '',
-        name, // high-level category, e.g., "instruction_used"
-        event_name: data?.instruction || name, // specific instruction or fallback to name
-        data: {
-          ...data,
-          // Duplicate key fields at top-level-friendly keys for Umami dashboards
-          instruction: data?.instruction || 'unknown',
-          model: data?.model || 'unknown',
-          tools: Array.isArray(data?.tools) ? data.tools : [],
-        },
-      },
-    };
+    const instance = typeof data?.instance === 'string' ? data.instance : undefined;
+    const payload = buildUsageEventPayload({
+      website: UMAMI_WEBSITE_ID,
+      name,
+      data,
+      instance,
+    });
     const body = JSON.stringify(payload);
 
-    if (navigator.sendBeacon) {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon(UMAMI_ENDPOINT, blob);
-    } else {
-      await fetch(UMAMI_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      });
+      if (navigator.sendBeacon(UMAMI_ENDPOINT, blob)) return;
     }
+    await fetch(UMAMI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    });
   } catch (e) {
     // never throw
     console.warn('Analytics send failed:', e);
@@ -341,8 +300,8 @@ async function sendUmamiEvent(name, data) {
 async function trackErrorEvent(category, code) {
   const env = await getEnvInfo();
   const instance = await getInstanceId();
-  const cat = sanitizeLabel(category) || 'unknown';
-  const c = sanitizeLabel(code) || 'unknown';
+  const cat = sanitizeAnalyticsLabel(category) || 'unknown';
+  const c = sanitizeAnalyticsLabel(code) || 'unknown';
   await sendUmamiEvent('error_event', { ...env, instance, category: cat, code: c });
 }
 
@@ -351,29 +310,25 @@ async function trackErrorEvent(category, code) {
  * @param {Object} params - The tracking parameters.
  * @param {string} params.instruction - The instruction name.
  * @param {string} params.model - The model name used.
+ * @param {string} [params.provider] - The provider identifier.
  * @param {Array<string>} [params.tools] - Array of tool names used.
- * @param {'custom_menu'|'predefined_menu'} [params.source] - Fixed event source.
+ * @param {'custom_menu'|'predefined_menu'|'side_panel'|'notch'} [params.source] - Fixed event source.
  * @returns {Promise<void>}
  */
-async function trackInstructionUsed({ instruction, model, tools, source }) {
+async function trackInstructionUsed({ instruction, model, provider, tools, source }) {
   const env = await getEnvInfo();
   const instance = await getInstanceId();
-  const safeInstruction = sanitizeLabel(instruction);
-  const safeModel = sanitizeLabel(model);
+  const safeInstruction = sanitizeAnalyticsLabel(instruction);
+  const safeModel = sanitizeModelLabel(model);
   const instr = safeInstruction || 'unknown';
   const mdl = safeModel || 'unknown';
-  const toolsSafe = Array.isArray(tools)
-    ? tools
-        .map((t) => sanitizeLabel(String(t)))
-        .filter(Boolean)
-        .slice(0, 8)
-    : [];
-  // Put the instruction and model into the event "name" context via sendUmamiEvent enhancements above
+  const toolsSafe = normalizeAnalyticsTools(tools);
   await sendUmamiEvent('instruction_used', {
     ...env,
     instance,
     instruction: instr,
     model: mdl,
+    provider: sanitizeAnalyticsLabel(provider) || 'unknown',
     instruction_status: safeInstruction
       ? 'available'
       : typeof instruction === 'string' && instruction.trim()
@@ -384,10 +339,36 @@ async function trackInstructionUsed({ instruction, model, tools, source }) {
       : typeof model === 'string' && model.trim()
         ? 'filtered'
         : 'missing',
-    source: source === 'custom_menu' ? 'custom_menu' : 'predefined_menu',
+    source: INSTRUCTION_SOURCES.has(source) ? source : 'unknown',
     tools: toolsSafe,
     count: 1,
   });
+}
+
+/**
+ * Track a stored instruction launched from an extension surface.
+ * @param {string} instructionId Stored instruction ID.
+ * @param {'side_panel'|'notch'} source Surface that launched it.
+ * @returns {Promise<void>}
+ */
+async function trackInstructionUsageById(instructionId, source) {
+  try {
+    const { instructions = [] } = await chrome.storage.local.get(['instructions']);
+    const instruction = Array.isArray(instructions)
+      ? instructions.find((entry) => String(entry?.id || '') === instructionId)
+      : null;
+    if (!instruction) return;
+    const cfg = await validateConfig().catch(() => ({}));
+    await trackInstructionUsed({
+      instruction: instruction.name || 'custom',
+      model: cfg?.modelName,
+      provider: cfg?.provider,
+      source,
+      tools: instruction.tool_choice,
+    });
+  } catch (_) {
+    // Telemetry never changes a user-visible result.
+  }
 }
 
 /**
@@ -398,7 +379,7 @@ async function trackInstructionUsed({ instruction, model, tools, source }) {
  */
 async function trackFeatureUsed(feature) {
   try {
-    const featureName = sanitizeLabel(feature);
+    const featureName = sanitizeAnalyticsLabel(feature);
     if (!featureName || !(await getConsent())) return;
     const env = await getEnvInfo();
     const instance = await getInstanceId();
@@ -452,7 +433,7 @@ async function trackActRunOutcome(aggregate = {}) {
       mutation: payload.mutation,
       loop_warnings: payload.loop_warnings,
       replans: payload.replans,
-      model: sanitizeLabel(payload.model) || 'unknown',
+      model: sanitizeModelLabel(payload.model) || 'unknown',
     });
   } catch (_) {
     // Telemetry never changes a capability's user-visible result.
@@ -945,12 +926,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           await trackInstructionUsed({
             instruction: instruction.name || 'custom',
             model: cfg?.modelName,
+            provider: cfg?.provider,
             source: 'custom_menu',
-            tools: Array.isArray(instruction.tool_choice)
-              ? instruction.tool_choice
-              : instruction.tool_choice && instruction.tool_choice !== 'none'
-                ? [instruction.tool_choice]
-                : [],
+            tools: instruction.tool_choice,
           });
         } catch (_) {
           // Analytics is best-effort; preserve the instruction action path.
@@ -985,6 +963,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         await trackInstructionUsed({
           instruction: info.menuItemId,
           model: cfg?.modelName,
+          provider: cfg?.provider,
           source: 'predefined_menu',
           tools: [],
         });
@@ -3480,6 +3459,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse,
   });
   if (panelMessage !== null) return panelMessage;
+
+  const analyticsMessage = handleAnalyticsMessage(request, sender, {
+    extensionPageSender,
+    rejectUnauthorizedMessage,
+    sendResponse,
+    trackInstructionUsageById,
+  });
+  if (analyticsMessage !== null) return analyticsMessage;
 
   const pageContentMessage = handlePageContentMessage(request, sender, {
     chrome,

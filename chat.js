@@ -43,6 +43,7 @@ import {
   classifyToolExecutionResult,
 } from './src/chat/ChatGrounding.js';
 import { MediaType, getMediaAnalysisPrompt } from './src/chat/ChatMedia.js';
+import { trackInstructionUsage } from './src/chat/ChatUsageAnalytics.js';
 import { initChatModelStatus } from './src/chat/ChatModelStatus.js';
 import { StreamStateManager } from './src/chat/ChatStream.js';
 import { prepareLoadedPageContext } from './src/chat/PageContext.js';
@@ -438,13 +439,14 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
 
-  async function executeSelectedTextInstruction(instruction) {
+  async function executeSelectedTextInstruction(instruction, source = 'side_panel') {
     const actionName = instruction.name || 'this prompt';
     const composed = await composeActionPrompt(instruction.content, `run ${actionName}`);
     if (composed === null) {
       return false;
     }
 
+    trackInstructionUsage(instruction.id, source);
     activateSelectedTextActionView();
     await makeApiCall(composed, normalizeToolChoice(instruction.tool_choice));
     // Keep the selection sticky so further actions can run on the same text.
@@ -1971,6 +1973,7 @@ document.addEventListener('DOMContentLoaded', () => {
           url: pageData.url,
           type: pageData.type,
         };
+        trackInstructionUsage(instruction.id, 'notch');
         void makeApiCall(
           {
             instruction: instruction.content,
@@ -1984,7 +1987,7 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         return;
       }
-      void executeSelectedTextInstruction(instruction);
+      void executeSelectedTextInstruction(instruction, 'notch');
     });
     return true;
   }

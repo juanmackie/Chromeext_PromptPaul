@@ -160,7 +160,7 @@ Prompt Paul works with OpenAI-compatible endpoints, including Mistral, OpenAI, c
 - When **Act** is enabled, bounded DOM/page metadata is sent to the configured LLM endpoint for that run. Non-sensitive field values are limited to 160 characters per field and 8K total; sensitive values stay masked or omitted. Values remain in live model context, not journals or checkpoints. Page text is untrusted data.
 - Action receipts expose only bounded status and postcondition evidence. The evaluation harness stores counts and sizes, not credentials, raw page history, or screenshots.
 - Analytics are opt-in and disabled by default
-- When enabled, analytics sends only coarse event labels such as instruction name, model name, and tool names, plus a rotating pseudonymous instance ID
+- When enabled, analytics sends only coarse event labels such as instruction name, model name, provider, and tool names, plus a rotating pseudonymous instance ID
 - No page URLs, page titles, page content, API keys, credentials, or prompt text are sent to analytics
 - Browser-internal pages and the Chrome Web Store are blocked before extraction or page actions
 - Page content is only sent when you explicitly invoke processing; page actions are separately opt-in through **Act**
