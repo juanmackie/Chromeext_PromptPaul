@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+- Act now has an **opt-in Anonymous ACT outcome telemetry** (default off, independent of usage analytics). When enabled, each terminated ACT run sends one bounded event: outcome (done/blocked/failed), reason code, coarse step and duration buckets, action budget counters, loop-warning and replan counts, and the model name plus rotating pseudonymous ID. No page URLs, titles, instructions, inputs, prompts, responses, or reasoning are sent. High-risk actions still always confirm as before; sensitive origins and hard blocks are unchanged.
+- Long-running ACT tasks no longer re-read a changing page forever: after three consecutive identical page observations the run is told to act or finish, and idle ACT runs with no checklist yet are nudged to create one so goal state is evidence-based.
+- Act internal mechanics (budget accounting, action receipts, approval funnel) were extracted into a shared module for testability. No behavior change.
+- Act benchmark and the browser E2E suite can now run headlessly on displayless Linux (env-gated full-Chromium launch in the browser harness).
+
 ## [6.4.0] - 2026-11-08
 
 - Context-menu labels are now plain text: the decorative emoji were removed so the native Chrome menu matches the extension's flat, monochrome visual language. Menu IDs, ordering, and routing are unchanged.

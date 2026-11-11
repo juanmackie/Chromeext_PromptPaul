@@ -1268,6 +1268,10 @@ document.addEventListener('DOMContentLoaded', () => {
         getValue: (el) => String(Boolean(el && el.checked)),
       },
       {
+        element: document.getElementById('actAnalyticsConsentToggle'),
+        getValue: (el) => String(Boolean(el && el.checked)),
+      },
+      {
         element: document.getElementById('voiceInputEnabledToggle'),
         getValue: (el) => String(Boolean(el && el.checked)),
       },
@@ -1391,6 +1395,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     // Persist on explicit save (Save Privacy Settings button)
     analyticsConsentToggle.addEventListener('change', () => {
+      announceDirtyChange(true);
+      showStatus('Privacy changes are pending. Click Save Privacy Settings.', false, true);
+    });
+  }
+
+  // ACT outcome telemetry toggle (opt-in, default OFF)
+  const actAnalyticsConsentToggle = document.getElementById('actAnalyticsConsentToggle');
+  if (actAnalyticsConsentToggle) {
+    privacyBaselinePending += 1;
+    chrome.storage.local.get(['analyticsActConsent'], (res) => {
+      const consent =
+        res && Object.prototype.hasOwnProperty.call(res, 'analyticsActConsent')
+          ? !!res.analyticsActConsent
+          : false;
+      actAnalyticsConsentToggle.checked = consent;
+      settlePrivacyBaseline();
+    });
+    actAnalyticsConsentToggle.addEventListener('change', () => {
       announceDirtyChange(true);
       showStatus('Privacy changes are pending. Click Save Privacy Settings.', false, true);
     });
@@ -1550,7 +1572,11 @@ document.addEventListener('DOMContentLoaded', () => {
           markClean: markPrivacyTrackerClean,
           write: async () => {
             const consent = !!analyticsConsentToggle.checked;
-            await setChromeStorage(chrome.storage.local, { analyticsConsent: consent });
+            const actConsent = !!actAnalyticsConsentToggle.checked;
+            await setChromeStorage(chrome.storage.local, {
+              analyticsConsent: consent,
+              analyticsActConsent: actConsent,
+            });
             await setStoredVoiceInputSettings({
               [VOICE_INPUT_ENABLED_KEY]: !!voiceInputEnabledToggle.checked,
             });

@@ -64,6 +64,7 @@ export const BACKUP_LOCAL_KEYS = Object.freeze([
   'customSkills',
   'promptPaulTools',
   'analyticsConsent',
+  'analyticsActConsent',
   'analyticsInstance',
   'analyticsRotateAt',
   'voiceInputEnabled',
@@ -392,6 +393,7 @@ function normalizeStorageArea(area, allowedKeys, areaName) {
     } else if (
       [
         'analyticsConsent',
+        'analyticsActConsent',
         'voiceInputEnabled',
         'webSearchEnabled',
         'pageActionsEnabled',

@@ -3065,6 +3065,58 @@ describe('RunOrchestrator page actions', () => {
     expect(prompt).not.toContain('ACT CHECKLIST');
   });
 
+  it('emits an anonymous ACT outcome when a run terminates and a tracker is injected', async () => {
+    const captured = [];
+    const orch = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+      actRunOutcomeTracker: (aggregate) => captured.push(aggregate),
+    });
+    orch._emitEvent = () => {};
+    const runId = await orch.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    const run = orch.activeRuns.get(runId);
+    run.pageActions.actions = 14;
+    run.pageActions.budgets = { observation: 3, navigation: 1, mutation: 2 };
+    run.pageActions.loopWarnings = 2;
+    run.pageActions.planner = { ...run.pageActions.planner, replanCount: 1 };
+    orch._terminateRun(runId, { type: 'complete' });
+
+    expect(captured).toHaveLength(1);
+    const aggregate = captured[0];
+    expect(aggregate).toMatchObject({
+      steps: 14,
+      observation: 3,
+      navigation: 1,
+      mutation: 2,
+      loopWarnings: 2,
+      replanCount: 1,
+    });
+    expect(['done', 'failed', 'blocked']).toContain(aggregate.outcome);
+    expect(JSON.stringify(aggregate)).not.toMatch(/page-snap-1|example\.test|Search/);
+  });
+
+  it('terminates cleanly when no ACT outcome tracker or a throwing tracker is injected', async () => {
+    const without = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+    });
+    without._emitEvent = () => {};
+    const noId = await without.startRun({ pageActions: true, sourceTabId: 7, tool_choice: 'auto' });
+    expect(() => without._terminateRun(noId, { type: 'complete' })).not.toThrow();
+
+    const throwing = new RunOrchestrator(createStubSkillManager(), {
+      pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),
+      actRunOutcomeTracker: () => {
+        throw new Error('tracker exploded');
+      },
+    });
+    throwing._emitEvent = () => {};
+    const throwId = await throwing.startRun({
+      pageActions: true,
+      sourceTabId: 7,
+      tool_choice: 'auto',
+    });
+    expect(() => throwing._terminateRun(throwId, { type: 'complete' })).not.toThrow();
+  });
+
   it('nudges an inactive checklist toward page_update_plan in the system prompt', async () => {
     const orch = new RunOrchestrator(createStubSkillManager(), {
       pageActionExecutor: async () => ({ success: true, snapshot: makeSnapshot() }),

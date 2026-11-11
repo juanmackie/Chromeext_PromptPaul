@@ -209,7 +209,7 @@ export class ActExecutionMethods {
       actionName,
       args,
       target,
-      policy,
+      policy
     );
   }
 

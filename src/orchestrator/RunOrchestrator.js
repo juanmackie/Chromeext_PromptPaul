@@ -147,6 +147,8 @@ class RunOrchestrator {
     this.pageTabRunDisposer = options.pageTabRunDisposer;
     this.pageActionTabFailureHandler = options.pageActionTabFailureHandler;
     this.pageActionActivityHandler = options.pageActionActivityHandler;
+    this.actRunOutcomeTracker =
+      typeof options.actRunOutcomeTracker === 'function' ? options.actRunOutcomeTracker : null;
     this.pageActionExecutor =
       options.pageActionExecutor ||
       (async () => {
@@ -1090,6 +1092,25 @@ class RunOrchestrator {
     if (run.pageActions?.enabled) {
       run.pageActions.actOutcome = deriveActOutcome(run, event.type);
       event.actOutcome = run.pageActions.actOutcome;
+      if (this.actRunOutcomeTracker) {
+        try {
+          this.actRunOutcomeTracker({
+            outcome: run.pageActions.actOutcome?.status || null,
+            reason: run.pageActions.actOutcome ? run.pageActions.actOutcome.reason : null,
+            steps: run.pageActions.actions || 0,
+            durationMs: Date.now() - (Number(run.startedAt) || Date.now()),
+            observation: run.pageActions.budgets?.observation || 0,
+            navigation: run.pageActions.budgets?.navigation || 0,
+            mutation: run.pageActions.budgets?.mutation || 0,
+            loopWarnings: run.pageActions.loopWarnings || 0,
+            replanCount: run.pageActions.planner?.replanCount || 0,
+            startedAt: run.startedAt,
+            model: run.config?.modelName || '',
+          });
+        } catch (_) {
+          // Telemetry never changes a capability's user-visible result.
+        }
+      }
     }
     run.status = event.type === 'aborted' ? 'stopped' : event.type;
     if (run.pageActions?.pendingConfirmation) {

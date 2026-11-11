@@ -68,6 +68,6 @@ Prompt Paul stores your configuration locally in Chrome and only sends selected 
 
 When you enable Act and submit a task, the selected provider receives a bounded outline of the inspected page, including non-sensitive field values (up to 160 characters per field and 8,000 per snapshot). Password, OTP, payment, credential, hidden and file values remain masked or excluded. Field values are not stored in activity journals or recovery checkpoints.
 
-API keys stay in Chrome storage. Analytics is opt-in and disabled by default; if enabled, it sends coarse event labels and a rotating pseudonymous instance ID, not page content, prompts, keys, or credentials.
+API keys stay in Chrome storage. Analytics is opt-in and disabled by default; if enabled, it sends coarse event labels and a rotating pseudonymous instance ID, not page content, prompts, keys, or credentials. An additional, independent opt-in Anonymous ACT outcome toggle (also default off) sends one bounded outcome/reason event per finished ACT run with step and duration buckets; it never sends page URLs, titles, instructions, inputs, prompts, responses, or reasoning.
 
 No ceremony. Just a short loop from context to answer.

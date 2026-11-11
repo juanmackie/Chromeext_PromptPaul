@@ -410,6 +410,19 @@
         </div>
 
         <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="actAnalyticsConsentToggle" />
+          <label class="form-check-label" for="actAnalyticsConsentToggle">
+            Share anonymous ACT run outcomes (beta)
+          </label>
+        </div>
+        <div class="form-text mt-0 mb-3">
+          In addition to usage analytics, Prompt Paul sends one event per finished ACT run: outcome
+          (done/blocked/failed), reason code, coarse step and duration buckets, action budget
+          counters, and the model name, plus your rotating pseudonymous ID. No page URLs, titles,
+          instructions, inputs, prompts, responses, or reasoning are sent. Independent of the
+          usage-analytics toggle and off by default.
+        </div>
+        <div class="form-check form-switch mb-3">
           <input class="form-check-input" type="checkbox" id="voiceInputEnabledToggle" checked />
           <label class="form-check-label" for="voiceInputEnabledToggle"> Enable voice input </label>
         </div>

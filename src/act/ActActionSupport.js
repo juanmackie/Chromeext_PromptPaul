@@ -182,136 +182,135 @@ import { sanitizePageActionUrl } from '../utils/pageDom.js';
  */
 export function requestPageActionConfirmation(deps, run, actionName, args, target, policy) {
   const { assertActive, emitEvent, extendDeadline } = deps;
-    assertActive(run);
-    if (run.pageActions.pendingConfirmation) {
-      const error = new Error('Another page action is already waiting for approval.');
-      error.code = 'PAGE_ACTION_CONFIRMATION_PENDING';
-      throw error;
-    }
-
-    const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const label = String(
-      target?.label || target?.name || target?.text || target?.tag || 'page control'
-    )
-      .trim()
-      .slice(0, 120);
-    const summary = `${actionName.replace(/^page_/, '')} ${label}`.trim();
-    // Bounded origin/title context so the user can tell which page the action
-    // targets before approving; never includes query strings or secrets.
-    const snapshot = run.pageActions.snapshot;
-    let origin = '';
-    try {
-      origin = new URL(target?.frameOrigin || snapshot?.url || '').hostname;
-    } catch (_) {
-      origin = '';
-    }
-    const contextTitle = String(snapshot?.title || '')
-      .trim()
-      .slice(0, 120);
-    let destination = '';
-    let destinationOrigin = '';
-    let destinationHasQueryOrFragment = false;
-    try {
-      if (target?.href) {
-        const targetUrl = new URL(target.href);
-        destination = sanitizePageActionUrl(targetUrl.href).slice(0, 240);
-        destinationOrigin = targetUrl.hostname.slice(0, 120);
-        destinationHasQueryOrFragment =
-          target?.linkHasQueryOrFragment === true || Boolean(targetUrl.search || targetUrl.hash);
-      }
-    } catch (_) {
-      destination = '';
-      destinationOrigin = '';
-    }
-    return new Promise((resolve, reject) => {
-      const timeoutMs = Math.min(
-        MAX_APPROVAL_WAIT_EXTENSION_MS,
-        Math.max(
-          1_000,
-          Number(run.config.pageActionConfirmationTimeoutMs) || MAX_APPROVAL_WAIT_EXTENSION_MS
-        )
-      );
-      const timer = setTimeout(() => {
-        const pending = run.pageActions.pendingConfirmation;
-        if (!pending || pending.id !== confirmationId) return;
-        emitEvent(run.id, {
-          type: 'page_action_decision',
-          confirmationId,
-          approved: false,
-          approveAll: false,
-          timedOut: true,
-          action: actionName,
-        });
-        pending.resolve(false, true);
-      }, timeoutMs);
-      const onAbort = () => {
-        clearTimeout(timer);
-        if (run.pageActions.pendingConfirmation?.id !== confirmationId) return;
-        run.pageActions.pendingConfirmation = null;
-        reject(new DOMException('The run was aborted.', 'AbortError'));
-      };
-      run.abortController.signal.addEventListener('abort', onAbort, { once: true });
-      run.pageActions.pendingConfirmation = {
-        id: confirmationId,
-        action: actionName,
-        siteOrigin: getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url),
-        documentOrigin: getPageActionSiteOrigin(snapshot?.url || run.pageActions.documentUrl),
-        resolve: (approved, timedOut = false) => {
-          clearTimeout(timer);
-          run.abortController.signal.removeEventListener('abort', onAbort);
-          run.pageActions.pendingConfirmation = null;
-          // Pause the deadline clock for the whole time the card waited, then
-          // record a bounded declined marker when the user said no (covers the
-          // explicit deny and the auto-timeout path in one place).
-          extendDeadline(run);
-          run.pageActions.confirmationTimedOut = timedOut;
-          run.pageActions.lastDecisionOutcome = approved
-            ? null
-            : timedOut
-              ? 'needs_confirmation'
-              : 'declined';
-          if (approved) {
-            run.pageActions.lastDeniedAction = null;
-          } else if (!timedOut) {
-            run.pageActions.lastDeniedAction = {
-              action: String(actionName).slice(0, 64),
-              at: Date.now(),
-            };
-          }
-          resolve(Boolean(approved));
-        },
-        reject: onAbort,
-      };
-      // Begin the approval-wait window that pauses the provider budget; the
-      // extension is applied exactly once inside the resolve funnel above.
-      run.resilience.approvalWaitStartedAt = Date.now();
-      emitEvent(run.id, {
-        type: 'page_action_confirmation',
-        confirmationId,
-        action: actionName,
-        args: { ...args, text: undefined },
-        summary,
-        origin: origin.slice(0, 120),
-        siteOrigin: getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url),
-        siteTrustAllowed:
-          !isPageActionSensitiveOrigin(
-            getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url)
-          ) &&
-          !isPageActionSensitiveOrigin(
-            getPageActionSiteOrigin(snapshot?.url || run.pageActions.documentUrl)
-          ),
-        destination,
-        destinationOrigin,
-        destinationHasQueryOrFragment,
-        inputPreview:
-          actionName === 'page_input' && target?.sensitive !== true && typeof args.text === 'string'
-            ? args.text.slice(0, 280)
-            : undefined,
-        title: contextTitle,
-        target: { label, tag: target?.tag || '', risk: policy.risk },
-        risk: policy.risk,
-        reason: policy.reason,
-      });
-    });
+  assertActive(run);
+  if (run.pageActions.pendingConfirmation) {
+    const error = new Error('Another page action is already waiting for approval.');
+    error.code = 'PAGE_ACTION_CONFIRMATION_PENDING';
+    throw error;
   }
 
+  const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const label = String(
+    target?.label || target?.name || target?.text || target?.tag || 'page control'
+  )
+    .trim()
+    .slice(0, 120);
+  const summary = `${actionName.replace(/^page_/, '')} ${label}`.trim();
+  // Bounded origin/title context so the user can tell which page the action
+  // targets before approving; never includes query strings or secrets.
+  const snapshot = run.pageActions.snapshot;
+  let origin = '';
+  try {
+    origin = new URL(target?.frameOrigin || snapshot?.url || '').hostname;
+  } catch (_) {
+    origin = '';
+  }
+  const contextTitle = String(snapshot?.title || '')
+    .trim()
+    .slice(0, 120);
+  let destination = '';
+  let destinationOrigin = '';
+  let destinationHasQueryOrFragment = false;
+  try {
+    if (target?.href) {
+      const targetUrl = new URL(target.href);
+      destination = sanitizePageActionUrl(targetUrl.href).slice(0, 240);
+      destinationOrigin = targetUrl.hostname.slice(0, 120);
+      destinationHasQueryOrFragment =
+        target?.linkHasQueryOrFragment === true || Boolean(targetUrl.search || targetUrl.hash);
+    }
+  } catch (_) {
+    destination = '';
+    destinationOrigin = '';
+  }
+  return new Promise((resolve, reject) => {
+    const timeoutMs = Math.min(
+      MAX_APPROVAL_WAIT_EXTENSION_MS,
+      Math.max(
+        1_000,
+        Number(run.config.pageActionConfirmationTimeoutMs) || MAX_APPROVAL_WAIT_EXTENSION_MS
+      )
+    );
+    const timer = setTimeout(() => {
+      const pending = run.pageActions.pendingConfirmation;
+      if (!pending || pending.id !== confirmationId) return;
+      emitEvent(run.id, {
+        type: 'page_action_decision',
+        confirmationId,
+        approved: false,
+        approveAll: false,
+        timedOut: true,
+        action: actionName,
+      });
+      pending.resolve(false, true);
+    }, timeoutMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      if (run.pageActions.pendingConfirmation?.id !== confirmationId) return;
+      run.pageActions.pendingConfirmation = null;
+      reject(new DOMException('The run was aborted.', 'AbortError'));
+    };
+    run.abortController.signal.addEventListener('abort', onAbort, { once: true });
+    run.pageActions.pendingConfirmation = {
+      id: confirmationId,
+      action: actionName,
+      siteOrigin: getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url),
+      documentOrigin: getPageActionSiteOrigin(snapshot?.url || run.pageActions.documentUrl),
+      resolve: (approved, timedOut = false) => {
+        clearTimeout(timer);
+        run.abortController.signal.removeEventListener('abort', onAbort);
+        run.pageActions.pendingConfirmation = null;
+        // Pause the deadline clock for the whole time the card waited, then
+        // record a bounded declined marker when the user said no (covers the
+        // explicit deny and the auto-timeout path in one place).
+        extendDeadline(run);
+        run.pageActions.confirmationTimedOut = timedOut;
+        run.pageActions.lastDecisionOutcome = approved
+          ? null
+          : timedOut
+            ? 'needs_confirmation'
+            : 'declined';
+        if (approved) {
+          run.pageActions.lastDeniedAction = null;
+        } else if (!timedOut) {
+          run.pageActions.lastDeniedAction = {
+            action: String(actionName).slice(0, 64),
+            at: Date.now(),
+          };
+        }
+        resolve(Boolean(approved));
+      },
+      reject: onAbort,
+    };
+    // Begin the approval-wait window that pauses the provider budget; the
+    // extension is applied exactly once inside the resolve funnel above.
+    run.resilience.approvalWaitStartedAt = Date.now();
+    emitEvent(run.id, {
+      type: 'page_action_confirmation',
+      confirmationId,
+      action: actionName,
+      args: { ...args, text: undefined },
+      summary,
+      origin: origin.slice(0, 120),
+      siteOrigin: getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url),
+      siteTrustAllowed:
+        !isPageActionSensitiveOrigin(
+          getPageActionSiteOrigin(target?.frameOrigin || snapshot?.url)
+        ) &&
+        !isPageActionSensitiveOrigin(
+          getPageActionSiteOrigin(snapshot?.url || run.pageActions.documentUrl)
+        ),
+      destination,
+      destinationOrigin,
+      destinationHasQueryOrFragment,
+      inputPreview:
+        actionName === 'page_input' && target?.sensitive !== true && typeof args.text === 'string'
+          ? args.text.slice(0, 280)
+          : undefined,
+      title: contextTitle,
+      target: { label, tag: target?.tag || '', risk: policy.risk },
+      risk: policy.risk,
+      reason: policy.reason,
+    });
+  });
+}

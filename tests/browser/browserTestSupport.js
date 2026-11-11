@@ -62,8 +62,11 @@ async function captureBrowserDiagnostics(context) {
 function browserLaunchOptions(userDataDir) {
   return {
     // Chromium disables extension service workers in legacy headless mode.
-    // Keep headed mode as the default for real extension coverage.
+    // Keep headed mode as the default for real extension coverage. Headless
+    // runs use the full Chromium build (new headless mode), which loads
+    // extensions; the default headless shell does not.
     headless: process.env.PROMPT_PAUL_HEADLESS === 'true' ? true : false,
+    channel: process.env.PROMPT_PAUL_HEADLESS === 'true' ? 'chromium' : undefined,
     args: [
       `--disable-extensions-except=${extensionLoadPath()}`,
       `--load-extension=${extensionLoadPath()}`,

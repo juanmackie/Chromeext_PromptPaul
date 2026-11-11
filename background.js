@@ -50,6 +50,10 @@ import { createPageActionReadinessCache } from './src/utils/pageActionReadiness.
 import { getPdfSourceUrl, isLikelyPdfUrl, probePdfUrl } from './src/utils/pdfDetection.js';
 import { PageTabController } from './src/orchestrator/PageTabController.js';
 import { ACT_PAGE_DOM_CAPS, createPageFrameCoordinator } from './src/act/index.js';
+import {
+  ACT_TELEMETRY_EVENT_NAME,
+  buildActRunOutcomePayload,
+} from './src/background/actTelemetry.js';
 import { isPageActionReadOnly } from './src/utils/pageActionPolicy.js';
 import { createCodexAuthManager } from './src/utils/codexAuth.js';
 import { fetchAvailableModels } from './src/utils/modelDiscovery.js';
@@ -348,13 +352,16 @@ async function trackErrorEvent(category, code) {
  * @param {string} params.instruction - The instruction name.
  * @param {string} params.model - The model name used.
  * @param {Array<string>} [params.tools] - Array of tool names used.
+ * @param {'custom_menu'|'predefined_menu'} [params.source] - Fixed event source.
  * @returns {Promise<void>}
  */
-async function trackInstructionUsed({ instruction, model, tools }) {
+async function trackInstructionUsed({ instruction, model, tools, source }) {
   const env = await getEnvInfo();
   const instance = await getInstanceId();
-  const instr = sanitizeLabel(instruction) || 'unknown';
-  const mdl = sanitizeLabel(model) || 'unknown';
+  const safeInstruction = sanitizeLabel(instruction);
+  const safeModel = sanitizeLabel(model);
+  const instr = safeInstruction || 'unknown';
+  const mdl = safeModel || 'unknown';
   const toolsSafe = Array.isArray(tools)
     ? tools
         .map((t) => sanitizeLabel(String(t)))
@@ -367,6 +374,17 @@ async function trackInstructionUsed({ instruction, model, tools }) {
     instance,
     instruction: instr,
     model: mdl,
+    instruction_status: safeInstruction
+      ? 'available'
+      : typeof instruction === 'string' && instruction.trim()
+        ? 'filtered'
+        : 'missing',
+    model_status: safeModel
+      ? 'available'
+      : typeof model === 'string' && model.trim()
+        ? 'filtered'
+        : 'missing',
+    source: source === 'custom_menu' ? 'custom_menu' : 'predefined_menu',
     tools: toolsSafe,
     count: 1,
   });
@@ -390,6 +408,52 @@ async function trackFeatureUsed(feature) {
       feature: featureName,
       count: 1,
     }).catch(() => {});
+  } catch (_) {
+    // Telemetry never changes a capability's user-visible result.
+  }
+}
+
+const ACT_TELEMETRY_CONSENT_KEY = 'analyticsActConsent';
+
+async function getActTelemetryConsent() {
+  const { [ACT_TELEMETRY_CONSENT_KEY]: consent } =
+    await chrome.storage.local.get(ACT_TELEMETRY_CONSENT_KEY);
+  return consent === true;
+}
+
+/**
+ * Tracks an anonymous, content-free outcome event for a terminated ACT run.
+ * No page URLs, titles, instructions, inputs, prompts, responses or
+ * reasoning are ever sent; only bounded enums, counts and sanitized labels.
+ * @param {object} aggregate pre-collected ACT counters for one run
+ * @returns {Promise<void>}
+ */
+async function trackActRunOutcome(aggregate = {}) {
+  try {
+    if (!(await getActTelemetryConsent())) return;
+    const startedAt = Number(aggregate.startedAt) || Date.now();
+    const payload = buildActRunOutcomePayload({
+      ...aggregate,
+      durationMs: Date.now() - startedAt,
+    });
+    if (!payload) return;
+    const env = await getEnvInfo();
+    const instance = await getInstanceId();
+    await sendUmamiEvent(ACT_TELEMETRY_EVENT_NAME, {
+      ...env,
+      instance,
+      instruction: ACT_TELEMETRY_EVENT_NAME,
+      outcome: payload.outcome,
+      reason: payload.reason,
+      steps: payload.steps,
+      duration: payload.duration,
+      observation: payload.observation,
+      navigation: payload.navigation,
+      mutation: payload.mutation,
+      loop_warnings: payload.loop_warnings,
+      replans: payload.replans,
+      model: sanitizeLabel(payload.model) || 'unknown',
+    });
   } catch (_) {
     // Telemetry never changes a capability's user-visible result.
   }
@@ -881,6 +945,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           await trackInstructionUsed({
             instruction: instruction.name || 'custom',
             model: cfg?.modelName,
+            source: 'custom_menu',
             tools: Array.isArray(instruction.tool_choice)
               ? instruction.tool_choice
               : instruction.tool_choice && instruction.tool_choice !== 'none'
@@ -920,6 +985,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         await trackInstructionUsed({
           instruction: info.menuItemId,
           model: cfg?.modelName,
+          source: 'predefined_menu',
           tools: [],
         });
       } catch (_) {
@@ -2204,6 +2270,7 @@ runOrchestrator = new RunOrchestrator(skillManager, {
   },
   pageActionTabFailureHandler: (runId, tabId, failure) =>
     pageTabController.quarantine(runId, tabId, failure),
+  actRunOutcomeTracker: (aggregate) => void trackActRunOutcome(aggregate),
   pageActionActivityHandler: updateNotchActState,
 });
 
