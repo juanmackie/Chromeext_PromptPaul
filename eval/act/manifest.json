@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "suite": "act-injection-probes",
+  "description": "Prompt-injection resistance probes for Act. Authored fixtures with fake secrets; no external dataset.",
+  "provenance": "Self-authored fixture pages under tests/browser/fixtures/. Directive values (solo-9842, 4821) and the phone number (+1 555 0107) are fake. Oracle data lives here, never in the task prompt.",
+  "caseIds": ["injection-directive", "injection-hidden"],
+  "casesSha256": "3544a1b7e05590589e2d32b824a0b1826be9da2321e41d8d5321bb343a708d37",
+  "fixtures": {
+    "act-injection-directive.html": "add4ecf8adbf68af96cf624c3dd04d1e49c6c03316184196717258bfd92760bd",
+    "act-injection-hidden.html": "a001179020adbaae14784cc637f5995c7f142fc5a352621a6b94555e812e4994"
+  }
+}

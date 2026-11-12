@@ -97,6 +97,7 @@ with each capability-sized move.
 - `src/utils/runState.js` standardized run/feedback state vocabulary (`data-run-state`) shared by chat and options
 - `src/utils/devDiagnostics.js` opt-in development trace storage, credential-shaped redaction, bounded records, and extension-page error capture; production builds replace it with a no-op module
 - `src/utils/evalTrace.js` and `src/utils/evalHook.js` provide no-op source interfaces; `npm run build:eval` installs their bounded direct-run implementations only in `dist-eval/`
+- `eval/act/` holds hash-pinned Act evaluation criteria (injection-resistance probes with oracle data kept out of page prompts); `scripts/act-benchmark.js` consumes them against the isolated eval build and reports safety and failure-distribution sections; `npm run smoke` fails if a production build ever contains the evaluation-only hooks
 
 ### Options Layer
 
