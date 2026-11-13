@@ -1656,7 +1656,9 @@ function buildSummary(records, runs, tasks = TASKS) {
  * @returns {string|null} the history file name, or null when not kept.
  */
 function preserveRunHistory(outputDir, outputPath, createdAt, keep = 10) {
-  const historyDir = path.join(outputDir, 'history');
+  // Beside the run directory, not inside it: every run clears
+  // artifacts/act-benchmark, which would delete the history it just kept.
+  const historyDir = path.join(outputDir, '..', 'act-benchmark-history');
   fs.mkdirSync(historyDir, { recursive: true });
   // Sortable, filesystem-safe, minute precision: 20261113T0412.
   const stamp = String(createdAt || '')
@@ -1893,7 +1895,7 @@ async function runBenchmark(options) {
     report.measuredAttempts > 0
       ? preserveRunHistory(outputDir, outputPath, report.createdAt)
       : null;
-  if (historyName) console.log(`Run kept at artifacts/act-benchmark/history/${historyName}`);
+  if (historyName) console.log(`Run kept at artifacts/act-benchmark-history/${historyName}`);
   for (const run of runSummary) {
     const rate =
       run.passRate === null ? 'no measurable score' : `${Math.round(run.passRate * 100)}%`;

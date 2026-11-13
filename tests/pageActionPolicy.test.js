@@ -378,17 +378,13 @@ describe('pageActionPolicy', () => {
     const policy = (actionName, target, origin = 'https://example.test', extra = {}) =>
       evaluatePageActionPolicy({ actionName, target, origin, ...extra });
 
-    // Typing without submitting stays local and correctable.
+    // Typing keeps its approval on purpose: the card shows exactly what will
+    // be typed, and the receipt records the delivery. The relaxations here are
+    // the actions with no preview and no data.
     expect(policy('page_input', { tag: 'input', label: 'City' })).toMatchObject({
       allowed: true,
-      requiresConfirmation: false,
+      requiresConfirmation: true,
       risk: PAGE_ACTION_RISKS.LOW,
-    });
-    expect(policy('page_set_value', { tag: 'textarea', label: 'Notes' })).toMatchObject({
-      requiresConfirmation: false,
-    });
-    expect(policy('page_select', { tag: 'select', label: 'Country' })).toMatchObject({
-      requiresConfirmation: false,
     });
     // Submitting is where data leaves the page, so it still asks.
     expect(
@@ -446,8 +442,8 @@ describe('pageActionPolicy', () => {
     ]) {
       expect(
         evaluatePageActionPolicy({
-          actionName: 'page_input',
-          target: { tag: 'input', label: 'City' },
+          actionName: 'page_click',
+          target: { tag: 'div', role: 'option', label: 'Japan' },
           origin,
           sitePolicies: { [origin]: 'allow_low_risk' },
         })
@@ -471,7 +467,7 @@ describe('pageActionPolicy', () => {
     }
   });
 
-  it('still confirms a send in an app origin even though typing is allowed', () => {
+  it('still confirms a send in an app origin', () => {
     const origin = 'https://mail.google.com';
     expect(
       evaluatePageActionPolicy({
@@ -479,7 +475,7 @@ describe('pageActionPolicy', () => {
         target: { tag: 'input', label: 'Subject' },
         origin,
       })
-    ).toMatchObject({ allowed: true, requiresConfirmation: false });
+    ).toMatchObject({ allowed: true, requiresConfirmation: true });
     expect(
       evaluatePageActionPolicy({
         actionName: 'page_click',

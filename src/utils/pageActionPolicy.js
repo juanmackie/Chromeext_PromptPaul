@@ -586,11 +586,6 @@ function targetCanSubmit(target = {}) {
   return false;
 }
 
-function authoredTextEntry(actionName, args = {}) {
-  if (args.submit === true) return false;
-  return ['page_input', 'page_set_value', 'page_select'].includes(String(actionName || ''));
-}
-
 /**
  * Classify a target using only safe, short metadata from the current snapshot.
  * @param {object} target
@@ -640,18 +635,6 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
       requiresConfirmation: true,
       prohibited: true,
       reason: 'Credential, password, one-time-code, or security-sensitive controls are blocked.',
-    };
-  }
-
-  // Typing into a field without submitting leaves the value in the page and is
-  // correctable in one action. Gating it put a card on almost every task.
-  if (authoredTextEntry(actionName, args)) {
-    return {
-      risk: PAGE_ACTION_RISKS.LOW,
-      requiresConfirmation: false,
-      prohibited: false,
-      reason:
-        'This types a value into a page field without submitting it. The value stays in the page and can be corrected.',
     };
   }
 

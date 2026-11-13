@@ -90,12 +90,20 @@ describe('Act site policy boundaries', () => {
         sitePolicies: { 'https://frame.test': 'allow_low_risk' },
       }).requiresConfirmation
     ).toBe(true);
-    // An unlisted origin now allows reversible field entry: typing a value is
-    // correctable in one action, so it no longer costs a human card.
+    // An unlisted origin still confirms field entry; only state-only controls
+    // (menu, tab, option) skip the card now.
     expect(
       evaluatePageActionPolicy({
         actionName: 'page_input',
         target: { tag: 'input', label: 'City' },
+        origin: 'https://other.test',
+        sitePolicies: policies,
+      }).requiresConfirmation
+    ).toBe(true);
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_click',
+        target: { tag: 'button', role: 'menuitem', label: 'Analytics' },
         origin: 'https://other.test',
         sitePolicies: policies,
       }).requiresConfirmation

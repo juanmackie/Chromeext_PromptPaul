@@ -497,7 +497,9 @@ describe('Act benchmark task registration', () => {
         expect(name).toMatch(/^results-20261113T0\d00\.json$/);
         fs.writeFileSync(outputPath, `{"run":${index}}\n`);
       }
-      const kept = fs.readdirSync(path.join(dir, 'history')).sort();
+      // History lives beside the run directory, because every run deletes its
+      // own output directory before writing fresh results.
+      const kept = fs.readdirSync(path.join(dir, '..', 'act-benchmark-history')).sort();
       expect(kept).toHaveLength(2);
       expect(kept.at(-1)).toBe('results-20261113T0300.json');
     } finally {

@@ -1706,6 +1706,9 @@ test.describe('page-agent-style page actions', () => {
         { run: id, tool: toolId }
       );
     };
+    // A categories toggle is a reversible in-page state control, so it runs
+    // without a card; the helper resolves a card only when one is actually
+    // raised, and otherwise waits for the action to settle on its own.
     const clickAndApprove = async (id, toolId, snapshot, element) => {
       await harness.evaluate(
         ({ runId: run, id: tool, snapshotId, index }) => {
@@ -1714,15 +1717,32 @@ test.describe('page-agent-style page actions', () => {
         },
         { runId: id, id: toolId, snapshotId: snapshot.snapshotId, index: element.index }
       );
-      await expect
-        .poll(() => harness.evaluate((run) => window.pageActionHarness.getConfirmation(run), id))
-        .toMatchObject({ action: 'page_click' });
-      expect(
-        await harness.evaluate(
-          ({ url, run }) => window.pageActionHarness.resolveConfirmation(url, run, true),
-          { url: targetUrl, run: id }
-        )
-      ).toMatchObject({ success: true });
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const confirmation = await harness.evaluate(
+          (run) => window.pageActionHarness.getConfirmation(run),
+          id
+        );
+        if (confirmation) {
+          expect(confirmation).toMatchObject({ action: 'page_click' });
+          expect(
+            await harness.evaluate(
+              ({ url, run }) => window.pageActionHarness.resolveConfirmation(url, run, true),
+              { url: targetUrl, run: id }
+            )
+          ).toMatchObject({ success: true });
+          break;
+        }
+        const settled = await harness.evaluate(
+          ({ run, tool }) => window.pageActionHarness.getToolResult(run, tool),
+          { run: id, tool: toolId }
+        );
+        if (settled) break;
+        if (Date.now() > deadline) {
+          throw new Error('The toggle click neither asked for approval nor completed.');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       await expect
         .poll(() =>
           harness.evaluate(({ run, tool }) => window.pageActionHarness.getToolResult(run, tool), {

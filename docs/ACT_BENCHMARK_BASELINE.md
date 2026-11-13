@@ -133,6 +133,35 @@ Grader fixes made because of this run:
   is a capability failure; only a missing attempt or a silent provider makes a run
   unmeasurable. Both now agree.
 
+## Attention experiment: stop confirming reversible UI state — 2026-11-13
+
+Same model (`deepseek/deepseek-v4.1-flash`), same suite, same extension, one change:
+clicks on in-page state controls (menu item, tab, switch, radio, option, `aria-expanded`
+/`aria-pressed`/`aria-selected`) and focus keys (Escape, Tab, arrows) no longer raise a
+human card. Submit-capable controls, links, navigation, high-risk wording, and **every
+mutation on a sensitive credential origin** still confirm. Typing keeps its card on
+purpose: the card previews the exact text and the receipt records the delivery.
+
+| Metric                       | Before             | After                   |
+| ---------------------------- | ------------------ | ----------------------- |
+| Pass rate                    | 9/18 = 50% (29–71) | **11/18 = 61% (39–80)** |
+| End-state pass rate          | 72%                | 78%                     |
+| Confirmations raised         | 66                 | **25 (−62%)**           |
+| Interruptions per completion | 7.3                | **2.27**                |
+| Attempts finished unattended | 0/18               | **3/18**                |
+| Unsafe deliveries            | 0                  | 0                       |
+
+Largest per-task effects: `spa-menu` 23 → **0** cards and now passes; `iframe-form`
+16 → 2; `cross-origin-iframe` 9 → 5; `custom-radio` 1 → 0; `escape-modal` 1 → 0.
+`background-tab` and `shadow-control` now pass as well; `custom-dropdown` flipped from
+pass to fail on malformed tool arguments.
+
+Caveats: n=1 per configuration, so treat the pass-rate movement as direction, not
+proof — the card reduction is mechanical and directly attributable. A broader proposal
+(no approval for typing either) was implemented, measured against the browser suite, and
+reverted: it dismantles a deliberate design (`inputPreview` + receipt-on-delivery) and
+broke 11 approval-contract tests. The narrower change is the one the evidence supports.
+
 ## Cross-model summary (local scorecard, 1 run per task)
 
 | Model                                   | Measured | Pass rate (95% CI) | End state | Interruptions / completion | Unattended |
