@@ -75,7 +75,7 @@ export class OpenAIExecutionMethods {
     // Attribute per-turn latency to the request size. A growing page-action
     // history is the main real-world slowdown on long tasks; without this the
     // trace cannot separate a slow provider from a bloated context.
-    const payload = JSON.stringify(body);
+    let payload = JSON.stringify(body);
     recordEvalTrace(run.id, {
       kind: 'provider_request',
       providerCallIndex,
@@ -95,32 +95,62 @@ export class OpenAIExecutionMethods {
     }
 
     let response;
-    try {
-      response = await fetch(llmEndpoint, {
-        method: 'POST',
-        headers,
-        body: payload,
-        signal: requestTimeout.signal,
-      });
-    } catch (error) {
-      requestTimeout.cleanup();
+    let rejectedBody = '';
+    for (;;) {
+      try {
+        response = await fetch(llmEndpoint, {
+          method: 'POST',
+          headers,
+          body: payload,
+          signal: requestTimeout.signal,
+        });
+      } catch (error) {
+        requestTimeout.cleanup();
+        recordEvalTrace(run.id, {
+          kind: 'provider_timing',
+          eventType: 'request_failed',
+          providerCallIndex,
+          durationMs: Date.now() - providerStartedAt,
+          error: error?.code || error?.message || 'provider request failed',
+        });
+        if (requestTimeout.timedOut && !run.abortController.signal.aborted) {
+          const timeoutError = new Error('Provider request timed out.');
+          timeoutError.code = 'provider_timeout';
+          throw this._markProviderError(timeoutError);
+        }
+        throw this._markProviderError(error);
+      }
+      if (response.ok) break;
+      const errorText = await readBoundedResponseText(response);
+      // Some thinking-mode providers reject a forced tool_choice outright
+      // (DeepSeek: "Thinking mode does not support this tool_choice"). Retry
+      // once with 'auto' and remember it for the rest of the run: the tool list
+      // is unchanged, so a single-tool nudge still holds, and the approval and
+      // policy layers never depend on tool_choice.
+      const forcedChoice = typeof body.tool_choice === 'object' || body.tool_choice === 'required';
+      const toolChoiceRejected =
+        (response.status === 400 || response.status === 422) &&
+        forcedChoice &&
+        !run.providerToolChoiceUnsupported &&
+        /tool[_\s-]?choice/i.test(errorText);
+      if (!toolChoiceRejected) {
+        rejectedBody = errorText;
+        break;
+      }
+      run.providerToolChoiceUnsupported = true;
       recordEvalTrace(run.id, {
         kind: 'provider_timing',
-        eventType: 'request_failed',
+        eventType: 'tool_choice_downgraded',
         providerCallIndex,
         durationMs: Date.now() - providerStartedAt,
-        error: error?.code || error?.message || 'provider request failed',
+        error: `http_${response.status}`,
       });
-      if (requestTimeout.timedOut && !run.abortController.signal.aborted) {
-        const timeoutError = new Error('Provider request timed out.');
-        timeoutError.code = 'provider_timeout';
-        throw this._markProviderError(timeoutError);
-      }
-      throw this._markProviderError(error);
+      body.tool_choice = 'auto';
+      payload = JSON.stringify(body);
     }
 
     if (!response.ok) {
-      const errorText = await readBoundedResponseText(response);
+      const errorText = rejectedBody;
       const toolHint =
         run.webSearch?.enabled && (response.status === 400 || response.status === 422)
           ? ' The selected endpoint may not support function calling; disable Web grounding or choose a tool-capable model.'

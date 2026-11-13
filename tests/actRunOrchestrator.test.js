@@ -455,10 +455,13 @@ describe('RunOrchestrator page actions', () => {
 
     const pending = orch.executeTool(
       runId,
+      // A submit-capable entry still raises a card, and the preview belongs on
+      // that card; plain typing no longer needs approval.
       makeCall('preview-input', 'page_input', {
         snapshotId: 'page-snap-1',
         index: 0,
         text: `Draft ${'x'.repeat(320)}`,
+        submit: true,
       })
     );
     await new Promise((resolve) => setTimeout(resolve, 0));

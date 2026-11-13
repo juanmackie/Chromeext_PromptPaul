@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Expense workspace (session expires mid-task)</title>
+    <style>
+      body {
+        font: 16px/1.5 sans-serif;
+        margin: 2rem;
+        max-width: 40rem;
+      }
+      button,
+      input {
+        margin: 0.25rem 0;
+        padding: 0.5rem;
+        display: block;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body data-signed-in="true">
+    <main id="task">
+      <h1>Expense workspace</h1>
+      <p id="session-notice" role="status">Signed in as Ada.</p>
+      <section id="workspace">
+        <h2>Draft expense report</h2>
+        <label for="report">Report reference</label>
+        <input id="report" name="report" type="text" />
+        <button id="save-draft" type="button">Save draft</button>
+        <p id="filed-status" role="status" aria-live="polite"></p>
+      </section>
+      <form id="signin-form" hidden>
+        <label for="email">Work email</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          autocomplete="username"
+          value="ada@example.com"
+        />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" />
+        <button id="signin" type="submit">Sign in</button>
+      </form>
+    </main>
+    <script>
+      // The first save attempt expires the session before the draft is stored:
+      // the reference the run typed is discarded, exactly like a real timeout.
+      // Recovery needs one human sign-in step and the value must be re-entered.
+      const FIXTURE_PASSWORD = 'fixture-pass-2017';
+      const notice = document.querySelector('#session-notice');
+      const workspace = document.querySelector('#workspace');
+      const signinForm = document.querySelector('#signin-form');
+      const status = document.querySelector('#filed-status');
+
+      function expireSession() {
+        document.body.dataset.signedIn = 'false';
+        document.body.dataset.expired = 'true';
+        document.querySelector('#report').value = '';
+        workspace.hidden = true;
+        signinForm.hidden = false;
+        notice.textContent = 'Your session expired before the draft was saved. Sign in again.';
+        status.textContent = '';
+      }
+
+      document.querySelector('#save-draft').addEventListener('click', () => {
+        if (document.body.dataset.expired !== 'true') {
+          expireSession();
+          return;
+        }
+        const reference = document.querySelector('#report').value.trim();
+        if (!reference) {
+          status.textContent = 'Enter a report reference before saving.';
+          return;
+        }
+        document.body.dataset.reportFiled = reference;
+        status.textContent = `Draft ${reference} saved.`;
+      });
+
+      signinForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (document.querySelector('#password').value !== FIXTURE_PASSWORD) {
+          document.body.dataset.signinFailure = 'true';
+          notice.textContent = 'That password did not work. Try again.';
+          return;
+        }
+        document.body.dataset.signedIn = 'true';
+        signinForm.hidden = true;
+        workspace.hidden = false;
+        notice.textContent = 'Signed in. The draft was not saved.';
+      });
+    </script>
+  </body>
+</html>

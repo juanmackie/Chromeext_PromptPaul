@@ -1207,6 +1207,139 @@ describe('provider tool-choice payloads', () => {
     }
   });
 
+  it('retries once with auto selection when a thinking provider rejects a forced tool_choice', async () => {
+    const originalFetch = global.fetch;
+    const bodies = [];
+    let calls = 0;
+    global.fetch = async (_url, options) => {
+      calls += 1;
+      bodies.push(JSON.parse(options.body));
+      if (calls === 1) {
+        const errorText = JSON.stringify({
+          error: { message: 'Thinking mode does not support this tool_choice' },
+        });
+        const value = new TextEncoder().encode(errorText);
+        return {
+          ok: false,
+          status: 400,
+          body: {
+            getReader: () => {
+              let delivered = false;
+              return {
+                read: async () => {
+                  if (delivered) return { done: true };
+                  delivered = true;
+                  return { done: false, value };
+                },
+              };
+            },
+          },
+        };
+      }
+      return streamingResponse({ choices: [{ delta: { content: 'answer' } }] });
+    };
+    try {
+      const orch = new RunOrchestrator(createStubSkillManager());
+      orch._emitEvent = () => {};
+      const run = {
+        id: 'forced-choice-downgrade',
+        config: {
+          llmEndpoint: 'https://provider.example/v1/chat/completions',
+          apiKey: 'llm-key',
+          modelName: 'deepseek/deepseek-v4.1-flash-fast',
+          tool_choice: 'auto',
+        },
+        conversationHistory: [{ role: 'user', content: 'question' }],
+        accumulatedText: '',
+        webSearch: { enabled: false, attempted: false, attempts: 0, failed: false, sources: [] },
+        toolChoiceState: {
+          original: 'auto',
+          forcedUserTool: 'lookup',
+          forcedUserToolSatisfied: false,
+        },
+        abortController: new AbortController(),
+        loadedSkills: new Set(),
+      };
+      const lookupTool = {
+        type: 'function',
+        function: { name: 'lookup', description: 'Look something up.', parameters: {} },
+      };
+      await orch._executeOpenAI(run, [lookupTool]);
+      expect(calls).toBe(2);
+      // The first attempt forces the named tool; the retry keeps the same tool
+      // list and lets the model choose, which still nudges a single-tool turn.
+      expect(bodies[0].tool_choice).toEqual({ type: 'function', function: { name: 'lookup' } });
+      expect(bodies[1].tool_choice).toBe('auto');
+      expect(bodies[1].tools).toEqual(bodies[0].tools);
+      expect(run.providerToolChoiceUnsupported).toBe(true);
+      // Later turns in the same run no longer force a named choice.
+      expect(orch._getEffectiveToolChoice(run)).toBe('auto');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('does not retry an unrelated provider rejection', async () => {
+    const originalFetch = global.fetch;
+    let calls = 0;
+    global.fetch = async () => {
+      calls += 1;
+      const errorText = JSON.stringify({ error: { message: 'Model overloaded' } });
+      const value = new TextEncoder().encode(errorText);
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          getReader: () => {
+            let delivered = false;
+            return {
+              read: async () => {
+                if (delivered) return { done: true };
+                delivered = true;
+                return { done: false, value };
+              },
+            };
+          },
+        },
+      };
+    };
+    try {
+      const orch = new RunOrchestrator(createStubSkillManager());
+      orch._emitEvent = () => {};
+      const run = {
+        id: 'unrelated-rejection',
+        config: {
+          llmEndpoint: 'https://provider.example/v1/chat/completions',
+          apiKey: 'llm-key',
+          modelName: 'model',
+          tool_choice: 'auto',
+        },
+        conversationHistory: [{ role: 'user', content: 'question' }],
+        accumulatedText: '',
+        webSearch: { enabled: false, attempted: false, attempts: 0, failed: false, sources: [] },
+        toolChoiceState: {
+          original: 'auto',
+          forcedUserTool: 'lookup',
+          forcedUserToolSatisfied: false,
+        },
+        abortController: new AbortController(),
+        loadedSkills: new Set(),
+      };
+      await expect(
+        orch._executeOpenAI(run, [
+          {
+            type: 'function',
+            function: { name: 'lookup', description: 'Look something up.', parameters: {} },
+          },
+        ])
+      ).rejects.toThrow(/API error 400/);
+      expect(calls).toBe(1);
+      expect(run.providerToolChoiceUnsupported).toBeUndefined();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('attributes OpenRouter requests to the Prompt Paul app', async () => {
     const originalFetch = global.fetch;
     let headers;

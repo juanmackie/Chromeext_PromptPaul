@@ -11,6 +11,7 @@ import {
   normalizePageTabActionArgs,
   normalizePageUserInputArgs,
   normalizePageManualInterventionArgs,
+  requestsHighRiskUserAction,
 } from '../src/utils/pageActionPolicy.js';
 
 describe('pageActionPolicy', () => {
@@ -336,6 +337,156 @@ describe('pageActionPolicy', () => {
     expect(normalizePageManualInterventionArgs({ question: 'Complete the purchase' }).valid).toBe(
       false
     );
+  });
+
+  it('allows handing a sign-in wall to the user without allowing secret disclosure', () => {
+    // Observed live failure: the model asked the user to sign in themselves and
+    // the credential-word filter rejected the only safe handoff, so the run
+    // guessed at the form instead of pausing.
+    for (const question of [
+      'The workspace shows a sign-in wall. Please sign in yourself in this tab, then resume.',
+      'Your work email is prefilled. Please type the password on the page and sign in, then resume.',
+      'Sign in on the site so I can continue filing the report, then press Resume.',
+      'A one-time code is needed. Please complete that step in the visible tab, then resume.',
+    ]) {
+      expect(requestsHighRiskUserAction(question)).toBe(false);
+      expect(normalizePageManualInterventionArgs({ question }).valid).toBe(true);
+    }
+    for (const question of [
+      'Paste your password here so I can continue.',
+      'Send me the one-time code.',
+      'Type the password into the chat.',
+      'Tell me your credentials and I will sign in for you.',
+      'Enter the OTP',
+      'Approve the payment so I can finish.',
+      'Delete the old reports and then continue.',
+      'Change the password for me.',
+    ]) {
+      expect(requestsHighRiskUserAction(question)).toBe(true);
+      expect(normalizePageManualInterventionArgs({ question }).valid).toBe(false);
+    }
+    expect(
+      normalizePageUserInputArgs({
+        question: 'Did you finish signing in on the page?',
+        options: ['Yes, resume', 'Not yet'],
+      }).valid
+    ).toBe(true);
+    expect(normalizePageUserInputArgs({ question: 'Send me the OTP' }).valid).toBe(false);
+  });
+
+  it('does not ask a human to approve a reversible page mutation', () => {
+    const policy = (actionName, target, origin = 'https://example.test', extra = {}) =>
+      evaluatePageActionPolicy({ actionName, target, origin, ...extra });
+
+    // Typing without submitting stays local and correctable.
+    expect(policy('page_input', { tag: 'input', label: 'City' })).toMatchObject({
+      allowed: true,
+      requiresConfirmation: false,
+      risk: PAGE_ACTION_RISKS.LOW,
+    });
+    expect(policy('page_set_value', { tag: 'textarea', label: 'Notes' })).toMatchObject({
+      requiresConfirmation: false,
+    });
+    expect(policy('page_select', { tag: 'select', label: 'Country' })).toMatchObject({
+      requiresConfirmation: false,
+    });
+    // Submitting is where data leaves the page, so it still asks.
+    expect(
+      policy('page_input', { tag: 'input', label: 'City', inForm: true }, 'https://example.test', {
+        args: { submit: true },
+      })
+    ).toMatchObject({ requiresConfirmation: true });
+
+    // In-page state controls (menu, tab, switch, option) send nothing.
+    expect(
+      policy('page_click', { tag: 'button', label: 'Products', expanded: false })
+    ).toMatchObject({ requiresConfirmation: false, risk: PAGE_ACTION_RISKS.LOW });
+    expect(
+      policy('page_click', { tag: 'button', role: 'menuitem', label: 'Analytics' })
+    ).toMatchObject({ requiresConfirmation: false });
+    expect(policy('page_click', { tag: 'button', role: 'tab', label: 'Activity' })).toMatchObject({
+      requiresConfirmation: false,
+    });
+    expect(policy('page_click', { tag: 'div', role: 'option', label: 'Japan' })).toMatchObject({
+      requiresConfirmation: false,
+    });
+    // Focus and widget keys cannot submit anything.
+    for (const key of ['Escape', 'Tab', 'ArrowDown']) {
+      expect(
+        policy('page_keypress', { tag: 'input', label: 'City' }, undefined, { args: { key } })
+      ).toMatchObject({ requiresConfirmation: false });
+    }
+
+    // Everything irreversible keeps its card.
+    expect(
+      policy('page_click', { tag: 'button', label: 'Delete row', role: 'menuitem' })
+    ).toMatchObject({ requiresConfirmation: true, risk: PAGE_ACTION_RISKS.HIGH });
+    expect(
+      policy('page_click', { tag: 'a', href: 'https://example.test/docs', label: 'Docs' })
+    ).toMatchObject({ requiresConfirmation: true, navigation: true });
+    expect(
+      policy('page_click', { tag: 'button', label: 'Save', inForm: true, role: 'menuitem' })
+    ).toMatchObject({ requiresConfirmation: true });
+    expect(policy('page_click', { tag: 'button', label: 'More details' })).toMatchObject({
+      requiresConfirmation: true,
+    });
+  });
+
+  it('keeps a human card on every mutation for a sensitive origin', () => {
+    // Mail, banking and account origins never inherit the reversible default,
+    // even with an allow-low-risk site policy, because the blast radius of a
+    // wrong edit there is not local.
+    // Credential surfaces are the origins the product treats as sensitive; an
+    // app like Gmail is not, because its dangerous action (send) is caught by
+    // the high-risk pattern instead.
+    for (const origin of [
+      'https://accounts.google.com',
+      'https://login.microsoftonline.com',
+      'https://vault.bitwarden.com',
+    ]) {
+      expect(
+        evaluatePageActionPolicy({
+          actionName: 'page_input',
+          target: { tag: 'input', label: 'City' },
+          origin,
+          sitePolicies: { [origin]: 'allow_low_risk' },
+        })
+      ).toMatchObject({ allowed: true, requiresConfirmation: true });
+      expect(
+        evaluatePageActionPolicy({
+          actionName: 'page_click',
+          target: { tag: 'button', role: 'menuitem', label: 'Analytics' },
+          origin,
+          trustedMode: true,
+        })
+      ).toMatchObject({ allowed: true, requiresConfirmation: true });
+      // Read-only inspection there is still unrestricted.
+      expect(
+        evaluatePageActionPolicy({
+          actionName: 'page_get_state',
+          origin,
+          sitePolicies: { [origin]: 'allow_low_risk' },
+        })
+      ).toMatchObject({ allowed: true, requiresConfirmation: false });
+    }
+  });
+
+  it('still confirms a send in an app origin even though typing is allowed', () => {
+    const origin = 'https://mail.google.com';
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_input',
+        target: { tag: 'input', label: 'Subject' },
+        origin,
+      })
+    ).toMatchObject({ allowed: true, requiresConfirmation: false });
+    expect(
+      evaluatePageActionPolicy({
+        actionName: 'page_click',
+        target: { tag: 'button', label: 'Send' },
+        origin,
+      })
+    ).toMatchObject({ requiresConfirmation: true, risk: PAGE_ACTION_RISKS.HIGH });
   });
 
   it('allows read-only page state and scrolling without confirmation', () => {

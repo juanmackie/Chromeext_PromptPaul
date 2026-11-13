@@ -256,10 +256,14 @@ describe('Model-maintained Act checklist', () => {
       elements: [{ index: 0, tag: 'input', label: 'City', editable: true, visible: true }],
     });
     await call('page_get_state');
+    // Typing alone no longer asks for approval, so this exercises a
+    // submit-capable entry: the decline path still has to hold for anything a
+    // human can be asked to approve.
     const action = call('page_input', {
       snapshotId: run.pageActions.snapshot.snapshotId,
       index: 0,
       text: 'Public city',
+      submit: true,
     });
     await vi.waitFor(() => expect(run.pageActions.pendingConfirmation).toBeTruthy());
     orchestrator.resolvePageActionDecision(run.id, run.pageActions.pendingConfirmation.id, false);

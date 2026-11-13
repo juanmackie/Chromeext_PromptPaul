@@ -24,6 +24,14 @@ function readReport(filePath) {
   ) {
     throw new Error(`Invalid Act benchmark report: ${filePath}`);
   }
+  // A run with provider or harness failures is evidence about the instrument,
+  // never about Act. Refusing it here stops a dead endpoint from becoming a
+  // "regression" or an accidental baseline.
+  if (report.measurable === false) {
+    throw new Error(
+      `Act benchmark report is not a measured capability score (${report.invalidAttempts ?? 'unknown'} invalid attempt(s)): ${filePath}`
+    );
+  }
   return report;
 }
 
@@ -35,10 +43,11 @@ function compareActScores(baseline, candidate) {
     !sameTasks ||
     baseline.provider !== candidate.provider ||
     baseline.model !== candidate.model ||
-    baseline.runsPerTask !== candidate.runsPerTask
+    baseline.runsPerTask !== candidate.runsPerTask ||
+    baseline.schemaVersion !== candidate.schemaVersion
   ) {
     throw new Error(
-      'Act benchmark reports must use the same model, tasks, provider, and run count.'
+      'Act benchmark reports must use the same model, tasks, provider, run count, and schema.'
     );
   }
   return {

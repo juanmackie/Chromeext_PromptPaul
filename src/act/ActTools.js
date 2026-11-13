@@ -379,7 +379,8 @@ const PAGE_USER_INPUT_TOOLS = [
     type: 'function',
     function: {
       name: 'page_request_user_input',
-      description: 'Ask the user one bounded clarification question. Never ask for secrets.',
+      description:
+        'Ask the user one bounded clarification question when a choice is genuinely theirs, for example which of two visible records to open. Use page_pause_for_user instead when the page needs a step only they can perform, such as signing in. Never ask the user to reveal a secret or payment data to you; ask them to complete that on the page.',
       parameters: {
         type: 'object',
         properties: {
@@ -395,7 +396,7 @@ const PAGE_USER_INPUT_TOOLS = [
     function: {
       name: 'page_pause_for_user',
       description:
-        'Pause automation while the user completes a safe manual step such as CAPTCHA or SSO. The user resumes explicitly; never request secrets, payments, destructive actions, or security changes.',
+        'Pause automation while the user completes a step only they can do, such as signing in, SSO, 2FA, or a CAPTCHA. Name the step and tell them to complete it on the page itself, then resume. Example: "Please sign in to the workspace in this tab, then press Resume." Never ask the user to reveal a password, code, or other secret to you; never ask for payments, destructive actions, or security changes.',
       parameters: {
         type: 'object',
         properties: { question: { type: 'string', maxLength: 600 } },

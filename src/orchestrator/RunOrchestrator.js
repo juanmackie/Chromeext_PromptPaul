@@ -1855,7 +1855,24 @@ class RunOrchestrator {
     return tools;
   }
 
+  /**
+   * The tool_choice to send. A provider that rejected a forced choice (for
+   * example DeepSeek thinking mode: "does not support this tool_choice") keeps
+   * the same tool list but gets 'auto', which preserves the nudge whenever only
+   * one tool is offered and never weakens the policy layer, which does not
+   * depend on tool_choice.
+   * @param {object} run - active run.
+   * @returns {string}
+   */
   _getEffectiveToolChoice(run) {
+    const choice = this._getRequestedToolChoice(run);
+    if (run?.providerToolChoiceUnsupported && choice !== 'auto' && choice !== 'none') {
+      return 'auto';
+    }
+    return choice;
+  }
+
+  _getRequestedToolChoice(run) {
     const state = run.toolChoiceState || {
       original: normalizeToolChoice(run.config.tool_choice),
       forcedUserTool: null,

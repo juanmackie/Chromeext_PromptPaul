@@ -222,16 +222,26 @@
         const menu = button('Products', { 'aria-expanded': 'false' });
         const options = el('div', { role: 'menu', hidden: '' });
         const item = button('Analytics', { role: 'menuitem' });
+        // A real SPA leaves durable evidence of the choice. Without it a closed
+        // menu makes the task unverifiable and the model keeps re-checking
+        // until the attempt times out.
+        const selection = el(
+          'p',
+          { id: 'selection-status', role: 'status' },
+          'No section selected.'
+        );
         item.addEventListener('click', () => {
           mark('selection', 'analytics');
           options.hidden = true;
+          menu.setAttribute('aria-expanded', 'false');
+          selection.textContent = 'Selected section: Analytics';
         });
         menu.addEventListener('click', () => {
           options.hidden = false;
           menu.setAttribute('aria-expanded', 'true');
         });
         options.append(item);
-        root.append(menu, options);
+        root.append(menu, options, selection);
       } else if (kind === 'autocomplete') {
         const input = el('input', {
           'aria-label': 'Choose a spice',

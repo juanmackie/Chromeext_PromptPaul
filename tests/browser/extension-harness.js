@@ -65,11 +65,18 @@
         confirmationCards: 0,
         progressCards: 0,
         manualInterventions: 0,
+        userInputRequests: 0,
       };
       if (request.event?.type === 'page_action_confirmation') metrics.confirmationCards += 1;
       if (request.event?.type === 'page_task_progress') metrics.progressCards += 1;
       if (request.event?.type === 'page_manual_intervention_request') {
         metrics.manualInterventions += 1;
+      }
+      // A question card is the other way a run stops for a human. Counting it
+      // here makes that path visible to the benchmark instead of letting the
+      // attempt time out with no explanation.
+      if (request.event?.type === 'page_user_input_request') {
+        metrics.userInputRequests += 1;
       }
       runMetrics.set(String(request.runId), metrics);
     }

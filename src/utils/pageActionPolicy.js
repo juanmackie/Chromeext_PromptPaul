@@ -45,6 +45,35 @@ export const PAGE_TAB_ACTION_NAMES = Object.freeze([
 export const PAGE_USER_INPUT_ACTION_NAME = 'page_request_user_input';
 export const PAGE_MANUAL_INTERVENTION_ACTION_NAME = 'page_pause_for_user';
 
+// A user-facing stop must never become a channel for secrets, payments,
+// destructive actions, or security changes. Blocking every mention of a
+// credential word also blocked the one safe handoff ("sign in yourself on the
+// page, then resume"), which left login walls unsolvable and pushed the model
+// into guessing. The rule is now about disclosure: a secret topic is only
+// acceptable when the request clearly sends the human to the site itself.
+const SECRET_TOPIC_PATTERN =
+  /password|passcode|one[-_ ]?time|otp|api[-_ ]?key|token|secret|credential/i;
+const SECRET_DISCLOSURE_PATTERN =
+  /\b(?:tell me|send me|send it to me|share (?:it )?with me|give me|paste (?:it )?(?:here|in(?:to)? (?:the |this )?(?:chat|panel|composer))|reply with|type (?:it )?(?:here|in(?:to)? (?:the |this )?(?:chat|panel|composer))|in (?:the|this) (?:chat|panel|composer)|to me)\b/i;
+const ON_PAGE_STEP_PATTERN =
+  /\b(?:on|in|into)\s+(?:the|this)\s+(?:page|tab|site|window|browser|form|screen)\b|\byourself\b|\bvisible tab\b|\bsign(?:ing)? in on\b/i;
+const HIGH_RISK_REQUEST_PATTERN =
+  /payment|purchase|buy|checkout|\bpay\b|transfer|delete|remove|destructive|security settings|change password/i;
+
+/**
+ * True when a user-facing question asks for a secret value to be disclosed to
+ * the assistant, a payment, a destructive action, or a security change.
+ * @param {string} question - bounded question text.
+ * @returns {boolean}
+ */
+export function requestsHighRiskUserAction(question) {
+  const text = String(question || '');
+  if (HIGH_RISK_REQUEST_PATTERN.test(text)) return true;
+  if (!SECRET_TOPIC_PATTERN.test(text)) return false;
+  if (SECRET_DISCLOSURE_PATTERN.test(text)) return true;
+  return !ON_PAGE_STEP_PATTERN.test(text);
+}
+
 export const PAGE_ACTION_RISKS = Object.freeze({
   READ_ONLY: 'read-only',
   LOW: 'low',
@@ -484,15 +513,11 @@ export function normalizePageManualInterventionArgs(args = {}) {
   }
   const question = capPageText(args.question, 600);
   if (!question) return { valid: false, error: 'A clear manual-intervention request is required.' };
-  if (
-    /password|passcode|one[-_ ]?time|otp|api[-_ ]?key|token|secret|payment|credential|purchase|buy|checkout|pay|transfer|delete|remove|destructive|security settings|change password/i.test(
-      question
-    )
-  ) {
+  if (requestsHighRiskUserAction(question)) {
     return {
       valid: false,
       error:
-        'Manual intervention cannot request secrets, payments, destructive actions, or security changes.',
+        'Ask the user to complete the step on the page itself (for example signing in or solving a CAPTCHA there), then resume. Never ask them to disclose a secret to you, approve a payment, make a destructive change, or change security settings.',
     };
   }
   return { valid: true, value: { question } };
@@ -504,12 +529,12 @@ export function normalizePageUserInputArgs(args = {}) {
   }
   const question = capPageText(args.question, 600);
   if (!question) return { valid: false, error: 'A clear question is required.' };
-  if (
-    /password|passcode|one[-_ ]?time|otp|api[-_ ]?key|token|secret|payment|credential/i.test(
-      question
-    )
-  ) {
-    return { valid: false, error: 'User-input requests cannot ask for secrets or payment data.' };
+  if (requestsHighRiskUserAction(question)) {
+    return {
+      valid: false,
+      error:
+        'Ask about the step the user can complete on the page, or what they prefer. Never ask them to disclose a secret to you, approve a payment, make a destructive change, or change security settings.',
+    };
   }
   const options = Array.isArray(args.options)
     ? args.options
@@ -518,6 +543,52 @@ export function normalizePageUserInputArgs(args = {}) {
         .slice(0, 6)
     : [];
   return { valid: true, value: { question, options } };
+}
+
+// Roles whose click only changes in-page UI state (a tab, a menu item, a
+// switch, an option). These are reversible and send nothing on their own, so
+// they do not deserve a human card. Submit-capable controls, links, and
+// anything matching the high-risk pattern still confirm.
+const REVERSIBLE_STATE_ROLES = new Set([
+  'tab',
+  'menuitem',
+  'menuitemcheckbox',
+  'menuitemradio',
+  'option',
+  'switch',
+  'checkbox',
+  'radio',
+  'combobox',
+]);
+
+function targetExposesReversibleState(target = {}) {
+  if (REVERSIBLE_STATE_ROLES.has(String(target.role || '').toLowerCase())) return true;
+  return (
+    target.expanded !== undefined ||
+    target.pressed !== undefined ||
+    target.selected !== undefined ||
+    target.checked !== undefined ||
+    target.haspopup !== undefined
+  );
+}
+
+function targetCanSubmit(target = {}) {
+  const type = String(target.type || '').toLowerCase();
+  if (type === 'submit') return true;
+  // A <button> inside a form defaults to submit even without type="submit".
+  if (
+    type === '' &&
+    String(target.tag || '').toLowerCase() === 'button' &&
+    target.inForm === true
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function authoredTextEntry(actionName, args = {}) {
+  if (args.submit === true) return false;
+  return ['page_input', 'page_set_value', 'page_select'].includes(String(actionName || ''));
 }
 
 /**
@@ -572,6 +643,18 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
     };
   }
 
+  // Typing into a field without submitting leaves the value in the page and is
+  // correctable in one action. Gating it put a card on almost every task.
+  if (authoredTextEntry(actionName, args)) {
+    return {
+      risk: PAGE_ACTION_RISKS.LOW,
+      requiresConfirmation: false,
+      prohibited: false,
+      reason:
+        'This types a value into a page field without submitting it. The value stays in the page and can be corrected.',
+    };
+  }
+
   if (
     ((actionName === 'page_keypress' && args.key === 'Enter') ||
       (actionName === 'page_input' && args.submit === true)) &&
@@ -594,6 +677,8 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
       return classifyPageAction({ tag: 'button', label: 'Submit form' }, 'page_click');
     if (actionName === 'page_keypress') return classifyPageAction(target, 'page_click');
   }
+  // Focus and widget keys cannot submit or transmit anything: they move
+  // selection, close a popover, or leave a field. They stay reversible.
   if (
     actionName === 'page_keypress' &&
     ['Escape', 'Tab', 'Shift+Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
@@ -602,9 +687,9 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
   ) {
     return {
       risk: PAGE_ACTION_RISKS.LOW,
-      requiresConfirmation: true,
+      requiresConfirmation: false,
       prohibited: false,
-      reason: 'This key changes focus or widget state.',
+      reason: 'This key only moves focus, selection, or an open widget on the page.',
     };
   }
 
@@ -614,6 +699,25 @@ export function classifyPageAction(target = {}, actionName = '', args = {}) {
       requiresConfirmation: true,
       prohibited: false,
       reason: 'This control may send, delete, purchase, publish, or change account/security state.',
+    };
+  }
+
+  // An in-page state control (menu item, tab, switch, radio, option) that cannot
+  // submit and is not a link only changes what the page shows.
+  if (
+    actionName === 'page_click' &&
+    !targetCanSubmit(target) &&
+    targetExposesReversibleState(target) &&
+    String(target.tag || '').toLowerCase() !== 'a' &&
+    String(target.role || '').toLowerCase() !== 'link' &&
+    !target.href
+  ) {
+    return {
+      risk: PAGE_ACTION_RISKS.LOW,
+      requiresConfirmation: false,
+      prohibited: false,
+      reason:
+        'This changes in-page selection or visibility only (menu, tab, switch, or option) and sends nothing.',
     };
   }
 
@@ -746,10 +850,16 @@ export function evaluatePageActionPolicy(input = {}) {
   // persistent trusted mode. Explicit run approval never bypasses high risk.
   const requiresExplicitConfirmation =
     classification.risk === PAGE_ACTION_RISKS.HIGH || classification.navigation === true;
+  // A sensitive origin (mail, banking, accounts) keeps a human card on every
+  // mutation, whatever the default relaxation or trusted mode says. Read-only
+  // inspection stays unrestricted, and a site can still be blocked outright.
+  const originForcesConfirmation =
+    sensitiveOrigin && classification.risk !== PAGE_ACTION_RISKS.READ_ONLY;
+  const effectiveTrustedMode = originForcesConfirmation ? false : trustedMode;
   const requiresConfirmation =
-    classification.requiresConfirmation &&
+    (classification.requiresConfirmation || originForcesConfirmation) &&
     !(
-      trustedMode &&
+      effectiveTrustedMode &&
       !requiresExplicitConfirmation &&
       [PAGE_ACTION_RISKS.LOW, PAGE_ACTION_RISKS.MEDIUM].includes(classification.risk)
     );

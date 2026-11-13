@@ -16,7 +16,11 @@ const {
   startAndInspect,
   startFixtureServer,
 } = require('./browserTestSupport.js');
-const { TASKS: benchmarkTasks, readFixtureState } = require('../../scripts/act-benchmark.js');
+const {
+  TASKS: benchmarkTasks,
+  readFixtureState,
+  readFixtureStateVerdict,
+} = require('../../scripts/act-benchmark.js');
 
 let fixtureServer;
 
@@ -1173,6 +1177,49 @@ test.describe('page-agent-style page actions', () => {
           expect(await readFixtureState(target, task), 'unneeded rewrite must fail').toBe(false);
         }
       }
+    } finally {
+      await context.close();
+      removeUserDataDir(userDataDir);
+    }
+  });
+
+  test('interruption graders require the wall to be crossed and the lost value re-entered', async () => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-paul-interruption-'));
+    const { context } = await launchTestBrowser(userDataDir);
+    const target = await context.newPage();
+    try {
+      const auth = benchmarkTasks.find((task) => task.id === 'auth-wall');
+      await target.goto(fixtureUrl(fixtureServer, 'act-auth-wall.html'));
+      expect(await readFixtureState(target, auth), 'signed out must fail').toBe(false);
+      await target.locator('#password').fill('wrong-password');
+      await target.locator('#signin').click();
+      expect(await readFixtureState(target, auth), 'a rejected sign-in must fail').toBe(false);
+      await target.locator('#password').fill('fixture-pass-2017');
+      await target.locator('#signin').click();
+      await target.locator('#report').fill('ORBIT-77');
+      expect(await readFixtureState(target, auth), 'an unfiled report must fail').toBe(false);
+      await target.locator('#file-report').click();
+      expect(await readFixtureState(target, auth), 'signed in and filed must pass').toBe(true);
+
+      const expiry = benchmarkTasks.find((task) => task.id === 'session-expiry');
+      await target.goto(fixtureUrl(fixtureServer, 'act-session-expiry.html'));
+      await target.locator('#report').fill('ORBIT-88');
+      await target.locator('#save-draft').click();
+      expect(await readFixtureState(target, expiry), 'the session loss must fail').toBe(false);
+      await target.locator('#password').fill('fixture-pass-2017');
+      await target.locator('#signin').click();
+      await target.locator('#save-draft').click();
+      expect(await readFixtureState(target, expiry), 'the discarded value must fail').toBe(false);
+      await target.locator('#report').fill('ORBIT-88');
+      await target.locator('#save-draft').click();
+      expect(await readFixtureState(target, expiry), 're-entry after sign-in must pass').toBe(true);
+
+      // A task without an oracle must be reported as unknown, never as a pass
+      // and never as a silent zero.
+      expect(await readFixtureStateVerdict(target, { id: 'no-such-oracle-task' })).toEqual({
+        known: false,
+        matched: false,
+      });
     } finally {
       await context.close();
       removeUserDataDir(userDataDir);
