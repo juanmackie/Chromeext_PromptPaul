@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACT_TAB_CAPS } from '../src/act/ActLimits.js';
+import { ACT_TAB_CAPS, ACT_TAB_SETTLE } from '../src/act/ActLimits.js';
 import { PageTabController } from '../src/orchestrator/PageTabController.js';
 
 describe('PageTabController', () => {
@@ -110,6 +110,74 @@ describe('PageTabController', () => {
 
     expect(opened.openedTabId).toBe(2);
     expect(opened.ready).toBe(true);
+  });
+
+  it('settles a navigated tab after the document finishes loading', async () => {
+    vi.useFakeTimers();
+    try {
+      tabs.set(1, {
+        id: 1,
+        title: 'Source',
+        url: 'https://example.com/start',
+        active: true,
+        status: 'loading',
+      });
+      const statuses = [];
+      const baseGet = chrome.tabs.get.getMockImplementation();
+      chrome.tabs.get = vi.fn(async (tabId) => {
+        const tab = await baseGet(tabId);
+        statuses.push(tab.status);
+        if (statuses.length >= 3) tab.status = 'complete';
+        return tab;
+      });
+      const pending = controller.execute('run-1', 'page_navigate_tab', {
+        tabId: 1,
+        url: 'https://example.com/next',
+      });
+      await vi.advanceTimersByTimeAsync(ACT_TAB_SETTLE.timeoutMs + 2 * ACT_TAB_SETTLE.quietMs);
+      const navigated = await pending;
+      expect(navigated).toMatchObject({ targetTabId: 1, ready: true, navigated: true });
+      expect(statuses).toContain('loading');
+      expect(statuses[statuses.length - 1]).toBe('complete');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns the navigated tab even when it never finishes loading', async () => {
+    vi.useFakeTimers();
+    try {
+      tabs.set(1, {
+        id: 1,
+        title: 'Source',
+        url: 'https://example.com/start',
+        active: true,
+        status: 'loading',
+      });
+      const pending = controller.execute('run-1', 'page_navigate_tab', {
+        tabId: 1,
+        url: 'https://example.com/next',
+      });
+      await vi.advanceTimersByTimeAsync(ACT_TAB_SETTLE.timeoutMs + 1_000);
+      const navigated = await pending;
+      expect(navigated).toMatchObject({ targetTabId: 1, navigated: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not delay navigation when load state is unknown', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = controller.execute('run-1', 'page_navigate_tab', {
+        tabId: 1,
+        url: 'https://example.com/next',
+      });
+      const navigated = await pending;
+      expect(navigated).toMatchObject({ targetTabId: 1, navigated: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('waits for a new tab bridge before reporting it ready', async () => {

@@ -4,7 +4,7 @@
  */
 
 import { sanitizePageActionUrl } from '../utils/pageDom.js';
-import { ACT_TAB_CAPS } from '../act/ActLimits.js';
+import { ACT_TAB_CAPS, ACT_TAB_SETTLE } from '../act/ActLimits.js';
 
 /**
  * Keep tab metadata small and free of query strings or fragments.
@@ -125,6 +125,37 @@ export class PageTabController {
   }
 
   /**
+   * Bounded post-navigation settle: wait until the tab finishes loading, then a
+   * short quiet window, so the first snapshot after a navigation does not race
+   * a partially loaded page. Best effort only; it never fails the action and
+   * it returns at once when the run is aborted.
+   * @param {number} tabId
+   * @param {AbortSignal|undefined} signal
+   * @returns {Promise<void>}
+   */
+  async _settleAfterNavigation(tabId, signal) {
+    const deadline = Date.now() + ACT_TAB_SETTLE.timeoutMs;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) return;
+      let status;
+      try {
+        status = (await chrome.tabs.get(tabId))?.status || '';
+      } catch (_) {
+        return;
+      }
+      if (status === 'loading') {
+        await new Promise((resolve) => setTimeout(resolve, ACT_TAB_SETTLE.pollMs));
+        continue;
+      }
+      // Unknown or discarded load state: proceed without waiting, which is no
+      // worse than the pre-settle behavior.
+      if (status !== 'complete') return;
+      await new Promise((resolve) => setTimeout(resolve, ACT_TAB_SETTLE.quietMs));
+      return;
+    }
+  }
+
+  /**
    * Select an owned tab (foreground unless background was requested), run the
    * readiness check, and return the reused-tab result shape.
    * @param {object} state
@@ -153,6 +184,7 @@ export class PageTabController {
         });
       }
     }
+    if (navigated) await this._settleAfterNavigation(tabId, args.signal);
     let tab;
     try {
       tab = await chrome.tabs.get(tabId);
@@ -293,6 +325,7 @@ export class PageTabController {
           });
         }
       }
+      await this._settleAfterNavigation(tab.id, args.signal);
       return {
         tab: safeTab(tab),
         openedTabId: tab.id,

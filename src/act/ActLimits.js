@@ -17,6 +17,12 @@ export const ACT_TAB_CAPS = Object.freeze({
   maxOwnedTabs: 12,
 });
 
+export const ACT_TAB_SETTLE = Object.freeze({
+  timeoutMs: 3_000,
+  quietMs: 500,
+  pollMs: 150,
+});
+
 export const ACT_PROGRESS_CAPS = Object.freeze({
   maxSteps: 12,
   maxStepLabelChars: 180,
