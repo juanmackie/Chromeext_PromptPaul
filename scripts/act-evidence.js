@@ -40,7 +40,13 @@ const TASK_ROW_FIELDS = Object.freeze([
   'wallTimeMs',
   'confirmationCards',
   'manualInterventions',
-  'interruptions',
+  'userInputRequests',
+  // Counts only. The report's `interruptions` entries carry the model's own
+  // question text, which can quote the page; the record must stay free of it.
+  'interruptionBudget',
+  'humanSteps',
+  'resumedInterruptions',
+  'interruptionWaitMs',
   'terminalState',
   'actOutcome',
   'failureCodes',
