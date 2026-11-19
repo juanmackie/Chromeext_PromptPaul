@@ -225,3 +225,25 @@ The same configuration produced 72% in one scorecard run and 56% in another whil
 instrument was being repaired, so a single run is triage evidence only. The matched
 acceptance set (5 tasks × 3 runs) is the comparison unit for a candidate; see
 EX-003 in [docs/ACT_EXPERIMENTS.md](ACT_EXPERIMENTS.md).
+
+### Does the grader reach the intended path?
+
+- **Known passing case:** `spa-menu` reaches its end state (`data-selection` set) and
+  passes on both models. The oracle reads that stored state, not Act's own completion
+  claim.
+- **Known failing end-state case:** `mind2web-1a16a98f` fails on both models with
+  `END_STATE_MISMATCH` (the annotated first action never matched), and
+  `mind2web-0633c328` fails the same way. A grader that only returned "pass" would not
+  produce these.
+- **End-state/outcome disagreement after navigation or resume:** no such case in these
+  runs. The one navigation-shaped failure (`background-tab`, `PAGE_TAB_NOT_OWNED` /
+  `RUN_TIMEOUT` in the primary baseline scorecard) failed with the end state
+  _unmatched_, not reached-but-unreported, and it passed in the candidate run and in
+  the second-model baseline. `nested-scroll` and `shadow-control` do disagree (end
+  state reached, outcome `ambiguous`/`loop_detected`), but both are blocked by the
+  loop guards rather than by navigation or resume, so they were not selected as the
+  target failure.
+- **Selected target failure instead:** `MALFORMED_TOOL_ARGUMENTS` — the top failure
+  code in the schema-4 baselines and the direct cause of the
+  `mind2web-37564222` `END_STATE_MISMATCH`. Reproduced deterministically from captured
+  provider fragments, then measured as EX-003.
