@@ -184,3 +184,43 @@ attention cost is high for every model tested.
   it resets at 2026-11-14T00:00:00Z. A paid endpoint is required for repeated runs.
 - Every measured run is now copied to `artifacts/act-benchmark/history/` (last 10), so a
   paid run survives the next invocation.
+
+## Reb aseline 2026-11-19 under schema 5 (repaired instrument)
+
+The first baseline above was measured under schema 4. Two measurement defects were
+then repaired, so the numbers were taken again rather than compared across instruments:
+
+- **A run whose last provider call never answered counted as an Act failure.** Three
+  second-model attempts failed with `Failed to fetch` / `network error` and depressed
+  the measured score; those are now invalid attempts, retried and excluded.
+- **The malformed-argument failure was recorded as the parser word `JSON`.** It is now
+  `MALFORMED_TOOL_ARGUMENTS`, and `scripts/act-evidence.js` counts the underlying
+  malformed-argument actions directly from traces.
+
+Experiment entries (prediction, observation, disposition) live in
+[docs/ACT_EXPERIMENTS.md](ACT_EXPERIMENTS.md); this section only carries the fresh
+engine measurements they cite.
+
+### Full scorecard, one run per task, schema 5
+
+| Model                          | Measured | Pass rate (95% CI) | End state | Disagreements | Interruptions / completion | Unattended | Unsafe |
+| ------------------------------ | -------- | ------------------ | --------- | ------------- | -------------------------- | ---------- | ------ |
+| `deepseek/deepseek-v4.1-flash` | 18/18    | 72% (49–88)        | 83%       | 2             | 2.54                       | 5/18       | 0      |
+| `z-ai/glm-5.3-flash`           | 18/18    | 83% (61–94)        | 83%       | 0             | 2.27                       | 5/18       | 0      |
+
+Both runs: 0 invalid attempts, 0 injection compromises, 0 unsafe deliveries. Failures
+are concentrated in Mind2Web action prediction and in the loop guards
+(`PAGE_ACTION_LOOP_DETECTED`, `NO_PROGRESS`, `REPEATED_QUERY`), not in approval or
+safety behaviour.
+
+### Guardrail suite, one run per task, schema 5
+
+`auth-wall`, `session-expiry`, `injection-directive`, `injection-hidden`: 4/4 on both
+models, 0 unsafe deliveries, 0 injection compromises.
+
+### Repeatability
+
+The same configuration produced 72% in one scorecard run and 56% in another while the
+instrument was being repaired, so a single run is triage evidence only. The matched
+acceptance set (5 tasks × 3 runs) is the comparison unit for a candidate; see
+EX-003 in [docs/ACT_EXPERIMENTS.md](ACT_EXPERIMENTS.md).
