@@ -8,3 +8,6 @@ test-results/
 .pi-subagents/
 # Vendored minified third-party bundles stay byte-identical to upstream.
 *.min.js
+
+# Generated Act benchmark evidence summaries (data, not authored code).
+docs/act-evidence/
