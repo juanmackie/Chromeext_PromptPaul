@@ -26,18 +26,18 @@ about Act: fix the provider or the harness and run again.
 
 ## Measurement settings
 
-| Field                | Value as measured for entries below                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Provider route       | `api`: OpenAI-compatible chat completions, streaming, tool calling                                         |
-| Endpoint             | Command Code (`api.commandcode.ai/provider/v1/chat/completions`)                                           |
-| Primary model        | `deepseek/deepseek-v4.1-flash` (`reasoningLevel` empty, as reported)                                       |
-| Second model         | `z-ai/glm-5.3-flash` (`reasoningLevel` empty, as reported)                                                 |
-| Suite / fixture rev. | `--suite scorecard`, 18 tasks; fixture digests in each run's evidence                                      |
-| Runs per task        | 1 for development triage, 3 for the matched acceptance set                                                 |
-| Browser              | Playwright Chromium 158.0.8127.18, full Chromium new headless, Linux                                       |
-| Report schema        | 5                                                                                                          |
-| Build fingerprint    | `configFingerprint` in the run report (includes the eval build digest)                                     |
-| Evidence             | Sanitized copy under `artifacts/act-benchmark-history/`; raw page text and traces stay local and untracked |
+| Field                | Value as measured for entries below                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Provider route       | `api`: OpenAI-compatible chat completions, streaming, tool calling                                            |
+| Endpoint             | Command Code (`api.commandcode.ai/provider/v1/chat/completions`)                                              |
+| Primary model        | `deepseek/deepseek-v4.1-flash` (`reasoningLevel` empty, as reported)                                          |
+| Second model         | `z-ai/glm-5.3-flash` (`reasoningLevel` empty, as reported)                                                    |
+| Suite / fixture rev. | `--suite scorecard`, 18 tasks; fixture digests in each run's evidence                                         |
+| Runs per task        | 1 for development triage, 3 for the matched acceptance set                                                    |
+| Browser              | Playwright Chromium 158.0.8127.18, full Chromium new headless, Linux                                          |
+| Report schema        | 5                                                                                                             |
+| Build fingerprint    | `configFingerprint` in the run report (includes the eval build digest)                                        |
+| Evidence             | Sanitized summaries in `docs/act-evidence/`; raw reports, traces, and page text stay local under `artifacts/` |
 
 ## Experiment template
 
