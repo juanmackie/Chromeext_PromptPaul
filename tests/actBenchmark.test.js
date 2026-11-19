@@ -543,6 +543,30 @@ describe('Act benchmark task registration', () => {
     expect(runs[1]).toMatchObject({ run: 2, passed: 0, endStatePassed: 1 });
   });
 
+  it('treats a run whose last provider call never answered as a provider failure', () => {
+    const base = { terminal: { type: 'error', error: 'network error' } };
+    const providerFailure = {
+      ...base,
+      steps: [
+        { kind: 'provider_timing', providerCallIndex: 1, eventType: 'stream_completed' },
+        { kind: 'provider_timing', providerCallIndex: 2, eventType: 'request_started' },
+      ],
+    };
+    expect(summarizeTrace(providerFailure).failureCodes).toEqual(expect.arrayContaining(['API']));
+    // The provider answered with a rejection, so the attempt stays measurable.
+    const answered = {
+      ...base,
+      steps: [{ kind: 'provider_timing', providerCallIndex: 1, eventType: 'request_rejected' }],
+    };
+    expect(summarizeTrace(answered).failureCodes).not.toContain('API');
+    // An Act-side failure after a completed response is capability evidence.
+    const actFailure = {
+      ...base,
+      steps: [{ kind: 'provider_timing', providerCallIndex: 1, eventType: 'stream_completed' }],
+    };
+    expect(summarizeTrace(actFailure).failureCodes).not.toContain('API');
+  });
+
   it('requires explicit run opt-in and bounds repetition counts', () => {
     expect(parseArgs([]).run).toBe(false);
     expect(parseArgs(['--list']).run).toBe(false);

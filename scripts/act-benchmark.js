@@ -20,7 +20,7 @@ const CODEX_PROFILE_RELATIVE_PATH = 'artifacts/act-benchmark-codex-profile';
 // 80% overall pass-rate target. Multi-run repeats stay opt-in via --runs.
 const PASS_TARGET_RATE = 0.8;
 const DEFAULT_RUNS = 1;
-const BENCHMARK_SCHEMA_VERSION = 4;
+const BENCHMARK_SCHEMA_VERSION = 5;
 // Attempts that ended without a model response measure the provider or the
 // harness, not Act. They are excluded from every rate so a dead endpoint can
 // never be quoted as a capability score.
@@ -171,6 +171,26 @@ const LOCAL_TASKS = [
     fixtureFile: 'act-session-expiry.html',
     humanStep: 'sign_in',
     maxInterruptions: 1,
+  },
+  // Held-out acceptance cases. They live outside SCORECARD_TASK_IDS on purpose:
+  // they must stay unseen while a candidate is designed, and only run once the
+  // candidate and the acceptance rules are frozen. Their oracles are separate
+  // from Act's own completion signal.
+  {
+    id: 'holdout-slot-picker',
+    prompt:
+      'Choose the 14:00 delivery slot and confirm it on this local page. Stay on this local page.',
+    fixtureFile: 'act-holdout.html',
+    fixtureCase: 'holdout-slot-picker',
+    holdout: true,
+  },
+  {
+    id: 'holdout-field-edit',
+    prompt:
+      'The tracking code on this shipment must be ORBIT-91. Correct it and save it on this local page. Stay on this local page.',
+    fixtureFile: 'act-holdout.html',
+    fixtureCase: 'holdout-field-edit',
+    holdout: true,
   },
 ];
 
@@ -784,6 +804,20 @@ function printHelp() {
   );
 }
 
+/**
+ * Whether the last provider call in a trace never produced a usable response.
+ * A transport failure (fetch threw, the stream broke, or no response arrived)
+ * measures the provider or the network, not the product. An HTTP rejection is
+ * excluded: the provider answered, so the attempt is measurable behaviour.
+ * @param {Array<object>} steps - trace steps.
+ * @returns {boolean}
+ */
+function providerCallIncomplete(steps) {
+  const lastTiming = [...steps].reverse().find((step) => step?.kind === 'provider_timing');
+  if (!lastTiming) return false;
+  return ['request_started', 'request_failed', 'stream_failed'].includes(lastTiming.eventType);
+}
+
 function summarizeTrace(trace) {
   const steps = Array.isArray(trace?.steps) ? trace.steps : [];
   const actionSteps = steps.filter((step) => step.kind === 'action');
@@ -806,11 +840,17 @@ function summarizeTrace(trace) {
         reason: String(settle.reason || '').slice(0, 32),
       });
     const code = result?.result?.error || result?.error || result?.code;
+    // Name the mechanism, not the parser: the generic code scan below would
+    // otherwise record the word "JSON" out of Node's parse error, which hides
+    // which mechanism failed.
+    const argumentError = String(result?.error || result?.result?.error || '');
+    const malformedArguments = argumentError.includes('Invalid tool arguments format');
+    if (malformedArguments) failureCodes.add('MALFORMED_TOOL_ARGUMENTS');
     if (result?.result?.toggleDetected === true || code === 'PAGE_ACTION_TOGGLE_LOOP') {
       toggleProtectionObserved = true;
     }
     if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{2,79}$/.test(code)) failureCodes.add(code);
-    if (typeof step.error === 'string') {
+    if (!malformedArguments && typeof step.error === 'string') {
       const match = step.error.match(/\b[A-Z][A-Z0-9_]{2,79}\b/);
       if (match) failureCodes.add(match[0]);
     }
@@ -830,6 +870,13 @@ function summarizeTrace(trace) {
     failureCodes.add(`ACT_${actOutcome.reason.toUpperCase()}`);
   if (trace?.terminal?.type && trace.terminal.type !== 'complete') {
     failureCodes.add(`RUN_${String(trace.terminal.type).toUpperCase().slice(0, 24)}`);
+  }
+  // A run whose last provider call never completed measures the provider or
+  // the network, not Act: the model had no chance to finish the task. Losing
+  // that distinction let three GLM attempts ("Failed to fetch", "network
+  // error") count as capability failures and depress a measured score.
+  if (trace?.terminal?.type === 'error' && providerCallIncomplete(steps)) {
+    failureCodes.add('API');
   }
   return {
     steps: actionSteps.length,
@@ -874,6 +921,8 @@ const IN_PAGE_ORACLE_TASK_IDS = Object.freeze([
   'validation-error-recovery',
   'auth-wall',
   'session-expiry',
+  'holdout-slot-picker',
+  'holdout-field-edit',
 ]);
 
 async function readFixtureStateVerdict(page, task, excludedTabIds = []) {
@@ -988,6 +1037,10 @@ async function readFixtureStateVerdict(page, task, excludedTabIds = []) {
           body.dataset.expired === 'true' &&
           body.dataset.signedIn === 'true' &&
           body.dataset.reportFiled === 'ORBIT-88',
+        'holdout-slot-picker': (body) =>
+          body.dataset.slot === '14:00' && body.dataset.confirmed === 'true',
+        'holdout-field-edit': (body) =>
+          body.dataset.saved === 'true' && body.dataset.tracking === 'ORBIT-91',
       };
       if (!oracleIds.includes(taskId)) return { known: false, matched: false };
       return { known: true, matched: Boolean(successById[taskId]?.(document.body)) };
@@ -1275,7 +1328,7 @@ async function runAttempt({
   const targetUrl = task.mind2web
     ? `${fixtureServer.url('mind2web-action.html')}?id=${encodeURIComponent(task.id)}`
     : task.fixtureFile
-      ? fixtureServer.url(task.fixtureFile)
+      ? `${fixtureServer.url(task.fixtureFile)}${task.fixtureCase ? `?case=${encodeURIComponent(task.fixtureCase)}` : ''}`
       : `${fixtureServer.url('act-benchmark.html')}?case=${encodeURIComponent(task.id)}`;
   await target.goto(targetUrl);
   if (task.mind2web) {

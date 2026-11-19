@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prompt Paul holdout cases</title>
+    <style>
+      body {
+        font: 16px/1.5 sans-serif;
+        margin: 2rem;
+      }
+      button,
+      input,
+      label {
+        margin: 0.25rem;
+        padding: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="task"></main>
+    <script>
+      // Held-out acceptance fixtures. These exist to measure whether an Act
+      // candidate generalizes to unseen pages; they are deliberately absent
+      // from the scorecard suite and must not be used for tuning. Both cases
+      // reward a short, ordinary interaction and expose no hidden trap.
+      const root = document.querySelector('#task');
+      const params = new URLSearchParams(location.search);
+      const kind = params.get('case') || '';
+      const el = (tag, attrs = {}, text = '') => {
+        const node = document.createElement(tag);
+        for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+        if (text) node.textContent = text;
+        return node;
+      };
+      const button = (text, attrs = {}) => el('button', { type: 'button', ...attrs }, text);
+      const mark = (name, value) => {
+        document.body.dataset[name] = value;
+      };
+
+      if (kind === 'holdout-slot-picker') {
+        const fieldset = el('fieldset', {}, 'Delivery slot');
+        const legend = el('legend', {}, 'Choose one delivery slot');
+        fieldset.append(legend);
+        for (const slot of ['09:00', '14:00', '18:00']) {
+          const label = el('label', { for: `slot-${slot}` }, slot);
+          const radio = el('input', {
+            id: `slot-${slot}`,
+            type: 'radio',
+            name: 'slot',
+            value: slot,
+            'aria-label': `Delivery ${slot}`,
+          });
+          radio.addEventListener('change', () => mark('slot', slot));
+          fieldset.append(radio, label);
+        }
+        const confirm = button('Confirm slot');
+        confirm.addEventListener('click', () => {
+          if (document.body.dataset.slot) mark('confirmed', 'true');
+        });
+        root.append(fieldset, confirm);
+      } else if (kind === 'holdout-field-edit') {
+        const label = el('label', { for: 'tracking' }, 'Tracking code');
+        const input = el('input', {
+          id: 'tracking',
+          name: 'tracking',
+          'aria-label': 'Tracking code',
+          value: 'ORBIT-00',
+        });
+        const save = button('Save tracking code');
+        save.addEventListener('click', () => {
+          mark('saved', input.value === 'ORBIT-91' ? 'true' : 'false');
+          mark('tracking', input.value);
+        });
+        root.append(
+          el('p', {}, 'The tracking code on this shipment is wrong.'),
+          label,
+          input,
+          save
+        );
+      } else {
+        root.textContent = 'Unknown holdout case.';
+      }
+    </script>
+  </body>
+</html>
