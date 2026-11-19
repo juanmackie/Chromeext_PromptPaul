@@ -740,6 +740,44 @@ describe('RunOrchestrator._processOpenAIChunk inline reasoning', () => {
     expect(events.find((e) => e.type === 'reasoning')?.data).toBe('structured');
     expect(run.accumulatedText).toBe('hello');
   });
+
+  it('keeps a closing brace that repeats the nested object it closes', async () => {
+    // Real DeepSeek stream for a page_click call whose trailing argument is a
+    // nested `expect` object. The final `}` repeats the `}` that closed
+    // `expect`, and merging it as a repeated tail dropped it, so every such
+    // call failed with "Invalid tool arguments format".
+    const fragments = [
+      '{"snapshotId": "frames-abc-123", "index": 30, "title": "Opening the NFL section", "expect": {"type": "url_changes"',
+      '}',
+      '}',
+    ];
+    const { orch, run } = setup();
+    run.activeToolCalls = new Map();
+    for (const fragment of fragments) {
+      await orch._processOpenAIChunk(run, {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_1', function: { name: 'page_click', arguments: fragment } },
+              ],
+            },
+          },
+        ],
+      });
+    }
+
+    const argumentsText = run.activeToolCalls.get(0).function.arguments;
+    expect(JSON.parse(argumentsText)).toEqual({
+      snapshotId: 'frames-abc-123',
+      index: 30,
+      title: 'Opening the NFL section',
+      expect: { type: 'url_changes' },
+    });
+    expect(orch._parseToolArguments(argumentsText)).toMatchObject({
+      expect: { type: 'url_changes' },
+    });
+  });
 });
 
 describe('completion metadata and empty reasoning recovery', () => {

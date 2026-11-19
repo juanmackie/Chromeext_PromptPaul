@@ -2840,12 +2840,29 @@ class RunOrchestrator {
     if (!incoming) return existing;
     if (incoming === existing) return existing;
     if (incoming.startsWith(existing)) return incoming;
-    if (existing.endsWith(incoming)) return existing;
 
     const existingParsed = this._tryParseJson(existing);
     const incomingParsed = this._tryParseJson(incoming);
     if (existingParsed.ok && incomingParsed.ok) {
       return incoming;
+    }
+
+    // Streamed argument fragments may legitimately repeat the end of the
+    // buffer: the closing brace of a nested object repeats the brace of the
+    // object inside it. Keep a repeated tail only while the buffer still has
+    // open structure to close, so a real final `}` is never dropped.
+    if (existing.endsWith(incoming)) {
+      const appended = existing + incoming;
+      const closesStructure = /^[}\]]+$/.test(incoming);
+      const openDepth = this._jsonStructuralDepth(existing);
+      if (
+        closesStructure &&
+        openDepth !== null &&
+        (openDepth.depth > 0 || openDepth.inString) &&
+        this._jsonStructuralDepth(appended) !== null
+      )
+        return appended;
+      return existing;
     }
 
     const overlap = this._getStringOverlap(existing, incoming);
@@ -2918,6 +2935,32 @@ class RunOrchestrator {
       }
     }
     return 0;
+  }
+
+  /**
+   * Track JSON bracket depth outside strings so a streamed closing brace that
+   * repeats the previous character is only merged when it still closes
+   * something. Returns null once the text closes a bracket it never opened.
+   * @param {string} text - accumulated tool arguments.
+   * @returns {{depth: number, inString: boolean}|null}
+   */
+  _jsonStructuralDepth(text) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (const char of text) {
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') inString = true;
+      else if (char === '{' || char === '[') depth += 1;
+      else if (char === '}' || char === ']') depth -= 1;
+      if (depth < 0) return null;
+    }
+    return { depth, inString };
   }
 
   _generateRunId() {
