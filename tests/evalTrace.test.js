@@ -292,3 +292,20 @@ describe('evaluation trace', () => {
     clearEvalTrace(runId);
   });
 });
+
+describe('evaluation trace terminal error codes', () => {
+  it('keeps the guard error code so the benchmark can tell a guard abort from a provider failure', () => {
+    const runId = 'guard-error-code';
+    beginEvalTrace({ taskId: 'public-task', runId, task: 'Do the thing.', dryRun: false });
+    finishEvalTrace(runId, {
+      type: 'error',
+      error: 'The model returned repetitive output and the response was stopped.',
+      errorCode: 'REPETITIVE_OUTPUT',
+    });
+    expect(getEvalTrace(runId).terminal).toMatchObject({
+      type: 'error',
+      errorCode: 'REPETITIVE_OUTPUT',
+    });
+    clearEvalTrace(runId);
+  });
+});

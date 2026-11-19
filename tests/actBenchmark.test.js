@@ -567,6 +567,28 @@ describe('Act benchmark task registration', () => {
     expect(summarizeTrace(actFailure).failureCodes).not.toContain('API');
   });
 
+  it('never hides an abort raised by an Act guard as a provider failure', () => {
+    // The repetitive-output guard aborts the run from inside the stream loop, so
+    // the last timing is stream_failed. Classifying that as a provider failure
+    // would exclude a model-behaviour failure from the score.
+    const guarded = {
+      steps: [{ kind: 'provider_timing', providerCallIndex: 1, eventType: 'stream_failed' }],
+      terminal: {
+        type: 'error',
+        error: 'The model returned repetitive output and the response was stopped.',
+        errorCode: 'REPETITIVE_OUTPUT',
+      },
+    };
+    expect(summarizeTrace(guarded).failureCodes).not.toContain('API');
+    expect(invalidAttemptReason({ failureCodes: summarizeTrace(guarded).failureCodes })).toBe('');
+
+    const answerGuard = {
+      steps: [{ kind: 'provider_timing', providerCallIndex: 1, eventType: 'stream_failed' }],
+      terminal: { type: 'error', errorCode: 'ANSWER_FORMAT_OUTPUT_LIMIT' },
+    };
+    expect(summarizeTrace(answerGuard).failureCodes).not.toContain('API');
+  });
+
   it('requires explicit run opt-in and bounds repetition counts', () => {
     expect(parseArgs([]).run).toBe(false);
     expect(parseArgs(['--list']).run).toBe(false);

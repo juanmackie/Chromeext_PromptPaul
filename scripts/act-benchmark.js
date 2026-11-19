@@ -805,14 +805,26 @@ function printHelp() {
 }
 
 /**
+ * Terminal error codes raised by Act's own guards, not by the provider. A guard
+ * aborts the run through the same catch that records a failed provider stream,
+ * so without this list a model-behaviour failure would be hidden as a provider
+ * failure and excluded from the score.
+ */
+const ACT_GUARD_ERROR_CODES = Object.freeze(['REPETITIVE_OUTPUT', 'ANSWER_FORMAT_OUTPUT_LIMIT']);
+
+/**
  * Whether the last provider call in a trace never produced a usable response.
  * A transport failure (fetch threw, the stream broke, or no response arrived)
  * measures the provider or the network, not the product. An HTTP rejection is
- * excluded: the provider answered, so the attempt is measurable behaviour.
+ * excluded: the provider answered, so the attempt is measurable behaviour. An
+ * abort raised by an Act guard is excluded too: Act ended the run on purpose.
  * @param {Array<object>} steps - trace steps.
+ * @param {object|null} terminal - trace terminal, for its error code.
  * @returns {boolean}
  */
-function providerCallIncomplete(steps) {
+function providerCallIncomplete(steps, terminal = null) {
+  const errorCode = String(terminal?.errorCode || '');
+  if (ACT_GUARD_ERROR_CODES.includes(errorCode)) return false;
   const lastTiming = [...steps].reverse().find((step) => step?.kind === 'provider_timing');
   if (!lastTiming) return false;
   return ['request_started', 'request_failed', 'stream_failed'].includes(lastTiming.eventType);
@@ -875,7 +887,7 @@ function summarizeTrace(trace) {
   // the network, not Act: the model had no chance to finish the task. Losing
   // that distinction let three GLM attempts ("Failed to fetch", "network
   // error") count as capability failures and depress a measured score.
-  if (trace?.terminal?.type === 'error' && providerCallIncomplete(steps)) {
+  if (trace?.terminal?.type === 'error' && providerCallIncomplete(steps, trace.terminal)) {
     failureCodes.add('API');
   }
   return {

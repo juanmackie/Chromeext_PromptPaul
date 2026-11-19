@@ -270,6 +270,7 @@ export function recordEvalTrace(runId, details = {}) {
       type: String(details.terminalType || 'complete').slice(0, 32),
       content: details.llmResponse,
       error: details.error,
+      errorCode: details.errorCode,
       actOutcome: normalizeActOutcome(details.actOutcome),
       actDiagnostics: details.actDiagnostics,
     });
@@ -300,6 +301,7 @@ export function finishEvalTrace(runId, terminal = {}) {
       type: String(terminal.type || 'complete').slice(0, 32),
       content: terminal.content,
       error: terminal.error,
+      errorCode: terminal.errorCode,
       actOutcome: normalizeActOutcome(terminal.actOutcome),
       actDiagnostics: terminal.actDiagnostics,
     });

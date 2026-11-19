@@ -1,7 +1,5 @@
 # Act benchmark baseline — 2026-11-13
 
-# Act benchmark baseline — 2026-11-13
-
 > Per-attempt experiment records (problem ID, prediction, observation, disposition)
 > live in [docs/ACT_EXPERIMENTS.md](ACT_EXPERIMENTS.md). This document holds the
 > engine measurements; the schema-5 rebaseline is at the end.

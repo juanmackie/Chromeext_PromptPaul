@@ -1070,6 +1070,7 @@ class RunOrchestrator {
       this._terminateRun(runId, {
         type: 'error',
         error: finalError.message || String(finalError),
+        errorCode: finalError.code || null,
       });
       throw finalError;
     }
@@ -1155,6 +1156,7 @@ class RunOrchestrator {
         : null,
       llmResponse: event.content,
       error: event.error,
+      errorCode: event.errorCode || null,
     });
     recordDevDiagnostic('run_terminated', {
       runId,
@@ -2561,7 +2563,11 @@ class RunOrchestrator {
     try {
       this._checkOutputSafety(run, true);
     } catch (error) {
-      this._terminateRun(run.id, { type: 'error', error: error.message }, { run });
+      this._terminateRun(
+        run.id,
+        { type: 'error', error: error.message, errorCode: error.code || null },
+        { run }
+      );
       return;
     }
     if (await this._continueMind2WebWithoutAction(run)) return;
@@ -2851,6 +2857,13 @@ class RunOrchestrator {
     // buffer: the closing brace of a nested object repeats the brace of the
     // object inside it. Keep a repeated tail only while the buffer still has
     // open structure to close, so a real final `}` is never dropped.
+    //
+    // Accepted trade-off: while the buffer is still open, an identical closing
+    // fragment genuinely sent twice is now appended twice instead of dropped.
+    // No provider in the measured runs re-sends a fragment (the dropped-fragment
+    // rule had no test behind it), whereas dropping the real brace broke every
+    // nested `expect` argument, so the trade favours keeping the data. Watch the
+    // MALFORMED_TOOL_ARGUMENTS count after a rollout to confirm it.
     if (existing.endsWith(incoming)) {
       const appended = existing + incoming;
       const closesStructure = /^[}\]]+$/.test(incoming);

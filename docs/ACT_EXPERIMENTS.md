@@ -135,29 +135,39 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   open JSON structure (bracket depth or an open string), and keep the duplicate rule
   otherwise. Touches tool-argument assembly only; page-action policy, confirmations,
   resume behaviour, and the fresh-evidence requirement are untouched.
-- **Predicted effect by task ID:**
-  - `mind2web-37564222`: fail → pass. It failed in the baseline solely on four
-    consecutive malformed-argument `page_click` attempts.
+- **Predicted effect by task ID:** written before any candidate measurement. The
+  acceptance set was fixed at the same time as the predictions: the tasks whose
+  baseline traces contained a malformed-argument action (`spa-menu`,
+  `custom-dropdown`, `mind2web-37564222`) plus both holdouts.
+  - `mind2web-37564222`: fail → pass. It failed in the baseline on repeated
+    malformed-argument `page_click` attempts (in the run with no timeout, those were
+    the only failure codes).
+  - `spa-menu`, `custom-dropdown`: no pass/fail change expected (both already passed);
+    fewer malformed-argument attempts and fewer wasted turns.
   - `hover-menu`, `prefilled-form`, `autocomplete`, `iframe-form`,
-    `cross-origin-iframe`: no pass/fail change expected; fewer malformed-argument
-    attempts and fewer wasted turns.
+    `cross-origin-iframe`: same expectation on the full scorecard — no pass/fail
+    change, fewer malformed-argument attempts.
   - `nested-scroll`, `shadow-control`: unchanged (loop guards, not argument errors).
   - `mind2web-1a16a98f`, `mind2web-0633c328`: unchanged (a tab-unavailable abort and a
     provider failure, not argument errors).
   - Interruptions per completion: hold or improve; the change adds no confirmations.
-- **Holdout cases:** `holdout-slot-picker`, `holdout-field-edit` — authored and frozen
-  before this entry, absent from the scorecard, and only inspected after the candidate
-  was frozen. Predicted: both pass, with no unsafe delivery, on both models.
+- **Holdout cases:** `holdout-slot-picker`, `holdout-field-edit` — authored and
+  committed in `6636705`, before the candidate in `0fa19f3`, and absent from the
+  scorecard. Their baseline runs happened after the holdout was frozen but before the
+  candidate was measured; no tuning followed the observation of a holdout failure (the
+  candidate code was already written and was not changed after those runs), so neither
+  case was retired. Predicted: both pass, with no unsafe delivery, on both models.
 - **Observed fixes:**
   - `mind2web-37564222`: fail → pass. On the matched acceptance set the baseline
-    failed 2 of 3 runs, both with `MALFORMED_TOOL_ARGUMENTS`; the candidate passed
-    3 of 3 with none.
+    failed 2 of 3 runs, both containing `MALFORMED_TOOL_ARGUMENTS` (run 2 failed on
+    that and the resulting budget exhaustion alone; run 1 also timed out); the
+    candidate passed 3 of 3 with no malformed-argument action.
   - Malformed-argument actions on the matched acceptance set (5 tasks × 3 runs):
     primary model 5 → **0**; second model 0 → 0.
   - Matched acceptance set pass rate: primary 11/15 (73%) → **15/15 (100%)**;
     second model 15/15 → 15/15. Held-out cases passed on both models under the
     candidate: `holdout-slot-picker` 3/3 and `holdout-field-edit` 3/3 (primary
-    baseline had 1/3 and 2/3).
+    baseline had 2/3 and 2/3).
   - Full scorecard: primary 13/18 (72%) → 13/18; second model 15/18 (83%) → 15/18.
     Held, not improved: the full suite is dominated by loop-guard and tab failures
     this change does not touch.
@@ -180,12 +190,19 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   2.54 → 2.77 (the one non-improvement, within baseline-to-baseline spread).
 - **Disposition:** retained. Revert commit `0fa19f3` alone if follow-up shows the
   trade-off below is worse than the repaired failure.
-- **Reviewer rationale:** independent review over this diff, both reports, and this
-  entry is recorded in the review notes. Accepted limitation: the rule now prefers
-  appending a repeated closing fragment while the buffer is still open, so a
-  provider that re-sends an identical closing fragment mid-object would duplicate
-  that character. The repaired failure hits every nested `expect` argument and is
-  measured far more often.
+- **Reviewer rationale:** independent review (GLM-5.3 Flash) over the diff, the
+  reports, and this entry. It found and we fixed: an instrument hole where an abort
+  raised by the repetitive-output guard was classified as a provider failure (the
+  terminal now carries `errorCode`, and guard codes are excluded); a wrong baseline
+  holdout figure in this record (2/3, not 1/3); and a prediction list that did not
+  name the acceptance tasks actually measured. Accepted limitation, recorded in the
+  code where the rule lives: while the buffer is still open, an identical closing
+  fragment genuinely sent twice is appended twice instead of dropped. No measured
+  provider re-sends fragments, while the dropped-fragment rule broke every nested
+  `expect` argument, so the trade keeps the data. Watch `MALFORMED_TOOL_ARGUMENTS`
+  after a rollout. Not addressed because it predates this change and is outside the
+  candidate: a mid-run non-retryable HTTP rejection (`request_rejected`) still counts
+  as a measurable Act failure.
 - **Evidence:** sanitized summaries committed under `docs/act-evidence/` (one JSON per
   run; no prompts, page text, or traces, protected by `tests/actEvidence.test.js`).
   Raw reports and traces stay local under `artifacts/`. Fingerprints: primary baseline
