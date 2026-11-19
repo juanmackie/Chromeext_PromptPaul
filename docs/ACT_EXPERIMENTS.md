@@ -186,9 +186,10 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   provider that re-sends an identical closing fragment mid-object would duplicate
   that character. The repaired failure hits every nested `expect` argument and is
   measured far more often.
-- **Evidence:** sanitized `evidence.json` beside each run's `results.json` in the
-  local run archive. Fingerprints: primary baseline `9b425afc4e80`, primary candidate
-  `864c54278201`, second-model baseline `c4ebc3ed8d29`, second-model candidate
-  `7ca1c1a0c55c`; matched acceptance sets `799dc27aff20` → `52308165af1c` (primary)
-  and `ceb138db88ba` → `1a5b585144bd` (second model). Schema 5 throughout; 0 invalid
-  attempts in every run.
+- **Evidence:** sanitized summaries committed under `docs/act-evidence/` (one JSON per
+  run; no prompts, page text, or traces, protected by `tests/actEvidence.test.js`).
+  Raw reports and traces stay local under `artifacts/`. Fingerprints: primary baseline
+  `9b425afc4e80`, primary candidate `864c54278201`, second-model baseline
+  `c4ebc3ed8d29`, second-model candidate `7ca1c1a0c55c`; matched acceptance sets
+  `799dc27aff20` → `52308165af1c` (primary) and `ceb138db88ba` → `1a5b585144bd`
+  (second model). Schema 5 throughout; 0 invalid attempts in every run.

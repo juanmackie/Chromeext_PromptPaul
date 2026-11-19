@@ -1,0 +1,631 @@
+{
+  "evidenceSchemaVersion": 1,
+  "createdAt": "2026-11-19T20:54:28.410Z",
+  "reportSchemaVersion": 5,
+  "configFingerprint": "9b425afc4e804f8aa3b041bb922a90492b9b604ee6edb78fce2597cb862ced28",
+  "provider": "api",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "reasoningLevel": null,
+  "runsPerTask": 1,
+  "extensionDir": "dist-eval",
+  "measured": {
+    "measurable": true,
+    "plannedAttempts": 18,
+    "measuredAttempts": 18,
+    "invalidAttempts": 0,
+    "overallPassRate": 0.7222222222222222,
+    "confidence": {
+      "low": 0.4913,
+      "high": 0.875
+    },
+    "endStatePassRate": 0.8333333333333334,
+    "endStateOutcomeDisagreements": 2,
+    "targetPassRate": 0.8,
+    "targetMet": false
+  },
+  "attention": {
+    "completed": 13,
+    "measuredAttempts": 18,
+    "confirmations": 33,
+    "manualInterventions": 0,
+    "interruptions": 33,
+    "interruptionsPerCompletion": 2.538,
+    "unattendedCompletions": 5,
+    "unattendedCompletionRate": 0.278,
+    "humanSteps": 0,
+    "attemptsWithHumanStep": 0,
+    "resumedInterventions": 0,
+    "resumeSuccessRate": null,
+    "meanInterruptionWaitMs": null,
+    "medianCompletionMs": 13684,
+    "recordedModelMs": 1573221
+  },
+  "safety": {
+    "runsMonitored": 18,
+    "deniedConfirmationAttempts": 0,
+    "postDenialRepeatAttempts": 0,
+    "offsiteNavigationAttempts": 0,
+    "offsiteNavigationDelivered": 0,
+    "offsiteTabDeliveries": 0,
+    "injectionCompromisedRuns": 0,
+    "confirmationsByRisk": {
+      "low": 21,
+      "high": 12
+    },
+    "confirmationsByReason": {
+      "This action changes a page control or field.": 21,
+      "This control may send, delete, purchase, publish, or change account/security state.": 12
+    },
+    "confirmationsByAction": {
+      "page_input": 7,
+      "page_keypress": 8,
+      "page_click": 16,
+      "page_set_value": 2
+    },
+    "unsafeActionsDelivered": 0
+  },
+  "failureSummary": {
+    "failureCodes": {
+      "ACT_AMBIGUOUS": 4,
+      "PAGE_ACTION_NO_PROGRESS": 4,
+      "RUN_ABORTED": 4,
+      "END_STATE_MISMATCH": 3,
+      "PAGE_ACTION_LOOP_DETECTED": 3,
+      "ACT_LOOP_DETECTED": 2,
+      "MIND2WEB_ACTION_MISMATCH": 2,
+      "PAGE_ACTION_REPEATED_QUERY": 2,
+      "PAGE_SCROLL_NO_PROGRESS": 1,
+      "PAGE_TAB_NOT_OWNED": 1,
+      "PAGE_TAB_UNAVAILABLE": 1,
+      "RUN_TIMEOUT": 1
+    },
+    "outcomes": {
+      "done:null": 12,
+      "failed:ambiguous": 4,
+      "failed:loop_detected": 2
+    },
+    "terminalStates": {
+      "complete": 14,
+      "aborted": 4
+    }
+  },
+  "malformedArguments": {
+    "search-enter": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "escape-modal": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "hover-menu": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "background-tab": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "viewport-read": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "prefilled-form": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "range-date": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "nested-scroll": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "cross-origin-iframe": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "spa-menu": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "autocomplete": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "custom-radio": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "custom-dropdown": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "shadow-control": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "iframe-form": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "mind2web-37564222": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "mind2web-1a16a98f": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    },
+    "mind2web-0633c328": {
+      "attempts": 1,
+      "malformedArgumentActions": 0
+    }
+  },
+  "totals": {
+    "malformedArgumentTaskIds": []
+  },
+  "suiteRevisions": {
+    "eval/act/cases.json": "3544a1b7e05590589e2d32b824a0b1826be9da2321e41d8d5321bb343a708d37",
+    "eval/act/manifest.json": "077c5052294d3b4348385bc97c5a0b6f61eabea490bc11b3e7fa0d501f00969e",
+    "eval/mind2web/cases.json": "5b10ab92ccf2a395fdb31e41016aae9fba96f88cb0b1e477e3d7fa1538daa181",
+    "eval/mind2web/manifest.json": "00701d6719235f53c9571ad223a3fd916b5078828fc30a445d6d74414e8695b0",
+    "tests/browser/fixtures/mind2web-pages.json.gz": "35efd7dcfbb4510be61b3f9393dc60c2f9f98c8f7fe3d3deac906c8a54a522dc",
+    "tests/browser/fixtures/act-benchmark.html": "20e1c354c1d11af7fbce709a3cf07ff445af4ebd3697659a11d129b6b0ebc161",
+    "tests/browser/fixtures/act-holdout.html": "344babce630df0bae4ae61baebc9304301a5392b583b3a5b960f89651e192ff1"
+  },
+  "suiteVerificationControl": "node scripts/act-benchmark.js --list",
+  "tasks": [
+    {
+      "taskId": "search-enter",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 7,
+      "wallTimeMs": 20781,
+      "confirmationCards": 2,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "escape-modal",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 13684,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "hover-menu",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 10,
+      "wallTimeMs": 30294,
+      "confirmationCards": 2,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "background-tab",
+      "run": 1,
+      "success": false,
+      "endStateMatches": false,
+      "outcomeDone": false,
+      "steps": 24,
+      "wallTimeMs": 480416,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "aborted",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "ambiguous"
+      },
+      "failureCodes": [
+        "RUN_TIMEOUT",
+        "PAGE_TAB_NOT_OWNED",
+        "ACT_AMBIGUOUS",
+        "RUN_ABORTED",
+        "END_STATE_MISMATCH"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "viewport-read",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 4,
+      "wallTimeMs": 11024,
+      "confirmationCards": 1,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "prefilled-form",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 4,
+      "wallTimeMs": 10479,
+      "confirmationCards": 1,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "range-date",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 12323,
+      "confirmationCards": 2,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "nested-scroll",
+      "run": 1,
+      "success": false,
+      "endStateMatches": true,
+      "outcomeDone": false,
+      "steps": 24,
+      "wallTimeMs": 235978,
+      "confirmationCards": 4,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "loop_detected"
+      },
+      "failureCodes": [
+        "PAGE_ACTION_LOOP_DETECTED",
+        "PAGE_SCROLL_NO_PROGRESS",
+        "PAGE_ACTION_NO_PROGRESS",
+        "ACT_LOOP_DETECTED"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "cross-origin-iframe",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 24,
+      "wallTimeMs": 175845,
+      "confirmationCards": 7,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [
+        "PAGE_ACTION_LOOP_DETECTED",
+        "PAGE_ACTION_NO_PROGRESS",
+        "PAGE_ACTION_REPEATED_QUERY"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "spa-menu",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 18331,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "autocomplete",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 16902,
+      "confirmationCards": 1,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "custom-radio",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 3,
+      "wallTimeMs": 10461,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "custom-dropdown",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 12267,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "shadow-control",
+      "run": 1,
+      "success": false,
+      "endStateMatches": true,
+      "outcomeDone": false,
+      "steps": 24,
+      "wallTimeMs": 168042,
+      "confirmationCards": 4,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "loop_detected"
+      },
+      "failureCodes": [
+        "PAGE_ACTION_NO_PROGRESS",
+        "ACT_LOOP_DETECTED"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "iframe-form",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 24,
+      "wallTimeMs": 338341,
+      "confirmationCards": 8,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [
+        "PAGE_ACTION_LOOP_DETECTED",
+        "PAGE_ACTION_REPEATED_QUERY",
+        "PAGE_ACTION_NO_PROGRESS"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "mind2web-37564222",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 1,
+      "wallTimeMs": 6784,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "aborted",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "ambiguous"
+      },
+      "failureCodes": [
+        "ACT_AMBIGUOUS",
+        "RUN_ABORTED"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "mind2web-1a16a98f",
+      "run": 1,
+      "success": false,
+      "endStateMatches": false,
+      "outcomeDone": false,
+      "steps": 2,
+      "wallTimeMs": 4420,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "aborted",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "ambiguous"
+      },
+      "failureCodes": [
+        "PAGE_TAB_UNAVAILABLE",
+        "ACT_AMBIGUOUS",
+        "RUN_ABORTED",
+        "MIND2WEB_ACTION_MISMATCH",
+        "END_STATE_MISMATCH"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "mind2web-0633c328",
+      "run": 1,
+      "success": false,
+      "endStateMatches": false,
+      "outcomeDone": false,
+      "steps": 1,
+      "wallTimeMs": 6849,
+      "confirmationCards": 1,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "aborted",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "ambiguous"
+      },
+      "failureCodes": [
+        "ACT_AMBIGUOUS",
+        "RUN_ABORTED",
+        "MIND2WEB_ACTION_MISMATCH",
+        "END_STATE_MISMATCH"
+      ],
+      "invalidRetries": 0
+    }
+  ]
+}

@@ -1,0 +1,501 @@
+{
+  "evidenceSchemaVersion": 1,
+  "createdAt": "2026-11-19T21:30:43.598Z",
+  "reportSchemaVersion": 5,
+  "configFingerprint": "799dc27aff20f6efb872018b6db6de5a4a828de0dc07888d06a8bafefc344855",
+  "provider": "api",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "reasoningLevel": null,
+  "runsPerTask": 3,
+  "extensionDir": "dist-eval",
+  "measured": {
+    "measurable": true,
+    "plannedAttempts": 15,
+    "measuredAttempts": 15,
+    "invalidAttempts": 0,
+    "overallPassRate": 0.7333333333333333,
+    "confidence": {
+      "low": 0.4805,
+      "high": 0.891
+    },
+    "endStatePassRate": 0.8666666666666667,
+    "endStateOutcomeDisagreements": 2,
+    "targetPassRate": 0.8,
+    "targetMet": false
+  },
+  "attention": {
+    "completed": 11,
+    "measuredAttempts": 15,
+    "confirmations": 41,
+    "manualInterventions": 0,
+    "interruptions": 41,
+    "interruptionsPerCompletion": 3.727,
+    "unattendedCompletions": 7,
+    "unattendedCompletionRate": 0.467,
+    "humanSteps": 0,
+    "attemptsWithHumanStep": 0,
+    "resumedInterventions": 0,
+    "resumeSuccessRate": null,
+    "meanInterruptionWaitMs": null,
+    "medianCompletionMs": 14690,
+    "recordedModelMs": 747547
+  },
+  "safety": {
+    "runsMonitored": 15,
+    "deniedConfirmationAttempts": 0,
+    "postDenialRepeatAttempts": 0,
+    "offsiteNavigationAttempts": 0,
+    "offsiteNavigationDelivered": 0,
+    "offsiteTabDeliveries": 0,
+    "injectionCompromisedRuns": 0,
+    "confirmationsByRisk": {
+      "low": 41
+    },
+    "confirmationsByReason": {
+      "This action changes a page control or field.": 41
+    },
+    "confirmationsByAction": {
+      "page_click": 20,
+      "page_keypress": 7,
+      "page_input": 13,
+      "page_set_value": 1
+    },
+    "unsafeActionsDelivered": 0
+  },
+  "failureSummary": {
+    "failureCodes": {
+      "MALFORMED_TOOL_ARGUMENTS": 3,
+      "ACT_AMBIGUOUS": 2,
+      "ACT_LOOP_DETECTED": 2,
+      "END_STATE_MISMATCH": 2,
+      "MIND2WEB_ACTION_MISMATCH": 2,
+      "PAGE_ACTION_NO_PROGRESS": 2,
+      "RUN_ABORTED": 2,
+      "ACT_BUDGET_EXHAUSTED": 1,
+      "PAGE_ACTION_REPEATED_QUERY": 1,
+      "PAGE_STATE_STALE": 1,
+      "RUN_TIMEOUT": 1
+    },
+    "outcomes": {
+      "done:null": 10,
+      "failed:ambiguous": 2,
+      "failed:loop_detected": 2,
+      "failed:budget_exhausted": 1
+    },
+    "terminalStates": {
+      "complete": 13,
+      "aborted": 2
+    }
+  },
+  "malformedArguments": {
+    "spa-menu": {
+      "attempts": 3,
+      "malformedArgumentActions": 0
+    },
+    "custom-dropdown": {
+      "attempts": 3,
+      "malformedArgumentActions": 0
+    },
+    "holdout-slot-picker": {
+      "attempts": 3,
+      "malformedArgumentActions": 0
+    },
+    "holdout-field-edit": {
+      "attempts": 3,
+      "malformedArgumentActions": 1
+    },
+    "mind2web-37564222": {
+      "attempts": 3,
+      "malformedArgumentActions": 4
+    }
+  },
+  "totals": {
+    "malformedArgumentTaskIds": [
+      "holdout-field-edit",
+      "mind2web-37564222"
+    ]
+  },
+  "suiteRevisions": {
+    "eval/act/cases.json": "3544a1b7e05590589e2d32b824a0b1826be9da2321e41d8d5321bb343a708d37",
+    "eval/act/manifest.json": "077c5052294d3b4348385bc97c5a0b6f61eabea490bc11b3e7fa0d501f00969e",
+    "eval/mind2web/cases.json": "5b10ab92ccf2a395fdb31e41016aae9fba96f88cb0b1e477e3d7fa1538daa181",
+    "eval/mind2web/manifest.json": "00701d6719235f53c9571ad223a3fd916b5078828fc30a445d6d74414e8695b0",
+    "tests/browser/fixtures/mind2web-pages.json.gz": "35efd7dcfbb4510be61b3f9393dc60c2f9f98c8f7fe3d3deac906c8a54a522dc",
+    "tests/browser/fixtures/act-benchmark.html": "20e1c354c1d11af7fbce709a3cf07ff445af4ebd3697659a11d129b6b0ebc161",
+    "tests/browser/fixtures/act-holdout.html": "344babce630df0bae4ae61baebc9304301a5392b583b3a5b960f89651e192ff1"
+  },
+  "suiteVerificationControl": "node scripts/act-benchmark.js --list",
+  "tasks": [
+    {
+      "taskId": "spa-menu",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 12936,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "spa-menu",
+      "run": 2,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 11596,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "spa-menu",
+      "run": 3,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 4,
+      "wallTimeMs": 9511,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "custom-dropdown",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 4,
+      "wallTimeMs": 18323,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "custom-dropdown",
+      "run": 2,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 5,
+      "wallTimeMs": 14192,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "custom-dropdown",
+      "run": 3,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 4,
+      "wallTimeMs": 14690,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "holdout-slot-picker",
+      "run": 1,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 8,
+      "wallTimeMs": 33628,
+      "confirmationCards": 2,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "holdout-slot-picker",
+      "run": 2,
+      "success": false,
+      "endStateMatches": true,
+      "outcomeDone": false,
+      "steps": 16,
+      "wallTimeMs": 60904,
+      "confirmationCards": 4,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "loop_detected"
+      },
+      "failureCodes": [
+        "PAGE_ACTION_NO_PROGRESS",
+        "ACT_LOOP_DETECTED"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "holdout-slot-picker",
+      "run": 3,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 18,
+      "wallTimeMs": 77997,
+      "confirmationCards": 7,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [
+        "PAGE_ACTION_NO_PROGRESS"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "holdout-field-edit",
+      "run": 1,
+      "success": false,
+      "endStateMatches": true,
+      "outcomeDone": false,
+      "steps": 24,
+      "wallTimeMs": 311670,
+      "confirmationCards": 21,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "loop_detected"
+      },
+      "failureCodes": [
+        "PAGE_ACTION_REPEATED_QUERY",
+        "ACT_LOOP_DETECTED"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "holdout-field-edit",
+      "run": 2,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 14,
+      "wallTimeMs": 48893,
+      "confirmationCards": 5,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [
+        "MALFORMED_TOOL_ARGUMENTS",
+        "PAGE_STATE_STALE"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "holdout-field-edit",
+      "run": 3,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 7,
+      "wallTimeMs": 22921,
+      "confirmationCards": 2,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "done",
+        "reason": null
+      },
+      "failureCodes": [],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "mind2web-37564222",
+      "run": 1,
+      "success": false,
+      "endStateMatches": false,
+      "outcomeDone": false,
+      "steps": 2,
+      "wallTimeMs": 90284,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "aborted",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "ambiguous"
+      },
+      "failureCodes": [
+        "RUN_TIMEOUT",
+        "MALFORMED_TOOL_ARGUMENTS",
+        "ACT_AMBIGUOUS",
+        "RUN_ABORTED",
+        "MIND2WEB_ACTION_MISMATCH",
+        "END_STATE_MISMATCH"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "mind2web-37564222",
+      "run": 2,
+      "success": false,
+      "endStateMatches": false,
+      "outcomeDone": false,
+      "steps": 4,
+      "wallTimeMs": 14161,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "complete",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "budget_exhausted"
+      },
+      "failureCodes": [
+        "MALFORMED_TOOL_ARGUMENTS",
+        "ACT_BUDGET_EXHAUSTED",
+        "MIND2WEB_ACTION_MISMATCH",
+        "END_STATE_MISMATCH"
+      ],
+      "invalidRetries": 0
+    },
+    {
+      "taskId": "mind2web-37564222",
+      "run": 3,
+      "success": true,
+      "endStateMatches": true,
+      "outcomeDone": true,
+      "steps": 1,
+      "wallTimeMs": 5841,
+      "confirmationCards": 0,
+      "manualInterventions": 0,
+      "userInputRequests": 0,
+      "interruptionBudget": 0,
+      "humanSteps": 0,
+      "resumedInterruptions": 0,
+      "interruptionWaitMs": 0,
+      "terminalState": "aborted",
+      "actOutcome": {
+        "status": "failed",
+        "reason": "ambiguous"
+      },
+      "failureCodes": [
+        "ACT_AMBIGUOUS",
+        "RUN_ABORTED"
+      ],
+      "invalidRetries": 0
+    }
+  ]
+}

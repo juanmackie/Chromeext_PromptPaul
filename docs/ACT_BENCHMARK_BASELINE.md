@@ -199,7 +199,8 @@ then repaired, so the numbers were taken again rather than compared across instr
 
 Experiment entries (prediction, observation, disposition) live in
 [docs/ACT_EXPERIMENTS.md](ACT_EXPERIMENTS.md); this section only carries the fresh
-engine measurements they cite.
+engine measurements they cite. Their sanitized summaries are committed under
+[docs/act-evidence/](act-evidence/), one JSON per run.
 
 ### Full scorecard, one run per task, schema 5
 
