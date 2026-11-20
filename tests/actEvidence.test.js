@@ -9,9 +9,9 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it } from 'vitest';
 
-const { buildEvidence, countMalformedArguments } = createRequire(import.meta.url)(
-  '../scripts/act-evidence.js'
-);
+const { buildEvidence, countMalformedArguments, totalsFromTraceCounts } = createRequire(
+  import.meta.url
+)('../scripts/act-evidence.js');
 
 const temporaryDirectories = [];
 function temporaryDirectory() {
@@ -108,6 +108,21 @@ describe('sanitized Act evidence', () => {
     expect(countMalformedArguments(traceDir, ['spa-menu', 'missing'])).toEqual({
       'spa-menu': { attempts: 1, malformedArgumentActions: 2 },
       missing: { attempts: 0, malformedArgumentActions: 0 },
+    });
+  });
+});
+
+describe('evidence totals stay reproducible', () => {
+  it('derives the malformed task list from the per-task counts, not a report code', () => {
+    // A schema-4 report names the mechanism `JSON`, so a code-based total made the
+    // committed file disagree with its own per-task counts.
+    const counts = {
+      'spa-menu': { attempts: 1, malformedArgumentActions: 3 },
+      'shadow-control': { attempts: 1, malformedArgumentActions: 1 },
+      clean: { attempts: 1, malformedArgumentActions: 0 },
+    };
+    expect(totalsFromTraceCounts(counts)).toEqual({
+      malformedArgumentTaskIds: ['shadow-control', 'spa-menu'],
     });
   });
 });

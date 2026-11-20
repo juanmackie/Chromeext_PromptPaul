@@ -173,11 +173,11 @@
   "totals": {
     "malformedArgumentTaskIds": [
       "cross-origin-iframe",
-      "spa-menu",
       "custom-dropdown",
+      "iframe-form",
       "mind2web-37564222",
-      "mind2web-1a16a98f",
-      "mind2web-0633c328"
+      "shadow-control",
+      "spa-menu"
     ]
   },
   "suiteRevisions": {

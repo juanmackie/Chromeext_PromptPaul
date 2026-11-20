@@ -203,12 +203,14 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   raised by the repetitive-output guard was classified as a provider failure (the
   terminal now carries `errorCode`, and guard codes are excluded); a wrong baseline
   holdout figure in this record (2/3, not 1/3); and a prediction list that did not
-  name the acceptance tasks actually measured. Accepted limitation, recorded in the
-  code where the rule lives: while the buffer is still open, an identical closing
-  fragment genuinely sent twice is appended twice instead of dropped. No measured
-  provider re-sends fragments, while the dropped-fragment rule broke every nested
-  `expect` argument, so the trade keeps the data. Watch `MALFORMED_TOOL_ARGUMENTS`
-  after a rollout. Not addressed, because each predates this change and is outside
+  name the acceptance tasks actually measured; and a committed evidence file whose
+  `totals` field no committed generator could produce (a second review pass caught
+  it). Accepted limitation, recorded in the code where the rule lives: while the
+  buffer is still open, the first of two identical closing fragments is appended
+  rather than dropped, and the second is still suppressed once the structure closes.
+  No measured provider re-sends fragments, while the dropped-fragment rule broke
+  every nested `expect` argument, so the trade keeps the data. Watch
+  `MALFORMED_TOOL_ARGUMENTS` after a rollout. Not addressed, because each predates this change and is outside
   the candidate: a mid-run non-retryable HTTP rejection (`request_rejected`) still
   counts as a measurable Act failure, and the provider-failure rule reads the
   `provider_timing` steps that only the OpenAI route emits, so a provider drop on

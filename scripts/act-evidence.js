@@ -102,13 +102,19 @@ function taskRows(records) {
   );
 }
 
-function totalsFromRecords(records) {
-  const malformedTaskIds = new Set();
-  for (const record of records || []) {
-    const codes = Array.isArray(record.failureCodes) ? record.failureCodes : [];
-    if (codes.includes('MALFORMED_TOOL_ARGUMENTS')) malformedTaskIds.add(record.taskId);
-  }
-  return { malformedArgumentTaskIds: [...malformedTaskIds] };
+/**
+ * Derived from the trace counts, not from a report failure code: schema-4 reports
+ * name the mechanism `JSON`, so a code-based total would silently disagree with
+ * the per-task counts in the same file.
+ * @param {object} counts - taskId -> {attempts, malformedArgumentActions}.
+ * @returns {{malformedArgumentTaskIds: string[]}}
+ */
+function totalsFromTraceCounts(counts) {
+  const malformedTaskIds = Object.entries(counts)
+    .filter(([, entry]) => entry.malformedArgumentActions > 0)
+    .map(([taskId]) => taskId)
+    .sort();
+  return { malformedArgumentTaskIds: malformedTaskIds };
 }
 
 /**
@@ -149,7 +155,7 @@ function buildEvidence(report, options = {}) {
     safety: report.safety,
     failureSummary: report.failureSummary,
     malformedArguments: traceCounts,
-    totals: totalsFromRecords(report.records),
+    totals: totalsFromTraceCounts(traceCounts),
     suiteRevisions: suiteRevisions(),
     suiteVerificationControl: 'node scripts/act-benchmark.js --list',
     tasks: taskRows(report.records),
@@ -198,6 +204,7 @@ module.exports = {
   SUITE_FILES,
   buildEvidence,
   countMalformedArguments,
+  totalsFromTraceCounts,
   suiteRevisions,
   writeEvidence,
 };
