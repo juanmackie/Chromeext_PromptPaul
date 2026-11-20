@@ -189,7 +189,7 @@ attention cost is high for every model tested.
 - Every measured run is now copied to `artifacts/act-benchmark/history/` (last 10), so a
   paid run survives the next invocation.
 
-## Reb aseline 2026-11-19 under schema 5 (repaired instrument)
+## Rebaseline 2026-11-19 under schema 5 (repaired instrument)
 
 The first baseline above was measured under schema 4. Two measurement defects were
 then repaired, so the numbers were taken again rather than compared across instruments:

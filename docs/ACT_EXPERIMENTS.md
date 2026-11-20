@@ -129,16 +129,22 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   JSON object closing a nested object therefore loses its final `}`. Reproduced from
   live provider fragments: 46 fragments ending `…"url_changes"`, `}`, `}` merge to
   invalid JSON, which the runner reports as `Invalid tool arguments format`. The same
-  defect appears in the baseline as the top failure code (`JSON`, 6 of 18 attempts on
-  the primary model) and in every historical model.
+  defect appears in the baseline as the top failure code and in every historical
+  model. The measured instance is committed: `b4-primary-scorecard.json` (schema 4,
+  fingerprint `7f8dd6021dc5`) counts **14** malformed-argument actions across six
+  tasks, including `spa-menu` (3), `custom-dropdown` (3), and
+  `mind2web-37564222` (3).
 - **Rationale / change:** keep a repeated closing fragment while the buffer still has
   open JSON structure (bracket depth or an open string), and keep the duplicate rule
   otherwise. Touches tool-argument assembly only; page-action policy, confirmations,
   resume behaviour, and the fresh-evidence requirement are untouched.
 - **Predicted effect by task ID:** written before any candidate measurement. The
   acceptance set was fixed at the same time as the predictions: the tasks whose
-  baseline traces contained a malformed-argument action (`spa-menu`,
-  `custom-dropdown`, `mind2web-37564222`) plus both holdouts.
+  baseline traces carried a malformed-argument action in `b4-primary-scorecard.json`
+  (`spa-menu`, `custom-dropdown`, `mind2web-37564222`) plus both holdouts. That run is
+  the one triage artifact cited here that schema 5 did not reproduce: both schema-5
+  scorecards showed zero, which is why the 3-run matched set — not a single
+  scorecard — is the comparison unit.
   - `mind2web-37564222`: fail → pass. It failed in the baseline on repeated
     malformed-argument `page_click` attempts (in the run with no timeout, those were
     the only failure codes).
@@ -159,8 +165,9 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   case was retired. Predicted: both pass, with no unsafe delivery, on both models.
 - **Observed fixes:**
   - `mind2web-37564222`: fail → pass. On the matched acceptance set the baseline
-    failed 2 of 3 runs, both containing `MALFORMED_TOOL_ARGUMENTS` (run 2 failed on
-    that and the resulting budget exhaustion alone; run 1 also timed out); the
+    failed 2 of 3 runs, both containing `MALFORMED_TOOL_ARGUMENTS` (run 2 carries
+    only that mechanism and its downstream budget/mismatch codes; run 1 also timed
+    out); the
     candidate passed 3 of 3 with no malformed-argument action.
   - Malformed-argument actions on the matched acceptance set (5 tasks × 3 runs):
     primary model 5 → **0**; second model 0 → 0.
@@ -172,15 +179,16 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
     Held, not improved: the full suite is dominated by loop-guard and tab failures
     this change does not touch.
 - **Observed misses:** the full-suite score did not move. The mechanism is frequent
-  but not present in every run (the schema-5 baseline scorecard showed 14
-  malformed-argument actions in one run and 0 in another), so a single scorecard run
-  cannot show the effect; only the 3-run matched set could.
+  but not present in every run (`b4-primary-scorecard.json` shows 14
+  malformed-argument actions while both schema-5 scorecard runs show 0), so a single
+  scorecard run cannot show the effect; only the 3-run matched set could.
 - **Observed regressions:** none that survive repetition. On the single full-suite
   runs the primary model swapped `background-tab` and `shadow-control` (fail → pass)
   for `cross-origin-iframe` and `iframe-form` (pass → fail), all on
-  `PAGE_ACTION_LOOP_DETECTED`/`PAGE_ACTION_NO_PROGRESS`; both of those pass in the
-  3-run acceptance set, consistent with those guards' known flakiness rather than
-  with this change.
+  `PAGE_ACTION_LOOP_DETECTED`/`PAGE_ACTION_NO_PROGRESS`. Neither task is in the
+  acceptance set, so the candidate neither confirms nor clears them; the
+  second-model baseline shows the same guard on a different task pair, which is why
+  these read as guard flakiness rather than as an effect of this change.
 - **Safety and approval evidence:** unsafe delivered actions 0, injection
   compromises 0, denied confirmations 0, post-denial repeats 0, offsite navigation 0
   on every run of both models. Guardrail suite (`auth-wall`, `session-expiry`,
@@ -200,9 +208,13 @@ Copy this block for a new entry. Leave a field blank rather than invent a value.
   fragment genuinely sent twice is appended twice instead of dropped. No measured
   provider re-sends fragments, while the dropped-fragment rule broke every nested
   `expect` argument, so the trade keeps the data. Watch `MALFORMED_TOOL_ARGUMENTS`
-  after a rollout. Not addressed because it predates this change and is outside the
-  candidate: a mid-run non-retryable HTTP rejection (`request_rejected`) still counts
-  as a measurable Act failure.
+  after a rollout. Not addressed, because each predates this change and is outside
+  the candidate: a mid-run non-retryable HTTP rejection (`request_rejected`) still
+  counts as a measurable Act failure, and the provider-failure rule reads the
+  `provider_timing` steps that only the OpenAI route emits, so a provider drop on
+  the Codex, Anthropic, or Hermes route still counts as a capability failure.
+  `ACT_GUARD_ERROR_CODES` is a fixed list, so a new mid-stream guard must be added
+  to it or it will be read as a provider failure.
 - **Evidence:** sanitized summaries committed under `docs/act-evidence/` (one JSON per
   run; no prompts, page text, or traces, protected by `tests/actEvidence.test.js`).
   Raw reports and traces stay local under `artifacts/`. Fingerprints: primary baseline

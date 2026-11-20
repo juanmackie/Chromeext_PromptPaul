@@ -2858,12 +2858,13 @@ class RunOrchestrator {
     // object inside it. Keep a repeated tail only while the buffer still has
     // open structure to close, so a real final `}` is never dropped.
     //
-    // Accepted trade-off: while the buffer is still open, an identical closing
-    // fragment genuinely sent twice is now appended twice instead of dropped.
-    // No provider in the measured runs re-sends a fragment (the dropped-fragment
-    // rule had no test behind it), whereas dropping the real brace broke every
-    // nested `expect` argument, so the trade favours keeping the data. Watch the
-    // MALFORMED_TOOL_ARGUMENTS count after a rollout to confirm it.
+    // Accepted trade-off: while the buffer is still open, the first of two
+    // identical closing fragments is appended rather than dropped (the second is
+    // still suppressed once the structure closes). No provider in the measured
+    // runs re-sends a fragment - the dropped-fragment rule had no test behind it -
+    // whereas dropping the real brace broke every nested `expect` argument, so the
+    // trade favours keeping the data. Watch the MALFORMED_TOOL_ARGUMENTS count
+    // after a rollout to confirm it.
     if (existing.endsWith(incoming)) {
       const appended = existing + incoming;
       const closesStructure = /^[}\]]+$/.test(incoming);

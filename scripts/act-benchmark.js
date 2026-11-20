@@ -818,6 +818,11 @@ const ACT_GUARD_ERROR_CODES = Object.freeze(['REPETITIVE_OUTPUT', 'ANSWER_FORMAT
  * measures the provider or the network, not the product. An HTTP rejection is
  * excluded: the provider answered, so the attempt is measurable behaviour. An
  * abort raised by an Act guard is excluded too: Act ended the run on purpose.
+ *
+ * This reads `provider_timing` steps, which only the OpenAI route emits. The
+ * Codex, Anthropic, and Hermes routes record none, so a genuine provider drop
+ * there still counts as a capability failure. The measured suite runs the OpenAI
+ * route only; extending this needs those routes to emit the same timings.
  * @param {Array<object>} steps - trace steps.
  * @param {object|null} terminal - trace terminal, for its error code.
  * @returns {boolean}
