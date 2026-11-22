@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MAX_PROMPT_INSTRUCTION_CHARS } from '../src/prompts.js';
 import {
   handleDevDiagnosticsMessage,
   handleExternalPanelMessage,
@@ -263,6 +264,24 @@ describe('background capability message handlers', () => {
     await Promise.resolve();
     expect(improveInstructionForProfile).toHaveBeenCalledWith('Make this clearer');
     expect(deps.sendResponse).toHaveBeenCalledWith({ success: true, content: 'Improved' });
+  });
+
+  it('rejects over-limit instruction improvements before calling the provider', () => {
+    const improveInstructionForProfile = vi.fn();
+    const deps = dependencies({ improveInstructionForProfile });
+
+    expect(
+      handleImproveInstructionMessage(
+        { action: 'improveInstruction', prompt: 'x'.repeat(MAX_PROMPT_INSTRUCTION_CHARS + 1) },
+        { origin: deps.extensionOrigin },
+        deps
+      )
+    ).toBe(true);
+    expect(improveInstructionForProfile).not.toHaveBeenCalled();
+    expect(deps.sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: `Prompt must be ${MAX_PROMPT_INSTRUCTION_CHARS} characters or fewer.`,
+    });
   });
 
   it('returns null when a message belongs to another capability', () => {

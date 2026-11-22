@@ -55,7 +55,7 @@ export function buildAnalyzePrompt(contextLabel) {
  * @param {ContextType} type - Context type.
  * @returns {string}
  */
-const MAX_PROMPT_INSTRUCTION_CHARS = 20_000;
+export const MAX_PROMPT_INSTRUCTION_CHARS = 20_000;
 const MAX_PROMPT_CONTEXT_CHARS = 200_000;
 
 function getContextLabel(type) {
