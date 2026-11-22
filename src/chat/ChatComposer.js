@@ -12,6 +12,7 @@
  */
 
 import { RUN_STATES, isActiveRunState, isRunState } from '../utils/runState.js';
+import { initImprovePrompt } from './improve-prompt/ImprovePrompt.js';
 import { shouldGateActRetry } from './ChatRunRecovery.js';
 
 /* ── Quick-action descriptors ────────────────────────────────────────── */
@@ -486,6 +487,7 @@ export function initComposer(options) {
   let pendingDocumentConflict = null;
   let documentSentInRun = false;
   let pendingAnswerFollowup = null;
+  if (options?.improvePrompt) initImprovePrompt(options.improvePrompt);
 
   function clearAnswerFollowup() {
     pendingAnswerFollowup = null;
