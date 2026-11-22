@@ -19,6 +19,17 @@ build (`npm run build` then Load unpacked on `dist/`).
    instructions, and tools behave exactly as before the refinement; page actions
    are a separate default-off opt-in.
 
+## Journey 0 - Improve a typed prompt
+
+1. In the chat composer, type a prompt without attaching page or selection context.
+2. Click **Improve** and wait for the result. Confirm only the typed prompt is sent; the chat does not submit automatically.
+3. Review the replacement. Click **Undo** to restore the original text, or edit the result and confirm Undo disappears.
+4. While a request is pending, edit the prompt; confirm the late result is discarded and the edit remains intact.
+5. Try an API profile with an invalid key or no network and confirm the text remains unchanged with a visible status message. Codex/Hermes show the existing unsupported response.
+6. Use Tab and Enter to reach and activate Improve; repeat in a narrow panel and in light/dark themes.
+
+Verification: test the exact existing `improveInstruction` message payload, status feedback, pending edit protection, and no automatic send.
+
 ## Journey 1 - Selected text (context menu + quick actions)
 
 Steps:
