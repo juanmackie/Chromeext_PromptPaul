@@ -1632,17 +1632,6 @@ document.addEventListener('DOMContentLoaded', () => {
     row: quickActionsRow,
     chatArea: document.getElementById('chat-area'),
     inputField: userInput,
-    improvePrompt: {
-      input: userInput,
-      button: document.getElementById('improve-prompt-button'),
-      undoButton: document.getElementById('undo-improve-prompt-button'),
-      sendButton: document.getElementById('send-button'),
-      status: document.getElementById('improve-prompt-status'),
-      send: (prompt) =>
-        new Promise((resolve) => {
-          chrome.runtime.sendMessage({ action: 'improveInstruction', prompt }, resolve);
-        }),
-    },
     overflowMenu: document.getElementById('quick-actions-menu'),
     handlers: {
       onStop: () => stopApiRequest(),
