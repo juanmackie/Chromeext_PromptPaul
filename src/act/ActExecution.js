@@ -406,7 +406,9 @@ export class ActExecutionMethods {
       const approved = await this._requestPageActionConfirmation(
         run,
         actionName,
-        args,
+        // The confirmation only needs the tool name; never put tool arguments
+        // (which can carry page data) into the event or checkpoint payload.
+        { name: args.name },
         { label: args.name, tag: 'webmcp' },
         { risk: PAGE_ACTION_RISKS.HIGH, requiresConfirmation: true, reason: decision.reason }
       );
@@ -424,6 +426,10 @@ export class ActExecutionMethods {
     }
     const mutationBudget = chargeBudget('mutation');
     if (mutationBudget) return mutationBudget;
+    // Save the in-flight checkpoint before the page function runs, so a crash,
+    // reconnect or restart can see that an unverified tool call was attempted.
+    const actionHash = pageStateHash(JSON.stringify({ actionName, args }));
+    await this._savePageActionCheckpoint(run, actionName, toolCall, actionHash);
     let executed;
     try {
       executed = await this.pageActionExecutor(
@@ -483,6 +489,9 @@ export class ActExecutionMethods {
     };
     run.pageActions.lastActionReceipt = result.actionReceipt;
     run.pageActions.reverifiedAfterUnverified = false;
+    // The tool result is unverified. Clear any prior fresh-snapshot exemption so
+    // the next state-changing action must inspect the page again.
+    run.pageActions.freshActionSnapshotAfterUnverified = false;
     this._emitEvent(run.id, {
       type: 'page_action_state',
       state: 'complete',

@@ -2021,6 +2021,13 @@ const pageActionExecutor = async (tabId, actionName, args, options = {}) => {
     }
     const diagnosticResponse = { ...(response || {}) };
     delete diagnosticResponse.screenshot;
+    // WebMCP payloads are page-authored tool text. Keep the diagnostic shape,
+    // but never persist the tool list, arguments or output.
+    if (actionName === 'page_webmcp_tools' || actionName === 'page_webmcp_call') {
+      delete diagnosticResponse.tools;
+      delete diagnosticResponse.toolResult;
+      delete diagnosticResponse.text;
+    }
     recordDevDiagnostic(
       'page_action_message_response_detail',
       {

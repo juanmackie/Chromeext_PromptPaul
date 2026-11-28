@@ -121,6 +121,7 @@ describe('Act WebMCP tools', () => {
       };
     });
     await orch.executeTool(runId, makeCall('state-1', 'page_get_state', {}));
+    orch.activeRuns.get(runId).pageActions.freshActionSnapshotAfterUnverified = true;
 
     const pending = orch.executeTool(
       runId,
@@ -147,6 +148,8 @@ describe('Act WebMCP tools', () => {
       disposition: 'delivered_unverified',
       evidence: { kind: 'webmcp_tool_result' },
     });
+    // A prior fresh-snapshot exemption must not survive an unverified tool call.
+    expect(orch.activeRuns.get(runId).pageActions.freshActionSnapshotAfterUnverified).toBe(false);
     // Probe first, then the approved execution with the model's arguments.
     expect(calls.filter((call) => call.actionName === 'page_webmcp_call')).toEqual([
       { actionName: 'page_webmcp_call', args: { name: 'get_order_status', approve: false } },
