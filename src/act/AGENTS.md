@@ -8,3 +8,14 @@ This directory owns Act planning, run-scoped action execution, outcome derivatio
 - Preserve existing public run/event/checkpoint shapes when changing Act internals.
 
 See `src/orchestrator/AGENTS.md` for run integration and `docs/PRODUCTION_READINESS.md` for release gates.
+
+## WebMCP page tools (authorized page-JavaScript exception)
+
+Act never executes page JavaScript, with one declared exception: an optional WebMCP tool call. Treat it as a bounded exception, not as permission to inject or evaluate script.
+
+- Tools are page-registered functions (`document.modelContext`, Chrome 146+ flag / 149+ origin trial). The page-action content script reads them in the isolated world; Chrome's own example extension does the same, so no MAIN-world bridge is needed.
+- `page_webmcp_tools` lists tools with normalized `{name, description, inputSchema, annotations}`. `src/act/WebMcpTools.js` owns normalization and annotation policy; the content script only validates, executes, and bounds.
+- Gating: tools with `debugging` are hidden. **Every** tool call needs explicit per-call confirmation. `readOnlyHint` is a display hint only; page annotations are untrusted and can never skip the card. `consequentialHint` forces the high-risk wording. Annotations are re-read from the live tool before approval so a stale listing cannot change the decision.
+- Bounds: 24 tools, 64-character names, 2000-character schemas, 1500-character arguments, 4000-character results, 8-second timeout with `AbortSignal`. Tool text is untrusted page data and never counts as observed page evidence; every call keeps a `delivered_unverified` receipt until a fresh snapshot verifies it.
+- Never log tool names, arguments, or output payloads in events, journals, or diagnostics.
+- Removing this exception means removing these two actions, `WebMcpTools.js`, and the content-script WebMCP block together.

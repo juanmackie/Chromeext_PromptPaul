@@ -1933,6 +1933,227 @@
     };
   }
 
+  // --- WEBMCP PAGE TOOLS (OPTIONAL) ---
+  // WebMCP tools are page-registered functions
+  // (https://developer.chrome.com/docs/ai/webmcp). This is the only place where
+  // Act calls page JavaScript: a tool must be named, listed, time-bounded, and
+  // approval-gated by the extension side. Tool output is untrusted page data and
+  // is never logged here.
+  const PAGE_ACTION_WEBMCP_MAX_TOOLS = 24;
+  const PAGE_ACTION_WEBMCP_MAX_DESCRIPTION_CHARS = 200;
+  const PAGE_ACTION_WEBMCP_MAX_SCHEMA_CHARS = 2_000;
+  const PAGE_ACTION_WEBMCP_MAX_INPUT_CHARS = 1_500;
+  const PAGE_ACTION_WEBMCP_MAX_RESULT_CHARS = 4_000;
+  const PAGE_ACTION_WEBMCP_TIMEOUT_MS = 8_000;
+  const PAGE_ACTION_WEBMCP_TOOL_NAME = /^[A-Za-z0-9_.:-]{1,64}$/;
+  let pageActionWebMcpTools = null;
+  let pageActionWebMcpWatching = false;
+
+  function getPageActionModelContext() {
+    const modelContext = typeof document === 'undefined' ? null : document.modelContext;
+    if (!modelContext) return null;
+    if (
+      typeof modelContext.getTools !== 'function' ||
+      typeof modelContext.executeTool !== 'function'
+    )
+      return null;
+    return modelContext;
+  }
+
+  function watchPageActionModelContext(modelContext) {
+    if (pageActionWebMcpWatching || typeof modelContext.addEventListener !== 'function') return;
+    pageActionWebMcpWatching = true;
+    try {
+      modelContext.addEventListener('toolchange', () => {
+        // A list captured before the change is no longer authoritative, so the
+        // next listing reads the live tool set again.
+        pageActionWebMcpTools = null;
+      });
+    } catch (_) {
+      pageActionWebMcpWatching = false;
+    }
+  }
+
+  function normalizePageActionWebMcpAnnotations(raw) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    return {
+      readOnlyHint: source.readOnlyHint === true,
+      untrustedContentHint: source.untrustedContentHint === true,
+      consequentialHint: source.consequentialHint === true,
+      debugging: source.debugging === true,
+    };
+  }
+
+  function normalizePageActionWebMcpTool(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const name = String(raw.name || '').trim();
+    if (!PAGE_ACTION_WEBMCP_TOOL_NAME.test(name)) return null;
+    let inputSchema = null;
+    if (raw.inputSchema && typeof raw.inputSchema === 'object' && !Array.isArray(raw.inputSchema)) {
+      try {
+        if (JSON.stringify(raw.inputSchema).length <= PAGE_ACTION_WEBMCP_MAX_SCHEMA_CHARS)
+          inputSchema = raw.inputSchema;
+      } catch (_) {
+        inputSchema = null;
+      }
+    }
+    return {
+      name,
+      description: capPageActionText(raw.description, PAGE_ACTION_WEBMCP_MAX_DESCRIPTION_CHARS),
+      inputSchema,
+      annotations: normalizePageActionWebMcpAnnotations(raw.annotations),
+    };
+  }
+
+  async function listPageActionWebMcpTools() {
+    const modelContext = getPageActionModelContext();
+    if (!modelContext) {
+      pageActionWebMcpTools = null;
+      return { success: true, available: false, tools: [] };
+    }
+    watchPageActionModelContext(modelContext);
+    if (pageActionWebMcpTools)
+      return { success: true, available: true, tools: pageActionWebMcpTools };
+    let listed;
+    try {
+      listed = await modelContext.getTools();
+    } catch (_) {
+      return { success: true, available: false, tools: [], error: 'WEBMCP_TOOLS_UNAVAILABLE' };
+    }
+    const tools = [];
+    const seen = new Set();
+    for (const entry of Array.isArray(listed) ? listed : []) {
+      const tool = normalizePageActionWebMcpTool(entry);
+      if (!tool || seen.has(tool.name)) continue;
+      seen.add(tool.name);
+      tools.push(tool);
+      if (tools.length >= PAGE_ACTION_WEBMCP_MAX_TOOLS) break;
+    }
+    pageActionWebMcpTools = tools;
+    return { success: true, available: true, tools };
+  }
+
+  function boundPageActionWebMcpResult(value) {
+    let text = '';
+    if (typeof value === 'string') text = value;
+    else if (value != null) {
+      try {
+        text = JSON.stringify(value);
+      } catch (_) {
+        text = '';
+      }
+    }
+    const bounded = String(text || '').slice(0, PAGE_ACTION_WEBMCP_MAX_RESULT_CHARS);
+    return { text: bounded, truncated: bounded.length < String(text || '').length };
+  }
+
+  async function callPageActionWebMcpTool(rawArgs = {}) {
+    const modelContext = getPageActionModelContext();
+    if (!modelContext)
+      return {
+        success: true,
+        available: false,
+        error: 'WEBMCP_UNAVAILABLE',
+        message: 'This page does not expose WebMCP tools.',
+      };
+    const name = String(rawArgs.name || '').trim();
+    if (!PAGE_ACTION_WEBMCP_TOOL_NAME.test(name))
+      return {
+        success: true,
+        available: true,
+        error: 'WEBMCP_TOOL_INVALID',
+        message: 'A valid tool name is required.',
+      };
+    watchPageActionModelContext(modelContext);
+    let listed;
+    try {
+      listed = await modelContext.getTools();
+    } catch (_) {
+      return {
+        success: true,
+        available: false,
+        error: 'WEBMCP_TOOLS_UNAVAILABLE',
+        message: 'The page did not return its tool list.',
+      };
+    }
+    // The live tool object is used, so the extension never supplies annotations
+    // that could skip approval for a tool that changed after it was listed.
+    const tool = (Array.isArray(listed) ? listed : []).find(
+      (entry) => entry && String(entry.name || '') === name
+    );
+    if (!tool)
+      return {
+        success: true,
+        available: true,
+        error: 'WEBMCP_TOOL_UNAVAILABLE',
+        message: 'The page no longer exposes that tool. List the tools again.',
+      };
+    const annotations = normalizePageActionWebMcpAnnotations(tool.annotations);
+    if (rawArgs.approve !== true)
+      return { success: true, available: true, probe: true, name, annotations };
+
+    let input = {};
+    if (rawArgs.arguments != null) {
+      if (typeof rawArgs.arguments !== 'object' || Array.isArray(rawArgs.arguments))
+        return {
+          success: true,
+          available: true,
+          error: 'WEBMCP_ARGUMENTS_INVALID',
+          message: 'Tool arguments must be an object.',
+        };
+      let serialized;
+      try {
+        serialized = JSON.stringify(rawArgs.arguments);
+      } catch (_) {
+        serialized = '';
+      }
+      if (!serialized || serialized.length > PAGE_ACTION_WEBMCP_MAX_INPUT_CHARS)
+        return {
+          success: true,
+          available: true,
+          error: 'WEBMCP_ARGUMENTS_INVALID',
+          message: `Tool arguments must serialize to at most ${PAGE_ACTION_WEBMCP_MAX_INPUT_CHARS} characters.`,
+        };
+      input = rawArgs.arguments;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PAGE_ACTION_WEBMCP_TIMEOUT_MS);
+    let output = null;
+    let failure = '';
+    try {
+      output = await modelContext.executeTool(tool, input, { signal: controller.signal });
+    } catch (_) {
+      failure = controller.signal.aborted ? 'WEBMCP_TIMEOUT' : 'WEBMCP_TOOL_FAILED';
+    } finally {
+      clearTimeout(timer);
+    }
+    if (failure)
+      return {
+        success: true,
+        available: true,
+        ok: false,
+        name,
+        error: failure,
+        message:
+          failure === 'WEBMCP_TIMEOUT'
+            ? `The page tool did not answer within ${PAGE_ACTION_WEBMCP_TIMEOUT_MS} milliseconds.`
+            : 'The page tool reported an error.',
+      };
+    const bounded = boundPageActionWebMcpResult(output);
+    return {
+      success: true,
+      available: true,
+      ok: true,
+      name,
+      annotations,
+      text: bounded.text,
+      truncated: bounded.truncated,
+      // The API returns null when the tool triggered a navigation.
+      navigated: output === null,
+    };
+  }
+
   async function executePageAction(request, countAction = true) {
     // The worker supplies its run-snapshotted block list. Check the live
     // document too, so a redirect between URL lookup and dispatch cannot expose
@@ -2028,6 +2249,12 @@
     }
     if (action === 'page_wait') {
       return waitForPageActionCondition(session, request.args || {});
+    }
+    if (action === 'page_webmcp_tools') {
+      return listPageActionWebMcpTools();
+    }
+    if (action === 'page_webmcp_call') {
+      return callPageActionWebMcpTool(request.args || {});
     }
     const settleContext = {
       busyBefore: new Set(document.querySelectorAll('[aria-busy="true"], [role="progressbar"]')),

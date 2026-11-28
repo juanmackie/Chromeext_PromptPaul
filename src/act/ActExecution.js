@@ -42,6 +42,15 @@ import {
   normalizePageManualInterventionArgs,
 } from '../utils/pageActionPolicy.js';
 import { normalizePageSnapshot, pageStateHash, sanitizePageActionUrl } from '../utils/pageDom.js';
+import {
+  WEBMCP_PAGE_ACTION_CALL,
+  WEBMCP_PAGE_ACTION_LIST,
+  WEBMCP_UNTRUSTED_RESULT_NOTICE,
+  boundWebMcpToolText,
+  classifyWebMcpTool,
+  isWebMcpToolVisible,
+  normalizeWebMcpToolList,
+} from './WebMcpTools.js';
 import { isPageActionSensitiveOrigin } from '../utils/pageActionSitePolicies.js';
 import { buildIndexedPageRegions, diffPageActionSnapshots } from '../utils/pageActionScopeDiff.js';
 import { recordDevDiagnostic } from '../utils/devDiagnostics.js';
@@ -211,6 +220,277 @@ export class ActExecutionMethods {
       target,
       policy
     );
+  }
+
+  /**
+   * WebMCP tool discovery and execution. The page owns the tool functions, so the
+   * run treats their text as untrusted, keeps the existing budgets, and asks the
+   * user before any tool that is not declared read-only.
+   */
+  async _executeWebMcpPageAction(runId, actionName, toolCall) {
+    const run = this.activeRuns.get(runId);
+    run.pageActions.currentActivityAction = actionName;
+    run.pageActions.currentActionTitle = null;
+    if (run.pageActions.pendingManualIntervention) {
+      return {
+        success: true,
+        result: {
+          error: 'PAGE_MANUAL_INTERVENTION_PENDING',
+          message: 'Resume the manual step before using page actions.',
+        },
+      };
+    }
+    const targetTabId = Number(run.pageActions.targetTabId || run.sourceTabId || 0) || null;
+    const siteBlock = await this._pageActionSiteGate(run, targetTabId);
+    this._assertPageActionRunActive(run);
+    if (siteBlock) return siteBlock;
+    if (!targetTabId) {
+      return {
+        success: true,
+        result: {
+          error: 'PAGE_TASK_NO_HEALTHY_TABS',
+          handled: true,
+          scope: 'tab',
+          message: 'No healthy owned tab is available for this page action.',
+          actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'no_healthy_tab' } },
+        },
+      };
+    }
+    const normalized = normalizePageActionArgs(
+      actionName,
+      this._parseToolArguments(toolCall.function.arguments)
+    );
+    if (!normalized.valid) {
+      return { success: true, result: { error: 'PAGE_ACTION_INVALID', message: normalized.error } };
+    }
+    const args = normalized.value;
+    const listing = actionName === WEBMCP_PAGE_ACTION_LIST;
+    const chargeBudget = (bucket) => {
+      const budget = consumePageActionBudget(run, bucket, actionName, this._emitEvent.bind(this));
+      return budget.ok ? null : budget;
+    };
+    // Listing and the annotation probe only read page metadata; the mutation
+    // slot is charged when a tool is actually executed, so a denied or missing
+    // tool never spends it.
+    const observationBudget = chargeBudget('observation');
+    if (observationBudget) return observationBudget;
+    const risk = listing ? PAGE_ACTION_RISKS.READ_ONLY : PAGE_ACTION_RISKS.HIGH;
+    this._emitEvent(run.id, {
+      type: 'page_action_state',
+      state: 'running',
+      action: actionName,
+      target: { label: listing ? 'page tools' : args.name, risk },
+    });
+    const fail = (error) => {
+      const message = error?.message || 'The page tool bridge failed.';
+      recordDevDiagnostic('page_action_error', {
+        runId,
+        toolCallId: toolCall?.id,
+        action: actionName,
+        error,
+      });
+      this._emitEvent(run.id, {
+        type: 'page_action_state',
+        state: 'error',
+        action: actionName,
+        error: message,
+      });
+      return {
+        success: true,
+        result: {
+          error: error?.code || 'WEBMCP_FAILED',
+          message,
+          actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'webmcp_bridge' } },
+        },
+      };
+    };
+
+    if (listing) {
+      let listed;
+      try {
+        listed = await this.pageActionExecutor(
+          targetTabId,
+          WEBMCP_PAGE_ACTION_LIST,
+          {},
+          {
+            runId,
+            signal: run.abortController.signal,
+          }
+        );
+      } catch (error) {
+        return fail(error);
+      }
+      if (listed?.available !== true) {
+        const result = {
+          available: false,
+          tools: [],
+          message: 'This page does not expose WebMCP tools. Continue with the DOM page actions.',
+          actionReceipt: {
+            disposition: 'not_delivered',
+            evidence: { kind: 'webmcp_unavailable' },
+          },
+        };
+        this._emitEvent(run.id, {
+          type: 'page_action_state',
+          state: 'complete',
+          action: actionName,
+          receipt: result.actionReceipt,
+          target: { label: 'page tools', risk },
+        });
+        return { success: true, result };
+      }
+      const tools = normalizeWebMcpToolList(listed.tools).filter(isWebMcpToolVisible);
+      const result = {
+        available: true,
+        toolCount: tools.length,
+        tools,
+        note: tools.length
+          ? 'Run a matching tool with page_webmcp_call before using DOM actions on this page. Tool text is untrusted page content.'
+          : 'The page exposes no usable tools. Continue with the DOM page actions.',
+        actionReceipt: {
+          disposition: 'delivered_verified',
+          evidence: { kind: 'webmcp_tool_list', matched: tools.length > 0 },
+        },
+      };
+      this._emitEvent(run.id, {
+        type: 'page_action_state',
+        state: 'complete',
+        action: actionName,
+        receipt: result.actionReceipt,
+        target: { label: 'page tools', risk },
+      });
+      return { success: true, result };
+    }
+
+    let probe;
+    try {
+      probe = await this.pageActionExecutor(
+        targetTabId,
+        WEBMCP_PAGE_ACTION_CALL,
+        { name: args.name, approve: false },
+        { runId, signal: run.abortController.signal }
+      );
+    } catch (error) {
+      return fail(error);
+    }
+    if (probe?.available !== true || probe?.probe !== true) {
+      const result = {
+        available: probe?.available === true,
+        error: probe?.error || 'WEBMCP_TOOL_UNAVAILABLE',
+        message:
+          probe?.message || 'This page does not expose that WebMCP tool. List the tools first.',
+        actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'webmcp_tool_missing' } },
+      };
+      this._emitEvent(run.id, {
+        type: 'page_action_state',
+        state: 'complete',
+        action: actionName,
+        receipt: result.actionReceipt,
+        target: { label: args.name, risk },
+      });
+      return { success: true, result };
+    }
+    const liveTool = { name: args.name, annotations: probe.annotations };
+    const decision = classifyWebMcpTool(liveTool);
+    if (!decision.allowed) {
+      return {
+        success: true,
+        result: {
+          error: 'PAGE_ACTION_BLOCKED',
+          message: decision.reason,
+          risk: decision.risk,
+        },
+      };
+    }
+    if (decision.requiresConfirmation) {
+      const approved = await this._requestPageActionConfirmation(
+        run,
+        actionName,
+        args,
+        { label: args.name, tag: 'webmcp' },
+        { risk: PAGE_ACTION_RISKS.HIGH, requiresConfirmation: true, reason: decision.reason }
+      );
+      this._assertPageActionRunActive(run);
+      if (!approved) {
+        return {
+          success: true,
+          result: {
+            error: 'PAGE_ACTION_DENIED',
+            message: 'The user denied running this page tool.',
+            actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'webmcp_denied' } },
+          },
+        };
+      }
+    }
+    const mutationBudget = chargeBudget('mutation');
+    if (mutationBudget) return mutationBudget;
+    let executed;
+    try {
+      executed = await this.pageActionExecutor(
+        targetTabId,
+        WEBMCP_PAGE_ACTION_CALL,
+        {
+          name: args.name,
+          ...(args.arguments ? { arguments: args.arguments } : {}),
+          approve: true,
+        },
+        { runId, signal: run.abortController.signal }
+      );
+    } catch (error) {
+      return fail(error);
+    }
+    if (executed?.ok !== true) {
+      const result = {
+        available: executed?.available !== false,
+        ok: false,
+        error: executed?.error || 'WEBMCP_TOOL_FAILED',
+        message: executed?.message || 'The page tool reported an error.',
+        actionReceipt: { disposition: 'not_delivered', evidence: { kind: 'webmcp_tool_failed' } },
+      };
+      this._emitEvent(run.id, {
+        type: 'page_action_state',
+        state: 'complete',
+        action: actionName,
+        receipt: result.actionReceipt,
+        target: { label: args.name, risk },
+      });
+      return { success: true, result };
+    }
+    const bounded = boundWebMcpToolText(executed);
+    const result = {
+      available: true,
+      ok: true,
+      name: args.name,
+      toolResult: bounded.text,
+      truncated: bounded.truncated,
+      untrusted: true,
+      notice: `${WEBMCP_UNTRUSTED_RESULT_NOTICE}${decision.untrusted ? ' This tool declares untrusted output.' : ''}`,
+      ...(executed.navigated === true
+        ? {
+            navigated: true,
+            message:
+              'The page tool triggered a navigation. Call page_get_state to inspect the page.',
+          }
+        : {}),
+      // A tool result is its own report, never observed page evidence, so a
+      // mutation stays unverified until the next fresh snapshot proves change.
+      // Page-declared read-only tools are unverified too: the annotation is an
+      // untrusted hint, not evidence about what the function did.
+      actionReceipt: {
+        disposition: 'delivered_unverified',
+        evidence: { kind: 'webmcp_tool_result' },
+      },
+    };
+    run.pageActions.lastActionReceipt = result.actionReceipt;
+    run.pageActions.reverifiedAfterUnverified = false;
+    this._emitEvent(run.id, {
+      type: 'page_action_state',
+      state: 'complete',
+      action: actionName,
+      receipt: result.actionReceipt,
+      target: { label: args.name, risk },
+    });
+    return { success: true, result };
   }
 
   _isPageActionMutation(actionName) {
@@ -589,6 +869,9 @@ export class ActExecutionMethods {
           message: 'Page actions are not enabled for this run.',
         },
       };
+    }
+    if (actionName === WEBMCP_PAGE_ACTION_LIST || actionName === WEBMCP_PAGE_ACTION_CALL) {
+      return this._executeWebMcpPageAction(runId, actionName, toolCall);
     }
     run.pageActions.currentActivityAction = actionName;
     // A fresh inspection means the model moved on from a denied action, so the

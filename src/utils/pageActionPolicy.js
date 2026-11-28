@@ -23,6 +23,8 @@ export const PAGE_ACTION_NAMES = Object.freeze([
   'page_find_text',
   'page_wait',
   'page_batch',
+  'page_webmcp_tools',
+  'page_webmcp_call',
 ]);
 
 export const READ_ONLY_PAGE_ACTIONS = Object.freeze([
@@ -32,7 +34,29 @@ export const READ_ONLY_PAGE_ACTIONS = Object.freeze([
   'page_find_text',
   'page_wait',
   'page_batch',
+  'page_webmcp_tools',
 ]);
+
+// Optional WebMCP page tools (https://developer.chrome.com/docs/ai/webmcp).
+// Act calls page-registered functions only through these bounded names, so the
+// runtime caps live here with the other page-action payload limits.
+export const PAGE_WEBMCP_CAPS = Object.freeze({
+  maxTools: 24,
+  maxNameChars: 64,
+  maxDescriptionChars: 200,
+  maxSchemaChars: 2_000,
+  maxInputChars: 1_500,
+  maxResultChars: 4_000,
+  timeoutMs: 8_000,
+});
+
+const WEBMCP_TOOL_NAME_PATTERN = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+/** Return a bounded page-tool name, or an empty string when it is not valid. */
+export function normalizeWebMcpToolName(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  return WEBMCP_TOOL_NAME_PATTERN.test(name) ? name : '';
+}
 
 export const PAGE_TAB_ACTION_NAMES = Object.freeze([
   'page_list_tabs',
@@ -267,6 +291,34 @@ export function normalizePageActionArgs(actionName, args = {}) {
           'Region must be region-N from the latest snapshot regions list (for example region-0), not a snapshotId.',
       };
     return { valid: true, value: attachTitle({ regionId }) };
+  }
+  if (actionName === 'page_webmcp_tools') {
+    return { valid: true, value: attachTitle({}) };
+  }
+  if (actionName === 'page_webmcp_call') {
+    const name = normalizeWebMcpToolName(args.name);
+    if (!name) return { valid: false, error: 'Use a tool name from page_webmcp_tools.' };
+    let toolArguments;
+    if (args.arguments != null) {
+      if (typeof args.arguments !== 'object' || Array.isArray(args.arguments))
+        return { valid: false, error: 'Tool arguments must be an object.' };
+      let serialized;
+      try {
+        serialized = JSON.stringify(args.arguments);
+      } catch (_) {
+        serialized = '';
+      }
+      if (!serialized || serialized.length > PAGE_WEBMCP_CAPS.maxInputChars)
+        return {
+          valid: false,
+          error: `Tool arguments must serialize to at most ${PAGE_WEBMCP_CAPS.maxInputChars} characters.`,
+        };
+      toolArguments = args.arguments;
+    }
+    return {
+      valid: true,
+      value: attachTitle({ name, ...(toolArguments ? { arguments: toolArguments } : {}) }),
+    };
   }
   if (actionName === 'page_wait') {
     const condition = String(args.condition || '')
